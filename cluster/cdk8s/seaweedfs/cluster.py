@@ -102,6 +102,7 @@ TENANTS = {
     "agentplane-staging",  # agentplane/db_backups.py
     "atuin",  # atuin/server.py
     "authentik",  # authentik/db_backups.py
+    "cdviz",  # cdviz/database.py
     "claude-session-sync",  # claude_session_sync/app.py
     "flux-system",  # seaweedfs/pr_visuals_bucket.py
     "forgejo",  # forgejo/app.py, forgejo/db.py
@@ -118,7 +119,6 @@ TENANTS = {
     "monitoring",  # monitoring/mimir.py, monitoring/tempo.py, monitoring/grafana_instance.py
     "nix-cache",  # nix_cache/attic.py
     "ntfy",  # ntfy.py
-    "oci-cache",  # oci_cache/zot.py
     "plaid-mcp",  # plaid_mcp/db.py
     "public-coder-agent",  # public_coder/backup.py
     "session-backup",  # session_backup.py
@@ -238,7 +238,7 @@ def seaweed(scope: Construct) -> Seaweed:
             # breaking gRPC changes (only additions to filer_pb / master_pb / iam_pb), and
             # split-brain prevention via persistent ClusterID is single-master-friendly
             # (auto-generates on first start).
-            image="chrislusf/seaweedfs:4.46",
+            image="chrislusf/seaweedfs:4.53",
             volume_server_disk_count=1,
             master=SeaweedSpecMaster(
                 # 3-instance raft, spread across kimsufi hosts. Quorum 2/3 -> cluster survives
@@ -362,7 +362,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 ),
                 "hdd-piraeus-102453": _volume_topology(
                     rack="hil-ovh-h109b04",
-                    storage="1700Gi",
+                    storage="2500Gi",  # This node has a larger HDD pool.
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
                     replicas=1,

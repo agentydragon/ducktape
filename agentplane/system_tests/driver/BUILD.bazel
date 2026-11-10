@@ -1,0 +1,500 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "agent",
+    testonly = True,
+    srcs = ["agent.py"],
+    deps = [
+        ":tracing",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/testing:scripted_model",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "dispatcher_transport",
+    testonly = True,
+    srcs = ["dispatcher_transport.py"],
+    deps = [
+        ":cluster",
+        ":port_forward",
+        ":tls",
+        ":tracing",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+    ],
+)
+
+py_library(
+    name = "port_forward",
+    testonly = True,
+    srcs = ["port_forward.py"],
+)
+
+py_test(
+    name = "test_port_forward",
+    srcs = ["test_port_forward.py"],
+    deps = [
+        ":port_forward",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "operator_login",
+    testonly = True,
+    srcs = ["operator_login.py"],
+    deps = [
+        ":cluster",
+        ":tracing",
+        "//agentplane/app:oidc",
+        "@pypi//beautifulsoup4",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+# Deliberate exception: this is an offline provider-adapter regression test, not evidence that a
+# deployed IdP or Agentplane is reachable. It remains here because login choreography is a
+# high-churn prerequisite for the MCP scenario and benefits from the same package/target.
+py_test(
+    name = "test_operator_login",
+    srcs = ["test_operator_login.py"],
+    deps = [
+        ":cluster",
+        ":mcp_connection",
+        ":operator_login",
+        "//:conftest",
+        "//agentplane/app:oidc",
+        "//agentplane/system_tests:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_agent",
+    srcs = ["test_agent.py"],
+    # The driver regression exercises the test driver, but owns only these offline cases.
+    args = ["$(location test_agent.py)"],
+    deps = [
+        ":agent",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:scripted_model",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "ollama_warmup",
+    srcs = ["ollama_warmup.py"],
+    deps = [
+        "//model_catalog:catalog",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_ollama_warmup",
+    srcs = ["test_ollama_warmup.py"],
+    deps = [
+        ":ollama_warmup",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//model_catalog:catalog",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "ollama_catalog",
+    srcs = ["ollama_catalog.py"],
+    deps = [
+        "//agentplane/env/runtime:harness",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_ollama_catalog",
+    srcs = ["test_ollama_catalog.py"],
+    deps = [
+        ":ollama_catalog",
+        "//:conftest",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cleanup_diagnostics",
+    srcs = ["cleanup_diagnostics.py"],
+)
+
+py_test(
+    name = "test_cleanup_diagnostics",
+    srcs = ["test_cleanup_diagnostics.py"],
+    deps = [
+        ":cleanup_diagnostics",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cluster",
+    testonly = True,
+    srcs = ["cluster.py"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_library(
+    name = "scripted_upstream",
+    srcs = ["scripted_upstream.py"],
+    deps = [
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/testing:claude_model",
+        "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_scripted_upstream",
+    srcs = ["test_scripted_upstream.py"],
+    deps = [
+        ":scripted_upstream",
+        "//:conftest",
+        "//agentplane/native/claude/testing:requests",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:scripted_model",
+        "//util:net",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "native_artifacts",
+    srcs = ["native_artifacts.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "central_sampler",
+    srcs = ["central_sampler.py"],
+    deps = [
+        ":cluster",
+        ":tls",
+        ":tracing",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/central_sampler:sampler_pb2_grpc",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:client",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
+        "//devinfra/testing:undeclared_outputs",
+        "//model_catalog:catalog",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "runner_data_archive",
+    srcs = ["runner_data_archive.py"],
+)
+
+py_test(
+    name = "test_runner_data_archive",
+    srcs = ["test_runner_data_archive.py"],
+    deps = [
+        ":runner_data_archive",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "runner_data_archive_bin",
+    main_module = "agentplane.system_tests.driver.runner_data_archive",
+    deps = [":runner_data_archive"],
+)
+
+py_library(
+    name = "executor",
+    srcs = ["executor.py"],
+)
+
+py_library(
+    name = "offered_models",
+    srcs = ["offered_models.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/env/runtime:harness",
+        "//agentplane/proto:session_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "sandbox",
+    srcs = ["sandbox.py"],
+    deps = [
+        ":cluster",
+        ":tracing",
+        "//agentplane:crd_group",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests/vm:boot_rcu",
+        "//agentplane/system_tests/vm:launcher_topology",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "tracing",
+    srcs = ["tracing.py"],
+    deps = ["@pypi//opentelemetry_api"],
+)
+
+py_test(
+    name = "test_sandbox",
+    srcs = ["test_sandbox.py"],
+    deps = [
+        ":cluster",
+        ":sandbox",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "session_setup",
+    srcs = ["session_setup.py"],
+    deps = [
+        ":tracing",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "harness_pair",
+    srcs = ["harness_pair.py"],
+    deps = [
+        ":cluster",
+        ":offered_models",
+        ":sandbox",
+        ":tracing",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_harness_pair",
+    srcs = ["test_harness_pair.py"],
+    deps = [
+        ":harness_pair",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "scenario",
+    srcs = ["scenario.py"],
+    deps = [
+        ":cluster",
+        ":native_artifacts",
+        ":sandbox",
+        "//agentplane/app/testing:client",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_test(
+    name = "test_scenario",
+    srcs = ["test_scenario.py"],
+    deps = [
+        ":cluster",
+        ":native_artifacts",
+        ":sandbox",
+        ":scenario",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//opentelemetry_api",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tracing",
+    srcs = ["test_tracing.py"],
+    deps = [
+        ":tracing",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:otel",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "case_batch",
+    srcs = ["case_batch.py"],
+    deps = [
+        ":tracing",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_case_batch",
+    srcs = ["test_case_batch.py"],
+    deps = [
+        ":case_batch",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "mcp_connection",
+    srcs = ["mcp_connection.py"],
+    deps = [
+        ":operator_login",
+        "//agentplane/mcp_edge:connection_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//httpx2",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//protobuf",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "egress_decisions",
+    srcs = ["egress_decisions.py"],
+    deps = [
+        ":cluster",
+        ":dispatcher_transport",
+        ":port_forward",
+        ":tls",
+        "//agentplane/egress:egress_admin_pb2",
+        "//agentplane/egress:egress_admin_pb2_grpc",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//types_grpcio",
+        "@pypi//types_protobuf",
+    ],
+)
+
+py_library(
+    name = "tls",
+    srcs = ["tls.py"],
+    deps = [
+        ":cluster",
+        "@pypi//grpcio",
+    ],
+)

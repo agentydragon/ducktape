@@ -1,11 +1,8 @@
-"""The constants and the rule parser through which the Action Service reads `PolicySet` and
-`PolicyBinding` (`agentplane/policy_sets.py`; the CRDs live in `agentplane/crds`).
+"""Action Service constants and validation for `action_auto_approve` PolicySet rules.
 
-A `PolicySet` carries Action policies as `action_auto_approve` rules, which `parse_action_rule` reads;
-a rule that does not parse refuses its set (`RefusedPolicySet`), which the informer reports in the
-binding's `ActionsReady` condition. A caller ServiceAccount is an ordinary ServiceAccount carrying
-`CALLER_LABEL`, which is what admits it here at all -- a Pod running as it and a Connection acting as
-it alike.
+`parse_action_rule` validates one rule during cdk8s synthesis. The Go runtime reads the PolicySets and
+reports `ActionsReady` on bindings. A caller ServiceAccount is an ordinary ServiceAccount carrying
+`CALLER_LABEL`, which admits it here -- a Pod running as it and a Connection acting as it alike.
 """
 
 from __future__ import annotations
@@ -19,15 +16,11 @@ from agentplane.action_service.policies.kind import Spec
 from agentplane.action_service.policies.registry import Policy
 from agentplane.crd_group import GROUP
 
-SERVICE_ACCOUNTS_PLURAL = "serviceaccounts"
 # Sandbox Controller sets the same label on its Sandboxes' accounts (`ActionCallerLabel` in
 # agentplane/sandbox_controller/identity.go).
 CALLER_LABEL = f"{GROUP}/use-action-service"
-CALLER_LABEL_SELECTOR = f"{CALLER_LABEL}=true"
-# On a PolicyBinding, beside the other readers' conditions; written by server-side apply under this
-# service's field manager.
+# On a PolicyBinding, beside the other readers' conditions.
 ACTIONS_READY_CONDITION = "ActionsReady"
-ACTIONS_FIELD_MANAGER = "agentplane-action-service"
 ACTION_RULE_TYPE = "action_auto_approve"
 
 

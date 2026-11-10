@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+// KubeVirt maps Filesystem.Name to QEMU's virtiofs tag, which is limited to 36 UTF-8 bytes.
+const maxVirtiofsTagBytes = 36
 
 // vm is the Sandbox's VirtualMachine, or nil; a same-name VM it does not control is not its.
 func (r *Reconciler) vm(ctx context.Context, sandbox *sandboxapi.Sandbox) (*kubevirtv1.VirtualMachine, error) {
@@ -61,6 +65,25 @@ func vmRunning(vm *kubevirtv1.VirtualMachine) bool {
 	return vm != nil && vm.Spec.RunStrategy != nil && *vm.Spec.RunStrategy == kubevirtv1.RunStrategyAlways
 }
 
+func invalidVirtiofsTag(template string, filesystems []kubevirtv1.Filesystem) *unready {
+	for _, filesystem := range filesystems {
+		if filesystem.Virtiofs == nil {
+			continue
+		}
+		// Go string length is the UTF-8 byte length passed through to QEMU.
+		if tagBytes := len(filesystem.Name); tagBytes > maxVirtiofsTagBytes {
+			return &unready{
+				reason: "TemplateInvalid",
+				message: fmt.Sprintf(
+					"SandboxTemplate %s defines virtiofs tag %q with %d UTF-8 bytes; QEMU allows at most %d",
+					template, filesystem.Name, tagBytes, maxVirtiofsTagBytes,
+				),
+			}
+		}
+	}
+	return nil
+}
+
 // haltVM stops the VM and keeps it, with its disks.
 func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) error {
 	if vm == nil || !vm.DeletionTimestamp.IsZero() || !vmRunning(vm) {
@@ -74,12 +97,19 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
-	vm, blocked := renderVM(sandbox, template)
+	if !validRunnerCredentialID(w.credential.ID) {
+		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next VMI"}, nil
+	}
+	vm, blocked := renderVM(sandbox, template, w.credential)
 	if blocked != nil {
 		return w, blocked, nil
 	}
 	if w.vm != nil {
+		lastVMIUID := w.vm.Annotations[RunnerCredentialLastVMIUIDAnnotation]
 		w.vm.Labels, w.vm.Annotations, w.vm.Spec = vm.Labels, vm.Annotations, vm.Spec
+		if lastVMIUID != "" {
+			w.vm.Annotations[RunnerCredentialLastVMIUIDAnnotation] = lastVMIUID
+		}
 		return w, nil, r.Update(ctx, w.vm)
 	}
 	if err := controllerutil.SetControllerReference(sandbox, vm, r.Scheme()); err != nil {
@@ -100,7 +130,7 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w
 // workspace PVC as the volume of its name. The launcher's ServiceAccount is not set here: KubeVirt
 // sets it only from a serviceAccount volume, which would hand the guest the token, so the
 // namespace's launcher admission sets the Sandbox's.
-func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (*kubevirtv1.VirtualMachine, *unready) {
+func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*kubevirtv1.VirtualMachine, *unready) {
 	if blocked := validateWorkspace(template); blocked != nil {
 		return nil, blocked
 	}
@@ -120,6 +150,9 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate)
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the workspace volume %s itself, or as the state volume", template.Name, workspace.Name)}
 	}
 	if blocked := withLaunchDisk(sandbox, template, instance); blocked != nil {
+		return nil, blocked
+	}
+	if blocked := withRunnerTLSDisk(template, instance, credential.SecretName); blocked != nil {
 		return nil, blocked
 	}
 	// DataVolume names are per namespace, so each Sandbox's VM gets its own, prefixed with the
@@ -149,12 +182,21 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate)
 	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 		Name: volume, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
 	})
+	if blocked := invalidVirtiofsTag(template.Name, instance.Domain.Devices.Filesystems); blocked != nil {
+		return nil, blocked
+	}
 	// The VMI and its virt-launcher Pod carry the Sandbox label too.
 	spec.Template.ObjectMeta.Labels = withSandboxLabel(spec.Template.ObjectMeta.Labels, sandbox)
+	spec.Template.ObjectMeta.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credential.ID
 	always := kubevirtv1.RunStrategyAlways
 	spec.Running, spec.RunStrategy = nil, &always
 	meta := owned(sandbox)
-	meta.Annotations = map[string]string{RenderedSpecAnnotation: renderedSpec(spec)}
+	meta.Annotations = map[string]string{
+		RenderedSpecAnnotation:               renderedSpec(spec),
+		RunnerCredentialIDAnnotation:         credential.ID,
+		RunnerCredentialVMIUIDAnnotation:     "",
+		RunnerCredentialLastVMIUIDAnnotation: "",
+	}
 	return &kubevirtv1.VirtualMachine{ObjectMeta: meta, Spec: *spec}, nil
 }
 

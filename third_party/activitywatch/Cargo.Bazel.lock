@@ -1,5 +1,5 @@
 {
-  "checksum": "57e463c6ce855710206de73f2a5f14b1a08d7f64bf6da9f72c1eeb5d10fcc585",
+  "checksum": "9f1581a36a2006f7243d1a3ae9e00bbdd9f4b0aef07b008afbe012865e1c5fd1",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -11297,6 +11297,7 @@
           }
         ]
       },
+      "disable_pipelining": true,
       "library_target_name": "rocket",
       "license": "MIT OR Apache-2.0",
       "license_file": "LICENSE-APACHE",

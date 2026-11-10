@@ -10,12 +10,13 @@
 
 mod selector_conflict;
 
+use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use analysis::facts::StructuralChunkAnalysis;
-use analysis::{DepKind, SourceUnitId, StatementKind};
+use analysis::StatementKind;
+use analysis::facts::StructuralChunkSourceFacts;
 use anyhow::{Context, Result, bail};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
@@ -23,7 +24,7 @@ use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
-use selector_ir_lowering::{MemberSelectorProgramBuilder, MemberSelectorSpecRef};
+use selector_ir_lowering::MemberSelectorProgramBuilder;
 use selector_outcome::{
     Candidate, ConflictSourceUnit, Differentiator, Entity, EntityRef, FreeIdentifier,
     IdentifierMeaning, MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome, OwnershipConflict,
@@ -31,6 +32,7 @@ use selector_outcome::{
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
+use source_identity::SourceUnitId;
 use source_match::chunk_resolver::ChunkResolver;
 use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
@@ -41,9 +43,10 @@ use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
 pub struct Chunk<'m> {
     name: String,
     module: &'m Module,
-    structural: StructuralChunkAnalysis<'m>,
+    structural: StructuralChunkSourceFacts<'m>,
     matcher: OnceCell<ChunkResolver<'m>>,
     places: OnceCell<Places>,
+    near_miss_indices: OnceCell<source_match::ItemMatchIndices>,
 }
 
 /// Top-level statements by source body index: the source unit of each statement,
@@ -56,6 +59,9 @@ struct Places {
     declarations: BTreeMap<String, Vec<(SourceUnitId, SourceUnitOrdinal, StatementKind)>>,
     /// Chunk import bindings, indexed once with the declaration sites.
     imports: HashMap<String, ImportBinding>,
+    /// Every top-level declared and imported name: what a template's free
+    /// identifier can refer to in this chunk.
+    shadowing: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,33 +107,15 @@ pub struct Member {
 /// claim share their template and resolve as one group.
 #[derive(Debug, Clone)]
 pub enum MemberSelector {
-    /// A name pin. On an import specifier it names the import binding itself
-    /// and is not resolved.
-    Binding(spec::BindingSelector),
+    /// A validated `members[].selector`. A binding pin on an import specifier
+    /// names the import binding itself and is not resolved.
+    Authored(MemberSelectorSpec),
     SourceMatch(ParsedSourceMatchSelector),
-    CrossRef(spec::CrossRefTarget),
-    ReadsMember(spec::ReadsMemberTarget),
-    MemberOfModule(spec::MemberOfModuleTarget),
-    PassedToCall(spec::PassedToCallTarget),
-    MakesDecorateCall(spec::MakesDecorateCallTarget),
-    IntrinsicAlias(spec::IntrinsicAliasTarget),
 }
 
 impl MemberSelector {
-    pub fn from_spec(selector: MemberSelectorSpec) -> Self {
-        match selector {
-            MemberSelectorSpec::Binding(binding) => Self::Binding(binding),
-            MemberSelectorSpec::CrossRef(target) => Self::CrossRef(target),
-            MemberSelectorSpec::ReadsMember(target) => Self::ReadsMember(target),
-            MemberSelectorSpec::MemberOfModule(target) => Self::MemberOfModule(target),
-            MemberSelectorSpec::PassedToCall(target) => Self::PassedToCall(target),
-            MemberSelectorSpec::MakesDecorateCall(target) => Self::MakesDecorateCall(target),
-            MemberSelectorSpec::IntrinsicAlias(target) => Self::IntrinsicAlias(target),
-        }
-    }
-
     pub fn is_import_specifier(&self) -> bool {
-        matches!(self, Self::Binding(binding)
+        matches!(self, Self::Authored(MemberSelectorSpec::Binding(binding))
             if binding.kind == Some(BindingSourceKind::ImportSpecifier))
     }
 
@@ -140,37 +128,18 @@ impl MemberSelector {
 
     pub fn kind(&self) -> SelectorKind {
         match self {
-            Self::Binding(_) => SelectorKind::Binding,
+            Self::Authored(selector) => SelectorKind::from(selector),
             Self::SourceMatch(_) => SelectorKind::SourceMatches,
-            Self::CrossRef(_) => SelectorKind::CrossRef,
-            Self::ReadsMember(_) => SelectorKind::ReadsMember,
-            Self::MemberOfModule(_) => SelectorKind::MemberOfModule,
-            Self::PassedToCall(_) => SelectorKind::PassedToCall,
-            Self::MakesDecorateCall(_) => SelectorKind::MakesDecorateCall,
-            Self::IntrinsicAlias(_) => SelectorKind::IntrinsicAlias,
         }
     }
 
     fn preview(&self) -> String {
         match self {
-            Self::Binding(binding) => format!("{binding:?}"),
+            Self::Authored(MemberSelectorSpec::Binding(binding)) => format!("{binding:?}"),
             Self::SourceMatch(parsed) => {
                 source_match::source_match_preview(&parsed.selector().match_source)
             }
-            relational => format!("{relational:?}"),
-        }
-    }
-
-    fn spec_ref(&self) -> MemberSelectorSpecRef<'_> {
-        match self {
-            Self::Binding(binding) => MemberSelectorSpecRef::Binding(binding),
-            Self::SourceMatch(parsed) => MemberSelectorSpecRef::SourceMatch(parsed.selector()),
-            Self::CrossRef(target) => MemberSelectorSpecRef::CrossRef(target),
-            Self::ReadsMember(target) => MemberSelectorSpecRef::ReadsMember(target),
-            Self::MemberOfModule(target) => MemberSelectorSpecRef::MemberOfModule(target),
-            Self::PassedToCall(target) => MemberSelectorSpecRef::PassedToCall(target),
-            Self::MakesDecorateCall(target) => MemberSelectorSpecRef::MakesDecorateCall(target),
-            Self::IntrinsicAlias(target) => MemberSelectorSpecRef::IntrinsicAlias(target),
+            Self::Authored(relational) => format!("{relational:?}"),
         }
     }
 }
@@ -495,7 +464,7 @@ impl<'m> Chunk<'m> {
     pub fn new(
         name: impl Into<String>,
         module: &'m Module,
-        structural: StructuralChunkAnalysis<'m>,
+        structural: StructuralChunkSourceFacts<'m>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -503,16 +472,17 @@ impl<'m> Chunk<'m> {
             structural,
             matcher: OnceCell::new(),
             places: OnceCell::new(),
+            near_miss_indices: OnceCell::new(),
         }
     }
 
     /// A chunk read from a file, outside a pipeline run.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
-        let structural = analysis::facts::analyze_chunk_structural(module, None, |_| None);
+        let structural = analysis::facts::collect_chunk_source_facts(module, None);
         Self::new(name, module, structural)
     }
 
-    pub fn into_structural(self) -> StructuralChunkAnalysis<'m> {
+    pub fn into_structural(self) -> StructuralChunkSourceFacts<'m> {
         self.structural
     }
 
@@ -530,6 +500,7 @@ impl<'m> Chunk<'m> {
                 source_unit_by_body_and_binding: BTreeMap::new(),
                 declarations: BTreeMap::new(),
                 imports: import_bindings(self.module),
+                shadowing: BTreeSet::new(),
             };
             for statement in &self.structural.per_statement {
                 for binding in &statement.declared {
@@ -556,6 +527,13 @@ impl<'m> Chunk<'m> {
                         .insert((body_idx.0, binding.0.as_str().to_string()), source_unit);
                 }
             }
+            places.shadowing = self
+                .structural
+                .per_statement
+                .iter()
+                .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
+                .chain(places.imports.keys().cloned())
+                .collect();
             places
         })
     }
@@ -732,6 +710,9 @@ fn add_nearest_unclaimed(
         };
         *nearest_unclaimed = source_match::fact_near_misses(
             chunk.module,
+            chunk
+                .near_miss_indices
+                .get_or_init(|| source_match::ItemMatchIndices::new(chunk.module)),
             template,
             unclaimed.iter().copied(),
             NEAREST_UNCLAIMED_MIN_SCORE,
@@ -1060,11 +1041,11 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         source_matches.push((module_index, member_index));
                     }
                     selector if selector.is_import_specifier() => {}
-                    selector => {
+                    MemberSelector::Authored(selector) => {
                         let target = self.builder.declare_member_target(
                             &self.ids[module_index],
                             &member.export_name,
-                            selector.spec_ref(),
+                            selector,
                         )?;
                         self.members.insert(target, (module_index, member_index));
                         constrained.push((module_index, member_index));
@@ -1108,10 +1089,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
         self.project_collected(collected)?;
         for (module_index, member_index) in constrained {
             let member = &modules[module_index].members[member_index];
+            let MemberSelector::Authored(selector) = &member.selector else {
+                unreachable!("constrained members are authored selectors");
+            };
             self.builder.lower_member_constraints(
                 &self.ids[module_index],
                 &member.export_name,
-                member.selector.spec_ref(),
+                selector,
             )?;
         }
         let builder = std::mem::take(&mut self.builder);
@@ -1394,11 +1378,13 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     projected_by_member.get(&(module_index, member_index)),
                 ) {
                     (_, Some(index)) => Referent::Projected(*index),
-                    (MemberSelector::Binding(pin), None) => Referent::Pin {
-                        module_index,
-                        member_index,
-                        name: pin.name.clone(),
-                    },
+                    (MemberSelector::Authored(MemberSelectorSpec::Binding(pin)), None) => {
+                        Referent::Pin {
+                            module_index,
+                            member_index,
+                            name: pin.name.clone(),
+                        }
+                    }
                     (MemberSelector::SourceMatch(_), None) => Referent::Unprojected,
                     (_, None) => Referent::Relational {
                         module_index,
@@ -1411,14 +1397,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     .push((module_index, referent));
             }
         }
-        let shadowing = self
-            .chunk
-            .structural
-            .per_statement
-            .iter()
-            .flat_map(|statement| statement.declared.iter().map(|id| id.0.to_string()))
-            .chain(self.chunk.places().imports.keys().cloned())
-            .collect::<BTreeSet<_>>();
+        let shadowing = &self.chunk.places().shadowing;
 
         for (index, entity) in collected.iter().enumerate() {
             let identifiers = entity
@@ -1426,7 +1405,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 .iter()
                 .map(|name| FreeIdentifier {
                     name: name.clone(),
-                    meaning: match classify(name, entity.module_index, &exports, &shadowing) {
+                    meaning: match classify(name, entity.module_index, &exports, shadowing) {
                         Meaning::Reference(_, Referent::Projected(referenced))
                             if referenced == index =>
                         {
@@ -1459,7 +1438,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let mut narrowed = Vec::with_capacity(collected.len());
         for (index, entity) in collected.iter().enumerate() {
             narrowed.push(narrow_by_references(
-                index, entity, modules, &exports, &shadowing,
+                index, entity, modules, &exports, shadowing,
             ));
         }
         let settled = settle_references(&collected, &mut narrowed, modules);
@@ -1593,7 +1572,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     .export_name
                     .clone();
                 let module_neutral_meaning =
-                    match classify_without_local_preference(name, &exports, &shadowing) {
+                    match classify_without_local_preference(name, &exports, shadowing) {
                         Meaning::Ambiguous(_) => ModuleNeutralReferenceMeaning::Ambiguous,
                         Meaning::Reference(_, _) => ModuleNeutralReferenceMeaning::Unique,
                         Meaning::Global | Meaning::Wildcard => {
@@ -1718,11 +1697,9 @@ impl<'c, 'm> Resolve<'c, 'm> {
         match &entity.shape {
             CollectedShape::Member(member_index) => {
                 let member = &module.members[*member_index];
-                let target = self.builder.declare_member_target(
-                    &logical_module,
-                    &member.export_name,
-                    member.selector.spec_ref(),
-                )?;
+                let target = self
+                    .builder
+                    .declare_source_match_member_target(&logical_module, &member.export_name)?;
                 self.members
                     .insert(target, (entity.module_index, *member_index));
                 targets.push(target);
@@ -1733,7 +1710,6 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     let target = self.builder.declare_binding_group_member_target(
                         &logical_module,
                         &member.export_name,
-                        member.selector.spec_ref(),
                     )?;
                     self.members
                         .insert(target, (entity.module_index, *member_index));
@@ -1762,7 +1738,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         self.members
             .iter()
             .filter_map(|(target, (module_index, member_index))| {
-                let MemberSelector::Binding(pin) =
+                let MemberSelector::Authored(MemberSelectorSpec::Binding(pin)) =
                     &self.modules[*module_index].members[*member_index].selector
                 else {
                     return None;

@@ -89,10 +89,10 @@ py_library(
         "//mcp_infra:request_scoped_openapi",
         "//mcp_infra/authentik_auth:provider",
         "//mcp_infra/authentik_auth:token_exchange",
-        "//util/bazel:runfiles",
         "@pypi//fastmcp_slim",
         "@pypi//prometheus_client",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -109,8 +109,8 @@ py_library(
     srcs = ["grocy_container.py"],
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
+        "//devinfra/oci",
         "//third_party/containers:grocy",
-        "//util:oci",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//tenacity",
@@ -125,8 +125,8 @@ py_library(
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":grocy_container",
+        "//devinfra/oci",
         "//third_party/containers:grocy",
-        "//util:oci",
         "//util/testing:container_logs",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
@@ -202,8 +202,8 @@ py_test(
         ":fix_openapi_spec",
         ":grocy_types",
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -233,6 +233,7 @@ py_test(
         ":conftest",
         ":mcp_types",
         "//:conftest",
+        "//grocy_mcp/testing:helpers",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

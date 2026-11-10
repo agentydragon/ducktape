@@ -18,6 +18,11 @@ from props.db.database import Database
 from props.db.models import AgentRun
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
 
@@ -86,10 +91,14 @@ def test_occurrences_with_runs(
     resp = stats_client.get("/api/stats/occurrences")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["total"] > 0
-    row = body["occurrences"][0]
-    assert row["n_runs"] >= 1
-    assert 0.0 <= row["mean_credit"] <= 1.0
+    example, _, _ = test_train_example_with_runs
+    rows = [row for row in body["occurrences"] if row["snapshot_slug"] == example.snapshot_slug]
+    assert rows
+    for row in rows:
+        assert row["n_runs"] == 2
+        assert row["mean_credit"] == pytest.approx(0.76)
+        assert row["min_credit"] == pytest.approx(0.72)
+        assert row["max_credit"] == pytest.approx(0.8)
 
 
 # --- /coverage ---
@@ -114,12 +123,22 @@ def test_coverage_with_runs(
     resp = stats_client.get("/api/stats/coverage", params={"split": "train"})
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["definitions"]) > 0
-    assert len(body["examples"]) > 0
-    assert len(body["cells"]) > 0
-    assert body["definitions"][0]["evaluated_on_count"] >= 1
-    assert body["examples"][0]["tp_count"] > 0
-    assert 0.0 <= body["cells"][0]["recall"] <= 1.0
+    example, _, _ = test_train_example_with_runs
+    definition_index = next(i for i, row in enumerate(body["definitions"]) if row["image_digest"] == FAKE_CRITIC_DIGEST)
+    example_index = next(
+        i
+        for i, row in enumerate(body["examples"])
+        if row["snapshot_slug"] == example.snapshot_slug and row["example_kind"] == str(example.kind)
+    )
+    assert body["definitions"][definition_index]["evaluated_on_count"] >= 1
+    assert body["examples"][example_index]["tp_count"] > 0
+    cell = next(
+        cell
+        for cell in body["cells"]
+        if cell["definition_idx"] == definition_index and cell["example_idx"] == example_index
+    )
+    assert cell["recall"] == pytest.approx(0.76)
+    assert cell["is_best"] is True
 
     assert len(body["max_recall_values"]) > 0
     assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])

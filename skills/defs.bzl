@@ -1,7 +1,7 @@
 """Macros for packaging skills for deployment."""
 
+load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -31,6 +31,31 @@ def _validated_skill_md(name, entry_idx, src_idx, src):
     )
     return ":" + target
 
+def _skill_spec_src_impl(ctx):
+    out = ctx.actions.declare_file(ctx.attr.module + ".py")
+    ctx.actions.write(out, """\"\"\"Auto-generated SkillSpec (do not edit).\"\"\"
+
+from skills.skill_spec import SkillSpec
+
+SPEC = SkillSpec(
+    archive_rlocation = {archive},
+    package_name = {package},
+)
+""".format(
+        archive = repr(to_rlocation_path(ctx, ctx.file.archive)),
+        package = repr(ctx.attr.package_name),
+    ))
+    return [DefaultInfo(files = depset([out]))]
+
+_skill_spec_src = rule(
+    implementation = _skill_spec_src_impl,
+    attrs = {
+        "archive": attr.label(mandatory = True, allow_single_file = True),
+        "module": attr.string(mandatory = True),
+        "package_name": attr.string(mandatory = True),
+    },
+)
+
 def skill_spec_library(name, archive_basename, package_name, visibility = None):
     """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill archive.
 
@@ -46,25 +71,15 @@ def skill_spec_library(name, archive_basename, package_name, visibility = None):
             skill_package's `name`).
         visibility: visibility override (default //visibility:public).
     """
-    spec_src = name + ".py"
-    write_file(
+    _skill_spec_src(
         name = name + "_src",
-        out = spec_src,
-        content = [
-            '"""Auto-generated SkillSpec for {} (do not edit)."""'.format(package_name),
-            "",
-            "from skills.skill_spec import SkillSpec",
-            "",
-            "SPEC = SkillSpec(",
-            '    archive_rlocation="_main/{}/{}.skill",'.format(native.package_name(), package_name),
-            '    package_name="{}",'.format(package_name),
-            ")",
-            "",
-        ],
+        module = name,
+        archive = ":" + archive_basename,
+        package_name = package_name,
     )
     py_library(
         name = name,
-        srcs = [spec_src],
+        srcs = [":" + name + "_src"],
         data = [":" + archive_basename],
         visibility = visibility or ["//visibility:public"],
         deps = [_SKILL_SPEC_LIB],

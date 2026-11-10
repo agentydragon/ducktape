@@ -28,7 +28,6 @@ NAME = "home-application-probes"
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
 _LABELS = {"app.kubernetes.io/part-of": NAME}
-_JOB = f"{NAMESPACE}/{NAME}"
 _SOURCES = ("optiplex", "wyrm2")
 _PORT_NAME = "http"
 _PORT = 9115

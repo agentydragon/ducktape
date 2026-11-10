@@ -15,13 +15,13 @@ from typing import cast
 import docker
 import docker.models.containers
 import pytest
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
-from util.oci import OciImage, load_oci_image
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.claude.claude_hook.container_e2e import e2e_container_descriptor
+from devinfra.oci.oci import load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-_RUST_BINARY_RLOC = "_main/devinfra/claude/claude_hook/claude_hook"
-E2E_IMAGE = OciImage("_main/devinfra/claude/claude_hook/container_e2e/e2e_container.rloc", "e2e-container:pinned")
+_RUST_BINARY_RLOC = "ducktape/devinfra/claude/claude_hook/claude_hook"
 
 
 @dataclass
@@ -85,7 +85,7 @@ class E2EContainer:
         )
 
     def install_rust(self) -> None:
-        rust_binary = get_required_path(_RUST_BINARY_RLOC)
+        rust_binary = Runfiles.CreateOrRaise().root() / _RUST_BINARY_RLOC
         self.cp(str(rust_binary), "/usr/local/bin/claude-hook")
 
     def send_hook(self, payload: dict) -> dict:
@@ -134,13 +134,11 @@ def _save_output(prefix: str, name: str, content: str) -> None:
 
 def load_e2e_image() -> str:
     started = time.monotonic()
-    image = load_oci_image(E2E_IMAGE)
+    image = load_oci_image(e2e_container_descriptor.LAYOUT_RLOCATION)
     _save_output(
         "container-e2e-image",
         "load-timing.json",
-        json.dumps(
-            {"duration_s": round(time.monotonic() - started, 3), "image": E2E_IMAGE.tag}, indent=2, sort_keys=True
-        ),
+        json.dumps({"duration_s": round(time.monotonic() - started, 3), "image": image}, indent=2, sort_keys=True),
     )
     return image
 

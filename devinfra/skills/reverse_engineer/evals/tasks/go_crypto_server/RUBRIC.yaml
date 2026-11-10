@@ -25,8 +25,10 @@ items:
     weight: 12
     description: |
       Did the agent correctly recover the JSON wire protocol — the
-      versioned envelope, the set of endpoints with their request/response
-      shapes, and the success/error response separation? An implementation
+      versioned envelope, the register/note/export endpoints and their
+      request/response shapes, and the success/error response separation?
+      The export verification route has its own rubric item so its
+      operation-specific behavior is scored independently. An implementation
       faithful to the agent's recovery should accept and emit the same
       bytes on the wire as the reference.
 
@@ -74,15 +76,65 @@ items:
       Did the agent correctly recover the MAC construction — the
       Merkle-Damgård chaining, the compression function built from the
       block cipher, the IV, the preimage layout (key, key-length, message),
-      and the tag size? Fully correct means a re-implementation would
-      produce bit-identical tags.
+      and the 8-byte tag size? This item scores tag generation. Verification
+      behavior is scored separately. Fully correct means a re-implementation
+      would produce bit-identical tags.
+
+  - id: mac_verification
+    weight: 6
+    description: |
+      Did the agent recover MAC verification behavior separately from tag
+      generation? For the correct key and message, the exact 8-byte tag is
+      accepted; changing any one tag byte makes verification fail. The
+      comparison must account for all 8 bytes (for example, by accumulating
+      byte differences or using an equivalent full-tag comparison), rather
+      than accepting a matching prefix. Correct signing with missing or
+      incomplete verification is partial at best; full credit requires both
+      the valid-tag and altered-tag cases to behave correctly. Internal
+      function and variable names do not matter.
 
   - id: custom_base32
     weight: 8
     description: |
-      Did the agent correctly recover the custom base32 — the alphabet,
-      the padding character, and the packing scheme? A re-implementation
-      should encode and decode bytes identically to the reference.
+      Did the agent correctly recover both encoding and decoding for the
+      custom base32 — the alphabet, the `~` padding character, and the
+      big-endian packing scheme? Valid padded groups must decode to the same
+      bytes they encode: 2, 4, 5, 7, or 8 alphabet glyphs in a group yield
+      1, 2, 3, 4, or 5 bytes respectively. Input consists of complete
+      8-character groups; `~` padding is allowed only in the final group,
+      must follow 2, 4, 5, or 7 alphabet glyphs in the matching count of
+      6, 4, 3, or 1 padding characters, and cannot be followed by data in
+      that group. Unused low bits in a partial final group must be zero.
+      Invalid alphabet glyphs, lengths, padding, and group sizes must be
+      reported as decode errors rather than silently mapped to bytes.
+      Correct encoding without a working decoder, or a decoder that ignores
+      padding/error behavior, is partial at best. Internal function and
+      variable names do not matter.
+
+  - id: export_verify_endpoint
+    weight: 8
+    description: |
+      Did the agent recover the operation-specific behavior of POST
+      `/v1/export/verify` (`op: "export.verify"`) inside the `ncs/1` JSON
+      envelope? Its request body contains `token` and `blob`. For a known
+      token, the blob is decoded with the custom base32 decoder, split into
+      payload followed by an 8-byte tag, and the tag is checked over the
+      payload with the session key derived from the token. A valid blob
+      succeeds with body `{ "valid": true }`. Malformed JSON, a wrong
+      protocol version, an undecodable blob, or a blob
+      too short to contain an 8-byte tag (fewer than 8 decoded bytes) returns
+      the bad-request code 4001; a well-formed request with a decodable blob
+      for an unknown token returns 4002; and a sufficiently long, decodable
+      blob with a bad tag for a known token returns 4005. These are separate
+      observable cases:
+      full credit requires the route/op, valid result, and all three error
+      distinctions to be correct. Trace the route through the called base32
+      decoder and MAC verifier implementations: a stub, or a helper that
+      always accepts or rejects, makes the endpoint incomplete even if its
+      route and error branches look right. Such an endpoint scores at most
+      partial credit. The helpers' own behavior is also scored in their
+      separate items. Shared envelope and reason-string details are scored
+      by `wire_protocol` and `error_codes`.
 
   - id: export_payload_layout
     weight: 8

@@ -81,19 +81,7 @@ class DirectExecArgs(ExecArgsBase):
 
 
 async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
-    """Execute a command locally (no sandbox).
-
-    Standalone function for direct command execution. Can be called directly
-    for in-container agent loops without MCP infrastructure.
-
-    Args:
-        input: Exec arguments (command, timeout, etc.)
-        default_cwd: Fallback working directory if input.cwd is not specified
-    """
-    cwd_val: Path | None = Path(input.cwd) if input.cwd else None
-    if cwd_val is None and default_cwd is not None:
-        cwd_val = default_cwd
-
+    """Execute a command locally with an optional fallback working directory."""
     timeout_s = max(0.001, input.timeout_ms / 1000.0)
-    outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val)
+    outcome = await run_proc(input.cmd, timeout_s, cwd=Path(input.cwd) if input.cwd else default_cwd)
     return render_outcome_to_result(outcome, input.max_bytes)

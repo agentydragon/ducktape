@@ -1,18 +1,3 @@
-"""
-InvenTree Beautifier Script
-
-Commands:
-  1) fix-lcsc-links
-       Minimizes long LCSC links attached to Parts.
-
-  2) assign-jellybean
-       Lets user assign "Jellybean P/N" values to parts which don't have them
-       set yet.
-
-  3) upload-lcsc-images
-       Scrapes images from LCSC for LCSC parts where Inventree has no image.
-"""
-
 import sys
 from textwrap import dedent
 

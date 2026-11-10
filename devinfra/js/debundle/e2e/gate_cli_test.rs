@@ -1,6 +1,6 @@
 //! E2e for `debundle gate {list,describe,cut}` against REAL pipeline
 //! artifacts. A spec with a cross-module at-init cycle is rejected by
-//! `debundle run`, which writes `dependency_graph.json` + `cycles.json`
+//! `debundle run`, which writes `dependency_graph.json.gz` + `cycles.json`
 //! under the report root; the gate CLI is then exercised against
 //! those files.
 //!
@@ -17,6 +17,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use debundle_e2e_support::*;
 
@@ -62,7 +63,7 @@ fn rejected_cycle_fixture() -> RejectedFixture {
 fn graph_path(rejected: &RejectedFixture) -> PathBuf {
     rejected
         .report_root
-        .join("static/app/dependency_graph.json")
+        .join("static/app/dependency_graph.json.gz")
 }
 
 fn gate_json(args: &[&str]) -> serde_json::Value {
@@ -127,6 +128,32 @@ fn sequenced_initializer_rejection_names_source_unit_location_rule_and_escape_ha
         "{}",
         rejected.stderr
     );
+
+    let described = gate_json(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--modules",
+        rejected.modules_root.to_str().unwrap(),
+        "--source-root",
+        rejected.source_root.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    let command = described["sequenced_source_inspections"]
+        [cause["source_unit_id"].as_str().unwrap()]
+    .as_str()
+    .expect("sequenced cause has runnable source inspection");
+    let inspected = Command::new("sh").arg("-c").arg(command).output().unwrap();
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let source: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(source["selected_source_unit_count"], 1, "{source}");
 }
 
 #[test]
@@ -145,6 +172,58 @@ fn gate_list_reports_each_blocking_scc() {
     assert_eq!(entries[0]["id"].as_u64(), Some(0));
     assert_eq!(entries[0]["module_count"].as_u64(), Some(2));
     assert!(entries[0]["cut_count"].as_u64().unwrap() >= 1, "{parsed}");
+}
+
+#[test]
+fn atomic_group_rejection_also_writes_current_cycle_report() {
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        "const alpha = beta;\nconst beta = alpha;\n",
+        vec![
+            logical_module("left", &[Member::new("alpha")]),
+            logical_module("right", &[Member::new("beta")]),
+        ],
+    ));
+    let chunk_reports = rejected.report_root.join("static/app");
+    let summary: serde_json::Value = read_json(&chunk_reports.join("graph_summary.json"));
+    assert_eq!(summary["atomic_group_conflicts"], 1, "{summary}");
+    assert_eq!(summary["cycles"], 1, "{summary}");
+    assert!(
+        rejected.stderr.contains("atomic-group conflict"),
+        "the atomic rejection remains primary: {}",
+        rejected.stderr
+    );
+    assert!(
+        !rejected.stderr.contains("spec is unrealizable"),
+        "the secondary cycle must not replace the primary diagnostic: {}",
+        rejected.stderr
+    );
+
+    let atomic: serde_json::Value = read_json(&chunk_reports.join("atomic_group_conflicts.json"));
+    let cycles: serde_json::Value = read_json(&chunk_reports.join("cycles.json"));
+    assert_eq!(atomic.as_array().unwrap().len(), 1, "{atomic}");
+    assert_eq!(cycles.as_array().unwrap().len(), 1, "{cycles}");
+
+    let graph = chunk_reports
+        .join("dependency_graph.json.gz")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let parsed = gate_json(&["gate", "list", "--graph", &graph, "--format", "json"]);
+    assert_eq!(
+        parsed["blocking_sccs"].as_array().unwrap().len(),
+        1,
+        "{parsed}"
+    );
+
+    let described = gate_json(&[
+        "gate", "describe", "0", "--graph", &graph, "--format", "json",
+    ]);
+    assert_eq!(described["modules"], cycles[0]["modules"], "{described}");
+    assert_eq!(described["cut"], cycles[0]["cut"], "{described}");
+    assert!(
+        !described["evidence"].as_array().unwrap().is_empty(),
+        "the graph and report describe the same assignment: {described}"
+    );
 }
 
 #[test]
@@ -228,6 +307,32 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
             .any(|edge| edge["sequenced_source_unit"].is_object()),
         "fixture must exercise sequencing provenance: {cut}"
     );
+    // Every constraining edge explains itself, from stored provenance
+    // (`cycles.json`) and from the recomputed `dependency_graph.json.gz`
+    // evidence alike: strict-chain sequencing names both impure
+    // endpoints; the at-init reads here are all direct (`wrap(A)`,
+    // `wrap(C)` read their argument in the statement's own position).
+    for edge in cut_edges.iter().chain(evidence) {
+        match edge["kind"].as_str().unwrap() {
+            "sequenced" => {
+                assert_eq!(
+                    edge["explanation"]["cause"],
+                    serde_json::json!({ "rule": "strict_chain" }),
+                    "{edge}"
+                );
+                assert_eq!(
+                    edge["explanation"]["target_source_unit"]["purity"]["kind"], "not_pure",
+                    "{edge}"
+                );
+            }
+            "eager_use" => assert_eq!(
+                edge["explanation"],
+                serde_json::json!({ "kind": "at_init_read", "position": { "kind": "direct" } }),
+                "{edge}"
+            ),
+            _ => assert!(edge["explanation"].is_null(), "{edge}"),
+        }
+    }
     // Both directions of the at-init cycle appear, naming the
     // bindings whose reads forced it.
     assert!(
@@ -309,7 +414,7 @@ fn gate_unknown_id_fails_cleanly() {
 fn dry_run_rejection_materializes_gate_artifacts() {
     // `debundle run --dry-run` keeps the no-output contract on the
     // accept path, but a gate rejection must still write
-    // dependency_graph.json + cycles.json at the standard report location
+    // dependency_graph.json.gz + cycles.json at the standard report location
     // so the documented `gate list/describe` follow-up works on the
     // rejection that was just reported.
     let rejected = run_dry_run_rejection_fixture(cycle_fixture_opts());
@@ -373,7 +478,8 @@ fn gate_cycles_override_picks_up_custom_path() {
     assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
 
     // With cycles.json gone from the default location and no
-    // `--cycles`, the gate reads the clean state: zero blocking SCCs.
+    // `--cycles`, the CLI loads an empty set; this alone does not prove
+    // that the surrounding report set is complete.
     let parsed = gate_json(&[
         "gate",
         "list",

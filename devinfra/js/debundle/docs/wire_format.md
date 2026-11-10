@@ -11,25 +11,87 @@ are consumed by:
 
 This doc states the convention these files follow.
 
+## Graph report selection
+
+Default runs write `graph_summary.json` per chunk: exact source-unit, edge,
+edge-kind, atomic-group/conflict and cycle counts, gate/legacy-TV verdicts, and
+whether full graphs were exported. It has no node/edge table. Full dependency
+and program graphs require `run --graphs` or Bazel's `dependency_graphs` output
+group. Their schema and provenance checks remain authoritative for graph-backed
+queries; a summary is not a substitute graph. This selection is independent of
+full diagnostic evidence and effect-conflict JSONL.
+
+For an ownership-subset run, `graph_summary.json` and `modules.json` include
+`ownership_subset` as an array of `{ "module": <chunk-local path>,
+"bindings": [<readable member names>], "anonymous_statements": [<zero-based authored selector indices>] }`
+objects. The two optional include lists are independent: a missing `bindings`
+field retains every named claim and `[]` retains none; a missing
+`anonymous_statements` field retains every authored anonymous claim and `[]`
+retains none. Anonymous selector indices refer to the original module's
+`anonymous_statements` list, before source resolution. An empty
+`ownership_subset` array means no explicit module was selected. This records the
+requested ownership selection, while final module contents show any bindings
+co-located by ordinary placement rules.
+
+The staged per-chunk `SynchronousCalls` fact now carries
+`non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
+cells. It is analysis input to the commuting-premise check, not a new public
+report field. `dependency_graph.json.gz` retains the existing
+`premise_verdict.conflict` shape with `kind: shared_cell` when the verdict is
+`known`; the cell
+may now come from a directly invoked callee. Saved analysis from an earlier
+engine must be recomputed before this field can be read.
+
+## Native input identity in saved analysis
+
+The staged analysis projection stores native operation premises separately from
+`chunk_analysis_inputs`. This is the source-analysis view of the authored
+`chunk_analysis_options` map; graph-only settings remain in graph construction
+and do not enter the saved analysis identity. A resolved-member selector becomes a typed
+`declaration` with the original `binding` and `body_index`, keyed by provider
+chunk. Saved native input evidence uses the same source-only declaration;
+rendered reports restore the current `resolved_member` selector. Structural
+selectors remain `source_match`. Fresh analysis is required after this compiled
+schema change. The authored YAML field and its values are unchanged.
+
 ## Convention: `Atom`-only on the wire
 
 Every JSON file carries binding identities as `Atom`s (interned
 strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 `SyntaxContext` half is dropped at serialization.
 
-| File                          | Field carrying binding identity                                                                                                  |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `dependency_graph.json`       | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
-| `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`) |
-| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                              |
+| File                          | Field carrying binding identity                                                                                                                                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dependency_graph.json.gz`    | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`, `edges[].sequenced_cause` binding/cell names                                                                                                                   |
+| `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>`, `cut[].explanation` binding/cell names (evidence is recomputed on demand by `debundle gate describe`); `rejection` names the pass (SPEC § Realizability cut explanations) |
+| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`, `witness.paths[].steps[].edge.binding: Option<Atom>`                                                                                                                                                    |
 
 `Atom` serializes as a plain JSON string via `swc_atoms`'s own
 `Serialize` impl. That impl writes the **string content** — interned
 in memory, but the wire form is the string itself, which is portable.
 
+## Program graph
+
+Full graph files use `.json.gz`: deterministic gzip level-1 streams containing
+the complete existing compact JSON payload. Writers finish the compression
+footer and flush the file before reporting success; no plaintext full graph
+is staged or emitted. Small JSON reports and JSONL are unchanged. Saved-graph
+readers require gzip streams and validate the complete stream, including
+checksums and trailing bytes. Graph consumers use the gzip-only reader; the
+generic JSON report reader accepts plain JSON for non-graph reports. For shell inspection, use
+`gzip -dc dependency_graph.json.gz | jq ...`.
+
+Sections that are the same for every chunk are written once per run, as
+`program_graph.json.gz` at the report root (`reports/tree/` beside the chunk
+directories): `provenance`, `native_integrity_witnesses` and
+`native_prototype_mutations`. Each `dependency_graph.json.gz` names it in
+`program_graph`, a path relative to the graph's own directory
+(`../program_graph.json.gz` for chunk `main`). A tool that copies a graph copies
+the program graph at the same relative location.
+
 ## Saved-graph input provenance
 
-`dependency_graph.json.provenance` records the graph's file inputs by named
+`program_graph.json.gz.provenance` records the run's file inputs by named
 root and SHA-256. Its `present_directories` entries record package subpaths
 whose directory presence affected analysis; they assert only that the path is a
 directory, not that its contents were read. `debundle snapshot create` recreates
@@ -39,7 +101,7 @@ list for older provenance records.
 
 ## Atomic graph reports
 
-`dependency_graph.json.atomic_graph.nodes[]` contains atomic groups. Each node
+`dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
 `source_unit_ids` and `members` identify the source units in that group.
 Each source unit can move between modules, while an atomic group can contain one or
@@ -59,33 +121,269 @@ requested source units cover complete groups or split them.
 
 Conflicts during `run` are written to `atomic_group_conflicts.json`. The
 analysis and CLI report fields name the groups explicitly, so each row can be
-joined directly to `dependency_graph.json.atomic_graph.nodes[].id`.
+joined directly to `dependency_graph.json.gz.atomic_graph.nodes[].id`.
+Each row also has `witness.claim_pair` and two `witness.paths`. The paths use
+the same `G_atomic` projection as SCC construction, embed full dependency-edge
+rows, and label each row's projection (`directed_init_order` or
+`symmetric_colocation`) and orientation (`forward` or `reverse`). A reverse
+orientation is only emitted for a symmetric co-location constraint. Paths keep
+at most twelve leading steps and report their complete `total_step_count` and
+whether those steps were truncated.
 
 ### Export-reentry diagnostics
 
-`export_reentry.json` is a per-selected-chunk diagnostic, not analyzer input.
-Its `execution_runtime` records the declared loading contract (`generic` or
-`native_browser_esm`), and `policy` is `conservative` or
-`no_static_importer_reentry`. The typed
-`global_blockers` and `closure_blockers` arrays use a `reason` tag. Chunk
-references are canonical chunk IDs; static-request entries carry the source
-chunk and original specifier, with `resolved_target: {"chunk", "file"}` when
-the index resolves one. The global predicates are collected once per
-materialization; closure predicates are checked for each selected target even
-when a global blocker already forces the conservative policy. The report
-never relaxes the proof.
+`export_reentry.json` is a bounded per-selected-chunk diagnostic, never analyzer
+input. `host_behavior` and `program_premises` echo the typed author inputs;
+`policy` is `conservative`, `no_static_importer_reentry`, or
+`{"reentry_through": {"total": N, "examples": [names], "truncated": bool}}`.
+The last form is a presentation sample, not the interpreter's actual name set.
 
-```json
-{
-  "execution_runtime": "generic",
-  "policy": "conservative",
-  "global_blockers": [{ "reason": "common_js_interop", "source_chunk": "static/provider" }],
-  "closure_blockers": [
-    { "reason": "vendor_affected_chunk", "source_chunk": "static/provider" },
-    { "reason": "target_cycle", "target_chunk": "static/provider" }
-  ]
-}
-```
+Every sampled collection has `{total, examples, truncated}`: `global_blockers`,
+`closure_blockers`, `host_builtin_leaves`, and, for `loader_closure`, loader
+`requests`, `loaded_chunks`, and optional `reentry_through`. Examples borrow the
+first twenty entries in the complete derivation's deterministic order. `total`
+is the exact collection size, not the number of underlying sites. Read totals,
+not example lengths. Empty sampled collections remain explicit.
+`host_builtin_request_count` is the exact sum of all builtin-leaf
+`request_count` values. Loader `request_site_count` similarly sums all resolved
+request counts, including rows beyond the examples.
+
+`loader.rule` is `no_synchronous_loader`, `no_host_loader_sites`, or
+`loader_closure`. The last form retains exact `closed`, consumed `host_keys`
+and `premise_keys`, `suspended_sites`, `premised_sites`, `outside_window_sites`,
+and `unreachable_sites`. `failures` already aggregates the complete occurrence
+count and one deterministic first witness per finite failure kind, so remains
+complete. Witnesses identify either a host behavior key or a source chunk and
+typed site. No result is inferred from a sample's emptiness.
+
+Request examples retain source chunk, specifier, typed target and
+`request_count`. Builtin-leaf examples retain the static request's source,
+specifier, builtin ID and count. Global/closure blocker examples retain their
+existing typed `reason` and source/target evidence. Chunk references remain
+canonical IDs. All global and closure predicates still run, including closure
+predicates when a global blocker has already forced conservative policy.
+
+`example_limit` is twenty. `full_detail_export_available` indicates a capability;
+`full_detail_export_command` names `debundle run --full-report export-reentry`.
+This explicit request streams compact `export_reentry.full.json` containing the
+complete original `ExportReentryReport` schema: full policy name sets, full
+loader requests/loaded chunks, full blocker/builtin arrays, and the original
+omission rules for empty fields. It is not emitted by default. Serialization
+and explicit flush must succeed before the bounded summary is written; failures
+fail the run and can leave a partial full file. No summary field asserts that
+an unrequested file exists. `--full-report-chunk` selects sinks only. Full graph
+export and full diagnostics are independent.
+
+The in-memory semantic report and staged analysis payload retain the complete
+original report. The output-only borrowed view cannot be deserialized as an
+interpreter policy or staged proof. Bounded diagnostics never change acceptance,
+export-reentry classification, atomic/cycle checks, rejection markers, or stderr.
+
+### Translation validation
+
+`effect_translation_validation.json` contains a typed effect relocation
+assessment beside the unchanged legacy gate and edge-TV reports. Its
+`emitted_order` is the exact statement-unit order produced from the candidate
+assignment and emitter import order. `decision` describes statement-order
+commutation only: `accepted/no_reordering` is vacuous; a reordered `accepted`
+proves that every inverted pair commutes under closed effect domains, or that
+one endpoint is a statement proved to have no evaluation effects. An open
+effect set is treated as Havoc against every nonempty partner, so crossing a
+proved-empty endpoint needs no assumption about the open endpoint. `conflict`
+means an uncovered modeled may-conflict or a contradiction with an existing
+premise; `incomplete` means an uncovered Havoc pair or a pair conditioned by
+an authored premise. A may-conflict does not prove a particular runtime trace
+executes both accesses. The assessment does not prove cross-module rebinding,
+importability, vendor replacement, privacy or singleton behavior, and never
+changes the legacy gate. `legacy_gate_accepts` and `legacy_tv_accepts` retain
+those current verdicts.
+
+`candidate_relocation_assessment.json` pairs the same emitted statement order
+and single effect sweep with typed structural placement obligations from the
+same assignment validation. `placement.cross_destination_rebinds` carries
+typed dependency-edge and source-unit identities; `atomic_group_obligations`
+retains each group's members, claims and causes. Pure `eager_use`/`sequenced`
+conflicts are classified as semantic-order SCCs, recognized write/co-location
+causes as structural constraints, and mixed or empty causes as explicit
+blockers. `placement.projection_violations` contains typed source-unit, binding,
+declarator, stable-interval and whole-statement identities for completed checks
+that found an inconsistency. `placement.coverage.unresolved_checks` is the
+canonical typed set naming source checks whose complete input domain was not
+available: `destructuring_declarator_grouping`, `source_unit_to_body_mapping`,
+`binding_and_shared_var_destination_projection`, and
+`whole_statement_destination_projection`. Coverage is complete only when that
+set is empty; completeness is derived and is not serialized separately. The
+same non-deserializable source/destination projection produces this evidence
+and the binding/statement maps consumed by the lowerer. An unmappable candidate
+whose finalized assignment reaches the projection still emits its diagnostic
+assessment, but it does not produce emitter maps. Conflicting destructuring and
+nested-`var` ownership requests are retained for this projection, which checks
+the hygienic binding catalogue against the retained source groups. They produce
+typed projection violations in the candidate report and the same projection
+refusal in normal emission. Request planning still uses the shared destructuring
+owner classifier for fixed-point pulls when exactly one owner is explicit;
+split claims remain intact for this final check.
+The top-level candidate `status` distinguishes `blocked_by_effect`,
+`blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
+means the effect decision or one of the required placement domains remains
+unproved. `accepted_within_checked_scope` means the effect component accepted
+and all four placement checks completed without a known structural blocker.
+It is a scoped assessment only: it does not establish vendor replacement, final
+exports, reconstruction or output validity, and it is not emission authority.
+`legacy_gate_ordering_veto` identifies semantic-order SCCs that still veto
+under the current legacy gate. Thus an ordering-only gate veto does not appear
+as a structural placement blocker, and the legacy gate remains authoritative.
+Its flattened `decision`, `emitted_order` and `swapped_pairs` are projections
+of the same sweep reported in `effect_translation_validation.json`; the
+flattened `decision.status` describes the effect component only.
+
+`global_resolution.json`, written once at the report root of an accepted
+non-dry run, checks that emission did not capture a source global. For each
+emitted source chunk, every identifier site the prepared parse left unbound
+must appear exactly once in that chunk's final files, at the same span and
+spelling, and still resolve to no binding when the final AST is resolved
+afresh. `preserved` means all sites passed, or were removed together with
+their statement by a vendor residual strip (`elided_use_count`); `changed`
+means a site is `captured_by_binding` (an emitted import or local) or
+`renamed`; `incomplete` names the missing evidence (no inventory, a missing
+or duplicated final site or entry, a raw entry whose bytes changed, or
+`dynamic_scope` from `with`/direct `eval` in a transformed body). It proves
+binding correspondence only, not value or effect equivalence, and says
+nothing about identifiers emission introduced without a source site. The
+report never changes acceptance.
+
+`counts` includes every conflicting swapped pair, cell incidence, Havoc pair
+and premise disposition. `legacy_edge_comparison` separately counts
+`legacy_edge_only_pairs`, `effect_only_pairs` and `both_pairs`; it excludes the
+legacy report's forward-edge and placement diagnostics.
+
+`coverage.unknown_coverage` counts missing global/property/host domains
+independently of legacy dataflow opacity, execution incompleteness and heap
+opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
+false. Cell conflicts can include `own_property` with `origin` and `property`;
+the origin includes all runtime generations of its source allocation and
+supplies no strong-update or privacy proof. A cell conflict retains the later
+access in `cell` and adds `overlap: { left, right, law }` for both footprints.
+The current laws are `exact_cell` and `array_contents_index_or_length`, the
+same-origin alias between array contents and canonical numeric indices or
+`length`. Shape and ordinary named properties remain distinct.
+`coverage.covered_owner_dependencies` retains the typed conditions for
+all owner coverage certificates in the analyzed facts. `relocation_dependencies`
+retains the typed conditions for closed owners participating in candidate
+inversions; `premise_dependencies` names authored commuting premises used for
+conflicting inverted pairs. Neither dependency field turns a report into a
+trusted input artifact.
+An exact `initializer_call_effect_inputs` reference in
+`covered_owner_dependencies` identifies an AUTHOR operation-domain premise
+consumed by normal owner coverage. Its original and effective source digests
+remain in saved staged evidence; the authored `resolved_member` key is only the
+selector for locating the declaration and does not replace that downstream
+proof reference. The graph's legacy `own_at_init.opaque` and separate
+`binding_effect_authority` fields can remain conservative.
+`coverage.owner_coverage_refusals` counts typed reasons why an original
+owner's whole-initialization certificate was not sealed. Bounded examples
+include an optional refusal and existing source location for each endpoint;
+JSONL carries the same refusal inside each endpoint's opacity record. Reasons
+identify only the refused proof boundary, never source bindings or expressions.
+They explain the report and do not change the certificate or coverage.
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.binding_effect_authority`
+is a diagnostic projection of the graph's decision to skip the syntactic
+at-init call fallback. Its report DTO is internally tagged by `authority` and
+has `unclassified`, `legacy_execution` (with the existing `complete` value),
+`author_source_only`, `ordered_root_initializer_uncovered`, and
+`operation_receipt` forms. The receipt reports the exact root owner, binding
+and initializer span, separate read/rebind prerequisites, and flat local call
+edges with caller/target bodies and merged conditions. The analyzer verifies
+that those edges connect to the root body. This DTO is output-only; it cannot
+be loaded as engine authority.
+Staged analysis artifacts instead carry the engine-owned, externally tagged
+saved `BindingEffectCoverage` fact. Its root binding uses the same saved
+symbol and context ordinal as other staged facts. That field is required:
+artifacts missing it fail to decode, and the normal analysis-engine and source
+provenance checks still apply. `legacy_execution` is a temporary decision for
+owners outside ordered-root execution, not evidence of covered operations.
+
+`examples` retains at most twenty deterministic pairs, preferring rows with
+modeled cells and filling unused slots with the earliest Havoc-only rows. The
+selected pairs retain sweep order and each contains at most twenty conflicting
+cells with their access provenance. Each sampled pair retains its exact
+`cell_count` and `cells_truncated` marker;
+`examples_truncated` makes omitted pairs explicit. Counts remain exact when
+examples are truncated. `full_detail_export_available` is true: request
+`debundle run --effect-conflicts-jsonl` for complete per-chunk rows in
+`effect_conflicts.jsonl`. The default does not write this file.
+Repeatable `--effect-conflicts-chunk <chunk-id>` selects only JSONL sinks;
+it leaves every graph, bounded summary, source input and census scope intact.
+
+Each JSONL line is one pair in the complete sweep order; summary examples are
+selected from this stream without changing that order. A line includes
+`runs_first`, `runs_later`, every `cells` entry
+with its later-footprint `cell`, an `overlap: { left, right, law }` witness,
+and access provenance, exact `cell_count`, `havoc`, typed `disposition`,
+`premise_locations`, typed `premise_references`, and the report-only
+`legacy_edge_conflict` comparison.
+`first_opacity` and
+`later_opacity` retain each endpoint's unknown coverage, dataflow opacity,
+execution completeness/losses, heap opacity and an optional typed
+`owner_coverage_refusal` with its existing source location when available.
+Bounded examples expose the same optional information as
+`first_owner_coverage_refusal` and `later_owner_coverage_refusal`. Cells serialize one at a time;
+the export does not retain a full-row or global pair vector. Empty streams
+are valid when the summary counts zero pairs. A write failure can leave a
+partial file; compare row/cell counts to the sibling summary, which is written
+only after the stream flushes. Gate-rejected chunks can have complete exports
+even though the command exits nonzero.
+These reports are not substitute semantic inputs for staged facts.
+
+Global-cell access evidence can additionally contain `global_may_accesses`:
+each entry has a `site` (lexical source-unit ordinal, chunk-relative SWC span
+endpoints, read/write kind and static property) and `evidence` (typed proof
+dependencies and conservative callback assumptions). The enclosing chunk
+supplies the file scope. Physical operation identities join across repeated
+value evaluation and invocation memo replay. These entries always describe
+may-accesses. A cell with no independent observed evidence has
+`kind: indexed_may_access` and cannot create an observed premise contradiction.
+Existing observed/fallback cell evidence can retain these additional may-sites.
+
+`global_may_access_count` is exact. Default samples retain at most
+`global_access_example_limit` (twenty) entries per access and set
+`global_may_accesses_truncated` when more were omitted. JSONL retains every
+entry and serializes borrowed evidence without cloning a full provenance list
+for each pair. Empty provenance/count and false truncation fields are omitted.
+Static callee-global recording closes no coverage domain; dynamic keys,
+ordinary heap, host effects, throws and reordered execution remain covered by
+the existing conservative gaps.
+
+`translation_validation.json`, beside `dependency_graph.json.gz`, is the bounded
+report-only edge-TV verdict;
+the gate remains authoritative. `gate_accepts`, `accepts` and `swapped_pairs`
+are exact. `counts` contains exact `conflicts`, `forward_edges_kept`,
+`forward_edges_swapped`, `placement_splits` totals and `conflicts_by_kind`.
+Each of those four evidence fields has `{ "total": N, "examples": [...],
+"truncated": true|false }`; at most twenty examples are retained in the same
+deterministic order as the complete checker. Conflict examples contain
+`runs_first`/`runs_later` (unit ordinal and module), `dependency_edge` and
+`kind`; other examples are dependency-edge keys. Read `total` or `counts`,
+not the sample length, when comparing results.
+
+`example_limit` is twenty. `full_detail_export_available` is a capability and
+`full_detail_export_command` names `debundle run --full-report translation-validation`.
+An explicit request writes `translation_validation.full.jsonl`; nothing writes
+that stream by default. Each row's `category` is `conflict`, `forward_edge_kept`,
+`forward_edge_swapped` or `placement_split`. Conflict rows flatten the complete
+conflict example fields; other rows contain `dependency_edge`. Category row
+counts equal the summary's exact totals, including when examples are truncated.
+The stream follows the existing edge-classification loop then the existing
+emitted-order conflict sweep, without a second evaluator. Full legacy pair
+comparison and all verdicts consume complete results, never sampled fields.
+
+Repeatable `--full-report-chunk` filters sinks only and rejects unknown chunk
+IDs. Requests require report output; an accepted dry run refuses suppressed
+output. Write/flush errors fail the run and can leave a partial stream. The
+sibling final summary is written only after stream completion/flush; no field
+asserts that an unrequested stream exists. Full diagnostic streams and complete
+graph output are independent, including when requested through Bazel attrs.
 
 ### Why the convention works for these files
 
@@ -113,7 +411,7 @@ resolver assigned to the chunk. This works because both sides agree
 that _every name in this file is a chunk-top-level binding_ — the
 ctxt is determined by that role, not by the wire data.
 
-## Why pre-filter facts (`StatementFacts`) aren't on the wire
+## Why pre-filter facts (`StatementFacts`) are absent from public reports
 
 `StatementFacts` is **pre-filter** raw analyzer output —
 `StatementFactsCollector::visit_ident` records every `Ident::to_id()`
@@ -122,21 +420,23 @@ with inner-scope marks. Those inner-scope `Id`s are `Globals`-bound:
 their `ctxt: u32` is meaningful only inside the SWC `Globals` that
 minted them.
 
-We don't serialize them. An `Atom`-only shape that reconstructs `Id`s via
-`top_level_id(name, fresh_mark)` is unsound under shadowing (a closure-local
-`counter` would collide with a top-level `counter`); a SWC hygiene-snapshot
-replay and pre-filtering inner-scope reads don't pay for themselves. See
-`docs/lessons_learned/cross_process_stage_b.md`.
+Public reports omit these raw facts. Staged analysis artifacts do retain them
+through explicit saved data: every SWC binding is represented by its symbol and
+a `ContextOrdinals` index, then restored against the consumer's freshly parsed
+modules. This preserves closure-local shadowing without serializing a
+process-local context number. Reconstructing all bindings as
+`top_level_id(name, fresh_mark)` would make a closure-local `counter` collide
+with a top-level `counter`. See `docs/lessons_learned/cross_process_stage_b.md`.
 
 ## Reader audiences
 
-| Consumer                                                                                                                     | Reads                                                                 | Cross-process?          |
-| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------- |
-| Spec author with `jq`                                                                                                        | `dependency_graph.json`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json`, source bytes + spec                          | yes (Atom-only)         |
-| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json`, source bytes + module spec                   | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json` (gate)                           | yes                     |
-| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                            | N/A — always in-process |
+| Consumer                                                                                                                     | Reads                                                                    | Cross-process?          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------- |
+| Spec author with `jq`                                                                                                        | `dependency_graph.json.gz`, `cycles.json`, `atomic_group_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `dependency_graph.json.gz`, source bytes + spec                          | yes (Atom-only)         |
+| `debundle gate diagnose <binding>`                                                                                           | `dependency_graph.json.gz`, source bytes + module spec                   | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `dependency_graph.json.gz` (gate)                           | yes                     |
+| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                               | N/A — always in-process |
 
 ## Reconstruction recipe
 
@@ -171,7 +471,7 @@ underlying number.
 
 ## Convention: interned module references + a single module table
 
-Module identity is **interned** on the wire. `dependency_graph.json` (a.k.a.
+Module identity is **interned** on the wire. `dependency_graph.json.gz` (a.k.a.
 `module_graph`) carries exactly one module table — `module_graph.nodes`,
 a list of `ModuleEntry { key, path, kind }` — and the table is the
 **single source of truth** for each module's path and destination kind.
@@ -196,11 +496,78 @@ determine the destination kind.
 The entry's `path` is the historical report label `anon_residual_sentinel`;
 the emitted entry filename is chosen separately by the chunk configuration.
 
+## Binding-ordering effect provenance
+
+`dependency_graph.json.gz` `edges[].sequenced_cause` for the `binding_timeline`
+and `shared_var_access` rules carries `source` and `target`, and
+`uninitialized_observation` carries `observation`: the provenance of that
+endpoint's binding effect, `{"kind": "observed"}` or
+`{"kind": "fallback", "reason": {"path": …}}`; `fallback_summary` carries
+`loss` in the `synchronous_execution.precision_losses[].reason` shape and
+`whole_body_promotion` carries `operation`. The fields are
+required: a graph written before them does not deserialize, so the
+commuting-statements gate never reads an unclassified effect as assumed.
+
+A `possible_getter` reason additionally requires `lookup`, with the lexical
+source-unit ordinal and SWC byte-position span, and `promotion`. The latter is
+`{"kind":"lazy_owner","source_owner":N}` when one lazy source owner was
+promoted, or `{"kind":"raw_callbacks"}` when raw callback promotion has no
+single identified owner. The binding effect keeps one deterministic reason;
+this witness does not enumerate all contributing lookups or owners. Global
+access evidence coalesces possible-getter reasons to the lexicographically
+smallest lookup and promotion witness for that access site, so its summary
+size stays bounded by reason categories. The current reader requires this
+shape; the former unit `possible_getter` reason has no legacy decoding path.
+
+## Ordered call-result refusal
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
+uses `reason: {"code": "missing_call_result"}` when an ordered call's effect
+proof completed but supplied no return-value transfer. The entry retains the
+call's lexical statement ordinal, source location and fallback reach. It may
+also appear as a `fallback_summary.loss` on assumed binding effects.
+The ordered body still stops and promotes its conservative remainder.
+Declining an ordered target does not establish this reason. Its
+`unsupported_operation` / `opaque_execution` loss may carry a typed
+`ordered_call_admission_refusal`; see [ordered call admission refusal](#ordered-call-admission-refusal).
+Incomplete invocation remains a generic unsupported-operation loss, and
+unknown-target classification remains a separate precision loss under the
+existing target rules.
+
+## Ordered call admission refusal
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
+may include `reason.ordered_call_admission_refusal` for a call whose already
+evaluated operands were declined by the ordered path. The values are
+`unknown_target`, `multiple_targets`, `non_local_target`,
+and `unsupported_receiver`; an `array_iteration` operation uses
+`array_iteration_row_unsupported`, `array_iteration_intrinsics_changed`,
+`array_iteration_receiver_unproved`, `array_iteration_callback_unsupported`,
+`array_iteration_capturing_callback` and `array_iteration_callback_incomplete`. The reason retains only the
+first failed admission category, with the existing call source site and
+fallback reach. It does not retain target identities or alter call admission,
+effect promotion, reachability, or gate acceptance. A complete effects-only
+call uses `missing_call_result`; an incomplete invocation does not use this
+field.
+
+## Ordered local member-read refusal
+
+`dependency_graph.json.gz.nodes[].synchronous_execution.precision_losses[]`
+may include `reason.ordered_field_read_refusal` for a conservative `member_read`.
+Its values are `receiver_not_singleton`, `receiver_not_object`,
+`borrowed_receiver`, `unsupported_record_shape`, `allocation_not_fresh`,
+`unsettled_receiver`, `missing_field`, `non_data_field`, and
+`missing_heap_value`. The entry retains the existing operation and source site;
+the refusal identifies the first failed condition in the shared local
+own-data guard. `allocation_not_fresh` does not identify a distinct runtime
+allocation. This optional diagnostic does not change effect promotion or gate
+admission. Older reports omit it.
+
 ## Shared purity causes
 
 An impure known-function call has one `impure_function_call` reason at the
 call site. Its optional `cause_ref` points to an entry in the same
-`dependency_graph.json` file's `purity_causes[]` table. Each entry has an `id`
+`dependency_graph.json.gz` file's `purity_causes[]` table. Each entry has an `id`
 and a `purity` verdict whose reasons may point to further entries. Follow
 these links to inspect the callee's full cause chain; shared callees are
 stored once rather than copied into every caller. A direct reason's
@@ -211,7 +578,7 @@ an impure known-function call. Older reports without the table or
 
 ## Callback-factory barrier diagnostics
 
-`dependency_graph.json.nodes[].callback_factory_barriers[]` is optional and
+`dependency_graph.json.gz.nodes[].callback_factory_barriers[]` is optional and
 omitted for accepted calls. It records a matched retained callback-factory
 signature that the conservative analyzer rejected. The currently supported
 rejections are `rejection.code = "namespace_member_write"` for a static member
@@ -219,6 +586,12 @@ write and `"namespace_dynamic_property_write"` for a computed-key write
 through the namespace binding or a recognized alias. Their `witness` identifies
 the receiver, optional static property, graph `source_unit` ref,
 `statement_ordinal`, and optional `source_location`. The
+`"namespace_call_argument"` rejection records a direct namespace binding
+passed as a non-spread ordinary top-level call argument. Its witness carries
+the exact source unit, SWC call span, argument index, and namespace binding.
+`opaque_call` is true only if a recorded `UnknownCallTarget` precision loss
+matches that same source unit and call span. It does not claim an actual
+mutation. The
 `rejection.code = "unsupported_guard"` value preserves a rejected match whose
 cause is outside this write-witness family. This diagnostic field does not
 alter promotion or acceptance decisions. A computed-key write through a more
@@ -252,9 +625,14 @@ instead of cross-pairing a contract with a promoted callback edge. A write
 witness is selected by source-unit order and is deterministic within its source
 unit; it does not establish token order among writes in that unit.
 
+`gate describe` can also emit `sequenced_source_inspections` when given both
+`--modules` and `--source-root`. Each command is keyed by the already stored
+impure source unit on a sequencing edge and uses `inspect-source` to navigate
+its purity reason.
+
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 
-Every artifact outside `dependency_graph.json` denotes modules by
+Every artifact outside `dependency_graph.json.gz` denotes modules by
 canonical `ModulePath` — never by interned key, and never by the
 in-process `"<chunk_id>::<path>"` spelling (`PlannedModule.id`,
 which exists only in memory). Per-chunk files use the bare path (the
@@ -263,12 +641,39 @@ a `ModuleRef { chunk_id, path }` object.
 
 | File                          | Module-identity fields                                                                   |
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `cycles.json` (per chunk)     | `modules[]`, `cut[].from`, `cut[].to` — `ModulePath`                                     |
+| `cycles.json` (per chunk)     | `modules[]`, `cut[].from`, `cut[].to`, `pass_one_witness.steps[].from/to` — `ModulePath` |
 | `atomic_group_conflicts.json` | `claims[].module` — `ModulePath` (source-unit IDs are `"unit:N"` strings)                |
 | `modules.json` (per chunk)    | `final_module_contents[].path`, `requested_logical_modules[].target_path` — `ModulePath` |
 | tree `index.json` (per dir)   | `modules[]` — `ModuleRef`; per-file rows carry `module: ModuleRef`                       |
 | chunk summary `linker_order`  | `ModulePath`                                                                             |
 | stderr rejection summaries    | every module named in cycle / atom-split / unmatched-claim blocks                        |
+
+## Module binding source-unit associations
+
+Each `modules.json.final_module_contents[]` row has `binding_source_units`,
+an array with one `{binding_name, source_unit_ids}` row per `binding_names`
+entry. Rows follow the same input-binding-name order as `binding_names`;
+`member_names` remains positionally aligned with that array. Each
+`source_unit_ids` value is a sorted, deduplicated list of chunk-local graph IDs
+encoded as `unit:N`, ordered by numeric `SourceUnitId`.
+
+The association lists every graph source unit whose `declared_bindings` contains
+that input binding. It includes every declaration site for redeclared bindings;
+IDs follow the analysis's source-unit boundaries, including units created by
+splitting a comma-list declaration. Reads, writes, and calls do not count as
+declarations. A binding with no declaring source unit has an empty list. The
+existing module-level `source_unit_ids` remains the aggregate of the named
+bindings' declaration IDs and does not pair IDs with individual names.
+
+`CycleEdge` rows in `cycles.json` (`cut[]`, `pass_one_witness.steps[]`, `lazy_closure[]`, and
+`inert_commuting_edges[]`) carry `from_source_unit_id` and
+`to_source_unit_id` as the actual dependency-edge endpoints, using the same
+`unit:N` identities as `dependency_graph.json.gz`'s `nodes[].id`,
+`edges[].source`, and `edges[].target`. These IDs identify the source units
+whose destinations project to the row's `from` and `to`; `statement_ordinal`
+remains edge-reason provenance and does not identify either endpoint. `gate
+describe`'s `cut` and `evidence` rows and `spec propose-commutations`' nested
+`edge` rows use the same endpoint fields.
 
 Cross-file join recipe (what `debundle gate describe` does): resolve
 each source unit's `destination` key through the dependency graph's module table

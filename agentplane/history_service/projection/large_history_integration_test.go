@@ -9,7 +9,6 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
-	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -184,7 +183,7 @@ func TestAnUpdateToAnOldItemReadsTheSameRowsHoweverLongTheHistory(t *testing.T) 
 			request := &historypb.ReadThreadEntitiesRequest{
 				SessionId: threadID.String(),
 				Window: &historypb.ReadThreadEntitiesRequest_Keys{Keys: &historypb.EntityKeys{
-					Keys: []*historypb.EntityKey{{EntityKind: string(threadfold.KindCommand), EntityId: "admission"}},
+					Keys: []*historypb.EntityKey{{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_COMMAND, EntityId: "admission"}},
 				}},
 			}
 			check("the command lookup", readsDuring(t, db, func(worker *sql.DB) {

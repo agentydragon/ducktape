@@ -6,10 +6,8 @@
  * around it. Any other entity (an assistant's answer, confirmed input, a lifecycle observation worth
  * its own line) stands alone and ends whichever it interrupts.
  */
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
-
-import { EventSchema, ItemKind, TurnStatus, TurnStatusSchema } from "../../../proto/event_pb";
-import type { ThreadEntity } from "./thread_sync";
+import { ItemKind, TurnStatus, type Event } from "../../../proto/event_pb";
+import type { ThreadEntity } from "../../../history_service/history_service_pb";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps
  * stream into a run or group. */
@@ -25,24 +23,24 @@ export type RunContent =
 
 const SETUP_OBSERVATIONS = new Set(["setup_started", "setup_output", "setup_finished", "setup_interrupted"]);
 
+function lifecycleCase(entity: ThreadEntity): string | null {
+  if (entity.entity.case !== "lifecycle") return null;
+  const observation = entity.entity.value.event?.observation;
+  return observation?.case?.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`) ?? null;
+}
+
 function setupStep(entity: ThreadEntity): boolean {
-  return (
-    entity.entityKind === "lifecycle" &&
-    "observation" in entity.state &&
-    SETUP_OBSERVATIONS.has(entity.state.observation)
-  );
+  const observation = lifecycleCase(entity);
+  return observation !== null && SETUP_OBSERVATIONS.has(observation);
 }
 
 export function summarizeSetup(entities: readonly ThreadEntity[]): string {
   const terminal = [...entities]
     .reverse()
-    .find((entity) =>
-      entity.entityKind === "lifecycle" && "observation" in entity.state
-        ? entity.state.observation === "setup_finished" || entity.state.observation === "setup_interrupted"
-        : false
-    );
-  if (!terminal || !("event" in terminal.state)) return "Thread setup running";
-  const parsed = fromJson(EventSchema, terminal.state.event as JsonValue).observation;
+    .find((entity) => ["setup_finished", "setup_interrupted"].includes(lifecycleCase(entity) ?? ""));
+  if (!terminal || terminal.entity.case !== "lifecycle") return "Thread setup running";
+  const parsed = terminal.entity.value.event?.observation;
+  if (!parsed) return "Thread setup running";
   if (parsed.case === "setupInterrupted") return "Thread setup interrupted";
   if (parsed.case === "setupFinished")
     return parsed.value.exitCode === 0
@@ -88,8 +86,9 @@ export function setupProgress(entities: readonly ThreadEntity[]): string[] {
   };
   let terminal = false;
   for (const entity of entities) {
-    if (!setupStep(entity) || !("event" in entity.state)) continue;
-    const observation = fromJson(EventSchema, entity.state.event as JsonValue).observation;
+    if (!setupStep(entity) || entity.entity.case !== "lifecycle") continue;
+    const observation = entity.entity.value.event?.observation;
+    if (!observation) continue;
     if (observation.case === "setupOutput") {
       const { case: channel, value } = observation.value.stream;
       if (channel === "stdout" || channel === "stderr") {
@@ -112,7 +111,7 @@ export function setupProgress(entities: readonly ThreadEntity[]): string[] {
 }
 
 function itemKind(entity: ThreadEntity): ItemKind | null {
-  return entity.entityKind === "item" && "kind" in entity.state ? entity.state.kind : null;
+  return entity.entity.case === "item" ? entity.entity.value.kind : null;
 }
 
 function runStep(entity: ThreadEntity): boolean {
@@ -142,14 +141,10 @@ const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> =
 
 export type TurnErrorLabel = { kind: "error"; label: string } | { kind: "ordinary" } | { kind: "unrecognised" };
 
-/** What a turn that ended with `status`, a TurnStatus member name as a thread's `last_turn_status` carries it,
- * is called when it ended in an error. `ordinary` is an ending the thread shows as ordinary. `unrecognised` is
- * a name outside this bundle's TurnStatus: a newer backend may have added one, and it is not known to be an
- * error. */
-export function turnErrorLabel(status: string): TurnErrorLabel {
-  const member = TurnStatusSchema.values.find((value) => value.name === status);
-  if (!member) return { kind: "unrecognised" };
-  const outcome = TURN_OUTCOMES[member.number as TurnStatus];
+/** Whether a generated TurnStatus is prominent or ordinary; unknown numeric values remain unrecognised. */
+export function turnErrorLabel(status: TurnStatus): TurnErrorLabel {
+  const outcome = TURN_OUTCOMES[status];
+  if (!outcome) return { kind: "unrecognised" };
   return outcome.prominent ? { kind: "error", label: outcome.label } : { kind: "ordinary" };
 }
 
@@ -161,8 +156,8 @@ export interface LifecyclePresentation {
   diagnostic: string | null;
 }
 
-export function lifecyclePresentation(observation: string, event: unknown): LifecyclePresentation {
-  const parsed = fromJson(EventSchema, event as JsonValue).observation;
+export function lifecyclePresentation(event: Event): LifecyclePresentation {
+  const parsed = event.observation;
   switch (parsed.case) {
     case "turnStarted":
       return { label: "Turn started", prominent: false, diagnostic: null };
@@ -206,15 +201,19 @@ export function lifecyclePresentation(observation: string, event: unknown): Life
     case "setupInterrupted":
       return { label: "Setup interrupted", prominent: true, diagnostic: null };
     default:
-      return { label: observation.replaceAll("_", " "), prominent: false, diagnostic: null };
+      return {
+        label: (parsed.case ?? "Unknown lifecycle event").replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`),
+        prominent: false,
+        diagnostic: null,
+      };
   }
 }
 
 /** A lifecycle entity plain enough to fold into a group: no alert to show and nothing beyond its
  * one-line label. */
 function groupableLifecycle(entity: ThreadEntity): boolean {
-  if (entity.entityKind !== "lifecycle" || !("observation" in entity.state)) return false;
-  const { prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
+  if (entity.entity.case !== "lifecycle" || !entity.entity.value.event) return false;
+  const { prominent, diagnostic } = lifecyclePresentation(entity.entity.value.event);
   return !prominent && diagnostic === null;
 }
 
@@ -246,7 +245,7 @@ export function historyRows(segments: readonly ThreadEntity[]): HistoryRow[] {
 }
 
 export function rowKey(row: HistoryRow): string {
-  return `${row.entities[0].entityKind}:${row.entities[0].entityId}`;
+  return `${row.entities[0].entity.case}:${row.entities[0].entityId}`;
 }
 
 /** "12 tool calls, 3 reasoning steps": each kind counted separately, so a mixed run reads at a
@@ -265,8 +264,8 @@ export function summarizeRun(entities: readonly ThreadEntity[]): string {
 export function summarizeLifecycleGroup(entities: readonly ThreadEntity[]): string {
   return entities
     .map((entity) =>
-      entity.entityKind === "lifecycle" && "observation" in entity.state
-        ? lifecyclePresentation(entity.state.observation, entity.state.event).label
+      entity.entity.case === "lifecycle" && entity.entity.value.event
+        ? lifecyclePresentation(entity.entity.value.event).label
         : ""
     )
     .join(", ");

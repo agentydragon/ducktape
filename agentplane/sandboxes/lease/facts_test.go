@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -81,9 +81,9 @@ func TestFactsChangedIgnoresRenewals(t *testing.T) {
 }
 
 func TestProtoFactsEncodeToLeaseAnnotations(t *testing.T) {
-	facts, err := FromProto(&runnercontrolpb.RunnerFacts{
-		QuiesceStage:  runnercontrolpb.RunnerFacts_QUIESCE_STAGE_QUIESCED,
-		Bootstrap:     runnercontrolpb.RunnerFacts_BOOTSTRAP_SUCCEEDED,
+	facts, err := FromProto(&environmentruntimestatepb.EnvironmentRuntimeFacts{
+		QuiesceStage:  environmentruntimestatepb.EnvironmentRuntimeFacts_QUIESCE_STAGE_QUIESCED,
+		Bootstrap:     environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
 		IdleSince:     timestamppb.New(time.Date(2026, 10, 14, 0, 30, 0, 0, time.UTC)),
 		SetupsRunning: true,
 	})
@@ -101,14 +101,14 @@ func TestProtoFactsEncodeToLeaseAnnotations(t *testing.T) {
 }
 
 func TestProtoFactsRejectUnknownStage(t *testing.T) {
-	if _, err := FromProto(&runnercontrolpb.RunnerFacts{QuiesceStage: runnercontrolpb.RunnerFacts_QuiesceStage(99)}); err == nil {
+	if _, err := FromProto(&environmentruntimestatepb.EnvironmentRuntimeFacts{QuiesceStage: environmentruntimestatepb.EnvironmentRuntimeFacts_QuiesceStage(99)}); err == nil {
 		t.Error("unknown stage was accepted")
 	}
 }
 
 func TestAutosuspendBlockersRoundTripClearAndRejectInvalidFacts(t *testing.T) {
 	sessionID := "session-a"
-	protoFacts := &runnercontrolpb.RunnerFacts{AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{
+	protoFacts := &environmentruntimestatepb.EnvironmentRuntimeFacts{AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{
 		{Reason: "ActiveTurn", SessionId: &sessionID},
 		{Reason: "Bootstrap"},
 	}}
@@ -137,10 +137,10 @@ func TestAutosuspendBlockersRoundTripClearAndRejectInvalidFacts(t *testing.T) {
 		t.Fatalf("cleared blockers = %+v, err = %v", cleared.AutosuspendBlockers, err)
 	}
 
-	for name, invalid := range map[string]*runnercontrolpb.RunnerFacts{
-		"unknown reason":            {AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{{Reason: "FutureReason"}}},
-		"session reason without ID": {AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{{Reason: "ActiveTurn"}}},
-		"global reason with ID":     {AutosuspendBlockers: []*sandboxpb.AutosuspendBlocker{{Reason: "Bootstrap", SessionId: &sessionID}}},
+	for name, invalid := range map[string]*environmentruntimestatepb.EnvironmentRuntimeFacts{
+		"unknown reason":            {AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{{Reason: "FutureReason"}}},
+		"session reason without ID": {AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{{Reason: "ActiveTurn"}}},
+		"global reason with ID":     {AutosuspendBlockers: []*environmentlifecyclepb.AutosuspendBlocker{{Reason: "Bootstrap", SessionId: &sessionID}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := FromProto(invalid); err == nil {

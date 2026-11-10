@@ -52,25 +52,44 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
         )
 
 
-def test_app_and_migration_use_same_database_uri_secret(staging_manifests: list[dict[str, Any]]) -> None:
+def test_app_migrates_with_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
     )
     pod = deployment["spec"]["template"]["spec"]
-    containers = [
-        one(container for container in pod["containers"] if container["name"] == "app"),
-        one(container for container in pod["initContainers"] if container["name"] == "migrate"),
-    ]
-    database_url_name = env_name(app.Settings, "database_url")
 
-    for container in containers:
-        variables = container["env"]
-        database_url = one(variable for variable in variables if variable["name"] == database_url_name)
-        assert database_url == {
-            "name": database_url_name,
-            "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
-        }
-        assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
+    assert not pod.get("initContainers")
+    container = one(container for container in pod["containers"] if container["name"] == "app")
+
+    variables = container["env"]
+    database_url = one(variable for variable in variables if variable["name"] == "AGENTPLANE_DATABASE_URL")
+    assert database_url == {
+        "name": "AGENTPLANE_DATABASE_URL",
+        "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
+    }
+    assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
+    assert container["startupProbe"]["httpGet"]["path"] == "/healthz"
+
+
+def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    app_container = one(container for container in pod["containers"] if container["name"] == "app")
+    service = one(
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "Service" and doc["metadata"]["name"] == session_dispatcher.NAME
+    )
+    grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
+    endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
+    app_config_map = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
+    )
+    app_config = yaml.safe_load(app_config_map["data"]["config.yaml"])
+    assert app_config["session_dispatcher_target"] == endpoint
+    assert app_container.get("args", []) == []
 
 
 if __name__ == "__main__":

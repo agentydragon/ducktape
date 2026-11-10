@@ -96,10 +96,13 @@ in
     path = [ pkgs.kmod ];
     serviceConfig = {
       Type = "oneshot";
+      TimeoutStartSec = 120;
       ExecStart = lib.escapeShellArgs [
         (lib.getExe cpap-gateway-health)
         "--card-ssid=${ssid}"
         "--psk-file=${secretMount}/wifi_password"
+        "--admin-password-file=${secretMount}/admin_password"
+        "--card-mac=F4:55:95:11:35:A2"
         "--connection=cpap-ezshare"
         "--proxy-unit=cpap-card-proxy.service"
         "--driver=mt7921u"

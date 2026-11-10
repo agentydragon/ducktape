@@ -2,10 +2,10 @@
 #
 # Creates a dedicated `ducktape-ci` Forgejo user that owns CI-pushed images
 # (git.allegedly.works/ducktape-ci/<image>, e.g. codex-pod). Its password is the
-# shared value in the SOPS-provisioned `forgejo-images-creds` Secret, so CI push
-# (secrets/ci/forgejo-images-registry.sops.yaml) and the kubelet/Flux pull
-# credential (the same Secret, distributed by ESO into consuming namespaces)
-# all authenticate as this user. Deliberately no proxy (unlike props): clients
+# shared value in the SOPS-provisioned `forgejo-images-creds` Secret. The
+# github-secrets-sync module publishes it as GitHub Actions secrets for CI push;
+# ESO distributes the same credential into kubelet/Flux pull namespaces. All
+# consumers authenticate as this user. Deliberately no proxy (unlike props): clients
 # talk to Forgejo directly.
 
 data "kubernetes_secret" "forgejo_admin" {

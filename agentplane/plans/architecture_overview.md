@@ -48,10 +48,10 @@ Sandbox, so lifetime is an axis of its own rather than a consequence of the stor
   workspace dropped (not possible yet). Deleting it is the one act that drops its history. Every
   record stays in the outer cluster's API, and anything that names a Sandbox, such as collection
   membership, is a Kubernetes object it owns.
-- **D2. Kubernetes for live objects, databases for what outlives them.** Today's workflow made
-  consistent: a finished Sandbox is deleted, and its history, collection membership and archive
-  grants stay in service databases keyed by Sandbox UID, with git-authored sets reconciled in. Live
-  grants stay in `PolicySet`s.
+- **D2. Kubernetes for live objects, databases for what outlives them.** Extend today's retained
+  Session history so a deleted Sandbox's proposed collection membership and archive grants also
+  stay in service databases keyed by Sandbox UID, with git-authored sets reconciled in. Those
+  Sandbox records and grants are not implemented. Live grants stay in `PolicySet`s.
 - **D3. Agentplane's own control plane.** A nodeless kube-apiserver per environment, on kine over the
   CNPG cluster, holds the Agentplane kinds; workloads stay on the cluster. Either lifetime works, and
   retiring comes naturally, since retired Sandboxes then cost the cluster's control plane nothing.
@@ -71,7 +71,7 @@ D1 and D2 differ only in lifetime; D3 and D4 change the store.
 | Finish with a Sandbox                                                                                                            | Retire it and drop its workspace                                                                                                        | Delete it; its history, membership and grants stay                       | Either                                                                                                                | Either; retired or deleted is a row state                                                    |
 | Haku moves to a fresh Sandbox ([story 4](user_stories.md#4-haku-itself-lives-here): "the sandbox is disposable and Haku is not") | The old Sandbox's threads go if it is deleted, so it stays retired                                                                      | The old threads stay readable                                            | As D1 or D2                                                                                                           | The old threads stay readable                                                                |
 | A coordinator audits its agents, finished ones included                                                                          | Grants on Sandboxes that still exist                                                                                                    | Grants matched on History's record of the writer, apart from live grants | As D1 or D2                                                                                                           | Grants and membership are rows beside the Sandbox rows                                       |
-| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is CRs owned by Sandboxes (#10987), or tags on them                                               | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
+| Grant a git-authored collection                                                                                                  | Flux applies `PolicySet`s; membership is tags on Sandboxes (`spec.inboxTags` today)                                                     | Flux applies `PolicySet`s; a reconciler copies the sets into History     | Flux applies to the second plane (`spec.kubeConfig`)                                                                  | tofu-controller or an importer writes rows                                                   |
 | Try a CRD change on testing first                                                                                                | Not possible: one cluster-scoped CRD set from `devel` serves both                                                                       | Not possible                                                             | Possible: each plane has its own CRDs                                                                                 | Possible: each environment has its own database                                              |
 | Inspect records with `kubectl`                                                                                                   | Yes                                                                                                                                     | Live ones; retained data through History's API                           | Yes, with the second plane's kubeconfig                                                                               | No; the records service's HTTP API                                                           |
 | 100 Sandboxes a day for a year (the operator, 09:50)                                                                             | 36,500 retired ones stay in the cluster's etcd, about 365 MB, each with its state PVC ([below](#keeping-finished-sandboxes-as-records)) | Only live ones stay                                                      | Off the cluster's etcd, still in every watcher's cache                                                                | Off the cluster's etcd                                                                       |
@@ -110,11 +110,12 @@ exploration (#10990, closed after this section absorbed it).
   PVCs, the launch ConfigMap, the ServiceAccount and the headless `<sandbox>-control` Service for
   each Sandbox (`sandbox_controller/`); the Runner Gateway writes the Service's EndpointSlice. They
   need scheduling, image pulls, kubelet mounts, cluster DNS and Cilium NetworkPolicy.
-- **Workload identity.** Pods get kubelet-projected, Pod-bound tokens: 600 s in Sandbox Pods
-  (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Every service
-  TokenReviews each bearer, the Go ones reusing an acceptance for 30 s
-  ([workload authentication](../docs/workload_authentication.md)), and the review includes the
-  bound Pod's existence and UID, so a deleted Pod fails it (`workload_auth/principal.py`). A VM guest holds no token; the relay in its launcher Pod does. A
+- **Workload identity.** Pods get kubelet-projected tokens: 600 s in Sandbox Pods
+  (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Destination services
+  use the Go resolver, which reuses accepted TokenReviews for up to 30 s
+  ([workload authentication](../docs/workload_authentication.md)). Pod-bound resolution checks the
+  bound Pod's existence and UID through TokenReview (`workload_auth/auth`); Action Service also
+  supports account-only resolution. A VM guest holds no token; the relay in its launcher Pod does. A
   second apiserver holds no Pods, so it cannot do the bound-Pod check: callers keep reviewing
   against the primary.
 - **RBAC.** Agents run `kubectl` against the real apiserver as their Sandbox's ServiceAccount through
@@ -134,16 +135,16 @@ exploration (#10990, closed after this section absorbed it).
 
 D1 and D2 keep all of it as it is. D4's costs are a relative judgment.
 
-| Behavior                                                                                                                                                                                                                                                                                                                                          | D3                                                                                                                                                                              | D4                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Five CRD kinds with schema, defaults and CEL rules (idle-suspend consistency, name length, exactly one of Pod or VM), tested against a real apiserver (`crds/test_sandbox_admission.py`)                                                                                                                                                          | Same, with CRDs per plane                                                                                                                                                       | Port or drop each rule at the API edge; medium                                                                                                                                                                                   |
-| Conflict-checked writes: exclusive create, `uid` and `resourceVersion` preconditions (`sandboxes/inventory.py`, the Dispatcher's wake), server-side apply with one field manager per reader on `PolicyBinding` status (`policy_sets.py`). The idle-suspend wake race relies on `resourceVersion` being object-wide (`sandbox_controller/idle.go`) | Same                                                                                                                                                                            | A version column; low                                                                                                                                                                                                            |
-| Status subresource with its own RBAC verb, conditions with `observedGeneration`, a per-reader condition on each `PolicyBinding`                                                                                                                                                                                                                   | Same                                                                                                                                                                            | A separate write path and authorization for status; medium                                                                                                                                                                       |
-| List-then-watch: one Python engine (`util/kubernetes_watch.py`) for the Action Service, the app and `policy_watch.py`, relisting on any failure and failing closed when stale; client-go and controller-runtime caches in the Go services (both controllers, the Gateway with the Dispatcher, egress)                                             | Same, with a second client per plane                                                                                                                                            | A resumable watch with a "gone, relist" signal; high, the one hard piece, since Postgres watches here send a snapshot then changes and cannot resume ([API aggregation](api_aggregation_exploration.md))                         |
-| Leases: `<sandbox>-runner` fences by `leaseTransitions`, names the holding Gateway replica and carries runner facts the controller reads; `dispatcher-<sandbox UID>` beside a Postgres fence; leader election for both controllers                                                                                                                | Move with the Sandbox family                                                                                                                                                    | Compare-and-set epoch with TTL and holder routing; medium. The Dispatcher's Postgres fence has no expiry, so it stops stale writers but cannot pick a live owner; `DISPATCHER_OWNERSHIP_IN_POSTGRES` (unscheduled) would add one |
-| Ownership and deletion: the Sandbox owns every child, a finalizer holds deletion until the runner has quiesced, garbage collection removes the rest; the Gateway (`runner_gateway/gateway/sandboxes.go`) and the relay policy identify a Pod by its owner chain                                                                                   | Ownership does not cross apiservers (general Kubernetes behavior, not tried): the controller deletes each child kind itself, and the Pod-to-Sandbox check needs another binding | A sweeper per child kind and a held deletion; medium to high                                                                                                                                                                     |
-| Provenance: the Flux label `kustomize.toolkit.fluxcd.io/name` marks git-owned `PolicyBinding`s and a Sandbox owner marks Sandbox-owned ones (`sandboxes/egress_views.py`); `managedFields` records writers                                                                                                                                        | Same                                                                                                                                                                            | A writer column; low to medium                                                                                                                                                                                                   |
-| Clients: `kubectl`, Flux, `kubernetes_asyncio` in about 28 non-test Python files, client-go and controller-runtime in the Go services                                                                                                                                                                                                             | Kept, with a second kubeconfig                                                                                                                                                  | Lost                                                                                                                                                                                                                             |
+| Behavior                                                                                                                                                                                                                                                                                                                                                                                         | D3                                                                                                                                                                              | D4                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Five CRD kinds with schema, defaults and CEL rules (idle-suspend consistency, name length, exactly one of Pod or VM), tested against a real apiserver (`crds/test_sandbox_admission.py`)                                                                                                                                                                                                         | Same, with CRDs per plane                                                                                                                                                       | Port or drop each rule at the API edge; medium                                                                                                                                                                                                                                         |
+| Conflict-checked writes: exclusive create, `uid` and `resourceVersion` preconditions (`runner_gateway/environments/internal/management/access.go`, the Dispatcher's wake), server-side apply with one field manager per reader on `PolicyBinding` status (`policy/reader/readiness.go`). The idle-suspend wake race relies on `resourceVersion` being object-wide (`sandbox_controller/idle.go`) | Same                                                                                                                                                                            | A version column; low                                                                                                                                                                                                                                                                  |
+| Status subresource with its own RBAC verb, conditions with `observedGeneration`, a per-reader condition on each `PolicyBinding`                                                                                                                                                                                                                                                                  | Same                                                                                                                                                                            | A separate write path and authorization for status; medium                                                                                                                                                                                                                             |
+| List-then-watch: client-go informers and controller-runtime caches in the Go app and services (the Action Service, both controllers, the Gateway with the Dispatcher, egress)                                                                                                                                                                                                                    | Same, with a second client per plane                                                                                                                                            | A resumable watch with a "gone, relist" signal; high, the one hard piece, since Postgres watches here send a snapshot then changes and cannot resume ([API aggregation](api_aggregation_exploration.md))                                                                               |
+| Leases: `<sandbox>-runner` fences by `leaseTransitions`, names the holding Gateway replica and carries runner facts the controller reads; `dispatcher-<sandbox UID>` beside a Postgres fence; leader election for both controllers                                                                                                                                                               | Move with the Sandbox family                                                                                                                                                    | Compare-and-set epoch with TTL and holder routing; medium. The Dispatcher's Postgres fence has no expiry, so it stops stale writers but cannot pick a live owner; the [proposed merge](dispatcher_gateway_merge.md#one-owner-per-sandbox) makes the runner connection holder the owner |
+| Ownership and deletion: the Sandbox owns every child, a finalizer holds deletion until the runner has quiesced, garbage collection removes the rest; the Gateway (`runner_gateway/gateway/sandboxes.go`) and the relay policy identify a Pod by its owner chain                                                                                                                                  | Ownership does not cross apiservers (general Kubernetes behavior, not tried): the controller deletes each child kind itself, and the Pod-to-Sandbox check needs another binding | A sweeper per child kind and a held deletion; medium to high                                                                                                                                                                                                                           |
+| Provenance: the Flux label `kustomize.toolkit.fluxcd.io/name` marks git-owned `PolicyBinding`s and a Sandbox owner marks Sandbox-owned ones (`app/go/policyaccess/views.go`); `managedFields` records writers                                                                                                                                                                                    | Same                                                                                                                                                                            | A writer column; low to medium                                                                                                                                                                                                                                                         |
+| Clients: `kubectl`, Flux, `kubernetes_asyncio` in four remaining non-test Python modules, client-go and controller-runtime in the Go services                                                                                                                                                                                                                                                    | Kept, with a second kubeconfig                                                                                                                                                  | Lost                                                                                                                                                                                                                                                                                   |
 
 D3's apiserver would be [kine](https://github.com/k3s-io/kine) on the CNPG cluster, which per its
 README implements the etcd API subset the apiserver needs over SQLite, MySQL, Postgres, NATS or T4,
@@ -271,8 +272,8 @@ Deleting a Sandbox today is an archive without History's record of the Sandbox. 
 (23:24): "history's record of a Sandbox would be an entity in History Service, and Sandbox CR could
 stop existing without the History Service records disappearing", but "I'm not sure if sandbox
 controller should be involved". It need not be: History already records each Session's writer
-namespace and name on the first push ([History
-README](../history_service/README.md#which-sandbox-wrote-a-session)) and lacks only the UID and
+namespace, name and UID on the first push ([History
+README](../history_service/README.md#session-writer-and-execution-sandbox)) and lacks only the
 tags, and a purge can be a History call the app makes after removing the CR; the operator deferred
 purging (23:33). The operator keeps two kinds of tag apart (2026-10-20 00:21): "recipient tags" and
 "history reader tags" are "permission gates for different services", since renamed inbox tags and
@@ -300,34 +301,15 @@ reconciler if needed between those and live sandboxes", which the history-tag wa
 
 ## Right under every direction
 
-Candidates; each still needs the operator's go.
+Already landed under every direction: History records and checks the writing Sandbox's UID on every
+push, keyed by the global Session ID ([History README](../history_service/README.md#session-writer-and-execution-sandbox)),
+and inbox tags live on the Sandbox as `spec.inboxTags`
+([Notification API](../notification_service/docs/api.md#messages)). The remaining candidates still
+need the operator's go.
 
-- **Record the writing Sandbox's UID in History and check it on every push.** Landed (#11835), with
-  the global Session ID kept as the key. D1 deletes by it, D2 keys grants by it, and D3 and D4 still
-  identify a Sandbox by it. History's record of the Sandbox and the history-tag watch remain
-  (`HISTORY_SANDBOX_RECORD`).
-- **Inbox tags on the Sandbox.** The operator (09:58): a collection as "something like a tag
-  on one or more Sandboxes that's just a string, without a UID identity or a k8s object backing it,
-  no Membership objects"; inbox tags and history tags are separate (2026-10-20 00:21). An
-  inbox tag lives and dies with its Sandbox, and a rule matches it the same way in every
-  direction, as it does direct and `allSandboxes` targets; membership then picks no direction, and a
-  recreated Sandbox has only the tags its manifest or preset gives it. History tags, also on the CR
-  (2026-10-20 00:32), follow the same rules below. Against the membership CRs, git cannot cleanly tag a Sandbox the app
-  created: Flux would own the whole object, delete it when the entry leaves git, and try to recreate
-  it from a partial manifest after an archive (not tried). On a Sandbox git creates, git and the app
-  can each own different tags, since server-side apply tracks each entry of a set-typed list separately and Flux
-  takes back only fields edited with `kubectl` (kustomize-controller's field-manager cleanup); a tag
-  git declares is reverted if changed live. Setting a tag is a grant, and RBAC on Sandbox writes is
-  its only gate, with no admission rule (2026-10-20 01:29): whoever can patch a Sandbox can already
-  set its `spec.policySets`, which grants at least as much. Flux and the app are the writers
-  (01:17), as the
-  [agent communication plan](multiagent_communication.md#target-collections-and-launch-enrollment)
-  now records.
-  Both tag kinds are spec lists declared `x-kubernetes-list-type: set`, like `spec.policySets`
-  (2026-10-20 00:36): the CRD validates them and requesters keep writing spec, and a set keeps the
-  split ownership that a plain list, owned whole, would lose. Labels would let `kubectl` and watchers
-  select on a tag, which nothing needs while History watches every Sandbox. This takes the
-  membership CR out of #10987 ([design](sandbox_tags.md)).
+- **History's record of the Sandbox and history tags** (`HISTORY_SANDBOX_RECORD`), per the
+  [design](sandbox_tags.md). D1 deletes by the recorded UID, D2 keys grants by it, and D3 and D4
+  still identify a Sandbox by it.
 - **Drop a Sandbox's workspace without deleting the Sandbox.** Deferred by the operator, "not needed
   for this plan" (23:32). The Sandbox owns `<sandbox>-workspace`, and a missing one blocks the next
   start with `VolumeLayoutMismatch` (`sandbox_controller/workspace.go`), so deleting the Sandbox is
@@ -339,9 +321,13 @@ Candidates; each still needs the operator's go.
   under the workspace (`/state/workspaces/{session_id}/...` in the presets), and its one-time setup
   script, which creates it, does not rerun under the same Session ID ([app
   README](../app/README.md)). D1 and D3 finish a Sandbox this way; D2 and D4 can keep one without
-  its storage. ## Configurable within sane options The operator: "one way to make things no-regret
-  might also be to make the 'what lives where' configurable, or configurable within sane options"
-  (02:19).
+  its storage.
+
+## Configurable within sane options
+
+The operator: "one way to make things no-regret might also be to make the 'what lives where'
+configurable, or configurable within sane options" (02:19).
+
 - **Which apiserver holds the records.** The outer cluster and an Agentplane-owned apiserver speak the
   same protocol, so each service could take a records connection apart from its cluster connection,
   both pointing at the cluster by default. Two things must first stop assuming one apiserver: the
@@ -386,8 +372,8 @@ Held until one is chosen:
 
 ### Kubernetes records
 
-- **Sandbox.** A `Sandbox` CR. The app writes desired state, the Sandbox Controller writes status,
-  and the Dispatcher patches the wake fields. Operator: deletes a Sandbox when done and wants its
+- **Sandbox.** A `Sandbox` CR. EnvironmentService owns the app-facing management operations, the
+  Sandbox Controller writes status, and the shared lifecycle manager handles authorized wake/resume. Operator: deletes a Sandbox when done and wants its
   history kept (2026-10-18 23:29), floated suspending instead of deleting, offered deleting the
   history with the Sandbox (2026-10-19 02:04), and wants the workspace disposable on its own while
   the state PVC and metadata stay with the history (09:42).
@@ -395,8 +381,8 @@ Held until one is chosen:
   Service, the Sandbox's own `PolicyBinding`). Owned by the Sandbox and removed with it; both PVCs
   survive suspension.
 - **Grants and catalog** (`PolicySet`, static `PolicyBinding`s, `SandboxTemplate`,
-  `EgressCredential`). Authored in git and applied by Flux; the app writes runtime grants as bindings
-  owned by the Sandbox. Operator: wants the Flux-managed shared permission sets kept gitops-driven,
+  `EgressCredential`). Authored in git and applied by Flux; the Sandbox Controller reconciles the
+  Sandbox-owned PolicyBinding from the Sandbox's selected PolicySets. Operator: wants the Flux-managed shared permission sets kept gitops-driven,
   and floated a second control plane "if it came to it" (2026-10-18 22:54, 23:02).
 - **Leases.** `dispatcher-<sandbox UID>`, renewed every 10 s (`LeaseRenewInterval`) while its
   Sandbox has queued or delivering work and left to lapse otherwise (#11035), and `<sandbox>-runner`
@@ -413,19 +399,20 @@ Held until one is chosen:
 - **Which Sandbox wrote a Session.** History records the namespace, name, and controller-owned Sandbox UID
   from the Sandbox's own ServiceAccount, which its runner authenticates as; it checks that UID on every
   push and keeps the globally unique Session ID
-  key ([History README](../history_service/README.md#which-sandbox-wrote-a-session)).
+  key ([History README](../history_service/README.md#session-writer-and-execution-sandbox)).
 - **Thread** (the app's link and metadata for a Session). The app database, keyed by Session ID with
   no Sandbox column. The app carries the recorded History UID in Thread views, filters Sandbox pages by
-  UID, and passes it to the Dispatcher for live actions.
-- **Commands and Session openings.** The Dispatcher database (`dispatch`, `session_opening`,
-  `wake_attempt`, `sandbox_ownership`), every row carrying the Sandbox UID and ended when the Sandbox
-  is gone. Proposed: `DISPATCHER_PERSISTENCE_MODEL_DESIGN` compares the durable queue with direct
-  admission. Operator: the Dispatcher keeps no Session-to-Sandbox registry (2026-10-17 03:53, 04:12).
-- **Inbox entries, notices, subscriptions.** The Notification database; entries survive their
-  inbox's retirement when the Sandbox is gone. Proposed: peer messages and sender receipts join this
-  store, and the service split stays unscheduled. Operator: wants receipts that tell "was this acked"
-  from "did a notice cover this" (2026-10-17 03:30), and may revisit the service with later
-  "refactors/splits/reshuffles" (04:18).
+  UID, and sends Session commands to Dispatcher by Session ID; Dispatcher resolves and fences the
+  recorded placement.
+- **Commands and Sessions.** The `session_dispatcher` database, served by the Runner
+  Gateway (`dispatch`, `session`, `wake_attempt`, `sandbox_ownership`). Session records are
+  addressed by Session ID, retain their exact required Sandbox placement, and survive that
+  Sandbox's deletion marked `required_environment=DELETED`; dispatch rows do not
+  ([Dispatcher SPEC](../runner_gateway/dispatcher/SPEC.md#deletion-admission-fence)). Independent
+  Session-lifetime work is in the [Session/environment plan](session_environment_model.md).
+- **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
+  survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
+  the operator may revisit the service with later "refactors/splits/reshuffles" (2026-10-17 04:18).
 - **Action requests, Decisions, connections** (Actions database), **egress admission decisions**
   (egress database), **launch presets** (app configuration, with a label and a compact annotation on
   the Sandbox). Nothing proposed.
@@ -434,55 +421,55 @@ Held until one is chosen:
 
 ### Not stored yet
 
-- **Sandbox tags** (which Sandboxes a grant's collection covers). Agreed, not implemented: inbox
-  and history tags as set-typed lists on the Sandbox, with History keeping the history tags in its own
-  record of each Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). They replace #10987's
-  `SandboxCollectionMembership` CRs and #10990's membership rows.
-- **Session-access grants** (who may send to, or read, which Sandbox's Sessions). History's
-  configured `reader_accounts` are the only gate on reads, and the Dispatcher trusts the app and
-  Notification to authorize their users. Proposed: `session_inbox_access` rules for sends and a rule
-  type of their own for reads, in `PolicySet`s, assigned by
-  `PolicyBinding`s and enforced by the owning service
-  ([plan](multiagent_communication.md#tentative-implementation-direction)). Operator: sending and
-  reading transcripts are "really separate capabilities" (2026-10-18 22:46); archive permissions maybe
-  "in a possibly separate universe" from live objects (22:31, tentative); read decisions held
-  (2026-10-17 10:56).
+- **History tags** (which Sandboxes a history-read grant's collection covers). Agreed, not
+  implemented: a second set-typed list on the Sandbox, kept by History in its own record of each
+  Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). Inbox tags are stored as
+  `spec.inboxTags`.
+- **Broader History-read grants** (who may read another principal's Sessions). History's configured
+  `reader_accounts` provide backend-wide access; ordinary callers can read Sessions owned by their
+  exact retained execution principal. Sends are granted by `session_inbox_access` rules that the
+  Notification service enforces. Proposed: a rule type of their own for broader reads, in
+  `PolicySet`s, enforced by History
+  ([plan](multiagent_communication.md#tentative-implementation-direction)). Operator: archive
+  permissions maybe "in a possibly separate universe" from live objects (2026-10-18 22:31,
+  tentative); read decisions held (2026-10-17 10:56).
 
 ## What the operator has said
 
-| Date (UTC)       | Operator                                                                                                                      | Consequence                                                     |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| 2026-10-17 03:30 | Sender receipts that tell "was this acked" from "did a notice cover this"                                                     | Receipts in v1                                                  |
-| 2026-10-17 03:41 | OAuth callers get an SA through an Actions connection and send from an actions-sandbox                                        | No separate OAuth sender path                                   |
-| 2026-10-17 04:12 | Messages come with the Sandbox; wake-on-send does not look it up from a Session                                               | No Session-to-Sandbox registry                                  |
-| 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                                            | Bounded to the PolicySet's namespace                            |
-| 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                                                 | Read grants stay held                                           |
-| 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                                           | Per-Session data stays out of Kubernetes records                |
-| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle"                           | The send rule carries sending only                              |
-| 2026-10-18 23:19 | No need to name a different namespace                                                                                         | Direct targets are same-namespace                               |
-| 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                                           | Rules out live-members-only collections for reads               |
-| 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                                                | Ports are not part of this map                                  |
-| 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                                           | No direction chosen                                             |
-| 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                                                         | A workspace drop is right under every direction                 |
-| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                                           | The drop keeps the Sandbox resumable                            |
-| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                                             | An archive need not be resumable                                |
-| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                                                      | Archived Sandboxes' tags stay editable                          |
-| 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                                                  | No importer; tags stored once, matched at read time             |
-| 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                                                    | Tags stay on the Sandbox CR                                     |
-| 2026-10-19 23:29 | History may read Sandbox tags                                                                                                 | History mirrors history tags for read grants                    |
-| 2026-10-19 23:32 | The workspace drop "can be deferred, not needed for this plan"                                                                | Deferred                                                        |
-| 2026-10-19 23:33 | No history purge operation yet                                                                                                | Purge deferred; history outlives its Sandbox as documented      |
-| 2026-10-19 23:48 | Tags could split into sendability and readability tags; a Sandbox's record could be its own k8s object whose finalizer purges | Split adopted at 00:21; record object declined at 00:12         |
-| 2026-10-20 00:12 | History keeps its own records in its database, with a reconciler against live Sandboxes if needed                             | No Kubernetes record object; the tag watch is that reconciler   |
-| 2026-10-20 00:21 | Recipient tags and history reader tags are separate gates for different services; recipient tags are not archived             | Two tag sets; only history tags outlive the CR                  |
-| 2026-10-20 00:32 | History tags as a second set on the Sandbox CR that History watches                                                           | History's watch reads only history tags; git can declare them   |
-| 2026-10-20 00:36 | Tags as set-typed spec lists rather than labels                                                                               | `spec.inboxTags` and `spec.historyTags`, like `spec.policySets` |
-| 2026-10-20 01:17 | Only Flux and the app may set tags                                                                                            | Flux and the app are the tag writers                            |
-| 2026-10-20 01:29 | No webhook for tag writes; Sandbox RBAC is enough                                                                             | No admission rule                                               |
-| 2026-10-20 04:04 | Name each tag kind after its service: "inbox tags" and "history tags"                                                         | `spec.inboxTags` and `spec.historyTags`                         |
-| 2026-10-20 04:05 | Consider "transcript tags", with History renamed to a transcript service                                                      | `HISTORY_SERVICE_RENAME` on the task DAG                        |
-| 2026-10-21 03:36 | Accepted the 30-day payload expiry, the cap of 128 unacknowledged messages per sender and inbox, and the idempotency key      | The peer message contract is agreed                             |
-| 2026-10-21 03:43 | Send rule `session_inbox_access` with `send_message`; reads take "a different kind of rule", like their tags                  | Reads get a rule type of their own                              |
+| Date (UTC)       | Operator                                                                                                                                                         | Consequence                                                                                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-17 03:30 | Sender receipts that tell "was this acked" from "did a notice cover this"                                                                                        | Receipts in v1                                                                                                                                                                                      |
+| 2026-10-17 03:41 | OAuth callers get an SA through an Actions connection and send from an actions-sandbox                                                                           | No separate OAuth sender path                                                                                                                                                                       |
+| 2026-10-17 04:12 | Messages come with the Sandbox; wake-on-send does not look it up from a Session                                                                                  | No Session-to-Sandbox registry                                                                                                                                                                      |
+| 2026-10-17 05:58 | `allSandboxes` in v1, "under some kind of scope of the controller"                                                                                               | Bounded to the PolicySet's namespace                                                                                                                                                                |
+| 2026-10-17 10:56 | Keep read-permission decisions held "for now"                                                                                                                    | Read grants stay held                                                                                                                                                                               |
+| 2026-10-18 22:39 | Agent traces and archives should not go into the control-plane etcd                                                                                              | Per-Session data stays out of Kubernetes records                                                                                                                                                    |
+| 2026-10-18 22:46 | Sending and reading transcripts are "really separate capabilities we probably don't need to bundle"                                                              | The send rule carries sending only                                                                                                                                                                  |
+| 2026-10-18 23:19 | No need to name a different namespace                                                                                                                            | Direct targets are same-namespace                                                                                                                                                                   |
+| 2026-10-18 23:33 | Collections keep covering Sandboxes no longer alive                                                                                                              | Rules out live-members-only collections for reads                                                                                                                                                   |
+| 2026-10-19 01:37 | Python and Go ports can be sequenced in any order relative to the other things                                                                                   | Ports are not part of this map                                                                                                                                                                      |
+| 2026-10-19 02:14 | No definite pick yet on where data and objects live                                                                                                              | No direction chosen                                                                                                                                                                                 |
+| 2026-10-19 09:42 | The workspace PVC "should be disposable without history disappearing"                                                                                            | A workspace drop is right under every direction                                                                                                                                                     |
+| 2026-10-19 09:50 | Dropping the workspace "should still in principle let a harness start and continue"                                                                              | The drop keeps the Sandbox resumable                                                                                                                                                                |
+| 2026-10-19 09:53 | No restoring a Sandbox from history records alone                                                                                                                | An archive need not be resumable                                                                                                                                                                    |
+| 2026-10-19 10:24 | Freezing an archived Sandbox's collections "would be a bit inconvenient"                                                                                         | Archived Sandboxes' tags stay editable                                                                                                                                                              |
+| 2026-10-19 10:43 | Retagging an archived Sandbox can wait, but must stay possible, from the app                                                                                     | No importer; tags stored once, matched at read time                                                                                                                                                 |
+| 2026-10-19 23:27 | Tags must not need History: sending checks them without it                                                                                                       | Tags stay on the Sandbox CR                                                                                                                                                                         |
+| 2026-10-19 23:29 | History may read Sandbox tags                                                                                                                                    | History mirrors history tags for read grants                                                                                                                                                        |
+| 2026-10-19 23:32 | The workspace drop "can be deferred, not needed for this plan"                                                                                                   | Deferred                                                                                                                                                                                            |
+| 2026-10-19 23:33 | No history purge operation yet                                                                                                                                   | Purge deferred; history outlives its Sandbox as documented                                                                                                                                          |
+| 2026-10-19 23:48 | Tags could split into sendability and readability tags; a Sandbox's record could be its own k8s object whose finalizer purges                                    | Split adopted at 00:21; record object declined at 00:12                                                                                                                                             |
+| 2026-10-20 00:12 | History keeps its own records in its database, with a reconciler against live Sandboxes if needed                                                                | No Kubernetes record object; the tag watch is that reconciler                                                                                                                                       |
+| 2026-10-20 00:21 | Recipient tags and history reader tags are separate gates for different services; recipient tags are not archived                                                | Two tag sets; only history tags outlive the CR                                                                                                                                                      |
+| 2026-10-20 00:32 | History tags as a second set on the Sandbox CR that History watches                                                                                              | History's watch reads only history tags; git can declare them                                                                                                                                       |
+| 2026-10-20 00:36 | Tags as set-typed spec lists rather than labels                                                                                                                  | `spec.inboxTags` and `spec.historyTags`, like `spec.policySets`                                                                                                                                     |
+| 2026-10-20 01:17 | Only Flux and the app may set tags                                                                                                                               | Flux and the app are the tag writers                                                                                                                                                                |
+| 2026-10-20 01:29 | No webhook for tag writes; Sandbox RBAC is enough                                                                                                                | No admission rule                                                                                                                                                                                   |
+| 2026-10-20 04:04 | Name each tag kind after its service: "inbox tags" and "history tags"                                                                                            | `spec.inboxTags` and `spec.historyTags`                                                                                                                                                             |
+| 2026-10-20 04:05 | Consider "transcript tags", with History renamed to a transcript service                                                                                         | `HISTORY_SERVICE_RENAME` on the task DAG                                                                                                                                                            |
+| 2026-10-21 03:36 | Accepted the 30-day payload expiry, the cap of 128 unacknowledged messages per sender and inbox, and the idempotency key                                         | The peer message contract is agreed                                                                                                                                                                 |
+| 2026-10-21 03:43 | Send rule `session_inbox_access` with `send_message`; reads take "a different kind of rule", like their tags                                                     | Reads get a rule type of their own                                                                                                                                                                  |
+| 2026-11-09       | Asked whether identity, policy and grants should live in Kubernetes authoritatively, given Session-bound identity lifetimes; CRs could stay as reconciled inputs | Evidence for D4; the identity track is constrained to name-and-UID references ([identity plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), "Authority outside Kubernetes") |
 
 Tentative words, not decisions: archive permissions "in a possibly separate universe" (2026-10-18
 22:31), suspending instead of deleting Sandboxes as "one consistent way" (23:29), a second control

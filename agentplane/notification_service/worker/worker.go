@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 )
 
@@ -209,16 +211,13 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 	case budget.Err() != nil && ctx.Err() == nil:
 		failed(timeoutName)
 	case errors.As(err, &stale):
-		retired, observeErr := w.Store.ObserveStale(ctx, claim, stale.reason, seconds(w.Settings.StaleInboxConfirmationSeconds))
+		observeErr := w.Store.ObserveStale(ctx, claim, stale.reason, seconds(w.Settings.UnavailableDestinationRetrySeconds))
 		outcome.released = true
-		if retired {
-			slog.InfoContext(ctx, "retired stale notification inbox", "inbox", claim.ID, "reason", stale.reason)
-		}
 		if !errors.Is(observeErr, store.ErrClaimLost) {
 			return outcome, observeErr
 		}
 	case errors.Is(err, errOwnerMismatch):
-		// The destination is the Sandbox it names, so a pending retirement is over.
+		// The destination is the Sandbox it names, so its unavailable state is over.
 		clearErr := w.Store.ClearStale(ctx, claim)
 		name := "OwnerMismatchError"
 		outcome.deliveryError = &name
@@ -241,20 +240,72 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 
 // work is the step's policy for one inbox. deliver is false while the inbox's history is known to be invalid.
 func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) error {
-	if err := w.checkDestination(ctx, claim); err != nil {
+	if claim.DestinationRef.Namespace != w.Namespace {
+		return errDestinationRejected
+	}
+	session, err := w.Dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: claim.SessionID})
+	if err != nil {
+		return unavailable(err)
+	}
+	if err := w.establishOwner(ctx, &claim, session.GetSession()); err != nil {
 		return err
 	}
-	if err := w.Store.ClearStale(ctx, claim); err != nil {
-		return err
+	destinationErr := w.checkDestination(ctx, claim)
+	var stale *staleDestinationError
+	if destinationErr != nil && !errors.As(destinationErr, &stale) {
+		return destinationErr
+	}
+	if stale == nil {
+		if err := w.Store.ClearStale(ctx, claim); err != nil {
+			return err
+		}
 	}
 	if err := w.readSource(ctx, claim); err != nil {
 		return err
 	}
 	notice, err := w.prepareNotice(ctx, claim)
-	if err != nil || notice == nil || !deliver {
+	if err != nil {
 		return err
 	}
+	if stale != nil {
+		return stale
+	}
+	if notice == nil || !deliver {
+		return nil
+	}
 	return w.deliver(ctx, claim, claim.DestinationRef.Name, *notice)
+}
+
+// establishOwner checks the claimed inbox's owner against what the Session authority recorded the
+// Session as executing as, establishing it on the inbox: its ServiceAccount incarnation, or, for a
+// Session recorded as executing as an Identity alone, that Identity incarnation, whose inbox has no
+// account owner.
+func (w *Worker) establishOwner(ctx context.Context, claim *store.Claim, session *dispatcherpb.Session) error {
+	if identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef); ok {
+		if claim.OwnerUID != nil {
+			return errOwnerMismatch
+		}
+		err := w.Store.EstablishInboxIdentity(ctx, claim.DestinationRef, claim.SessionID, identity)
+		if errors.Is(err, store.ErrNotFound) {
+			return errOwnerMismatch
+		}
+		claim.OwnerIdentity = &identity
+		return err
+	}
+	uid, err := sessionidentity.AccountUID(session, claim.SessionID, claim.DestinationRef, claim.Owner)
+	if err != nil || (claim.OwnerUID != nil && *claim.OwnerUID != uid) {
+		return errOwnerMismatch
+	}
+	if err := w.Store.EstablishInboxOwner(ctx, claim.Owner, claim.DestinationRef, claim.SessionID, uid); err != nil {
+		return err
+	}
+	if identity, ok := sessionidentity.Identity(session, claim.SessionID, claim.DestinationRef); ok {
+		if err := w.Store.EstablishInboxIdentity(ctx, claim.DestinationRef, claim.SessionID, identity); err != nil {
+			return err
+		}
+	}
+	claim.OwnerUID = &uid
+	return nil
 }
 
 // readSource reads the claimed inbox's next due subscription, if any, and records the outcome on it.

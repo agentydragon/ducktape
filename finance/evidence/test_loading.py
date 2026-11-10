@@ -7,21 +7,31 @@ import textwrap
 import zipfile
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import cast
 
+import polars as pl
 import pytest
 import pytest_bazel
 
 from finance.evidence.loading import (
+    align_monthly_frames,
     fred_series_frame,
     french_factors_frame,
     french_international_market_frame,
+    french_market_returns,
+    french_risk_free_returns,
+    monthly_last,
     read_monthly_levels,
+    require_contiguous_months,
     source_bytes,
     yahoo_adjusted_close_frame,
+    zillow_city_series_frame,
+    zillow_city_table,
 )
 from finance.evidence.sources import (
     EVIDENCE_SOURCES,
     FRED_CPI,
+    FRED_MORTGAGE30,
     FRENCH_FACTORS,
     FRENCH_INTERNATIONAL_INDICES,
     YAHOO_BTC,
@@ -43,9 +53,54 @@ def test_fred_frame_parses_and_drops_empty_values() -> None:
     assert frame["value"].to_list() == [5900.0, 5881.63]
 
 
+def test_fred_zero_and_negative_rates_survive_monthly_alignment() -> None:
+    raw = fred_series_frame(
+        (
+            b"observation_date,MORTGAGE30US\n"
+            b"2024-01-15,0\n"
+            b"2024-01-31,NaN\n"
+            b"2024-02-15,-0.25\n"
+            b"2024-03-15,\n"
+            b"2024-03-31,inf\n"
+        ),
+        FRED_MORTGAGE30,
+    )
+    monthly = monthly_last(raw)
+    aligned = align_monthly_frames(
+        {
+            "mortgage_rate": monthly,
+            "reference": pl.DataFrame({"month": [date(2024, 1, 1), date(2024, 2, 1)], "value": [1.0, 2.0]}),
+        },
+        value_column="value",
+    )
+
+    assert monthly["value"].to_list() == [0.0, -0.25]
+    assert aligned["mortgage_rate"].to_list() == [0.0, -0.25]
+
+
 def test_fred_frame_rejects_missing_series_column() -> None:
     with pytest.raises(ValueError, match=re.escape(FRED_CPI.provenance_label)):
         fred_series_frame(b"observation_date,OTHER\n2024-12-31,1.0\n", FRED_CPI)
+
+
+def test_zillow_table_selects_multiple_cities_without_losing_source_rows() -> None:
+    data = (
+        b"RegionType,RegionName,State,2024-01-31,2024-02-29\ncity,San Francisco,CA,100,110\ncity,Vallejo,CA,200,220\n"
+    )
+    table = zillow_city_table(data, ZILLOW_ZHVI)
+    sf = zillow_city_series_frame(table, ZILLOW_ZHVI, region_name="San Francisco", state="CA")
+    vallejo = zillow_city_series_frame(table, ZILLOW_ZHVI, region_name="Vallejo", state="CA")
+    assert table.height == 2
+    assert sf["month"].to_list() == [date(2024, 1, 1), date(2024, 2, 1)]
+    assert sf["value"].to_list() == [100.0, 110.0]
+    assert vallejo["value"].to_list() == [200.0, 220.0]
+    with pytest.raises(ValueError, match="does not contain a city row"):
+        zillow_city_series_frame(table, ZILLOW_ZHVI, region_name="Oakland", state="CA")
+
+
+def test_zillow_table_rejects_a_missing_city_identity_column() -> None:
+    with pytest.raises(ValueError, match="missing columns"):
+        zillow_city_table(b"RegionName,State,2024-01-31\nVallejo,CA,200\n", ZILLOW_ZHVI)
 
 
 def _yahoo_payload(points: list[tuple[datetime, float | None]], *, granularity: str = "1d") -> bytes:
@@ -129,6 +184,47 @@ def test_source_bytes_missing_file_raises(tmp_path: Path) -> None:
         source_bytes(tmp_path, FRED_CPI)
 
 
+def test_month_alignment_projects_selected_columns_and_keeps_only_the_intersection() -> None:
+    months = [date(2024, month, 1) for month in (1, 2, 3, 4)]
+    aligned = align_monthly_frames(
+        {
+            "factor_a": pl.DataFrame({"month": months, "value": [1.0, 2.0, 3.0, 4.0], "unused": [None] * 4}),
+            "factor_b": pl.DataFrame({"month": months[1:], "value": [20.0, 30.0, 40.0], "unused": [float("nan")] * 3}),
+        },
+        value_column="value",
+    )
+
+    assert aligned.columns == ["month", "factor_a", "factor_b"]
+    assert aligned["month"].to_list() == months[1:]
+    assert aligned["factor_a"].to_list() == [2.0, 3.0, 4.0]
+    assert aligned["factor_b"].to_list() == [20.0, 30.0, 40.0]
+    require_contiguous_months(aligned["month"].to_list(), series_name="aligned fixture")
+
+
+def test_month_alignment_rejects_disjoint_series() -> None:
+    with pytest.raises(ValueError, match="no shared months"):
+        align_monthly_frames(
+            {
+                "left": pl.DataFrame({"month": [date(2024, 1, 1)], "value": [1.0]}),
+                "right": pl.DataFrame({"month": [date(2024, 2, 1)], "value": [2.0]}),
+            },
+            value_column="value",
+        )
+
+
+@pytest.mark.parametrize(
+    ("bad_frame", "message"),
+    [
+        (pl.DataFrame({"month": [date(2024, 1, 1), date(2024, 1, 1)], "value": [1.0, 2.0]}), "duplicate"),
+        (pl.DataFrame({"month": [date(2024, 1, 1), date(2024, 2, 1)], "value": [1.0, float("nan")]}), "nonfinite"),
+        (pl.DataFrame({"month": [date(2024, 1, 1), None], "value": [1.0, 2.0]}), "null"),
+    ],
+)
+def test_month_alignment_rejects_invalid_required_series(bad_frame: pl.DataFrame, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        align_monthly_frames({"required": bad_frame}, value_column="value")
+
+
 def _french_zip(body: str, *, member: str = "F-F_Research_Data_Factors.csv") -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -163,7 +259,10 @@ def test_the_annual_section_is_not_mistaken_for_monthly_rows() -> None:
     frame = french_factors_frame(_french_zip(_FRENCH_BODY), FRENCH_FACTORS)
 
     assert frame.height == 3
-    assert frame.get_column("market_total_return").max() < 0.05
+    assert frame.columns == ["month", "Mkt-RF", "SMB", "HML", "RF"]
+    assert frame.row(0) == (date(1926, 7, 1), 2.89, -2.55, -2.39, 0.22)
+    assert french_market_returns(frame)["market_total_return"].to_list() == pytest.approx([0.0311, 0.0289, 0.0059])
+    assert french_risk_free_returns(frame)["risk_free_rate"].to_list() == pytest.approx([0.0022, 0.0025, 0.0023])
     assert date(1927, 1, 1) not in frame.get_column("month").to_list()
 
 
@@ -173,6 +272,12 @@ def test_a_gap_in_the_monthly_series_is_rejected() -> None:
 
     body = _FRENCH_BODY.replace("192608,   2.64,  -1.20,   3.82,   0.25\n", "")
     with pytest.raises(ValueError, match=re.escape(FRENCH_FACTORS.provenance_label)):
+        french_factors_frame(_french_zip(body), FRENCH_FACTORS)
+
+
+def test_unrecognized_factors_header_is_rejected() -> None:
+    body = _FRENCH_BODY.replace(",Mkt-RF,SMB,HML,RF", ",Mkt-RF,HML,SMB,RF")
+    with pytest.raises(ValueError, match="recognized factors header"):
         french_factors_frame(_french_zip(body), FRENCH_FACTORS)
 
 
@@ -254,7 +359,7 @@ def test_international_sections_sharing_the_columns_are_not_read() -> None:
     frame = french_international_market_frame(_international_zip(_INTERNATIONAL_TARGET), FRENCH_INTERNATIONAL_INDICES)
 
     assert frame.height == len(_INTERNATIONAL_TARGET)
-    assert frame.get_column("market_total_return").abs().max() < 0.05
+    assert cast(float, frame.get_column("market_total_return").abs().max()) < 0.05
 
 
 @pytest.mark.parametrize(

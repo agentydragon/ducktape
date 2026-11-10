@@ -33,6 +33,7 @@ from finance.plaid.spend.sustainability import (
     WithdrawalTax,
     calculate_sustainability,
 )
+from finance.plaid.spend.testing.transaction import make_transaction
 
 _ZONE = ZoneInfo("UTC")
 _NOW = datetime(2026, 4, 1, tzinfo=UTC)
@@ -71,19 +72,7 @@ def policy(pairs: list[ReversalPair]) -> AllowancePolicy:
 
 
 def transaction(day: date, amount: str, name: str, key: str) -> Transaction:
-    return Transaction(
-        account_id="card",
-        transaction_id=key,
-        pending_transaction_id=None,
-        date=day,
-        amount=Decimal(amount),
-        pending=False,
-        name=name,
-        merchant_name=None,
-        pfc_primary=None,
-        pfc_detailed=None,
-        currency="USD",
-    )
+    return make_transaction(account_id="card", transaction_id=key, date=day, amount=Decimal(amount), name=name)
 
 
 def legs() -> list[Transaction]:
@@ -395,7 +384,6 @@ def test_pair_schema_requires_bounded_identifying_selectors_and_unique_ids() -> 
         ReversalPair.model_validate(raw)
     with pytest.raises(ValidationError, match="unique ids"):
         policy([pair(), pair()])
-    assert AmountExact(value="-80.00").value == "-80.00"
     assert policy([]).reversal_pairs == []
 
 

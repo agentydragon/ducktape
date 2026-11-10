@@ -10,7 +10,10 @@ package policyview
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
+
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -21,9 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // Reader is who reads a view.
@@ -39,11 +40,16 @@ const (
 
 // View is the subject's effective Action policy as reader may see it, from the resolution admission decides from.
 // While the index is unavailable it holds no binding and no policy, as nothing then auto-decides.
-func View(index *informer.Index, subject policyapi.ServiceAccountRef, viewer Reader) *action_servicepb.CallerActionPolicy {
+func View(index *informer.Index, subject reader.Subject, viewer Reader) *action_servicepb.CallerActionPolicy {
 	resolved, synced := index.Resolve(subject)
-	view := &action_servicepb.CallerActionPolicy{
-		Subject: &sandboxespb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name},
-		Synced:  synced,
+	view := &action_servicepb.CallerActionPolicy{Synced: synced}
+	switch subject := subject.(type) {
+	case reader.ServiceAccount:
+		view.Subject = &identitypb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name}
+	case reader.Identity:
+		view.Identity = &identitypb.Identity{Name: subject.Name, Uid: string(subject.UID)}
+	default:
+		panic(fmt.Sprintf("unknown policy subject %T", subject))
 	}
 	approvable := sets.New[store.ActionIdentity]()
 	for _, bound := range resolved {
@@ -130,7 +136,7 @@ func conditionStatus(status metav1.ConditionStatus) action_servicepb.ConditionSt
 }
 
 func policy(rule policies.Policy) *action_servicepb.Policy {
-	actions := stringLists(rule.Actions)
+	actions := groupActions(rule.Actions)
 	switch kind := rule.Kind.(type) {
 	case policies.ExactActions:
 		return &action_servicepb.Policy{Kind: &action_servicepb.Policy_ExactActions{
@@ -151,7 +157,7 @@ func policy(rule policies.Policy) *action_servicepb.Policy {
 	case policies.HomeAssistantEntityControl:
 		return &action_servicepb.Policy{Kind: &action_servicepb.Policy_HomeAssistantEntityControl{
 			HomeAssistantEntityControl: &action_servicepb.HomeAssistantEntityControlPolicy{
-				Actions: actions, Entities: stringLists(kind.Entities),
+				Actions: actions, Entities: entityPermissions(kind.Entities),
 			},
 		}}
 	default:
@@ -160,11 +166,20 @@ func policy(rule policies.Policy) *action_servicepb.Policy {
 	}
 }
 
-// stringLists is each key's names, sorted.
-func stringLists(named map[string]sets.Set[string]) map[string]*action_servicepb.StringList {
-	lists := make(map[string]*action_servicepb.StringList, len(named))
-	for key, names := range named {
-		lists[key] = &action_servicepb.StringList{Values: sets.List(names)}
+// groupActions is each group's names, in group order and each sorted, as the proto promises.
+func groupActions(named map[string]sets.Set[string]) []*action_servicepb.GroupActions {
+	groups := make([]*action_servicepb.GroupActions, 0, len(named))
+	for _, group := range slices.Sorted(maps.Keys(named)) {
+		groups = append(groups, &action_servicepb.GroupActions{Group: group, Names: sets.List(named[group])})
 	}
-	return lists
+	return groups
+}
+
+// entityPermissions is each entity's services, in entity id order and each sorted, as the proto promises.
+func entityPermissions(services map[string]sets.Set[string]) []*action_servicepb.EntityPermission {
+	entities := make([]*action_servicepb.EntityPermission, 0, len(services))
+	for _, entityID := range slices.Sorted(maps.Keys(services)) {
+		entities = append(entities, &action_servicepb.EntityPermission{EntityId: entityID, Services: sets.List(services[entityID])})
+	}
+	return entities
 }

@@ -1,12 +1,10 @@
-"""Typed browser routes over the app's native Connection and Session Dispatcher gRPC clients."""
+"""Real Go HTTP -> generated Dispatcher gateway, with operator-session cancellation."""
 
-from __future__ import annotations
-
-# Generated protobuf annotations need the protobuf typing dependency.
-# gazelle:include_dep @pypi//protobuf
 import asyncio
+import json
+import signal
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
@@ -14,340 +12,211 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
-from fastapi import FastAPI, Request
-from sqlalchemy import update
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.action_federation import FederatedOperatorActions
-from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import app_services, create_app
-from agentplane.app.database_updates import Channel
-from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ElectricProxy
-from agentplane.app.grpc_stream import OperatorGrpcClient
-from agentplane.app.live import LiveIndex
-from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.oidc import INSECURE_COOKIE
-from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
-from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import served_dispatcher
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_MODELS
-from agentplane.app.testing.operator_streams import APP_URL, OIDC, EventSource, login, logout, with_test_login
-from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import dial
-from agentplane.grpc.serving import serving
-from agentplane.mcp_edge import connection_service_pb2, connection_service_pb2_grpc
-from agentplane.postgres.wakeups import WakeupListener, notify
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
+from agentplane.environment_runtime_transport.config import SESSION_DISPATCHER_URI, ClientTLS
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.testing.tls import issue_workload_leaf, make_ca
 
-CONNECTIONS_WATCH = "/upstream/connections/v1/operator/connections:watch"
-DISPATCHES_WATCH = "/upstream/dispatcher/v1/dispatches:watch"
-CONNECTION_FRAME = b'{"result":{"snapshotComplete":{}}}\n'
-DISPATCH_FRAME = b'{"result":{"caughtUp":{}}}\n'
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
+WATCH = "/upstream/dispatcher/v1/dispatches:watch"
+# gazelle:include_dep @pypi//protobuf
 
 
-class FakeFederation(FederatedOperatorActions):
-    """A valid federation provider with a fixed test bearer."""
-
+class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     def __init__(self) -> None:
-        self.calls = 0
-
-    async def token_for_request(self, request: Request) -> str:
-        self.calls += 1
-        return f"test-operator-token-{self.calls}"
-
-
-class FakeConnectionService(connection_service_pb2_grpc.ConnectionServiceServicer):
-    def __init__(self) -> None:
-        self.authorization: list[str | None] = []
-        self.updated: list[connection_service_pb2.UpdateConnectionRequest] = []
-        self.watch_cancelled = asyncio.Event()
+        self.authorization: list[str] = []
+        self.requests: list[session_dispatcher_pb2.ListDispatchesRequest] = []
+        self.watches: list[session_dispatcher_pb2.WatchDispatchesRequest] = []
+        self.cancelled = asyncio.Event()
         self.reject_watch = False
+        self.clean_eof = False
 
-    @override
-    async def ListConnections(
-        self, request: connection_service_pb2.ListConnectionsRequest, context: grpc.aio.ServicerContext
-    ) -> connection_service_pb2.ListConnectionsResponse:
-        self.authorization.append(_authorization(context))
-        return connection_service_pb2.ListConnectionsResponse()
-
-    @override
-    async def UpdateConnection(
-        self, request: connection_service_pb2.UpdateConnectionRequest, context: grpc.aio.ServicerContext
-    ) -> connection_service_pb2.UpdateConnectionResponse:
-        self.authorization.append(_authorization(context))
-        self.updated.append(request)
-        return connection_service_pb2.UpdateConnectionResponse(
-            connection=connection_service_pb2.Connection(
-                id=request.connection_id, display_name=request.display_name, version=request.expected_version
-            )
+    def record_authorization(self, context: grpc.aio.ServicerContext) -> None:
+        self.authorization.extend(
+            str(value) for key, value in (context.invocation_metadata() or ()) if key == "authorization"
         )
 
     @override
-    async def WatchConnections(
-        self, request: connection_service_pb2.WatchConnectionsRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[connection_service_pb2.WatchConnectionsResponse]:
-        self.authorization.append(_authorization(context))
-        if self.reject_watch:
-            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "test refusal")
-        try:
-            yield connection_service_pb2.WatchConnectionsResponse(snapshot_complete={})
-            await asyncio.Event().wait()
-        finally:
-            self.watch_cancelled.set()
-
-
-class FakeDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
-    def __init__(self) -> None:
-        self.authorization: list[str | None] = []
-        self.list_requests: list[session_dispatcher_pb2.ListDispatchesRequest] = []
-        self.watch_requests: list[session_dispatcher_pb2.WatchDispatchesRequest] = []
-        self.watch_cancelled = asyncio.Event()
-        self.reject_watch = False
-
-    @override
-    async def ListDispatches(
-        self, request: session_dispatcher_pb2.ListDispatchesRequest, context: grpc.aio.ServicerContext
-    ) -> session_dispatcher_pb2.ListDispatchesResponse:
-        self.authorization.append(_authorization(context))
-        self.list_requests.append(request)
+    async def ListDispatches(self, request, context):
+        self.record_authorization(context)
+        self.requests.append(request)
         return session_dispatcher_pb2.ListDispatchesResponse()
 
     @override
-    async def WatchDispatches(
-        self, request: session_dispatcher_pb2.WatchDispatchesRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[session_dispatcher_pb2.WatchDispatchesResponse]:
-        self.authorization.append(_authorization(context))
-        self.watch_requests.append(request)
+    async def WatchDispatches(self, request, context):
+        self.record_authorization(context)
+        self.watches.append(request)
         if self.reject_watch:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "test refusal")
+        await context.send_initial_metadata((("x-backend-private", "must-not-reach-browser"),))
         try:
             yield session_dispatcher_pb2.WatchDispatchesResponse(caught_up={})
-            await asyncio.Event().wait()
+            if not self.clean_eof:
+                await asyncio.Event().wait()
         finally:
-            self.watch_cancelled.set()
+            self.cancelled.set()
 
 
-def _authorization(context: grpc.aio.ServicerContext) -> str | None:
-    return next((str(value) for key, value in context.invocation_metadata() or () if key == "authorization"), None)
+@dataclass
+class Peer:
+    service: Dispatcher
+    target: str
+    token: Path
+    tls: ClientTLS
 
 
 @pytest.fixture
-async def connection_peer(
-    tmp_path: Path,
-) -> AsyncIterator[tuple[connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient]]:
-    service = FakeConnectionService()
+async def peer(tmp_path: Path) -> AsyncIterator[Peer]:
+    service = Dispatcher()
     server = grpc.aio.server()
-    connection_service_pb2_grpc.add_ConnectionServiceServicer_to_server(service, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield (
-            connection_service_pb2_grpc.ConnectionServiceStub(channel),
-            service,
-            OperatorGrpcClient(request_timeout_s=2),
-        )
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(service, server)
+    token = tmp_path / "dispatcher-token"
+    token.write_text("test-dispatcher-token")
+    ca = make_ca("Dispatcher facade test")
+    ca_file = tmp_path / "ca.pem"
+    ca_file.write_bytes(ca.cert_pem)
+    certificate, key = issue_workload_leaf(ca, SESSION_DISPATCHER_URI, tmp_path)
+    port = server.add_secure_port(
+        "127.0.0.1:0", grpc.ssl_server_credentials([(key.read_bytes(), certificate.read_bytes())])
+    )
+    await server.start()
+    try:
+        yield Peer(service, f"127.0.0.1:{port}", token, ClientTLS(ca_file=ca_file, server_uri=SESSION_DISPATCHER_URI))
+    finally:
+        await server.stop(grace=0)
 
 
 @pytest.fixture
-def app(
-    inventory: SandboxAccess,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    electric_proxy: ElectricProxy,
-    notifications: NotificationsOperatorClient,
-    operator_sessions: OperatorSessionStore,
-    database_updates: WakeupListener,
-    connection_peer: tuple[
-        connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient
-    ],
-) -> FastAPI:
-    connection, _, operator_grpc = connection_peer
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        OIDC,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        electric=electric_proxy,
-        connection_service=connection,
-        operator_grpc=operator_grpc,
-        notifications=notifications,
-        system_status=answering_system_status(),
-    )
-    app_services(app).operator_actions = FakeFederation()
-    return with_test_login(app)
+def app_config(peer: Peer) -> dict[str, object]:
+    return {
+        "session_dispatcher_target": peer.target,
+        "session_dispatcher_token_file": str(peer.token),
+        "session_dispatcher_tls": peer.tls.model_dump(mode="json"),
+    }
 
 
-async def test_connection_routes_use_federated_bearer_typed_requests_and_protojson(
-    app: FastAPI,
-    connection_peer: tuple[
-        connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient
-    ],
+async def test_dispatcher_preserves_filters_reads_rotating_token_and_filters_headers(
+    http: httpx.AsyncClient, peer: Peer
 ) -> None:
-    _, peer, _ = connection_peer
-    cookie = await login(app)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
-    ) as browser:
-        listed = await browser.get("/upstream/connections/v1/operator/connections")
-        updated = await browser.patch(
-            "/upstream/connections/v1/operator/connections/connection-1",
-            json={"expectedVersion": "7", "displayName": "renamed"},
-            headers={"Origin": APP_URL},
-        )
-    assert listed.status_code == 200
-    assert listed.json() == {"connections": []}
-    assert updated.status_code == 200
-    connection = updated.json()["connection"]
-    assert (connection["displayName"], connection["id"], connection["version"]) == ("renamed", "connection-1", "7")
-    assert peer.authorization == ["Bearer test-operator-token-1", "Bearer test-operator-token-2"]
-    assert len(peer.updated) == 1
-    assert (peer.updated[0].connection_id, peer.updated[0].expected_version, peer.updated[0].display_name) == (
-        "connection-1",
-        7,
-        "renamed",
-    )
-
-
-async def test_connection_watch_uses_ndjson_and_fails_auth_before_headers(
-    app: FastAPI,
-    connection_peer: tuple[
-        connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient
-    ],
-) -> None:
-    _, peer, _ = connection_peer
-    cookie = await login(app)
-    browser = EventSource(app, cookie, CONNECTIONS_WATCH)
-    assert await browser.next_chunk() == CONNECTION_FRAME
-    await logout(app, cookie)
-    await browser.ended()
-    async with asyncio.timeout(5):
-        await peer.watch_cancelled.wait()
-    assert peer.authorization == ["Bearer test-operator-token-1"]
-
-    peer.reject_watch = True
-    refused = await EventSource(app, await login(app), CONNECTIONS_WATCH).ended()
-    assert refused[0]["status"] == 401
-
-
-async def test_connection_path_field_mismatch_is_rejected_before_rpc(app: FastAPI) -> None:
-    cookie = await login(app)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
-    ) as browser:
-        response = await browser.patch(
-            "/upstream/connections/v1/operator/connections/path-id",
-            json={"connectionId": "body-id", "expectedVersion": "1", "displayName": "x"},
-            headers={"Origin": APP_URL},
-        )
-    assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "INVALID_ARGUMENT"
-
-
-@pytest.mark.parametrize("ending", ["logout", "expiry", "disconnect", "drain"])
-async def test_dispatcher_watch_cancellation_tracks_operator_session_and_response(
-    app: FastAPI, bridge: RunnerBridge, operator_sessions: OperatorSessionStore, tmp_path: Path, ending: str
-) -> None:
-    peer = FakeDispatcher()
-    token_file = tmp_path / "dispatcher-token"
-    async with served_dispatcher(peer, token_file, request_timeout_s=2) as client:
-        bridge.dispatcher = client
-        cookie = await login(app)
-        browser = EventSource(app, cookie, DISPATCHES_WATCH)
-        assert await browser.next_chunk() == DISPATCH_FRAME
-        if ending == "expiry":
-            # Expire only after the stream is open; a subsecond cookie age would log out at login.
-            async with operator_sessions.sessions.begin() as db:
-                await db.execute(update(BrowserSession).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
-                await notify(db, Channel.OPERATOR_SESSIONS)
-        elif ending == "logout":
-            await logout(app, cookie)
-        elif ending == "disconnect":
-            browser.disconnect()
-        elif ending == "drain":
-            app_services(app).drain.begin()
-        await browser.ended()
-        async with asyncio.timeout(5):
-            await peer.watch_cancelled.wait()
-
-
-async def test_dispatcher_routes_preserve_filters_and_read_the_rotating_service_token(
-    app: FastAPI, bridge: RunnerBridge, tmp_path: Path
-) -> None:
-    peer = FakeDispatcher()
-    token_file = tmp_path / "dispatcher-token"
-    async with served_dispatcher(peer, token_file, request_timeout_s=2) as client:
-        bridge.dispatcher = client
-        cookie = await login(app)
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
-        ) as browser:
-            response = await browser.get(
-                "/upstream/dispatcher/v1/dispatches",
-                params=[
-                    ("filter.sessionId", "session-1"),
-                    ("filter.commandIds", "command-1"),
-                    ("filter.commandIds", "command-2"),
-                ],
-            )
+    params = httpx.QueryParams("filter.sessionId=session-1&filter.commandIds=one&filter.commandIds=two")
+    listed = await http.get("/upstream/dispatcher/v1/dispatches", params=params)
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == {"dispatches": []}
+    assert peer.service.requests[0].filter.session_id == "session-1"
+    assert list(peer.service.requests[0].filter.command_ids) == ["one", "two"]
+    peer.token.write_text("rotated-dispatcher-token\n")
+    async with http.stream("GET", WATCH, params=params) as response:
         assert response.status_code == 200
-        assert response.json() == {"dispatches": []}
-        assert peer.authorization == ["Bearer test-app-command-peer"]
-        assert peer.list_requests[0].filter.session_id == "session-1"
-        assert list(peer.list_requests[0].filter.command_ids) == ["command-1", "command-2"]
-
-        token_file.write_text("rotated-dispatcher-token\n")
-        stream = EventSource(
-            app,
-            cookie,
-            DISPATCHES_WATCH,
-            b"filter.sessionId=session-1&filter.commandIds=command-1&filter.commandIds=command-2",
-        )
-        assert await stream.next_chunk() == DISPATCH_FRAME
-        stream.disconnect()
-        await stream.ended()
-        async with asyncio.timeout(5):
-            await peer.watch_cancelled.wait()
-        assert peer.authorization == ["Bearer test-app-command-peer", "Bearer rotated-dispatcher-token"]
-        assert peer.watch_requests[0].filter.session_id == "session-1"
-        assert list(peer.watch_requests[0].filter.command_ids) == ["command-1", "command-2"]
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-accel-buffering"] == "no"
+        assert not any(key.startswith("grpc-metadata-") for key in response.headers)
+        lines = response.aiter_lines()
+        assert json.loads(await anext(lines)) == {"result": {"caughtUp": {}}}
+    async with asyncio.timeout(5):
+        await peer.service.cancelled.wait()
+    assert peer.service.authorization == ["Bearer test-dispatcher-token", "Bearer rotated-dispatcher-token"]
+    assert peer.service.watches[0].filter == peer.service.requests[0].filter
 
 
-async def test_dispatcher_watch_authentication_failure_is_an_http_error_before_headers(
-    app: FastAPI, bridge: RunnerBridge, tmp_path: Path
+@pytest.mark.parametrize("ending", ["logout", "expiry", "disconnect", "sigterm"])
+async def test_dispatcher_stream_cancels_upstream_and_closes_cleanly(
+    app: AppProcess, http: httpx.AsyncClient, engine: AsyncEngine, peer: Peer, ending: str
 ) -> None:
-    peer = FakeDispatcher()
-    peer.reject_watch = True
-    async with served_dispatcher(peer, tmp_path / "dispatcher-token", request_timeout_s=2) as client:
-        bridge.dispatcher = client
-        refused = await EventSource(app, await login(app), DISPATCHES_WATCH).ended()
-    assert refused[0]["status"] == 401
+    async with http.stream("GET", WATCH) as response:
+        assert response.status_code == 200
+        lines = response.aiter_lines()
+        assert "caughtUp" in await anext(lines)
+        if ending == "logout":
+            assert (await http.post("/auth/logout")).status_code == 303
+        elif ending == "expiry":
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text("UPDATE operator_browser_session SET expires_at = now() - interval '1 second'")
+                )
+                await connection.execute(text("SELECT pg_notify('agentplane_operator_sessions', '')"))
+        elif ending == "sigterm":
+            app.process.send_signal(signal.SIGTERM)
+        if ending != "disconnect":
+            async with asyncio.timeout(5):
+                assert all([json.loads(line)["error"]["code"] == 1 async for line in lines])
+    async with asyncio.timeout(5):
+        await peer.service.cancelled.wait()
+    if ending == "sigterm":
+        async with asyncio.timeout(10):
+            assert await app.process.wait() == 0, app.stderr.read_text()
+        async with engine.connect() as connection:
+            assert (
+                await connection.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()"
+                    )
+                )
+                == 0
+            )
 
 
-async def test_unmapped_facade_paths_are_not_forwarded(app: FastAPI) -> None:
-    cookie = await login(app)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
-    ) as browser:
-        response = await browser.get("/upstream/connections/v1/operator/not-an-rpc")
-    assert response.status_code == 404
+async def test_dispatcher_watch_refusal_precedes_response_headers(http: httpx.AsyncClient, peer: Peer) -> None:
+    peer.service.reject_watch = True
+    response = await http.get(WATCH)
+    assert response.status_code == 401, response.text
+
+
+async def test_clean_grpc_eof_ends_browser_watch(http: httpx.AsyncClient, peer: Peer) -> None:
+    peer.service.clean_eof = True
+    response = await http.get(WATCH)
+    assert response.status_code == 200
+    assert [json.loads(line) for line in response.text.splitlines()] == [{"result": {"caughtUp": {}}}]
+
+
+async def test_another_replica_logout_ends_only_its_sessions_stream(
+    app: AppProcess,
+    http: httpx.AsyncClient,
+    peer: Peer,
+    db_url: str,
+    history_client: HistoryServiceClient,
+    sandbox: SandboxCluster,
+    gateway_service: GatewayProcess,
+    app_token_file: Path,
+    app_config: dict[str, object],
+) -> None:
+    async with (
+        app_process(
+            db_url,
+            history_client,
+            sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
+            gateway=GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls),
+            config=app_config,
+        ) as replica,
+        httpx.AsyncClient(base_url=replica.url, headers={"Origin": replica.url}) as other,
+    ):
+        async with http.stream("GET", WATCH) as response:
+            lines = response.aiter_lines()
+            assert "caughtUp" in await anext(lines)
+            unrelated = await other.post("/auth/logout", cookies=replica.cookies)
+            assert unrelated.status_code == 303
+            assert not peer.service.cancelled.is_set()
+            # A request through this stream's still-live session continues to work.
+            assert (await http.get("/auth/me")).status_code == 200
+            ended = await other.post("/auth/logout", cookies=app.cookies)
+            assert ended.status_code == 303
+            async with asyncio.timeout(5):
+                assert all([json.loads(line)["error"]["code"] == 1 async for line in lines])
+        async with asyncio.timeout(5):
+            await peer.service.cancelled.wait()
+
+
+async def test_unknown_facade_paths_are_not_forwarded(http: httpx.AsyncClient, peer: Peer) -> None:
+    assert (await http.get("/upstream/dispatcher/v2/dispatches")).status_code == 404
+    assert (await http.get("/upstream/dispatcher/v1/not-a-route")).status_code == 404
+    assert not peer.service.requests
 
 
 if __name__ == "__main__":

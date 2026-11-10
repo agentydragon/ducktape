@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -23,10 +24,11 @@ import (
 )
 
 const (
-	policyNamespace  = "test-policies"
-	subjectNamespace = "test-subjects"
-	namespaceReader  = "test-namespace-reader"
-	nodeReader       = "test-node-reader"
+	policyNamespace   = "test-policies"
+	subjectNamespace  = "test-subjects"
+	accountsNamespace = "test-accounts"
+	namespaceReader   = "test-namespace-reader"
+	nodeReader        = "test-node-reader"
 )
 
 var grantRequest = reconcile.Request{NamespacedName: client.ObjectKey{Namespace: policyNamespace, Name: "test-grant"}}
@@ -56,7 +58,7 @@ func newReconciler(t *testing.T, expiresAt *metav1.Time, clusterRoles ...string)
 		&policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-grant", UID: "uid-grant"},
 			Spec: policyapi.PolicyBindingSpec{
-				Subject:    policyapi.ServiceAccountRef{Namespace: subjectNamespace, Name: "test-account"},
+				Subject:    policyapi.Subject{Namespace: subjectNamespace, Name: "test-account"},
 				PolicySets: []string{"test-diagnostics"},
 				ExpiresAt:  expiresAt,
 			},
@@ -345,12 +347,33 @@ func TestExpiredBindingIsDeletedAndItsGrantsWithIt(t *testing.T) {
 func TestMissingRoleIsReportedAndLeftUnbound(t *testing.T) {
 	r, c := newReconciler(t, nil, namespaceReader)
 	reconcileOnce(t, r)
-	if got := condition(t, c); got.Reason != "ApplyFailed" {
+	if got := condition(t, c); got.Status != metav1.ConditionFalse {
 		t.Fatalf("condition = %+v", got)
+	}
+	var binding policyapi.PolicyBinding
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if want := []policyapi.MissingRole{{Kind: "ClusterRole", Name: nodeReader}}; !slices.Equal(binding.Status.MissingRoles, want) {
+		t.Fatalf("missingRoles = %+v, want %+v", binding.Status.MissingRoles, want)
 	}
 	want := map[scope]bool{{"test-team-a", namespaceReader}: true, {"test-team-b", namespaceReader}: true}
 	if got := nativeScopes(t, c); !maps.Equal(got, want) {
 		t.Fatalf("natives = %v", got)
+	}
+
+	if err := c.Create(context.Background(), &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: nodeReader}}); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if got := condition(t, c); got.Status != metav1.ConditionTrue || len(binding.Status.MissingRoles) != 0 {
+		t.Fatalf("after the role appeared: condition = %+v, missingRoles = %+v", got, binding.Status.MissingRoles)
+	}
+	if got := nativeScopes(t, c); !maps.Equal(got, granted) {
+		t.Fatalf("natives after the role appeared = %v", got)
 	}
 }
 
@@ -370,5 +393,25 @@ func TestMissingSetIsReportedAndTheRestStillGrant(t *testing.T) {
 	}
 	if got := nativeScopes(t, c); !maps.Equal(got, granted) {
 		t.Fatalf("natives = %v", got)
+	}
+}
+
+func TestIdentitySubjectGetsNoNativeBindings(t *testing.T) {
+	r, c := newReconciler(t, nil, namespaceReader, nodeReader)
+	reconcileOnce(t, r)
+	var binding policyapi.PolicyBinding
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
+	if err := c.Update(context.Background(), &binding); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if got := condition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "SubjectNotServiceAccount" {
+		t.Fatalf("condition = %+v", got)
+	}
+	if got := nativeScopes(t, c); len(got) != 0 {
+		t.Fatalf("natives for an identity subject = %v", got)
 	}
 }

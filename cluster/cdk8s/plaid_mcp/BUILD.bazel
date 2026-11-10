@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "app",
@@ -8,10 +8,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -30,13 +27,10 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -54,11 +48,8 @@ py_library(
     # The agentplane egress config imports SERVICE and AUTH to wire sandboxes to it.
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":app",
         ":db",
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
@@ -77,10 +68,7 @@ py_library(
         ":db",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:generation",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -91,5 +79,49 @@ py_library(
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "component",
+    srcs = ["component.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":app",
+        ":db",
+        ":pgweb",
+        ":spend",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//util/testing:postgres_fixtures"],
+)
+
+py_test(
+    name = "test_readonly_role",
+    size = "medium",
+    srcs = ["test_readonly_role.py"],
+    data = ["//cluster/k8s:agents/plaid-mcp/readonly-role.sql"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//finance/plaid/db:models",
+        "//finance/plaid/spend:portfolio_queries",
+        "//util/testing:postgres",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )

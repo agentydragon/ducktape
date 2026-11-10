@@ -6,18 +6,16 @@ MCP-aware convenience methods.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput, EchoOutput
-from agent_core.testing.responses import DecoratorMock, PlayGen, ResponsesFactory, tool_roundtrip
-from mcp_infra.exec.docker.server import ContainerExecServer
+from agent_core.testing.responses import DecoratorMock, ResponsesFactory, tool_roundtrip
 from mcp_infra.testing.naming import build_mcp_function
 from openai_utils.model import FunctionCallItem, ResponsesRequest
-from util.exec.models import BaseExecResult
 
 
 class MCPResponsesFactory(ResponsesFactory):
@@ -34,17 +32,8 @@ class MCPResponsesFactory(ResponsesFactory):
 class MCPDecoratorMock(DecoratorMock):
     """DecoratorMock with MCP-aware convenience methods.
 
-    Use this base class instead of DecoratorMock when your mock needs
-    call_roundtrip or mcp_tool_call.
+    Use this base class instead of DecoratorMock when your mock needs MCP tool calls.
     """
-
-    def call_roundtrip[U: BaseModel](
-        self, prefix: str, tool: str | Callable[..., Any], arguments: dict[str, Any] | BaseModel, output_type: type[U]
-    ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
-        """Create tool call and yield roundtrip generator."""
-        tool_name = tool if isinstance(tool, str) else tool.__name__
-        call = self.mcp_tool_call(prefix, tool_name, arguments)
-        return tool_roundtrip(call, output_type)
 
     def mcp_tool_call(
         self, server: str, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
@@ -52,31 +41,6 @@ class MCPDecoratorMock(DecoratorMock):
         """Create tool call for MCP server/tool with automatic naming."""
         args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
         return self.tool_call(build_mcp_function(server, tool), args, call_id)
-
-
-class DockerExecMock(MCPDecoratorMock):
-    """Mock with docker exec helpers.
-
-    Example:
-        @DockerExecMock.mock(ContainerExecServer.RUNTIME_MOUNT_PREFIX)
-        def mock(m: DockerExecMock):
-            req = yield
-            result = yield from m.exec(["ls", "-la"])
-            assert result.exit.exit_code == 0
-            yield from m.exec(["submit"])
-    """
-
-    def __init__(self, play_fn: Callable[[DockerExecMock], PlayGen], runtime_prefix: str) -> None:
-        self._runtime_prefix = runtime_prefix
-        # Safe: play() only calls play_fn with self which is DockerExecMock
-        super().__init__(play_fn)  # type: ignore[arg-type]
-
-    def exec(
-        self, cmd: list[str], timeout_ms: int = 30000, cwd: str | None = None
-    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
-        """Yield exec call, receive response, return typed result."""
-        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms, "cwd": cwd}
-        return self.call_roundtrip(self._runtime_prefix, ContainerExecServer.EXEC_TOOL_NAME, args, BaseExecResult)
 
 
 class EchoMock(MCPDecoratorMock):

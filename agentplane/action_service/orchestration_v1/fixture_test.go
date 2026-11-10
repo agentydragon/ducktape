@@ -11,25 +11,53 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type launchTokenReview struct{ namespace string }
+
+func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
+	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+		Authenticated: request.Spec.Token == "action-fixture-token", Audiences: request.Spec.Audiences,
+		User: authenticationv1.UserInfo{
+			Username: "system:serviceaccount:" + r.namespace + ":actions", UID: "actions-uid",
+			Extra: map[string]authenticationv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"actions-pod"}, "authentication.kubernetes.io/pod-uid": {"actions-pod-uid"}},
+		},
+	}}, nil
+}
+
+type unusedWakeBudget struct{}
+
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
+	return 0, nil
+}
 
 const (
 	testGroup         = "test-orchestration"
@@ -38,7 +66,7 @@ const (
 	testPresets       = `{"test-preset": {
 		"title": "Test preset",
 		"launch": {"template": "test-template", "policy_sets": ["test-extra-policy"]},
-		"open_session": {"spec": {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/test/{session_id}"}}
+		"create_session": {"spec": {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/test/{session_id}"}}
 	}}`
 )
 
@@ -54,7 +82,7 @@ func TestMain(m *testing.M) {
 	os.Exit(kubeapiserver.Run(m, func(started *kubeapiserver.Server) error {
 		server = started
 		scheme := runtime.NewScheme()
-		for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
+		for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme, corev1.AddToScheme} {
 			if err := add(scheme); err != nil {
 				return err
 			}
@@ -93,12 +121,32 @@ func newFixture(t *testing.T) fixture {
 			t.Fatal(err)
 		}
 	}
-	dispatcher := &recordingDispatcher{openings: map[string]*dispatcherpb.SessionOpening{}}
+	dispatcher := &recordingDispatcher{openings: map[string]*dispatcherpb.Session{}}
 	history := &fakeHistory{summaries: map[string]*historypb.SessionSummary{}}
+	objects, err := client.NewWithWatch(server.Config, client.Options{Scheme: kube.Scheme()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := lifecycle.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects, WakeBudget: unusedWakeBudget{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
+		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}), DefaultPolicySets: []string{testDefaultPolicy},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(launchTokenReview{namespace}, "environment-test", []string{namespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := environments.Methods(resolver)
+	environment := environmentpb.NewEnvironmentServiceClient(serve(t, func(s *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(s, service) }, methods.ServerOptions(0)...))
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
-		Description: "test orchestration", Namespace: namespace, DefaultPolicySets: []string{testDefaultPolicy},
+		Description: "test orchestration", Namespace: namespace,
 		Presets: json.RawMessage(testPresets),
-	}, kube,
+	}, kube, environment,
 		dispatcherpb.NewSessionDispatcherClient(serve(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })),
 		historypb.NewHistoryServiceClient(serve(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })), 30*time.Second)
 	if err != nil {
@@ -111,16 +159,19 @@ func newFixture(t *testing.T) fixture {
 }
 
 // serve serves what register registers in memory until the test ends, and is a connection to it.
-func serve(t *testing.T, register func(*grpc.Server)) *grpc.ClientConn {
+func serve(t *testing.T, register func(*grpc.Server), serverOptions ...grpc.ServerOption) *grpc.ClientConn {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(serverOptions...)
 	register(grpcServer)
 	go grpcServer.Serve(listener)
 	t.Cleanup(grpcServer.Stop)
 	connection, err := grpc.NewClient("passthrough:///test-peer",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, conn *grpc.ClientConn, invoke grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			return invoke(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer action-fixture-token"), method, req, reply, conn, opts...)
+		}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,19 +192,19 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 	t.Helper()
 	outcome, err := f.executor.attempt(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: testGroup, Name: action},
-		Arguments: json.RawMessage(arguments), Caller: caller,
+		Arguments: json.RawMessage(arguments), Caller: store.ServiceAccountCaller{Account: caller},
 	})
 	return attempted{t, outcome, err}
 }
 
 // launch launches a Sandbox of name as the fixture's caller, granting it grants.
-func (f fixture) launch(t *testing.T, name string, grants ...string) SandboxRef {
+func (f fixture) launch(t *testing.T, name string, grants ...string) contract.SandboxRef {
 	t.Helper()
-	arguments, err := json.Marshal(launchArgs{Name: name, Template: "test-template", LauncherGrants: grants})
+	arguments, err := json.Marshal(contract.LaunchArgs{Name: name, Template: "test-template", LauncherGrants: grants})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, string(arguments))).Sandbox
+	return resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, string(arguments))).Sandbox
 }
 
 // resultOf is the result of an attempt that succeeded.
@@ -170,18 +221,12 @@ func resultOf[T any](a attempted) T {
 }
 
 // failure is the kind of an attempt that failed with a reason the caller can act on.
-func (a attempted) failure() string {
+func (a attempted) failure() action_servicepb.ExecutionErrorKind {
 	a.t.Helper()
 	if a.err != nil || a.outcome.State != store.ExecutionFailed {
 		a.t.Fatalf("attempt = %s %s, %v; want it to fail", a.outcome.State, a.outcome.Result, a.err)
 	}
-	var failure struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(a.outcome.Error, &failure); err != nil {
-		a.t.Fatal(err)
-	}
-	return failure.Kind
+	return a.outcome.Error.GetKind()
 }
 
 // recordingDispatcher is a Session Dispatcher that records each command and answers with a Dispatch of it, or with
@@ -191,7 +236,7 @@ type recordingDispatcher struct {
 	mu         sync.Mutex
 	requests   []proto.Message
 	refusal    error
-	openings   map[string]*dispatcherpb.SessionOpening
+	openings   map[string]*dispatcherpb.Session
 	dispatches []*dispatcherpb.Dispatch
 }
 
@@ -215,14 +260,15 @@ func (d *recordingDispatcher) received() []proto.Message {
 	return append([]proto.Message{}, d.requests...)
 }
 
-func (d *recordingDispatcher) OpenSession(_ context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
+func (d *recordingDispatcher) CreateSession(_ context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
 	if err := d.record(request); err != nil {
 		return nil, err
 	}
-	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
-		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-	}}, nil
+	opening := &dispatcherpb.Session{
+		SessionId: request.GetSessionId(), Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING},
+	}
+	opening.Placement = request.GetSpec().GetPlacement()
+	return &dispatcherpb.CreateSessionResponse{Session: opening}, nil
 }
 
 func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -230,13 +276,13 @@ func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcher
 		return nil, err
 	}
 	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
-		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
-		SandboxUid: request.GetSandboxUid(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(),
+		SandboxUid: request.GetExpectedSandboxUid(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
 
 // hold has the Dispatcher hold opening, and dispatches after those it holds.
-func (d *recordingDispatcher) hold(opening *dispatcherpb.SessionOpening, dispatches ...*dispatcherpb.Dispatch) {
+func (d *recordingDispatcher) hold(opening *dispatcherpb.Session, dispatches ...*dispatcherpb.Dispatch) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if opening != nil {
@@ -245,14 +291,14 @@ func (d *recordingDispatcher) hold(opening *dispatcherpb.SessionOpening, dispatc
 	d.dispatches = append(d.dispatches, dispatches...)
 }
 
-func (d *recordingDispatcher) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (d *recordingDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	opening, held := d.openings[request.GetSessionId()]
 	if !held {
 		return nil, status.Error(codes.NotFound, "dispatch not found")
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+	return &dispatcherpb.GetSessionResponse{Session: opening}, nil
 }
 
 // ListDispatches answers a Session's Dispatches, oldest first.
@@ -272,7 +318,7 @@ func (d *recordingDispatcher) InterruptTurn(_ context.Context, request *dispatch
 	if err := d.record(request); err != nil {
 		return nil, err
 	}
-	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP}, nil
+	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
 }
 
 // fakeHistory is a History Service holding the summaries a test gives it, or refusing every read while refusal is set.

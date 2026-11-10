@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import Output
+from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import Release
-from devinfra.ci.release_assets import nix_override_rows, release_paths, resolve_asset
+from devinfra.ci.release_assets import nix_override_assets, release_paths, resolve_asset
 
 BIN = "bazel-out/k8-fastbuild/bin"
 
@@ -66,7 +66,7 @@ def test_nix_overrides_cover_exactly_the_gated_pins(tmp_path: Path) -> None:
         )
     )
     by_label = {"//:g": [out(f"{BIN}/g.whl", label="//:g")]}
-    assert nix_override_rows(spec, by_label) == [("gated", f"bb-out/{BIN}/g.whl")]
+    assert nix_override_assets(spec, by_label) == [("gated", by_label["//:g"][0])]
 
 
 if __name__ == "__main__":

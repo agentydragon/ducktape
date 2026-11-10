@@ -11,10 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -36,8 +38,7 @@ type config struct {
 	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
 	Namespace     string `mapstructure:"namespace"`
 	TokenAudience string `mapstructure:"token_audience"`
-	// OperatorReaderAccount is the name, in Namespace, of the ServiceAccount that may call NotificationsOperator.
-	// Empty admits nobody.
+	// OperatorReaderAccount is the ServiceAccount allowed to inspect Session diagnostics across the namespace.
 	OperatorReaderAccount string       `mapstructure:"operator_reader_account"`
 	Quotas                store.Quotas `mapstructure:"quotas"`
 	worker.Settings       `mapstructure:",squash"`
@@ -49,19 +50,17 @@ type config struct {
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
-	// WatchLeaseSeconds is how long a watch stream lasts before planned renewal.
-	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
 	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
-	MessageBodyLimitBytes int `mapstructure:"message_body_limit_bytes"`
-	// PolicyWatchPeriodSeconds is how long the API server holds each watch of PolicySets and PolicyBindings open.
-	// Sends are refused once a watch has missed reader.StaleAfterCycles of these.
-	PolicyWatchPeriodSeconds int    `mapstructure:"policy_watch_period_s"`
-	Host                     string `mapstructure:"host"`
-	Port                     int    `mapstructure:"port"`
+	MessageBodyLimitBytes int    `mapstructure:"message_body_limit_bytes"`
+	Host                  string `mapstructure:"host"`
+	// HTTPPort is reserved for the signed GitHub webhook.
+	HTTPPort int             `mapstructure:"http_port"`
+	RPC      listener.Config `mapstructure:"rpc"`
 }
 
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
 type runnerGateway struct {
+	TLS *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 	// ControlTarget is each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as
 	// `{sandbox}-control.{namespace}.svc:8080`.
 	ControlTarget         string  `mapstructure:"control_target"`
@@ -71,6 +70,7 @@ type runnerGateway struct {
 
 // peer is another Agentplane service the service calls over gRPC as a workload.
 type peer struct {
+	TLS *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 	// Target is the gRPC `host:port`.
 	Target string `mapstructure:"target"`
 	// TokenFile is the projected ServiceAccount token the peer admits, read again for each call.
@@ -80,9 +80,10 @@ type peer struct {
 
 // actionPeer retains the deployment's HTTP(S) URL key while composing the Action Service's gRPC transport.
 type actionPeer struct {
-	URL                   string  `mapstructure:"url"`
-	TokenFile             string  `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
+	TLS                   *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
+	URL                   string                                   `mapstructure:"url"`
+	TokenFile             string                                   `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64                                  `mapstructure:"request_timeout_s"`
 }
 
 type actionGRPCEndpoint struct {
@@ -136,12 +137,11 @@ func defaultConfig() config {
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
 		GitHub:                settings.DefaultSettings(),
-		RequestTimeoutSeconds: 15, WatchLeaseSeconds: 300,
+		RequestTimeoutSeconds: 15,
 		MessageBodyLimitBytes: 32 * 1024,
-		// A wedged watch then refuses sends within three minutes; a healthy one costs a re-watch a minute.
-		PolicyWatchPeriodSeconds: 60,
-		Host:                     "0.0.0.0",
-		Port:                     8080,
+		Host:                  "0.0.0.0",
+		RPC:                   listener.Config{ListenAddress: "0.0.0.0:8080"},
+		HTTPPort:              8081,
 	}
 }
 
@@ -173,7 +173,7 @@ func loadConfig() (config, error) {
 		settings.Set(retentionKey, (*int)(nil))
 	}
 	// The errors name no value: a setting can be a Secret.
-	if err := settings.UnmarshalExact(&c); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook))); err != nil {
 		return config{}, errors.New("invalid Notification Service settings")
 	}
 	if err := c.validate(); err != nil {
@@ -208,8 +208,21 @@ func (c *config) validate() error {
 	if _, err := c.Actions.grpcEndpoint(); err != nil {
 		return err
 	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
+	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
+		return errors.New("http_port must be between 1 and 65535")
+	}
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc listener: %w", err)
+	}
+	if !c.RPC.AllowsBearerAudience(c.TokenAudience) {
+		return errors.New("rpc.auth must allow the configured token_audience")
+	}
+	for _, tls := range []*environment_runtime_transport.ClientTLS{c.Actions.TLS, c.RunnerGateway.TLS, c.HistoryService.TLS, c.SessionDispatcher.TLS} {
+		if tls != nil {
+			if err := tls.Validate(); err != nil {
+				return err
+			}
+		}
 	}
 	for _, quota := range []struct {
 		name  string
@@ -233,7 +246,6 @@ func (c *config) validate() error {
 		{"history_service.request_timeout_s", c.HistoryService.RequestTimeoutSeconds},
 		{"session_dispatcher.request_timeout_s", c.SessionDispatcher.RequestTimeoutSeconds},
 		{"request_timeout_s", c.RequestTimeoutSeconds},
-		{"watch_lease_s", c.WatchLeaseSeconds},
 	} {
 		if !(timeout.value > 0) || math.IsInf(timeout.value, 0) {
 			return fmt.Errorf("%s must be a finite number above 0", timeout.name)
@@ -241,9 +253,6 @@ func (c *config) validate() error {
 	}
 	if c.MessageBodyLimitBytes < 1 || c.MessageBodyLimitBytes > store.MessageBodyCeiling {
 		return fmt.Errorf("message_body_limit_bytes must be 1 to %d", store.MessageBodyCeiling)
-	}
-	if time.Duration(c.PolicyWatchPeriodSeconds)*time.Second < reader.MinWatchPeriod {
-		return fmt.Errorf("policy_watch_period_s must be at least %v", reader.MinWatchPeriod.Seconds())
 	}
 	if err := c.Settings.Validate(); err != nil {
 		return err

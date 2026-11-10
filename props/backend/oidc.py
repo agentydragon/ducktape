@@ -21,6 +21,10 @@ import os
 from authlib.integrations.starlette_client import OAuth
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Authlib's Starlette integration imports these optional backends at module load.
+# gazelle:include_dep @pypi//starlette
+# gazelle:include_dep @pypi//httpx
+
 ENV_OIDC_ISSUER = "PROPS_OIDC_ISSUER"
 
 # authlib client registration name; referenced by the /auth routes.

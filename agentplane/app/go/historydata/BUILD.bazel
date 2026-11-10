@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "historydata",
+    srcs = ["historydata.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/historydata",
+    deps = [
+        "//agentplane/history_service:history_service_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "historydata_test",
+    srcs = ["historydata_test.go"],
+    embed = [":historydata"],
+    deps = [
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

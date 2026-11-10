@@ -1,13 +1,33 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useState } from "react";
+import { create, toJson } from "@bufbuild/protobuf";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import type { RunnerStatusView, SandboxView, ThreadView } from "../api/schema";
+import type { ThreadView } from "../threads/client";
+import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
+import {
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  type EnvironmentDescriptor,
+  SandboxPhase,
+} from "../../../environments/v1/environment_service_pb";
+
 import { displayableError } from "../client";
-import { getRunnerStatus } from "./client";
+import { getEnvironmentRuntimeStatus } from "./client";
 import { harnessLabel } from "../model_catalog";
+import {
+  EnvironmentRuntimeLifecycleBlockerKind,
+  EnvironmentRuntimeLifecycleMode,
+  EnvironmentRuntimeLifecycleStage,
+  type Harness as ProtoHarness,
+  ProcessState,
+  SessionExecutionState,
+  type EnvironmentRuntimeLifecycleStatus,
+  type EnvironmentRuntimeStatus,
+} from "../../../proto/session_pb";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
-import { JsonView } from "../json_view";
+import { JsonView } from "../../../../util/frontend/json_view";
 import { deleting } from "./lifecycle";
 import { RawSwitch } from "../raw_switch";
 import {
@@ -164,10 +184,10 @@ function StatusItem({
  * What Kubernetes says about the Sandbox: its own status conditions, then its Pod's conditions and
  * containers. An item starts open when something in it is not as it should be.
  */
-function KubernetesStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
-  const sandboxConditions = rawConditions(sandbox.status);
-  const podConditions = rawConditions(sandbox.pod?.status ?? null);
-  const containers = containerStatuses(sandbox.pod?.status ?? null);
+function KubernetesStatus({ sandbox }: { sandbox: EnvironmentDescriptor }): JSX.Element {
+  const sandboxConditions = rawConditions(sandbox.kubernetesDiagnostics?.sandboxStatus);
+  const podConditions = rawConditions(sandbox.kubernetesDiagnostics?.pod?.status ?? null);
+  const containers = containerStatuses(sandbox.kubernetesDiagnostics?.pod?.status ?? null);
   const unmet = (conditions: RawCondition[]): boolean => conditions.some((condition) => condition.status !== "True");
   const open = [
     ...(unmet(sandboxConditions) ? ["sandbox"] : []),
@@ -185,7 +205,7 @@ function KubernetesStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
           </Text>
         )}
       </StatusItem>
-      {sandbox.pod && (
+      {sandbox.kubernetesDiagnostics?.pod && (
         <>
           <StatusItem value="pod" title="Pod conditions" summary={conditionsSummary(podConditions)}>
             {podConditions.length > 0 ? (
@@ -226,24 +246,24 @@ function SandboxDetails({
   sandbox,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const pod = sandbox.pod;
+  const pod = sandbox.kubernetesDiagnostics?.pod;
+  const createdAt = sandbox.observedState?.createdAt;
   const startedAt = rawString(pod?.status?.startTime);
   return (
     <Table>
       <Table.Tbody>
         <Detail label="State">{sandboxSummary(sandbox).label}</Detail>
-        <Detail label="Created">
-          <TimeAgo value={sandbox.created_at} />
-        </Detail>
-        {sandbox.preset && <Detail label="Preset">{sandbox.preset}</Detail>}
+        <Detail label="Created">{createdAt ? <TimeAgo value={timestampDate(createdAt)} /> : "—"}</Detail>
+        {sandbox.configuration?.preset && <Detail label="Preset">{sandbox.configuration?.preset}</Detail>}
         <Detail
           label="ServiceAccount"
           help="The subject its policy bindings name. Two sandboxes sharing an account share what they may do."
         >
-          {sandbox.service_account.namespace}/{sandbox.service_account.name}
+          {sandbox.executionAccount?.account?.namespace ?? sandbox.target!.namespace}/
+          {sandbox.executionAccount?.account?.name ?? sandbox.target!.name}
         </Detail>
         <Detail label="Wake on message" help="A message to one of its Sessions resumes it while suspended.">
           <WakeOnSendCheckbox sandbox={sandbox} disabled={deleting(sandbox)} onError={onError} />
@@ -259,7 +279,7 @@ function SandboxDetails({
             <>
               {podPhase(sandbox) ?? "phase unknown"}
               {podIp(sandbox) ? ` at ${podIp(sandbox)}` : ""}
-              {pod.node_name ? ` on ${pod.node_name}` : ", not placed"}
+              {pod.nodeName ? ` on ${pod.nodeName}` : ", not placed"}
               {pod.deleting ? " · deleting" : ""}
               {rawString(pod.status?.reason) ? `: ${rawString(pod.status?.reason)}` : ""}
               {rawString(pod.status?.message) ? ` (${rawString(pod.status?.message)})` : ""}
@@ -283,56 +303,230 @@ function SandboxDetails({
   );
 }
 
-function processStateLabel(state: RunnerStatusView["processes"][number]["state"]): string {
+function processStateLabel(state: ProcessState): string {
   switch (state) {
-    case "PROCESS_STATE_STARTING":
+    case ProcessState.STARTING:
       return "Starting";
-    case "PROCESS_STATE_RUNNING":
+    case ProcessState.RUNNING:
       return "Running";
-    case "PROCESS_STATE_STOPPING":
+    case ProcessState.STOPPING:
       return "Stopping";
+    case ProcessState.UNSPECIFIED:
+      return "Unspecified";
   }
+  return "Unknown";
 }
 
-function executionStateLabel(state: RunnerStatusView["sessions"][number]["execution_state"]): string {
+function executionStateLabel(state: SessionExecutionState): string {
   switch (state) {
-    case "SESSION_EXECUTION_STATE_DORMANT":
+    case SessionExecutionState.DORMANT:
       return "Dormant";
-    case "SESSION_EXECUTION_STATE_PREPARING":
+    case SessionExecutionState.PREPARING:
       return "Preparing";
-    case "SESSION_EXECUTION_STATE_READY":
+    case SessionExecutionState.READY:
       return "Ready";
-    case "SESSION_EXECUTION_STATE_FAILED":
+    case SessionExecutionState.FAILED:
       return "Failed";
+    case SessionExecutionState.UNSPECIFIED:
+      return "Unspecified";
   }
+  return "Unknown";
 }
 
-type RunnerDiagnosticsState =
+function lifecycleModeLabel(mode: EnvironmentRuntimeLifecycleStatus["desiredMode"]): string {
+  switch (mode) {
+    case EnvironmentRuntimeLifecycleMode.RUNNING:
+      return "Running";
+    case EnvironmentRuntimeLifecycleMode.QUIESCING:
+      return "Quiescing";
+    case EnvironmentRuntimeLifecycleMode.CLOSING:
+      return "Closing";
+    case EnvironmentRuntimeLifecycleMode.UNSPECIFIED:
+      return "Unknown";
+  }
+  return "Unknown";
+}
+
+function lifecycleStageLabel(stage: EnvironmentRuntimeLifecycleStatus["stage"]): string {
+  switch (stage) {
+    case EnvironmentRuntimeLifecycleStage.RUNNING:
+      return "Running";
+    case EnvironmentRuntimeLifecycleStage.DRAINING:
+      return "Draining admissions";
+    case EnvironmentRuntimeLifecycleStage.HALTING:
+      return "Halting Sessions";
+    case EnvironmentRuntimeLifecycleStage.STOPPING:
+      return "Stopping processes";
+    case EnvironmentRuntimeLifecycleStage.FENCING:
+      return "Fencing processes";
+    case EnvironmentRuntimeLifecycleStage.SEALING:
+      return "Sealing journals";
+    case EnvironmentRuntimeLifecycleStage.FLUSHING:
+      return "Flushing history";
+    case EnvironmentRuntimeLifecycleStage.QUIESCED:
+      return "Quiesced";
+    case EnvironmentRuntimeLifecycleStage.CLOSED:
+      return "Closed";
+    case EnvironmentRuntimeLifecycleStage.UNSPECIFIED:
+      return "Unknown";
+  }
+  return "Unknown";
+}
+
+function lifecycleBlockerLabel(kind: EnvironmentRuntimeLifecycleBlockerKind): string {
+  switch (kind) {
+    case EnvironmentRuntimeLifecycleBlockerKind.ADMISSIONS:
+      return "command admission";
+    case EnvironmentRuntimeLifecycleBlockerKind.SESSION_HALT:
+      return "Session halt";
+    case EnvironmentRuntimeLifecycleBlockerKind.SESSION_PROCESS:
+      return "Session process stop";
+    case EnvironmentRuntimeLifecycleBlockerKind.CODEX_APP_SERVER:
+      return "Codex app-server stop";
+    case EnvironmentRuntimeLifecycleBlockerKind.CODEX_EXEC_SERVER:
+      return "Codex exec-server fence";
+    case EnvironmentRuntimeLifecycleBlockerKind.BOOTSTRAP:
+      return "Sandbox bootstrap";
+    case EnvironmentRuntimeLifecycleBlockerKind.PROCESS_CLEANUP:
+      return "native process cleanup";
+    case EnvironmentRuntimeLifecycleBlockerKind.SESSION_INSPECTION:
+      return "Session inspection";
+    case EnvironmentRuntimeLifecycleBlockerKind.JOURNAL_SEAL:
+      return "Session journal seal";
+    case EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT:
+      return "History acknowledgement";
+    case EnvironmentRuntimeLifecycleBlockerKind.UNSPECIFIED:
+      return "unknown barrier";
+  }
+  return "unknown barrier";
+}
+
+function runtimeHarnessLabel(harness: ProtoHarness): string {
+  return harnessLabel(harness);
+}
+
+function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: EnvironmentRuntimeLifecycleStatus }): JSX.Element {
+  const blocker = lifecycle.blocker;
+  const stage = lifecycleStageLabel(lifecycle.stage);
+  const progress = !lifecycle.progressAvailable
+    ? `Progress not published for generation ${lifecycle.desiredGeneration}.`
+    : lifecycle.progressCurrent
+      ? `Progress · ${stage}`
+      : `Last progress · generation ${lifecycle.progressGeneration} · ${stage}`;
+
+  return (
+    <Paper data-testid="environment-runtime-lifecycle" withBorder p="sm" radius="md">
+      <Stack gap={4}>
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <Title order={6}>Lifecycle</Title>
+          <Badge>{lifecycleModeLabel(lifecycle.desiredMode)}</Badge>
+        </Group>
+        <Text size="sm">
+          Desired generation {lifecycle.desiredGeneration} · {progress}
+        </Text>
+        {lifecycle.progressAvailable && !lifecycle.progressCurrent && (
+          <Text size="xs" c="orange">
+            Waiting for progress from the desired generation.
+          </Text>
+        )}
+        {blocker && (
+          <>
+            <Text size="sm" c="orange">
+              Blocked at {lifecycleBlockerLabel(blocker.kind)}
+              {blocker.resourceId && ` · ${blocker.resourceId}`}
+            </Text>
+            {blocker.resourceType && (
+              <Text size="xs" c="dimmed">
+                Resource · {blocker.resourceType} · {blocker.resourcePresent ? "present" : "missing"}
+              </Text>
+            )}
+            {blocker.processId && (
+              <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                Process · {blocker.processId}
+              </Text>
+            )}
+            {blocker.error && (
+              <Text size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
+                Resource error · {blocker.error}
+              </Text>
+            )}
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.ADMISSIONS && (
+              <Text size="xs" c="dimmed">
+                In-flight admissions · {blocker.admissions}
+              </Text>
+            )}
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.JOURNAL_SEAL && (
+              <Text size="xs" c="dimmed">
+                Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
+                {blocker.expectedJournalSealUid && ` · expected ${blocker.expectedJournalSealUid}`}
+              </Text>
+            )}
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT && (
+              <Text size="xs" c="dimmed">
+                {blocker.acknowledgementPresent
+                  ? `Acknowledged cursor · ${blocker.acknowledgementCursor} of ${blocker.journalSealCursor} · sealed ${blocker.acknowledgementSealed ? "yes" : "no"}`
+                  : `No acknowledgement · final cursor ${blocker.journalSealCursor}`}
+              </Text>
+            )}
+            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT &&
+              blocker.expectedJournalSealUid &&
+              blocker.journalSealUid !== blocker.expectedJournalSealUid && (
+                <Text size="xs" c="dimmed">
+                  Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
+                  {` · expected ${blocker.expectedJournalSealUid}`}
+                </Text>
+              )}
+            {blocker.finalizersPending && (
+              <Text size="xs" c="dimmed">
+                Native process cleanup finalizer is still present.
+              </Text>
+            )}
+          </>
+        )}
+        {lifecycle.error && lifecycle.error !== blocker?.error && (
+          <Text size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
+            Lifecycle error · {lifecycle.error}
+          </Text>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+type EnvironmentRuntimeDiagnosticsState =
   | { kind: "loading" }
-  | { kind: "available"; value: RunnerStatusView; observedAt: string }
+  | { kind: "available"; value: EnvironmentRuntimeStatus; observedAt: string }
   | { kind: "unavailable"; reason: string }
   | { kind: "suspended" };
 
-function RunnerDiagnostics({
+function EnvironmentRuntimeDiagnostics({
   sandbox,
   threads,
   active,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   threads: ThreadView[];
   active: boolean;
 }): JSX.Element {
-  const [state, setState] = useState<RunnerDiagnosticsState>({ kind: "loading" });
+  const [state, setState] = useState<EnvironmentRuntimeDiagnosticsState>({ kind: "loading" });
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID } = sandbox.target!;
+  const target = useMemo(
+    () => create(EnvironmentTargetSchema, { namespace: sandboxNamespace, name: sandboxName, uid: sandboxUID }),
+    [sandboxNamespace, sandboxName, sandboxUID]
+  );
   useEffect(() => {
     if (!active) return;
-    if (sandbox.phase === "Suspended" || sandbox.operating_mode === "Suspended") {
+    if (
+      sandbox.observedState?.phase === SandboxPhase.SUSPENDED ||
+      sandbox.observedState?.operatingMode === OperatingMode.SUSPENDED
+    ) {
       setState({ kind: "suspended" });
       return;
     }
     let current = true;
     setState({ kind: "loading" });
-    void getRunnerStatus(sandbox.name).then(
+    void getEnvironmentRuntimeStatus(target).then(
       (value) => {
         if (current) setState({ kind: "available", value, observedAt: new Date().toISOString() });
       },
@@ -343,16 +537,16 @@ function RunnerDiagnostics({
     return () => {
       current = false;
     };
-  }, [active, refreshVersion, sandbox.name, sandbox.operating_mode, sandbox.phase]);
-  const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
+  }, [active, refreshVersion, target, sandbox.observedState?.operatingMode, sandbox.observedState?.phase]);
+  const threadsById = new Map(threads.map((thread) => [thread.metadata.threadId, thread]));
 
   return (
-    <Stack gap="xs" data-testid="sandbox-runner-diagnostics">
+    <Stack gap="xs" data-testid="sandbox-environment-runtime-diagnostics">
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
         <div>
-          <Title order={5}>Runner diagnostics</Title>
+          <Title order={5}>Runtime diagnostics</Title>
           <Text size="xs" c="dimmed">
-            Read-only snapshot of process and Session state reported by the runner.
+            Read-only snapshot of Runtime lifecycle, process, and Session state.
           </Text>
         </div>
         <Button
@@ -366,17 +560,17 @@ function RunnerDiagnostics({
       </Group>
       {state.kind === "loading" && (
         <Text size="sm" role="status" c="dimmed">
-          Loading runner diagnostics…
+          Loading Runtime diagnostics…
         </Text>
       )}
       {state.kind === "suspended" && (
         <Text size="sm" role="status" c="dimmed">
-          Sandbox suspended. Runner diagnostics are unavailable until it is running.
+          Sandbox suspended. Runtime diagnostics are unavailable until it is running.
         </Text>
       )}
       {state.kind === "unavailable" && (
         <Text size="sm" role="status" c="dimmed">
-          Runner diagnostics unavailable: {state.reason}
+          Runtime diagnostics unavailable: {state.reason}
         </Text>
       )}
       {state.kind === "available" && (
@@ -384,7 +578,14 @@ function RunnerDiagnostics({
           <Text size="xs" c="dimmed">
             Snapshot read <TimeAgo value={state.observedAt} />
           </Text>
-          <Text size="sm">Runner boot ID · {state.value.runner_boot_id}</Text>
+          <Text size="sm">Environment Runtime boot ID · {state.value.environmentRuntimeBootId}</Text>
+          {state.value.lifecycle ? (
+            <EnvironmentRuntimeLifecycleCard lifecycle={state.value.lifecycle} />
+          ) : (
+            <Text size="sm" c="dimmed">
+              Runtime lifecycle progress is not reported.
+            </Text>
+          )}
           {state.value.processes.length === 0 ? (
             <Text size="sm" c="dimmed">
               No harness processes reported.
@@ -393,19 +594,19 @@ function RunnerDiagnostics({
             <Stack gap="xs">
               <Title order={6}>Harness processes</Title>
               {state.value.processes.map((process) => (
-                <Paper key={process.process_id} withBorder p="sm" radius="md">
+                <Paper key={process.processId} withBorder p="sm" radius="md">
                   <Stack gap={4}>
                     <Group justify="space-between" wrap="wrap" gap="xs">
-                      <Text fw={600}>{harnessLabel(process.harness)}</Text>
+                      <Text fw={600}>{runtimeHarnessLabel(process.harness)}</Text>
                       <Badge>{processStateLabel(process.state)}</Badge>
                     </Group>
-                    <Text size="sm">PID {process.pid ?? "not started"}</Text>
+                    <Text size="sm">PID {process.pid === undefined ? "not started" : process.pid.toString()}</Text>
                     <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                      Process ID · {process.process_id}
+                      Process ID · {process.processId}
                     </Text>
                     <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
                       Assigned Sessions ·{" "}
-                      {process.assigned_session_ids.length ? process.assigned_session_ids.join(", ") : "None"}
+                      {process.assignedSessionIds.length ? process.assignedSessionIds.join(", ") : "None"}
                     </Text>
                   </Stack>
                 </Paper>
@@ -420,32 +621,32 @@ function RunnerDiagnostics({
             <Stack gap="xs">
               <Title order={6}>Sessions</Title>
               {state.value.sessions.map((session) => {
-                const title = threadsById.get(session.session_id)?.name?.trim();
+                const title = threadsById.get(session.sessionId)?.metadata.name?.trim();
                 return (
-                  <Paper key={session.session_id} withBorder p="sm" radius="md">
+                  <Paper key={session.sessionId} withBorder p="sm" radius="md">
                     <Stack gap={4}>
                       <Group justify="space-between" wrap="wrap" gap="xs">
                         <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                          {title || session.session_id}
+                          {title || session.sessionId}
                         </Text>
-                        <Badge>{executionStateLabel(session.execution_state)}</Badge>
+                        <Badge>{executionStateLabel(session.executionState)}</Badge>
                       </Group>
                       {title && (
                         <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                          Session ID · {session.session_id}
+                          Session ID · {session.sessionId}
                         </Text>
                       )}
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Process ID · {session.process_id ?? "—"}
+                        Process ID · {session.processId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Native Session ID · {session.native_session_id ?? "—"}
+                        Native Session ID · {session.nativeSessionId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Active turn · {session.active_turn_id ?? "—"}
+                        Active turn · {session.activeTurnId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        Failure cursor · {session.failure_cursor ?? "—"}
+                        Failure cursor · {session.failureCursor?.toString() ?? "—"}
                         {session.busy ? " · Work in progress" : ""}
                       </Text>
                     </Stack>
@@ -467,7 +668,7 @@ export function StatusView({
   active,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   threads: ThreadView[];
   active: boolean;
   onError: (message: string | null) => void;
@@ -479,14 +680,14 @@ export function StatusView({
         <RawSwitch raw={raw} onChange={setRaw} />
       </Group>
       {raw ? (
-        <JsonView value={sandbox} />
+        <JsonView value={toJson(EnvironmentDescriptorSchema, sandbox)} />
       ) : (
         <>
           <SandboxDetails sandbox={sandbox} onError={onError} />
           <KubernetesStatus sandbox={sandbox} />
         </>
       )}
-      <RunnerDiagnostics sandbox={sandbox} threads={threads} active={active} />
+      <EnvironmentRuntimeDiagnostics sandbox={sandbox} threads={threads} active={active} />
     </Stack>
   );
 }

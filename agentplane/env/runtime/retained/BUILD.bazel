@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "retained",
+    srcs = [
+        "resources.go",
+        "retained.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/retained",
+    visibility = ["//agentplane/env:__subpackages__"],
+    deps = [
+        "//agentplane/env/runtime/cosistate",
+        "//agentplane/env/runtime/cosistate:persistent_go_proto",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/protobuf",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "retained_test",
+    srcs = ["retained_test.go"],
+    embed = [":retained"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/cosistate",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+    ],
+)

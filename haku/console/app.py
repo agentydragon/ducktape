@@ -28,10 +28,12 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.types import Lifespan
 
 from haku.console import capabilities
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.deps import SettingsDep
 from haku.console.identity import agent_routes, operator_auth, operator_login_flow
 from haku.console.identity.authorization import PostgresAgentAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust
@@ -97,62 +99,14 @@ def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
     )
 
 
-def create_app(settings: Settings) -> FastAPI:
-    # Deploy-time Console config file (non-secret): Agent access profiles.
-    # Postgres is required for operator identity and login-flow state. Construction is lazy (no
-    # connect); migrations run once at startup (app.main / the test fixture), not here.
-    # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
-    # process holds a single connection pool rather than one per store.
-    # Configuration accepts a driver-neutral URI and existing explicit PostgreSQL driver schemes.
-    database_url = make_url(settings.database_url.get_secret_value()).set(drivername="postgresql+asyncpg")
-    # SQLAlchemy loads asyncpg at runtime from the URL selected here.
-    # gazelle:include_dep @pypi//asyncpg
-    db_engine = create_async_engine(database_url, pool_pre_ping=True)
-    db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
-    operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
-    operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    agent_authority = PostgresAgentAuthority(
-        db_sessions,
-        operator_identity_store=operator_identity_store,
-        access_profiles=tuple(profile.id for profile in settings.access_profiles),
-        default_access_profile_id=settings.default_access_profile_id,
-    )
+def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
+    """The production route graph on a bare ``FastAPI``.
 
-    @asynccontextmanager
-    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        async with AsyncExitStack() as stack:
-            # Register before startup work so partial startup still disposes the pool.
-            stack.push_async_callback(db_engine.dispose)
-            await stack.enter_async_context(agent_authority.expiry_maintenance())
-            yield
-
-    app = FastAPI(title="Haku console", lifespan=_lifespan)
-    # The capability router reads settings off app.state (see haku.console.capabilities).
-    app.state.settings = settings
-    # Expose the shared database resources to internal dependencies and diagnostics; every store
-    # above uses these same objects rather than creating a second pool.
-    app.state.db_engine = db_engine
-    app.state.db_sessions = db_sessions
-    app.state.agent_enrollment_service = agent_authority
-    app.state.operator_identity_store = operator_identity_store
-    app.state.operator_login_flows = operator_login_flows
-
-    # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
-    # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
-    # console itself from being framed. Only frame-* is set, so the SPA's own scripts/styles
-    # are unaffected. See haku/console/docs/containment.md.
-    csp = f"frame-src 'self' {settings.haku_ui_url} {settings.auth_origin}; frame-ancestors 'none'"
-
-    @app.middleware("http")
-    async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        response = await call_next(request)
-        # The operator-login failure response carries its own stricter, nonce-bound policy.
-        # Preserve it; this default governs the SPA/API surfaces.
-        response.headers.setdefault("Content-Security-Policy", csp)
-        response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
-        response.headers.setdefault("Referrer-Policy", REFERRER_POLICY)
-        response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
-        return response
+    Every handler and guard reaches settings, stores and the OAuth registry through ``app.state`` at
+    request time, so the routes register without any runtime resource; ``create_app`` attaches
+    those plus the middleware, and ``export_schema`` reads ``app.openapi()`` off this alone.
+    """
+    app = FastAPI(title="Haku console", lifespan=lifespan)
 
     @app.get("/healthz")
     async def healthz() -> Response:
@@ -173,7 +127,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(agent_routes.router, dependencies=operator_only)
 
     @app.get("/api/deployment", dependencies=operator_only)
-    async def deployment() -> DeploymentInfo:
+    async def deployment(settings: SettingsDep) -> DeploymentInfo:
         # The static shell is an independent Deployment. Its Flux-selected tag is
         # read from a projected ConfigMap on every request so a frontend-only roll
         # does not need to restart this API pod merely to update Settings metadata.
@@ -184,15 +138,73 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     @app.get("/api/config", dependencies=operator_only)
-    async def config() -> ConfigResponse:
+    async def config(settings: SettingsDep) -> ConfigResponse:
         """Static config for the SPA."""
         launch = settings.launch_routine
         return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
-    # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
-    # router guards read; https_only follows the canonical public origin.
-    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc, login_flows=operator_login_flows)
     app.include_router(operator_auth.router)
+    return app
+
+
+def create_app(settings: Settings) -> FastAPI:
+    # Deploy-time Console config file (non-secret): Agent access profiles.
+    # Postgres is required for operator identity and login-flow state. Construction is lazy (no
+    # connect); migrations run once at startup (app.main / the test fixture), not here.
+    # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
+    # process holds a single connection pool rather than one per store.
+    # Configuration accepts a driver-neutral URI and existing explicit PostgreSQL driver schemes.
+    database_url = make_url(settings.database_url.get_secret_value()).set(drivername="postgresql+asyncpg")
+    # SQLAlchemy loads asyncpg at runtime from the URL selected here.
+    # gazelle:include_dep @pypi//asyncpg
+    db_engine = create_async_engine(database_url, pool_pre_ping=True)
+    db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
+    operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
+    operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
+    agent_authority = PostgresAgentAuthority(
+        db_sessions, access_profiles=tuple(profile.id for profile in settings.access_profiles)
+    )
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with AsyncExitStack() as stack:
+            # Register before startup work so partial startup still disposes the pool.
+            stack.push_async_callback(db_engine.dispose)
+            await stack.enter_async_context(agent_authority.expiry_maintenance())
+            yield
+
+    app = build_app(lifespan=_lifespan)
+    # The routers and guards read settings off app.state (see haku.console.deps).
+    app.state.settings = settings
+    # Expose the shared database resources to internal dependencies and diagnostics; every store
+    # above uses these same objects rather than creating a second pool.
+    app.state.db_engine = db_engine
+    app.state.db_sessions = db_sessions
+    app.state.agent_management_service = agent_authority
+    app.state.operator_identity_store = operator_identity_store
+    app.state.operator_login_flows = operator_login_flows
+    # Operator browser auth is mandatory; the /auth router drives the registry per request.
+    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc, login_flows=operator_login_flows)
+
+    # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
+    # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
+    # console itself from being framed. Only frame-* is set, so the SPA's own scripts/styles
+    # are unaffected. See haku/console/docs/containment.md.
+    csp = f"frame-src 'self' {settings.haku_ui_url} {settings.auth_origin}; frame-ancestors 'none'"
+
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        response = await call_next(request)
+        # The operator-login failure response carries its own stricter, nonce-bound policy.
+        # Preserve it; this default governs the SPA/API surfaces.
+        response.headers.setdefault("Content-Security-Policy", csp)
+        response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
+        response.headers.setdefault("Referrer-Policy", REFERRER_POLICY)
+        response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
+        return response
+
+    # SessionMiddleware establishes request.session, which the router guards read; https_only
+    # follows the canonical public origin.
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.operator_oidc.session_secret.get_secret_value(),

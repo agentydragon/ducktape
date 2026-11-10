@@ -2,7 +2,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("//devinfra/js:json_schema.bzl", "js_json_schema")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -52,10 +52,9 @@ ts_config(
     src = "tsconfig.json",
 )
 
-js_json_schema(
+json_schema_js_library(
     name = "types",
-    out = "types.d.ts",
-    generator = "//airlock:export_schema_bin",
+    schema = "//airlock:types_schema",
     visibility = ["//visibility:public"],
 )
 
@@ -205,8 +204,8 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     test_deps = [
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

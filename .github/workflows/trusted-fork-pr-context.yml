@@ -1,0 +1,54 @@
+# Resolve the immutable GitHub merge commit for a fork PR and select the
+# protected review environment before any caller checks out PR-controlled code.
+# pull_request_target loads this reusable workflow from the base branch; the
+# runner checks out devel to keep the resolver base-controlled as well.
+name: Trusted fork PR context
+
+on:
+  workflow_call:
+    outputs:
+      source_commit:
+        description: GitHub's merge commit for the exact PR head, or empty when unavailable
+        value: ${{ jobs.resolve.outputs.source_commit }}
+      environment:
+        description: Protected environment required before checking out a non-allowlisted fork
+        value: ${{ jobs.resolve.outputs.environment }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve fork PR context
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # Empty if this PR head has no merge commit or the PR moved to a newer head.
+      source_commit: ${{ steps.resolve.outputs.sha }}
+      environment: >-
+        ${{
+          github.event.pull_request.user.login != 'agentydragon-agent' &&
+          github.event.pull_request.user.login != 'agentydragon' &&
+          'fork-ci-review' || ''
+        }}
+    steps:
+      # Never check out PR-controlled code here. Resolve the commit GitHub built
+      # for this exact head; downstream reusable workflows verify its parents.
+      - uses: actions/checkout@v7
+        with:
+          # Event-time base.sha can predate this helper on a long-lived PR.
+          ref: devel
+          fetch-depth: 1
+      - name: Resolve the merge commit GitHub built for this PR head
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 devinfra/ci/pr_mergeability.py resolve

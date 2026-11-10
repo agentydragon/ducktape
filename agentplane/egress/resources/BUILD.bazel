@@ -4,11 +4,16 @@ go_library(
     name = "resources",
     srcs = ["resources.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/resources",
-    visibility = ["//agentplane/egress:__subpackages__"],
+    visibility = [
+        "//agentplane/egress:__subpackages__",
+        # Managed accounts' credential descriptions name the placeholder.
+        "//agentplane/policy_controller:__pkg__",
+    ],
     deps = [
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/policy/api/v1alpha1",
         "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/util/validation",
     ],
 )
 

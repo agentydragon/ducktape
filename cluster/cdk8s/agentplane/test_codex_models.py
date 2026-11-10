@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS
+from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS
 from model_catalog.catalog import Provider
-from util.bazel.runfiles import get_required_path
 
 
 def _codex_reads(catalog: str, directory: Path) -> dict[str, Any]:
@@ -22,7 +22,7 @@ def _codex_reads(catalog: str, directory: Path) -> dict[str, Any]:
     home.mkdir()
     result = subprocess.run(
         [
-            get_required_path(os.environ["CODEX_BINARY"]),
+            Runfiles.CreateOrRaise().root() / os.environ["CODEX_BINARY"],
             "-c",
             f"model_catalog_json={json.dumps(str(path))}",
             "debug",

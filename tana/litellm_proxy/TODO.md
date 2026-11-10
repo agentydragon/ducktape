@@ -19,33 +19,15 @@ source-faithful to that evidence.
     blocks, `cache_control`, `tool_use`, and `tool_result` transcript entries
   - `/v1/messages/count_tokens`
   - tool use and tool-result continuation
-- Keep refresh-token ownership in the resigner:
-  - LiteLLM config gets the reflected refresh-token env var through the
-    standard `api_key: os.environ/...` reference; its custom handler uses the
-    resolved value but never owns the token
-  - LiteLLM may cache Firebase ID tokens, but must not persist or adopt rotated
-    Firebase refresh tokens
-  - the existing resigner remains the only component that maintains the
-    canonical refresh-token secret
-  - avoid unless necessary: make the Tana MCP pod expose the currently valid
-    renderer/session token to LiteLLM, because that couples two deployments and
-    creates a new token-broker surface
 - Map upstream failures into useful client-facing errors:
   - Firebase refresh-token exchange failures
   - Tana 5xx and malformed stream events
-- Make the remaining RE-listed models work or intentionally suppress them with
-  a documented reason. `bazel run //tana/litellm_proxy:probe_models_bin --` on
-  2026-06-10 found these current failures:
-  - HTTP 500: `gpt-3.5-turbo-0125`, `gpt-3.5-turbo-instruct`,
-    `gpt-4-turbo`, `gpt-4-turbo-2024-04-09`, `gpt-4-turbo-preview`,
-    `gpt-4-0125-preview`, `gpt-4`, `gpt-4-32k`, `gpt-4o`,
-    `gpt-4o-2024-05-13`, `gpt-4o-2024-11-20`, `gpt-4.1`,
-    `gpt-4.1-2025-04-14`
-  - HTTP 400 Zod validation: `gpt-5.2/xhigh`, `gpt-5.4/xhigh`
-  - The cluster LiteLLM config currently exposes only
-    `TANA_LLM_PROXY_RESPONDING_MODELS`; keep the full RE list in
-    `model_registry.py` so this can be re-probed without rediscovering the
-    model registry.
+- Re-probe the RE-listed models and either support or intentionally suppress
+  those that fail. The 2026-06-10 probe is historical; current model behavior is
+  unverified. Keep the full list in `model_registry.py` and expose only the
+  supported subset through `TANA_LLM_PROXY_RESPONDING_MODELS`. The direct
+  `probe_models_bin` refreshes Firebase credentials without persisting rotated
+  refresh tokens; establish a safe credential path before a live re-probe.
 
 ## P1: Agent-client compatibility polish
 

@@ -15,7 +15,6 @@ from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch
 from cdk8s_plus_34 import (
     Container,
     ContainerPort,
-    ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
     Deployment,
@@ -44,25 +43,6 @@ class ServiceWorkload:
     container: Container
     # Volume names `project_tokens` has patched in; the Deployment's own `volumes` omit them.
     _projected: list[str] = field(default_factory=list, init=False)
-
-    def mount_secret(self, volume: str, secret_name: str, mount_path: str, *, key: str) -> None:
-        """Mount one Secret key as a read-only file after the app's config volume is attached."""
-        deployment = ApiObject.of(self.deployment)
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name=volume,
-                    secret=k8s.SecretVolumeSource(secret_name=secret_name, items=[k8s.KeyToPath(key=key, path=key)]),
-                ),
-            )
-        )
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name=volume, mount_path=mount_path, read_only=True),
-            )
-        )
 
     def project_tokens(self, volume: str, mount_path: str, audiences: Mapping[str, str]) -> None:
         """Mounts a rotating workload token for each `{file: audience}` under `mount_path`, apart
@@ -108,11 +88,11 @@ def add_service_workload(
     liveness: Probe,
     resources: ContainerResources,
     termination_grace: Duration,
+    startup: Probe | None = None,
     extra_ports: list[ContainerPort] | None = None,
     replica_profile: ReplicaProfile | None = None,
     args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
-    migrate: ContainerProps | None = None,
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
@@ -123,6 +103,7 @@ def add_service_workload(
     registry_secret_name: str | None = None,
     automount_service_account_token: bool = True,
     read_only_root_filesystem: bool = False,
+    run_as: int = 1000,
 ) -> ServiceWorkload:
     """`serves` identify the Pod ports and shared name/labels. Normally build their Service here;
     a separately reconciled Service can instead use the same refs. Mount into the returned container."""
@@ -159,9 +140,7 @@ def add_service_workload(
             if registry_secret_name is not None
             else None
         ),
-        security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-        # A migration failure blocks startup; no migration command has a retry loop.
-        init_containers=[migrate] if migrate is not None else None,
+        security_context=PodSecurityContextProps(ensure_non_root=True, user=run_as, group=run_as, fs_group=run_as),
     )
     service_environment = (
         {name: EnvValue.from_value(value) for name, value in telemetry.service_environment(env.namespace, name).items()}
@@ -181,6 +160,7 @@ def add_service_workload(
         ports=[*ports.values(), *(extra_ports or [])],
         readiness=readiness,
         liveness=liveness,
+        startup=startup,
         resources=resources,
         # API services' writes remain unaudited; static workloads opt into a read-only root.
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=read_only_root_filesystem),

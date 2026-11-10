@@ -7,7 +7,14 @@ import pytest_asyncio
 import pytest_bazel
 from playwright.async_api import Page, expect
 
-from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, AgentplaneFixture, Scene
+from agentplane.app.frontend.testing.app import (
+    IDLE_THREAD,
+    RUNNING_THREAD,
+    SUSPENDED_THREAD,
+    UNNAMED_THREAD,
+    AgentplaneFixture,
+    Scene,
+)
 from agentplane.app.frontend.testing.visual_assertions import (
     _expand_tool_steps,
     _focus,
@@ -21,12 +28,173 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _tool_steps,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.page_capture import wait_for_stable
+from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
+
+
+@pytest.mark.parametrize("viewport", [Viewport(width=828, height=866, device_scale_factor=1.25)], ids=["thread-switch"])
+async def test_switching_to_short_thread_keeps_history_compact(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.SHORT_THREAD_SWITCH_HISTORY)
+    page = view.page
+
+    # Measure the exact same seven rows on a different Thread before seeding the target Thread.
+    await app.mount_thread(UNNAMED_THREAD)
+    warmup_history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(warmup_history.locator("[data-history-row-key]")).to_have_count(7)
+    await expect(warmup_history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+    wide_width = round(await warmup_history.evaluate("element => element.clientWidth"))
+    await warmup_history.evaluate("element => { element.style.overflowY = 'scroll'; }")
+    await expect(warmup_history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+    narrow_width = round(await warmup_history.evaluate("element => element.clientWidth"))
+    warmup_rows = await warmup_history.locator("[data-history-row-key]").evaluate_all(
+        """rows => rows.map(row => {
+          const rect = row.getBoundingClientRect();
+          return { key: row.dataset.historyRowKey, height: rect.height };
+        })"""
+    )
+    heights = {row["key"]: row["height"] for row in warmup_rows}
+    assert len(heights) == 7, warmup_rows
+    for key in ("lifecycle:visual-lifecycle-before", "lifecycle:visual-lifecycle-after"):
+        await app.remember_history_row_height(IDLE_THREAD, wide_width, key, heights[key])
+    for key, height in heights.items():
+        await app.remember_history_row_height(IDLE_THREAD, narrow_width, key, height)
+
+    await app.mount_thread(RUNNING_THREAD)
+    thread_name = page.get_by_role("textbox", name="Thread name", exact=True)
+    await expect(thread_name).to_have_value("Running thread")
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await page.evaluate(
+        """() => {
+          const samples = [];
+          const observed = new WeakSet();
+          let active = true;
+          let frame = 0;
+          const resize = new ResizeObserver(() => sample());
+          const sample = () => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            if (!history) return;
+            const content = history.firstElementChild;
+            const rows = [...history.querySelectorAll('[data-history-row-key]')].map(row => {
+              const rect = row.getBoundingClientRect();
+              return { key: row.dataset.historyRowKey, top: rect.top, bottom: rect.bottom, height: rect.height };
+            });
+            samples.push({
+              route: window.location.hash,
+              rowCount: rows.length,
+              rows,
+              rowSpan: rows.length > 0 ? rows[rows.length - 1].bottom - rows[0].top : 0,
+              contentHeight: content?.getBoundingClientRect().height ?? 0,
+              scrollHeight: history.scrollHeight,
+              clientHeight: history.clientHeight,
+              historyClientWidth: history.clientWidth,
+              historyScrollTop: history.scrollTop,
+              windowScrollY: window.scrollY,
+              documentScrollTop: document.scrollingElement?.scrollTop ?? 0,
+            });
+          };
+          const attachTargets = () => {
+            const history = document.querySelector('[aria-label="Thread history"]');
+            if (!history) return;
+            for (const target of [history, history.firstElementChild, ...history.querySelectorAll('[data-history-row-key]')]) {
+              if (target && !observed.has(target)) {
+                observed.add(target);
+                resize.observe(target);
+              }
+            }
+          };
+          const mutations = new MutationObserver(() => {
+            attachTargets();
+            sample();
+          });
+          mutations.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+          const tick = () => {
+            if (!active) return;
+            attachTargets();
+            sample();
+            frame = requestAnimationFrame(tick);
+          };
+          frame = requestAnimationFrame(tick);
+          window.__shortThreadSwitchProbe = {
+            stop() {
+              active = false;
+              cancelAnimationFrame(frame);
+              mutations.disconnect();
+              resize.disconnect();
+              sample();
+              return samples;
+            },
+          };
+        }"""
+    )
+
+    target_thread = page.locator(".agentplane-thread-list-row[role='button']").filter(has_text="Short thread arriving")
+    await expect(target_thread).to_be_visible()
+    await target_thread.click()
+    await expect(thread_name).to_have_value("Short thread arriving")
+    await expect(history.locator("[data-history-row-key]")).to_have_count(7)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await wait_for_stable(page)
+
+    row_keys = await history.locator("[data-history-row-key]").evaluate_all(
+        "rows => rows.map(row => row.dataset.historyRowKey)"
+    )
+    assert set(row_keys) == set(heights), row_keys
+    await view.check(context="short thread after switch")
+    await view.capture()
+
+    samples = await page.evaluate("() => window.__shortThreadSwitchProbe.stop()")
+    final = samples[-1]
+    assert any(sample["rowCount"] == 0 for sample in samples), "the switched-to Thread never mounted empty"
+    assert final["contentHeight"] < final["clientHeight"], final
+    assert final["contentHeight"] < 450, final
+    transient_geometry = [
+        sample
+        for sample in samples
+        if sample["rowCount"] == 7
+        and (
+            sample["rowSpan"] > 450
+            or sample["scrollHeight"] > sample["clientHeight"] + 1
+            or sample["historyScrollTop"] > 1
+            or sample["windowScrollY"] > 1
+            or sample["documentScrollTop"] > 1
+        )
+    ]
+    assert not transient_geometry, f"short history transiently expanded or scrolled: {transient_geometry[:8]}"
+
+
+@DESKTOP_AND_MOBILE
+async def test_single_tool_expansion_reserves_height(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(RUNNING_THREAD)
+    page = view.page
+    row = page.locator('[data-thread-anchor="7"]')
+    following = page.locator('[data-thread-anchor="10"]')
+    await expect(row.locator(".ui-disclosure-summary")).to_have_count(1)
+    control = row.locator(
+        ".transcript-step-details > .ui-disclosure-item > .ui-disclosure-heading > .ui-disclosure-summary"
+    ).first
+    await expect(control).to_contain_text("git branch -d stale")
+    await control.scroll_into_view_if_needed()
+    await view.capture(name="single-tool-collapsed")
+    before = await row.bounding_box()
+    assert before is not None
+    await control.click()
+    await expect(control).to_have_attribute("aria-expanded", "true")
+    await expect(row.get_by_text("fatal: branch 'stale' not found.", exact=True)).to_be_visible()
+    await wait_for_stable(page)
+    after = await row.bounding_box()
+    next_box = await following.bounding_box()
+    assert after is not None
+    assert next_box is not None
+    assert after["height"] > before["height"]
+    assert next_box["y"] >= after["y"] + after["height"] - 1
+    await view.capture(name="single-tool-expanded")
 
 
 @pytest.mark.parametrize(
@@ -135,16 +303,14 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
     await _rollout_start(completed_rollout)
     await _open_run(page)
     call = (
-        page.locator(".agentplane-run-steps .agentplane-step-details")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+        page.locator(".transcript-steps .transcript-step-details")
+        .filter(has=page.locator(".transcript-step-title:text-is('Shell')"))
         .nth(1)
     )
-    await call.locator(".agentplane-disclosure-summary").first.click()
-    output = call.locator(".agentplane-clamped-block[data-label='Output']")
+    await call.locator(".ui-disclosure-summary").first.click()
+    output = call.locator(".ui-clamped-block[data-label='Output']")
     await expect(output).to_be_attached()
-    heading = call.locator(
-        ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
-    )
+    heading = call.locator(".agentplane-output-disclosure > .ui-disclosure-item > .ui-disclosure-heading")
     heading_box = await heading.bounding_box()
     card_box = await call.locator("xpath=ancestor::*[@data-open][1]").bounding_box()
     assert heading_box is not None
@@ -156,16 +322,12 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         await output.get_by_role("button", name=re.compile("^Show all")).click()
         await expect(output).to_have_attribute("data-expanded", "true")
         history = page.get_by_role("region", name="Thread history")
-        run_steps = page.locator(".agentplane-run-steps").first
+        run_steps = page.locator(".transcript-steps").first
         run_anchor = await run_steps.evaluate("element => element.closest('[data-thread-anchor]').dataset.threadAnchor")
-        run_card = history.locator(f'[data-thread-anchor="{run_anchor}"] > .agentplane-collapsible-card')
-        run_heading = run_card.locator(
-            ":scope > .agentplane-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
-        )
-        call_heading = call.locator(":scope > .agentplane-disclosure-item > .agentplane-disclosure-heading")
-        output_heading = call.locator(
-            ".agentplane-output-disclosure > .agentplane-disclosure-item > .agentplane-disclosure-heading"
-        )
+        run_card = history.locator(f'[data-thread-anchor="{run_anchor}"] > .ui-collapsible-card')
+        run_heading = run_card.locator(":scope > .ui-disclosure > .ui-disclosure-item > .ui-disclosure-heading")
+        call_heading = call.locator(":scope > .ui-disclosure-item > .ui-disclosure-heading")
+        output_heading = call.locator(".agentplane-output-disclosure > .ui-disclosure-item > .ui-disclosure-heading")
         history_box = await history.bounding_box()
         run_box = await run_heading.bounding_box()
         call_box = await call_heading.bounding_box()
@@ -197,8 +359,8 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
             await heading.evaluate(
                 """element => {
                     const bounds = element.getBoundingClientRect();
-                    const control = element.querySelector('.agentplane-disclosure-summary');
-                    const label = element.querySelector('.agentplane-disclosure-summary-content');
+                    const control = element.querySelector('.ui-disclosure-summary');
+                    const label = element.querySelector('.ui-disclosure-summary-content');
                     const chevron = element.querySelector('.mantine-Accordion-chevron');
                     const controlBounds = control.getBoundingClientRect();
                     const labelBounds = label.getBoundingClientRect();
@@ -234,7 +396,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         indents = [geometry[index + 1]["left"] - geometry[index]["left"] for index in range(2)]
         assert all(abs(indent - 5) <= 1 for indent in indents), indents
     else:
-        await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
+        await _focus(page, call.locator(".ui-clamped-block[data-label='Command']"))
     await page.mouse.move(0, 0)
     await completed_rollout.capture()
     if expanded_output:
@@ -246,7 +408,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
         await expect(output).to_have_attribute("data-expanded", "false")
         await expect(output.get_by_role("button", name=re.compile("^Show all"))).to_be_visible()
         await page.mouse.move(0, 0)
-        await completed_rollout.capture(name=f"{completed_rollout.capture_name}_output_preview")
+        await completed_rollout.capture(name="output_preview")
         shell_control = call_heading.get_by_role("button").first
         await expect(shell_control).to_be_in_viewport(ratio=1)
         await shell_control.click()
@@ -258,7 +420,7 @@ async def test_realistic_rollout_call(completed_rollout: VisualPage, expanded_ou
 
 
 async def _open_discarded_recovery(page: Page) -> None:
-    discarded = page.locator(".agentplane-disclosure-summary").filter(has_text="not retained in model context")
+    discarded = page.locator(".ui-disclosure-summary").filter(has_text="not retained in model context")
     await expect(discarded).to_have_count(1)
     await discarded.click()
     await expect(discarded).to_have_attribute("aria-expanded", "true")
@@ -276,7 +438,7 @@ async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage
     # The discarded call uses DiscardedCard, not a normal StepLine.
     await expect(tools).to_have_count(3)
     await expect(view.page.get_by_text("Succeeded, then discarded from context", exact=True)).to_be_visible()
-    await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
+    await expect(tools.locator(".ui-disclosure-summary[aria-expanded='false']")).to_have_count(0)
     # Expansion resizes virtual rows and can still restore the reading anchor.
     # Position the screenshot only after the history's own layout work finishes.
     await expect(view.page.get_by_role("region", name="Thread history")).to_have_attribute(
@@ -297,7 +459,7 @@ async def test_recovery_messages_open(view: VisualPage, app: AgentplaneFixture) 
     await expect(page.get_by_text("Remember the name in the margin", exact=True)).to_be_visible()
     await expect(page.locator('[aria-label="Not retained in context"]')).to_be_visible()
     await expect(page.locator('[aria-label="Retention unknown"]')).to_be_visible()
-    await expect(page.locator(".agentplane-disclosure-summary[aria-expanded='true']").first).to_be_visible()
+    await expect(page.locator(".ui-disclosure-summary[aria-expanded='true']").first).to_be_visible()
     await view.capture()
 
 
@@ -309,8 +471,8 @@ async def test_recovery_quiet_open(view: VisualPage, app: AgentplaneFixture) -> 
     await _open_tool_run(page)
     tools = _tool_steps(page)
     await expect(tools).to_have_count(2)
-    await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
-    await expect(page.locator(".agentplane-step-details .agentplane-code-block").first).to_be_visible()
+    await expect(tools.locator(".ui-disclosure-summary[aria-expanded='false']")).to_have_count(0)
+    await expect(page.locator(".transcript-step-details .ui-code-block").first).to_be_visible()
     await view.capture()
 
 
@@ -382,7 +544,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         "node => node.closest('[data-thread-anchor]').dataset.threadAnchor"
     ) < await effected.evaluate("node => node.closest('[data-thread-anchor]').dataset.threadAnchor")
     await model_row.scroll_into_view_if_needed()
-    await view.capture(name=f"{view.capture_name}_controls", target=history)
+    await view.capture(name="controls", target=history)
     input_indicator = input_row.locator(".agentplane-command-progress-hit")
     if viewport.has_touch:
         await input_indicator.tap()
@@ -391,7 +553,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await input_indicator.hover()
     await expect(detail).to_be_visible()
     await expect(detail).to_be_in_viewport(ratio=1)
-    await view.capture(name=f"{view.capture_name}_detail")
+    await view.capture(name="detail")
     effort_row = page.locator('[data-command-id="progress-effort"]')
     effort_indicator = effort_row.locator(".agentplane-command-progress-hit")
     if viewport.has_touch:
@@ -401,17 +563,17 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await effort_indicator.hover()
     await expect(effort_row.get_by_role("tooltip")).to_be_visible()
     await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
-    await view.capture(name=f"{view.capture_name}_effort_detail")
+    await view.capture(name="effort_detail")
     applied_input = page.locator('[data-command-id="progress-applied-input"]')
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
     await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
     await expect(input_hit).to_have_css("opacity", "0")
     if viewport.has_touch:
-        await applied_input.locator(".agentplane-user-bubble").tap()
+        await applied_input.locator(".transcript-user-bubble").tap()
     else:
-        await applied_input.locator(".agentplane-user-bubble").hover()
+        await applied_input.locator(".transcript-user-bubble").hover()
     await expect(input_hit).to_have_css("opacity", "1")
-    await view.capture(name=f"{view.capture_name}_applied_input", target=applied_input)
+    await view.capture(name="applied_input", target=applied_input)
 
 
 @DESKTOP_AND_MOBILE
@@ -437,7 +599,7 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await expect(row.locator(".agentplane-command-light")).to_have_count(4)
     await expect(row.get_by_role("button", name="Retry")).to_have_count(0)
     await expect(row.get_by_role("button", name="Cancel")).to_have_count(0)
-    await view.capture(name=f"{view.capture_name}_wake_composer_placeholder")
+    await view.capture(name="wake_composer_placeholder")
     await page.get_by_role("textbox", name="Message").fill("Please wake the Sandbox and continue.")
     await expect(page.get_by_role("button", name="Send")).to_be_enabled()
     await view.capture()
@@ -509,7 +671,7 @@ async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: A
     page = view.page
     await _open_debug_history(page)
     await expect(page.locator('[data-thread-anchor="16"]')).to_be_visible()
-    await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_be_visible()
+    await expect(page.locator('.transcript-user-bubble[data-message-phase="local"]')).to_be_visible()
     await view.capture()
 
 
@@ -519,7 +681,7 @@ async def test_debug_history_stderr_disclosure(view: VisualPage, app: Agentplane
     await view.check(context="fixture ready")
     page = view.page
     await _open_debug_history(page)
-    stderr = page.locator('[data-debug-observation="31"] .agentplane-disclosure-summary')
+    stderr = page.locator('[data-debug-observation="31"] .ui-disclosure-summary')
     await stderr.click()
     await expect(stderr).to_have_attribute("aria-expanded", "true")
     await view.capture()
@@ -530,7 +692,7 @@ async def test_thread_setup_progress(view: VisualPage, app: AgentplaneFixture) -
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    setup = page.locator(".agentplane-disclosure-summary").filter(has_text="Thread setup running")
+    setup = page.locator(".ui-disclosure-summary").filter(has_text="Thread setup running")
     await expect(setup.get_by_text("Cloning into project...")).to_be_visible()
     await expect(setup.get_by_text("Updating files: 100%")).to_be_visible()
     await expect(setup.get_by_text("Updating files: 10%")).to_have_count(0)
@@ -544,7 +706,7 @@ async def test_thread_setup_output(view: VisualPage, app: AgentplaneFixture) -> 
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    setup = page.locator(".agentplane-disclosure-summary").filter(has_text="Thread setup complete")
+    setup = page.locator(".ui-disclosure-summary").filter(has_text="Thread setup complete")
     await setup.click()
     await expect(setup).to_have_attribute("aria-expanded", "true")
     await expect(page.get_by_text("Setup stdout")).to_be_visible()
@@ -580,16 +742,14 @@ async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixtur
     await view.check(context="fixture ready")
     page = view.page
     await _open_run(page)
-    reasoning = page.locator(".agentplane-step-details").filter(
-        has=page.locator(".agentplane-step-title:text-is('Reasoning')")
+    reasoning = page.locator(".transcript-step-details").filter(
+        has=page.locator(".transcript-step-title:text-is('Reasoning')")
     )
-    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
-    preview_size = await reasoning.locator(".agentplane-markdown--single-line").evaluate(
-        "el => getComputedStyle(el).fontSize"
-    )
+    title_size = await reasoning.locator(".transcript-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    preview_size = await reasoning.locator(".ui-markdown--single-line").evaluate("el => getComputedStyle(el).fontSize")
     assert title_size == preview_size
-    await reasoning.locator(".agentplane-disclosure-summary").first.click()
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    await reasoning.locator(".ui-disclosure-summary").first.click()
+    await expect(reasoning.locator(".ui-disclosure-panel .ui-markdown")).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -601,20 +761,20 @@ async def test_consecutive_reasoning_group_inside_tool_run(view: VisualPage, app
     await view.check(context="fixture ready")
     page = view.page
     await _open_run(page)
-    steps = page.locator(".agentplane-run-steps").first
-    reasoning_group = steps.locator(":scope > .agentplane-collapsible-card").nth(1)
-    summary = reasoning_group.locator(".agentplane-disclosure-summary").first
+    steps = page.locator(".transcript-steps").first
+    reasoning_group = steps.locator(":scope > .ui-collapsible-card").nth(1)
+    summary = reasoning_group.locator(".ui-disclosure-summary").first
     await expect(summary).to_have_attribute("aria-expanded", "false")
-    await expect(reasoning_group.locator(".agentplane-step-title")).to_have_text("Reasoning")
-    await expect(reasoning_group.locator(".agentplane-step-preview .agentplane-markdown--single-line")).to_be_attached()
+    await expect(reasoning_group.locator(".transcript-step-title")).to_have_text("Reasoning")
+    await expect(reasoning_group.locator(".transcript-step-preview .ui-markdown--single-line")).to_be_attached()
     await view.capture(target=page.locator("#app"))
 
     await summary.click()
     await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning_group.locator(".agentplane-disclosure-panel .agentplane-step-title")).to_have_text(
+    await expect(reasoning_group.locator(".ui-disclosure-panel .transcript-step-title")).to_have_text(
         ["Reasoning", "Reasoning", "Reasoning"]
     )
-    await view.capture(name=f"{view.capture_name}_reasoning_items", target=page.locator("#app"))
+    await view.capture(name="reasoning_items", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
@@ -629,12 +789,10 @@ async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app:
     await expect(history).to_have_attribute("data-layout-settled", "true")
     await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
-    control = reasoning.locator(".agentplane-disclosure-summary").first
+    control = reasoning.locator(".ui-disclosure-summary").first
     await expect(control).to_have_attribute("aria-expanded", "true")
-    title_size = await reasoning.locator(".agentplane-step-title").evaluate("el => getComputedStyle(el).fontSize")
-    preview_size = await reasoning.locator(".agentplane-markdown--single-line").evaluate(
-        "el => getComputedStyle(el).fontSize"
-    )
+    title_size = await reasoning.locator(".transcript-step-title").evaluate("el => getComputedStyle(el).fontSize")
+    preview_size = await reasoning.locator(".ui-markdown--single-line").evaluate("el => getComputedStyle(el).fontSize")
     assert title_size == preview_size
     await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
@@ -642,7 +800,7 @@ async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app:
     await control.click()
     await expect(control).to_have_attribute("aria-expanded", "false")
     await page.mouse.move(0, 0)
-    await view.capture(name=f"{view.capture_name}_collapsed", target=page.locator("#app"))
+    await view.capture(name="collapsed", target=page.locator("#app"))
 
 
 async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
@@ -663,9 +821,9 @@ async def test_standalone_reasoning_compact_markdown_and_code_fence(view: Visual
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
-    summary = reasoning.locator(".agentplane-disclosure-summary").first
-    preview = reasoning.locator(".agentplane-step-preview .agentplane-markdown--single-line")
+    reasoning = page.locator('[data-thread-anchor="20"] .transcript-step-details')
+    summary = reasoning.locator(".ui-disclosure-summary").first
+    preview = reasoning.locator(".transcript-step-preview .ui-markdown--single-line")
     await expect(summary).to_have_attribute("aria-expanded", "false")
     await expect(preview).to_contain_text("> Check")
     await expect(preview).to_contain_text("State | Count ; Ready | 2")
@@ -675,10 +833,10 @@ async def test_standalone_reasoning_compact_markdown_and_code_fence(view: Visual
 
     await summary.click()
     await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
-    await expect(reasoning.locator(".agentplane-code-block .cm-content")).to_be_attached()
+    await expect(reasoning.locator(".ui-disclosure-panel .ui-markdown")).to_be_visible()
+    await expect(reasoning.locator(".ui-code-block .cm-content")).to_be_attached()
     await wait_for_stable(page)
-    await view.capture(name=f"{view.capture_name}_expanded", target=page.locator("#app"))
+    await view.capture(name="expanded", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
@@ -686,7 +844,7 @@ async def test_shell_call_run_previews(shell_calls: VisualPage) -> None:
     view = shell_calls
     page = view.page
     await _open_run(page)
-    await expect(page.locator(".agentplane-step-details .agentplane-step-preview").first).to_be_visible()
+    await expect(page.locator(".transcript-step-details .transcript-step-preview").first).to_be_visible()
     await view.capture()
 
 
@@ -698,16 +856,16 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await view.check(context="fixture ready")
     page = view.page
     owner = page.locator(f'[data-thread-anchor="{anchor}"]')
-    button = owner.locator("button.agentplane-evidence-toggle").first
+    button = owner.locator("button.transcript-inspection-toggle").first
     # The overlay button is reachable by keyboard even when another row covers its corner.
     await button.focus()
     await button.press("Enter")
     await expect(button).to_have_attribute("aria-expanded", "true")
     await expect(owner.locator("[data-evidence-observation]").first).to_be_visible()
     if anchor == "4":
-        bubble = owner.locator(".agentplane-user-bubble")
-        panel = owner.locator(".agentplane-disclosure").first
-        await expect(bubble.locator(".agentplane-disclosure")).to_have_count(0)
+        bubble = owner.locator(".transcript-user-bubble")
+        panel = owner.locator(".ui-disclosure").first
+        await expect(bubble.locator(".ui-disclosure")).to_have_count(0)
         bubble_box = await bubble.bounding_box()
         panel_box = await panel.bounding_box()
         owner_box = await owner.bounding_box()
@@ -722,9 +880,9 @@ async def test_thread_evidence_panel(view: VisualPage, app: AgentplaneFixture, a
     await view.capture()
     frames = owner.locator("[data-evidence-observation]").first
     await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
-    await expect(frames.locator(".agentplane-code-block")).to_be_visible()
+    await expect(frames.locator(".ui-code-block")).to_be_visible()
     await page.mouse.move(0, 0)
-    await view.capture(name=f"{view.capture_name}_raw_frames")
+    await view.capture(name="raw_frames")
 
 
 @DESKTOP_AND_MOBILE
@@ -734,14 +892,14 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     page = view.page
     await _open_run(page)
     owner = (
-        page.locator(".agentplane-collapsible-card.agentplane-evidence-owner")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        page.locator(".ui-collapsible-card.transcript-inspection-owner")
+        .filter(has=page.locator(".transcript-step-title:text-is('Bash')"))
         .first
     )
-    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
-    await owner.locator(".agentplane-step-details .agentplane-disclosure-summary").click()
-    await expect(owner.locator(".agentplane-step-details .agentplane-code-block .cm-content").first).to_be_attached()
-    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(owner.locator(".transcript-step-title")).to_have_text("Bash")
+    await owner.locator(".transcript-step-details .ui-disclosure-summary").click()
+    await expect(owner.locator(".transcript-step-details .ui-code-block .cm-content").first).to_be_attached()
+    button = owner.locator(".transcript-step-inspect > .transcript-inspection-toggle")
     await expect(button).to_be_attached()
 
     # Keyboard and pointer activation both reach the separate action beside the chevron.
@@ -753,7 +911,7 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     await page.mouse.move(0, 0)
     await owner.hover()
     await expect(button).to_have_css("opacity", "1")
-    heading = owner.locator(".agentplane-step-details .agentplane-disclosure-heading").first
+    heading = owner.locator(".transcript-step-details .ui-disclosure-heading").first
     button_box = await button.bounding_box()
     heading_box = await heading.bounding_box()
     assert button_box is not None
@@ -768,9 +926,9 @@ async def test_bash_evidence_panel(shell_calls: VisualPage) -> None:
     await page.mouse.move(0, 0)
     await view.capture()
     await frames.get_by_role("button", name=re.compile("Observation .* raw frames")).click()
-    await expect(frames.locator(".agentplane-code-block")).to_be_visible()
+    await expect(frames.locator(".ui-code-block")).to_be_visible()
     await page.mouse.move(0, 0)
-    await view.capture(name=f"{view.capture_name}_raw_frames")
+    await view.capture(name="raw_frames")
 
 
 @pytest.mark.parametrize("viewport", [MOBILE_TOUCH], ids=["mobile-touch"])
@@ -779,14 +937,14 @@ async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> N
     page = view.page
     await _open_run(page)
     owner = (
-        page.locator(".agentplane-collapsible-card.agentplane-evidence-owner")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Bash')"))
+        page.locator(".ui-collapsible-card.transcript-inspection-owner")
+        .filter(has=page.locator(".transcript-step-title:text-is('Bash')"))
         .first
     )
-    await expect(owner.locator(".agentplane-step-title")).to_have_text("Bash")
-    await owner.locator(".agentplane-step-details .agentplane-disclosure-summary").tap()
-    await expect(owner).to_have_attribute("data-evidence-revealed", "")
-    button = owner.locator(".agentplane-step-inspect > .agentplane-evidence-toggle")
+    await expect(owner.locator(".transcript-step-title")).to_have_text("Bash")
+    await owner.locator(".transcript-step-details .ui-disclosure-summary").tap()
+    await expect(owner).to_have_attribute("data-inspection-revealed", "")
+    button = owner.locator(".transcript-step-inspect > .transcript-inspection-toggle")
     await expect(button).to_have_css("opacity", "1")
     await button.tap()
     await expect(button).to_have_attribute("aria-expanded", "true")
@@ -796,8 +954,8 @@ async def test_bash_evidence_button_reveals_on_tap(shell_calls: VisualPage) -> N
 
 @pytest.mark.parametrize(
     "target",
-    ['[data-thread-anchor="4"] .agentplane-user-bubble', '[data-thread-anchor="34"] .agentplane-evidence-owner'],
-    ids=['[data-thread-anchor="4"] .agentplane-user-bubble', '[data-thread-anchor="34"] .agentplane-evidence-owner'],
+    ['[data-thread-anchor="4"] .transcript-user-bubble', '[data-thread-anchor="34"] .transcript-inspection-owner'],
+    ids=['[data-thread-anchor="4"] .transcript-user-bubble', '[data-thread-anchor="34"] .transcript-inspection-owner'],
 )
 async def test_evidence_button_reveals_on_hover(view: VisualPage, app: AgentplaneFixture, target: str) -> None:
     await app.mount_thread(IDLE_THREAD)
@@ -814,21 +972,21 @@ async def test_evidence_button_reveals_on_tap(view: VisualPage, app: AgentplaneF
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    owner = page.locator('[data-thread-anchor="34"] .agentplane-evidence-owner')
+    owner = page.locator('[data-thread-anchor="34"] .transcript-inspection-owner')
     await owner.tap()
-    await expect(owner).to_have_attribute("data-evidence-revealed", "")
+    await expect(owner).to_have_attribute("data-inspection-revealed", "")
     await view.capture()
 
 
 @DESKTOP_AND_MOBILE
 async def test_open_tool_calls_and_output_session_tool_payloads(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
     page = view.page
     await _open_tool_run(page)
     await expect(
-        page.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']").first
+        page.locator(".agentplane-output-disclosure .ui-disclosure-summary[aria-expanded='true']").first
     ).to_be_attached()
     await view.capture(target=view.page.locator("#app"))
 
@@ -838,12 +996,26 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(shell_calls: 
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
-    call = page.locator(".agentplane-step-details").filter(has_text="step 16")
-    output_control = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']")
-    output = call.locator(".agentplane-output-disclosure .agentplane-code-block")
+    history = page.get_by_role("region", name="Thread history")
+    call = page.locator(".transcript-step-details").filter(has_text="step 16")
+    output_control = call.locator(".agentplane-output-disclosure .ui-disclosure-summary[aria-expanded='true']")
+    output = call.locator(".agentplane-output-disclosure .ui-code-block")
     await _in_viewport(output_control)
     await expect(output).to_contain_text("step 16")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await _focus(page, output)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    await wait_for_stable(page)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await expect(history).to_have_attribute("data-scroll-mode", "following")
+    await _in_viewport(output_control)
     await _in_viewport(output)
+    scroll = await history.evaluate(
+        "element => ({scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight})"
+    )
+    assert abs(scroll["scrollHeight"] - scroll["scrollTop"] - scroll["clientHeight"]) <= 1, scroll
+    await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -866,9 +1038,9 @@ async def test_shell_call_command_and_output(shell_calls: VisualPage, call_text:
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
-    call = page.locator(".agentplane-step-details").filter(has_text=call_text)
-    await expect(call.locator(".agentplane-step-title")).to_have_text(tool)
-    await _focus(page, call.locator(".agentplane-clamped-block[data-label='Command']"))
+    call = page.locator(".transcript-step-details").filter(has_text=call_text)
+    await expect(call.locator(".transcript-step-title")).to_have_text(tool)
+    await _focus(page, call.locator(".ui-clamped-block[data-label='Command']"))
     await _in_viewport(call.locator(".agentplane-output-label"))
     await view.capture(target=view.page.locator("#app"))
 
@@ -879,22 +1051,20 @@ async def test_shell_call_raw_arguments_and_json_output(shell_calls: VisualPage)
     page = view.page
     await _open_run(page)
     call = (
-        page.locator(".agentplane-step-details")
-        .filter(has=page.locator(".agentplane-step-title:text-is('Shell')"))
+        page.locator(".transcript-step-details")
+        .filter(has=page.locator(".transcript-step-title:text-is('Shell')"))
         .first
     )
-    await call.locator(".agentplane-disclosure-summary").first.click()
-    await _focus(page, call.locator(".agentplane-step-controls"))
+    await call.locator(".ui-disclosure-summary").first.click()
+    await _focus(page, call.locator(".transcript-step-controls"))
     await call.locator("label").filter(has_text=re.compile(r"^Raw$")).click()
     await expect(call.get_by_role("switch", name="Show raw arguments and output")).to_be_checked()
-    arguments = call.locator(".agentplane-clamped-block[data-label='Arguments']")
+    arguments = call.locator(".ui-clamped-block[data-label='Arguments']")
     await expect(arguments).to_be_visible()
-    await expect(call.locator(".agentplane-clamped-block[data-label='Command']")).to_have_count(0)
-    await expect(call.locator(".agentplane-output-disclosure .agentplane-code-block")).to_contain_text(
-        '"institution_name"'
-    )
+    await expect(call.locator(".ui-clamped-block[data-label='Command']")).to_have_count(0)
+    await expect(call.locator(".agentplane-output-disclosure .ui-code-block")).to_contain_text('"institution_name"')
     await _focus(page, arguments)
-    await expect(call.locator(".agentplane-step-controls")).to_be_in_viewport(ratio=1)
+    await expect(call.locator(".transcript-step-controls")).to_be_in_viewport(ratio=1)
     await expect(call.locator(".agentplane-output-label")).to_be_in_viewport(ratio=1)
     await page.mouse.move(0, 0)
     await view.capture(target=page.locator("#app"))
@@ -905,16 +1075,14 @@ async def test_collapsed_steps_in_open_run_are_compact(shell_calls: VisualPage) 
     view = shell_calls
     page = view.page
     await _open_run(page)
-    await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
-    steps = page.locator(
-        ".agentplane-run-steps .agentplane-step-details .agentplane-disclosure-summary[aria-expanded='false']"
-    )
+    await expect(page.locator(".transcript-step-details [aria-busy='true']")).to_have_count(0)
+    steps = page.locator(".transcript-steps .transcript-step-details .ui-disclosure-summary[aria-expanded='false']")
     await expect(steps.first).to_be_attached()
     # Both kinds share the step disclosure control. Its normal mobile min-height
     # and label padding must not turn every collapsed step into a full-size card.
     assert await steps.first.evaluate("el => getComputedStyle(el).minHeight") == "24px"
     assert (
-        await steps.first.locator(".agentplane-disclosure-summary-content").evaluate(
+        await steps.first.locator(".ui-disclosure-summary-content").evaluate(
             "el => getComputedStyle(el).paddingBlockStart"
         )
         == "0px"
@@ -929,7 +1097,7 @@ async def test_expanded_command_uses_heading_to_collapse(shell_calls: VisualPage
     page = view.page
     await _open_tool_run(page)
     command = (
-        page.locator(".agentplane-clamped-block[data-label='Command']")
+        page.locator(".ui-clamped-block[data-label='Command']")
         .filter(has=page.get_by_role("button", name=re.compile("^Show all")))
         .first
     )
@@ -938,7 +1106,7 @@ async def test_expanded_command_uses_heading_to_collapse(shell_calls: VisualPage
     # The Show all control disappears after expansion, so use the expanded
     # block rather than a locator that keeps filtering for Show all.
     heading = page.locator(
-        ".agentplane-clamped-block[data-label='Command'][data-expanded='true'] .agentplane-clamped-disclosure .agentplane-disclosure-heading"
+        ".ui-clamped-block[data-label='Command'][data-expanded='true'] .ui-clamped-disclosure .ui-disclosure-heading"
     ).first
     await expect(heading.locator("button")).to_have_count(1)
     await expect(heading.get_by_role("button", name="Command", expanded=True)).to_be_visible()
@@ -951,15 +1119,15 @@ async def test_expanded_shell_output_sticks_while_scrolling(shell_calls: VisualP
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
-    output = page.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']")
+    output = page.locator(".agentplane-output-disclosure .ui-disclosure-summary[aria-expanded='true']")
     await expect(output.first).to_be_attached()
     # The long Codex command and output are present before enumerating expansion controls.
-    await expect(page.locator(".agentplane-clamped-block[data-label='Command']").first).to_be_attached()
-    await expect(page.locator(".agentplane-clamped-block[data-label='Arguments']").first).to_be_attached()
-    await expect(page.locator(".agentplane-clamped-block[data-label='Output']").first).to_be_attached()
-    await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
+    await expect(page.locator(".ui-clamped-block[data-label='Command']").first).to_be_attached()
+    await expect(page.locator(".ui-clamped-block[data-label='Arguments']").first).to_be_attached()
+    await expect(page.locator(".ui-clamped-block[data-label='Output']").first).to_be_attached()
+    await expect(page.locator(".transcript-step-details [aria-busy='true']")).to_have_count(0)
     await expect(page.locator("[aria-label='Thread history'][data-layout-settled='true']")).to_be_attached()
-    controls = page.locator(".agentplane-clamped-block button[aria-expanded='false']")
+    controls = page.locator(".ui-clamped-block button[aria-expanded='false']")
     count = await controls.count()
     assert count > 0, "long command/output had no expansion controls"
     for _ in range(count):

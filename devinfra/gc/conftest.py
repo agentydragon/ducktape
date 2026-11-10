@@ -11,6 +11,8 @@ from pathlib import Path
 import pygit2
 import pytest
 
+from devinfra.gc.repo_contents_cache_gc import recorded_inputs_of
+
 _SIGNATURE = pygit2.Signature("t", "t@t")
 
 
@@ -124,3 +126,21 @@ def make_base(root: Path, workspace: Path, *, name: str | None = None) -> Path:
         + os.fsencode(workspace)
     )
     return base
+
+
+def make_cache_entry(contents: Path, hash_name: str, uuid_name: str, *, recorded_inputs: bool = True) -> Path:
+    """A fetched repository as Bazel's repo contents cache holds it: the directory plus its
+    recorded-inputs file."""
+    entry = contents / hash_name / uuid_name
+    entry.mkdir(parents=True)
+    (entry / "REPO.bazel").write_text("")
+    (entry / "payload").write_bytes(b"x" * 4096)
+    if recorded_inputs:
+        recorded_inputs_of(entry).write_text(f"{hash_name}\n")
+    return entry
+
+
+def link_external(base: Path, repo: str, target: Path) -> None:
+    """`<base>/external/<repo> -> target`, the way an output base uses a repo-cache entry."""
+    (base / "external").mkdir(exist_ok=True)
+    (base / "external" / repo).symlink_to(target)

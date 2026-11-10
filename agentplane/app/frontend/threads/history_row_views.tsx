@@ -1,9 +1,10 @@
 import { Box, Flex, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { ItemKind } from "../../../proto/event_pb";
 import { Markdown } from "../../../../util/frontend/markdown";
-import { type ThreadEntity, useThreadSync } from "./thread_sync";
+import { useThreadSync } from "./thread_sync";
+import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/history_service_pb";
+import { threadEntityKind } from "./thread_entity";
 import {
   summarizeLifecycleGroup,
   summarizeRun,
@@ -12,11 +13,11 @@ import {
   type HistoryRow,
   type RunContent,
 } from "./history_rows";
-import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import { EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
-import { StepLine } from "./step_line";
+import { StepLine } from "../../../../util/frontend/transcript/step_line";
 import { ProjectedControlCommand } from "./thread_commands";
-import { DisclosureCard } from "../disclosure";
+import { DisclosureCard } from "../../../../util/frontend/disclosure";
 
 /** A group of history rows, with the disclosure frame shared by runs and lifecycle groups. */
 function CollapsibleRows({
@@ -35,7 +36,7 @@ function CollapsibleRows({
   return (
     <DisclosureCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
-        <Stack gap={steps ? 0 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
+        <Stack gap={steps ? 0 : "xs"} className={steps ? "transcript-steps" : undefined}>
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -67,7 +68,7 @@ function ReasoningSummaryPart({
   onText,
 }: {
   entityId: string;
-  reference: NonNullable<ThreadEntity["textRef"]>;
+  reference: ThreadPayloadReference;
   onText: (entityId: string, text: string) => void;
 }): null {
   const { body } = useThreadSync().usePayload(reference);
@@ -85,7 +86,7 @@ function ReasoningGroup({
   live: (entity: ThreadEntity) => boolean;
 }): JSX.Element {
   const first = entities[0];
-  const id = `${first.projectionEpoch}:${first.entityKind}:${first.entityId}:reasoning-group`;
+  const id = `${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:reasoning-group`;
   const [open, setOpen] = useRetainedDisclosure(id);
   const [texts, setTexts] = useState<ReadonlyMap<string, string>>(() => new Map());
   const onText = useCallback((entityId: string, text: string) => {
@@ -107,11 +108,12 @@ function ReasoningGroup({
             <Markdown source={summary} singleLine size="sm" />
             {entities.map(
               (entity) =>
-                entity.textRef && (
+                entity.entity.case === "item" &&
+                entity.entity.value.textRef && (
                   <ReasoningSummaryPart
                     key={entity.entityId}
                     entityId={entity.entityId}
-                    reference={entity.textRef}
+                    reference={entity.entity.value.textRef}
                     onText={onText}
                   />
                 )
@@ -122,7 +124,7 @@ function ReasoningGroup({
         open={open}
         onOpenChange={setOpen}
       >
-        <Stack gap={0} className="agentplane-run-steps">
+        <Stack gap={0} className="transcript-steps">
           <EntityCards threadId={threadId} entities={entities} live={live} />
         </Stack>
       </StepLine>
@@ -160,7 +162,7 @@ function RunView({
   const first = entities[0];
   return (
     <CollapsibleRows
-      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
+      id={`${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:run`}
       summary={
         <Flex component="span" display="inline-flex" gap="xs" align="center" wrap="wrap">
           <Text size="sm" c="dimmed">
@@ -198,7 +200,7 @@ function LifecycleGroupView({
   const first = entities[0];
   return (
     <CollapsibleRows
-      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:lifecycle`}
+      id={`${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:lifecycle`}
       summary={
         // Unlike RunView's inline-flex Flex, a plain Text defaults to a block <p> -- inside the
         // Accordion control's flex label, that wraps below the disclosure chevron.
@@ -225,7 +227,7 @@ function SetupView({
   const first = entities[0];
   return (
     <CollapsibleRows
-      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:setup`}
+      id={`${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:setup`}
       summary={
         <Box component="span" style={{ display: "grid", gap: 2 }}>
           <Text span size="xs" c="dimmed">
@@ -262,21 +264,15 @@ export function HistoryRowView({
 }: HistoryRowViewProps): JSX.Element {
   const [first] = row.entities;
   if (row.kind === "setup") return <SetupView threadId={threadId} entities={row.entities} live={live} />;
-  // A lone reasoning step is already a folded block of its own; a lone tool call keeps its run's
-  // summary, so every tool call reads the same. A lone lifecycle observation has nothing to
-  // group with, so it reads exactly as it always has.
-  const lone =
-    row.kind === "entity" ||
-    (row.entities.length === 1 &&
-      (row.kind === "lifecycle_group" || ("kind" in first.state && first.state.kind === ItemKind.REASONING)));
+  const lone = row.kind === "entity" || row.entities.length === 1;
   if (lone) {
     const echoCommandId = pendingSentMessage(first)
       ? first.entityId
-      : first.entityKind === "confirmed_input" && "origin_command_ids" in first.state
-        ? first.state.origin_command_ids.find((id) => inputEchoes?.has(id))
+      : first.entity.case === "confirmedInput"
+        ? first.entity.value.originCommandIds.find((id) => inputEchoes?.has(id))
         : undefined;
     const fallbackText = echoCommandId === undefined ? undefined : inputEchoes?.get(echoCommandId);
-    return first.entityKind === "command" && !pendingSentMessage(first) ? (
+    return first.entity.case === "command" && !pendingSentMessage(first) ? (
       <ProjectedControlCommand threadId={threadId} row={first} />
     ) : (
       <EntityCard

@@ -5,31 +5,8 @@
  */
 import { createContext, useContext, type Context, type JSX, type ReactNode } from "react";
 
-import type { ThreadEntityView } from "../api/schema";
-import type { StreamConnection } from "../live_stream";
-
-export type Decimal = string | bigint;
-export function decimalBigInt(value: Decimal): bigint {
-  return typeof value === "bigint" ? value : BigInt(value);
-}
-export type PayloadRef = NonNullable<ThreadEntityView["text_ref"]>;
-
-export interface ThreadEntity {
-  threadId: string;
-  projectionEpoch: string;
-  entityKind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command";
-  entityId: string;
-  entityIndex: Decimal;
-  cursor: Decimal;
-  revisionCursor: Decimal;
-  pending: boolean;
-  turnId: string | null;
-  state: ThreadEntityView["state"];
-  textRef: PayloadRef | null;
-  argumentsRef: PayloadRef | null;
-  outputRef: PayloadRef | null;
-  inputRef: PayloadRef | null;
-}
+import type { StreamConnection } from "../stream_reader";
+import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/history_service_pb";
 
 /** The rows a reader holds of a thread: its tail, and as far back as it has loaded. */
 export interface ThreadWindow {
@@ -77,7 +54,7 @@ export interface ThreadSync {
   useThread: () => ThreadState;
   /** The command rows among `commandIds`, pending or settled, however old. */
   useCommandRows: (commandIds: readonly string[]) => ThreadEntity[];
-  usePayload: (reference: PayloadRef) => Payload;
+  usePayload: (reference: ThreadPayloadReference) => Payload;
 }
 
 export const ThreadSyncContext: Context<ThreadSync | null> = createContext<ThreadSync | null>(null);

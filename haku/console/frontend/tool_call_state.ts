@@ -1,4 +1,4 @@
-import type { ToolCallRecord } from "./api/tool_call_record";
+import type { ToolCallRecord } from "./tool_call_record";
 
 export interface ApprovalDisplayFields {
   title: string;
@@ -49,29 +49,20 @@ export function showsAutoApprovalEvaluation(
   return detailed || fields.approvalPolicyId !== null;
 }
 
-// Keyed maps make a new status a type error instead of silently rendering as a blue "Pending" badge.
-const STATUS_LABELS: Record<ToolCallRecord["status"], string> = {
-  pending_approval: "Pending",
-  running: "Running",
-  ok: "OK",
-  error: "Error",
-  denied: "Denied",
-  withdrawn: "Withdrawn",
-};
-
-const STATUS_COLORS: Record<ToolCallRecord["status"], string> = {
-  pending_approval: "orange",
-  running: "blue",
-  ok: "teal",
-  error: "red",
-  denied: "gray",
-  withdrawn: "gray",
-};
+// Keep every status accounted for instead of silently rendering it as a blue "Pending" badge.
+const STATUS_PRESENTATION = {
+  pending_approval: { label: "Pending", color: "orange" },
+  running: { label: "Running", color: "blue" },
+  ok: { label: "OK", color: "teal" },
+  error: { label: "Error", color: "red" },
+  denied: { label: "Denied", color: "gray" },
+  withdrawn: { label: "Withdrawn", color: "gray" },
+} satisfies Record<ToolCallRecord["status"], { label: string; color: string }>;
 
 export function terminalStatusLabel(status: ToolCallRecord["status"]): string {
-  return STATUS_LABELS[status];
+  return STATUS_PRESENTATION[status]?.label;
 }
 
 export function statusColor(status: ToolCallRecord["status"]): string {
-  return STATUS_COLORS[status];
+  return STATUS_PRESENTATION[status]?.color;
 }

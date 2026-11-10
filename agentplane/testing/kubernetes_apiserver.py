@@ -3,7 +3,6 @@
 import asyncio
 import subprocess
 import tempfile
-import time
 from collections.abc import AsyncIterator, Awaitable, Iterator
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
@@ -12,10 +11,11 @@ from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.config import new_client_from_config
+from python.runfiles import Runfiles
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @dataclass(frozen=True)
@@ -84,9 +84,11 @@ def control_plane() -> Iterator[Path]:
     Only control-plane processes are started. No event loop is involved, so a session-scoped fixture can share
     one control plane among tests whose loops differ; each test enters `kubernetes_api` in its own loop.
     """
-    binary = get_required_path(own_repo_rlocation("agentplane/testing/envtest/server_/server"))
-    assets = get_required_path("envtest_kubernetes_linux_amd64/kube-apiserver").parent
-    crds = get_required_path(own_repo_rlocation("agentplane/crds/manifests"))
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    binary = runfiles_root / "ducktape/agentplane/testing/envtest/server_/server"
+    api_server = Path(str(runfiles_root / "envtest_kubernetes_linux_amd64/kube-apiserver"))
+    assets = api_server.parent
+    crds = runfiles_root / "ducktape/agentplane/crds/manifests"
     log_path = undeclared_outputs_dir() / f"kubernetes-apiserver-{uuid4().hex}.log"
     with tempfile.TemporaryDirectory(prefix="agentplane-apiserver-") as work, log_path.open("wb") as log:
         kubeconfig = Path(work) / "kubeconfig"
@@ -96,13 +98,16 @@ def control_plane() -> Iterator[Path]:
             stderr=subprocess.STDOUT,
         )
         try:
-            deadline = time.monotonic() + 60
-            while not kubeconfig.exists():
-                if process.poll() is not None:
-                    raise RuntimeError(f"Kubernetes API server exited with {process.returncode}; see {log_path}")
-                if time.monotonic() > deadline:
-                    raise TimeoutError(f"Kubernetes API server was not ready within 60 s; see {log_path}")
-                time.sleep(0.05)
+            for attempt in Retrying(
+                stop=stop_after_delay(60),
+                wait=wait_fixed(0.05),
+                retry=retry_if_exception_type(AssertionError),
+                reraise=True,
+            ):
+                with attempt:
+                    if process.poll() is not None:
+                        raise RuntimeError(f"Kubernetes API server exited with {process.returncode}; see {log_path}")
+                    assert kubeconfig.exists(), f"Kubernetes API server is not ready; see {log_path}"
             yield kubeconfig
         finally:
             if process.poll() is None:

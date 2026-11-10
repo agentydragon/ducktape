@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 )
 
 // awaitBound only fails a test whose wakeup never comes.
@@ -62,20 +62,21 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	check := observeWakeups(t, f)
 
-	creation := body("first")
+	creation := f.body("first")
 	var subscription Subscription
 	check("creating a subscription", true, func() { subscription = f.subscribe(t, creation) })
 	check("replaying a creation", false, func() { f.subscribe(t, creation) })
 	reused := creation
 	reused.LifetimeDays = 30
 	check("a refused creation", false, func() {
-		if _, err := f.Subscribe(t.Context(), f.owner, reused, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+		if _, err := f.Subscribe(t.Context(), f.owner, reused, nil, "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Error(err)
 		}
 	})
 	check("reading", false, func() { f.read(t, subscription.InboxID, 0) })
 	check("appending an event", false, func() {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}, `{}`)
+		event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	})
 	check("acknowledging", true, func() { f.acknowledge(t, subscription.InboxID, 1) })
 	check("renewing", true, func() { f.renew(t, subscription.ID, 1, 7) })
@@ -91,4 +92,57 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 			t.Error(err)
 		}
 	})
+}
+
+func TestSharedGitHubChangesWakeOnlyAffectedSessionWatches(t *testing.T) {
+	first, other := newGitHubFixture(t), newGitHubFixture(t)
+	sub := first.follow(t, first.source(model.PullRequestSubject{Number: 7}), "first")
+	other.follow(t, other.source(model.PullRequestSubject{Number: 7}), "other")
+	const barrier = "notification_session_watch_barrier"
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, InboxChannel, barrier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	firstSignal, stopFirst, err := hub.SubscribeKey(InboxChannel, first.sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopFirst()
+	otherSignal, stopOther, err := hub.SubscribeKey(InboxChannel, other.sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopOther()
+	settled, stopSettled, err := hub.Subscribe(barrier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopSettled()
+	for name, update := range map[string]func(){
+		"repository access": func() {
+			first.exec(t, `UPDATE github_repository_access SET checked_at=now() WHERE app_id=$1 AND installation_id=$2 AND repository_id=$3`, first.app, first.installation, first.repository)
+		},
+		"subject": func() {
+			first.exec(t, `UPDATE github_subject SET last_success_at=now() WHERE repository_id=$1 AND kind=$2 AND subject_key=$3`, sub.Subject.RepositoryID, sub.Subject.Kind, sub.Subject.Key)
+		},
+	} {
+		update()
+		first.exec(t, `SELECT pg_notify($1, '')`, barrier)
+		select {
+		case <-settled:
+		case <-time.After(awaitBound):
+			t.Fatal("no barrier")
+		}
+		select {
+		case <-firstSignal:
+		default:
+			t.Errorf("%s did not wake the affected Session", name)
+		}
+		select {
+		case <-otherSignal:
+			t.Errorf("%s woke an unrelated Session", name)
+		default:
+		}
+	}
 }

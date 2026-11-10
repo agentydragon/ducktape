@@ -60,25 +60,9 @@ class ToolCallStatus(StrEnum):
     WITHDRAWN = "withdrawn"
 
 
-class ToolCallPayloadField(StrEnum):
-    ARGUMENTS = "arguments"
-    CALLER = "caller"
-    RATIONALE = "rationale"
-    RESULT = "result"
-
-
 class ApprovalDecision(StrEnum):
     APPROVE = "approve"
     DENY = "deny"
-
-
-class SubmitToolCallRequest(BaseModel):
-    server_id: str
-    tool_name: str
-    arguments: dict[str, Any]
-    rationale: str = ""
-    title: str | None = None
-    wait_for_ms: int = Field(ge=0, le=60_000)
 
 
 class ApprovalDecisionRequest(BaseModel):

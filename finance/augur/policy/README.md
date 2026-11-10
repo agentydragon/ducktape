@@ -13,11 +13,10 @@ target-weighted sleeve sales (a public security's lots, or a managed portfolio's
 money), full due-claim payments, then optional surplus and drift purchases. The app
 builds one from its funding policy.
 
-Sleeve `withdraw` weights account/asset pools independently; `withdraw_by_symbol`
-weights each symbol once across explicitly ordered accounts, using FIFO within
-each account. Both reuse the same allocation and exact-lot proposal calculations.
-Zero targets stay sellable at this level; product-specific exclusions belong to
-the calling policy.
+Sleeve `withdraw` weights selected account/asset pools independently. The
+household weights each security once across its source accounts, then sells in
+account order and FIFO within each account. Zero targets stay sellable at this
+level; product-specific exclusions belong to the calling policy.
 
 Experiments own decision cadence, memory and ordered action lists. Financial
 admission, accounting and settlement stay in the shared action executor; neutral

@@ -8,15 +8,16 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 from pydantic import HttpUrl, ValidationError
 
 from finance.augur.api.config import (
     CalibrationCatalogConfig,
+    Config,
     DistributionTaxShareConfig,
     PropertyAssetConfig,
     PropertySourceConfig,
     SecurityDistributionConfig,
-    dump_augur_config_yaml,
     load_augur_config,
 )
 from finance.augur.api.conftest import MinimalConfig
@@ -88,6 +89,15 @@ PLAID_PORTFOLIO_SOURCES = PortfolioSourcesConfig(
 )
 
 
+def _write_config_yaml(path: Path, config: Config) -> None:
+    path.write_text(
+        yaml.safe_dump(
+            config.model_dump(mode="json", exclude_computed_fields=True), sort_keys=True, default_flow_style=False
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_property_asset_property_ids_must_be_unique() -> None:
     with pytest.raises(ValidationError):
         PropertySourceConfig(
@@ -128,7 +138,7 @@ def test_yaml_round_trip_through_dump_and_load(
     config = minimal_config(location_selection=("san_francisco_ca",), portfolio_sources=portfolio_sources)
 
     path = tmp_path / "config.yaml"
-    path.write_text(dump_augur_config_yaml(config), encoding="utf-8")
+    _write_config_yaml(path, config)
     reloaded = load_augur_config(path)
 
     assert reloaded == config
@@ -140,23 +150,21 @@ def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "private_equity_model.json").write_text("{}", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        dump_augur_config_yaml(
-            minimal_config(
-                property_source=PropertySourceConfig(properties_path=Path("properties.json")),
-                models={
-                    "current_model": {
-                        "type": "composite",
-                        "macro": {"type": "independent"},
-                        "private_equity": {
-                            "type": "trained_private_equity",
-                            "trained_model_path": "private_equity_model.json",
-                        },
-                    }
-                },
-            )
+    _write_config_yaml(
+        config_path,
+        minimal_config(
+            property_source=PropertySourceConfig(properties_path=Path("properties.json")),
+            models={
+                "current_model": {
+                    "type": "composite",
+                    "macro": {"type": "independent"},
+                    "private_equity": {
+                        "type": "trained_private_equity",
+                        "trained_model_path": "private_equity_model.json",
+                    },
+                }
+            },
         ),
-        encoding="utf-8",
     )
 
     reloaded = load_augur_config(config_path)
@@ -173,21 +181,19 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "state_space_artifact.json").write_text("{}", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        dump_augur_config_yaml(
-            minimal_config(
-                property_source=PropertySourceConfig(properties_path=Path("properties.json")),
-                models={
-                    "current_model": {
-                        "type": "state_space",
-                        "trained_artifact_path": "state_space_artifact.json",
-                        "conditioning": {"start_at": "2026-05-27", "observations": {}},
-                        "current_mortgage30_rate_pct": 6.23,
-                    }
-                },
-            )
+    _write_config_yaml(
+        config_path,
+        minimal_config(
+            property_source=PropertySourceConfig(properties_path=Path("properties.json")),
+            models={
+                "current_model": {
+                    "type": "state_space",
+                    "trained_artifact_path": "state_space_artifact.json",
+                    "conditioning": {"start_at": "2026-05-27", "observations": {}},
+                    "current_mortgage30_rate_pct": 6.23,
+                }
+            },
         ),
-        encoding="utf-8",
     )
 
     reloaded = load_augur_config(config_path)
@@ -204,16 +210,14 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(
     like the other ConfigMap-mounted deployment paths."""
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        dump_augur_config_yaml(
-            minimal_config(
-                property_source=PropertySourceConfig(properties_path=Path("properties.json")),
-                calibration_catalog=CalibrationCatalogConfig(
-                    catalog_path=Path("catalog.yaml"), sample_sanity_path=Path("sample_sanity.yaml")
-                ),
-            )
+    _write_config_yaml(
+        config_path,
+        minimal_config(
+            property_source=PropertySourceConfig(properties_path=Path("properties.json")),
+            calibration_catalog=CalibrationCatalogConfig(
+                catalog_path=Path("catalog.yaml"), sample_sanity_path=Path("sample_sanity.yaml")
+            ),
         ),
-        encoding="utf-8",
     )
 
     reloaded = load_augur_config(config_path)
@@ -228,22 +232,20 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, 
     against the yaml's directory."""
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "assets").mkdir()
-    (tmp_path / "config.yaml").write_text(
-        dump_augur_config_yaml(
-            minimal_config(
-                property_source=PropertySourceConfig(
-                    properties_path=Path("properties.json"),
-                    asset_dir=Path("assets"),
-                    property_assets=(
-                        PropertyAssetConfig(
-                            property_id=LOCATION_A_PROPERTY,
-                            image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg"),
-                        ),
+    _write_config_yaml(
+        tmp_path / "config.yaml",
+        minimal_config(
+            property_source=PropertySourceConfig(
+                properties_path=Path("properties.json"),
+                asset_dir=Path("assets"),
+                property_assets=(
+                    PropertyAssetConfig(
+                        property_id=LOCATION_A_PROPERTY,
+                        image_url=HttpUrl("https://cdn.example.com/augur/location-a-hero.jpg"),
                     ),
-                )
+                ),
             )
         ),
-        encoding="utf-8",
     )
 
     reloaded = load_augur_config(tmp_path / "config.yaml")

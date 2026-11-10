@@ -3,10 +3,18 @@
 Status: **proposed policy design**, not an implemented permission or a grant to existing
 callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md), where the operator
 holds its decisions for now (2026-10-17 UTC). Review the choices below before implementing the policy. The durable raw Session Event
-history and its Thread fold live in the [History Service](../history_service/README.md),
-which today serves only its configured reader accounts.
+history and its Thread fold live in the [History Service](../history_service/README.md).
+Narrow same-principal retained reads are already implemented for
+[caller-privilege delegation](session_delegation_workflows.md), independently of this held
+cross-ServiceAccount policy. Configured privileged readers remain a separate authority path.
 
-SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
+**Reconsideration, 2026-11-04:** the Sandbox-scoped grouping below is earlier direction, not a
+settled boundary for independent Sessions. Revisit it with
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments)
+when the operator reopens this policy. Same-principal reads already use the retained principal and
+do not depend on a recorded Sandbox UID.
+
+SA-level caller attribution and Sandbox-level authorization were previously agreed. Reads may request an
 individual Session, but the permission covers its Sandbox's histories. V1 supports history tags on the
 Sandbox ([design](sandbox_tags.md)), an [`allSandboxes` target](multiagent_communication.md#target-collections-and-launch-enrollment)
 bounded to the rule's namespace and launch defaults at the same link, and no individual-Session
@@ -61,7 +69,7 @@ History enforces scoped authorization on its own API regardless of policy repres
 broaden its reader allowlist wholesale: a listed reader reads every Session. The one accepted exception
 (operator, 2026-10-26) is the [`orchestration_v1` group's executor](../action_service/orchestration_v1/README.md), which reads only on an
 Action Decision until this policy replaces it. Keep read authority
-separate from message ingress, Session open/control, Sandbox lifecycle and grant administration.
+separate from message ingress, Session creation/control, Sandbox lifecycle and grant administration.
 A read grant does not imply send or create authority.
 
 ## Sandbox trust boundary

@@ -6,12 +6,24 @@ describe("generated MCP tool result schemas", () => {
   it("parses a Draft resource and rejects one missing its id", () => {
     const draft: McpToolResultFor<"gmail", "drafts_create"> = {
       id: "r-7364618394",
-      // gmail_api's to_camel wire aliases (threadId, not thread_id); the recursive `parts`
-      // tree under payload is permissive, so this shallow message parses.
+      // gmail_api's to_camel wire aliases (threadId, not thread_id).
       message: { id: "18c2f0a", threadId: "t42" },
     };
     expect(mcpToolResultSchema("gmail", "drafts_create").safeParse(draft).success).toBe(true);
     expect(mcpToolResultSchema("gmail", "drafts_create").safeParse({ message: { id: "m1" } }).success).toBe(false);
+  });
+
+  it("validates recursive Gmail parts at every depth", () => {
+    const valid = {
+      id: "r-123",
+      message: { id: "m1", payload: { parts: [{ parts: [{ mime_type: "text/plain" }] }] } },
+    };
+    const invalid = {
+      id: "r-123",
+      message: { id: "m1", payload: { parts: [{ parts: [{ mime_type: 42 }] }] } },
+    };
+    expect(mcpToolResultSchema("gmail", "drafts_create").safeParse(valid).success).toBe(true);
+    expect(mcpToolResultSchema("gmail", "drafts_create").safeParse(invalid).success).toBe(false);
   });
 
   it("parses a created calendar event", () => {

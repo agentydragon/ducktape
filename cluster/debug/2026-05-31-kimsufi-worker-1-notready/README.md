@@ -6,7 +6,7 @@ Captured on 2026-05-31 before rebooting `talos-kimsufi-worker-1`
 > **Root cause (identified 2026-06-08):** this was the first symptom capture of a
 > recurring syndrome — promtail page-cache eviction starving etcd of IO, which
 > surfaced as node-lease misses and `NotReady` flaps. Full RCA + fix in
-> <../2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md>. The
+> <../../docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md#additional-workload-io-incidents-2026-06-08-to-2026-06-10>. The
 > raw capture files (kubectl/talosctl dumps, Loki and Mimir query responses,
 > node-exporter scrapes) were dropped once the RCA landed; what is kept below is
 > the narrative, the visibility gap that still needs closing, and the CNPG

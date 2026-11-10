@@ -31,7 +31,6 @@ manifest:
     aioitertools: aioitertools
     aioquic: aioquic
     aiosignal: aiosignal
-    aiosqlite: aiosqlite
     alembic: alembic
     annotated_doc: annotated_doc
     annotated_types: annotated_types
@@ -60,7 +59,6 @@ manifest:
     bs4: beautifulsoup4
     cachetools: cachetools
     caio: caio
-    canonicaljson: canonicaljson
     cattr: cattrs
     cattrs: cattrs
     cdk8s: cdk8s
@@ -481,4 +479,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: b957ac3f98729b8345e47ef344d69bbf864835695d1556045b0326a9e1e1e93d
+integrity: 03ead7934a9c34cc71464f1a8ab94dc661aedc60f317ed08cd554408a303542e

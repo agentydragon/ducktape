@@ -14,7 +14,7 @@ import {
   Title,
 } from "@mantine/core";
 
-import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./api/schema";
+import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
@@ -279,7 +279,7 @@ function AllowancePanel({
               </Text>
             </Group>
             <Text size="sm" c="dimmed">
-              Provisional leash ~{m(Math.round((allowance.monthly_minor_units * 12) / 365.2425))} / day.
+              Provisional leash ~{m(allowance.daily_reference_minor_units)} / day.
             </Text>
             {(estimateLoading || (unmatched && unmatched.count > 0)) && (
               <Text size="xs" c="dimmed">

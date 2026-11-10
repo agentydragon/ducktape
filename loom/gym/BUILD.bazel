@@ -195,8 +195,8 @@ py_test(
         ":task",
         "//:conftest",
         "//finance/evidence:markets",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -228,7 +228,6 @@ py_test(
     name = "test_task",
     srcs = ["test_task.py"],
     deps = [
-        ":seed_tasks",
         ":task",
         "//:conftest",
         "@pypi//pydantic",
@@ -341,9 +340,6 @@ py_test(
     name = "test_inspect_harness",
     size = "large",
     srcs = ["test_inspect_harness.py"],
-    data = [
-        "//loom/wayback/proxy:image_info",
-    ],
     requires_docker = True,
     deps = [
         ":dossier",
@@ -352,10 +348,11 @@ py_test(
         ":series_tasks",
         ":task",
         "//:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "//loom/wayback/proxy:fake_ia",
+        "//loom/wayback/proxy:wayback_proxy_image",
         "//third_party/containers:python_3_14_slim",
-        "//util:oci",
-        "//util/testing:undeclared_outputs",
         "@pypi//inspect_ai",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -437,6 +434,13 @@ oci_load(
     name = "eval_load",
     image = ":eval_image",
     repo_tags = ["loom-gym-eval:latest"],
+)
+
+# keep
+py_binary(
+    name = "analyze_baselines_bin",
+    main_module = "loom.gym.analyze_baselines",
+    deps = [":analyze_baselines"],
 )
 
 py_library(

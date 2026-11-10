@@ -20,8 +20,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -468,3 +470,25 @@ def chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, OUTPUT_DIR, chart)
+
+
+def tana_mcp(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_operator: Kustomization,
+    mcp_oauth_state: Kustomization,
+    monitoring_crds: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        "tana-mcp",
+        artifact,
+        timeout="5m",
+        decryption=SOPS_DECRYPTION,
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator,
+            mcp_oauth_state,
+            # ServiceMonitor + PrometheusRule
+            monitoring_crds,
+        ),
+    )

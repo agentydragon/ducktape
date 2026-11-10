@@ -1,7 +1,8 @@
+use source_identity::ChunkId;
 use source_identity::SourceUnitOrdinal;
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use swc_atoms::Atom;
 use swc_common::{Mark, SyntaxContext};
 use swc_ecma_ast::Id;
@@ -45,46 +46,6 @@ impl EntryDestination {
 
     pub fn module_id(self) -> ModuleId {
         self.0
-    }
-}
-
-/// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
-/// loading and used throughout the pipeline in place of `String` chunk names.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ChunkId(pub usize);
-
-#[derive(Debug, Clone, Default)]
-pub struct ChunkTable {
-    names: Vec<String>,
-    ids_by_name: HashMap<String, ChunkId>,
-}
-
-impl ChunkTable {
-    pub fn intern(&mut self, name: String) -> ChunkId {
-        if let Some(id) = self.ids_by_name.get(&name) {
-            return *id;
-        }
-        let id = ChunkId(self.names.len());
-        self.names.push(name.clone());
-        self.ids_by_name.insert(name, id);
-        id
-    }
-
-    pub fn get(&self, name: &str) -> Option<ChunkId> {
-        self.ids_by_name.get(name).copied()
-    }
-
-    pub fn name(&self, id: ChunkId) -> &str {
-        &self.names[id.0]
-    }
-
-    pub fn len(&self) -> usize {
-        self.names.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.names.is_empty()
     }
 }
 
@@ -163,33 +124,16 @@ impl BindingId {
 
 /// Error returned when a binding identity or local catalogue view belongs to
 /// a different chunk than the catalogue's scope.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[error(
+    "binding belongs to chunk {}, but catalogue is scoped to chunk {}",
+    .actual.0,
+    .expected.0
+)]
 pub struct BindingScopeError {
     expected: ChunkId,
     actual: ChunkId,
 }
-
-impl BindingScopeError {
-    pub fn expected_chunk(&self) -> ChunkId {
-        self.expected
-    }
-
-    pub fn actual_chunk(&self) -> ChunkId {
-        self.actual
-    }
-}
-
-impl std::fmt::Display for BindingScopeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "binding belongs to chunk {}, but catalogue is scoped to chunk {}",
-            self.actual.0, self.expected.0
-        )
-    }
-}
-
-impl std::error::Error for BindingScopeError {}
 
 /// Per-chunk binding metadata, keyed by the original hygiene-aware SWC ID.
 ///

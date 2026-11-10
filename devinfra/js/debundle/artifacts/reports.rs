@@ -1,13 +1,17 @@
 //! Serialized report models and the shared JSON writer for artifact output.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::sync::Arc;
 
-use analysis::DepKind;
+use analysis_model::DepKind;
+use analysis_model::StableExportValue;
 use anyhow::{Context, Result};
-use serde::Serialize;
+use js_ast::ParsedGlobalUses;
+use serde::{Deserialize, Serialize};
+use swc_common::Span;
 
 use crate::FileRole;
 use crate::metrics::{DecompositionMetrics, OutputMetrics};
@@ -21,12 +25,18 @@ pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
-    let mut writer = BufWriter::new(
+    let writer = BufWriter::new(
         fs::File::create(path).with_context(|| format!("creating {}", path.display()))?,
     );
+    write_json_to(writer, path, data)
+}
+
+fn write_json_to(mut writer: impl Write, path: &Path, data: &impl Serialize) -> Result<()> {
     serde_json::to_writer(&mut writer, data)
         .with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+    writer
+        .flush()
+        .with_context(|| format!("flushing {}", path.display()))
 }
 
 /// Emission-set chunk records, serialized as `{ "chunks": [...] }` to the
@@ -185,13 +195,139 @@ pub struct ChunkAnalysisReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChunkRuntimeFacts {
-    /// Direct ESM exports whose complete local binding history is primitive.
-    /// Canonical shallow-scan facts; never serialized or author asserted.
-    pub stable_primitive_exports: BTreeSet<String>,
+    /// Unresolved identifier sites of the prepared parse. `None` means the
+    /// inventory was not computed (no prepared parse for this chunk).
+    pub global_uses: Option<Arc<ParsedGlobalUses>>,
+    pub resources: Vec<crate::runtime_resources::RuntimeResourceUse>,
+    /// Direct ESM exports whose complete local binding history is primitive
+    /// once their copied imports are. Resolved by the program-level
+    /// cross-module analysis.
+    pub stable_export_values: BTreeMap<String, StableExportValue>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,
+    /// True when source uses the CommonJS export namespace (`module`,
+    /// `exports`, or TypeScript `export =`). Kept distinct from request-only
+    /// host loading so direct ESM export bindings can retain value-type facts.
+    pub has_own_cjs_export_surface: bool,
     pub static_requests: Vec<StaticModuleRequest>,
+    /// Source-only host interop sites from the canonical shallow SWC walk.
+    pub interop_uses: Vec<InteropUse>,
+    pub loader_bindings: Vec<LoaderBindingUses>,
+    pub namespace_requests: Vec<NamespaceRequest>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InteropUse {
+    pub item_index: usize,
+    pub line: Option<usize>,
+    /// Exact original SWC site, retained for future phase/call joins.
+    pub span: Span,
+    pub kind: InteropUseKind,
+    pub specifier: Option<String>,
+    pub phase: SitePhase,
+}
+
+/// When a source site can run relative to the stack that enters its function
+/// (SPEC.md § Loader-closed derivation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SitePhase {
+    Synchronous,
+    /// Synchronous, in top-level code outside every function: it runs only
+    /// while its own module's body evaluates.
+    ModuleBody,
+    /// The site follows an `await` on every path of its innermost async
+    /// function, so it never runs on the stack that invoked that function.
+    MandatorilySuspended,
+    /// No reachable code can enter the site's innermost function.
+    Unreachable,
+}
+
+/// Uses of a binding that may hold the host loader: an import binding, or a
+/// top-level binding initialized with exactly `import.meta.require`.
+#[derive(Debug, Clone)]
+pub struct LoaderBindingUses {
+    pub binding: LoaderBinding,
+    /// Uses in reachable code; unreachable uses are dropped.
+    pub uses: Vec<LoaderBindingUse>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LoaderBinding {
+    Import {
+        source: String,
+        imported: String,
+    },
+    LoaderAlias {
+        /// The `import.meta.require` census site that initializes it.
+        definition: Span,
+        /// Names a local export publishes it under.
+        exported_as: Vec<String>,
+    },
+    /// A binding initialized with a direct call of a `createRequire` named
+    /// import from the `module` builtin.
+    CreatedLoader,
+}
+
+/// What immediately consumes a use: the value a call returns, or the binding
+/// itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoaderUseConsumer {
+    /// `use.name`, read and not called.
+    MemberRead(String),
+    /// `use.name(...)`.
+    MemberCall(String),
+    /// The initializer of a `var`/`let`/`const` binding the walk tracks.
+    BindingInitializer,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoaderBindingUse {
+    pub item_index: usize,
+    pub line: Option<usize>,
+    /// `Some` for a direct call whose only argument is a string literal.
+    pub literal: Option<String>,
+    /// A direct call, literal or not.
+    pub call: bool,
+    /// For a call, what consumes its result; otherwise what consumes the
+    /// binding's value.
+    pub consumer: LoaderUseConsumer,
+    pub phase: SitePhase,
+}
+
+/// A request exposing its target's whole export surface: `import * as`,
+/// `export * from`, `export { … } from`.
+#[derive(Debug, Clone)]
+pub struct NamespaceRequest {
+    pub item_index: usize,
+    pub specifier: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InteropUseKind {
+    ImportMetaRequireLiteralCall,
+    ImportMetaRequireDynamicCall,
+    ImportMetaRequireReference,
+    GlobalThisRequire,
+    UnboundRequire,
+    /// A call of a direct `eval` whose code folds to exactly `require`:
+    /// `eval("require")("x")` with one string literal.
+    EvaluatedRequireLiteralCall,
+    /// The same with any other argument list.
+    EvaluatedRequireDynamicCall,
+    UnboundModule,
+    /// `module.exports`: the export object, which cannot load a module.
+    UnboundModuleExports,
+    UnboundExports,
+    ImportMetaDynamicProperty,
+    ImportMetaOtherProperty,
+    ImportMetaValue,
+    TsImportEquals,
+    TsExportAssignment,
+    /// `import(...)`; `specifier` is set for a string-literal argument.
+    DynamicImport,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -199,6 +335,15 @@ pub enum ChunkModuleKind {
     #[default]
     Unknown,
     Esm,
+    /// No AST items. When statically imported, it cannot run code or reenter
+    /// an importer, even though there is no ESM declaration in its source.
+    EmptySource,
+}
+
+impl ChunkModuleKind {
+    pub fn supports_static_esm_closure(self) -> bool {
+        matches!(self, Self::Esm | Self::EmptySource)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -301,4 +446,29 @@ pub enum TopLevelDeclarationKind {
     Function,
     Class,
     Variable,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    struct FlushFailure;
+
+    impl Write for FlushFailure {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::other("flush failed"))
+        }
+    }
+
+    #[test]
+    fn compact_report_propagates_final_flush_failure() {
+        let error =
+            write_json_to(FlushFailure, Path::new("full.json"), &Vec::<u8>::new()).unwrap_err();
+        assert!(error.to_string().contains("flushing full.json"));
+    }
 }

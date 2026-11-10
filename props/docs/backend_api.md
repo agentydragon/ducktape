@@ -92,8 +92,8 @@ logs** via `/api/runs/{id}/logs` — agents cannot query Loki directly.
 `responses` models must call `/v1/responses`, `chat_completions` models must call
 `/v1/chat/completions`, and `anthropic` models must call `/v1/messages`.
 The proxy adds run, parent-run, agent-type, API-shape, and model correlation keys
-under LiteLLM's `trace_metadata`, which the `langfuse_otel` callback exports to
-Langfuse. Responses and Anthropic requests carry this in `litellm_metadata`;
+under LiteLLM's `trace_metadata`. Whether these keys still reach Langfuse is unverified
+([tracing](../../cluster/cdk8s/litellm/docs/langfuse_tracing.md#open-props-correlation-keys)). Responses and Anthropic requests carry this in `litellm_metadata`;
 Chat Completions uses `metadata`. Caller-supplied provider metadata is preserved.
 
 Request and response bodies are stored as raw JSON in `llm_requests` because each

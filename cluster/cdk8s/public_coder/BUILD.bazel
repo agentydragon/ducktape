@@ -5,7 +5,6 @@ package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config",
         ":egress",
@@ -14,6 +13,7 @@ py_library(
         "//agentplane/egress:resources",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
@@ -23,6 +23,8 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -45,13 +47,12 @@ py_library(
 py_library(
     name = "egress",
     srcs = ["egress.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//agentplane:subjects",
         "//agentplane/crds:egresscredential",
-        "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
+        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
-        "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:settings_file",
@@ -59,6 +60,8 @@ py_library(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/agentplane:egress_policies",
+        "//cluster/cdk8s/agentplane:platform_routes",
+        "//cluster/cdk8s/agentplane:standing_caller",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
@@ -84,6 +87,7 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:agent_rbac_base",
         "//cluster/cdk8s:agent_shared_rbac",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",
@@ -91,6 +95,7 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

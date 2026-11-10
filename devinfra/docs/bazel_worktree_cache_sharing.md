@@ -12,40 +12,48 @@ remain authoritative for agent execution: Bazel-family commands (`bazel`,
 
 ## The Boundary
 
-Never point multiple worktrees at one `--output_base` — it's single-owner, locked,
-path-sensitive Skyframe state, not a shareable cache. What can be shared is the
-expensive content cache underneath separate output bases:
+Each worktree needs its own locked, path-sensitive `--output_base`; never point
+multiple worktrees at one. Content caches beneath separate output bases can be
+shared:
 
-- `--output_user_root`: common parent for per-worktree output bases. This keeps
-  all Bazel state under one mount, but each worktree still receives a separate
-  hashed output base.
-- `--repository_cache`: downloaded external repository archives.
-- `--repo_contents_cache`: fetched external repository trees that Bazel can
-  reuse across workspaces when their repository rules declare reproducible
-  results.
-- `--disk_cache`: local action cache/CAS. This is less important when `--config=rbe`
-  uses remote execution and remote cache, but it helps local builds, no-RBE
-  debugging, and actions that are not downloaded from the remote cache.
-- `BAZELISK_HOME`: Bazelisk's downloaded Bazel binaries.
+| Path or flag                                                                | Purpose and sharing boundary                                                                                                                    |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--output_user_root=~/.cache/bazel/_bazel_$USER`                            | Common parent for per-worktree hashed output bases.                                                                                             |
+| `--output_base=~/.cache/bazel/_bazel_$USER/<hash>`                          | One locked Skyframe state tree per worktree; not shareable.                                                                                     |
+| `--repository_cache=~/.cache/bazel/_bazel_$USER/cache/repos/v1`             | Downloaded external repository archives.                                                                                                        |
+| `--repo_contents_cache=~/.cache/bazel/_bazel_$USER/cache/repos/v1/contents` | Eligible fetched repository trees; Bazel 9.2 defaults here. Wyrm2 configures 14-day age GC and a 5-minute idle delay; there is no size ceiling. |
+| `--disk_cache=~/.cache/bazel/_bazel_$USER/cache/disk`                       | Local action cache/CAS; useful for local or no-RBE builds and actions not downloaded from remote cache.                                         |
+| `BAZELISK_HOME=~/.cache/bazelisk`                                           | Downloaded Bazel binaries.                                                                                                                      |
 
-Remote execution/cache already shares action work across machines. It does not
-share local analysis state between worktrees.
+Remote execution/cache shares action work across machines, not local analysis
+state between worktrees. Bazel provides the output and archive-cache defaults;
+Bazelisk defaults its own binary cache. The shared [Nix module](../../nix/home/modules/bazel-cache.nix)
+owns the disk-cache flags and directory creation, plus optional repo-contents
+and hardlink flags. `rugged` and `wyrm2` enable it: rugged stores this tree on
+btrfs and uses defaults; wyrm2 uses one 300G SSD for output bases and caches,
+sets the disk-cache GC cap to 80G (200G by default), pins the contents-cache path
+above, and enables repository-cache hardlinks. Other hosts leave the optional
+contents path unset and hardlinks off. Hardlinks require the repository cache
+and output bases on one filesystem; the contents cache has no size ceiling, so
+monitor SSD free space.
 
-Bazel 9.2 defaults `--repo_contents_cache` to `<repository_cache>/contents`,
-with a 14-day maximum age and a 5-minute idle delay. Wyrm2 pins that default path
-explicitly; it shares the 300G SSD filesystem with downloaded archives and
-output bases. This cache has age-based GC only, with no size ceiling, so monitor
-the SSD's free space. Bazel 9.2 already uses this default path unless overridden;
-Wyrm2's explicit setting pins the location and GC policy.
+The repo contents cache shares only eligible repository trees. Earlier local
+investigation found repository trees with absolute symlinks into their producing
+output base, including rules_python's hermetic `python` link and Gazelle helper
+repositories. Bazel uses repository metadata to decide which trees are
+reusable, but those symlink cases have not been revalidated on Bazel 9.2. The
+follow-up tracks checking them and deciding whether to configure the cache on
+other hosts.
 
-The repo contents cache makes only eligible repository trees shareable; it
-does not make output bases themselves shareable. Earlier local investigation
-found repository trees containing absolute symlinks into their producing
-output base (including rules_python's hermetic `python` link and Gazelle helper
-repositories). Bazel's repo contents cache uses repository metadata to decide
-which trees are reusable, but those specific symlink cases have not yet been
-revalidated on Bazel 9.2. The follow-up tracks checking them and deciding
-whether to explicitly configure the cache on other hosts.
+For long local debugging loops, consider adding this temporarily rather than
+globally:
+
+```text
+build --noallow_analysis_cache_discard
+```
+
+That can keep more local analysis data around inside one server at the cost of
+memory. It still does not share analysis across worktrees.
 
 ## Output-base Lifecycle
 
@@ -88,55 +96,6 @@ Shared `cache/repos` and `cache/disk` directories, any legacy
 naming scheme and remain untouched. Only one output-user-root is scanned. Pass
 `--output-user-root PATH` for an explicit non-default root; session and
 temporary roots are not auto-discovered.
-
-## Recommended Layout
-
-Use one cache root per user:
-
-```text
-~/.cache/bazel/
-  _bazel_$USER/
-    <hashed output bases per worktree>
-    cache/
-      repos/
-      disk/
-~/.cache/bazelisk/
-```
-
-On `rugged`, the whole `~/.cache/bazel` tree is on the same btrfs filesystem.
-On `wyrm2`, `~/.cache/bazel` is one 300G SSD filesystem for output bases and all
-repository and action caches. The repository cache and output bases now share a
-filesystem, satisfying the same-filesystem prerequisite for
-`--experimental_repository_cache_hardlinks`. Wyrm2 enables that flag so Bazel
-hardlinks repository-cache hits into external repositories instead of copying
-them. Other hosts leave the experimental flag disabled by default.
-
-## Implementation
-
-Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
-`ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel defaults
-`--output_user_root`, per-worktree `--output_base`, and the archive
-`--repository_cache` into `~/.cache/bazel/_bazel_$USER`. Bazel 9 also defaults
-the repo contents cache to a `contents` subdirectory of the repository cache.
-The module pins that path and its GC settings only when a host sets
-`repoContentsCache`; Wyrm2 does so, while other hosts retain Bazel's own
-defaults. `repositoryCacheHardlinks` opts a host into Bazel's experimental
-repository-cache hardlink flag; Wyrm2 enables it because its repository cache
-and output bases share the same filesystem. The module owns the exact rc flags
-and directory-creation wiring.
-The other per-host knob is `diskCacheGcMaxSize` — Wyrm2 keeps it below the
-`200G` default because its `cache/disk` shares a 300G SSD with per-worktree
-output bases and repository caches.
-
-For long local debugging loops, consider adding this temporarily rather than
-globally:
-
-```text
-build --noallow_analysis_cache_discard
-```
-
-That can keep more local analysis data around inside one server at the cost of
-memory. It still does not share analysis across worktrees.
 
 ## Claude Code Local Sandbox
 

@@ -26,11 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	// watchPeriod is short so a few cycles fit in a test; the staleness bound is StaleAfterCycles of it.
-	watchPeriod = reader.MinWatchPeriod
-	host        = "api.informer-test.invalid"
-)
+const host = "api.informer-test.invalid"
 
 var (
 	fixtures atomic.Int32
@@ -61,7 +57,6 @@ type fixture struct {
 	t        *testing.T
 	index    *policy.Index
 	informer *Informer
-	started  time.Time
 
 	rules, credentials, elsewhere string
 }
@@ -81,11 +76,16 @@ func newFixture(t *testing.T) *fixture {
 // start runs an Informer over the fixture's namespaces until the test ends.
 func (f *fixture) start() {
 	f.t.Helper()
-	f.started = time.Now()
-	f.index = policy.NewIndex(reader.StaleAfterCycles * watchPeriod)
+	f.startThrough(apiConfig)
+}
+
+// startThrough runs an Informer that reaches the API server through base.
+func (f *fixture) startThrough(base *rest.Config) {
+	f.t.Helper()
+	f.index = policy.NewIndex()
 	var err error
-	f.informer, err = New(apiConfig, Config{
-		Index: f.index, RulesNamespace: f.rules, CredentialsNamespace: f.credentials, WatchPeriod: watchPeriod,
+	f.informer, err = New(base, Config{
+		Index: f.index, RulesNamespace: f.rules, CredentialsNamespace: f.credentials,
 	})
 	if err != nil {
 		f.t.Fatal(err)
@@ -142,7 +142,7 @@ func (f *fixture) policySet(name string, rules ...policyapi.Rule) *policyapi.Pol
 func (f *fixture) policyBinding(name string, sets ...string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: f.rules, Name: name},
-		Spec:       policyapi.PolicyBindingSpec{Subject: subject, PolicySets: sets},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets},
 	}
 }
 
@@ -183,7 +183,7 @@ func decide(index *policy.Index, credential string) policy.Decision {
 	if credential != "" {
 		headers.Set("Authorization", "Bearer "+resources.Placeholder(credential))
 	}
-	return index.Evaluate(subject, policy.Request{Method: http.MethodGet, Host: host, Path: "/", Headers: headers}, nil)
+	return index.Evaluate(reader.ServiceAccount(subject), policy.Request{Method: http.MethodGet, Host: host, Path: "/", Headers: headers}, nil)
 }
 
 func substituted(value string) []presentation.HeaderRewrite {

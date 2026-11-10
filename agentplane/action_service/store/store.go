@@ -12,7 +12,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 )
 
 // Channels the store notifies.

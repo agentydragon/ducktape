@@ -7,50 +7,34 @@ Remove completed work from this plan as it lands. The deployed design is in
 [Piraeus block storage](../piraeus.md); node maintenance follows the
 [node runbook](../runbooks/piraeus_node_roll.md).
 
-## Status, 2026-10-26
-
-Every OVH Talos node (`ovh-ns1001419`, `ovh-ns104952`, `ovh-ns104963`,
-`ovh-ns103656`, `ovh-ns103711`, `ovh-ns102453`) and the OptiPlex run the split
-system layout and a whole-data-disk Piraeus pool, and Terraform state matches
-their live configuration. The OVH local-path classes and their records are gone,
-and a `volume.fix.replication` dry-run finds no SeaweedFS volume short of two
-copies after the `ovh-ns102453` reimage. Parked manifests under `cluster/parked/`
-still name OVH local-path classes; repoint them to Piraeus on revival.
-
-Remaining: close the operational gaps below, the replicated-class and
-Seaweed-reduction work, and the separate Wyrm2/NixOS phase.
-
 ## Operational gaps
 
 - **LINSTOR recovery:** export LINSTOR metadata off-cluster and rehearse a
   controller restore; establish a volume backup/restore path for strict-local
   claims whose application has no replica.
-- **Alerts:** degraded or diskless-only resources and stalled resync, once the
-  replicated class carries production data. Thin data/metadata alerts exist.
+- **Alerts:** add coverage for degraded or diskless-only resources and stalled
+  resync. The replicated class already carries production data, including Matrix
+  media. Thin data/metadata alerts exist.
 - **Thin-pool exhaustion:** production DRBD-pool and metadata exhaustion
   recovery has not been exercised; only disposable canaries have.
 
 ## Replicated class and Seaweed reduction
 
 Track this separately in [#11753](https://github.com/agentydragon/ducktape/issues/11753).
-Owner decisions, 2026-10-24: small single-writer Seaweed consumers move to
-`piraeus-ssd-2-autodiskful`. CLIProxyAPI, Claude session sync, GitHub API proxy
-capture and Matrix media have moved, and their old Seaweed claims were deleted
-on 2026-10-26 with owner approval. The Haku UI WALs stay on
-Seaweed until Haku UI is retired. Forgejo's shared Git volume and Grocy's backup
-destinations stay on Seaweed.
+The Haku UI WALs stay on Seaweed until Haku UI is retired. Forgejo's shared Git
+volume also remains on Seaweed.
 
-Before more consumers move, run expansion on the class. Node-loss failover is
-accepted on the diskless-Primary run, 84 s with the HA controller
-([results](../../debug/drbd_canary/failover/results.md)); owner 2026-10-27: no
-separate data-copy-loss or resync round. Review Matrix and GitHub API capture's RWX needs
-before choosing RWO for similar apps, and inventory direct S3 consumers as well
-as PVCs. Keep a moved consumer's old claim until the owner releases it.
+The remaining replicated-class acceptance gap is expansion. Test it before more
+consumers move (see [the deployed design](../piraeus.md) and
+[failover results](../../debug/drbd_canary/failover/results.md)). Review Matrix
+and GitHub API capture's RWX needs before choosing RWO for similar apps, and
+inventory direct S3 consumers as well as PVCs. Keep a moved consumer's old claim
+until the owner releases it.
 
-Goal, owner 2026-10-24: multi-writer (RWX) storage on Piraeus eventually, so
-Forgejo-style shared volumes can leave Seaweed too. Candidates are linstor-csi's
-NFS export (drbd-reactor failover) if the deployed version supports it,
-otherwise a separate shared-filesystem design.
+Longer-term goal: multi-writer (RWX) storage on Piraeus, so Forgejo-style shared
+volumes can leave Seaweed too. Candidates are linstor-csi's NFS export
+(drbd-reactor failover) if the deployed version supports it, otherwise a
+separate shared-filesystem design.
 
 ## Scheduling locality (later)
 
@@ -64,36 +48,17 @@ deploy and validate). Measure Nebula latency and sustained throughput between
 eligible nodes, including during DRBD resync, before setting the preference or
 resync limits.
 
-## Wyrm2 on Atlas virtual disks
+## Wyrm2 and Atlas follow-ups
 
-Owner decisions, 2026-10-27: Wyrm2 stays a VM on Atlas for this phase and gets
-two new Proxmox virtual disks as whole-device Piraeus pools; nothing waits on an
-Atlas reinstall. Only the served Qwen3.8-Flash-Next `UD-IQ4_XS` weights (88 GB)
-stay on SSD. ActivityWatch moves to HDD. Every other model under
-`/var/lib/llm-models-ssd` and the Ollama `llm-models` blobs are re-downloadable
-and are deleted, not copied. All local-path claims on Wyrm2 eventually go.
-
-Atlas, read 2026-10-27: `local-zfs` (`rpool/data`) is a **single** 4 TB NVMe with
-no redundancy (61% allocated, 1.27 TB available after `virtio8` was destroyed);
-`tank-hdd` (pool `tank`) is raidz2 over four 16 TB disks with about 27.9 TB
-available. A `piraeus-ssd-local` volume on Wyrm2 therefore has no redundancy
-below LINSTOR; `piraeus-hdd-local` survives two disk failures. Atlas's LVM
-`global_filter` rejects `/dev/zd*`, so the host never activates guest VGs.
-
-Done 2026-10-27: DRBD 9 on Wyrm2, the satellite enrolled with `ssd` and `hdd`
-pools on sparse zvols `rpool/data/vm-110-piraeus-ssd` (150 GiB) and
-`tank/vm-110-piraeus-hdd` (500 GiB) with serials `piraeus-{ssd,hdd}`, lifecycle
-acceptance on each pool, Qwen, ActivityWatch and Ollama moved to
-`piraeus-{ssd,hdd}-local` claims, their old claims deleted, and the old model
-disk (`virtio8`) destroyed.
+The deployed Wyrm2 and Rugged pool layouts, including Atlas's storage risks, are
+in [Piraeus host-specific storage](../piraeus.md#nixos-worker-pools).
 
 Remaining; deletions need the owner's approval at the time:
 
 - **Alert** on `tank` and `rpool` free space, which LINSTOR's thin accounting
   cannot see.
-- **Retirement:** OpenEBS and the local-path provisioner are gone from the
-  cluster and Wyrm2's NixOS config. Detach and destroy `virtio0`, `virtio2` and
-  `virtio6` (owner approved destroying their leftovers without copies).
+- **Retirement:** detach and destroy `virtio0`, `virtio2` and `virtio6` after
+  checking their contents and confirming the owner's approval at the time.
 
 ## Atlas reinstall (later, separate decision)
 
@@ -133,15 +98,8 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
 
 ## NixOS rollout
 
-- [ ] **Other NixOS hosts:** after Wyrm2 (above), enable the same host module and
-      admit hosts individually. Do not assume compatibility with rugged's last-known
-      7.2 kernel. Inventory laptops online and test suspend/disconnect behavior
-      before admission.
-- [ ] **Laptop pools:** give each admitted laptop (iguana, rugged) an LVM
-      physical volume as a Piraeus pool, so laptops work symmetrically with
-      Wyrm2. Rugged first, as an interim partition behind its shrunk root
-      ([procedure](../../../nix/nixos/hosts/rugged/plans/piraeus_partition.md));
-      full LVM layouts wait for each laptop's reinstall.
+- [ ] **Iguana:** enable the same host module and admit it individually after
+      confirming kernel/DRBD compatibility and testing suspend/disconnect behavior.
 - [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
       checks on NixOS, then test Talos/NixOS remote use and automatic movement within
       the approved placement domain. Preserve existing Talos service throughout.

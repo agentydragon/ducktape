@@ -280,55 +280,6 @@ py_library(
 )
 
 py_library(
-    name = "funding",
-    srcs = ["funding.py"],
-    deps = [
-        ":holdings",
-        ":wire",
-        "//finance/augur/api:portfolio",
-        "//finance/augur/model:series",
-        "//finance/augur/policy:cash_band",
-        "//finance/augur/policy:sleeves",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:money",
-        "//finance/augur/sim:observations",
-    ],
-)
-
-py_test(
-    name = "funding_test",
-    srcs = ["funding_test.py"],
-    deps = [
-        ":conftest",
-        ":funding",
-        ":holdings",
-        ":scenarios",
-        ":wire",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/api:config",
-        "//finance/augur/api:portfolio",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:bills",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:income",
-        "//finance/augur/sim:jurisdictions",
-        "//finance/augur/sim:market_path",
-        "//finance/augur/sim:results",
-        "//finance/augur/sim:session",
-        "//finance/augur/sim:tax_authority",
-        "//finance/augur/sim:tax_indexation",
-        "//finance/augur/sim:tax_profile",
-        "//finance/augur/sim:world",
-        "//finance/augur/sim/testing:session",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "action_projection",
     srcs = ["action_projection.py"],
     deps = [

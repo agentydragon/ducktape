@@ -1,7 +1,7 @@
 """The sandbox Actions' own boxes, behind the egress path every agentplane box shares (sandbox_pod.py),
 with no harness and no state volume. The command box runs the plain sandbox image
-(agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
-the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
+(agentplane/env/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
+the same box sized for a build, on the build image (agentplane/env/images/build.nix), which adds Bazel
 and its toolchain. Each is a core PodTemplate, not a SandboxTemplate: the Action Service creates
 every box as a plain Pod from one, and staging.py offers both by name (`TEMPLATES`).
 """
@@ -9,15 +9,19 @@ every box as a plain Pod from one, and staging.py offers both by name (`TEMPLATE
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
+from agentplane.egress import sidecar_config
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoute, PlatformRoutes
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import egress, sandbox_pod
+from cluster.cdk8s.agentplane import egress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # The command box's PodTemplate, and both boxes' Pod name label and fence. The egress proxy's
@@ -26,12 +30,18 @@ NAME = "sandbox"
 BUILD_NAME = "sandbox-build"
 # The workload container, which `exec` runs commands in.
 CONTAINER = "sandbox"
-# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/images/sandbox.nix).
+# The image's HOME and WorkingDir, writable by its uid 1000 (agentplane/env/images/sandbox.nix).
 HOME = "/home/runner"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
 _BUILD_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-build"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
+# The workload CA alone, on the sidecar: it verifies the proxy's and the platform routes' server SVIDs.
+_SIDECAR_TRUST_VOLUME = "workload-trust"
+_SIDECAR_TRUST_DIR = Path("/run/agentplane/workload-trust")
+# The box's own SVID, which the Action Service mounts into the sidecar alone; keep in sync with
+# `svidMountPath` in agentplane/action_service/sandbox/inventory.go.
+_SVID_DIR = Path("/run/agentplane/workload-svid")
 _COMMAND_RESOURCES = k8s.ResourceRequirements(
     requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
     limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
@@ -77,8 +87,29 @@ class CommandSandbox(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.egress_mounts()
+        rules = platform_routes.egress_rules(env.namespace)
+        # A box runs as its caller's ServiceAccount, whose Kubernetes-audience token the proxy
+        # substitutes for the API server credential; the identity catalog renders no such credential.
+        self.kubernetes_token = not env.identity_catalog
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
-            self, env, name=f"{NAME}-egress-sidecar", platform_routes={}
+            self,
+            env,
+            name=f"{NAME}-egress-sidecar",
+            platform_routes=PlatformRoutes(
+                listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
+                routes={
+                    rules.name: PlatformRoute(
+                        service_prefixes=rules.service_prefixes,
+                        upstream=f"{rules.service.fqdn}:{rules.service.port.number}",
+                        transport=rules.transport,
+                    )
+                },
+            ),
+            proxy_transport=sidecar_config.TLSProxyTransport(
+                ca_file=_SIDECAR_TRUST_DIR / cluster_ca.BUNDLE_KEY,
+                auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
+            ),
+            kubernetes_token=self.kubernetes_token,
         )
         _pod_template(
             self,
@@ -133,10 +164,20 @@ def _pod_template(
         sandbox_pod.pod_spec(
             env,
             workload=workload,
-            workload_volumes=volumes,
+            workload_volumes=[
+                *volumes,
+                k8s.Volume(
+                    name=_SIDECAR_TRUST_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=cluster_ca.WORKLOAD_BUNDLE)
+                ),
+            ],
             sidecar_settings=scope.sidecar_settings,
             sidecar_resources=scope.sidecar_resources,
+            # Directory mount lets the TLS root source observe trust-manager rotation.
+            sidecar_mounts=[
+                k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
+            ],
             image_pull_secret_name=scope.image_pull_secret_name,
+            kubernetes_token=scope.kubernetes_token,
             # Keep command boxes in the environment's runner zone alongside LiteLLM.
             node_selector=(
                 {node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None
@@ -165,7 +206,13 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env()),
+        env=sandbox_pod.workload_environment(
+            env,
+            [
+                *sandbox_pod.proxy_environment(),
+                k8s.EnvVar(name="AGENTPLANE_EGRESS_GRPC_URL", value=f"http://{PLATFORM_ROUTES_LISTEN_ADDRESS}"),
+            ],
+        ),
         resources=resources,
         volume_mounts=[*trust_mounts, sandbox_pod.bazelrc_mount(), *mounts],
     )

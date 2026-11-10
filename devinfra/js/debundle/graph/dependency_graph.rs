@@ -1,22 +1,15 @@
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeSet, HashMap};
-use std::fmt;
 
-use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
+use crate::StatementKind;
+use crate::analysis_inputs::CommutingStatementsRef;
+use crate::execution_evidence::SourceLocation;
 use crate::facts::CallbackFactoryBarrierFact;
 use crate::purity::Purity;
-use crate::{SourceLocation, StatementKind};
 
 use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
-
-/// Stable-in-run identity of one dependency-graph source unit. A source unit is
-/// one post-comma-list `StatementFacts` row, so it is not necessarily one
-/// original AST statement. Original AST statements remain intact for emission.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SourceUnitId(pub usize);
 
 /// Fine-grained dependency graph before logical modules are formed. Nodes are
 /// source units from split statement facts; edges are reads between source units
@@ -41,6 +34,23 @@ pub struct DependencyGraph {
     pub(crate) out_edges: Vec<Vec<DependencyEdgeId>>,
     /// CSR adjacency by target source unit.
     pub(crate) in_edges: Vec<Vec<DependencyEdgeId>>,
+    /// Author `commuting_statements` premises the build applied, in spec
+    /// order. Each listed edge carries the matching
+    /// [`EdgeReason::commuting_premise`] marker.
+    pub(crate) commuting_premises: Vec<AppliedCommutingPremise>,
+}
+
+/// One `commuting_statements` entry the graph build accepted: every
+/// `Sequenced` edge between `a` and `b` (either direction) is inert, listed
+/// in `inerted_edges`. An accepted premise inerts at least one edge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppliedCommutingPremise {
+    pub reference: CommutingStatementsRef,
+    pub spec_location: String,
+    pub a: SourceUnitId,
+    pub b: SourceUnitId,
+    pub inerted_edges: Vec<DependencyEdgeId>,
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,8 +62,10 @@ pub struct SourceUnit {
     pub kind: StatementKind,
     pub purity: Purity,
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
+    pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub synchronous_execution: Option<crate::reports::schema::SynchronousExecutionReport>,
     pub callback_factory_uses: Vec<crate::facts::CallbackFactoryUseFact>,
+    pub returned_record_uses: Vec<crate::facts::ReturnedRecordUseFact>,
 }
 
 /// Declaration-based classification, independent of syntax kind and destination.
@@ -107,6 +119,11 @@ impl DependencyGraph {
         self.edges.len()
     }
 
+    /// Author `commuting_statements` premises applied to this graph.
+    pub fn commuting_premises(&self) -> &[AppliedCommutingPremise] {
+        &self.commuting_premises
+    }
+
     /// Dependency-edge row by `DependencyEdgeId`. CSR adjacency returns IDs;
     /// callers dereference them through this accessor instead of indexing the
     /// private edge table directly.
@@ -153,10 +170,10 @@ impl DependencyGraph {
     ///
     /// Errors with [`UnresolvedDependencyEdgeEndpoint`] when an edge
     /// references a source unit id missing from the report's node table —
-    /// a malformed or version-skewed `dependency_graph.json`. Silently
+    /// a malformed or version-skewed `dependency_graph.json.gz`. Silently
     /// dropping such edges would hand the planner-side gate a weaker
     /// graph than the one the report described.
-    pub fn from_report(
+    pub(crate) fn from_report(
         report: &crate::DependencyGraphReport,
     ) -> Result<Self, UnresolvedDependencyEdgeEndpoint> {
         let by_id: HashMap<String, SourceUnitId> = report
@@ -178,8 +195,10 @@ impl DependencyGraph {
                 kind: n.statement_kind,
                 purity: n.purity.clone(),
                 callback_factory_barriers: Vec::new(),
+                heap_native_integrity_uses: n.heap_native_integrity_uses.clone(),
                 synchronous_execution: None,
                 callback_factory_uses: Vec::new(),
+                returned_record_uses: Vec::new(),
             })
             .collect();
 
@@ -203,7 +222,12 @@ impl DependencyGraph {
                 Some(role) => role.resolve(&by_id),
                 None => EdgeRole::Direct,
             };
-            let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal, role);
+            // Round-trip the inert marker too: `constrains_init_order` reads
+            // it, so dropping it would hand the planner a stricter gate than
+            // the materializer ran.
+            let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal, role)
+                .with_sequenced_cause(edge.sequenced_cause.clone())
+                .with_commuting_premise(edge.commuting_premise.clone());
             let id = DependencyEdgeId(edges.len());
             edges.push(DependencyEdge {
                 id,
@@ -212,13 +236,47 @@ impl DependencyGraph {
                 reason,
             });
         }
+        let edge_by_report_id: HashMap<&str, DependencyEdgeId> = report
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(i, edge)| (edge.id.as_str(), DependencyEdgeId(i)))
+            .collect();
+        let mut commuting_premises = Vec::with_capacity(report.commuting_statements.len());
+        for premise in &report.commuting_statements {
+            let resolve = |endpoint: &String| {
+                by_id
+                    .get(endpoint)
+                    .copied()
+                    .ok_or_else(|| UnresolvedDependencyEdgeEndpoint {
+                        edge_id: premise.spec_location.clone(),
+                        endpoint: endpoint.clone(),
+                    })
+            };
+            commuting_premises.push(AppliedCommutingPremise {
+                reference: premise.reference.clone(),
+                spec_location: premise.spec_location.clone(),
+                a: resolve(&premise.a)?,
+                b: resolve(&premise.b)?,
+                inerted_edges: premise
+                    .inerted_edge_ids
+                    .iter()
+                    .filter_map(|id| edge_by_report_id.get(id.as_str()).copied())
+                    .collect(),
+                note: premise.note.clone(),
+            });
+        }
 
-        Ok(Self::from_parts(nodes, edges))
+        Ok(Self::from_parts(nodes, edges, commuting_premises))
     }
 
     /// Assemble the graph from `nodes` and `edges` (`edges[i].id` is
     /// `DependencyEdgeId(i)`), deriving the CSR adjacency in one pass.
-    pub(super) fn from_parts(nodes: Vec<SourceUnit>, edges: Vec<DependencyEdge>) -> Self {
+    pub(super) fn from_parts(
+        nodes: Vec<SourceUnit>,
+        edges: Vec<DependencyEdge>,
+        commuting_premises: Vec<AppliedCommutingPremise>,
+    ) -> Self {
         let mut out_edges: Vec<Vec<DependencyEdgeId>> = vec![Vec::new(); nodes.len()];
         let mut in_edges: Vec<Vec<DependencyEdgeId>> = vec![Vec::new(); nodes.len()];
         for edge in &edges {
@@ -234,28 +292,20 @@ impl DependencyGraph {
             edges,
             out_edges,
             in_edges,
+            commuting_premises,
         }
     }
 }
 
-/// An `dependency_graph.json` edge references a source unit id absent from the
+/// An `dependency_graph.json.gz` edge references a source unit id absent from the
 /// report's node table. See [`DependencyGraph::from_report`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "dependency-graph edge {edge_id} references source-unit ID {endpoint} which is not in the report's node table \
+     (malformed or version-skewed dependency_graph.json.gz)"
+)]
 pub struct UnresolvedDependencyEdgeEndpoint {
     pub edge_id: String,
     /// The source unit id (e.g. `unit:42`) that didn't resolve.
     pub endpoint: String,
 }
-
-impl fmt::Display for UnresolvedDependencyEdgeEndpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "dependency-graph edge {} references source-unit ID {} which is not in the report's node table \
-             (malformed or version-skewed dependency_graph.json)",
-            self.edge_id, self.endpoint,
-        )
-    }
-}
-
-impl std::error::Error for UnresolvedDependencyEdgeEndpoint {}

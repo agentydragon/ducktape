@@ -1,0 +1,31 @@
+# Trusted metadata-only controller: new CI admission never depends on this job.
+name: Cancel obsolete PR CI
+
+on:
+  workflow_run:
+    workflows: [CI, Nix wheel check]
+    types: [requested]
+
+permissions: {}
+
+jobs:
+  cancel-obsolete:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.id == github.event.repository.id
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # workflow_run uses the default branch workflow, never the PR's code.
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Request cancellation of older ordinary PR runs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 -m devinfra.ci.cancel_obsolete_pr_runs

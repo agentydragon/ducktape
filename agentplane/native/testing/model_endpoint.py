@@ -1,6 +1,7 @@
 """Async model endpoints driven through typed request exchanges.
 
-The native harness sees an ordinary loopback HTTP endpoint.  Tests see only a
+The native harness sees an ordinary HTTP endpoint, bound to loopback by default.
+Pod clients can use a reachable node address through `bind_host`. Tests see only a
 parsed API request and an exchange that owns its response lifecycle; HTTP
 objects and sockets stay inside this module.
 """
@@ -87,6 +88,10 @@ class _HttpExchange:
         self._closed = asyncio.Event()
         self._action_waiters: set[asyncio.Future[None]] = set()
 
+    @property
+    def request_headers(self) -> Mapping[str, str]:
+        return self._request.headers
+
     async def submit(self, action: _Action) -> None:
         if self._closed.is_set():
             raise ConnectionError("the native harness already closed this model request")
@@ -158,6 +163,7 @@ class ModelExchange[RequestT: StreamableRequest]:
 
     def __init__(self, request: RequestT, http: _HttpExchange):
         self.request = request
+        self.headers = http.request_headers
         self._http = http
         self._settled_by: str | None = None
 
@@ -217,7 +223,8 @@ class ModelExchange[RequestT: StreamableRequest]:
 class ModelEndpoint[RequestT: StreamableRequest]:
     """aiohttp lifecycle shared by concrete wire-shaped endpoint fixtures."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, bind_host: str = "127.0.0.1") -> None:
+        self._bind_host = bind_host
         self._pending: asyncio.Queue[ModelExchange[RequestT] | ModelRequestParseError] = asyncio.Queue()
         self._exchanges: list[ModelExchange[RequestT]] = []
         self._runner: web.AppRunner | None = None
@@ -235,14 +242,14 @@ class ModelEndpoint[RequestT: StreamableRequest]:
         app.router.add_post("/{tail:.*}", self.serve)
         self._runner = web.AppRunner(app, handler_cancellation=True)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, "127.0.0.1", 0)
+        site = web.TCPSite(self._runner, self._bind_host, 0)
         await site.start()
         address = cast(tuple[str, int], self._runner.addresses[0])
         self._origin = f"http://{address[0]}:{address[1]}"
 
     def _add_routes(self, app: web.Application) -> None:
-        """Platform routes beside the model API, which LLM ingress serves to the harness's runner."""
-        app.router.add_get("/agentplane/model-config", self._no_model_config)
+        """Add fixture-specific routes beside the model API."""
+        del app
 
     def _response_headers(self) -> Mapping[str, str]:
         """Added to every model reply."""
@@ -263,11 +270,6 @@ class ModelEndpoint[RequestT: StreamableRequest]:
                 raise error
             case ModelExchange() as exchange:
                 return exchange
-
-    @staticmethod
-    async def _no_model_config(request: web.Request) -> web.Response:
-        del request
-        return web.json_response(None)
 
     async def serve(self, request: web.Request) -> web.StreamResponse:
         """Answer one model request through this endpoint's queue. `start` routes every POST here; a

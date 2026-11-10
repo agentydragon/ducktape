@@ -1,0 +1,236 @@
+{
+  "observed_date": "2026-11-09",
+  "invocation_id": "46993f63-7c5b-5685-a009-4664f7c8318f",
+  "source_commit": "a099f6439911ed7e0221e5df257ae99a19a4f13b",
+  "classification": "readiness deadline after early-kernel console output stopped; cause unresolved",
+  "test_summary": {
+    "overallStatus": "FAILED",
+    "totalRunCount": 1,
+    "runCount": 1,
+    "attemptCount": 1,
+    "failed": [
+      {
+        "uri": "bytestream://remote.buildbuddy.io/blobs/20a8804abda7eb0f79592b9e86026f10e3307348d616809bc1ba8758c91081ff/46457"
+      }
+    ],
+    "firstStartTimeMillis": "1794217722318",
+    "firstStartTime": "2026-11-09T09:48:42.318Z",
+    "lastStopTimeMillis": "1794218263667",
+    "lastStopTime": "2026-11-09T09:57:43.667Z",
+    "totalRunDurationMillis": "541349",
+    "totalRunDuration": "541.349s"
+  },
+  "artifacts": [
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.log",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/20a8804abda7eb0f79592b9e86026f10e3307348d616809bc1ba8758c91081ff/46457"
+    },
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.outputs/test-spans.jsonl",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/abfd1381042f8f24fa3341b041fa111b76f7e2ed70b6ddb00ed2c7aba9fd7672/123998",
+      "sha256": "abfd1381042f8f24fa3341b041fa111b76f7e2ed70b6ddb00ed2c7aba9fd7672",
+      "bytes": 123998,
+      "download_hash_verified": true
+    },
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.outputs/vm-sandboxes.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b516ee6e8ba6594eef7d908cb81bfc0aa10b075b5192ae04dc4dab0f9cd6185b/51323",
+      "sha256": "b516ee6e8ba6594eef7d908cb81bfc0aa10b075b5192ae04dc4dab0f9cd6185b",
+      "bytes": 51323,
+      "download_hash_verified": true
+    },
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.outputs/vm-artifacts/consoles/systest_virt-launcher-systest-vm-2-7w8wx_8cd66627-1ca1-45be-a045-cc29afbf890a/1029024-0.log.cri.log",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6ac51ff81ba02e663f57506ac4c8b9d5d055113bcffb5dba6d72e5616b832006/47737",
+      "sha256": "6ac51ff81ba02e663f57506ac4c8b9d5d055113bcffb5dba6d72e5616b832006",
+      "bytes": 47737,
+      "download_hash_verified": true
+    },
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-7w8wx_8cd66627-1ca1-45be-a045-cc29afbf890a/report-0-1794218228621190198.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/9fbf193ea4200cd35099fd8e6eb7982f839b3ff33e8485a39e771cec3e78ecc3/840",
+      "sha256": "9fbf193ea4200cd35099fd8e6eb7982f839b3ff33e8485a39e771cec3e78ecc3",
+      "bytes": 840,
+      "download_hash_verified": true
+    },
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.outputs/vm-artifacts/launchers/systest_virt-launcher-systest-vm-2-7w8wx_8cd66627-1ca1-45be-a045-cc29afbf890a/1157658-0.log.cri.log",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a9a0ef8d90c9da577a695c618a5609afcdd000dda278a5d3dbe5f47f0912f37a/100976",
+      "sha256": "a9a0ef8d90c9da577a695c618a5609afcdd000dda278a5d3dbe5f47f0912f37a",
+      "bytes": 100976,
+      "download_hash_verified": true
+    },
+    {
+      "result_id": {
+        "testResult": {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "configuration": {
+            "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+          },
+          "run": 1,
+          "shard": 1,
+          "attempt": 1
+        }
+      },
+      "name": "test.outputs/vm-artifacts/serial/systest_virt-launcher-systest-vm-2-7w8wx_8cd66627-1ca1-45be-a045-cc29afbf890a/eaf7ccf7-fef1-44bf-871d-b9cf8ceaf201/1158335-virt-serial0-log.log",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ce949955a0ade014d1ef5e33a31ba2e6022ddf30d27b68312011cd0a0697bd90/30845",
+      "sha256": "ce949955a0ade014d1ef5e33a31ba2e6022ddf30d27b68312011cd0a0697bd90",
+      "bytes": 30845,
+      "download_hash_verified": true
+    }
+  ],
+  "current_source_observation": {
+    "invocation_id": "cb469644-f04f-4844-9021-f3a425dce6ef",
+    "effective_source": "4a2ef6f0f1d4e9da7d7ea7b3dcc08bf0dcc00ea0",
+    "remote_base": "e73261cb2c464c1ce267f4bf8a91f524b761199f",
+    "classification": "QEMU fails before Linux: workload-trust virtiofs tag is45bytes, exceeds36byte maximum; distinct from original kernel stop",
+    "artifacts": [
+      {
+        "result_id": {
+          "testResult": {
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "configuration": {
+              "id": "0d0160f45834ecac304de249ad4700e886e21bc0be8ec202534d1e3222dd4c87"
+            },
+            "run": 1,
+            "shard": 1,
+            "attempt": 1
+          }
+        },
+        "name": "test.log",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/35ee2b422778e6170142a99dc96de821ab1822247e5d43657717c1951ad57de0/42009"
+      },
+      {
+        "result_id": {
+          "testResult": {
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "configuration": {
+              "id": "0d0160f45834ecac304de249ad4700e886e21bc0be8ec202534d1e3222dd4c87"
+            },
+            "run": 1,
+            "shard": 1,
+            "attempt": 1
+          }
+        },
+        "name": "test.outputs/vm-artifacts/boot-rcu-host/full-suite-summary.json",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/1200a6f03b33435386d9e8c3af45232021fbb5dad387409d4af31797bb097d94/2185",
+        "sha256": "1200a6f03b33435386d9e8c3af45232021fbb5dad387409d4af31797bb097d94",
+        "bytes": 2185,
+        "download_hash_verified": true
+      },
+      {
+        "result_id": {
+          "testResult": {
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "configuration": {
+              "id": "0d0160f45834ecac304de249ad4700e886e21bc0be8ec202534d1e3222dd4c87"
+            },
+            "run": 1,
+            "shard": 1,
+            "attempt": 1
+          }
+        },
+        "name": "test.outputs/vm-artifacts/boot-rcu-host/full-suite.jsonl",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/804b1e556f6ff2d8336fa88e59642f3276fc69058c3bb234db22ba2f55c8f27b/444066",
+        "sha256": "804b1e556f6ff2d8336fa88e59642f3276fc69058c3bb234db22ba2f55c8f27b",
+        "bytes": 444066,
+        "download_hash_verified": true
+      },
+      {
+        "result_id": {
+          "testResult": {
+            "label": "//agentplane/system_tests/suites:test_vm",
+            "configuration": {
+              "id": "0d0160f45834ecac304de249ad4700e886e21bc0be8ec202534d1e3222dd4c87"
+            },
+            "run": 1,
+            "shard": 1,
+            "attempt": 1
+          }
+        },
+        "name": "test.outputs/vm-artifacts/launchers/systest_virt-launcher-systest-vm-2-62pnb_023dd50f-5d50-4d79-a5f0-a3fea5637e6f/1158859-0.log.cri.log",
+        "uri": "bytestream://remote.buildbuddy.io/blobs/16c7fb324d36c23a2a9cdf09f217e1cae30400ccd6e43b99c11eef3dfb9cd861/79868",
+        "sha256": "16c7fb324d36c23a2a9cdf09f217e1cae30400ccd6e43b99c11eef3dfb9cd861",
+        "bytes": 79868,
+        "download_hash_verified": true
+      }
+    ]
+  },
+  "post_tag_repair_validation": {
+    "invocation_id": "e77e85c9-4306-4e40-8593-6b5e0cb3a54c",
+    "source_commit": "d2e6f15c4af683a87a5b7dfc10c7d3758d1c2aa6",
+    "execution_start_utc": "2026-11-09T11:29:20.317538Z",
+    "execution_end_utc": "2026-11-09T11:39:37.692749Z",
+    "result": "FAILED during service bootstrap; VM scenarios did not execute",
+    "boundary": "Gateway local-chain verification and service probes rejected the certificate chain against test-k3s-runner-root with an ECDSA verification error.",
+    "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29/56213",
+    "test_log_sha256": "37b6b81d3db036bff3d1099287f76923549da632fbe90a902b948087ab1eef29",
+    "conclusion": "Does not validate guest boot after the tag repair or diagnose the original early-kernel stop."
+  }
+}

@@ -7,7 +7,7 @@ export const version = 'private-callback-storage';
 const nativeRequire = import.meta.require ?? createRequire(import.meta.url);
 export const resourceUrl = new URL('./resource.cjs', import.meta.url);
 export function readResource() { return nativeRequire('./resource.cjs'); }
-var factory = (callback) => () => callback();
+var factory = (callback) => { const wrapped = () => callback(); return wrapped; };
 export { factory };
 "#;
 
@@ -137,4 +137,33 @@ fn source_markers_are_a_conjunction_and_policy_label_is_not_a_chunk_alias() {
         &["neutral-lazy-registry"],
         &["factory"],
     );
+}
+
+#[test]
+fn source_only_premise_retention_preserves_source_markers_and_emitted_bytes() {
+    const SOURCE: &str = "/* source-provider-purpose */function read(){return 7}function invoke(target,key){target[key]()}export{read};\n";
+    let policy = [ChunkExportPurityBuilder::new("sourceReader")
+        .with_source_markers(&["source-provider-purpose", "function read(){return 7}"])
+        .with_pure_exports(&["read"])
+        .build()];
+    let opts = || {
+        FixtureOpts::new(
+            "import { read } from './peer.js';\nconst result = read();\nconsole.log(result);\n",
+            vec![logical_module("result", &[Member::new("result")])],
+        )
+        .with_extra_chunks(&[("static/peer", SOURCE)])
+        .with_chunk_export_purity(&policy)
+    };
+    let control = run_fixture(opts());
+    let fixture = run_fixture(opts().with_no_accessor_install_callables(
+        "static/peer",
+        vec![NoAccessorInstallCallableContract {
+            source_match: serde_yaml::from_str(
+                "match: 'function invoke(target, key) { target[key](); }'\nbindings: [invoke]\n",
+            ).unwrap(),
+            note: None,
+        }],
+    ));
+    assert_preserved_entry_output(&fixture, "7\n");
+    assert_same_module_bytes(&control, &fixture, "static/peer/entry.js");
 }

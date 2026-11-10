@@ -1,12 +1,12 @@
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BAZEL_CI = REPO_ROOT / "devinfra/ci/bazel_ci.py"
@@ -17,11 +17,52 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
+@pytest.fixture
+def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedProcess[str]]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    cache_root = tmp_path / "xdg-cache"
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    for command, asset in (("git", "fake_git.py"), ("bazel-diff", "fake_bazel_diff.py"), ("bazel", "fake_bazel.py")):
+        _write_executable(bin_dir / command, (runfiles_root / f"ducktape/devinfra/ci/testing/{asset}").read_text())
+    _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
+
+    def run(overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{bin_dir}:{env['PATH']}",
+                "GITHUB_EVENT_NAME": "push",
+                "PR_HEAD_SHA": "",
+                "PR_BASE_SHA": "",
+                "CI_TEST_LOG_DIR": str(tmp_path),
+                "XDG_CACHE_HOME": str(cache_root),
+                "RBE_CONTAINER_IMAGE": "test-image",
+                "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
+                "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
+                "FAKE_TESTS": "//ci:normal_test",
+                "FAKE_TEST_EXIT": "0",
+                "FAKE_BUILD_EXIT": "0",
+                "FAKE_GENERATE_LOCKFILE": "",
+            }
+        )
+        env.update(overrides)
+        return subprocess.run(
+            [sys.executable, str(BAZEL_CI)], cwd=workspace, env=env, capture_output=True, text=True, check=False
+        )
+
+    return run
+
+
 @pytest.mark.parametrize(
     ("changed_file", "graph_wide"),
     [
         ("devinfra/ci/test_bazel_ci.py", False),
         ("MODULE.bazel", True),
+        ("devinfra/bazel/oci.MODULE.bazel", True),
+        ("devinfra/bazel/oci.MODULE.bazel.notes", False),
         ("third_party/cli_proxy_api/go.mod", True),
         ("third_party/activitywatch/package.json", True),
         ("pnpm-lock.yaml", True),
@@ -31,35 +72,25 @@ def _write_executable(path: Path, content: str) -> None:
         ("devinfra/ci/example.bzl", True),
     ],
 )
-def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool) -> None:
+def test_pr_target_selection(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    changed_file: str,
+    graph_wide: bool,
+) -> None:
     """Graph metadata uses //..., while ordinary changes retain bazel-diff filtering."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
     bazel_diff_args_log = tmp_path / "bazel-diff-args.log"
     affected_targets_log = tmp_path / "affected-targets.log"
     query_log = tmp_path / "query.log"
     test_args_log = tmp_path / "test-args.log"
 
-    for command, asset in (("git", "fake_git.py"), ("bazel-diff", "fake_bazel_diff.py"), ("bazel", "fake_bazel.py")):
-        _write_executable(bin_dir / command, get_required_path(f"_main/devinfra/ci/testing/{asset}").read_text())
-    _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
-
-    env = os.environ.copy()
-    env.update(
+    result = run_ci(
         {
-            "PATH": f"{bin_dir}:{env['PATH']}",
             "GITHUB_EVENT_NAME": "pull_request",
             "PR_HEAD_SHA": "pr-head",
             "PR_BASE_SHA": "base",
             "CHANGED_FILE": changed_file,
-            "CI_TEST_LOG_DIR": str(tmp_path),
-            "RBE_CONTAINER_IMAGE": "test-image",
-            "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
-            "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
         }
-    )
-    result = subprocess.run(
-        [sys.executable, str(BAZEL_CI)], cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0, result.stderr + result.stdout
@@ -73,7 +104,7 @@ def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool
             "//:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir\n//ci:normal_test\n"
         )
         bazel_diff_args = bazel_diff_args_log.read_text().splitlines()
-        assert bazel_diff_args[:3] == ["get-impacted-targets", "-w", str(REPO_ROOT)]
+        assert bazel_diff_args[:3] == ["get-impacted-targets", "-w", str(tmp_path / "workspace")]
         assert any(arg.startswith("--target_pattern_file=") for arg in test_args)
         query = query_log.read_text()
         assert 'except kind("source file", set(' in query
@@ -83,6 +114,122 @@ def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool
     # The pre-assigned ID has to reach Bazel: it is the only handle a consumer has on
     # this invocation when the run is cancelled before `bb remote` returns.
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args
+    build_args = (tmp_path / "build-args.log").read_text().splitlines()
+    assert "--invocation_id=22222222-2222-2222-2222-222222222222" in build_args
+    assert "--@io_bazel_rules_go//go/config:race" not in build_args
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected", "phases"),
+    [
+        ({}, 0, ["test", "build"]),
+        ({"FAKE_TESTS": ""}, 0, ["build"]),
+        ({"FAKE_TEST_EXIT": "1"}, 1, ["test"]),
+        ({"FAKE_TEST_EXIT": "4"}, 4, ["test"]),
+        ({"FAKE_BUILD_EXIT": "1"}, 1, ["test", "build"]),
+        (
+            {
+                "GITHUB_EVENT_NAME": "pull_request",
+                "PR_HEAD_SHA": "pr-head",
+                "CHANGED_FILE": "devinfra/ci/test_bazel_ci.py",
+                "FAKE_TEST_EXIT": "4",
+            },
+            0,
+            ["test", "build"],
+        ),
+    ],
+)
+def test_phase_order_and_failure_handling(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    overrides: dict[str, str],
+    expected: int,
+    phases: list[str],
+) -> None:
+    result = run_ci(overrides)
+    assert result.returncode == expected, result.stderr + result.stdout
+    assert (tmp_path / "phases.log").read_text().splitlines() == phases
+
+
+def test_module_lockfile_cache_survives_workspace_cleanup(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    """A generated resolution lockfile is restored for the next cleaned checkout."""
+    lockfile_contents = '{"lockFileVersion": 1}\n'
+    workspace_lockfile = tmp_path / "workspace" / "MODULE.bazel.lock"
+    cache_lockfile = tmp_path / "xdg-cache" / "ducktape" / "bazel" / "MODULE.bazel.lock"
+
+    first = run_ci({"FAKE_GENERATE_LOCKFILE": lockfile_contents})
+    assert first.returncode == 0, first.stderr + first.stdout
+    assert cache_lockfile.read_text() == lockfile_contents
+
+    workspace_lockfile.unlink()
+    second = run_ci({"FAKE_EXPECT_LOCKFILE": lockfile_contents})
+    assert second.returncode == 0, second.stderr + second.stdout
+    assert workspace_lockfile.read_text() == lockfile_contents
+
+
+@pytest.mark.parametrize("cached_contents", [None, "not valid JSON"])
+def test_module_lockfile_cache_missing_or_corrupt_is_best_effort(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]], cached_contents: str | None
+) -> None:
+    lockfile_contents = '{"lockFileVersion": 1}\n'
+    cache_lockfile = tmp_path / "xdg-cache" / "ducktape" / "bazel" / "MODULE.bazel.lock"
+    if cached_contents is not None:
+        cache_lockfile.parent.mkdir(parents=True)
+        cache_lockfile.write_text(cached_contents)
+
+    result = run_ci({"FAKE_GENERATE_LOCKFILE": lockfile_contents})
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert cache_lockfile.read_text() == lockfile_contents
+    if cached_contents is not None:
+        assert "Ignoring invalid JSON in cached Bazel module lockfile" in result.stderr
+
+
+def test_module_lockfile_cache_preserves_preexisting_workspace_file(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    workspace_contents = '{"lockFileVersion": 2}\n'
+    cached_contents = '{"lockFileVersion": 1}\n'
+    workspace_lockfile = tmp_path / "workspace" / "MODULE.bazel.lock"
+    cache_lockfile = tmp_path / "xdg-cache" / "ducktape" / "bazel" / "MODULE.bazel.lock"
+    workspace_lockfile.write_text(workspace_contents)
+    cache_lockfile.parent.mkdir(parents=True)
+    cache_lockfile.write_text(cached_contents)
+
+    result = run_ci({"FAKE_EXPECT_LOCKFILE": workspace_contents})
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert cache_lockfile.read_text() == workspace_contents
+
+
+def test_module_lockfile_cache_saves_lockfile_after_test_failure(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    lockfile_contents = '{"lockFileVersion": 1}\n'
+    cache_lockfile = tmp_path / "xdg-cache" / "ducktape" / "bazel" / "MODULE.bazel.lock"
+
+    result = run_ci({"FAKE_GENERATE_LOCKFILE": lockfile_contents, "FAKE_TEST_EXIT": "1"})
+
+    assert result.returncode == 1, result.stderr + result.stdout
+    assert cache_lockfile.read_text() == lockfile_contents
+    assert (tmp_path / "phases.log").read_text().splitlines() == ["test"]
+
+
+def test_module_lockfile_cache_failure_preserves_test_status(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    cache_root = tmp_path / "cache-root-is-a-file"
+    cache_root.write_text("not a directory")
+
+    result = run_ci(
+        {"XDG_CACHE_HOME": str(cache_root), "FAKE_GENERATE_LOCKFILE": '{"lockFileVersion": 1}\n', "FAKE_TEST_EXIT": "1"}
+    )
+
+    assert result.returncode == 1, result.stderr + result.stdout
+    assert "Could not save Bazel module lockfile cache" in result.stderr
+    assert (tmp_path / "phases.log").read_text().splitlines() == ["test"]
 
 
 if __name__ == "__main__":

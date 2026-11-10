@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,11 @@ class GitError(RuntimeError):
     """A git invocation failed in a way that blocks classification."""
 
 
+# libgit2 reports missing objects as KeyError and invalid refs as ValueError, in
+# addition to GitError. Classifiers turn these data/IO failures into REVIEW.
+INSPECTION_ERRORS = (GitError, pygit2.GitError, KeyError, ValueError, OSError, subprocess.SubprocessError)
+
+
 def open_repo(path: Path) -> pygit2.Repository:
     """Open `path` as a repository, normalizing pygit2's own `GitError` (a plain `Exception`,
     so it slips past every `except GitError` here that means this module's `GitError`) into
@@ -36,8 +42,34 @@ def open_repo(path: Path) -> pygit2.Repository:
         raise GitError(f"cannot open {path} as a git repository: {error}") from error
 
 
+_running_git: set[subprocess.Popen[str]] = set()
+_running_git_lock = threading.Lock()
+
+
+def interrupt_running_git() -> None:
+    """Kill every in-flight `git` child.
+
+    Worker threads blocked on a `git` child (often in uninterruptible disk reads) otherwise
+    delay process exit until the child finishes on its own — many seconds on a cold disk.
+    """
+    with _running_git_lock:
+        for process in _running_git:
+            process.kill()
+
+
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", "-C", os.fspath(repo), *args], capture_output=True, text=True, check=check)
+    command = ["git", "-C", os.fspath(repo), *args]
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+        with _running_git_lock:
+            _running_git.add(process)
+        try:
+            stdout, stderr = process.communicate()
+        finally:
+            with _running_git_lock:
+                _running_git.discard(process)
+    if check and process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def git_out(repo: Path, *args: str) -> str:

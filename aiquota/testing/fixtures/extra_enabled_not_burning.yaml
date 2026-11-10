@@ -1,34 +1,41 @@
 # Anthropic extra-spend is enabled and the account has already incurred
-# billable spend this month, but the weekly cap still has room. The user is
-# NOT currently burning extra.
+# billable spend this month, but the weekly cap still has room; no window is
+# exhausted, so there is no active over-plan state.
 #
 # This pins the pre-view-model regression where the panel pill and collapsed
-# popup fired purely on extraSpend.is_enabled. They should fire only when a
-# window is exhausted; currentlyOverPlan=false here.
+# popup fired purely on extra-spend enablement. The Python view model derives
+# the active over-plan state from exhausted windows.
 #
 # Numbers loosely match the maintainer's real bill when the bug was found:
 # $2324.85 / $4600.
-claude:
-  short: { usedPercent: 6, resetSeconds: 7200, windowSeconds: 18000 }
-  long: { usedPercent: 2, resetSeconds: 432000, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend:
-    is_enabled: true
-    utilization: 50.540217391304346
-    used_usd: 2324.85
-    monthly_limit_usd: 4600.0
-  currentlyOverPlan: false
-  extraStatus: informational
-codex:
-  short: { usedPercent: 30, resetSeconds: 12600, windowSeconds: 18000 }
-  long: { usedPercent: 30, resetSeconds: 432000, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend: null
-zai:
-  short: { usedPercent: 20, resetSeconds: 12600, windowSeconds: 18000 }
-  long: { usedPercent: 25, resetSeconds: 432000, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend: null
+providers:
+  - provider: claude
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 6.0, reset_seconds: 7200.0, window_seconds: 18000.0 }
+          - { used_percent: 2.0, reset_seconds: 432000.0, window_seconds: 604800.0 }
+        extra_spend:
+          is_enabled: true
+          monthly_limit_usd: 4600.0
+          used_usd: 2324.85
+          utilization: 50.540217391304346
+  - provider: codex
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 30.0, reset_seconds: 12600.0, window_seconds: 18000.0 }
+          - { used_percent: 30.0, reset_seconds: 432000.0, window_seconds: 604800.0 }
+  - provider: zai
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 20.0, reset_seconds: 12600.0, window_seconds: 18000.0 }
+          - { used_percent: 25.0, reset_seconds: 432000.0, window_seconds: 604800.0 }
+fetched_at: "2026-01-15T12:00:00Z"

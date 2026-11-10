@@ -1,3 +1,5 @@
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
+# gazelle:resolve py agentplane.app.app_service_pb2 //agentplane/app:app_service_pb2
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
@@ -9,24 +11,6 @@ py_library(
     name = "model_test_data",
     srcs = ["model_test_data.py"],
     visibility = ["//agentplane/app:__subpackages__"],
-    deps = [
-        "//agentplane/app:model_catalog",
-        "//agentplane/runner:harness",
-    ],
-)
-
-py_library(
-    name = "dispatcher",
-    srcs = ["dispatcher.py"],
-    visibility = ["//agentplane/app:__pkg__"],
-    deps = [
-        "//agentplane/app/threads:dispatcher_client",
-        "//agentplane/grpc:calls",
-        "//agentplane/grpc:serving",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
 )
 
 py_library(
@@ -35,8 +19,6 @@ py_library(
     deps = [
         "//agentplane/action_service:action_service_pb2",
         "//agentplane/action_service:action_service_pb2_grpc",
-        "//agentplane/app:grpc_stream",
-        "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -48,15 +30,14 @@ py_library(
     srcs = ["thread_test_support.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
-        ":history",
-        "//agentplane/app:operator_sessions",
-        "//agentplane/app/threads:models",
-        "//agentplane/app/threads:store",
+        ":models",
+        "//agentplane/app:app_service_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -74,52 +55,30 @@ py_library(
 py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
+    data = ["//agentplane/app/go:agentplane-app"],  # keep: subprocess runtime
     deps = [
+        ":browser_certificate",
         ":model_test_data",
-        ":notifications_operator",
-        ":operator_streams",
-        ":system_status",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:sandbox_resource",
-        "//agentplane/app:action_policy",
-        "//agentplane/app:api",
-        "//agentplane/app:database",
-        "//agentplane/app:database_updates",
-        "//agentplane/app:egress_access",
-        "//agentplane/app:electric",
-        "//agentplane/app:identity",
-        "//agentplane/app:live",
-        "//agentplane/app:model_catalog",
-        "//agentplane/app:notifications_operator_client",
-        "//agentplane/app:operator_sessions",
-        "//agentplane/app:sandbox_access",
-        "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:dispatcher_client",
-        "//agentplane/app/threads:history_watch",
-        "//agentplane/app/threads:runner_directory",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads:summaries",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/view:content",
-        "//agentplane/egress:decisions_client",
-        "//agentplane/grpc:calls",
+        ":notifications",
+        "//agentplane/app:oidc",
+        "//agentplane/environment_runtime_transport:config",
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
-        "//agentplane/notification_service:notifications_operator_pb2_grpc",
-        "//agentplane/runner:harness",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/sandboxes:inventory",
-        "//agentplane/sandboxes/testing:sandbox_namespace",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//util:kubernetes",
-        "//util/testing:undeclared_outputs",
-        "@pypi//asyncpg",
+        "//agentplane/notification_service:notifications_pb2_grpc",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:db_url",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
         "@pypi//grpcio",
         "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
+        "@pypi//playwright",
         "@pypi//protobuf",
+        "@pypi//pyyaml",
         "@pypi//starlette",
+        "@pypi//tenacity",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -127,16 +86,22 @@ py_library(
     name = "replication_source",
     srcs = ["replication_source.py"],
     deps = [
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:runner_service_pb2",
-        "//agentplane/runner:runner_service_pb2_grpc",
+        "//agentplane/proto:session_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
+)
+
+py_library(
+    name = "browser_certificate",
+    srcs = ["browser_certificate.py"],
+    deps = ["@pypi//cryptography"],
 )
 
 py_library(
@@ -144,16 +109,15 @@ py_library(
     srcs = ["http2_proxy.py"],
     data = ["http2_proxy.conf.j2"],
     deps = [
+        ":browser_certificate",
         "//agentplane/app/frontend/serving/testing:image",
+        "//devinfra/oci",
         "//third_party/containers:nginx_unprivileged",
-        "//util:net",
-        "//util:oci",
-        "//util/bazel:runfiles",
         "//util/testing:container_logs",
-        "@pypi//cryptography",
         "@pypi//h2",
         "@pypi//httpx",
         "@pypi//jinja2",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -162,8 +126,8 @@ py_library(
     srcs = ["history_probe.py"],
     data = ["history_probe.js"],
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//playwright",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -171,10 +135,14 @@ py_library(
     name = "thread_view_marks",
     srcs = ["thread_view_marks.py"],
     data = ["thread_view_marks.js"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/app/frontend/testing:__pkg__",
+    ],
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//playwright",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -183,32 +151,34 @@ py_library(
     srcs = ["thread_browser.py"],
     data = ["thread_page.js"],
     deps = [
+        ":browser_certificate",
         ":history",
         ":history_probe",
         ":http2_proxy",
         ":replication_process",
         ":replication_source",
-        ":runner_gateway",
+        ":thread_test_support",
         ":thread_view_marks",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:electric_service",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
-        "//agentplane/runner_gateway/testing:runner_connection",
+        "//agentplane/runner_gateway/testing:runner_server",
         "//agentplane/sandboxes/testing:kubernetes",
-        "//util/bazel:runfiles",
-        "//util/testing:frontend_visual",
+        "//devinfra/testing:undeclared_outputs",
         "//util/testing:postgres",
-        "//util/testing:undeclared_outputs",
-        "//util/testing:viewports",
+        "//util/testing/frontend_visual:context",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -217,14 +187,13 @@ py_library(
     srcs = ["history.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
-        "//agentplane/app:database_updates",
-        "//agentplane/app/threads:models",
-        "//agentplane/app/threads:summaries",
-        "//agentplane/app/threads/events:event_log",
+        "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/testing:history",
-        "//agentplane/postgres:wakeups",
-        "@pypi//sqlalchemy",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
 
@@ -232,30 +201,25 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = [
-        "//agentplane/system_tests:__pkg__",
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
     ],
     deps = [
-        "//agentplane/app:live",
-        "//agentplane/app:model_catalog",
-        "//agentplane/app:presets",
-        "//agentplane/app:sandbox_models",
-        "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads:thread_view",
-        "//agentplane/egress:decisions",
+        ":models",
+        "//agentplane/app:app_service_pb2",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/grpc:calls",
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/sandboxes:egress_views",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "@pypi//grpcio",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
-)
-
-py_library(
-    name = "system_status",
-    srcs = ["system_status.py"],
-    deps = ["//agentplane/app:system_status"],
 )
 
 py_test(
@@ -263,11 +227,15 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":models",
         "//:conftest",
-        "//agentplane/app:conftest",
+        "//agentplane/env/runtime:harness",
+        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
         "@pypi//httpx",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -275,23 +243,11 @@ py_test(
 )
 
 py_library(
-    name = "operator_streams",
-    srcs = ["operator_streams.py"],
+    name = "notifications",
+    srcs = ["notifications.py"],
     deps = [
-        "//agentplane/app:oidc",
-        "//agentplane/app:operator_sessions",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
-    name = "notifications_operator",
-    srcs = ["notifications_operator.py"],
-    deps = [
-        "//agentplane/notification_service:notifications_operator_pb2",
-        "//agentplane/notification_service:notifications_operator_pb2_grpc",
+        "//agentplane/notification_service:notifications_pb2",
+        "//agentplane/notification_service:notifications_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -300,29 +256,27 @@ py_library(
 py_library(
     name = "runner_gateway",
     srcs = ["runner_gateway.py"],
+    visibility = [
+        "//agentplane/app:__subpackages__",
+        "//agentplane/runner_gateway:__pkg__",
+    ],
     deps = [
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
-        "//agentplane/app:live",
-        "//agentplane/app/threads:dispatcher_client",
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/environment_runtime_transport:config",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/testing:go_service",
-        "//agentplane/runner:configuration",
-        "//agentplane/runner/testing:config",
-        "//agentplane/runner/testing:failure_journal",
-        "//agentplane/runner/testing:gateway",
-        "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//util/testing:postgres",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//tenacity",
     ],
 )
 
@@ -333,9 +287,30 @@ py_test(
     deps = [
         ":http2_proxy",
         "//:conftest",
-        "//agentplane/app:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/env/runtime:harness",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "pytest_logfile",
+    srcs = ["pytest_logfile.py"],
+    deps = [
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
     ],
 )

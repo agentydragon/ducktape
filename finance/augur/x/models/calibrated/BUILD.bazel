@@ -6,8 +6,8 @@ package(default_visibility = [
     "//finance/augur/x:__subpackages__",
 ])
 
-# Quarantined: fails `sanity_test` (reason and numbers in its `QUARANTINED`). Kept as a real
-# sample of the typed observation boundary, never as a model.
+# Quarantined: fails `sanity_test` (reason and numbers in its `QUARANTINED`) and predates the
+# required dated VECM state. Kept only to verify legacy configs require refitting, never as a model.
 filegroup(
     name = "trained_vecm_provider",
     srcs = ["trained_vecm_provider.yaml"],

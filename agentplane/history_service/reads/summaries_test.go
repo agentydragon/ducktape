@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -98,7 +98,7 @@ func TestSummaryFieldsComeFromTheirColumns(t *testing.T) {
 func TestTheFeedStatusFollowsHowTheStreamEnded(t *testing.T) {
 	f := newFixture(t)
 	text := func(document string) *string { return &document }
-	attached, err := protojson.Marshal(&runnerpb.Attached{LastCursor: 3})
+	attached, err := protojson.Marshal(&sessionpb.Attached{LastCursor: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,10 +233,10 @@ func TestSessionsExposeAndFilterBySandboxUID(t *testing.T) {
 	first, second := uuid.New(), uuid.New()
 	for index, sandboxUID := range []string{"sandbox-uid-first", "sandbox-uid-replacement"} {
 		sessionID := []uuid.UUID{first, second}[index]
-		writer := storage.Writer{
+		writer := storage.ServiceAccountWriter{
 			Namespace: "test-sandbox-namespace", Name: "same-name", UID: "writer-account-" + sandboxUID,
 		}
-		if _, err := f.history.BindWriter(t.Context(), sessionID, writer, sandboxUID); err != nil {
+		if _, err := f.history.BindWriter(t.Context(), sessionID, writer, sandboxUID, nil); err != nil {
 			t.Fatal(err)
 		}
 		summary, err := f.reader.GetSessionSummary(t.Context(), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})

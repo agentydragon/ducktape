@@ -9,12 +9,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 
 def _kyverno_bin() -> Path:
-    return get_required_path("multitool/tools/kyverno/kyverno")
+    return Runfiles.CreateOrRaise().root() / "multitool/tools/kyverno/kyverno"
 
 
 @dataclass(frozen=True)

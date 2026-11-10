@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Event } from "./api/schema";
+import type { Event } from "./schema";
 import { adaptSessionEvent, foldSessionEvents } from "./transcript";
 
 function event(sequence: number, event_type: string, payload: Record<string, unknown>): Event {

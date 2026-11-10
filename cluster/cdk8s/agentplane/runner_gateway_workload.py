@@ -1,18 +1,18 @@
-"""The Gateway workload and its Goose migration init container.
+"""The Gateway workload with embedded startup migrations.
 
-The stable addresses stay in `runner_gateway.py`: the app and Notification service import them, and this
-module imports both of those."""
+The public API and stable Service address are defined in `runner_gateway.py`; this module wires
+the Gateway's public listeners and direct mTLS connections to runner Pods."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
-from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ContainerProps,
     ContainerResources,
     Cpu,
     CpuResources,
@@ -31,27 +31,31 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
-from agentplane.runner_gateway.settings import Settings
+from agentplane.environment_runtime_transport.config import MTLS, SESSION_DISPATCHER_URI, TLS
+from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth import listener as workload_listener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    central_sampler,
     database,
     egress,
+    environment_sandbox,
     notifications,
     runner_gateway,
     sandbox_controller,
     session_dispatcher,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.probes import grpc_probe
+from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -60,10 +64,13 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
-_MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
+_RUNNER_TLS_CERT = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt"
+_RUNNER_TLS_KEY = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key"
+_RUNNER_TLS_CA = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt"
 _GRPC_PORT = 8080
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
 
@@ -77,42 +84,19 @@ def dispatcher_service(namespace: str) -> ServiceRef:
     )
 
 
-def runner_control_service(namespace: str, *, port: Port | None = None) -> ServiceRef:
-    """The shared listener behind a caller-selected control Service port."""
-    control = runner_gateway.runner_control(namespace)
-    return control if port is None else replace(control, port=port)
-
-
 def _account(account: ServiceAccountRef) -> str:
     return f"{account.namespace}/{account.name}"
 
 
-def add_stable_services(scope: Construct, env: Environment, *, control: ServiceRef | None = None) -> None:
+def add_stable_services(scope: Construct, env: Environment) -> None:
     """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
-    control = control or runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
-    dispatcher_http = session_dispatcher.http_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
-        spec=k8s.ServiceSpec(
-            selector=proxy.pods.selector,
-            ports=(
-                [proxy.port.k8s_service_port()]
-                if control.port.number == proxy.port.number
-                else [
-                    proxy.port.k8s_service_port(),
-                    k8s.ServicePort(
-                        name=control.port.name,
-                        port=control.port.number,
-                        target_port=k8s.IntOrString.from_number(_GRPC_PORT),
-                        protocol="TCP",
-                    ),
-                ]
-            ),
-        ),
+        spec=k8s.ServiceSpec(selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port()]),
     )
     k8s.KubeService(
         scope,
@@ -128,15 +112,14 @@ def add_stable_services(scope: Construct, env: Environment, *, control: ServiceR
                     port=dispatcher.port.number,
                     target_port=k8s.IntOrString.from_number(dispatcher.pod_port),
                     protocol="TCP",
-                ),
-                dispatcher_http.port.k8s_service_port(),
+                )
             ],
         ),
     )
 
 
 class RunnerGateway(Construct):
-    """One workload with three authenticated services on one listener; the root retains its Services."""
+    """One TLS gRPC listener with per-method bearer or SVID auth, plus runner mTLS."""
 
     def __init__(
         self,
@@ -145,15 +128,18 @@ class RunnerGateway(Construct):
         env: Environment,
         *,
         database_url: EnvValue,
-        migration: ContainerProps,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
+        environment_launchers: Mapping[ServiceAccountRef, Pods],
+        operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
+        delegation_actor: ServiceAccountRef | None,
+        extra_delegated_methods: tuple[str, ...] = (),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
-        control: ServiceRef | None = None,
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
         image: str = _IMAGE,
     ) -> None:
@@ -162,15 +148,14 @@ class RunnerGateway(Construct):
             raise ValueError("Runner Gateway needs explicit Dispatcher and proxy caller grants")
         if not wake_callers <= dispatcher_callers.keys():
             raise ValueError("wake callers must also be Dispatcher callers")
+        if extra_delegated_methods and delegation_actor is None:
+            raise ValueError("extra delegated methods require a delegation actor")
 
         namespace = env.namespace
         self.env = env
         self.dispatcher_callers = dispatcher_callers
         self.sandbox_controller_pods = sandbox_controller[1]
         proxy = runner_gateway.service(namespace)
-        control = control or runner_control_service(namespace)
-        self.control = control
-        dispatcher_http = session_dispatcher.http_service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
         # the per-Sandbox control Service with this projected Gateway-audience token.
@@ -180,36 +165,35 @@ class RunnerGateway(Construct):
             field: checked_value(Settings, field, value)
             for field, value in {
                 "sandbox_namespace": namespace,
-                "listen_address": f"0.0.0.0:{_GRPC_PORT}",
-                "http_listen_address": f"0.0.0.0:{dispatcher_http.pod_port}",
+                "policy_namespace": namespace,
                 "runner_token_file": _RUNNER_TOKEN_FILE,
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
-                "runner_audience": RUNNER_CONTROL_AUDIENCE,
+                "runner_control_target_template": runner_gateway.control_target(namespace),
+                "kubernetes_client_qps": -1,
                 "sandbox_controller_account": _account(sandbox_controller[0]),
             }.items()
         }
         dispatcher_accounts = sorted(map(_account, dispatcher_callers))
+        operator_accounts = sorted(map(_account, operator_callers or {}))
         gateway_accounts = sorted(map(_account, proxy_callers))
         wake_accounts = sorted(map(_account, wake_callers))
-        # Lists are file-only settings.
-        content = {
-            "dispatcher_callers": dispatcher_accounts,
-            "gateway_callers": gateway_accounts,
-            **({"wake_callers": wake_accounts} if wake_accounts else {}),
-        }
-        settings = SettingsFile(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
-            path="/etc/agentplane-runner-gateway/settings/settings.yaml",
+        central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
+        central_sampler_settings = (
+            {
+                "central_sampler": CentralSamplerTarget(
+                    target=central_sampler.target(namespace),
+                    token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
+                ),
+                "executor_callers": [_account(central_sampler_account)],
+            }
+            if env.central_sampler is not None
+            else {}
         )
         workload = add_service_workload(
             self,
             env,
-            serves=[proxy, control],
-            extra_ports=[dispatcher_http.container_port()],
+            serves=[proxy],
             container="runner-gateway",
             image=image,
             env_variables={
@@ -218,11 +202,31 @@ class RunnerGateway(Construct):
                 env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
                 **(container_env or {}),
             },
-            readiness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=grpc_probe(port=proxy.pod_port, initial_delay_seconds=20, period_seconds=30),
+            readiness=tls_grpc_probe(
+                port=proxy.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=SESSION_DISPATCHER_URI,
+                initial_delay_seconds=3,
+                period_seconds=10,
+            ),
+            liveness=tls_grpc_probe(
+                port=proxy.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=SESSION_DISPATCHER_URI,
+                initial_delay_seconds=20,
+                period_seconds=30,
+            ),
+            startup=tls_grpc_probe(
+                port=proxy.pod_port,
+                ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                server_uri=SESSION_DISPATCHER_URI,
+                initial_delay_seconds=0,
+                period_seconds=5,
+                failure_threshold=60,
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
+                memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(60),
             # A Recreate drops delivery and every runner connection, so the Gateway rolls
@@ -234,34 +238,119 @@ class RunnerGateway(Construct):
                 ),
             ),
             create_service=False,
-            migrate=migration,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
             placement=placement,
         )
-        settings.mount_into(workload.container, env=Settings.config_file_env)
-        workload.project_tokens(
-            "runner-gateway-token",
-            "/var/run/secrets/agentplane-runner-gateway",
-            {"token": runner_gateway.TOKEN_AUDIENCE},
+        # Lists are file-only settings.
+        serving_tls = workload_tls.serving_certificate(
+            self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
         )
-        self._add_rbac(workload.account, namespace)
-        egress.add_runner_egress(
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
+        content = {
+            "dispatcher_callers": dispatcher_accounts,
+            "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
+            "environment_managers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
+            "environment_launchers": sorted(map(_account, environment_launchers)),
+            "environment_default_policy_sets": sorted(env.default_policy_sets),
+            "gateway_callers": gateway_accounts,
+            "runner_security": MTLS(
+                tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
+            ).model_dump(mode="json"),
+            "gateway_tls": workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            "rpc": workload_listener.Listener(
+                listen_address=f"0.0.0.0:{proxy.pod_port}",
+                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[
+                    workload_listener.KubernetesBearerAuth(
+                        audiences=frozenset({session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE})
+                    ),
+                    workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+                ],
+            ).model_dump(mode="json"),
+            **central_sampler_settings,
+            **(
+                {"runtime_catalog": env.runtime_catalog.model_dump(mode="json", exclude_none=True)}
+                if env.runtime_catalog is not None
+                else {}
+            ),
+            **({"wake_callers": wake_accounts} if wake_accounts else {}),
+            **({"operator_callers": operator_accounts} if operator_accounts else {}),
+        }
+        if delegation_actor is not None:
+            content["delegation"] = {
+                "actor": _account(delegation_actor),
+                "caller_namespaces": [namespace],
+                "methods": [
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
+                    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
+                    "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+                    "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
+                    "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
+                    *extra_delegated_methods,
+                ],
+            }
+        settings = SettingsFile(
             self,
-            policy=runner_gateway.RUNNER_CONTROL_POLICY,
-            credential=runner_gateway.RUNNER_CONTROL_CREDENTIAL,
-            endpoint=control,
-            path="/agentplane.runner_gateway.RunnerControl/Connect",
-            audience=RUNNER_CONTROL_AUDIENCE,
-            purpose="control stream to the Runner Gateway",
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
+            path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
+        settings.mount_into(workload.container, env=Settings.config_file_env)
+        trust_projection = k8s.ProjectedVolumeSource(
+            default_mode=0o440,
+            sources=[
+                k8s.VolumeProjection(
+                    secret=k8s.SecretProjection(
+                        name=runner_gateway.GATEWAY_TLS_SECRET,
+                        items=[
+                            k8s.KeyToPath(key="tls.crt", path="tls.crt"),
+                            k8s.KeyToPath(key="tls.key", path="tls.key"),
+                        ],
+                    )
+                ),
+                # The workload CA alone: it issues every runner's server SVID and the Gateway's own leaf.
+                k8s.VolumeProjection(
+                    config_map=k8s.ConfigMapProjection(
+                        name=cluster_ca.WORKLOAD_BUNDLE, items=[k8s.KeyToPath(key=cluster_ca.BUNDLE_KEY, path="ca.crt")]
+                    )
+                ),
+            ],
+        )
+        # cdk8s-plus Container.mount consumes its IStorage interface; a projected volume has no
+        # cdk8s-plus wrapper, so append the generated typed Kubernetes structs directly.
+        deployment = ApiObject.of(workload.deployment)
+        deployment.add_json_patch(
+            JsonPatch.add("/spec/template/spec/volumes/-", k8s.Volume(name="runner-tls", projected=trust_projection))
+        )
+        deployment.add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(name="runner-tls", mount_path=runner_gateway.GATEWAY_TLS_MOUNT_PATH, read_only=True),
+            )
+        )
+        gateway_tokens = {"token": runner_gateway.TOKEN_AUDIENCE}
+        if env.central_sampler is not None:
+            gateway_tokens["central-sampler"] = central_sampler.TOKEN_AUDIENCE
+        workload.project_tokens("runner-gateway-token", "/var/run/secrets/agentplane-runner-gateway", gateway_tokens)
+        self._add_rbac(workload.account, namespace)
 
     def add_platform_resources(self) -> None:
         """Add the fleet Cilium fences around the shared Gateway listeners."""
         namespace = self.env.namespace
         proxy = runner_gateway.service(namespace)
         dispatcher = dispatcher_service(namespace)
-        dispatcher_http = session_dispatcher.http_service(namespace)
         NetworkPolicy(
             self,
             "network-policy",
@@ -269,22 +358,27 @@ class RunnerGateway(Construct):
             endpoint_selector=proxy.pods.selector,
             ingress=[
                 *(pods.admit(proxy.pod_port) for pods in self.proxy_callers.values()),
-                self.sandbox_controller_pods.admit(proxy.pod_port),
                 *(
-                    pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)
-                    for pods in self.dispatcher_callers.values()
+                    [central_sampler.pods(namespace).admit(proxy.pod_port)]
+                    if self.env.central_sampler is not None
+                    else []
                 ),
-                egress.proxy(namespace).pods.admit(self.control.pod_port),
+                # Managed Sandboxes reach the Dispatcher through the central proxy; the Gateway
+                # authenticates them by their Sandbox SVID.
+                egress.proxy(namespace).pods.admit(dispatcher.pod_port),
+                self.sandbox_controller_pods.admit(proxy.pod_port),
+                *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
             ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 proxy.egress(),
+                EgressRule.to_endpoints(
+                    environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
+                ),
+                *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
-        )
-        egress.add_runner_egress_network_policy(
-            self, policy=runner_gateway.RUNNER_CONTROL_POLICY, endpoint=self.control
         )
 
     def _add_rbac(self, service_account: ServiceAccount, namespace: str) -> None:
@@ -301,10 +395,34 @@ class RunnerGateway(Construct):
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
+                # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                # The environment watch observes account revocation; all reads and Session admission
+                # recheck the live UID of the Sandbox-owned execution account.
                 RolePolicyRule(
-                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
+                    resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
                 ),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource("kubevirt.io", "virtualmachineinstances"),
+                        custom_resource("kubevirt.io", "virtualmachines"),
+                    ],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "sandboxes")],
+                    verbs=["get", "list", "watch", "create", "patch", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "sandboxtemplates"), custom_resource(GROUP, "policysets")],
+                    verbs=["get", "list"],
+                ),
+                # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+                # One Role covers both reads because the Sandbox namespace is the policy namespace: a
+                # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
+                # `spec.identity` names one beside it (Sandbox namespace).
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],
@@ -322,13 +440,20 @@ class RunnerGateway(Construct):
         ).add_subjects(service_account)
 
 
-def serving_chart(app: App, *, env: Environment) -> Chart:
+def serving_chart(
+    app: App,
+    *,
+    env: Environment,
+    operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
+    extra_delegated_methods: tuple[str, ...] = (),
+) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     callers = {
         ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods,
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods,
     }
     orchestration = actions.orchestration_callers(env)
+    session_delegation = actions.session_delegation_callers(env)
     dispatcher_database_url = (
         SecretRef(namespace=env.namespace, name="postgres-session-dispatcher")
         .key("uri")
@@ -339,10 +464,15 @@ def serving_chart(app: App, *, env: Environment) -> Chart:
         "runner-gateway",
         env,
         database_url=dispatcher_database_url,
-        migration=migrate_init_container(
-            _MIGRATION_IMAGE, name="migrate", env_variables={"DATABASE_URL": dispatcher_database_url}
+        dispatcher_callers=callers | orchestration | session_delegation,
+        operator_callers=operator_callers,
+        environment_launchers=orchestration,
+        delegation_actor=(
+            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
+            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
+            else None
         ),
-        dispatcher_callers=callers | orchestration,
+        extra_delegated_methods=extra_delegated_methods,
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
         wake_callers=env.wake_caller_accounts | orchestration.keys(),

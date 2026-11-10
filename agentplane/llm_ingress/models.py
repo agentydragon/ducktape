@@ -7,19 +7,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class VerifiedClaim(StrEnum):
-    """Fields supplied by the authenticated Kubernetes principal."""
+    """Fields supplied by the authenticated caller.
+
+    A ServiceAccount caller has no identity claims and an Identity caller no namespace or
+    service_account claim; a field whose claim the caller lacks is omitted.
+    """
 
     NAMESPACE = "namespace"
     SERVICE_ACCOUNT = "service_account"
     POD_NAME = "pod_name"
     POD_UID = "pod_uid"
+    IDENTITY = "identity"
+    IDENTITY_UID = "identity_uid"
 
 
 class AttributionField(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     key: str = Field(min_length=1, description="Literal JSON member or W3C baggage key.")
-    source: VerifiedClaim = Field(description="Verified principal field supplying the value.")
+    source: VerifiedClaim = Field(description="Verified caller field supplying the value.")
 
 
 class AttributionJsonHeader(BaseModel):
@@ -69,6 +75,11 @@ class AttributionConfig(BaseModel):
             raise ValueError("invalid attribution baggage key")
         return self
 
+    def names_identity(self) -> bool:
+        """Whether every output names an Identity caller."""
+        outputs = [header.fields for header in self.json_headers] + ([self.baggage] if self.baggage else [])
+        return all(any(field.source == VerifiedClaim.IDENTITY for field in fields) for fields in outputs)
+
 
 def default_attribution() -> AttributionConfig:
     return AttributionConfig(
@@ -80,6 +91,8 @@ def default_attribution() -> AttributionConfig:
                     AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
                     AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
                     AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
+                    AttributionField(key="agentplane.identity", source=VerifiedClaim.IDENTITY),
+                    AttributionField(key="agentplane.identity_uid", source=VerifiedClaim.IDENTITY_UID),
                 ],
             )
         ]

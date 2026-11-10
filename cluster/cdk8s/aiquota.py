@@ -41,8 +41,10 @@ from external_secrets_crds.io.external_secrets import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from aiquota.config import CLIProxyAPISettings, Config
+from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
 from aiquota.providers.claude import ClaudeSettings
 from aiquota.providers.codex import CodexSettings
+from aiquota.providers.openai_platform import OpenAIPlatformSettings
 from aiquota.providers.zai import ZaiSettings
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
@@ -75,6 +77,8 @@ NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomizatio
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
+_PLATFORM_SESSIONS_URL = "http://platform-sessions.platform-sessions.svc:8080"
+_PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-aiquota-bearer"
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
 # authenticated usage requests. Haku's existing egress proxy still owns the legacy Claude
 # setup token.
@@ -82,6 +86,8 @@ _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
+    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/openai"),
+    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/anthropic"),
     zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
@@ -189,7 +195,10 @@ class Aiquota(Construct):
                 name=_API_NAME,
                 namespace=NAMESPACE,
                 labels=SERVICE.pods.selector,
-                annotations={"description": "Claude and Codex subscription quota API via the CLIProxyAPI integration."},
+                annotations={
+                    "description": "AI subscription quotas and OpenAI Platform credits.",
+                    "secret.reloader.stakater.com/reload": _PLATFORM_SESSIONS_READ_TOKEN,
+                },
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
@@ -213,6 +222,16 @@ class Aiquota(Construct):
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
                     self, "cli-proxy-api-management-ref"
                 ),
+                env_name(Settings, "openai_platform_token"): SecretRef(
+                    namespace=NAMESPACE, name=_PLATFORM_SESSIONS_READ_TOKEN
+                )
+                .key("token")
+                .env_value(self, "openai-platform-token-ref", optional=True),
+                env_name(Settings, "anthropic_platform_token"): SecretRef(
+                    namespace=NAMESPACE, name=_PLATFORM_SESSIONS_READ_TOKEN
+                )
+                .key("token")
+                .env_value(self, "anthropic-platform-token-ref", optional=True),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(client.HTTP.url),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
                 env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(
@@ -247,7 +266,9 @@ class Aiquota(Construct):
                 memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
             ),
             readiness=http_probe("/readyz", port=SERVICE.pod_port, initial_delay_seconds=5, failure_threshold=12),
-            liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20),
+            liveness=http_probe(
+                "/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20, timeout_seconds=5
+            ),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 read_only_root_filesystem=False,

@@ -10,10 +10,78 @@ workflow.
 from __future__ import annotations
 
 import fnmatch
+import json
+import logging
 import os
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def _read_json_lockfile(path: Path, *, description: str) -> bytes | None:
+    """Read a lockfile if it is readable JSON, without interpreting Bazel's schema."""
+    try:
+        contents = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not read %s Bazel module lockfile %s: %s", description, path, exc)
+        return None
+
+    try:
+        json.loads(contents)
+    except (ValueError, RecursionError) as exc:
+        logger.warning("Ignoring invalid JSON in %s Bazel module lockfile %s: %s", description, path, exc)
+        return None
+    return contents
+
+
+def _atomic_write(path: Path, contents: bytes) -> None:
+    """Write through a temporary sibling directory so replacement is atomic."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".bazel-module-lock-", dir=path.parent) as temp_dir:
+        temporary_path = Path(temp_dir) / path.name
+        temporary_path.write_bytes(contents)
+        temporary_path.replace(path)
+
+
+@contextmanager
+def _module_lockfile_cache() -> Iterator[None]:
+    """Restore and persist Bazel's disposable module-resolution lockfile cache."""
+    workspace_lockfile = Path.cwd() / "MODULE.bazel.lock"
+    cache_home = os.environ.get("XDG_CACHE_HOME")
+    if cache_home:
+        cache_root: Path | None = Path(cache_home)
+    else:
+        try:
+            cache_root = Path.home() / ".cache"
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Could not locate Bazel module lockfile cache: %s", exc)
+            cache_root = None
+    cache_lockfile = cache_root / "ducktape" / "bazel" / "MODULE.bazel.lock" if cache_root is not None else None
+
+    if cache_lockfile is not None and not workspace_lockfile.exists():
+        cached_contents = _read_json_lockfile(cache_lockfile, description="cached")
+        if cached_contents is not None:
+            try:
+                _atomic_write(workspace_lockfile, cached_contents)
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not restore cached Bazel module lockfile %s: %s", cache_lockfile, exc)
+
+    try:
+        yield
+    finally:
+        if cache_lockfile is not None:
+            workspace_contents = _read_json_lockfile(workspace_lockfile, description="workspace")
+            if workspace_contents is not None:
+                try:
+                    _atomic_write(cache_lockfile, workspace_contents)
+                except (OSError, ValueError) as exc:
+                    logger.warning("Could not save Bazel module lockfile cache %s: %s", cache_lockfile, exc)
 
 
 def _run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -82,9 +150,10 @@ def graph_wide_change_reason(paths: list[str]) -> str | None:
 
     for path in paths:
         basename = Path(path).name
-        if path in exact_paths or basename in manifest_basenames:
+        if path in exact_paths or basename in manifest_basenames or basename.endswith(".MODULE.bazel"):
             return path
         if fnmatch.fnmatch(path, "*.bzl"):
+            # Keep this fallback for the gaps in debug/bazel_diff_starlark.md.
             return path
         if basename.startswith("requirements") and basename.endswith(".txt"):
             return path
@@ -99,11 +168,11 @@ def _quote_labels(path: Path) -> str:
 
 def _probe(stage: str) -> None:
     """Record runner state, while keeping the probe best-effort."""
-    _run(["python3", "devinfra/ci/bb_runner_probe.py", "snapshot", stage], check=False)
+    _run(["python3", "devinfra/buildbuddy/ci/runner_probe.py", "snapshot", stage], check=False)
 
 
 def _finalize_probe() -> None:
-    _run(["python3", "devinfra/ci/bb_runner_probe.py", "finalize", "--upload"], check=False)
+    _run(["python3", "devinfra/buildbuddy/ci/runner_probe.py", "finalize", "--upload"], check=False)
 
 
 def _announce_bazel_command(role: str) -> None:
@@ -119,6 +188,25 @@ def _rbe_flags() -> list[str]:
         flags.extend(["--build_metadata=ROLE=CI", "--build_metadata=DISABLE_TARGET_TRACKING=false"])
     flags.append("--remote_default_exec_properties=container-image=docker://" + os.environ["RBE_CONTAINER_IMAGE"])
     return flags
+
+
+def _run_bazel(
+    command: str, *, role: str, targets: list[str], extra_flags: tuple[str, ...] = (), check: bool = True
+) -> subprocess.CompletedProcess[str]:
+    """Run one named CI phase with its common Bazel flags."""
+    _announce_bazel_command(role)
+    return _run(
+        [
+            "bazel",
+            command,
+            f"--invocation_id={os.environ[f'{role.upper()}_INVOCATION_ID']}",
+            "--keep_going",
+            *_rbe_flags(),
+            *extra_flags,
+            *targets,
+        ],
+        check=check,
+    )
 
 
 def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
@@ -167,10 +255,24 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     affected_query = temp_dir / "affected-query.txt"
     affected = temp_dir / "affected.txt"
 
+    # Cross-run base-hash caching was evaluated and deferred; see
+    # debug/bazel_diff_base_hash_cache.md for measurements and revisit conditions.
+    # Base/head queries share warm Bazel state: time the whole driver, not just base.
+    # Query flattens scalar select() values; fingerprint the raw attributes too.
+    # Remaining omissions are documented in debug/bazel_diff_starlark.md.
+    hash_command = [
+        "bazel-diff",
+        "generate-hashes",
+        "-co=--proto:include_synthetic_attribute_hash",
+        "-w",
+        str(Path.cwd()),
+        "-b",
+        "bazel",
+    ]
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", base])
-    _run(["bazel-diff", "generate-hashes", "-w", str(Path.cwd()), "-b", "bazel", str(base_hashes)])
+    _run([*hash_command, str(base_hashes)])
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", head_sha])
-    _run(["bazel-diff", "generate-hashes", "-w", str(Path.cwd()), "-b", "bazel", str(head_hashes)])
+    _run([*hash_command, str(head_hashes)])
     affected_raw.write_text(
         _capture(
             [
@@ -204,8 +306,8 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
 
 
 def main() -> int:
-    """Run selection, test, and build, then finalize runner diagnostics."""
-    with tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
+    """Run selection, race-enabled tests and normal builds, then finalize runner diagnostics."""
+    with _module_lockfile_cache(), tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
         temp_dir = Path(temp_path)
         try:
             full_sweep, targets, test_query = _select_targets(temp_dir)
@@ -215,51 +317,16 @@ def main() -> int:
             _probe("before-test")
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
-                _announce_bazel_command("build")
-                _run(
-                    [
-                        "bazel",
-                        "build",
-                        f"--invocation_id={os.environ['BUILD_INVOCATION_ID']}",
-                        "--keep_going",
-                        *_rbe_flags(),
-                        *targets,
-                    ]
-                )
-                _probe("after-build")
-                return 0
+            else:
+                test_rc = _run_bazel("test", role="test", targets=targets, check=False).returncode
+                if test_rc == 4 and not full_sweep:
+                    print("No runnable tests after tag filtering in the affected set; continuing to build.")
+                    test_rc = 0
+                if test_rc != 0:
+                    return test_rc
+                _probe("after-test")
 
-            _announce_bazel_command("test")
-            test_result = _run(
-                [
-                    "bazel",
-                    "test",
-                    f"--invocation_id={os.environ['TEST_INVOCATION_ID']}",
-                    "--keep_going",
-                    *_rbe_flags(),
-                    *targets,
-                ],
-                check=False,
-            )
-            test_rc = test_result.returncode
-            if test_rc == 4 and not full_sweep:
-                print("No runnable tests after tag filtering in the affected set; continuing to build.")
-                test_rc = 0
-            if test_rc != 0:
-                return test_rc
-
-            _probe("after-test")
-            _announce_bazel_command("build")
-            _run(
-                [
-                    "bazel",
-                    "build",
-                    f"--invocation_id={os.environ['BUILD_INVOCATION_ID']}",
-                    "--keep_going",
-                    *_rbe_flags(),
-                    *targets,
-                ]
-            )
+            _run_bazel("build", role="build", targets=targets)
             _probe("after-build")
             return 0
         finally:

@@ -5,34 +5,26 @@ a stopgap that acts for the operator ([ADR](../docs/adr_orchestration_v1.md)).**
 implemented in that group's contract. What remains: moving each operation to a grant its backend checks (P3),
 and bounding what a launcher may let its workers do.
 
+**Caller-privilege delegation shipped separately:** the standing-agent workflow the operator
+prioritized on 2026-10-30 PDT uses the [`session_delegation` group](../action_service/session_delegation/README.md)
+under the caller's own authority, not `orchestration_v1`; its remaining usability capstone is in the
+[delegation plan](session_delegation_workflows.md). Different-privilege launch bounds below remain
+later work. Reuse the canonical operation authorities; a new authorization bypass is not an
+acceptable shortcut.
+
+**Session–Environment separation, 2026-11-04:** the Sandbox-only authorization target and
+SA-only subject in the historical sketch below are not settled for independent Sessions. Reconcile
+Session commands, interrupts and reads with
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments),
+[`DELIVERY_DESTINATION_AUTHORITY_DESIGN`](task_dag.md#delivery_destination_authority_design--assign-session-send-authority-and-internal-fences)
+and [`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
+before extending backend grants. The subject becomes an Agentplane `Identity`
+([identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms));
+the actual future target remains open, and existing backend enforcement continues until replaced.
+
 Claude.ai is the first client, but nothing here is specific to it: the same Actions serve any MCP Connection, and an
 orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](../docs/agent_cli.md)
 ([user stories 2 and 3](user_stories.md#2-trusted-orchestrator-untrusted-fleet)).
-
-## The workflow
-
-What an orchestrating caller does:
-
-1. **Pick a configuration.** `orchestration_v1__list_launch_presets` returns the reviewed launch presets as concrete
-   launch and Session fields.
-2. **Launch a worker.** `request_action` for `orchestration_v1/launch_sandbox` with those fields, edited for the task,
-   plus the launcher grants the caller wants on the new Sandbox. The operator approves it on the Action card, which
-   Web Push brings to the phone. The result names the Sandbox and its UID.
-3. **Give it the task.** `orchestration_v1__open_session` with the Sandbox name and UID, a Session ID the caller mints
-   and the Session spec, then `orchestration_v1__submit_input` with the task. The Dispatcher queues both until the
-   Sandbox is Ready.
-4. **Follow it.** `orchestration_v1__get_session` says whether the Session is working or idle and where its queued
-   commands are. `read_turns` returns recent turns and a resume token; `wait_for_turn` waits within the direct-tool
-   budget for the next completion and returns a token for the next call. Read final messages with `read_turns`.
-5. **Answer and steer.** A worker that needs something ends its turn saying so. The caller reads that in step 4 and
-   answers with `orchestration_v1__submit_input`, or stops a turn going wrong with `orchestration_v1__interrupt_turn`.
-6. **Finish.** Launched with idle suspend and wake-on-send, the worker suspends once idle and a later input wakes
-   it. Its work lands where its own grants let it write, such as a branch or a PR. Deleting it stays an operator
-   act, never automatic.
-
-A claude.ai conversation acts only while it has a turn, so following is pull-based; a Claude Code session can also
-schedule its own next check. [External inboxes](task_freezer.md#external_agent_inboxes--inboxes-for-externally-running-agents)
-stay deferred until a worker must reach a caller that has not asked.
 
 ## Shape-matched approval is the v1 expedient
 
@@ -57,7 +49,7 @@ verbs over targets, as `session_inbox_access` already does for `send_message` wi
 
 ```yaml
 - type: session_access # sketch: session_inbox_access with more verbs
-  operations: [send_message, open_session, submit_input, interrupt_turn, read_history]
+  operations: [send_message, create_session, submit_input, interrupt_turn, read_history]
   targets: { sandboxes: [{ name: worker-3f2a, uid: 9b0e… }] }
 ```
 
@@ -69,9 +61,9 @@ the backends share, not one bespoke rule each.
 
 Where the check runs (operator, 00:18 UTC: "send message, interrupt, open session might end up looking like rbac
 checked on the runner gateway side"): Session commands in the Runner Gateway, whose Dispatcher already authorizes
-the caller of every command; history reads in History; inbox messages in Notifications. The subject is the caller's
-ServiceAccount and the object is the Sandbox, never a Session (operator, 00:37 UTC: "the thing that's the
-object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom verbs such as `open-session`,
+the caller of every command; history reads in History; inbox messages in Notifications. In the original sketch, the subject was the caller's
+ServiceAccount and the object the Sandbox, never a Session (operator, 00:37 UTC: "the thing that's the
+object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom verbs such as `create-session`,
 `submit-input` and `interrupt` on `sandboxes`, checked with a `SubjectAccessReview` and granted by a Role naming the
 worker through a `kubernetes_role_binding` rule: Kubernetes' own check on who may bind what comes with it, but a Role
 cannot pin a UID, so the Gateway still compares it. Or it could be a typed `PolicySet` rule over Sandbox targets by
@@ -104,4 +96,4 @@ Later and unplanned: auto-approved launches within reviewed bounds (`AGENT_LAUNC
 Actions (suspend, resume, delete), an inbox for external callers, subscriptions to a worker's lifecycle ("this
 Sandbox died"), a fleet view grouping workers under their launcher, one preset owner the app and the group both read
 at run time instead of two rendered copies (operator, 2026-10-27 00:51 UTC), and a spend budget per account at the
-LLM ingress, which `THREAD_CREATE_POLICY` records as the operator's actual concern.
+LLM ingress, recorded in the [delegation scope boundary](session_delegation_workflows.md#budget-and-broader-policy-boundaries).

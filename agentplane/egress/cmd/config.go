@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -18,38 +19,47 @@ const settingPrefix = "AGENTPLANE_EGRESS_"
 // AGENTPLANE_EGRESS_CONFIG_FILE, with AGENTPLANE_EGRESS_* environment overrides for scalar
 // settings. Lists and maps are file-only. Viper loads the settings.
 //
-// The admin listener serves the gRPC health service, and the admin API beside it when
+// The gRPC listener serves rules and health, and the admin API beside them when
 // admin_grpc_audience, the audience of the bearer its callers send, and admin_grpc_callers, the
 // ServiceAccounts it admits as `namespace/name`, are set.
+//
+// local_api_server is where kubernetesServiceAccount credentials naming the `local` API server act,
+// and the token file holding the proxy's own bearer for it; unset, those credentials are unavailable.
 type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	ListenAddress                   string            `mapstructure:"listen_address"`
+	Forward                         listener.Config   `mapstructure:"forward"`
+	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
-	AgentAPIListenAddress           string            `mapstructure:"agent_api_listen_address"`
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
-	TokenAudience                   string            `mapstructure:"token_audience"`
 	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	ResyncSeconds                   int               `mapstructure:"resync_seconds"`
 	DatabaseURL                     string            `mapstructure:"database_url"`
 	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
 	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
 	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
 	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
 	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
+	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
+}
+
+// apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
+// requests to it name, and the file holding the proxy's bearer for it, read on every use.
+type apiServerConfig struct {
+	Host      string `mapstructure:"host"`
+	Port      int    `mapstructure:"port"`
+	TokenFile string `mapstructure:"token_file"`
 }
 
 func defaultConfig() config {
 	return config{
-		ListenAddress: "0.0.0.0:8888", AdminListenAddress: "0.0.0.0:8081",
-		AgentAPIListenAddress: "0.0.0.0:8082", ResyncSeconds: 300, DecisionHistorySize: 200,
+		AdminListenAddress: "0.0.0.0:8081", DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
 }
@@ -61,16 +71,12 @@ func loadConfig() (config, error) {
 	for _, key := range []string{
 		"rules_namespace",
 		"credentials_namespace",
-		"listen_address",
 		"admin_listen_address",
 		"admin_grpc_audience",
-		"agent_api_listen_address",
 		"ca_cert",
 		"ca_key",
 		"upstream_ca_file",
-		"token_audience",
 		"kubeconfig",
-		"resync_seconds",
 		"database_url",
 		"decision_history_size",
 		"decision_retention_days",
@@ -86,7 +92,7 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read egress settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(listener.AuthenticationDecodeHook, mapstructure.TextUnmarshallerHookFunc()))); err != nil {
 		return config{}, errors.New("invalid egress settings")
 	}
 	if err := c.validate(); err != nil {
@@ -107,7 +113,6 @@ func (c *config) validate() error {
 		{"credentials_namespace", c.CredentialsNamespace},
 		{"ca_cert", c.CACert},
 		{"ca_key", c.CAKey},
-		{"token_audience", c.TokenAudience},
 		{"database_url", c.DatabaseURL},
 	} {
 		if required.value == "" {
@@ -120,9 +125,16 @@ func (c *config) validate() error {
 	if slices.Contains(c.ProjectedTokenAudiences, "") {
 		return errors.New("projected_token_audiences must not contain an empty audience")
 	}
+	if err := c.Forward.Validate(); err != nil {
+		return fmt.Errorf("forward listener: %w", err)
+	}
+	if c.Forward.TLS == nil {
+		return errors.New("forward listener requires TLS")
+	}
+	if !c.Forward.Has(listener.SPIFFE) || c.Forward.Has(listener.KubernetesBearer) {
+		return errors.New("forward listener authenticates SPIFFE alone")
+	}
 	for _, limit := range []bounded{
-		// client-go relists a watch shorter than a second, so the informer takes two at the least.
-		{"resync_seconds", c.ResyncSeconds, 2, 86400},
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},
 		{"decision_retention_days", c.DecisionRetentionDays, 1, 365},
 		{"decision_queue_size", c.DecisionQueueSize, 1, 100000},
@@ -134,6 +146,10 @@ func (c *config) validate() error {
 	}
 	if err := c.validateAdminGRPC(); err != nil {
 		return err
+	}
+	if server := c.LocalAPIServer; server != nil &&
+		(server.Host == "" || server.TokenFile == "" || server.Port < 1 || server.Port > 65535) {
+		return errors.New("local_api_server needs a host, a port between 1 and 65535 and a token_file")
 	}
 	for logger, level := range c.LogLevels {
 		if logger != "root" {

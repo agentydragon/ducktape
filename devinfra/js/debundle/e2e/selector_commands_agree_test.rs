@@ -16,15 +16,16 @@
 //! `switch`; property names stay exact; and a `const ANYTHING = <init>`
 //! declarator matches its initializer wherever it sits in its statement.
 
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
 use debundle_e2e_support::{
-    BindingGroup, Fixture, FixtureOpts, GraphFixture, Member, assert_entry_output,
+    BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output,
     assert_generated_module_after_entry_script, assert_module_source, logical_module,
     logical_module_with_binding_groups, outcomes, parse_stdout_json, read_selector_outcomes,
     run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
-    run_source_only_validate, run_spec_validate, run_synthesize_selectors, write_text_file,
-    write_validate_fixture_spec,
+    run_source_only_validate, run_spec_validate, run_synthesize_selectors,
+    source_match_module_yaml, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -638,9 +639,7 @@ fn elimination_tree() -> GraphFixture {
         ("elimination/either.yaml", "Either", "f", EITHER),
         ("elimination/other.yaml", "Other", "g", OTHER),
     ] {
-        modules.push((path, format!(
-            "source_matches: [{{match: {selector:?}, bindings: [{{local: {local}, name: {name}}}]}}]"
-        )));
+        modules.push((path, source_match_module_yaml(selector, local, name)));
     }
     modules.push((
         "elimination/third.yaml",
@@ -788,8 +787,7 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
         "{run:#}"
     );
 
-    let either =
-        format!("source_matches: [{{match: {EITHER:?}, bindings: [{{local: f, name: Either}}]}}]");
+    let either = source_match_module_yaml(EITHER, "f", "Either");
     let tree = GraphFixture::new(
         RELATIONAL_ELIMINATION_CHUNK,
         &[

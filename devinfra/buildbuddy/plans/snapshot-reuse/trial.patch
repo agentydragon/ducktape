@@ -1,0 +1,12 @@
+--- a/agentplane/system_tests/k3s/defs.bzl
++++ b/agentplane/system_tests/k3s/defs.bzl
+@@ -146,7 +146,8 @@
+         properties |= KVM_EXEC_PROPERTIES
+     else:
+         properties |= K3S_PERSISTENCE_PROPERTIES | {
+-            "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
++            "test.retry": "false",
++            "test.runner-recycling-key": "snapshot-policy-review-20261103-" + k3s_recycling_key(vm = config.vm),
+         }
+     py_test(
+         name = name,

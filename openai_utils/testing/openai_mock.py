@@ -1,34 +1,27 @@
 """Mock OpenAI clients for testing.
 
-Provides mock implementations of OpenAIModelProto for unit tests:
+Provides mock implementations of Model for unit tests:
 - FakeOpenAIModel: Returns predefined responses in sequence
-- CapturingOpenAIModel: Wraps any model and records all requests
-- LIVE sentinel: Used in parametrized tests to select real API
+- CapturingOpenAIModel: Wraps a Responses model and records its requests
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
 
-from pydantic import BaseModel, ConfigDict
-
-from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-
-# Sentinel for selecting a real AsyncOpenAI client in parameterized tests
-LIVE = object()
+from openai_utils.model import Model, ResponsesRequest, ResponsesResult, WireRequest
 
 # Function type for a mocked OpenAI Responses API call
 ResponsesCreateFn = Callable[[ResponsesRequest], Awaitable[ResponsesResult]]
 
 
-class CapturingOpenAIModel(OpenAIModelProto):
+class CapturingOpenAIModel(Model):
     """Wrapper that captures all requests to an underlying OpenAI model.
 
-    Wraps any OpenAIModelProto and records all requests in the .captured list.
+    Wraps a Responses model and records all requests in the .captured list.
     """
 
-    def __init__(self, inner: OpenAIModelProto) -> None:
+    def __init__(self, inner: Model) -> None:
         self._inner = inner
         self.captured: list[ResponsesRequest] = []
         self.calls = 0
@@ -37,20 +30,17 @@ class CapturingOpenAIModel(OpenAIModelProto):
     def model(self) -> str:
         return self._inner.model
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    def prepare(self, request: ResponsesRequest) -> WireRequest:
+        return self._inner.prepare(request)
+
+    async def sample(self, req: WireRequest) -> ResponsesResult:
+        assert isinstance(req, ResponsesRequest)
         self.captured.append(req)
         self.calls += 1
-        return await self._inner.responses_create(req)
+        return await self._inner.sample(req)
 
 
-class CapturedRequest(BaseModel):
-    """Pydantic wrapper for captured Responses.create kwargs used in tests."""
-
-    input: list[dict[str, Any]] | None = None
-    model_config = ConfigDict(extra="allow")
-
-
-class FakeOpenAIModel(OpenAIModelProto):
+class FakeOpenAIModel(Model):
     """Mock OpenAI model that returns predefined responses.
 
     Wrap with CapturingOpenAIModel if you need to inspect requests.
@@ -62,9 +52,9 @@ class FakeOpenAIModel(OpenAIModelProto):
         self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def sample(self, req: WireRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
-            raise TypeError("responses_create expects a ResponsesRequest instance")
+            raise TypeError("FakeOpenAIModel expects a Responses request")
         if self.calls >= len(self._outputs):
             last_messages = []
             if isinstance(req.input, list):
@@ -88,27 +78,24 @@ class FakeOpenAIModel(OpenAIModelProto):
         return result
 
 
-class OpenAIClient(Protocol):
-    @property
-    def responses(self) -> Any: ...
-
-
 def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:
     """Construct a capturing mock client that delegates to the provided behavior."""
 
-    class _MockClient(OpenAIModelProto):
+    class _MockClient(Model):
         model = "test-model"
 
-        async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+        async def sample(self, req: WireRequest) -> ResponsesResult:
+            assert isinstance(req, ResponsesRequest)
             return await responses_create_fn(req)
 
     return CapturingOpenAIModel(_MockClient())
 
 
-class NoopOpenAIClient(OpenAIModelProto):
+class NoopOpenAIClient(Model):
     """No-op OpenAI client for tests that bypass sampling via SyntheticAction."""
 
     model = "noop-model"
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def sample(self, req: WireRequest) -> ResponsesResult:
+        assert isinstance(req, ResponsesRequest)
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")

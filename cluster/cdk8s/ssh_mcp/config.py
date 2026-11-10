@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address
 from pathlib import Path
 
+from python.runfiles import Runfiles
+
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from ssh_mcp_server.server import SshSettings, TargetConfig
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "ssh-mcp"
 NAMESPACE = NAME
@@ -115,7 +116,7 @@ def _ordered_destinations(targets: tuple[Target, ...]) -> tuple[Destination, ...
 
 
 def _read_input(relative: str) -> str:
-    return get_required_path(own_repo_rlocation(relative)).read_text()
+    return (Runfiles.CreateOrRaise().root() / f"ducktape/{relative}").read_text()
 
 
 def _host_key(relative: str) -> str:

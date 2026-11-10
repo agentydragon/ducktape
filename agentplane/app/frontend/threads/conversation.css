@@ -1,158 +1,4 @@
-/* Live assistant text uses an inline caret so its streaming state doesn't create a separate row. */
-.agentplane-streaming-cursor {
-  display: inline-block;
-  margin-inline-start: 0.12em;
-  color: var(--mantine-primary-color-filled);
-  font-weight: 700;
-  animation: agentplane-streaming-cursor-blink 1s steps(1, end) infinite;
-}
-
-.agentplane-streaming-cursor::before {
-  content: attr(data-character);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agentplane-streaming-cursor {
-    animation: none;
-  }
-}
-
-@keyframes agentplane-streaming-cursor-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0;
-  }
-}
-
-/* The operator's own input: a filled bubble at the right, where every other row is a bordered
-   full-width card, so role reads from position and colour without a "user" label. The capped width
-   keeps a short message from stretching edge to edge. Mantine's light variant follows the colour
-   scheme. */
-.agentplane-user-bubble {
-  background-color: var(--mantine-color-blue-light);
-  max-width: min(34rem, 80%);
-  /* The gutter takes what the bubble leaves, never the other way round: the bubble keeps its width
-     when the gutter's status goes. */
-  flex-shrink: 0;
-}
-
-.agentplane-user-message-row {
-  min-width: 0;
-}
-
-/* The status, error and action of an unsettled input, before its bubble. They wrap into the room the
-   bubble leaves. */
-.agentplane-user-message-aside {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 10rem;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-/* Keep room for the action button in the gutter before an input message. */
-.agentplane-user-bubble[data-has-action="true"] {
-  max-width: min(34rem, calc(100% - 6rem));
-}
-
-/* A step of a run (a reasoning step, a tool call) as one line, opening to its content below -- see
-   step_line.tsx. */
-.agentplane-step-row {
-  font-size: var(--mantine-font-size-sm);
-  position: relative;
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: var(--mantine-spacing-xs);
-  line-height: var(--mantine-line-height-sm);
-}
-
-/* The run chooses a compact folded-row policy; the shared header owns its geometry. */
-.agentplane-run-steps {
-  --agentplane-disclosure-collapsed-height: var(--agentplane-disclosure-compact-height);
-}
-
-/* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
-   cards when another step follows it. Below the card, so opening it does not move its top edge. */
-.agentplane-run-steps > [data-open="true"]:not(:last-child) {
-  margin-block-end: var(--mantine-spacing-xs);
-}
-
-.agentplane-step-details,
-.agentplane-step-static {
-  min-width: 0;
-  flex: 1;
-}
-
-.agentplane-step-summary {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: baseline;
-  gap: var(--mantine-spacing-xs);
-  white-space: nowrap;
-}
-
-.agentplane-step-title {
-  flex: none;
-  font-size: inherit;
-}
-
-.agentplane-step-preview {
-  position: relative;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Controls change the displayed details; keep them with that content so the sticky disclosure
-   button keeps the full row for its title and chevron. */
-.agentplane-step-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-/* A streaming step breathes, as its status in the line; one that stopped short is blue and still. */
-.agentplane-step-title--streaming {
-  animation: agentplane-step-breathe 2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agentplane-step-title--streaming {
-    animation: none;
-  }
-}
-
-@keyframes agentplane-step-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.4;
-  }
-}
-
-.agentplane-step-trailing {
-  display: inline-flex;
-  flex: none;
-  align-items: baseline;
-  gap: var(--mantine-spacing-xs);
-}
-
-.agentplane-step-preview .agentplane-markdown--single-line {
-  white-space: inherit;
-}
-
-.agentplane-step-retry {
+.agentplane-tool-retry {
   flex: none;
   border: 0;
   padding: 0;
@@ -325,8 +171,8 @@
 .agentplane-command-card-line:focus-within
   .agentplane-command-progress[data-stage="effected"]
   .agentplane-command-progress-hit,
-.agentplane-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
-.agentplane-user-message-row:focus-within
+.transcript-user-message-row:hover .agentplane-command-progress[data-stage="effected"] .agentplane-command-progress-hit,
+.transcript-user-message-row:focus-within
   .agentplane-command-progress[data-stage="effected"]
   .agentplane-command-progress-hit,
 .agentplane-command-progress[data-stage="effected"]:is(:hover, :focus-within) .agentplane-command-progress-hit {
@@ -335,10 +181,10 @@
 }
 
 @media (hover: none) {
-  .agentplane-user-message-row:has(.agentplane-evidence-owner[data-evidence-revealed])
+  .transcript-user-message-row:has(.transcript-inspection-owner[data-inspection-revealed])
     .agentplane-command-progress[data-stage="effected"]
     .agentplane-command-progress-hit,
-  .agentplane-evidence-owner[data-evidence-revealed]
+  .transcript-inspection-owner[data-inspection-revealed]
     .agentplane-command-progress[data-stage="effected"]
     .agentplane-command-progress-hit {
     opacity: 1;
@@ -381,15 +227,15 @@
    edge, and detail centred on the indicator runs off the page. The row is the containing block
    instead: detail opens below the indicator, flush with the row's right edge, never wider than the
    row. */
-.agentplane-user-message-row {
+.transcript-user-message-row {
   position: relative;
 }
 
-.agentplane-user-message-aside .agentplane-command-progress {
+.transcript-user-message-aside .agentplane-command-progress {
   position: static;
 }
 
-.agentplane-user-message-aside .agentplane-command-progress-label {
+.transcript-user-message-aside .agentplane-command-progress-label {
   top: 1.8rem;
   bottom: auto;
   left: auto;
@@ -448,8 +294,4 @@
   max-width: min(85%, 34rem);
   min-width: 0;
   background: var(--mantine-color-default-hover);
-}
-
-.agentplane-step-inspect {
-  display: inline-flex;
 }

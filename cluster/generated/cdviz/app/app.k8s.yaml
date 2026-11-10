@@ -1,0 +1,1651 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: collector-config
+  namespace: cdviz
+data:
+  001_ci_feedback.sql: |
+    -- Additive analytics migration. Source clocks and raw conclusions deliberately
+    -- bypass the upstream aggregate views, which discard transitions and map skipped
+    -- checks to cancellation. Later schema changes belong in a new migration.
+    CREATE OR REPLACE FUNCTION cdviz.ci_feedback(p_from timestamptz, p_to timestamptz)
+    RETURNS TABLE (
+        repository text, head_sha text, pr text, branch text,
+        arrived_at timestamptz, clock text, superseded_at timestamptz,
+        first_red_at timestamptz, first_green_at timestamptz, first_verdict text,
+        first_verdict_seconds numeric, red_seconds numeric, green_seconds numeric,
+        state text, observed_gates integer, required_gates integer, missing_gates text,
+        policy_observed_at timestamptz, url text
+    )
+    LANGUAGE sql STABLE AS $$
+    WITH lake AS MATERIALIZED (
+        SELECT timestamp AS event_at, predicate, payload,
+            payload #> '{customData,github}' AS github,
+            COALESCE(payload #>> '{customData,github,repository,full_name}',
+                split_part(payload #>> '{subject,content,pipelineName}', '/', 1) || '/' ||
+                split_part(payload #>> '{subject,content,pipelineName}', '/', 2)) AS repo
+        FROM cdviz.cdevents_lake
+        WHERE timestamp >= p_from - interval '1 day' AND timestamp <= p_to
+    ), policy AS (
+        -- This is an explicitly labeled replay under the latest observed policy,
+        -- not a claim about which rules GitHub enforced at a historical instant.
+        SELECT payload #> '{customData,ci_policy}' AS data, timestamp AS observed_at
+        FROM cdviz.cdevents_lake
+        WHERE timestamp <= p_to AND payload #> '{customData,ci_policy}' IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    ), required AS (
+        SELECT DISTINCT jsonb_array_elements_text(data -> 'contexts') AS name FROM policy
+    ), pr_events AS (
+        SELECT DISTINCT repo, github #>> '{pull_request,head,sha}' AS sha,
+            github #>> '{pull_request,number}' AS pr_number,
+            github #>> '{pull_request,head,ref}' AS head_branch,
+            CASE WHEN github ->> 'action' = 'opened'
+                THEN (github #>> '{pull_request,created_at}')::timestamptz
+                ELSE (github #>> '{pull_request,updated_at}')::timestamptz END AS at
+        FROM lake
+        WHERE github ->> 'action' IN ('opened', 'synchronize')
+            AND github #>> '{pull_request,head,sha}' IS NOT NULL
+    ), pr_changes AS (
+        SELECT *, lag(sha) OVER (PARTITION BY repo, pr_number ORDER BY at, sha) AS previous_sha
+        FROM pr_events
+    ), pr_heads AS (
+        SELECT repo, sha, pr_number, head_branch, at, 'PR head event' AS start_clock,
+            lead(at) OVER (PARTITION BY repo, pr_number ORDER BY at, sha) AS replaced_at
+        FROM pr_changes WHERE sha IS DISTINCT FROM previous_sha
+    ), runs AS (
+        SELECT *, github -> 'workflow_run' AS run FROM lake
+        WHERE github -> 'workflow_run' IS NOT NULL
+    ), fallback_heads AS (
+        SELECT r.repo, r.run ->> 'head_sha' AS sha, item ->> 'number' AS pr_number,
+            r.run ->> 'head_branch' AS head_branch,
+            min((r.run ->> 'created_at')::timestamptz) AS at,
+            'Workflow creation proxy' AS start_clock, NULL::timestamptz AS replaced_at
+        FROM runs r
+        LEFT JOIN LATERAL jsonb_array_elements(r.run -> 'pull_requests') item ON true
+        WHERE r.run ->> 'created_at' IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM pr_heads h WHERE h.repo = r.repo AND h.sha = r.run ->> 'head_sha'
+                    AND (h.pr_number = item ->> 'number' OR (item IS NULL
+                        AND COALESCE(r.run ->> 'event', 'pull_request') <> 'push'
+                        AND r.run ->> 'head_branch' NOT IN ('devel', 'main')))
+            )
+        GROUP BY r.repo, r.run ->> 'head_sha', item ->> 'number', r.run ->> 'head_branch'
+    ), heads AS MATERIALIZED (
+        SELECT h.*, EXISTS (
+            SELECT 1 FROM pr_events e WHERE e.repo = h.repo AND e.pr_number = h.pr_number
+                AND e.at = h.at AND e.sha <> h.sha
+        ) AS ambiguous FROM pr_heads h WHERE at BETWEEN p_from AND p_to
+        UNION ALL
+        SELECT *, false FROM fallback_heads WHERE at BETWEEN p_from AND p_to
+    ), jobs AS MATERIALIZED (
+        SELECT repo, github -> 'workflow_job' AS job, event_at, predicate
+        FROM lake WHERE github -> 'workflow_job' IS NOT NULL
+    ), workflow_contexts AS (
+        SELECT DISTINCT repo, job ->> 'workflow_name' AS workflow, job ->> 'name' AS name
+        FROM jobs JOIN required ON required.name = job ->> 'name'
+    ), check_events AS MATERIALIZED (
+        SELECT DISTINCT j.repo, job ->> 'head_sha' AS sha, job ->> 'name' AS name,
+            (job ->> 'run_id')::bigint AS run_id,
+            COALESCE((job ->> 'run_attempt')::integer, 1) AS attempt,
+            CASE WHEN predicate = 'finished' THEN (job ->> 'completed_at')::timestamptz
+                ELSE (job ->> 'started_at')::timestamptz END AS at,
+            CASE WHEN predicate <> 'finished' THEN 'pending'
+                WHEN job ->> 'conclusion' IN ('success', 'skipped', 'neutral') THEN 'green'
+                WHEN job ->> 'conclusion' IN ('failure', 'timed_out', 'action_required', 'startup_failure') THEN 'red'
+                WHEN job ->> 'conclusion' IN ('cancelled', 'stale') THEN 'cancelled'
+                ELSE 'unknown' END AS status,
+            CASE WHEN predicate = 'finished' THEN 2 ELSE 1 END AS priority
+        FROM jobs j JOIN required ON required.name = job ->> 'name'
+        UNION
+        -- A queued rerun invalidates an older result before its job starts. Use
+        -- webhook transition clocks only: REST created_at is the ORIGINAL run clock.
+        SELECT r.repo, run ->> 'head_sha', c.name, (run ->> 'id')::bigint,
+            COALESCE((run ->> 'run_attempt')::integer, 1), event_at,
+            CASE WHEN run ->> 'conclusion' = 'cancelled' THEN 'cancelled' ELSE 'pending' END, 0
+        FROM runs r JOIN workflow_contexts c ON c.repo = r.repo AND c.workflow = run ->> 'name'
+        WHERE github ->> 'action' IN ('requested', 'in_progress')
+            OR (github ->> 'action' = 'completed' AND run ->> 'conclusion' = 'cancelled'
+                AND NOT EXISTS (
+                    SELECT 1 FROM jobs j WHERE j.repo = r.repo
+                        AND j.job ->> 'run_id' = run ->> 'id' AND j.job ->> 'name' = c.name
+                        AND COALESCE(j.job ->> 'run_attempt', '1') = COALESCE(run ->> 'run_attempt', '1')
+                        AND j.predicate = 'finished' AND j.event_at <= r.event_at
+                ))
+    ), samples AS MATERIALIZED (
+        SELECT h.*, point.at AS point_at, verdict.*
+        FROM heads h
+        CROSS JOIN LATERAL (
+            SELECT DISTINCT e.at FROM check_events e
+            WHERE e.repo = h.repo AND e.sha = h.sha AND e.at >= h.at
+                AND e.at <= LEAST(COALESCE(h.replaced_at, p_to), p_to)
+            UNION SELECT LEAST(COALESCE(h.replaced_at, p_to), p_to)
+        ) point
+        CROSS JOIN LATERAL (
+            SELECT count(s.status)::integer AS observed,
+                count(*) FILTER (WHERE s.status = 'green')::integer AS greens,
+                count(*) FILTER (WHERE s.status = 'red')::integer AS reds,
+                count(*) FILTER (WHERE s.status = 'cancelled')::integer AS cancels,
+                count(*) FILTER (WHERE s.status = 'unknown')::integer AS unknowns,
+                string_agg(required.name, ', ' ORDER BY required.name)
+                    FILTER (WHERE s.status IS NULL OR s.status NOT IN ('green', 'red', 'cancelled')) AS missing
+            FROM required
+            LEFT JOIN LATERAL (
+                SELECT e.status FROM check_events e
+                WHERE e.repo = h.repo AND e.sha = h.sha AND e.name = required.name
+                    AND e.at >= h.at AND e.at <= point.at
+                ORDER BY e.run_id DESC, e.attempt DESC, e.at DESC, e.priority DESC
+                LIMIT 1
+            ) s ON true
+        ) verdict
+    ), history AS (
+        SELECT repo, sha, pr_number, head_branch, at, start_clock, replaced_at, ambiguous,
+            min(point_at) FILTER (WHERE reds > 0 AND NOT ambiguous
+                AND COALESCE((SELECT (data ->> 'supported')::boolean FROM policy), false)) AS red_at,
+            min(point_at) FILTER (WHERE greens = (SELECT count(*) FROM required)
+                AND greens > 0 AND NOT ambiguous
+                AND COALESCE((SELECT (data ->> 'supported')::boolean FROM policy), false)) AS green_at
+        FROM samples GROUP BY repo, sha, pr_number, head_branch, at, start_clock, replaced_at, ambiguous
+    ), latest AS (
+        SELECT DISTINCT ON (repo, sha, pr_number, at) * FROM samples
+        ORDER BY repo, sha, pr_number, at, point_at DESC
+    )
+    SELECT h.repo, h.sha, h.pr_number, h.head_branch, h.at, h.start_clock, h.replaced_at,
+        h.red_at, h.green_at,
+        CASE WHEN h.red_at <= COALESCE(h.green_at, h.red_at) THEN 'red'
+            WHEN h.green_at IS NOT NULL THEN 'green' END,
+        extract(epoch FROM (LEAST(h.red_at, h.green_at) - h.at)),
+        extract(epoch FROM (h.red_at - h.at)), extract(epoch FROM (h.green_at - h.at)),
+        CASE WHEN h.ambiguous OR NOT COALESCE((SELECT (data ->> 'supported')::boolean FROM policy), false)
+                OR (SELECT count(*) FROM required) = 0 THEN 'unknown'
+            WHEN l.reds > 0 THEN 'red'
+            WHEN l.greens = (SELECT count(*) FROM required) THEN 'green'
+            WHEN h.replaced_at <= p_to THEN 'superseded'
+            WHEN l.unknowns > 0 THEN 'unknown'
+            WHEN l.cancels > 0 THEN 'cancelled' ELSE 'pending' END,
+        l.observed, (SELECT count(*)::integer FROM required),
+        CASE WHEN h.ambiguous THEN 'ambiguous PR head order' ELSE l.missing END,
+        (SELECT observed_at FROM policy),
+        'https://github.com/' || h.repo || '/commit/' || h.sha
+    FROM history h JOIN latest l
+        ON l.repo = h.repo AND l.sha = h.sha AND l.pr_number IS NOT DISTINCT FROM h.pr_number AND l.at = h.at;
+    $$;
+  002_ci_feedback_optimization.sql: |
+    -- Keep the feedback semantics of 001 while reducing intermediate row widths and
+    -- evaluating each head only against its own events.
+    CREATE OR REPLACE FUNCTION cdviz.ci_feedback(p_from timestamptz, p_to timestamptz)
+    RETURNS TABLE (
+        repository text, head_sha text, pr text, branch text,
+        arrived_at timestamptz, clock text, superseded_at timestamptz,
+        first_red_at timestamptz, first_green_at timestamptz, first_verdict text,
+        first_verdict_seconds numeric, red_seconds numeric, green_seconds numeric,
+        state text, observed_gates integer, required_gates integer, missing_gates text,
+        policy_observed_at timestamptz, url text
+    )
+    LANGUAGE sql STABLE AS $$
+    WITH lake AS MATERIALIZED (
+        -- Decode each GitHub payload once, and retain only fields used below.
+        SELECT timestamp AS event_at, predicate, gh.action,
+            gh.pull_request #>> '{head,sha}' AS pr_sha, gh.pull_request ->> 'number' AS pr_number,
+            gh.pull_request #>> '{head,ref}' AS pr_branch,
+            gh.pull_request ->> 'created_at' AS pr_created_at, gh.pull_request ->> 'updated_at' AS pr_updated_at,
+            COALESCE(gh.repository ->> 'full_name',
+                split_part(payload #>> '{subject,content,pipelineName}', '/', 1) || '/' ||
+                split_part(payload #>> '{subject,content,pipelineName}', '/', 2)) AS repo,
+            gh.workflow_run IS NOT NULL AS is_run, gh.workflow_job IS NOT NULL AS is_job,
+            gh.workflow_run -> 'pull_requests' AS run_pull_requests,
+            r.head_sha AS run_sha, r.head_branch AS run_branch, r.id AS run_id,
+            r.run_attempt AS run_attempt, r.created_at AS run_created_at,
+            r.event AS run_event, r.name AS run_name, r.conclusion AS run_conclusion,
+            j.head_sha AS job_sha, j.name AS job_name, j.workflow_name AS job_workflow,
+            j.run_id AS job_run_id, j.run_attempt AS job_attempt,
+            j.completed_at AS job_completed_at, j.started_at AS job_started_at, j.conclusion AS job_conclusion
+        FROM cdviz.cdevents_lake
+        CROSS JOIN LATERAL jsonb_to_record(
+            CASE WHEN jsonb_typeof(payload #> '{customData,github}') = 'object'
+                THEN payload #> '{customData,github}' ELSE '{}'::jsonb END
+        ) AS gh(action text, repository jsonb, pull_request jsonb, workflow_run jsonb, workflow_job jsonb)
+        CROSS JOIN LATERAL jsonb_to_record(
+            CASE WHEN jsonb_typeof(gh.workflow_run) = 'object' THEN gh.workflow_run ELSE '{}'::jsonb END
+        ) AS r(head_sha text, head_branch text, id text, run_attempt text, created_at text,
+            event text, name text, conclusion text)
+        CROSS JOIN LATERAL jsonb_to_record(
+            CASE WHEN jsonb_typeof(gh.workflow_job) = 'object' THEN gh.workflow_job ELSE '{}'::jsonb END
+        ) AS j(head_sha text, name text, workflow_name text, run_id text, run_attempt text,
+            completed_at text, started_at text, conclusion text)
+        WHERE timestamp >= p_from - interval '1 day' AND timestamp <= p_to
+    ), recent_policy AS MATERIALIZED (
+        -- Most selections have a recent policy replay. Limit the first search so a
+        -- chunk without any policy does not have to scan its entire history.
+        SELECT payload #> '{customData,ci_policy}' AS data, timestamp AS observed_at
+        FROM cdviz.cdevents_lake
+        WHERE timestamp <= p_to AND timestamp > p_to - interval '1 hour'
+            AND payload #> '{customData,ci_policy}' IS NOT NULL
+        ORDER BY timestamp DESC LIMIT 1
+    ), policy AS MATERIALIZED (
+        -- Fall back to all older history if there is no recent replay: historical
+        -- selections and interrupted polls still use the latest available policy.
+        SELECT * FROM recent_policy
+        UNION ALL
+        (SELECT payload #> '{customData,ci_policy}' AS data, timestamp AS observed_at
+            FROM cdviz.cdevents_lake
+            WHERE timestamp <= p_to - interval '1 hour'
+                AND payload #> '{customData,ci_policy}' IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM recent_policy)
+            ORDER BY timestamp DESC LIMIT 1)
+    ), required AS (
+        SELECT DISTINCT jsonb_array_elements_text(data -> 'contexts') AS name FROM policy
+    ), pr_events AS (
+        SELECT DISTINCT repo, pr_sha AS sha,
+            pr_number AS pr_number,
+            pr_branch AS head_branch,
+            CASE WHEN action = 'opened'
+                THEN (pr_created_at)::timestamptz
+                ELSE (pr_updated_at)::timestamptz END AS at
+        FROM lake
+        WHERE action IN ('opened', 'synchronize')
+            AND pr_sha IS NOT NULL
+    ), pr_changes AS (
+        SELECT *, lag(sha) OVER (PARTITION BY repo, pr_number ORDER BY at, sha) AS previous_sha
+        FROM pr_events
+    ), pr_heads AS (
+        SELECT repo, sha, pr_number, head_branch, at, 'PR head event' AS start_clock,
+            lead(at) OVER (PARTITION BY repo, pr_number ORDER BY at, sha) AS replaced_at
+        FROM pr_changes WHERE sha IS DISTINCT FROM previous_sha
+    ), runs AS MATERIALIZED (
+        SELECT repo, event_at, action, run_sha AS sha, run_branch AS head_branch,
+            run_id AS id, run_attempt AS attempt, run_created_at AS created_at,
+            run_event AS event, run_name AS name, run_conclusion AS conclusion,
+            run_pull_requests AS pull_requests
+        FROM lake WHERE is_run
+    ), fallback_heads AS (
+        SELECT r.repo, r.sha AS sha, item ->> 'number' AS pr_number,
+            r.head_branch AS head_branch,
+            min((r.created_at)::timestamptz) AS at,
+            'Workflow creation proxy' AS start_clock, NULL::timestamptz AS replaced_at
+        FROM runs r
+        LEFT JOIN LATERAL jsonb_array_elements(r.pull_requests) item ON true
+        WHERE r.created_at IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM pr_heads h WHERE h.repo = r.repo AND h.sha = r.sha
+                    AND (h.pr_number = item ->> 'number' OR (item IS NULL
+                        AND COALESCE(r.event, 'pull_request') <> 'push'
+                        AND r.head_branch NOT IN ('devel', 'main')))
+            )
+        GROUP BY r.repo, r.sha, item ->> 'number', r.head_branch
+    ), heads AS MATERIALIZED (
+        SELECT h.*, EXISTS (
+            SELECT 1 FROM pr_events e WHERE e.repo = h.repo AND e.pr_number = h.pr_number
+                AND e.at = h.at AND e.sha <> h.sha
+        ) AS ambiguous FROM pr_heads h WHERE at BETWEEN p_from AND p_to
+        UNION ALL
+        SELECT *, false FROM fallback_heads WHERE at BETWEEN p_from AND p_to
+    ), jobs AS MATERIALIZED (
+        SELECT repo, event_at, predicate, job_sha AS sha, job_name AS name, job_workflow AS workflow,
+            job_run_id AS run_id, job_attempt AS attempt, job_completed_at AS completed_at,
+            job_started_at AS started_at, job_conclusion AS conclusion
+        FROM lake WHERE is_job
+    ), workflow_contexts AS (
+        SELECT DISTINCT repo, workflow, jobs.name
+        FROM jobs JOIN required ON required.name = jobs.name
+    ), finished_jobs AS (
+        SELECT repo, run_id, name, COALESCE(attempt, '1') AS attempt, min(event_at) AS first_finished_at
+        FROM jobs WHERE predicate = 'finished'
+        GROUP BY repo, run_id, name, COALESCE(attempt, '1')
+    ), check_events AS MATERIALIZED (
+        SELECT DISTINCT j.repo, j.sha, j.name, j.run_id::bigint AS run_id,
+            COALESCE(j.attempt::integer, 1) AS attempt,
+            CASE WHEN predicate = 'finished' THEN completed_at::timestamptz
+                ELSE started_at::timestamptz END AS at,
+            CASE WHEN predicate <> 'finished' THEN 'pending'
+                WHEN conclusion IN ('success', 'skipped', 'neutral') THEN 'green'
+                WHEN conclusion IN ('failure', 'timed_out', 'action_required', 'startup_failure') THEN 'red'
+                WHEN conclusion IN ('cancelled', 'stale') THEN 'cancelled'
+                ELSE 'unknown' END AS status,
+            CASE WHEN predicate = 'finished' THEN 2 ELSE 1 END AS priority
+        FROM jobs j JOIN required ON required.name = j.name
+        UNION
+        -- A queued rerun invalidates an older result before its job starts. Use
+        -- webhook transition clocks only: REST created_at is the ORIGINAL run clock.
+        SELECT r.repo, r.sha, c.name, r.id::bigint,
+            COALESCE(r.attempt::integer, 1), event_at,
+            CASE WHEN r.conclusion = 'cancelled' THEN 'cancelled' ELSE 'pending' END, 0
+        FROM runs r JOIN workflow_contexts c ON c.repo = r.repo AND c.workflow = r.name
+        WHERE r.action IN ('requested', 'in_progress')
+        UNION
+        -- Keep cancellation separate so PostgreSQL can use a hash anti-join instead
+        -- of rescanning every job for each workflow transition.
+        SELECT r.repo, r.sha, c.name, r.id::bigint,
+            COALESCE(r.attempt::integer, 1), event_at, 'cancelled', 0
+        FROM runs r JOIN workflow_contexts c ON c.repo = r.repo AND c.workflow = r.name
+        LEFT JOIN finished_jobs j ON j.repo = r.repo AND j.run_id = r.id AND j.name = c.name
+            AND j.attempt = COALESCE(r.attempt, '1') AND j.first_finished_at <= r.event_at
+        WHERE r.action = 'completed' AND r.conclusion = 'cancelled' AND j.run_id IS NULL
+    ), numbered_heads AS MATERIALIZED (
+        SELECT row_number() OVER () AS head_id, h.* FROM heads h
+    ), head_events AS MATERIALIZED (
+        -- Restrict once by head and its lifetime before considering sample times.
+        SELECT h.head_id, e.name, e.run_id, e.attempt, e.at, e.status, e.priority
+        FROM numbered_heads h JOIN check_events e ON e.repo = h.repo AND e.sha = h.sha
+            AND e.at >= h.at AND e.at <= LEAST(COALESCE(h.replaced_at, p_to), p_to)
+    ), points AS (
+        SELECT head_id, at AS point_at FROM head_events
+        UNION
+        SELECT head_id, LEAST(COALESCE(replaced_at, p_to), p_to) FROM numbered_heads
+    ), point_status AS (
+        -- Select the same run/attempt/event precedence as the former lateral lookup,
+        -- but join on head and gate instead of rescanning all events for every point.
+        SELECT DISTINCT ON (p.head_id, p.point_at, r.name)
+            p.head_id, p.point_at, r.name, e.status
+        FROM points p LEFT JOIN required r ON true
+        LEFT JOIN head_events e ON e.head_id = p.head_id AND e.name = r.name AND e.at <= p.point_at
+        ORDER BY p.head_id, p.point_at, r.name, e.run_id DESC, e.attempt DESC, e.at DESC, e.priority DESC
+    ), samples AS MATERIALIZED (
+        SELECT h.*, p.point_at, count(p.status)::integer AS observed,
+            count(*) FILTER (WHERE p.status = 'green')::integer AS greens,
+            count(*) FILTER (WHERE p.status = 'red')::integer AS reds,
+            count(*) FILTER (WHERE p.status = 'cancelled')::integer AS cancels,
+            count(*) FILTER (WHERE p.status = 'unknown')::integer AS unknowns,
+            string_agg(p.name, ', ' ORDER BY p.name)
+                FILTER (WHERE p.status IS NULL OR p.status NOT IN ('green', 'red', 'cancelled')) AS missing
+        FROM numbered_heads h JOIN point_status p ON p.head_id = h.head_id
+        GROUP BY h.head_id, h.repo, h.sha, h.pr_number, h.head_branch, h.at,
+            h.start_clock, h.replaced_at, h.ambiguous, p.point_at
+    ), history AS (
+        SELECT repo, sha, pr_number, head_branch, at, start_clock, replaced_at, ambiguous,
+            min(point_at) FILTER (WHERE reds > 0 AND NOT ambiguous
+                AND COALESCE((SELECT (data ->> 'supported')::boolean FROM policy), false)) AS red_at,
+            min(point_at) FILTER (WHERE greens = (SELECT count(*) FROM required)
+                AND greens > 0 AND NOT ambiguous
+                AND COALESCE((SELECT (data ->> 'supported')::boolean FROM policy), false)) AS green_at
+        FROM samples GROUP BY repo, sha, pr_number, head_branch, at, start_clock, replaced_at, ambiguous
+    ), latest AS (
+        SELECT DISTINCT ON (repo, sha, pr_number, at) * FROM samples
+        ORDER BY repo, sha, pr_number, at, point_at DESC
+    )
+    SELECT h.repo, h.sha, h.pr_number, h.head_branch, h.at, h.start_clock, h.replaced_at,
+        h.red_at, h.green_at,
+        CASE WHEN h.red_at <= COALESCE(h.green_at, h.red_at) THEN 'red'
+            WHEN h.green_at IS NOT NULL THEN 'green' END,
+        extract(epoch FROM (LEAST(h.red_at, h.green_at) - h.at)),
+        extract(epoch FROM (h.red_at - h.at)), extract(epoch FROM (h.green_at - h.at)),
+        CASE WHEN h.ambiguous OR NOT COALESCE((SELECT (data ->> 'supported')::boolean FROM policy), false)
+                OR (SELECT count(*) FROM required) = 0 THEN 'unknown'
+            WHEN l.reds > 0 THEN 'red'
+            WHEN l.greens = (SELECT count(*) FROM required) THEN 'green'
+            WHEN h.replaced_at <= p_to THEN 'superseded'
+            WHEN l.unknowns > 0 THEN 'unknown'
+            WHEN l.cancels > 0 THEN 'cancelled' ELSE 'pending' END,
+        l.observed, (SELECT count(*)::integer FROM required),
+        CASE WHEN h.ambiguous THEN 'ambiguous PR head order' ELSE l.missing END,
+        (SELECT observed_at FROM policy),
+        'https://github.com/' || h.repo || '/commit/' || h.sha
+    FROM history h JOIN latest l
+        ON l.repo = h.repo AND l.sha = h.sha AND l.pr_number IS NOT DISTINCT FROM h.pr_number AND l.at = h.at;
+    $$;
+  collector.toml: |
+    # CDviz Collector 0.53.1. Secret *_file keys are expanded by the pinned
+    # file-provider adapter before TOML deserialization; no shell interpolation is used.
+    [state]
+    kind = "fs"
+
+    [state.parameters]
+    root = "/var/lib/cdviz/state"
+
+    [http]
+    host = "0.0.0.0"
+    port = 8080
+
+    [pipeline]
+    queue_capacity = 1000
+
+    # A separate name avoids the bundled sinks.database.url overriding url_file.
+    [sinks.postgres]
+    enabled = true
+    type = "db"
+    url_file = "/var/run/secrets/database/DATABASE_URL"
+    pool_connections_min = 0
+    pool_connections_max = 2
+    batch_max_size = 10
+    batch_max_wait = "1s"
+    batch_spool_dir = "/var/lib/cdviz/spool"
+
+    [sources.github_webhook]
+    enabled = true
+    transformer_refs = ["github_events"]
+
+    [sources.github_webhook.extractor]
+    type = "webhook"
+    id = "github"
+    headers_to_keep = ["X-GitHub-Event"]
+
+    [sources.github_webhook.extractor.headers]
+    "X-Hub-Signature-256" = { type = "signature", token_file = "/var/run/secrets/webhook/token", signature_prefix = "sha256=", signature_on = "body", signature_encoding = "hex" }
+
+    [sources.github_poll]
+    enabled = true
+    transformer_refs = ["github_workflow_runs"]
+
+    [sources.github_poll.extractor]
+    type = "http_polling"
+    polling_interval = "15m"
+    total_duration_of_retries = "30s"
+    request_timeout = "20s"
+    max_requests = 12
+    max_depth = 12
+    max_concurrency = 1
+    parser = "json"
+    on_status = { "403" = "hold", "429" = "hold", "5xx" = "hold" }
+    driver_vrl = '''
+    if .response == null {
+      .state = {"cutoff": to_unix_timestamp(now()) - 3600}
+      .requests = [{
+        "url": "https://api.github.com/repos/agentydragon/ducktape/actions/runs",
+        "query": {"per_page": "100"},
+        "parser": "json",
+        "route": "both"
+      }]
+    } else {
+      .requests = []
+      runs = array!(.response.body.workflow_runs)
+      if length(runs) > 0 {
+        oldest = parse_timestamp!(string!(runs[-1].created_at), format: "%+")
+        if to_unix_timestamp(oldest) >= to_int!(.state.cutoff) {
+          link = string(.response.headers.link) ?? ""
+          matched = parse_regex(link, r'<(?P<next>[^>]+)>;\s*rel="next"') ?? {}
+          if exists(matched.next) {
+            .requests = [{"url": matched.next, "parser": "json", "route": "both"}]
+          }
+        }
+      }
+    }
+    '''
+
+    # The rules endpoint returns the currently active branch rules in one response.
+    # It is public, so this poll shares the unauthenticated API budget with the
+    # workflow-run poll and deliberately makes one request every 15 minutes.
+    [sources.github_policy_poll]
+    enabled = true
+    transformer_refs = ["github_policy"]
+
+    [sources.github_policy_poll.extractor]
+    type = "http_polling"
+    polling_interval = "15m"
+    total_duration_of_retries = "30s"
+    request_timeout = "20s"
+    max_requests = 1
+    max_depth = 1
+    max_concurrency = 1
+    parser = "json"
+    on_status = { "401" = "hold", "403" = "hold", "404" = "hold", "429" = "hold", "5xx" = "hold" }
+    driver_vrl = '''
+    if .response == null {
+      .requests = [{
+        "url": "https://api.github.com/repos/agentydragon/ducktape/rules/branches/devel",
+        "parser": "json",
+        "route": "pipeline"
+      }]
+    } else {
+      .requests = []
+    }
+    '''
+
+    [transformers.github_events]
+    type = "vrl"
+    template_file = "/etc/cdviz/github_webhook.vrl"
+
+    [transformers.github_workflow_runs]
+    type = "vrl"
+    template_file = "/etc/cdviz/github_workflow_runs.vrl"
+
+    [transformers.github_policy]
+    type = "vrl"
+    template_file = "/etc/cdviz/github_policy.vrl"
+  github_policy.vrl: |
+    rules = array!(.body)
+    contexts = []
+    supported = true
+    found_required_checks = false
+
+    for_each(rules) -> |_rule_index, raw_rule| {
+      rule = object!(raw_rule)
+      if string!(rule.type) == "required_status_checks" {
+        found_required_checks = true
+        parameters = object!(rule.parameters)
+        checks = array!(parameters.required_status_checks)
+        for_each(checks) -> |_check_index, raw_check| {
+          check = object!(raw_check)
+          contexts = push(contexts, string!(check.context))
+          integration_id = check.integration_id
+          if integration_id != null && integration_id != 0 && integration_id != 15368 {
+            supported = false
+          }
+        }
+      }
+    }
+
+    if !found_required_checks || length(contexts) == 0 {
+      supported = false
+    }
+
+    observed_at = format_timestamp!(now(), format: "%+")
+    repository = "agentydragon/ducktape"
+    repository_id = "https://api.github.com/repos/agentydragon/ducktape"
+    policy_url = repository_id + "/rules/branches/devel"
+
+    [{
+      "metadata": .metadata,
+      "headers": .headers,
+      "body": {
+        "context": {
+          "specversion": "0.5.0",
+          "type": "dev.cdevents.change.updated.0.3.0",
+          "timestamp": observed_at
+        },
+        "subject": {
+          "id": policy_url,
+          "content": {
+            "repository": {"id": repository_id}
+          }
+        },
+        "customData": {
+          "ci_policy": {
+            "repository": repository,
+            "branch": "devel",
+            "contexts": contexts,
+            "observed_at": observed_at,
+            "supported": supported
+          }
+        }
+      }
+    }]
+  github_webhook.vrl: |
+    # Convert [github events](https://docs.github.com/en/developers/webhooks-and-events/webhooks/webhook-events-and-payloads)
+    # to [cdevents](https://cdevents.dev)
+    #
+    # | done | Gihub Event | cdevent |
+    # | --- | --- | --- |
+    # | [x] | package:published | artifact:published |
+    # | [ ] | package:updated | artifact:published |
+    # | [x] | release:published | artifact:published |
+    # | [x] | release:published/assets | artifact:published |
+    # | [ ] | release:unpublished | artifact:deleted |
+    # | [ ] | release:unpublished/assets | artifact:deleted |
+    # | [x] | workflow_run:requested | pipelineRun:queued |
+    # | [x] | workflow_run:in_progress | pipelineRun:started |
+    # | [x] | workflow_run:completed | pipelineRun:finished |
+    # | [x] | workflow_job:in_progress | taskRun:started |
+    # | [x] | workflow_job:completed | taskRun:finished |
+    # | [x] | issue:opened | ticket:created |
+    # | [x] | issue:closed | ticket:closed |
+    # | [x] | issue:* | ticket:updated |
+    # | [x] | branch | branch:created |
+    # | [x] | pull_request:opened | change:created |
+    # | [x] | pull_request:closed | change:merged change:abandoned |
+    # | [x] | pull_request:* | change:updated |
+    # | [x] | pull_request_review:submitted | change:reviewed |
+    #
+    # ## Rules:
+    #
+    # - `context.id` is computed by the collector (using content id, CID computed)
+    # - `subject.id` is the api url of the entity, except for artifacts usiong the package url (PURL)
+    # - `subject.source` is empty, all information are in the `subject.id` (global id)
+    # - `customData.github` follow the hierarchy of the github event, but only provides few fields
+    # - `customData.links` provides links to related subjects
+    #
+
+    bodies = []
+    sender = .body.sender.login
+    repo_url = to_string(.body.repository.url) ?? ""
+    custom_data = {
+      "links": [
+        {
+          "linkKind": "storedAt",
+          "target": {
+            "subject": {
+              "type": "repository",
+              "id": repo_url,
+            }
+          }
+        }
+      ],
+      "github": .body
+    }
+
+    # test existance of a field to determine the event type (alternative: .headers["X-GitHub-Event"])
+    if exists(.body.package) {
+      if .body.action == "published" {
+        ts = parse_timestamp(.body.package.updated_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        name = .body.package.name || "noname"
+        namespace = string(.body.package.namespace) ?? "nonamespace"
+        # [purl-spec/PURL-TYPES.rst at master · package-url/purl-spec](https://github.com/package-url/purl-spec/blob/master/PURL-TYPES.rst)
+        pkgs = []
+        # the case of the value seems inconsitent
+        # see [List packages for an organization](https://docs.github.com/en/rest/packages/packages?apiVersion=2022-11-28#list-packages-for-an-organization)
+        # see https://github.com/octokit/webhooks.net/blob/main/src/Octokit.Webhooks/Models/PackageType.cs
+        package_type = downcase(.body.package.package_type) ?? .body.package.package_type
+        if package_type == "container" && .body.package.package_version.container_metadata.tag.name != "" {
+          # [Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+          # if no tag, it could be an intermediate layer => no package
+          # github generate 1 event per tag
+          digest = (.body.package.package_version.container_metadata.tag.digest || .body.package.package_version.version)
+          tag_name = .body.package.package_version.container_metadata.tag.name
+          purl_obj = {
+            "type": "oci",
+            "name": name,
+            "version": digest,
+            "qualifiers": {"repository_url": "ghcr.io/" + namespace, "tag": tag_name}
+          }
+          pkgs = [purl_to_string(purl_obj)] ?? []
+        } else if package_type == "docker" {
+          # if no tag, it could be an intermediate layer => no package
+          # [Docker registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-docker-registry)
+          version = .body.package.package_version.version
+          tag_names = filter(array!(.body.package.package_version.docker_metadata.tags || [])) -> |_index, tag_name| {
+            !is_nullish(tag_name)
+          }
+          pkgs = map_values(tag_names) -> |tag_name|{
+            purl_obj = {
+              "type": "oci",
+              "name": name,
+              "version": version,
+              "qualifiers": {"repository_url": "ghcr.io/"+ namespace, "tag": tag_name}
+            }
+            purl_to_string!(purl_obj)
+          }
+          pkgs = filter(pkgs) -> |_index, pkg| {
+            !is_nullish(pkg)
+          }
+        } else if package_type == "maven" {
+          # [Apache Maven registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry)
+          # [Gradle registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-gradle-registry)
+          repo_full_name = string!(.body.repository.full_name)
+          version = .body.package.package_version.version
+          purl_obj = {
+            "type": "maven",
+            "namespace": namespace,
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://maven.pkg.github.com/" + repo_full_name}
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        } else if package_type == "npm" && .body.package.package_version.npm_metadata.tag.name != "" {
+          # [npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
+          version = (.body.package.package_version.npm_metadata.version || .body.package.package_version.npm_metadata.npm_version || .body.package.package_version.version)
+          purl_obj = {
+            "type": "npm",
+            "namespace": namespace,
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://npm.pkg.github.com"}
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        } else if package_type == "nuget" {
+          # [NuGet registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry)
+          version = .body.package.package_version.version
+          purl_obj = {
+            "type": "nuget",
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://nuget.pkg.github.com/"+ namespace }
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        } else if package_type == "rubygems" {
+          # [RubyGems registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-rubygems-registry)
+          version = (.body.package.package_version.rugygems_metadata.version_info.version || .body.package.package_version.version)
+          purl_obj = {
+            "type": "gem",
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://rubygems.pkg.github.com/{{ namespace }}"}
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        }
+        custom_data.github.package = {
+          "package_version" : {
+            "package_url" : .body.package.package_version.package_url
+          }
+        }
+        bodies = map_values(pkgs) -> |pkg|{
+          {
+            "context": {
+              "specversion": "0.5.0",
+              "type": "dev.cdevents.artifact.published.0.3.0",
+              "timestamp": ts,
+              # "chainId": ??
+              # "links": ??
+            },
+            "subject": {
+              "id": pkg,
+              "content": {
+                "user": sender,
+              }
+            },
+            "customData": custom_data,
+          }
+        }
+      }
+    } else if exists(.body.release) {
+      if .body.action == "published" {
+        ts = parse_timestamp(.body.release.published_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        repo_full_name = string!(.body.repository.full_name)
+        version = .body.release.tag_name
+        version_s = to_string(.body.release.tag_name) ?? ""
+        repo_parts = split(repo_full_name, "/")
+        owner = string(repo_parts[0]) ?? "unknown"
+        repo_name = string(repo_parts[1]) ?? "unknown"
+        purl_obj = {
+          "type": "github",
+          "namespace": owner,
+          "name": repo_name,
+          "version": version
+        }
+        pkg = purl_to_string(purl_obj) ?? ""
+        custom_data.github.release = {
+          "url": .body.release.url,
+          # "tag_name": version,
+          # "name": .body.release.name,
+          # "description": .body.release.body,
+          # "draft": bool!(.body.release.draft || false),
+          # "prerelease": bool!(.body.release.prerelease || false),
+        }
+        release_body = {
+          "context": {
+            "specversion": "0.5.0",
+            "type": "dev.cdevents.artifact.published.0.3.0",
+            "timestamp": ts,
+            # "chainId": ??
+            # "links": ??
+          },
+          "subject": {
+            "id": pkg,
+            "content": {
+              "user": sender,
+            }
+          },
+          "customData": custom_data,
+        }
+        # one artifact.published per release asset; the asset file name keeps each asset a
+        # distinct PURL coordinate (download_url/checksum are qualifiers, NOT part of identity,
+        # so without the file name all assets would collapse to pkg:generic/{repo}@{tag})
+        asset_bodies = map_values(array(.body.release.assets) ?? []) -> |asset| {
+          asset_ts = parse_timestamp(asset.created_at, "%+") ?? parse_timestamp(.body.release.published_at, "%+") ?? now()
+          asset_ts = format_timestamp!(asset_ts, format: "%+")
+          qualifiers = { "download_url": to_string!(asset.browser_download_url) }
+          if !is_nullish(asset.digest) {
+            # asset.digest is already "sha256:...", the PURL checksum format
+            qualifiers.checksum = to_string!(asset.digest)
+          }
+          asset_purl_obj = {
+            "type": "generic",
+            "namespace": owner + "/" + repo_name,
+            "name": to_string!(asset.name),
+            "version": version_s,
+            "qualifiers": qualifiers,
+          }
+          asset_cd = custom_data
+          asset_cd.github.asset = {
+            "name": asset.name,
+            "content_type": asset.content_type,
+            "size": asset.size,
+            "browser_download_url": asset.browser_download_url,
+            "digest": asset.digest,
+          }
+          {
+            "context": {
+              "specversion": "0.5.0",
+              "type": "dev.cdevents.artifact.published.0.3.0",
+              "timestamp": asset_ts,
+            },
+            "subject": {
+              "id": purl_to_string!(asset_purl_obj),
+              "content": {
+                "user": sender,
+              }
+            },
+            "customData": asset_cd,
+          }
+        }
+        bodies = flatten([[release_body], asset_bodies])
+      }
+    } else if exists(.body.workflow_run) {
+      # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_run
+      ts = parse_timestamp(.body.workflow_run.updated_at, "%+") ?? now()
+      ts = format_timestamp!(ts, format: "%+")
+      repo_full_name = string!(.body.repository.full_name)
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+          "timestamp": ts,
+        },
+        "subject": {
+          "id": to_string!(.body.workflow_run.url) + "/attempts/" + to_string!(.body.workflow_run.run_attempt), # or .body.workflow_run.workflow_id, integration of run_number ?
+          "content": {
+            "pipelineName": (repo_full_name + "/" + .body.workflow_run.name) ?? "",
+            "uri": to_string!(.body.workflow_run.html_url) + "/attempts/" + to_string!(.body.workflow_run.run_attempt),
+          }
+        },
+        "customData": custom_data,
+      }
+      if .body.action == "requested" {
+        body.context.type = "dev.cdevents.pipelinerun.queued.0.3.0"
+        bodies = [body]
+      } else if .body.action == "in_progress" {
+        body.context.type = "dev.cdevents.pipelinerun.started.0.3.0"
+        bodies = [body]
+      } else if .body.action == "completed" {
+        body.context.type = "dev.cdevents.pipelinerun.finished.0.3.0"
+        outcome = .body.workflow_run.conclusion # action_required, cancelled, failure, neutral, skipped, stale, success, timed_out, startup_failure, null
+        outcome_mapping = {
+          "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+          "timed_out": "error", "startup_failure": "error", "action_required": "error",
+          "success": "success", "neutral": "success",
+          "failure": "failure"
+        }
+        mapped = get(outcome_mapping, [outcome]) ?? null
+        if !is_null(mapped) { body.subject.content.outcome = string!(mapped) }
+        bodies = [body]
+      }
+    } else if exists(.body.workflow_job) {
+      # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
+      repo_full_name = string!(.body.repository.full_name)
+      pipeline_run_id = to_string!(.body.workflow_job.run_url) + "/attempts/" + to_string!(.body.workflow_job.run_attempt)
+      custom_data.links = push(custom_data.links, {
+        "linkKind": "runsIn",
+        "target": {
+          "subject": {
+            "type": "pipelinerun",
+            "id": pipeline_run_id,
+          }
+        }
+      })
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+        },
+        "subject": {
+          "id": .body.workflow_job.url,
+          "content": {
+            # define an "absolute" name to avoid conflicts with other entities from other contexts
+            "taskName": (repo_full_name + "/" + .body.workflow_job.workflow_name + "/" + .body.workflow_job.name) ?? .body.workflow_job.name,
+            "uri": .body.workflow_job.html_url,
+            "pipelineRun": {
+              "id": pipeline_run_id,
+            }
+          }
+        },
+        "customData": custom_data,
+      }
+      if .body.action == "in_progress" {
+        ts = parse_timestamp(.body.workflow_job.started_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.taskrun.started.0.3.0"
+        bodies = [body]
+      } else if .body.action == "completed" {
+        ts = parse_timestamp(.body.workflow_job.completed_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.taskrun.finished.0.3.0"
+        outcome = .body.workflow_job.conclusion # success, failure, null, skipped, cancelled, action_required, neutral, timed_out
+        outcome_mapping = {
+          "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+          "timed_out": "error", "startup_failure": "error", "action_required": "error",
+          "success": "success", "neutral": "success",
+          "failure": "failure"
+        }
+        mapped = get(outcome_mapping, [outcome]) ?? null
+        if !is_null(mapped) { body.subject.content.outcome = string!(mapped) }
+        bodies = [body]
+      }
+    } else if exists(.body.issue) {
+      # !! field "issue" is present for issue & issue_comment events and some actions are shared
+      # ignore if draft or not
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+        },
+        "subject": {
+          "id": .body.issue.url,
+          "content": {
+            "summary": .body.issue.title,
+            "ticketType": .body.issue.type.name,
+            # group\": \"security\",
+            "creator": .body.issue.user.login,
+            "assignees": map_values(array!(.body.issue.assignees || [])) -> |assignee| {
+              assignee.login
+            },
+            #"priority": "high",
+            "labels": map_values(array!(.body.issue.labels || [])) -> |label| {
+              label.name
+            },
+            "milestone": .body.issue.milestone.title,
+            "uri": .body.issue.html_url,
+          }
+        },
+        "customData": custom_data,
+      }
+      if .body.action == "opened" {
+        ts = parse_timestamp(.body.issue.created_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.ticket.created.0.2.0"
+        body.context.timestamp = ts
+        bodies = [body]
+      } else if .body.action == "closed" {
+        ts = parse_timestamp(.body.issue.closed_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.ticket.closed.0.2.0"
+        body.context.timestamp = ts
+        body.subject.content.updatedBy = .body.sender.login
+        body.subject.content.resolution = .body.issue.state_reason # completed, cancelled, duplicate, not_planned, fixed, invalid, wont_fix
+        bodies = [body]
+      } else {
+        ts = parse_timestamp(.body.issue.updated_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.ticket.updated.0.2.0"
+        body.context.timestamp = ts
+        body.subject.content.updatedBy = .body.sender.login
+        body.customData.github.action = .body.action # edited, transferred, reopened, locked, unlocked, milestoned, demilestoned
+        bodies = [body]
+      }
+    } else if exists(.body.ref) {
+      if bool!(.body.created || false) {
+        body = {
+          "context": {
+            "specversion": "0.5.0",
+          },
+          "subject": {
+            "id": (.body.repository.url + "/branches/" + replace(.body.ref, "refs/heads/", "")) ?? .body.ref,
+            "content": {
+              "repository": {
+                "id": .body.repository.url,
+              }
+            }
+          },
+          "customData": custom_data,
+        }
+        ts = parse_timestamp(.body.head_commit.timestamp, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.branch.created.0.3.0"
+        body.context.timestamp = ts
+        bodies = [body]
+      # } else if .body.deleted {
+      #   # ts is not available in the payload => no reproduction => failed to compute unique id/CID for the event
+      #   ts = now()
+      #   ts = format_timestamp!(ts, format: "%+")
+      #   body.context.type = "dev.cdevents.branch.deleted.0.3.0"
+      #   body.context.timestamp = ts
+      #   bodies = [body]
+      }
+    } else if exists(.body.pull_request) {
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+        },
+        "subject": {
+          "id": .body.pull_request.url,
+          "content": {
+            "repository": {
+              "id": .body.repository.url,
+            }
+          }
+        },
+        "customData": custom_data,
+      }
+      if exists(.body.review) {
+        if .body.action == "submitted" && .body.review.state != "approved" {
+          ts = parse_timestamp(.body.review.submitted_at, "%+") ?? now()
+          ts = format_timestamp!(ts, format: "%+")
+          body.context.timestamp = ts
+          body.context.type = "dev.cdevents.change.reviewed.0.3.0"
+          body.customData.github.action = .body.action # submitted, dismissed, edited
+          body.customData.github.review = {
+            "state": .body.review.state, # approved, changes_requested, dismissed
+            "author": .body.review.user.login,
+            "url": .body.review.html_url
+          }
+          bodies = [body]
+        }
+        # other actions / states related to reviews are not supported by cdevents
+      } else if .body.action == "opened" {
+        ts = parse_timestamp(.body.pull_request.created_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.change.created.0.3.0"
+        body.subject.content.description = .body.pull_request.title # ?? concatenate with body ?
+        bodies = [body]
+      } else if .body.action == "closed" {
+        ts = parse_timestamp(.body.pull_request.closed_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        if bool!(.body.pull_request.merged) {
+          body.context.type = "dev.cdevents.change.merged.0.3.0"
+        } else {
+          body.context.type = "dev.cdevents.change.abandoned.0.3.0"
+        }
+        bodies = [body]
+      } else {
+        ts = parse_timestamp(.body.pull_request.updated_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.change.updated.0.3.0"
+        body.customData.github.action = .body.action
+        bodies = [body]
+      }
+    }
+
+    map_values(bodies) -> |body| {
+      {
+        "metadata": .metadata,
+        "headers": .headers,
+        "body": body
+      }
+    }
+  github_workflow_runs.vrl: |
+    # Convert GitHub REST API /repos/{owner}/{repo}/actions/runs response to CDEvents
+    #
+    # Input: paginated response from GET /repos/{owner}/{repo}/actions/runs
+    #   .body = { "total_count": N, "workflow_runs": [...] }
+    #
+    # | done | GitHub REST field     | CDEvent(s) emitted                              |
+    # | ---- | --------------------- | ----------------------------------------------- |
+    # | [x]  | status == queued      | pipelineRun:queued                              |
+    # | [x]  | status == in_progress | pipelineRun:queued + started                    |
+    # | [x]  | status == completed   | pipelineRun:queued + started + finished         |
+    #
+    # Rules:
+    # - context.id is computed by the collector (content-based CID)
+    # - subject.id = run.url + "/attempts/" + run.run_attempt (API URL)
+    # - Each phase uses its own timestamp for idempotent backfill (see RULES.md)
+    # - customData.github only includes fields stable at each phase (no status/conclusion for queued/started)
+
+    outcome_mapping = {
+      "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+      "timed_out": "error", "startup_failure": "error", "action_required": "error",
+      "success": "success", "neutral": "success",
+      "failure": "failure"
+    }
+
+    items = array(.body.workflow_runs) ?? []
+    events = map_values(items) -> |run| {
+      if run.status != "queued" && run.status != "waiting" && run.status != "requested" && run.status != "pending" && run.status != "in_progress" && run.status != "completed" {
+        []
+      } else {
+        attempt = to_string!(run.run_attempt)
+        repo_url = to_string(run.repository.url) ?? ""
+        subject = {
+          "id": to_string!(run.url) + "/attempts/" + attempt,
+          "content": {
+            "pipelineName": to_string!(run.repository.full_name) + "/" + to_string!(run.name),
+            "uri": to_string!(run.html_url) + "/attempts/" + attempt,
+          },
+        }
+        links = [{ "linkKind": "storedAt", "target": { "subject": { "type": "repository", "id": repo_url } } }]
+
+        # queued — emitted for all statuses; customData excludes volatile fields (status, conclusion)
+        queued_ts = format_timestamp!(parse_timestamp(run.created_at, "%+") ?? now(), format: "%+")
+        queued_event = {
+          "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.queued.0.3.0", "timestamp": queued_ts },
+          "subject": subject,
+          "customData": {
+            "links": links,
+            "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "created_at": run.created_at } },
+          },
+        }
+
+        # started — emitted for in_progress and completed
+        started_events = if run.status == "in_progress" || run.status == "completed" {
+          started_ts = format_timestamp!(parse_timestamp(run.run_started_at, "%+") ?? now(), format: "%+")
+          [{
+            "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.started.0.3.0", "timestamp": started_ts },
+            "subject": subject,
+            "customData": {
+              "links": links,
+              "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "created_at": run.created_at, "run_started_at": run.run_started_at } },
+            },
+          }]
+        } else { [] }
+
+        # finished — emitted only when completed; conclusion is stable at this point
+        finished_events = if run.status == "completed" {
+          finished_ts = format_timestamp!(parse_timestamp(run.updated_at, "%+") ?? now(), format: "%+")
+          mapped = get(outcome_mapping, [to_string!(run.conclusion)]) ?? null
+          finished_subject = subject
+          if !is_null(mapped) { finished_subject.content.outcome = string!(mapped) }
+          [{
+            "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.finished.0.3.0", "timestamp": finished_ts },
+            "subject": finished_subject,
+            "customData": {
+              "links": links,
+              "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "conclusion": run.conclusion, "run_started_at": run.run_started_at, "updated_at": run.updated_at } },
+            },
+          }]
+        } else { [] }
+
+        flatten([[queued_event], started_events, finished_events])
+      }
+    }
+    bodies = flatten(events)
+    bodies = filter(bodies) -> |_index, body| { !is_null(body) }
+
+    map_values(bodies) -> |body| {
+      { "metadata": .metadata, "headers": .headers, "body": body }
+    }
+  grants.sql: |
+    GRANT CONNECT ON DATABASE cdviz TO cdviz_collector, cdviz_reader;
+    GRANT USAGE ON SCHEMA cdviz TO cdviz_collector, cdviz_reader;
+    GRANT SELECT ON ALL TABLES IN SCHEMA cdviz TO cdviz_reader;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA cdviz TO cdviz_collector;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA cdviz TO cdviz_collector;
+    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cdviz TO cdviz_collector;
+    GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA cdviz TO cdviz_collector;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA cdviz GRANT SELECT ON TABLES TO cdviz_reader;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA cdviz GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cdviz_collector;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA cdviz GRANT USAGE, SELECT ON SEQUENCES TO cdviz_collector;
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: collector-spool
+  namespace: cdviz
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: seaweedfs-ovh-ssd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: cdviz
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-collector
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cdviz-collector
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - connect
+            - --config
+            - /etc/cdviz/collector.toml
+          image: ghcr.io/cdviz-dev/cdviz-collector:0.53.1@sha256:7d69848b44d608e56db67b8af6b28885071ae593bcda35bf23cdb220ae45dab8
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          name: collector
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/cdviz
+              name: config
+              readOnly: true
+            - mountPath: /var/lib/cdviz
+              name: spool
+            - mountPath: /var/run/secrets/database
+              name: database
+              readOnly: true
+            - mountPath: /var/run/secrets/webhook
+              name: webhook
+              readOnly: true
+      initContainers:
+        - args:
+            - -database
+            - $(DATABASE_URL)
+            - -path
+            - /migrations/
+            - up
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: db-app
+          image: ghcr.io/cdviz-dev/cdviz-db-migration:1.5.0@sha256:6bbc4e2b9e3bfbe283571e80eff2d59ca2e9ecb5d50d51f174535af073b2fb1d
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+        - args:
+            - --no-psqlrc
+            - --set=ON_ERROR_STOP=1
+            - --single-transaction
+            - --file=/etc/cdviz/001_ci_feedback.sql
+            - --file=/etc/cdviz/002_ci_feedback_optimization.sql
+            - --file=/etc/cdviz/grants.sql
+          command:
+            - psql
+          env:
+            - name: PGHOST
+              value: db-rw.cdviz.svc
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: cdviz
+            - name: PGUSER
+              value: cdviz
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: db-app
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie@sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f
+          name: grants
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/cdviz
+              name: config
+              readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: collector-config
+          name: config
+        - name: spool
+          persistentVolumeClaim:
+            claimName: collector-spool
+        - name: database
+          secret:
+            secretName: collector-db
+        - name: webhook
+          secret:
+            secretName: github-webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: cdviz-collector
+  name: collector
+  namespace: cdviz
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: cdviz-collector
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: collector
+  namespace: cdviz
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-collector
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: github-webhook
+  namespace: cdviz
+spec:
+  hostnames:
+    - cdviz-webhook.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: collector
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: Exact
+            value: /webhook/github
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: collector
+  namespace: cdviz
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchName: api.github.com
+              - matchPattern: "**.cluster.local"
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: db
+            k8s:io.kubernetes.pod.namespace: cdviz
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.github.com
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-collector
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: retention
+  namespace: cdviz
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: cdviz-retention
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --no-psqlrc
+                - --set=ON_ERROR_STOP=1
+                - --command=CALL cdviz.apply_retention(INTERVAL '90 days');
+              command:
+                - psql
+              env:
+                - name: PGHOST
+                  value: db-rw.cdviz.svc
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  value: cdviz
+                - name: PGUSER
+                  value: cdviz
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: db-app
+              image: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie@sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f
+              name: retention
+              resources:
+                limits:
+                  memory: 128Mi
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+  schedule: 30 4 * * *
+  successfulJobsHistoryLimit: 1
+  timeZone: Etc/UTC
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: retention
+  namespace: cdviz
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: db
+            k8s:io.kubernetes.pod.namespace: cdviz
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-retention
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cdviz-database-reader
+  namespace: monitoring
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cdviz-database-reader
+  namespace: cdviz
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - grafana-db
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cdviz-database-reader
+  namespace: cdviz
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cdviz-database-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: cdviz-database-reader
+    namespace: monitoring
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-cdviz-database-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - monitoring
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: cdviz-database-reader
+      remoteNamespace: cdviz
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cdviz-database
+  namespace: monitoring
+spec:
+  dataFrom:
+    - extract:
+        key: grafana-db
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cdviz-database-secret-store
+  target:
+    creationPolicy: Owner
+    name: cdviz-database
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: cdviz
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: false
+    isDefault: false
+    jsonData:
+      database: cdviz
+      postgresVersion: 1800
+      sslmode: require
+      timescaledb: true
+    name: CI Analytics
+    secureJsonData:
+      password: ${password}
+    type: grafana-postgresql-datasource
+    uid: cdviz
+    url: db-rw.cdviz.svc:5432
+    user: cdviz_reader
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  valuesFrom:
+    - targetPath: secureJsonData.password
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: cdviz-database
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cdviz-ci
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: dashboard.json
+    name: cdviz-ci
+  folder: CI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cdviz-ci-feedback
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: feedback-dashboard.json
+    name: cdviz-ci-feedback
+  folder: CI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana

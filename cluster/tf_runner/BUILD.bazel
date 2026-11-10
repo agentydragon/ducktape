@@ -35,6 +35,7 @@ go_binary(
     name = "buildbuddy-secret-sync",
     srcs = ["buildbuddy_secret_sync.go"],
     importpath = "github.com/agentydragon/ducktape/cluster/tf_runner/buildbuddy_secret_sync",
+    race = "off",
     deps = ["@org_golang_x_crypto//nacl/box"],
 )
 

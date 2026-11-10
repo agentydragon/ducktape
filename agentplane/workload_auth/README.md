@@ -1,70 +1,114 @@
 # Workload authentication
 
-`WorkloadPrincipalResolver` authenticates an ordinary destination-side
-`Authorization: Bearer <token>` with Kubernetes TokenReview. The result is the immutable
-`WorkloadPrincipal`:
+[`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared authoring
+and Go decoding contract for workload listeners: a listen address and an explicit list of
+supported authentication methods. `kubernetes_bearer` lists its allowed audiences; `spiffe` requires
+TLS and an absolute trust-root path. Unsupported modes, empty lists, duplicates and unknown fields
+fail configuration loading. For protected calls, exactly one enabled credential must select a mode;
+both or neither are refused, and selection never falls back based on list order. Native RPC listeners
+may still admit unauthenticated public health methods. Listener authentication does not grant method
+authorization. The egress proxy and first-party service RPC listeners consume this contract.
 
-- Kubernetes namespace;
-- ServiceAccount name and full subject; and
-- Pod name and UID, as the API server bound the token to them.
+[`auth`](auth/auth.go) provides the TokenReview resolver used by Agentplane services. Each
+service constructs a `Resolver` with its accepted audience and allowed namespaces. Its namespace
+allowlist is checked for every request.
 
-`WorkloadPrincipal.account` is the `ServiceAccountRef` a binding names, and it is the subject every
-destination authorizes against. Whatever else owns the Pod is not the caller.
+`ResolveAuthorization` accepts exactly one RFC 6750 Bearer value. `ResolveToken` verifies the
+reviewed ServiceAccount identity and returns a Pod-bound `Principal` containing the account, the
+ServiceAccount UID, and the Pod name and UID. The API server's TokenReview checks the bound Pod;
+accepted review results are cached for up to 30 seconds by default, so revocation or Pod deletion
+may take that long to affect a cached token. Rejections and review failures are not cached.
 
-Configure the accepted audience and a non-empty namespace allowlist when constructing the resolver.
-The audience of a Sandbox's workload token, which the egress proxy, the LLM ingress and the Action
-Service all verify, is `WORKLOAD_TOKEN_AUDIENCE` in `audience.py`; the cluster configuration passes it
-to each, since none of them defaults it. It is the compatibility value `agentplane-egress`;
-deployments may migrate it to `agentplane-workload` without changing this API.
+`SVIDResolver` accepts a leaf already verified by the shared workload TLS listener, requires its
+validity and explicit clientAuth EKU, and resolves it through the live `WorkloadCredential` it names
+([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)).
+It returns the same `Principal` shape: the record's ServiceAccount subject with its canonical UID and,
+when the record's owner accepted one, the Pod name/UID. A record naming an `Identity` subject is
+refused until `Principal` has an Identity form. There is no identity reference or caller header.
+Deleting the record or replacing its credential ID revokes the certificate. `Resolver.WithListenerAuthentication` selects this path only when the
+listener allows SPIFFE. Listener credential selection does not grant method authorization, and
+delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
+bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
+`SVIDResolver.IdentitySubjectsOnly` refuses records naming a ServiceAccount, for a listener whose
+ServiceAccount callers keep presenting bearers (History's read API).
 
-Resolution requires an authenticated TokenReview for that audience, an allowed ServiceAccount
-subject, and exactly one Pod name/UID claim pair. Nothing else is read: the API server validates the
-object the token is bound to, so a deleted or replaced Pod fails the TokenReview. No caller-supplied
-header, body field, source address, operator identity, role, permission, Agent, or Thread
-participates, and resolution does not read the Pod object. The Runner Gateway's `resolve_peer` reads
-it afterwards, to follow a runner control stream's Pod to its controlling Sandbox.
+History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
+terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
+asserting a caller. The central sampler retains its delegated ServiceAccount path and holds no SVID.
 
-The Go resolver also exposes `ResolveServiceAccountToken`, returning a `ServiceAccountPrincipal`
-with the account and its UID, without a Pod identity. Actions explicitly uses that method: it
-requires the same TokenReview audience, namespace and ServiceAccount UID, and accepts either no
-Pod binding claims or one complete name/UID pair. Partial or duplicate claims are rejected.
-Its caller admission still requires the account's live label, apart from configured read-only
-service readers. `ResolveToken`, `Resolve`, `ResolveAuthorization` and `RequireAccount` retain their
-Pod-bound contract for the other destinations.
+Each service uses one TLS RPC listener for Sandbox and backend callers. Backend clients verify the
+service's SPIFFE URI using `environment_runtime_transport.ClientTLS`, then authenticate with their
+existing bearer or delegation credentials. They receive no SVID. The shared `grpc/healthprobe`
+binary checks the same listener through verified TLS without application credentials.
 
-**Verdict reuse (Go).** The Go `Resolver` (`go/auth`) puts its TokenReview behind `k8s.io/apiserver`'s
-cached token authenticator, the cache the API server itself uses for webhook and delegated
-authentication (`authenticatorfactory.DelegatingAuthenticatorConfig`). It keeps the API server's
-acceptance of a bearer for `DefaultVerdictTTL` (30 s): a revoked token, or one whose Pod is gone,
-still resolves here for at most that long. The key is a keyed hash of the bearer, calls for one
-bearer that arrive while its TokenReview is in flight share it, and a caller that gives up does not
-fail the others. Only acceptances are kept: a rejection or a failed review is asked again by the
-next call, so an API server blip is never extended. The namespace allowlist and claim checks run on
-every call against the kept answer. Reviewing every request would make each one wait on the API
-server and spend its client's rate limit, and Sandbox Pod tokens live 600 s, so the window is small
-beside the token's own life.
+Action command/build boxes and Haku's and `haku-ci`'s standing workloads present their own
+`WorkloadCredential`'s SVID; the egress proxy's `forward` listener authenticates SVIDs alone. Sandbox
+Runtime templates continue projecting Kubernetes destination-audience tokens where credential rules
+require them; they do not project first-party-service audiences.
 
-**Deviation:** the Python resolver (`principal.py`) reviews every call.
+`ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
+belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
+claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action
+Service uses this path. Other callers use Pod-bound `Principal` values.
 
-Rejected: verifying the projected token locally against the cluster's issuer keys. A signature
-and expiry check cannot see a deleted or replaced Pod, which is the property the TokenReview
-supplies, so it would bound revocation by the token's lifetime, not by the TTL, unless every
-service also watched Pods.
+[`methods.go`](auth/methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
+each full method name to the `Rule` admitting its callers and refuses any method it does not list
+([gRPC services](../docs/grpc_services.md#authentication)).
 
-Kubernetes API failures log only the fixed operation (`create_token_review`) and numeric status,
-never exception reason, body, headers or traceback. The original API exception still propagates.
-These diagnostics distinguish the failed authentication hop, not the underlying outage's cause.
+`AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
+TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
+only the identity fields it proves. `Accounts` applies an explicit account allowlist. `SVIDOrAccounts` admits current Sandbox SVIDs
+and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
+an SVID naming an Identity is admitted as `AnySubject` admits it.
+`ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver` and
+admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmission`.
+`ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity
+as an `IdentityAdmission`.
 
-`WorkloadPrincipalAuthenticator` is the small FastAPI dependency shared by first-party destination
-services; `egress.identity.WorkloadIdentityVerifier` is the same translation for a proxied
-connection, answering with a `DenyReason` where the dependency answers 401. It accepts exactly one well-formed Bearer credential and returns 401 otherwise, and both
-halves of that rule live in `bearer.py`: `sole_header`, because several credentials are not one, and
-`parse_bearer` for the `token68` spelling a projected ServiceAccount token has. A door that also
-admits credentials this service did not mint uses `sole_header` alone and lets the issuer's own
-parser read the value. The bearer is sent only to TokenReview: it is absent from the principal,
-exception text, and representations. Destination services pass the principal to their own
-authorization layer.
+Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
+pins exact actor ServiceAccounts and per-actor caller scopes to the Rule; attaching that Rule to a
+full method name is the method trust grant. It preserves the Rule's ordinary direct path. Delegation
+requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is reviewed for
+this service's audience. An asserted ServiceAccount must be in the actor's caller namespaces and
+match the live ServiceAccount UID. An asserted Identity needs the actor's separate
+`Delegator.IdentityCallers` grant, a Rule whose direct mode admits Identity callers
+(`ReviewedServiceAccountOrIdentity`, `AnySubject`, `SVIDOrAccounts`), and the live Identity's UID in
+the receiver's policy namespace (`KubernetesIdentityUIDs`, an uncached read); otherwise it is
+`PERMISSION_DENIED`. A method with no delegation policy rejects the delegated scheme and any
+delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a direct call.
+Each UID reader is required only by the grants that use it: a receiver whose delegators assert
+Identities alone passes no ServiceAccount reader. The envelope's provenance is one typed profile,
+an Action's records or a central Session; the handler consumes the one its method serves.
+`Rule.AdmitRequest` admits an HTTP request by the same Rule and middleware, reading the
+`Authorization` header, the verified TLS peer and the `agentplane-delegation-bin` header in
+standard base64 (`EncodeDelegationHeader`), the form gRPC itself transports `-bin` metadata in.
 
-No layer correlates a caller's address: destinations see the central proxy's source address rather
-than the Pod's, and the proxy does not read the Pod at all. Operator/session/BFF authentication is a
-separate mechanism and does not produce a `WorkloadPrincipal`.
+Handlers can read the typed result with `Admitted` or use `EffectiveCaller` for ordinary account
+checks. `DirectAdmission` keeps the direct caller and optional Pod proof together;
+`DelegatedAdmission` keeps the actor's Pod-bound `Principal`, effective ServiceAccount identity and
+provenance separate, and `DelegatedIdentityAdmission` the same with an effective `Identity`, which
+`EffectiveCaller` refuses as it refuses an `IdentityAdmission`. A delegated actor is never installed in the legacy `Caller` context, which
+continues to mean the direct principal. For TokenReview callers that principal is Pod-bound; other
+`AnyAccount` sources supply only the fields they prove. The effective caller is account identity
+only and cannot prove a Pod binding.
+
+[`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. The dialer reads the
+destination-audience token file for each call, emits the distinct `Agentplane-Delegated` scheme and
+binary envelope, rejects duplicate authorization/envelope metadata, and disables retries. It does
+not install the ordinary Bearer interceptor. Existing direct clients continue using their current
+Bearer helper.
+
+[`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
+used by backend callers of LLM ingress and Action Service: the sampler, Notification, and the MCP
+edge's minted Connection tokens. The egress proxy's hop still accepts it, though no workload sends
+it there. Sandbox Runtime templates do not project it. Each backend
+verifier receives its audience explicitly; the Go resolver has no default audience.
+
+Operator and browser-session authentication use separate mechanisms and do not produce a workload
+principal. The approved [delegated authorization design](../docs/delegated_authorization.md) records
+the shared protocol. Action Service's [Session delegation executor](../action_service/session_delegation/README.md)
+uses it for caller-scoped Environment, Dispatcher and History operations.
+
+Each listener mode accepts only its own fields, and each resolver verifies its own audience and
+namespace policy after selection. A failed credential never triggers a retry with another mode.
+Each service retains its own method authorization after authentication.

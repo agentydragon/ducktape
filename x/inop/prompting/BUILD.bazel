@@ -1,10 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+package(default_visibility = ["//x/inop:__subpackages__"])
+
 py_library(
     name = "truncation_utils",
     testonly = True,
     srcs = ["truncation_utils.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//x/inop:config",
         "//x/inop/engine:models",
@@ -16,7 +17,6 @@ py_library(
     name = "pe_controller",
     testonly = True,
     srcs = ["pe_controller.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:handler",
         "//agent_core:loop_control",
@@ -27,7 +27,6 @@ py_library(
     name = "prompt_engineer",
     testonly = True,
     srcs = ["prompt_engineer.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//x/inop/engine:models",
         "//x/inop/io:logging_utils",
@@ -38,7 +37,6 @@ py_library(
     name = "summarizer",
     testonly = True,
     srcs = ["summarizer.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":prompt_engineer",
         ":truncation_utils",

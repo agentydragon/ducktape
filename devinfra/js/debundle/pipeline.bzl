@@ -1,39 +1,166 @@
 """Bazel-driven debundle pipeline rule.
 
-Runs the ducktape debundler with `--out-root` pointing at a tree-artifact
-output directory. All pipeline outputs (manifests, analysis, emitted JS) land
-under the rule's declared output directory in `bazel-bin/`. Each corpus may
-layer a `write_source_files` regen target on top to commit a subset of outputs
-into the source tree.
+Runs the debundle projection, analysis and pipeline executables. All pipeline
+outputs (manifests, analysis, emitted JS) land under the rule's declared
+output directory in `bazel-bin/`. Each corpus may layer a `write_source_files`
+regen target on top to commit a subset of outputs into the source tree.
+
+By default, three actions: `DebundleProjectAnalysis` writes what analysis reads from the
+spec, `DebundleAnalyze` computes the analysis from that projection and the
+sources alone, and `DebundlePipeline` runs against the stored analysis. The
+`analysis` output group holds the projection and the analysis artifact. The
+`native_inputs` output group exposes the spec, source and package inputs without
+selecting analysis or pipeline actions.
+An explicit `analysis` input reuses another target's projection and analysis
+instead of registering those two actions. The CLI checks compatibility before
+using saved facts; assignment, gates and translation validation still run.
+When split_dependency_graphs is enabled, a separate DebundleExportGraphs action
+loads that exact artifact on demand; default outputs never serialize full graphs.
 """
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 
+# Sync: `GATE_REJECTED_EXIT_CODE` in `pipeline.rs`.
+_GATE_REJECTED_EXIT_CODE = 3
+
 def _debundle_pipeline_impl(ctx):
+    if ctx.attr.analysis_threads < 0:
+        fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
+    if ctx.attr.analysis and ctx.attr.analysis_threads:
+        fail("analysis_threads cannot be set when reusing an analysis input")
+    if ctx.file.ownership_subset and ctx.attr.split_dependency_graphs:
+        fail("ownership_subset does not support split_dependency_graphs")
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
-    ctx.actions.run_shell(
-        inputs = plan.inputs,
-        tools = [ctx.executable.debundler],
+
+    analysis_files = _pipeline_analysis(ctx, plan)
+    analysis = [file for file in analysis_files.to_list() if file.extension == "analysis"]
+    if len(analysis) != 1:
+        fail("analysis must expose exactly one .analysis artifact, got {}".format(len(analysis)))
+    analysis = analysis[0]
+
+    output_groups = {
+        "analysis": analysis_files,
+        "debundler": depset([ctx.executable.debundler]),
+        "projector": depset([ctx.executable.projector]),
+        "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
+    }
+    _run_debundler(
+        ctx,
+        inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs]),
         outputs = [out_dir],
-        command = "cd \"${{BAZEL_BINDIR}}\" && exec {command}".format(command = plan.command),
-        env = {"BAZEL_BINDIR": ctx.bin_dir.path},
+        command = _pipeline_command(ctx, plan, analysis, []),
+        mnemonic = "DebundlePipeline",
+        progress = "Running debundle pipeline for %{label}",
+    )
+    if ctx.attr.split_dependency_graphs:
+        # Register an independent, on-demand export. DefaultInfo never reaches
+        # this action; it consumes the exact SAME Analyze artifact as Pipeline.
+        graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
+        graph_plan = _debundle_pipeline_plan(ctx, graphs_dir.short_path, include_full_streams = False)
+        _run_debundler(
+            ctx,
+            inputs = depset([analysis], transitive = [graph_plan.inputs]),
+            outputs = [graphs_dir],
+            command = _pipeline_command(ctx, graph_plan, analysis, [
+                "--graphs",
+                "--reports-only",
+                shell.quote(graphs_dir.short_path),
+            ], allow_gate_rejection = True),
+            mnemonic = "DebundleExportGraphs",
+            progress = "Exporting full debundle graphs for %{label}",
+        )
+        output_groups["dependency_graphs"] = depset([graphs_dir])
+    return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
+
+def _pipeline_analysis(ctx, plan):
+    if ctx.attr.analysis:
+        return ctx.attr.analysis[DefaultInfo].files
+
+    # Analysis is computed by its own action, keyed only by what it reads:
+    # the projection, the sources and the package roots. An edit the
+    # projection does not cover (module assignment, renames, notes,
+    # `commuting_statements`) leaves the projection's bytes unchanged, so the
+    # `DebundleAnalyze` action hits the action cache and only
+    # `DebundlePipeline` reruns.
+    projection = ctx.actions.declare_file(ctx.label.name + ".analysis_projection")
+    analysis = ctx.actions.declare_file(ctx.label.name + ".analysis")
+    _run_debundler(
+        ctx,
+        inputs = plan.inputs,
+        outputs = [projection],
+        command = _shell_execroot_path(ctx.executable.projector.path) + " " + " ".join(
+            plan.spec_args + plan.package_args +
+            ["--out", shell.quote(projection.short_path)],
+        ),
+        mnemonic = "DebundleProjectAnalysis",
+        progress = "Projecting debundle analysis inputs for %{label}",
+        tool = ctx.executable.projector,
+    )
+    _run_debundler(
+        ctx,
+        inputs = depset([projection], transitive = [plan.source_inputs]),
+        outputs = [analysis],
+        command = "\"${{OLDPWD}}/{}\" ".format(ctx.executable.analyzer.path) + " ".join(
+            [
+                "--projection",
+                shell.quote(projection.short_path),
+                "--tree-source-root",
+                plan.source_root,
+            ] + plan.package_args + ["--out", shell.quote(analysis.short_path)],
+        ),
+        mnemonic = "DebundleAnalyze",
+        progress = "Analyzing debundle input for %{label}",
+        tool = ctx.executable.analyzer,
+        analysis_threads = ctx.attr.analysis_threads,
+    )
+
+    return depset([projection, analysis])
+
+def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
+    run_flags = plan.run_flags
+    if ctx.file.ownership_subset:
+        run_flags = run_flags + ["--ownership-subset", _shell_source_path(ctx.file.ownership_subset.path)]
+    if allow_gate_rejection and not ctx.attr.emit_on_rejection:
+        run_flags = run_flags + ["--emit-on-rejection"]
+    command = plan.debundler + " " + " ".join(
+        ["run"] + run_flags + plan.spec_args + plan.package_args +
+        ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
+    )
+    if ctx.attr.emit_on_rejection or allow_gate_rejection:
+        # Reading output must have both the typed status and its marker.
+        return "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] && [ -f {marker} ] || exit \"$status\"; }}".format(
+            command = command,
+            gate = _GATE_REJECTED_EXIT_CODE,
+            marker = shell.quote(paths.join(plan.out_root, "GATE_REJECTED")),
+        )
+    return command
+
+def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = None, analysis_threads = 0):
+    action_env = {"BAZEL_BINDIR": ctx.bin_dir.path}
+    if analysis_threads > 0:
+        action_env["RAYON_NUM_THREADS"] = str(analysis_threads)
+    ctx.actions.run_shell(
+        inputs = inputs,
+        tools = [tool if tool else ctx.executable.debundler],
+        outputs = outputs,
+        command = "cd \"${{BAZEL_BINDIR}}\" && {command}".format(command = command),
+        env = action_env,
         use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
         # canonicalizes to a location within the package root. Inside
         # Bazel's linux-sandbox, package-dir entries are real directories
         # but their leaf files are symlinks to the host execroot's bazel-bin
         # — so `realpath(file)` lands outside `realpath(dir)` and the check
-        # spuriously fails. Disable sandboxing for this action; inputs are
+        # spuriously fails. Disable sandboxing for these actions; inputs are
         # declared via Bazel attrs, so reproducibility is preserved.
         execution_requirements = {"no-sandbox": "1"},
-        progress_message = "Running debundle pipeline for %{label}",
-        mnemonic = "DebundlePipeline",
+        progress_message = progress,
+        mnemonic = mnemonic,
     )
-    return [DefaultInfo(files = depset([out_dir]))]
 
-def _debundle_pipeline_plan(ctx, out_root):
+def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
     bin_dir = ctx.bin_dir.path
 
     has_flat = bool(ctx.file.spec)
@@ -48,28 +175,47 @@ def _debundle_pipeline_plan(ctx, out_root):
         fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
 
     # Each entry is a fully-rendered shell token (already quoted/escaped).
-    argv = ["run"]
+    run_flags = []
     if ctx.attr.fail_fast:
-        argv.append("--fail-fast")
+        run_flags.append("--fail-fast")
+    if ctx.attr.emit_on_rejection:
+        run_flags.append("--emit-on-rejection")
+    if ctx.attr.full_report_chunks and not ctx.attr.full_reports:
+        fail("full_report_chunks requires full_reports")
+    for report in ctx.attr.full_reports if include_full_streams else []:
+        if report not in ["translation-validation", "export-reentry"]:
+            fail("unknown full_reports entry {}: expected translation-validation or export-reentry".format(report))
+        run_flags += ["--full-report", shell.quote(report)]
+    for chunk in ctx.attr.full_report_chunks if include_full_streams else []:
+        run_flags += ["--full-report-chunk", shell.quote(chunk)]
+    if include_full_streams and ctx.attr.effect_conflicts_jsonl:
+        run_flags.append("--effect-conflicts-jsonl")
+    for chunk in ctx.attr.effect_conflicts_chunks if include_full_streams else []:
+        run_flags.extend(["--effect-conflicts-chunk", shell.quote(chunk)])
     if has_flat:
-        argv += ["--spec", _shell_source_path(ctx.file.spec.path)]
+        spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
+
+        # A flat spec's source paths resolve against the working directory.
+        source_root = "\"${PWD}\""
     else:
         pkg = ctx.label.package
-        argv += [
+        source_root = _tree_source_root_arg(ctx)
+        spec_args = [
             "--tree-config",
-            _shell_source_path(paths.join(pkg, ctx.attr.tree_config)),
+            _shell_source_path(ctx.file.tree_config.path),
             "--tree-modules",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_modules)),
             "--tree-vendor-marks",
-            _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
+            _shell_source_path(ctx.file.tree_vendor_marks.path),
             # Source-relative paths embedded in the tree config YAML
             # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
-            _tree_source_root_arg(ctx),
+            source_root,
             "--out-root",
             shell.quote(out_root),
         ]
 
+    package_args = []
     for pkg_label, pkg_name in ctx.attr.package_roots.items():
         pkg_files = pkg_label[DefaultInfo].files.to_list()
         if not pkg_files:
@@ -79,23 +225,32 @@ def _debundle_pipeline_plan(ctx, out_root):
         # already points directly at the package directory containing
         # `package.json`. Make it bin-dir-relative for the post-cd cwd.
         pkg_dir = paths.relativize(pkg_files[0].path, bin_dir)
-        argv += [
+        package_args += [
             shell.quote("--package-root"),
             shell.quote("{}={}".format(pkg_name, pkg_dir)),
         ]
 
-    inputs = depset(
-        direct = [ctx.file.spec] if ctx.file.spec else [],
-        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
-                     [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
+    # What analysis reads besides its projection: never the spec tree.
+    source_inputs = depset(
+        transitive = [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
                      [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
                      [ctx.attr.tree_source_root[DefaultInfo].files],
     )
+    inputs = depset(
+        direct = [ctx.file.spec] if ctx.file.spec else [ctx.file.tree_config, ctx.file.tree_vendor_marks],
+        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
+                     [source_inputs],
+    )
 
     return struct(
-        argv = argv,
-        command = "\"${{OLDPWD}}/{}\" {}".format(ctx.executable.debundler.path, " ".join(argv)),
+        debundler = "\"${{OLDPWD}}/{}\"".format(ctx.executable.debundler.path),
+        run_flags = run_flags,
+        spec_args = spec_args,
+        package_args = package_args,
+        source_root = source_root,
+        source_inputs = source_inputs,
         inputs = inputs,
+        out_root = out_root,
     )
 
 def _tree_source_root_arg(ctx):
@@ -145,18 +300,32 @@ def _shell_execroot_path(execroot_relative):
     return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
 
 _DEBUNDLE_PIPELINE_ATTRS = {
+    "analysis": attr.label(
+        allow_files = [".analysis"],
+        doc = "Optional saved analysis file or filegroup selecting another pipeline's analysis output group. The CLI checks engine, source and projection compatibility. Only assignment, validation and emission actions are registered for this target.",
+    ),
+    "analysis_threads": attr.int(
+        default = 0,
+        doc = "Rayon worker limit for DebundleAnalyze; 0 omits the override, using inherited RAYON_NUM_THREADS or Rayon's default, and positive values set RAYON_NUM_THREADS for that action only.",
+    ),
+    "ownership_subset": attr.label(
+        allow_single_file = [".json"],
+        doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry, per_atomic_group, or coarse_atomic_groups and conflicts with split_dependency_graphs.",
+    ),
     "spec": attr.label(
         allow_single_file = True,
         doc = "Optional flat transform spec YAML. Mutually exclusive with the tree_* attrs.",
     ),
-    "tree_config": attr.string(
-        doc = "Package-relative path to the tree-shaped authoring config YAML.",
+    "tree_config": attr.label(
+        allow_single_file = True,
+        doc = "Source or generated tree-shaped authoring config YAML.",
     ),
     "tree_modules": attr.string(
         doc = "Package-relative path to the directory containing per-module YAML files.",
     ),
-    "tree_vendor_marks": attr.string(
-        doc = "Package-relative path to the tree-shaped vendor marks YAML.",
+    "tree_vendor_marks": attr.label(
+        allow_single_file = True,
+        doc = "Source or generated tree-shaped vendor marks YAML.",
     ),
     "spec_tree_inputs": attr.label_list(
         allow_files = True,
@@ -167,6 +336,18 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         cfg = "exec",
         default = Label("//devinfra/js/debundle:debundler"),
         doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
+    ),
+    "analyzer": attr.label(
+        executable = True,
+        cfg = "exec",
+        default = Label("//devinfra/js/debundle:analyzer"),
+        doc = "Analysis-only binary; custom analyzers must share the CLI's compiled analysis identity.",
+    ),
+    "projector": attr.label(
+        executable = True,
+        cfg = "exec",
+        default = Label("//devinfra/js/debundle:projector"),
+        doc = "Small projection binary; custom projectors must write the canonical pipeline analysis projection.",
     ),
     "input_data": attr.label_list(
         allow_files = True,
@@ -187,9 +368,41 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         allow_files = True,
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
     ),
+    "emit_on_rejection": attr.bool(
+        default = False,
+        doc = (
+            "Pass --emit-on-rejection and succeed when the realizability gate's " +
+            "rejection is the run's only failure: the output is then a " +
+            "reading-only tree marked by a `GATE_REJECTED` file at its " +
+            "`write_js_tree` root, never a runnable bundle. Name such a target " +
+            "for that (`debundle_product`'s `<name>_readable`)."
+        ),
+    ),
+    "split_dependency_graphs": attr.bool(
+        default = False,
+        doc = (
+            "Expose full graphs as an on-demand dependency_graphs output group " +
+            "(`<name>.dependency_graphs/`, same report paths), using the same " +
+            "Analyze artifact. Default outputs never generate full graphs."
+        ),
+    ),
+    "full_reports": attr.string_list(
+        doc = "Complete diagnostic sinks to export (translation-validation, export-reentry). Independent of full graphs; only Pipeline inputs change.",
+    ),
+    "full_report_chunks": attr.string_list(
+        doc = "Select only these full-report sinks; checks and bounded summaries still cover every configured chunk. Requires full_reports.",
+    ),
     "fail_fast": attr.bool(
         default = False,
         doc = "Pass --fail-fast to debundle run for debugging; by default broad pipeline runs aggregate supported diagnostics.",
+    ),
+    "effect_conflicts_jsonl": attr.bool(
+        default = False,
+        doc = "Stream full effect-conflict JSONL into the existing reports tree; disabled by default.",
+    ),
+    "effect_conflicts_chunks": attr.string_list(
+        default = [],
+        doc = "Restrict JSONL sinks to these materialized chunk IDs; requires effect_conflicts_jsonl. Empty selects all chunks. The CLI validates IDs.",
     ),
 }
 

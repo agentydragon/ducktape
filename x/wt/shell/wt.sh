@@ -3,23 +3,21 @@
 # __PY__ will be substituted at install-print time with the Python executable.
 
 wt() {
-  local wt_command_file
-  wt_command_file=$(mktemp)
-  trap 'rm -f "$wt_command_file"' EXIT
-
-  __PY__ -m x.wt.cli sh "$@" 3>"$wt_command_file"
-  local wt_exit_code=$?
+  local wt_shell_commands wt_exit_code
+  # Capture fd3 commands while forwarding normal stdout through a scoped fd4.
+  {
+    if wt_shell_commands=$(__PY__ -m x.wt.cli sh "$@" 3>&1 1>&4); then
+      wt_exit_code=0
+    else
+      wt_exit_code=$?
+    fi
+  } 4>&1
 
   if [ $wt_exit_code -eq 0 ] || [ $wt_exit_code -eq 2 ]; then
-    if [ -s "$wt_command_file" ]; then
-      # shellcheck disable=SC2155
-      local wt_shell_commands="$(cat "$wt_command_file")"
-      if [ -n "$wt_shell_commands" ]; then
-        eval "$wt_shell_commands"
-      fi
+    if [ -n "$wt_shell_commands" ]; then
+      eval "$wt_shell_commands"
     fi
   fi
 
-  rm -f "$wt_command_file"
   return $wt_exit_code
 }

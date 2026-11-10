@@ -17,7 +17,7 @@ py_test(
     deps = [
         ":merge",
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

@@ -2,9 +2,9 @@ package inboxaccess
 
 import (
 	"testing"
-	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -35,14 +35,14 @@ func sendRule(targets policyapi.SandboxTargets) policyapi.Rule {
 
 // policyOf is a Policy holding one set of the rules, bound to sender.
 func policyOf(rules ...policyapi.Rule) *Policy {
-	policy := NewPolicy(time.Minute)
+	policy := NewPolicy()
 	policy.Rules.PutPolicySet(&policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-set"},
 		Spec:       policyapi.PolicySetSpec{Rules: rules},
 	})
 	policy.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-binding"},
-		Spec:       policyapi.PolicyBindingSpec{Subject: sender, PolicySets: []string{"test-set"}},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: sender.Namespace, Name: sender.Name}, PolicySets: []string{"test-set"}},
 	})
 	return policy
 }
@@ -73,7 +73,7 @@ func TestASendIsPermittedOnlyToTheSandboxesARuleTargets(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := policyOf(sendRule(c.targets)).PermitsSend(sender, c.sandbox); got != c.want {
+			if got := policyOf(sendRule(c.targets)).PermitsSend(reader.ServiceAccount(sender), c.sandbox); got != c.want {
 				t.Errorf("PermitsSend = %v, want %v", got, c.want)
 			}
 		})
@@ -82,18 +82,18 @@ func TestASendIsPermittedOnlyToTheSandboxesARuleTargets(t *testing.T) {
 
 func TestOnlyTheBoundAccountMaySend(t *testing.T) {
 	policy := policyOf(sendRule(policyapi.SandboxTargets{AllSandboxes: true}))
-	if policy.PermitsSend(other, recipient()) {
+	if policy.PermitsSend(reader.ServiceAccount(other), recipient()) {
 		t.Error("an account no binding names may send")
 	}
 	policy.Rules.DeleteBinding("test-binding")
-	if policy.PermitsSend(sender, recipient()) {
+	if policy.PermitsSend(reader.ServiceAccount(sender), recipient()) {
 		t.Error("the account may still send once its binding is gone")
 	}
 }
 
 func TestOtherReadersRulesGrantNoSend(t *testing.T) {
 	policy := policyOf(policyapi.Rule{Type: "egress", Hosts: []string{"inbox-access-test.invalid"}})
-	if policy.PermitsSend(sender, recipient()) {
+	if policy.PermitsSend(reader.ServiceAccount(sender), recipient()) {
 		t.Error("an egress rule allows a send")
 	}
 }
@@ -108,5 +108,29 @@ func TestARuleThisServiceCannotEnforceIsRefused(t *testing.T) {
 		if _, err := ParseRule(rule); err == nil {
 			t.Errorf("%s: parsed", name)
 		}
+	}
+}
+
+// A binding naming an Identity lets exactly the incarnation live under that name send: not a deleted
+// predecessor's credential, and not a ServiceAccount of the same name.
+func TestABindingNamingAnIdentityLetsItsLiveIncarnationSend(t *testing.T) {
+	policy := NewPolicy()
+	policy.Rules.PutPolicySet(&policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-set"},
+		Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{sendRule(policyapi.SandboxTargets{AllSandboxes: true})}},
+	})
+	policy.Rules.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-binding"},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}, PolicySets: []string{"test-set"}},
+	})
+	policy.Rules.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-agent", UID: currentUID}})
+	if !policy.PermitsSend(reader.Identity{Name: "test-agent", UID: currentUID}, recipient()) {
+		t.Error("the bound Identity may not send")
+	}
+	if policy.PermitsSend(reader.Identity{Name: "test-agent", UID: formerUID}, recipient()) {
+		t.Error("a predecessor incarnation of the bound Identity may send")
+	}
+	if policy.PermitsSend(reader.ServiceAccount{Namespace: testNamespace, Name: "test-agent"}, recipient()) {
+		t.Error("a ServiceAccount named like the bound Identity may send")
 	}
 }

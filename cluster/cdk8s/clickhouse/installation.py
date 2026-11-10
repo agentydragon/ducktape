@@ -17,6 +17,7 @@ from clickhouse_installation_crds.com.altinity.clickhouse import (
     ClickHouseInstallationSpecConfiguration,
     ClickHouseInstallationSpecConfigurationClusters,
     ClickHouseInstallationSpecConfigurationClustersLayout,
+    ClickHouseInstallationSpecConfigurationClustersLayoutReplicas,
     ClickHouseInstallationSpecConfigurationClustersLayoutShards,
     ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas,
     ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates,
@@ -49,6 +50,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
 from cluster.cdk8s.clickhouse import client
@@ -57,7 +59,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 SOPS_FILES = (
@@ -82,8 +83,8 @@ _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
 _PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
-_CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE = "clickhouse-piraeus-103711"
 _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
+_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
@@ -141,7 +142,9 @@ def _clickhouse_pod_template(
                     "ports": [_METRICS.k8s_container_port()],
                     "resources": {
                         "requests": {"cpu": "500m", "memory": "2Gi"},
-                        "limits": {"cpu": "4", "memory": "8Gi"},
+                        # ClickHouse caps itself at 90% of this. Rewriting a large
+                        # langfuse.events_full part (~400 KB rows) needs ~8 GiB.
+                        "limits": {"cpu": "4", "memory": "16Gi"},
                     },
                     "securityContext": _CONTAINER_SECURITY_CONTEXT,
                 }
@@ -277,7 +280,9 @@ def _users() -> dict[str, object]:
 # The key must sort after the operator's own generated
 # `01-clickhouse-0*-{query,part,trace}_log.xml`, which set `replace="1"`.
 _SYSTEM_LOGS_FILE = "zz-system-logs.xml"
-_SYSTEM_LOGS_XML = get_required_path(own_repo_rlocation("cluster/cdk8s/clickhouse/zz-system-logs.xml")).read_text()
+_SYSTEM_LOGS_XML = (
+    Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/clickhouse/zz-system-logs.xml"
+).read_text()
 
 
 def clickhouse_chart(app: App) -> Chart:
@@ -357,25 +362,32 @@ def clickhouse_chart(app: App) -> Chart:
                         layout=ClickHouseInstallationSpecConfigurationClustersLayout(
                             shards_count=1,
                             replicas_count=2,
+                            # Preserve the existing StatefulSet selector labels after
+                            # removing the full-node host from the end of the layout.
+                            replicas=[
+                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="1"),
+                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="2"),
+                            ],
                             shards=[
                                 ClickHouseInstallationSpecConfigurationClustersLayoutShards(
                                     name="0",
                                     replicas_count=2,
                                     replicas=[
                                         ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0",
+                                            name="0-1",
                                             templates=(
                                                 ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
+                                                    pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
                                                     data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
                                                 )
                                             ),
                                         ),
+                                        # Use a fresh identity after the interrupted 0-2 replica.
                                         ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="1",
+                                            name="0-3",
                                             templates=(
                                                 ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
+                                                    pod_template=_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
                                                     data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
                                                 )
                                             ),
@@ -399,12 +411,12 @@ def clickhouse_chart(app: App) -> Chart:
                 pod_templates=[
                     _clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR),
                     _clickhouse_pod_template(
-                        _CLICKHOUSE_PIRAEUS_103711_POD_TEMPLATE,
-                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103711"},
-                    ),
-                    _clickhouse_pod_template(
                         _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
                         {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103656"},
+                    ),
+                    _clickhouse_pod_template(
+                        _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
+                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns102453"},
                     ),
                 ],
                 volume_claim_templates=[

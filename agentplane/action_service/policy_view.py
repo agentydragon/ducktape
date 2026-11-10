@@ -1,4 +1,4 @@
-"""Typed policy views for the Action Service facade and PolicySet inventory."""
+"""Typed policy views for the Action Service facade."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from agentplane.action_service.models import PolicyKind, PolicySource
-from agentplane.action_service.policies.registry import Policy
-from agentplane.policy_sets import PolicySet, RefusedPolicySet
 
 
 class _View(BaseModel):
@@ -65,24 +63,3 @@ class EffectivePolicyView(_View):
     source: PolicySource = Field(description="The list of the set the policy sits in.")
     index: int = Field(ge=0)
     policy: PolicyView
-
-
-class ActionPolicySetView(_View):
-    """A PolicySet's identity and the parser's refusal reason, if its rules are invalid."""
-
-    name: str
-    generation: int
-    refused: str | None = Field(
-        default=None,
-        description="Why a rule does not parse, when one does not; such a set contributes nothing. A PolicySet has "
-        "no status of its own: each binding's `ActionsReady` says whether its sets resolved.",
-    )
-
-
-def set_view(policy_set: PolicySet[Policy] | RefusedPolicySet) -> ActionPolicySetView:
-    assert policy_set.generation is not None, "PolicySet inventory comes from the API server"
-    return ActionPolicySetView(
-        name=policy_set.name,
-        generation=policy_set.generation,
-        refused=policy_set.reason if isinstance(policy_set, RefusedPolicySet) else None,
-    )

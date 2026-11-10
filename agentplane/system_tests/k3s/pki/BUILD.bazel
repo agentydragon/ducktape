@@ -1,0 +1,27 @@
+load("@image_pins//:pins.bzl", "TRUST_MANAGER_REFERENCE")
+
+package(default_testonly = True)
+
+genrule(
+    name = "trust_manager_install_yaml",
+    srcs = [
+        "trust-manager-values.yaml",
+        "@trust_manager_chart_v0_25_0//:chart_files",
+        "@trust_manager_chart_v0_25_0//:chart_yaml",
+    ],
+    outs = ["trust-manager.yaml"],
+    # The source chart carries appVersion v0.0.0; render the authoritative image pin instead.
+    cmd = """
+chart_manifest="$(location @trust_manager_chart_v0_25_0//:chart_yaml)"
+chart_dir="$${{chart_manifest%/Chart.yaml}}"
+$(location @helm_3_20_2_linux_amd64//:helm) template trust-manager "$${{chart_dir}}" \\
+  --namespace cert-manager \\
+  --values $(location trust-manager-values.yaml) \\
+  --set-string image.tag={image_tag} \\
+  --include-crds > "$@"
+""".format(image_tag = TRUST_MANAGER_REFERENCE.rsplit(":", 1)[1]),
+    tools = ["@helm_3_20_2_linux_amd64//:helm"],
+    visibility = [
+        "//agentplane/system_tests:__subpackages__",
+    ],
+)

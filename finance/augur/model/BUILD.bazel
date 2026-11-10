@@ -121,6 +121,7 @@ py_library(
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pydantic",
     ],
 )
@@ -135,10 +136,12 @@ py_test(
         ":historical_windows",
         ":series",
         "//:conftest",
+        "//finance:calendar_months",
         "//finance/augur:conftest",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -362,15 +365,5 @@ py_test(
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "evidence",
-    srcs = ["evidence.py"],
-    deps = [
-        ":conditioning",
-        ":schemas",
-        "@pypi//pydantic",
     ],
 )

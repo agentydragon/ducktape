@@ -86,10 +86,10 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//util/bazel:runfiles",
         "//x/wt/testing:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

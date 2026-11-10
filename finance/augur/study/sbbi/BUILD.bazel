@@ -11,10 +11,11 @@ py_library(
     srcs = ["long_term_corporate.py"],
     deps = [
         "//finance/augur/model:bond_fund",
-        "//finance/augur/model:historical_windows",
         "//finance/augur/study/trinity:evidence_snapshot",
+        "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
+        "@pypi//polars",
     ],
 )
 
@@ -38,6 +39,20 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/study/trinity:evidence_snapshot",
         "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "long_term_corporate_data_test",
+    srcs = ["long_term_corporate_data_test.py"],
+    deps = [
+        ":long_term_corporate",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

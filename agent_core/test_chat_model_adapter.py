@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import cast
+from typing import Any, cast
 
 import httpx2
 import pytest
@@ -9,16 +9,88 @@ import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 
-from agent_core.model import AgentModelRequest, ChatCompletionsAgentModel
+from agent_core.model import ChatCompletionsAgentModel
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
     FunctionCallOutputItem,
     FunctionToolParam,
+    InputTokensDetails,
+    OutputTokensDetails,
     ReasoningItem,
+    ResponsesRequest,
+    ResponseUsage,
     SystemMessage,
     UserMessage,
 )
+
+
+@pytest.mark.parametrize(
+    ("details", "expected_input", "expected_output"),
+    [
+        ({}, None, None),
+        ({"prompt_tokens_details": None, "completion_tokens_details": None}, None, None),
+        ({"prompt_tokens_details": {}, "completion_tokens_details": {}}, InputTokensDetails(), OutputTokensDetails()),
+        (
+            {
+                "prompt_tokens_details": {"cache_write_tokens": 2},
+                "completion_tokens_details": {"reasoning_tokens": None},
+            },
+            InputTokensDetails(cache_write_tokens=2),
+            OutputTokensDetails(),
+        ),
+        (
+            {
+                "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "completion_tokens_details": {"reasoning_tokens": 0},
+            },
+            InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            OutputTokensDetails(reasoning_tokens=0),
+        ),
+        (
+            {
+                "prompt_tokens_details": {"cached_tokens": 3, "cache_write_tokens": 2, "audio_tokens": 1},
+                "completion_tokens_details": {"reasoning_tokens": 4},
+            },
+            InputTokensDetails(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
+            OutputTokensDetails(reasoning_tokens=4),
+        ),
+    ],
+    ids=["omitted", "null", "empty", "partial", "zero", "positive"],
+)
+async def test_chat_adapter_preserves_reported_usage(
+    details: dict[str, Any], expected_input: InputTokensDetails | None, expected_output: OutputTokensDetails | None
+) -> None:
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "chatcmpl_test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "chat-model",
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15, **details},
+            },
+        )
+
+    async with AsyncOpenAI(
+        base_url="http://test/v1",
+        api_key="sk-test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    ) as client:
+        model = ChatCompletionsAgentModel(client=client, model="chat-model")
+        result = await model.sample(model.prepare(ResponsesRequest(input=[UserMessage.text("hello")])))
+
+    assert result.usage == ResponseUsage(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_tokens_details=expected_input,
+        output_tokens_details=expected_output,
+    )
 
 
 async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
@@ -66,7 +138,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     try:
         client = AsyncOpenAI(base_url="http://test/v1", api_key="sk-test", http_client=http_client)
         model = ChatCompletionsAgentModel(client=client, model="chat-model")
-        request = AgentModelRequest(
+        request = ResponsesRequest(
             input=[
                 SystemMessage.text("static system"),
                 UserMessage.text("hello"),
@@ -87,7 +159,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
         )
 
         prepared = model.prepare(request)
-        wire_body = prepared.wire_body
+        wire_body = prepared
         assert isinstance(wire_body, dict)
         assert wire_body["messages"] == [
             {"role": "system", "content": "static system"},
@@ -107,7 +179,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     finally:
         await http_client.aclose()
 
-    assert captured_body == prepared.wire_body
+    assert captured_body == prepared
     assert result.id == "chatcmpl_test"
     assert result.usage is not None
     assert result.usage.input_tokens == 10
@@ -156,7 +228,7 @@ async def test_chat_adapter_rejects_custom_tool_call() -> None:
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     ) as client:
         model = ChatCompletionsAgentModel(client=client, model="chat-model")
-        prepared = model.prepare(AgentModelRequest(input=[UserMessage.text("hello")]))
+        prepared = model.prepare(ResponsesRequest(input=[UserMessage.text("hello")]))
 
         with pytest.raises(ValueError, match="Unsupported chat completion tool call type: 'custom'"):
             await model.sample(prepared)
@@ -165,10 +237,10 @@ async def test_chat_adapter_rejects_custom_tool_call() -> None:
 def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:
     model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
 
-    prepared = model.prepare(AgentModelRequest(input=[], instructions="system instructions"))
+    prepared = model.prepare(ResponsesRequest(input=[], instructions="system instructions"))
 
-    assert isinstance(prepared.wire_body, dict)
-    assert prepared.wire_body["messages"] == [
+    assert isinstance(prepared, dict)
+    assert prepared["messages"] == [
         {"role": "system", "content": "system instructions"},
         {"role": "user", "content": "Begin the task using the available tools."},
     ]
@@ -177,10 +249,10 @@ def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:
 def test_chat_adapter_does_not_add_kickoff_when_user_input_exists() -> None:
     model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
 
-    prepared = model.prepare(AgentModelRequest(input=[SystemMessage.text("static system"), UserMessage.text("hello")]))
+    prepared = model.prepare(ResponsesRequest(input=[SystemMessage.text("static system"), UserMessage.text("hello")]))
 
-    assert isinstance(prepared.wire_body, dict)
-    assert prepared.wire_body["messages"] == [
+    assert isinstance(prepared, dict)
+    assert prepared["messages"] == [
         {"role": "system", "content": "static system"},
         {"role": "user", "content": "hello"},
     ]

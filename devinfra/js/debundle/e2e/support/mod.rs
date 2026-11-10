@@ -5,8 +5,7 @@
 
 mod ast_assertions;
 mod fixture_spec;
-mod graph_fixture;
-pub use graph_fixture::GraphFixture;
+pub mod saved_analysis;
 
 pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
@@ -15,15 +14,16 @@ pub use ast_assertions::{
 use fixture_spec::build_spec;
 pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
+    anonymous_source_unit, commuting_pair, composed_global_access_fixture, declared_source_unit,
     logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_anon_comment, logical_module_with_binding_groups,
-    logical_module_with_comment, mixed_selector_failure_fixture, unassigned_mode_catchall_file,
-    unassigned_mode_inline, unassigned_mode_per_atomic_group,
+    logical_module_with_comment, member_source_unit, mixed_selector_failure_fixture,
+    source_match_module_yaml, source_match_selector, source_sha256, unassigned_mode_catchall_file,
+    unassigned_mode_coarse_atomic_groups, unassigned_mode_inline, unassigned_mode_per_atomic_group,
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
-use analysis::DependencyGraphReport;
-use artifact::reports::PackageManifest;
+use output_layout::{APP_DIR, GATE_REJECTED_MARKER};
 use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -32,21 +32,33 @@ use serde_json::Value;
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
-    ExecutionRuntime, InitializerPurity, MemberEffect, MemberPurity, VendorLevel, VendorMark,
+    ArgumentInputContract, BunModule, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
+    CommutingStatementsContract, EmbeddedLoader, HostBehavior,
+    ImportedPrimitiveArrayLifetimeContract, ImportedPrimitiveArrayOperandContract,
+    ImportedPrimitiveArraySpreadInputContract, InitializerCallEffectInputContract,
+    InitializerPurity, LoaderResultForEvaluatingModule, MemberEffect, MemberPurity,
+    NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
+    NativeOperationKind, NoAccessorInstallCallableContract, NodeBuiltinModule,
+    NonLiteralLoaderCalls, PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises,
+    ReentryFreeOperation, ResolvedMemberSelector, SourceMatchClaim, SourceUnitSelector,
+    SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
+    ValueInputContract, VendorLevel, VendorMark,
 };
 
+use artifact::paths::path_from_module_path;
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::TempDir;
 
-const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle";
 const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static FAILED_FIXTURE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Fixture {
     pub chunk_id: String,
@@ -56,6 +68,9 @@ pub struct Fixture {
     /// The debundler's stderr from the successful run, for asserting
     /// on warnings/notices (e.g. admission-override notices).
     pub stderr: String,
+    /// The `emit_browser_harness` output root; `Some` only for
+    /// [`FixtureOpts::with_browser_harness`].
+    pub harness_root: Option<PathBuf>,
     source_path: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
@@ -72,24 +87,96 @@ pub struct RejectedFixture {
     /// The `write_js_tree` output root, exposed so dry-run callers can
     /// assert the no-output contract (only `reports/` may exist).
     pub out_root: PathBuf,
+    /// The `emit_browser_harness` output root; `Some` only for
+    /// [`FixtureOpts::with_browser_harness`].
+    pub harness_root: Option<PathBuf>,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
 
 impl Fixture {
-    pub fn dependency_graph(&self) -> DependencyGraphReport {
-        read_dependency_graph(&self.report_root, &self.chunk_id)
+    /// `translation_validation.json`: translation validation beside the gate's verdict.
+    pub fn translation_validation(&self) -> Value {
+        read_json(
+            &self
+                .report_root
+                .join(&self.chunk_id)
+                .join("translation_validation.json"),
+        )
+    }
+
+    pub fn effect_translation_validation(&self) -> Value {
+        read_json(
+            &self
+                .report_root
+                .join(&self.chunk_id)
+                .join("effect_translation_validation.json"),
+        )
+    }
+
+    /// `global_resolution.json`: the report-only check that every source
+    /// global of each emitted chunk is still unbound in the final output.
+    pub fn global_resolution(&self) -> Value {
+        read_json(&self.report_root.join("global_resolution.json"))
+    }
+}
+
+/// Every source global site of every emitted chunk is still unbound in the
+/// final output.
+pub fn assert_global_resolution_preserved(fixture: &Fixture) {
+    let report = fixture.global_resolution();
+    assert_eq!(report["status"], "preserved", "{report:#}");
+    for chunk in report["chunks"].as_object().expect("chunk map").values() {
+        assert_eq!(chunk["findings"], serde_json::json!([]), "{report:#}");
+        assert_eq!(
+            chunk["required_use_count"].as_u64(),
+            Some(
+                chunk["preserved_use_count"].as_u64().unwrap()
+                    + chunk["elided_use_count"].as_u64().unwrap()
+            ),
+            "{report:#}"
+        );
     }
 }
 
 impl RejectedFixture {
-    pub fn dependency_graph(&self) -> DependencyGraphReport {
-        self.read_report("dependency_graph.json")
+    /// Where `--emit-on-rejection` writes the logical-module tree.
+    pub fn app_root(&self) -> PathBuf {
+        self.out_root.join(APP_DIR)
+    }
+
+    pub fn entry_path(&self) -> PathBuf {
+        self.app_root()
+            .join(path_from_module_path(&self.chunk_id))
+            .join("entry.js")
+    }
+
+    pub fn gate_rejected_marker(&self) -> PathBuf {
+        self.out_root.join(GATE_REJECTED_MARKER)
+    }
+
+    /// The per-chunk gate evidence report (`cycles.json` or
+    /// `atomic_group_conflicts.json`).
+    pub fn report_path(&self, filename: &str) -> PathBuf {
+        self.report_root.join(&self.chunk_id).join(filename)
     }
 
     /// `cycles.json`: one entry per blocking SCC, with its `modules` and `cut`.
     pub fn cycles(&self) -> Vec<Value> {
         self.read_report("cycles.json")
+    }
+
+    /// `translation_validation.json`: translation validation beside the gate's verdict.
+    pub fn translation_validation(&self) -> Value {
+        self.read_report("translation_validation.json")
+    }
+
+    pub fn effect_translation_validation(&self) -> Value {
+        self.read_report("effect_translation_validation.json")
+    }
+
+    pub fn candidate_relocation_assessment(&self) -> Value {
+        self.read_report("candidate_relocation_assessment.json")
     }
 
     /// `atomic_group_conflicts.json`: one entry per atomic group the spec splits, with its
@@ -105,15 +192,8 @@ impl RejectedFixture {
     }
 
     fn read_report<T: DeserializeOwned>(&self, filename: &str) -> T {
-        read_json_with_stderr(
-            &self.report_root.join(&self.chunk_id).join(filename),
-            Some(&self.stderr),
-        )
+        read_json_with_stderr(&self.report_path(filename), Some(&self.stderr))
     }
-}
-
-fn read_dependency_graph(report_root: &Path, chunk_id: &str) -> DependencyGraphReport {
-    read_json(&report_root.join(chunk_id).join("dependency_graph.json"))
 }
 
 pub struct DryRunFixture {
@@ -124,9 +204,33 @@ pub struct DryRunFixture {
 }
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
+    run_fixture_with_args(opts, &[])
+}
+
+pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
+    run_fixture_with_options(opts, extra_args, true)
+}
+
+/// Run a fixture without `--graphs`, for CLI options that conflict with full
+/// graph export.
+pub fn run_fixture_without_graphs_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
+    run_fixture_with_options(opts, extra_args, false)
+}
+
+fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: bool) -> Fixture {
     let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform(&setup.spec_path);
+    let mut args = Vec::new();
+    if graphs {
+        args.push("--graphs");
+    }
+    args.extend_from_slice(extra_args);
+    let result = spawn_transform_with_args(&setup.spec_path, &args);
+    let app_root = setup.out_root.join(APP_DIR);
+    mirror_runtime_extra_files(&app_root, opts.extra_files, result.status.success());
+    if !result.status.success() {
+        preserve_failed_fixture_reports(&setup, opts.chunk_id);
+    }
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -135,26 +239,157 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
         result.stderr,
     );
 
-    let app_root = setup.out_root.join("app");
-
-    // Mirror `extra_files` into app_root after the transform runs, so
-    // re-imports emitted by the materializer can resolve through
-    // their relative paths under the runtime app tree.
-    for (rel_path, content) in opts.extra_files {
-        write_text_file(&app_root.join(rel_path), content);
-    }
-
     let entry_path = app_root
-        .join(opts.chunk_id.split('/').collect::<PathBuf>())
+        .join(path_from_module_path(opts.chunk_id))
         .join("entry.js");
+    audit_node_parity(
+        "accepted",
+        &setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
+        &entry_path,
+        &setup
+            .report_root
+            .join(opts.chunk_id)
+            .join("effect_translation_validation.json"),
+    );
     Fixture {
         chunk_id: opts.chunk_id.to_string(),
         entry_path,
         out_root: app_root,
         report_root: setup.report_root,
         stderr: result.stderr,
+        harness_root: setup.browser_harness.map(|harness| harness.out_dir),
         source_path: setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
         _root: setup.root,
+    }
+}
+
+/// Preserve reports and any emitted app before an unexpected exit drops its tempdir.
+/// Earlier pipeline failures can legitimately precede individual reports.
+fn preserve_failed_fixture_reports(setup: &PreparedFixture, chunk_id: &str) {
+    let output = PathBuf::from(
+        std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+            .expect("Bazel undeclared outputs directory is set"),
+    )
+    .join("failed-fixtures")
+    .join(format!(
+        "{}{}",
+        current_test_prefix(),
+        FAILED_FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
+    fs::create_dir_all(&output).expect("create failed fixture report directory");
+    fs::copy(&setup.spec_path, output.join("transform_spec.yaml"))
+        .expect("preserve failed fixture spec");
+    for name in [
+        "candidate_relocation_assessment.json",
+        "effect_translation_validation.json",
+        "dependency_graph.json.gz",
+    ] {
+        let source = setup.report_root.join(chunk_id).join(name);
+        if source.exists() {
+            fs::copy(&source, output.join(name)).unwrap_or_else(|error| {
+                panic!(
+                    "preserve failed fixture report {}: {error}",
+                    source.display()
+                )
+            });
+        }
+    }
+
+    let program_graph = setup.report_root.join("program_graph.json.gz");
+    if program_graph.exists() {
+        fs::copy(&program_graph, output.join("program_graph.json.gz")).unwrap_or_else(|error| {
+            panic!(
+                "preserve failed fixture report {}: {error}",
+                program_graph.display()
+            )
+        });
+    }
+
+    let app_root = setup.out_root.join(APP_DIR);
+    if app_root.is_dir() {
+        copy_generated_tree(&app_root, &output.join(APP_DIR)).unwrap_or_else(|error| {
+            panic!(
+                "preserve failed fixture emitted tree {}: {error}",
+                app_root.display()
+            )
+        });
+    }
+}
+
+/// Mirror runtime-only siblings after transformation so materialized imports can
+/// resolve, and before a failed fixture's emitted tree is retained. A failed
+/// pipeline may stop before producing `app/`; keep that output absent.
+fn mirror_runtime_extra_files(
+    app_root: &Path,
+    extra_files: &[(&str, &str)],
+    create_app_if_missing: bool,
+) {
+    if !create_app_if_missing && !app_root.is_dir() {
+        return;
+    }
+    for (rel_path, content) in extra_files {
+        write_text_file(&app_root.join(rel_path), content);
+    }
+}
+
+/// Copy the generated app while retaining module paths, package metadata, and assets.
+fn copy_generated_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_generated_tree(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
+}
+
+/// What the authoritative gate decided for a fixture, and how its source and
+/// the entry emitted for that spec run under Node.
+pub struct GateOutcome {
+    pub accepted: bool,
+    pub source: CommandResult,
+    pub emitted: CommandResult,
+    /// The entry chunk's `candidate_relocation_assessment.json`.
+    pub assessment: Value,
+}
+
+/// `debundle run --emit-on-rejection` over a spec the gate may accept or
+/// refuse: any exit other than acceptance or the gate-only rejection panics.
+pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
+    let setup = prepare_fixture(&opts);
+    let result = spawn_transform_with_args(&setup.spec_path, &["--graphs", "--emit-on-rejection"]);
+    let accepted = match result.status.code() {
+        Some(0) => true,
+        Some(3) => false,
+        code => {
+            preserve_failed_fixture_reports(&setup, opts.chunk_id);
+            panic!(
+                "debundler exited {code:?}\nstdout:\n{}\nstderr:\n{}",
+                result.stdout, result.stderr
+            )
+        }
+    };
+    let app_root = setup.out_root.join(APP_DIR);
+    mirror_runtime_extra_files(&app_root, opts.extra_files, true);
+    GateOutcome {
+        accepted,
+        source: run_node_script(&setup.snapshot_root.join(format!("{}.js", opts.chunk_id))),
+        emitted: run_node_script(
+            &app_root
+                .join(path_from_module_path(opts.chunk_id))
+                .join("entry.js"),
+        ),
+        assessment: read_json(
+            &setup
+                .report_root
+                .join(opts.chunk_id)
+                .join("candidate_relocation_assessment.json"),
+        ),
     }
 }
 
@@ -236,22 +471,85 @@ pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
 }
 
 pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &[])
+    run_rejection_fixture_with_args(opts, &[], 1)
+}
+
+/// Like [`run_rejection_fixture`] but with `debundle run --emit-on-rejection`,
+/// for a spec whose only failure is the gate's rejection: the run exits with
+/// the gate-rejected status, and the logical-module tree is written under
+/// [`RejectedFixture::app_root`] marked unrunnable.
+pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
+}
+
+/// The xfail form of a positive the gate still refuses: the split is valid
+/// (the tree emitted on rejection prints `expected_stdout`, the source's
+/// output) but not provable yet, and today's refusal is the typed candidate
+/// status `pending`, returned with the assessment for the caller's own typed
+/// reason. Once the gate accepts the split this fails so the caller
+/// is converted to a positive.
+pub fn assert_pending_split_preserves_output(
+    opts: FixtureOpts<'_>,
+    pending: &str,
+    expected_stdout: &str,
+) -> Value {
+    let rejected = run_rejection_fixture_with_options(
+        opts,
+        &["--emit-on-rejection"],
+        3,
+        true,
+        "capability landed: convert this pending split to a positive",
+    );
+    assert_node_output(&rejected.entry_path(), expected_stdout, "");
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+    assert_eq!(assessment["status"], pending, "{assessment:#}");
+    assessment
+}
+
+/// `debundle run --emit-on-rejection` over a spec that fails for more than
+/// the gate's rejection: the run exits 1 like any other refusal.
+pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 1)
+}
+
+/// Asserts `entry_path` is a parseable module that opens with the
+/// gate-rejected banner: a leading `//` comment block naming the
+/// `GATE_REJECTED` marker and `evidence_report`.
+pub fn assert_gate_rejected_banner(entry_path: &Path, evidence_report: &Path) {
+    let code = fs::read_to_string(entry_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", entry_path.display()));
+    parse_module(&code);
+    let banner: Vec<&str> = code
+        .lines()
+        .take_while(|line| line.starts_with("//"))
+        .collect();
+    assert!(
+        banner
+            .first()
+            .is_some_and(|line| line.contains(GATE_REJECTED_MARKER)),
+        "entry must open with the {GATE_REJECTED_MARKER} banner:\n{code}"
+    );
+    let evidence = evidence_report.to_str().unwrap();
+    assert!(
+        banner.iter().any(|line| line.contains(evidence)),
+        "banner must name {evidence}:\n{code}"
+    );
 }
 
 /// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
 /// Dry-run skips all emitted-JS and accept-path report writes but
-/// still materializes rejection evidence (`dependency_graph.json` +
+/// still materializes rejection evidence (`dependency_graph.json.gz` +
 /// `cycles.json` / `atomic_group_conflicts.json`) under the standard
 /// per-chunk report layout.
 pub fn run_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run"])
+    run_rejection_fixture_with_args(opts, &["--dry-run"], 1)
 }
 
 /// Like [`run_dry_run_rejection_fixture`] but opts out of the default
 /// keep-going diagnostics and stops at the first supported failure.
 fn run_fail_fast_dry_run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"])
+    run_rejection_fixture_with_args(opts, &["--dry-run", "--fail-fast"], 1)
 }
 
 /// Runs `fixture` keep-going and with `--fail-fast`, both dry. Keep-going
@@ -310,18 +608,69 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
     }
 }
 
-fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
+/// `exit_code` is 1 for a refused spec, or the gate-rejected status of an
+/// `--emit-on-rejection` run; a panic exits 101 and is no refusal.
+pub fn run_rejection_fixture_with_args(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    exit_code: i32,
+) -> RejectedFixture {
+    run_rejection_fixture_with_options(
+        opts,
+        extra_args,
+        exit_code,
+        true,
+        "expected spec to be rejected",
+    )
+}
+
+/// Run a rejected fixture without `--graphs`, for CLI options that conflict
+/// with full graph export.
+pub fn run_rejection_fixture_without_graphs_with_args(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    exit_code: i32,
+) -> RejectedFixture {
+    run_rejection_fixture_with_options(
+        opts,
+        extra_args,
+        exit_code,
+        false,
+        "expected spec to be rejected",
+    )
+}
+
+fn run_rejection_fixture_with_options(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    exit_code: i32,
+    graphs: bool,
+    unexpected_status: &str,
+) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform_with_args(&setup.spec_path, extra_args);
-    // `debundle` exits 1 when it refuses a spec; a panic exits 101 and is no refusal.
+    let mut args = Vec::new();
+    if graphs {
+        args.push("--graphs");
+    }
+    args.extend_from_slice(extra_args);
+    let result = spawn_transform_with_args(&setup.spec_path, &args);
+    mirror_runtime_extra_files(
+        &setup.out_root.join(APP_DIR),
+        opts.extra_files,
+        result.status.success(),
+    );
+    if result.status.code() != Some(exit_code) {
+        preserve_failed_fixture_reports(&setup, opts.chunk_id);
+    }
     assert_eq!(
         result.status.code(),
-        Some(1),
-        "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
+        Some(exit_code),
+        "{unexpected_status}\nstdout:\n{}\nstderr:\n{}",
         result.stdout,
         result.stderr,
     );
+    audit_rejected_node_parity(&setup, &args, opts.chunk_id);
     RejectedFixture {
         chunk_id: opts.chunk_id.to_string(),
         stderr: result.stderr,
@@ -329,6 +678,7 @@ fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -
         modules_root: setup.modules_root,
         source_root: setup.snapshot_root,
         out_root: setup.out_root,
+        harness_root: setup.browser_harness.map(|harness| harness.out_dir),
         _root: setup.root,
     }
 }
@@ -388,6 +738,28 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
     )
 }
 
+/// Run `debundle spec lint --spec <path> --format json <extra_args>` and parse
+/// its report; panics on a non-zero exit.
+pub fn spec_lint_json(spec_path: &Path, extra_args: &[&str]) -> Value {
+    let bin = debundler_path();
+    let out = command_result(
+        Command::new(&bin)
+            .args(["spec", "lint", "--spec"])
+            .arg(spec_path)
+            .args(["--format", "json"])
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    );
+    assert!(
+        out.status.success(),
+        "spec lint exited non-zero: {}",
+        out.stderr
+    );
+    serde_json::from_str(&out.stdout)
+        .unwrap_or_else(|err| panic!("parse spec lint json: {err}\nstdout:\n{}", out.stdout))
+}
+
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.entry_path, expected_stdout, "");
 }
@@ -396,6 +768,110 @@ pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
 pub fn assert_preserved_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.source_path, expected_stdout, "");
     assert_entry_output(fixture, expected_stdout);
+}
+
+/// Assert that the original and emitted entry both fail with the same runtime
+/// error class and stdout. This covers top-level initialization failures, whose
+/// modules cannot be imported inside a catch block by the generated-module
+/// probe helper.
+pub fn assert_preserved_entry_error(fixture: &Fixture, expected_error: &str) {
+    let original = run_node_script(&fixture.source_path);
+    let emitted = run_node_script(&fixture.entry_path);
+    for (path, result) in [
+        (&fixture.source_path, &original),
+        (&fixture.entry_path, &emitted),
+    ] {
+        assert!(
+            !result.status.success(),
+            "node {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+            path.display(),
+            result.stdout,
+            result.stderr,
+        );
+        assert!(
+            result.stderr.contains(expected_error),
+            "node {} stderr did not contain {expected_error:?}:\n{}",
+            path.display(),
+            result.stderr,
+        );
+    }
+    assert_eq!(original.status.code(), emitted.status.code());
+    assert_eq!(original.stdout, emitted.stdout);
+}
+
+/// Compare both files under the pinned Bun release supplied in this test's
+/// runfiles. Node execution alone cannot validate a Bun-specific host premise.
+pub fn assert_preserved_entry_output_with_bun(fixture: &Fixture, expected_stdout: &str) {
+    let bun = bun_1_3_10_path();
+    for path in [&fixture.source_path, &fixture.entry_path] {
+        let output = Command::new(&bun)
+            .arg(path)
+            .output()
+            .unwrap_or_else(|err| panic!("spawn Bun {}: {err}", bun.display()));
+        assert!(
+            output.status.success(),
+            "Bun {} exited {:?}: {}",
+            path.display(),
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), expected_stdout);
+        assert!(
+            output.stderr.is_empty(),
+            "Bun stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// Exercise Bun's standalone embedding path for one runtime-premise probe.
+/// This tests the public release binary, not any third-party embedded artifact.
+pub fn assert_compiled_bun_entry_output(fixture: &Fixture, expected_stdout: &str) {
+    let bun = bun_1_3_10_path();
+    let dir = TempDir::with_prefix("debundle-bun-standalone-").expect("compile tempdir");
+    let executable = dir.path().join("probe");
+    let compile = Command::new(&bun)
+        .arg("build")
+        .arg("--compile")
+        .arg(&fixture.source_path)
+        .arg("--outfile")
+        .arg(&executable)
+        .output()
+        .unwrap_or_else(|err| panic!("spawn Bun compiler {}: {err}", bun.display()));
+    assert!(
+        compile.status.success(),
+        "Bun compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let output = Command::new(&executable)
+        .output()
+        .unwrap_or_else(|err| panic!("spawn compiled Bun {}: {err}", executable.display()));
+    assert!(
+        output.status.success(),
+        "compiled Bun exited {:?}: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected_stdout);
+    assert!(
+        output.stderr.is_empty(),
+        "compiled Bun stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn bun_1_3_10_path() -> PathBuf {
+    let relative = std::env::var("DEBUNDLE_TEST_BUN").expect("DEBUNDLE_TEST_BUN runfile label");
+    let runfiles = Runfiles::create().expect("create runfiles");
+    let bun = rlocation!(runfiles, relative.as_str())
+        .unwrap_or_else(|| panic!("resolve Bun runfile: {relative}"));
+    let version = Command::new(&bun)
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|err| panic!("spawn Bun version {}: {err}", bun.display()));
+    assert!(version.status.success(), "Bun version check failed");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "1.3.10");
+    bun
 }
 
 /// Run `node --check` against every emitted JavaScript file in a fixture.
@@ -479,6 +955,39 @@ pub fn assert_module_exports(
     }
 }
 
+/// Every file below `left` and `right` has the same bytes: two runs emitted
+/// the same tree.
+pub fn assert_same_tree(left: &Path, right: &Path) {
+    fn files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(dir) = pending.pop() {
+            for entry in
+                fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            {
+                let path = entry.expect("directory entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    let bytes =
+                        fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+                    out.insert(path.strip_prefix(root).unwrap().to_path_buf(), bytes);
+                }
+            }
+        }
+        out
+    }
+    let (left, right) = (files(left), files(right));
+    assert_eq!(
+        left.keys().collect::<Vec<_>>(),
+        right.keys().collect::<Vec<_>>(),
+        "emitted file sets differ"
+    );
+    for (file, bytes) in &left {
+        assert!(right[file] == *bytes, "{} differs", file.display());
+    }
+}
+
 pub fn assert_same_module_bytes(left: &Fixture, right: &Fixture, module_path: &str) {
     let read = |fixture: &Fixture| {
         fs::read(fixture.out_root.join(module_path))
@@ -497,18 +1006,25 @@ pub fn assert_module_source(
     contains: &[&str],
     does_not_contain: &[&str],
 ) {
-    let code = fs::read_to_string(out_root.join(module_path))
-        .unwrap_or_else(|e| panic!("read {module_path}: {e}"));
+    assert_source_file(&out_root.join(module_path), contains, does_not_contain);
+}
+
+pub fn assert_source_file(path: &Path, contains: &[&str], does_not_contain: &[&str]) {
+    let code = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     for needle in contains {
         assert!(
             code.contains(*needle),
-            "{module_path} did not contain {needle:?}\n--- {module_path} ---\n{code}",
+            "{} did not contain {needle:?}\n--- {} ---\n{code}",
+            path.display(),
+            path.display(),
         );
     }
     for needle in does_not_contain {
         assert!(
             !code.contains(*needle),
-            "{module_path} unexpectedly contained {needle:?}\n--- {module_path} ---\n{code}",
+            "{} unexpectedly contained {needle:?}\n--- {} ---\n{code}",
+            path.display(),
+            path.display(),
         );
     }
 }
@@ -680,6 +1196,23 @@ pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &
     assert_eq!(result.stderr, expected_stderr, "stderr mismatch");
 }
 
+pub fn assert_node_error(path: &Path, expected_error: &str) {
+    let result = run_node_script(path);
+    assert!(
+        !result.status.success(),
+        "node {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        path.display(),
+        result.stdout,
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains(expected_error),
+        "node {} stderr did not contain {expected_error:?}:\n{}",
+        path.display(),
+        result.stderr,
+    );
+}
+
 /// Real source files plus a serialized spec, ready for any CLI execution mode.
 struct PreparedFixture {
     root: TempDir,
@@ -689,6 +1222,25 @@ struct PreparedFixture {
     snapshot_root: PathBuf,
     modules_root: PathBuf,
     js_list_path: PathBuf,
+    browser_harness: Option<BrowserHarnessFixture>,
+}
+
+/// `emit_browser_harness` inputs of a fixture: a snapshot `index.html`
+/// loading the entry chunk as a module script, and its asset summary.
+pub(crate) struct BrowserHarnessFixture {
+    pub(crate) asset_summary_path: PathBuf,
+    pub(crate) out_dir: PathBuf,
+}
+
+#[derive(Serialize)]
+struct AssetSummaryFixture<'a> {
+    #[serde(rename = "entryPoints")]
+    entry_points: AssetSummaryEntryPoints<'a>,
+}
+
+#[derive(Serialize)]
+struct AssetSummaryEntryPoints<'a> {
+    html: &'a str,
 }
 
 fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
@@ -703,16 +1255,32 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&modules_root).unwrap();
 
+    let browser_harness = opts.browser_harness.then(|| {
+        write_text_file(
+            &snapshot_root.join("index.html"),
+            &format!(
+                "<!doctype html>\n<script type=\"module\" src=\"./{}.js\"></script>\n",
+                opts.chunk_id
+            ),
+        );
+        let asset_summary_path = extracted_root.join("asset-summary.json");
+        write_text_file(
+            &asset_summary_path,
+            &serde_json::to_string(&AssetSummaryFixture {
+                entry_points: AssetSummaryEntryPoints { html: "index.html" },
+            })
+            .unwrap(),
+        );
+        BrowserHarnessFixture {
+            asset_summary_path,
+            out_dir: root.path().join("harness"),
+        }
+    });
+
     // Mark the snapshot tree as ESM so node loads emitted .js files as modules.
     write_text_file(
         &snapshot_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&PackageManifest {
-                module_type: "module"
-            })
-            .unwrap()
-        ),
+        "{\n  \"type\": \"module\"\n}\n",
     );
 
     let entry_file = format!("{}.js", opts.chunk_id);
@@ -747,8 +1315,13 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
         snapshot_root,
         modules_root,
         js_list_path,
+        browser_harness,
     };
-    write_yaml_file(&setup.spec_path, &build_spec(opts, &setup));
+    let mut spec = serde_json::to_value(build_spec(opts, &setup)).expect("serialize spec");
+    for (key, value) in &opts.raw_spec_keys {
+        spec[*key] = value.clone();
+    }
+    write_yaml_file(&setup.spec_path, &spec);
     setup
 }
 
@@ -775,6 +1348,29 @@ fn current_test_prefix() -> String {
         .collect::<Vec<_>>()
         .join("-");
     format!("debundle-e2e-{compact}-")
+}
+
+/// Failed fixture artifact directories retained by the current test thread.
+pub fn failed_fixture_dirs_for_current_test() -> Vec<PathBuf> {
+    let outputs = PathBuf::from(
+        std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+            .expect("Bazel undeclared outputs directory is set"),
+    )
+    .join("failed-fixtures");
+    let prefix = current_test_prefix();
+    let Ok(entries) = fs::read_dir(outputs) else {
+        return Vec::new();
+    };
+    let mut directories = entries
+        .map(|entry| entry.expect("read failed fixture output entry"))
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+                && entry.file_name().to_string_lossy().starts_with(&prefix)
+        })
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    directories.sort();
+    directories
 }
 
 pub fn write_text_file(path: &Path, content: &str) {
@@ -824,23 +1420,6 @@ pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process:
     out
 }
 
-/// SourceUnit-graph node id that declares `binding`, panicking (with the node dump)
-/// if none does.
-pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a str {
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| node.declared_bindings.iter().any(|b| b.binding == binding))
-        .unwrap_or_else(|| {
-            panic!(
-                "no dependency-graph node declares binding `{binding}`; \
-                 nodes: {:#?}",
-                graph.nodes,
-            )
-        });
-    node.id.as_str()
-}
-
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     // `serde_json` is built with `arbitrary_precision` workspace-wide (feature
     // unification), which makes `serde_yaml` emit a `serde_json::Value::Number`
@@ -853,25 +1432,56 @@ pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     fs::write(path, format!("{}\n", serde_yaml::to_string(&yaml).unwrap())).unwrap();
 }
 
+pub fn read_jsonl(path: &Path) -> Vec<Value> {
+    let input = std::io::BufReader::new(
+        fs::File::open(path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display())),
+    );
+    std::io::BufRead::lines(input)
+        .map(|line| serde_json::from_str(&line.expect("JSONL line")).expect("valid JSONL row"))
+        .collect()
+}
+
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     read_json_with_stderr(path, None)
+}
+
+pub fn read_gzip_json<T: DeserializeOwned>(path: &Path) -> T {
+    read_gzip_json_with_stderr(path, None)
 }
 
 fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
     let context = stderr
         .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
         .unwrap_or_default();
-    serde_json::from_str(
-        &fs::read_to_string(path)
-            .unwrap_or_else(|err| panic!("read JSON report {}: {err}{context}", path.display())),
-    )
-    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
+    report_io::read_json(path)
+        .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
+}
+
+fn read_gzip_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
+    let context = stderr
+        .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
+        .unwrap_or_default();
+    report_io::read_json_gzip(path)
+        .unwrap_or_else(|err| panic!("parse gzip JSON report {}: {err}{context}", path.display()))
 }
 
 pub fn debundler_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_DEBUNDLER")
+}
+
+pub fn analyzer_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_ANALYZER")
+}
+
+pub fn projector_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_PROJECTOR")
+}
+
+fn tool_path(variable: &str) -> PathBuf {
+    let relative = std::env::var(variable).unwrap_or_else(|_| panic!("{variable} runfile label"));
     let r = Runfiles::create().expect("create runfiles");
-    rlocation!(r, DEBUNDLER_RLOCATION)
-        .unwrap_or_else(|| panic!("could not resolve debundler runfile: {DEBUNDLER_RLOCATION}"))
+    rlocation!(r, relative.as_str())
+        .unwrap_or_else(|| panic!("could not resolve tool runfile: {relative}"))
 }
 
 /// `debundle` as a release download runs it: a copy of the binary alone in an
@@ -911,6 +1521,11 @@ pub struct CommandResult {
 }
 
 fn command_result(output: std::process::Output) -> CommandResult {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("purity-completion-disagreement"),
+        "classifier-pure completion regression is an e2e bug: {stderr}"
+    );
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -1053,10 +1668,6 @@ pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) ->
         .unwrap_or_else(|| panic!("missing {kind} outcome for export {export_name}: {outcomes:#?}"))
 }
 
-fn spawn_transform(spec_path: &Path) -> CommandResult {
-    run_debundler(spec_path, &[])
-}
-
 fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
     command_result(
@@ -1112,8 +1723,31 @@ impl TreeRun {
     }
 }
 
+/// The `--tree-{config,modules,vendor-marks,source-root}` arguments for the
+/// tree-fixture layout [`run_tree_fixture`] writes under `root`.
+pub fn tree_spec_args(root: &Path) -> [OsString; 8] {
+    [
+        "--tree-config".into(),
+        root.join("spec_config.yaml").into(),
+        "--tree-modules".into(),
+        root.join("modules").into(),
+        "--tree-vendor-marks".into(),
+        root.join("vendor_marks.yaml").into(),
+        "--tree-source-root".into(),
+        root.into(),
+    ]
+}
+
 /// Writes `fixture` and runs `debundle run` on it in tree form with
 /// `extra_args`, writing the JS tree.
+/// A tree fixture for tests whose queries require full graph reports.
+pub fn run_tree_graph_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
+    let args = std::iter::once("--graphs")
+        .chain(extra_args.iter().copied())
+        .collect::<Vec<_>>();
+    run_tree_fixture(fixture, &args)
+}
+
 pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let snapshot = root.path().join("snapshot");
@@ -1128,11 +1762,18 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
         unassigned_mode.push_str(&format!("  {chunk}: {{ kind: inline_in_entry }}\n"));
     }
     write_text_file(&root.path().join("js-files.txt"), &js_list);
-    let module_roots = fixture
-        .module_roots
-        .iter()
-        .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
-        .collect::<String>();
+    let module_roots = if fixture.module_roots.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "module_roots:\n{}",
+            fixture
+                .module_roots
+                .iter()
+                .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
+                .collect::<String>()
+        )
+    };
     for (tree, _) in fixture.module_roots {
         fs::create_dir_all(modules.join(tree)).expect("create chunk module root");
     }
@@ -1143,7 +1784,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
     write_text_file(
         &config,
         &format!(
-            "main_chunk_id: {}\nmodule_roots:\n{module_roots}inputs:\n  root: snapshot\n  \
+            "main_chunk_id: {}\n{module_roots}inputs:\n  root: snapshot\n  \
              js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}",
             fixture.chunks[0].0,
         ),
@@ -1153,14 +1794,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
     let bin = debundler_path();
     let output = Command::new(&bin)
         .arg("run")
-        .arg("--tree-config")
-        .arg(&config)
-        .arg("--tree-modules")
-        .arg(&modules)
-        .arg("--tree-vendor-marks")
-        .arg(&vendor_marks)
-        .arg("--tree-source-root")
-        .arg(root.path())
+        .args(tree_spec_args(root.path()))
         .arg("--out-root")
         .arg(&out_root)
         .args(extra_args)
@@ -1182,4 +1816,85 @@ fn run_node_script(path: &Path) -> CommandResult {
             .output()
             .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display())),
     )
+}
+
+/// With `DEBUNDLE_TV_AUDIT` (the L4c discrepancy audit, beside the CLI's
+/// `debundle_tv_audit/` records), write whether the source and the emitted
+/// entry behave the same under Node, with the effect verdict of the run that
+/// emitted it, to `$TEST_UNDECLARED_OUTPUTS_DIR/debundle_node_parity/`.
+fn audit_node_parity(kind: &str, source: &Path, entry: &Path, effect_report: &Path) {
+    let Some(dir) = std::env::var_os("DEBUNDLE_TV_AUDIT")
+        .and_then(|_| std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR"))
+    else {
+        return;
+    };
+    static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+    let dir = PathBuf::from(dir).join("debundle_node_parity");
+    let run = |path: &Path| {
+        let result = run_node_script(path);
+        serde_json::json!({
+            "code": result.status.code(),
+            "stdout": result.stdout,
+            "error": result.stderr.lines().find(|line| line.contains("Error")),
+        })
+    };
+    let effect = fs::read_to_string(effect_report).ok().map(|text| {
+        let report: Value = serde_json::from_str(&text).expect("effect report JSON");
+        serde_json::json!({
+            "legacy_gate_accepts": report["legacy_gate_accepts"],
+            "status": report["decision"]["status"],
+            "swapped_pairs": report["swapped_pairs"],
+            "emitted_order": report["emitted_order"],
+        })
+    });
+    let record = serde_json::json!({
+        "test": current_test_prefix(),
+        "kind": kind,
+        "source": run(source),
+        "emitted": entry.exists().then(|| run(entry)),
+        "effect": effect,
+    });
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join(format!(
+            "{}-{}.json",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        )),
+        record.to_string(),
+    )
+    .unwrap();
+}
+
+/// `audit_node_parity` for a refused fixture: rerun it with
+/// `--emit-on-rejection` into a sibling output root, restoring the refused
+/// run's reports for the caller's assertions.
+fn audit_rejected_node_parity(setup: &PreparedFixture, args: &[&str], chunk_id: &str) {
+    if std::env::var_os("DEBUNDLE_TV_AUDIT").is_none() || args.contains(&"--emit-on-rejection") {
+        return;
+    }
+    let refused = setup.out_root.with_extension("refused");
+    let emitted = setup.out_root.with_extension("emitted");
+    fs::rename(&setup.out_root, &refused).unwrap();
+    let rerun =
+        spawn_transform_with_args(&setup.spec_path, &[args, &["--emit-on-rejection"]].concat());
+    if setup.out_root.exists() {
+        fs::rename(&setup.out_root, &emitted).unwrap();
+    }
+    fs::rename(&refused, &setup.out_root).unwrap();
+    // Only a gate-only refusal (exit 3) lowers a runnable-shaped tree.
+    if rerun.status.code() == Some(3) {
+        audit_node_parity(
+            "rejected",
+            &setup.snapshot_root.join(format!("{chunk_id}.js")),
+            &emitted
+                .join(APP_DIR)
+                .join(path_from_module_path(chunk_id))
+                .join("entry.js"),
+            &emitted
+                .join(setup.report_root.strip_prefix(&setup.out_root).unwrap())
+                .join(chunk_id)
+                .join("effect_translation_validation.json"),
+        );
+    }
 }

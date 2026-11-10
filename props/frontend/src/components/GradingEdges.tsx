@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { UnstyledButton } from "@mantine/core";
-import type { GradingEdgeInfo } from "../lib/api/schema";
+import type { GradingEdgeInfo } from "../lib/schema";
 import CritiqueIssueLink from "../lib/CritiqueIssueLink";
 import OccurrenceLink from "../lib/OccurrenceLink";
 

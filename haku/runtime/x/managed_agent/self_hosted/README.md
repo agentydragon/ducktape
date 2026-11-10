@@ -4,10 +4,9 @@
 > deliberate manual builds. Retained manifests and reactivation conditions:
 > [`deploy/README.md`](deploy/README.md).
 
-Runtime B (<../../../../plans/runtime_options.md>): Anthropic runs the agent loop; tools execute
+Runtime B: Anthropic runs the agent loop; tools execute
 in our worker in `haku-sandbox` (`config.type: self_hosted`). Sibling:
-<../anthropic_hosted/README.md>. Design: <../../../../plans/managed_agents.md> (+
-<../../../../plans/managed_agents_artifacts.md>). Bring-up RCA:
+<../anthropic_hosted/README.md>. Bring-up RCA:
 <debug/self_hosted_worker_bringup.md>. Control-plane runbook, IDs, and transcript debugging:
 <operations.md>.
 

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
 from x.wt.testing.conftest import kill_daemon_at_wt_dir
 
 
@@ -17,7 +17,9 @@ def real_env_with_python_post_script(real_temp_repo, daemon_config_factory, tmp_
     and writes a marker file in the new worktree root.
     """
     script = tmp_path / "post_create.py"
-    script.write_text(get_required_path("_main/x/wt/testing/post_create.py").read_text(), encoding="utf-8")
+    script.write_text(
+        (Runfiles.CreateOrRaise().root() / "ducktape/x/wt/testing/post_create.py").read_text(), encoding="utf-8"
+    )
     script.chmod(0o755)
 
     # Configure environment (WT_DIR) with this post-creation script

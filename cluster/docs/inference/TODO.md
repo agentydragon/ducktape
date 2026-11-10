@@ -11,11 +11,17 @@ freely as we run things and learn what surprises us.
 
 ## P0 — high signal, low cost, hits the main use case
 
-### 1. Standard coding benchmark on `gpt-oss:20b` — _HumanEval done; saturated_
+### 1. Less-saturated coding benchmark for the `gpt-oss:20b` baseline — _HumanEval done_
 
-**Done at HumanEval:** see <runs/2026-04-29_humaneval_gpt20/README.md>.
+**Original HumanEval done:** see <runs/2026-04-29_humaneval_gpt20/README.md>.
 pass@1 = 0.957 / 0.970 / 0.970 at low / medium / high. Saturation; no
-discrimination across efforts.
+discrimination across efforts. This was the original 164-task HumanEval, not
+HumanEval+; the run record explicitly says EvalPlus's augmented tests were not used.
+
+The fixed 20-task HumanEval+ cohort in
+<runs/2026-10-13_rugged_coding/README.md> is a separate local comparison across
+other model/runtime candidates. It is not a full HumanEval+ result for
+`gpt-oss:20b` and does not measure the current Wyrm2 model/runtime.
 
 **SWE-bench Verified N=100 (shuffled): paused, no headline yet** — see
 <runs/2026-04-29_swebench_n100_shuffled_gpt20/README.md>. Two aborted
@@ -36,16 +42,11 @@ Candidates:
 Recommend HumanEval+ first (smallest, fastest, most directly comparable
 to public leaderboards).
 
-What we'd learn:
-
-- Is the model we're already running actually good at the main use case
-  (AI-powered coding) — i.e. should we keep it as the default?
-- Does the AIME inverted-U on `reasoning_effort` hold for coding too,
-  or does coding prefer a different effort level?
-
-This is the single biggest gap in our current evidence base. We do a
-lot of AI-powered coding through this deployment but have no quality
-number on it.
+What this old follow-up could learn: whether a less-saturated benchmark changes
+the `gpt-oss:20b` HumanEval result, and whether the AIME `reasoning_effort` pattern
+appears on harder code tasks. The original “keep it as the default” framing is
+superseded by the capability-first queue in <PLAN.md>; this is not a current-model
+score or an execution priority.
 
 ### 2. AIME-2025 contamination test on `gpt-oss:20b`
 
@@ -154,7 +155,10 @@ some operational workflow.
 ## Out of scope here
 
 - **AIME on `gpt-oss:120b` via Ollama** — at 1.5 tok/s it would take
-  ~30 h. Wait for vLLM.
+  ~30 h by the old estimate. A later vLLM CPU-offload run is recorded at
+  <runs/2026-07-17_e7_gptoss120b/README.md>, but it did not run AIME. No
+  120B AIME result is recorded; revisit this only if the active <PLAN.md>
+  makes it useful.
 - **Re-run gemma4 on AIME** — Ollama's gemma streaming is finicky (see
   <runs/2026-04-28_gemma_followup/>); not worth the yak-shave.
 - **Custom RE / FreeCAD evals as a primary path** — those are a

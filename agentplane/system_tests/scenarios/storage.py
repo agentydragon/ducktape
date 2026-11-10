@@ -1,0 +1,554 @@
+"""Fresh storage fixtures on a deployment no one else is using; deterministic file probes, without model turns."""
+
+from __future__ import annotations
+
+import asyncio
+import copy
+import json
+import shlex
+from collections.abc import Callable
+from contextlib import AsyncExitStack
+from dataclasses import dataclass
+from uuid import uuid4
+
+import yaml
+from kubernetes_asyncio import client as k8s
+
+from agentplane.app.testing.client import Client
+from agentplane.crd_group import GROUP, VERSION
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
+from agentplane.system_tests.driver.tracing import tracer
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+
+BOUND_SECONDS = 300
+RECORD = "agentplane.allegedly.works/workspace-record"
+
+
+@dataclass(frozen=True)
+class VmStorage:
+    storage_class: str
+    check_boot: Callable[[], None]
+
+
+async def _object(cluster: Cluster, kind: str, name: str) -> dict:
+    decoded = json.loads(await cluster.kubectl("get", kind, name, "-o", "json"))
+    assert isinstance(decoded, dict)
+    return decoded
+
+
+async def _condition(cluster: Cluster, name: str, condition: str, *, check_boot: Callable[[], None] | None) -> None:
+    await cluster.kubectl(
+        "wait",
+        f"sandboxes.{GROUP}/{name}",
+        f'--for=jsonpath={{.status.conditions[?(@.type=="{condition}")].status}}=True',
+        f"--timeout={BOUND_SECONDS}s",
+        check_failure=check_boot if condition == "Ready" else None,
+    )
+
+
+async def _readiness_snapshot(cluster: Cluster, name: str) -> dict:
+    """Capture the bounded Sandbox/VM readiness state before fixture cleanup removes it."""
+    sandbox = await _object(cluster, f"sandboxes.{GROUP}", name)
+    snapshot: dict = {
+        "sandbox": {
+            "uid": sandbox["metadata"]["uid"],
+            "conditions": sandbox.get("status", {}).get("conditions", []),
+            "incarnation": sandbox.get("status", {}).get("incarnation"),
+        }
+    }
+    for kind in ("virtualmachine", "virtualmachineinstance"):
+        try:
+            obj = await _object(cluster, kind, name)
+        except Exception as error:
+            snapshot[kind] = {"read_error": str(error)}
+        else:
+            status = obj.get("status", {})
+            snapshot[kind] = {
+                "uid": obj["metadata"]["uid"],
+                "phase": status.get("phase"),
+                "run_strategy": obj.get("spec", {}).get("runStrategy"),
+                "conditions": status.get("conditions", []),
+                "reason": status.get("reason"),
+                "message": status.get("message"),
+            }
+
+    pods = json.loads(
+        await cluster.kubectl("get", "pods", "--selector=agentplane.allegedly.works/sandbox=" + name, "-o", "json")
+    )["items"]
+    pod_names = {pod["metadata"]["name"] for pod in pods}
+    snapshot["pods"] = [
+        {
+            "name": pod["metadata"]["name"],
+            "uid": pod["metadata"]["uid"],
+            "node": pod.get("spec", {}).get("nodeName"),
+            "phase": pod.get("status", {}).get("phase"),
+            "conditions": pod.get("status", {}).get("conditions", []),
+            "containers": [
+                {
+                    "name": status["name"],
+                    "ready": status.get("ready"),
+                    "started": status.get("started"),
+                    "restart_count": status.get("restartCount"),
+                    "state": next(iter(status.get("state", {})), None),
+                    "last_state": next(iter(status.get("lastState", {})), None),
+                }
+                for status in pod.get("status", {}).get("containerStatuses", [])
+            ],
+        }
+        for pod in pods
+    ]
+    for pod, pod_snapshot in zip(pods, snapshot["pods"], strict=True):
+        for status in pod.get("status", {}).get("containerStatuses", []):
+            if "terminated" not in status.get("lastState", {}):
+                continue
+            try:
+                logs = await cluster.kubectl(
+                    "logs", pod["metadata"]["name"], "-c", status["name"], "--previous", "--tail=100"
+                )
+            except Exception as error:
+                logs = f"read_error: {error}"
+            pod_snapshot.setdefault("previous_logs", {})[status["name"]] = logs
+    events = json.loads(await cluster.kubectl("get", "events", "-o", "json"))["items"]
+    snapshot["events"] = [
+        {key: event.get(key) for key in ("eventTime", "firstTimestamp", "lastTimestamp", "type", "reason", "message")}
+        | {"object": event.get("involvedObject", {}).get("name"), "kind": event.get("involvedObject", {}).get("kind")}
+        for event in events
+        if event.get("involvedObject", {}).get("name") in ({name} | pod_names)
+    ]
+    return snapshot
+
+
+async def _running(cluster: Cluster, name: str, uid: str, value: bool) -> None:
+    await cluster.kubectl(
+        "patch",
+        f"sandboxes.{GROUP}",
+        name,
+        "--type=merge",
+        "-p",
+        json.dumps({"metadata": {"uid": uid}, "spec": {"running": value}}),
+    )
+
+
+async def _delete(
+    cluster: Cluster, plural: str, name: str, uid: str, *, group: str = GROUP, version: str = VERSION
+) -> None:
+    async with cluster.api_client() as api:
+        await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
+            group,
+            version,
+            cluster.namespace,
+            plural,
+            name,
+            body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid)),
+        )
+    await cluster.kubectl("wait", f"{plural}.{group}/{name}", "--for=delete", "--timeout=120s")
+
+
+async def _suspend(cluster: Cluster, name: str, uid: str) -> None:
+    await _running(cluster, name, uid, False)
+    await cluster.kubectl(
+        "wait", f"sandboxes.{GROUP}/{name}", "--for=jsonpath={.status.stopStage}=Stopped", f"--timeout={BOUND_SECONDS}s"
+    )
+
+
+async def _cleanup(cluster: Cluster, name: str, uid: str, claims: list[str], *, case: str) -> None:
+    errors: list[Exception] = []
+    try:
+        with tracer.start_as_current_span(
+            "system_test.storage.cleanup_suspend", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _suspend(cluster, name, uid)
+    except Exception as error:
+        errors.append(error)
+    # Delete remains allowed when bootstrap/startup cannot suspend. It follows the controller's
+    # ordinary seal policy; the fixture never removes a finalizer or forces shared state.
+    try:
+        with tracer.start_as_current_span(
+            "system_test.storage.cleanup_delete_sandbox", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _delete(cluster, "sandboxes", name, uid)
+        with tracer.start_as_current_span(
+            "system_test.storage.cleanup_delete_claims", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            for claim in claims:
+                await cluster.kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
+    except Exception as error:
+        errors.append(error)
+    if errors:
+        raise ExceptionGroup("storage fixture cleanup failed", errors)
+
+
+async def _volumes(cluster: Cluster, name: str, uid: str) -> dict:
+    state = await _object(cluster, "pvc", f"{name}-state")
+    workspace = await _object(cluster, "pvc", f"{name}-workspace")
+    assert state["status"]["phase"] == workspace["status"]["phase"] == "Bound"
+    assert any(owner["uid"] == uid and owner.get("controller") for owner in state["metadata"]["ownerReferences"])
+    record = workspace["metadata"].get("annotations", {}).get(RECORD)
+    assert any(owner["uid"] == uid and owner.get("controller") for owner in workspace["metadata"]["ownerReferences"])
+    assert record is not None
+    binding = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["volumes"]["workspace"]
+    assert binding["name"] == workspace["metadata"]["name"]
+    assert binding["uid"] == workspace["metadata"]["uid"]
+    assert binding["layout"] == json.loads(record)["layout"]
+    return {
+        "state": {
+            "name": state["metadata"]["name"],
+            "uid": state["metadata"]["uid"],
+            "pv": state["spec"]["volumeName"],
+            "storage_class": state["spec"]["storageClassName"],
+            "volume_mode": state["spec"].get("volumeMode", "Filesystem"),
+        },
+        "workspace": {
+            "name": workspace["metadata"]["name"],
+            "uid": workspace["metadata"]["uid"],
+            "pv": workspace["spec"]["volumeName"],
+            "storage_class": workspace["spec"]["storageClassName"],
+            "volume_mode": workspace["spec"].get("volumeMode", "Filesystem"),
+            "record": record,
+        },
+    }
+
+
+async def _probe(
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    name: str,
+    sandbox_uid: str,
+    cwd: str,
+    workspace_dir: str,
+    marker: str,
+) -> dict:
+    state = "/state/storage-systest-state"
+    workspace = f"{workspace_dir}/storage-systest-workspace"
+    source = f'set -eu\ntest "$(cat {state})" = {shlex.quote(marker)}\nsha256sum {state}\n'
+    source += f'test "$(cat {workspace})" = {shlex.quote(marker)}\nsha256sum {workspace}\n'
+    if workspace_dir == "/workspace":
+        # The Pod image declares awk/coreutils, but not util-linux's findmnt.
+        source += "awk '$5 == \"/workspace\" { print; found=1 } END { exit !found }' /proc/self/mountinfo\n"
+    else:
+        source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {workspace_dir}\n"
+        home_marker = "/state/home/storage-systest-home"
+        source += 'test "$HOME" = /state/home\ntest "$(stat -c \'%u:%g\' "$HOME")" = 107:107\n'
+        source += 'test "$(stat -c \'%a\' "$HOME")" = 700\n'
+        source += f'test "$(cat {home_marker})" = {shlex.quote(marker)}\nsha256sum {home_marker}\n'
+    source += "printf 'STORAGE_PROBE_OK\\n'\n"
+    session = uuid4()
+    await client.create_session_and_wait(
+        name,
+        session,
+        dispatcher=dispatcher,
+        sandbox_uid=sandbox_uid,
+        overrides={
+            "placement": {
+                "environmentHosted": {"environment": {"name": name, "uid": sandbox_uid}, "harness": "HARNESS_CODEX"}
+            },
+            "model": "chatgpt-sub/oai-responses/gpt-6-luna",
+            "cwd": cwd,
+            "reasoningEffort": "low",
+            "instructions": "",
+        },
+        setup_script=source,
+    )
+    # Runner admission precedes History's Thread projection, which owns the event stream.
+    await client.wait_for_thread_projection(session, timeout_s=BOUND_SECONDS)
+    stdout, stderr = bytearray(), bytearray()
+    async with asyncio.timeout(BOUND_SECONDS):
+        async for entry in client.events(session, after=0, read_seconds=BOUND_SECONDS):
+            if entry.event.HasField("setup_output"):
+                stdout.extend(entry.event.setup_output.stdout)
+                stderr.extend(entry.event.setup_output.stderr)
+            if entry.event.HasField("setup_finished"):
+                assert entry.event.setup_finished.exit_code == 0, stderr.decode()
+                assert "STORAGE_PROBE_OK" in stdout.decode()
+                return {"session": str(session), "stdout": stdout.decode(), "setup_exit_code": 0}
+            assert not entry.event.HasField("setup_interrupted"), "storage probe setup was interrupted"
+    raise AssertionError("storage probe ended without its setup result")
+
+
+async def fresh_workspace_storage_survives_replacement(
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    executor: Executor,
+    *,
+    vm_storage: VmStorage | None,
+) -> None:
+    vm = vm_storage is not None
+    check_boot = vm_storage.check_boot if vm_storage is not None else None
+    case = "vm-raw" if vm else "pod-directory"
+    controller = await _object(cluster, "deployment", "sandbox-controller")
+    assert controller["status"].get("readyReplicas") == 1
+    controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
+    existing = json.loads(await cluster.kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
+    assert not existing, "serialize this scenario with the deployment's other Sandbox users"
+    base = await _object(cluster, f"sandboxtemplates.{GROUP}", executor.template)
+    name = f"systest-storage-{case}-{uuid4().hex[:8]}"
+    template = name
+    spec = copy.deepcopy(base["spec"])
+    workspace_dir = "/state/workspaces" if vm else "/workspace"
+    # Runtime requires a child of its workspace root; the mount root itself is forbidden.
+    cwd = f"{workspace_dir}/storage-systest-cwd" if vm else workspace_dir
+    if not vm:
+        environment_runtime = next(
+            container
+            for container in spec["pod"]["spec"]["containers"]
+            if container["name"] == ENVIRONMENT_RUNTIME_CONTAINER
+        )
+        environment_runtime["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
+    marker = f"storage-test-{uuid4().hex}"
+    bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\n"
+    if vm:
+        bootstrap += f"printf '%s\\n' {marker} > /state/home/storage-systest-home\n"
+    bootstrap += "sync\n"
+    config = await _object(cluster, "configmap", "runner-gateway-settings")
+    policies = yaml.safe_load(config["data"]["settings.yaml"])["environment_default_policy_sets"]
+    assert policies
+    assert all(isinstance(policy, str) for policy in policies)
+    evidence: dict = {
+        "case": case,
+        "namespace": cluster.namespace,
+        "controller_image": controller_image,
+        "base_template": base,
+        "sandbox": name,
+        "passed": False,
+        "cleanup_complete": False,
+    }
+    path = undeclared_outputs_dir() / f"storage-{case}.json"
+
+    def save() -> None:
+        path.write_text(json.dumps(evidence, indent=2) + "\n")
+
+    save()
+    async with AsyncExitStack() as stack:
+        with tracer.start_as_current_span(
+            "system_test.storage.create_template", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            created_template = json.loads(
+                await cluster.kubectl(
+                    "create",
+                    "-f",
+                    "-",
+                    "-o",
+                    "json",
+                    body={
+                        "apiVersion": SANDBOX_API_VERSION,
+                        "kind": "SandboxTemplate",
+                        "metadata": {"name": template, "namespace": cluster.namespace},
+                        "spec": spec,
+                    },
+                )
+            )
+
+        async def delete_template() -> None:
+            with tracer.start_as_current_span(
+                "system_test.storage.delete_template", attributes={"storage.case": case, "sandbox.name": name}
+            ):
+                await _delete(cluster, "sandboxtemplates", template, created_template["metadata"]["uid"])
+
+        stack.push_async_callback(delete_template)
+        with tracer.start_as_current_span(
+            "system_test.storage.create_sandbox", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            created = json.loads(
+                await cluster.kubectl(
+                    "create",
+                    "-f",
+                    "-",
+                    "-o",
+                    "json",
+                    body={
+                        "apiVersion": SANDBOX_API_VERSION,
+                        "kind": "Sandbox",
+                        "metadata": {"name": name, "namespace": cluster.namespace},
+                        "spec": {"template": template, "running": True, "policySets": policies, "bootstrap": bootstrap},
+                    },
+                )
+            )
+        uid = created["metadata"]["uid"]
+        sandbox_uid = uid
+        evidence["sandbox_uid"] = uid
+
+        async def cleanup_sandbox() -> None:
+            with tracer.start_as_current_span(
+                "system_test.storage.cleanup_sandbox", attributes={"storage.case": case, "sandbox.name": name}
+            ):
+                await _cleanup(cluster, name, uid, [f"{name}-state", f"{name}-workspace"], case=case)
+
+        stack.push_async_callback(cleanup_sandbox)
+        save()
+        try:
+            with tracer.start_as_current_span(
+                "system_test.storage.ready", attributes={"storage.case": case, "sandbox.name": name}
+            ):
+                await _condition(cluster, name, "Ready", check_boot=check_boot)
+        except Exception as error:
+            evidence["readiness_error"] = str(error)
+            try:
+                evidence["readiness_snapshot"] = await _readiness_snapshot(cluster, name)
+            except Exception as diagnostic_error:
+                evidence["readiness_snapshot_error"] = str(diagnostic_error)
+            try:
+                evidence["sandbox_controller_logs"] = await cluster.kubectl(
+                    "logs",
+                    "deployment/sandbox-controller",
+                    "--all-pods=true",
+                    "--all-containers=true",
+                    "--tail=200",
+                    "--since=10m",
+                )
+            except Exception as diagnostic_error:
+                evidence["sandbox_controller_logs_error"] = str(diagnostic_error)
+            save()
+            raise
+        with tracer.start_as_current_span(
+            "system_test.storage.bootstrapped", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _condition(cluster, name, "Bootstrapped", check_boot=check_boot)
+        old_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+        before = await _volumes(cluster, name, uid)
+        if vm:
+            workspace_pv = await _object(cluster, "pv", before["workspace"]["pv"])
+            assert before["state"]["storage_class"] == "local-path"
+            assert before["state"]["volume_mode"] == "Filesystem"
+            assert vm_storage is not None
+            assert before["workspace"]["storage_class"] == vm_storage.storage_class
+            assert before["workspace"]["volume_mode"] == workspace_pv["spec"]["volumeMode"] == "Block"
+            assert workspace_pv["spec"]["local"]["path"].startswith("/dev/loop")
+            assert json.loads(before["workspace"]["record"])["layout"] == {
+                "type": "BlockFilesystem",
+                "filesystem": "ext4",
+            }
+            evidence["raw_block_pv"] = {
+                "name": workspace_pv["metadata"]["name"],
+                "path": workspace_pv["spec"]["local"]["path"],
+                "capacity": workspace_pv["spec"]["capacity"]["storage"],
+                "volume_mode": workspace_pv["spec"]["volumeMode"],
+            }
+        workload = await _object(cluster, "virtualmachine" if vm else "pod", name)
+        workload_uid = workload["metadata"]["uid"]
+        workload_spec = workload["spec"]["template"]["spec"] if vm else workload["spec"]
+        attachment = next(volume for volume in workload_spec["volumes"] if volume["name"] == "workspace")
+        assert attachment["persistentVolumeClaim"]["claimName"] == before["workspace"]["name"]
+        evidence.update(
+            before=before,
+            old_incarnation=old_incarnation,
+            workspace_attachment=attachment,
+            original_workload_uid=workload_uid,
+        )
+        with tracer.start_as_current_span(
+            "system_test.storage.first_probe", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            evidence["first_probe"] = await _probe(client, dispatcher, name, sandbox_uid, cwd, workspace_dir, marker)
+        if vm:
+            assert "\next4 " in evidence["first_probe"]["stdout"]
+        save()
+        with tracer.start_as_current_span(
+            "system_test.storage.first_suspend", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _suspend(cluster, name, uid)
+        with tracer.start_as_current_span(
+            "system_test.storage.first_workload_delete", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await cluster.kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
+        # Ordinary VM suspension halts the VM and removes its VMI/launcher, retaining the VM and
+        # all its disks. VM-object replacement is a separate explicit fixture operation below.
+        if vm:
+            await cluster.kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+        with tracer.start_as_current_span(
+            "system_test.storage.retained_volumes_after_suspend",
+            attributes={"storage.case": case, "sandbox.name": name},
+        ):
+            assert await _volumes(cluster, name, uid) == before
+        # Exercise the durable record at the actual resume boundary: an incompatible claim
+        # edit must refuse before starting any replacement or changing retained contents.
+        with tracer.start_as_current_span(
+            "system_test.storage.incompatible_claim_refusal", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
+            changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
+            await cluster.kubectl("replace", "-f", "-", body=changed)
+            await _running(cluster, name, uid, True)
+            await cluster.kubectl(
+                "wait",
+                f"sandboxes.{GROUP}/{name}",
+                '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
+                f"--timeout={BOUND_SECONDS}s",
+            )
+        refused = await _object(cluster, f"sandboxes.{GROUP}", name)
+        assert not refused["status"].get("incarnation")
+        assert await _volumes(cluster, name, uid) == before
+        evidence["incompatible_claim_refused"] = True
+        save()
+        with tracer.start_as_current_span(
+            "system_test.storage.suspend_after_refusal", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _suspend(cluster, name, uid)
+        with tracer.start_as_current_span(
+            "system_test.storage.resume_request", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
+            changed["spec"] = spec
+            await cluster.kubectl("replace", "-f", "-", body=changed)
+            await _running(cluster, name, uid, True)
+        with tracer.start_as_current_span(
+            "system_test.storage.resumed_ready", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _condition(cluster, name, "Ready", check_boot=check_boot)
+        with tracer.start_as_current_span(
+            "system_test.storage.resumed_bootstrapped", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            await _condition(cluster, name, "Bootstrapped", check_boot=check_boot)
+        new_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+        assert new_incarnation["uid"] != old_incarnation["uid"]
+        with tracer.start_as_current_span(
+            "system_test.storage.retained_volumes_after_resume", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            after = await _volumes(cluster, name, uid)
+            assert after["state"] == before["state"]
+            assert after == before
+        if vm:
+            assert (await _object(cluster, "virtualmachine", name))["metadata"]["uid"] == workload_uid
+        evidence.update(after=after, new_incarnation=new_incarnation)
+        with tracer.start_as_current_span(
+            "system_test.storage.resumed_probe", attributes={"storage.case": case, "sandbox.name": name}
+        ):
+            evidence["resumed_probe"] = await _probe(client, dispatcher, name, sandbox_uid, cwd, workspace_dir, marker)
+        save()
+        if vm:
+            await _suspend(cluster, name, uid)
+            await cluster.kubectl("wait", f"pod/{new_incarnation['name']}", "--for=delete", "--timeout=120s")
+            await cluster.kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+            halted = await _object(cluster, "virtualmachine", name)
+            assert halted["metadata"]["uid"] == workload_uid
+            assert halted["spec"]["runStrategy"] == "Halted"
+            assert any(
+                owner["uid"] == uid and owner.get("controller") for owner in halted["metadata"]["ownerReferences"]
+            )
+            # Delete only this recorded, fully stopped fixture VM. The Sandbox-owned workspace
+            # claim survives replacement of its VM.
+            await _delete(cluster, "virtualmachines", name, workload_uid, group="kubevirt.io", version="v1")
+            assert await _volumes(cluster, name, uid) == before
+            await _running(cluster, name, uid, True)
+            await _condition(cluster, name, "Ready", check_boot=check_boot)
+            await _condition(cluster, name, "Bootstrapped", check_boot=check_boot)
+            replacement = await _object(cluster, "virtualmachine", name)
+            assert replacement["metadata"]["uid"] != workload_uid
+            replacement_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+            assert replacement_incarnation["uid"] != new_incarnation["uid"]
+            replacement_volumes = await _volumes(cluster, name, uid)
+            assert replacement_volumes["state"] == before["state"]
+            assert replacement_volumes == before
+            evidence["replacement"] = {
+                "workload_uid": replacement["metadata"]["uid"],
+                "incarnation": replacement_incarnation,
+                "volumes": replacement_volumes,
+                "probe": await _probe(client, dispatcher, name, sandbox_uid, cwd, workspace_dir, marker),
+            }
+        evidence["passed"] = True
+        save()
+    evidence["cleanup_complete"] = True
+    save()

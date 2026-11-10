@@ -7,6 +7,12 @@ from pathlib import Path
 
 def main() -> None:
     log_dir = Path(os.environ["CI_TEST_LOG_DIR"])
+    lockfile = Path.cwd() / "MODULE.bazel.lock"
+    expected_lockfile = os.environ.get("FAKE_EXPECT_LOCKFILE")
+    actual_lockfile = lockfile.read_text() if lockfile.exists() else None
+    if expected_lockfile is not None and actual_lockfile != expected_lockfile:
+        raise SystemExit(f"unexpected MODULE.bazel.lock contents: {actual_lockfile!r}")
+
     args = sys.argv[1:]
     query_arg = next((arg for arg in args if arg.startswith("--query_file=")), None)
     if query_arg:
@@ -21,15 +27,26 @@ def main() -> None:
             ]
             print("\n".join(sorted(labels)))
         elif query_arg.endswith("test-query.txt"):
-            print("//ci:normal_test")
+            tests = os.environ.get("FAKE_TESTS", "//ci:normal_test")
+            if tests:
+                print(tests)
         else:
             raise SystemExit(f"unexpected query file: {query_arg}")
     elif args and args[0] in {"test", "build"}:
+        role = args[0]
+        with (log_dir / "phases.log").open("a") as log:
+            log.write(f"{role}\n")
         if args[0] == "test":
             (log_dir / "test-args.log").write_text("\n".join(args))
             target_file = next((arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file=")), None)
             if target_file:
                 (log_dir / "affected-targets.log").write_text(Path(target_file).read_text())
+        else:
+            (log_dir / "build-args.log").write_text("\n".join(args))
+        generated_lockfile = os.environ.get("FAKE_GENERATE_LOCKFILE")
+        if generated_lockfile:
+            lockfile.write_text(generated_lockfile)
+        raise SystemExit(int(os.environ.get(f"FAKE_{role.upper()}_EXIT", "0")))
     else:
         raise SystemExit(f"unexpected bazel args: {args}")
 

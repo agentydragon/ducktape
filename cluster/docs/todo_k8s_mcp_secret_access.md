@@ -1,15 +1,14 @@
 # TODO: Allow MCP k8s servers to read/list secrets
 
-The in-cluster `kubectl-passthrough-mcp` cannot list/read secrets. This forces falling back to
-`kubectl` via Bash for secret operations
-(deletion, inspection, rotation).
+Some MCP callers have encountered secret-access denials, forcing a fallback to `kubectl`
+with a different identity. Identify the caller and namespace before changing permissions.
 
 **Symptom**: `secrets is forbidden: User "..." cannot list resource "secrets" in API group ""`
 
-**Likely fix**: RBAC for the MCP server service accounts / client certs needs `secrets` added
-to the allowed resources. Check:
+The passthrough server forwards the caller's Authentik JWT; its own service account is
+unprivileged. The `claude-sandbox` role already includes Secrets, and cross-namespace
+grants are explicit opt-ins. See <agent_rbac.md> and
+<../cdk8s/kubectl_passthrough_mcp.py>.
 
-1. `cluster/cdk8s/agent_rbac_base.py` — add `secrets` to the `claude-sandbox` role
-2. The MCP client identity and its Kubernetes RBAC may need to grant secret access
-   **Why it matters**: Every suspension/deletion workflow needs secret access. Falling back to
-   `kubectl` via Bash works but defeats the purpose of having dedicated MCP servers.
+Next, reproduce the denial with the affected caller, record the exact identity, verb and
+namespace, and determine whether that caller should receive the specific grant.

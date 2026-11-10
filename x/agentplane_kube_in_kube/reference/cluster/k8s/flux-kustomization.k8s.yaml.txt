@@ -1,0 +1,35 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Persistent inner K3s test cluster on wyrm2. Suspended until the trusted-node safety bootstrap, runtime proof, and first published image are ready.
+  name: agentplane-test-cluster
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: oci-cache
+      namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: flux-image-automation-forgejo
+      namespace: ducktape-flux
+    - name: kubevirt
+      namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane-test-cluster
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-test-cluster
+    namespace: ducktape-flux
+  suspend: true
+  timeout: 10m
+  wait: true

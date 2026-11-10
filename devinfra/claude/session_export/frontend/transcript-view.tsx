@@ -20,7 +20,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 
-import type { Event, SessionSummary } from "./api/schema";
+import type { Event, SessionSummary } from "./schema";
 import { Markdown } from "../../../../util/frontend/markdown";
 import { EventInspector } from "./event-inspector";
 import { groupToolActivity, toolGroupSummary, type ToolGroup } from "./tool-groups";

@@ -43,7 +43,7 @@ runs:
       run: |
         set -euo pipefail
         for phase in unstamped stamped; do
-          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+          invocation_id="$(python3 devinfra/buildbuddy/ci/invocation_ids.py \
             --run-id "$GITHUB_RUN_ID" \
             --attempt "$GITHUB_RUN_ATTEMPT" \
             --role "release-$phase" \

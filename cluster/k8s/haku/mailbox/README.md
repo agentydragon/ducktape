@@ -89,9 +89,11 @@ directory points at the `stalwart-haku` Authentik provider
 (`tf/gitops/agent-machine-access`) with `requireAudience` pinned to its
 client id, so tokens minted for any other Authentik app (e.g. the
 kubectl-sandbox JWT) are rejected. The `authentik-jwt-rotation` CronJob
-(`haku-mail` entry) mints the JWT for the `haku` service account
-biweekly-ish, publishes it as the `haku-mail-token` Secret (flux-system),
-and the `ClusterExternalSecret` in `app/` mirrors it into `haku-sandbox`.
+(`haku-mail` entry) checks the token hourly, normally mints with 24 hours or
+less remaining (about every 44 days), and re-mints if the configured
+authentication probe returns 401 or 403 for its published Secret. It publishes the JWT as the
+`haku-mail-token` Secret (`flux-system`), and the `ClusterExternalSecret` in
+`app/` mirrors it into `haku-sandbox`.
 agentplane-staging's egress proxy also holds a copy and presents it to
 `claude-ai` sandboxes for the `agentplane-credential-haku-mailbox`
 placeholder, on JMAP paths only

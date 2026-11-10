@@ -17,15 +17,26 @@ picks h1 or prior-knowledge h2c) and one `httputil.ReverseProxy` per admitted re
   either way.
 
 Consequences the standard library transport owns: hijacked CONNECT connections sit outside
-`http.Server` shutdown, so the proxy tracks tunnels itself to drain; the upstream transport is
-single-use per admitted request (`DisableKeepAlives`, which covers HTTP/2 too), so a pooled or
-coalesced connection can never carry a request to an address other than the one the admission
-pinned.
+`http.Server` shutdown, so the proxy tracks tunnels itself to drain. `http.Transport` pools by the
+URL's host, not by the address an admission pinned, so the proxy keeps one transport per pin
+(admitted authority, pinned address, scheme and protocol) in a bounded LRU: a pooled connection
+only carries requests whose admission pinned that same address, and a host that re-resolves gets a
+new pool while the old one idles out. Single-use connections would hold the same invariant, at a
+TCP and TLS handshake per request.
+
+## Sidecar relay: a per-connection request loop, not `httputil.ReverseProxy`
+
+The sidecar parses each request with `http.ReadRequest` and writes it with `Request.WriteProxy` over
+one central proxy connection per workload connection. `http.Server` with `ReverseProxy` would pool
+upstream connections, breaking the per-client-connection `ConnectionID` the central proxy records;
+rewrite responses (`Date`, sniffed `Content-Type`, re-chunking, hop-by-hop stripping); and answer
+malformed requests without the `x-agentplane-egress-sidecar` refusal header the `agentplane` CLI
+classifies errors by. CONNECT needs a hijacked tunnel either way.
 
 ## Sidecar settings: strict `yaml.v3`, not Viper
 
 The proxy and the other Go services read their settings through Viper. The sidecar does not, because
-its file keys maps by data: `audience_token_files` by audience and `platform_routes` by route name.
+its file keys maps by data: `audience_token_files` by audience and `platform_routes.routes` by route name; each route also allowlists exact gRPC service prefixes.
 Viper lowercases every key, map keys included. With v1.21.0 (`ExperimentalBindStruct`,
 `UnmarshalExact`) two audiences that differ only in case merge into one entry and a route name loses
 its case, so a Pod could offer one audience the other's token. `config_test.go` keeps both spellings

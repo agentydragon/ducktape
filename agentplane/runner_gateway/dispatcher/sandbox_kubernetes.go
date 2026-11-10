@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +26,7 @@ type KubernetesSandboxes struct {
 	informer  cache.Informer
 	namespace string
 	changed   chan struct{}
+	reader    *sandboxreader.Reader
 }
 
 func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namespace string) (*KubernetesSandboxes, error) {
@@ -34,9 +37,13 @@ func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namesp
 	if err != nil {
 		return nil, err
 	}
+	reader, err := sandboxreader.New(namespace, objects)
+	if err != nil {
+		return nil, err
+	}
 	result := &KubernetesSandboxes{
 		objects: objects, inventory: inventory, informer: informer,
-		namespace: namespace, changed: make(chan struct{}, 1),
+		namespace: namespace, changed: make(chan struct{}, 1), reader: reader,
 	}
 	_, err = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
 		AddFunc:    func(any) { result.signal() },
@@ -77,6 +84,28 @@ func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (Sand
 	return view, err == nil, err
 }
 
+// GetExecutionAccount returns only the ServiceAccount controlled by the exact live Sandbox UID.
+// The uncached object client is deliberate: writes and queued delivery must not authorize from an
+// old informer snapshot after the managed account has been replaced.
+func (k *KubernetesSandboxes) GetExecutionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+	account, found, err := k.reader.ExecutionAccount(ctx, &sandboxreader.Identity{
+		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
+	})
+	if err != nil || !found {
+		return nil, found, err
+	}
+	if account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" || account.GetUid() == "" {
+		return nil, false, errors.New("Sandbox execution ServiceAccount identity is incomplete")
+	}
+	return account, true, nil
+}
+
+// GetExecutionIdentity returns the Identity the exact live Sandbox UID names, read uncached for the
+// reason GetExecutionAccount is.
+func (k *KubernetesSandboxes) GetExecutionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return k.reader.ExecutionIdentity(ctx, &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID})
+}
+
 func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnapshot, error) {
 	if !k.informer.HasSynced() {
 		return nil, errors.New("Sandbox inventory is not synchronized")
@@ -96,6 +125,23 @@ func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnaps
 	return result, nil
 }
 
+// CurrentSandboxUIDs confirms cleanup candidates against the API server, never
+// the informer: an older list cannot justify a permanent deletion fence.
+func (k *KubernetesSandboxes) CurrentSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
+	var objects sandboxapi.SandboxList
+	if err := k.objects.List(ctx, &objects, client.InNamespace(k.namespace)); err != nil {
+		return nil, err
+	}
+	result := make(map[string]struct{}, len(objects.Items))
+	for _, object := range objects.Items {
+		if object.UID == "" {
+			return nil, errors.New("Sandbox has no UID")
+		}
+		result[string(object.UID)] = struct{}{}
+	}
+	return result, nil
+}
+
 func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 	if object.Name == "" || object.UID == "" {
 		return SandboxSnapshot{}, errors.New("Sandbox has no name or UID")
@@ -105,81 +151,25 @@ func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
 	}
 	view := SandboxSnapshot{
 		Name: object.Name, Namespace: object.Namespace, UID: string(object.UID),
-		Deleting:    object.DeletionTimestamp != nil,
-		WakeOnSend:  object.Spec.WakeOnSend,
-		ReadyDetail: "Ready condition is unavailable",
+		Deleting:       object.DeletionTimestamp != nil,
+		WakeOnSend:     object.Spec.WakeOnSend,
+		WakeGeneration: object.Spec.WakeGeneration,
+		ManualStop:     object.Status.SuspendedBy != nil && *object.Status.SuspendedBy == sandboxapi.SuspendedByRequested,
+		ReadyDetail:    "Ready condition is unavailable",
 	}
 	if object.Status.Incarnation != nil {
 		view.Incarnation = object.Status.Incarnation.UID
 	}
-	ready, stopped := false, false
+	ready := false
 	if condition := meta.FindStatusCondition(object.Status.Conditions, sandboxapi.ConditionReady); condition != nil {
 		view.ReadyDetail = fmt.Sprintf("Ready=%s/%s: %s", condition.Status, condition.Reason, condition.Message)
-		ready, stopped = condition.Status == metav1.ConditionTrue, condition.Reason == "Stopped"
+		ready = condition.Status == metav1.ConditionTrue
 	}
 	if !ready {
 		view.Blocker = "sandbox_not_ready"
-		if object.Status.OperatingMode == sandboxapi.OperatingModeSuspended && stopped {
+		if object.Status.OperatingMode == sandboxapi.OperatingModeSuspended && object.Status.StopStage == sandboxapi.StopStageStopped {
 			view.Blocker = "sandbox_suspended"
 		}
 	}
 	return view, nil
-}
-
-// WakeForSend rereads the exact Sandbox UID immediately before deciding to
-// write. The object's resourceVersion makes the write conditional on the
-// decision's read; a conflict repeats the read and durable callback. The write
-// is a patch of the two desired-state fields because the Runner Gateway's Role
-// grants `patch` on Sandboxes, not `update`.
-func (k *KubernetesSandboxes) WakeForSend(ctx context.Context, name, uid string, beforeResume func(int64) error) (bool, error) {
-	for attempt := 0; attempt < 5; attempt++ {
-		var object sandboxapi.Sandbox
-		err := k.objects.Get(ctx, types.NamespacedName{Namespace: k.namespace, Name: name}, &object)
-		if apierrors.IsNotFound(err) {
-			return false, ErrWakeDeleted
-		}
-		if err != nil {
-			return false, err
-		}
-		if string(object.UID) != uid || object.DeletionTimestamp != nil {
-			return false, ErrWakeDeleted
-		}
-		if !object.Spec.WakeOnSend {
-			return false, nil
-		}
-		if condition := meta.FindStatusCondition(object.Status.Conditions, sandboxapi.ConditionRunning); condition != nil && condition.Reason == "Quiescing" {
-			return false, ErrWakeQuiescing
-		}
-		mode := object.Status.OperatingMode
-		if mode == "" {
-			return false, ErrWakeModeUnknown
-		}
-		if mode == sandboxapi.OperatingModeRunning {
-			return true, nil
-		}
-		if mode != sandboxapi.OperatingModeSuspended {
-			return false, ErrWakeModeUnknown
-		}
-		generation := object.Spec.WakeGeneration
-		idle := object.Status.SuspendedBy != nil && *object.Status.SuspendedBy == sandboxapi.SuspendedByIdle &&
-			object.Status.SuspendedAtWakeGeneration != nil && *object.Status.SuspendedAtWakeGeneration == generation
-		if object.Spec.Running && !idle {
-			return true, nil
-		}
-		if beforeResume != nil {
-			if err := beforeResume(generation + 1); err != nil {
-				return false, err
-			}
-		}
-		resumed := object.DeepCopy()
-		resumed.Spec.Running = true
-		resumed.Spec.WakeGeneration = generation + 1
-		if err := k.objects.Patch(ctx, resumed, client.MergeFromWithOptions(&object, client.MergeFromWithOptimisticLock{})); apierrors.IsConflict(err) {
-			continue
-		} else if err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, fmt.Errorf("Sandbox wake could not pass UID/resourceVersion guard after 5 attempts")
 }

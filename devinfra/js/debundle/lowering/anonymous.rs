@@ -6,6 +6,7 @@ use source_identity::StatementId;
 
 #[derive(Debug, Clone)]
 pub(super) struct ResolvedAnonymousStatement {
+    pub(super) selector_index: usize,
     pub(super) body_index: StatementId,
     pub(super) comment: Option<String>,
 }

@@ -289,30 +289,6 @@ kind: Kustomization
 metadata:
   annotations:
     ducktape.org/parked: "true"
-  name: buildbuddy-executor
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  interval: 10m
-  path: ./cluster/parked/buildbuddy-executor
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  suspend: true
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    ducktape.org/parked: "true"
   name: gecko-namespace
   namespace: ducktape-flux
 spec:
@@ -536,6 +512,37 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: buildbuddy-executor
+  namespace: ducktape-flux
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: kubevirt
+      namespace: ducktape-flux
+    - name: kyverno
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: buildbuddy-executor
+      namespace: buildbuddy-executor
+  interval: 10m
+  path: ./cluster/k8s/buildbuddy-executor
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: buildbuddy-executor
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1804,6 +1811,10 @@ spec:
       kind: ExternalSecret
       name: buildbuddy-api-key
       namespace: flux-system
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: gaffer-repo-fetch-pat
+      namespace: flux-system
   interval: 10m
   path: ./cluster/k8s/github-secrets-sync-secrets
   prune: false
@@ -2986,11 +2997,9 @@ spec:
       name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
-    - name: valkey
-      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
-    - name: seaweedfs-operator
+    - name: piraeus-cluster
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/oci-cache
@@ -3194,6 +3203,90 @@ spec:
     name: flux-webhook
     namespace: ducktape-flux
   timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cdviz-database
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation && has(status.extensions) && status.extensions.exists(e, e.name == 'timescaledb' && e.applied)
+      kind: Database
+  interval: 10m
+  path: ./cluster/generated/cdviz/database
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: cdviz-database
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-cdviz-github-webhook
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
+    - name: github-secrets-sync-secrets
+      namespace: ducktape-flux
+    - name: cdviz-database
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: opentofu.upbound.io/v1beta1
+      current: has(status.conditions) && status.conditions.exists(c, has(c.type) && c.type == 'Synced' && has(c.status) && c.status == 'True' && has(c.observedGeneration) && c.observedGeneration == metadata.generation) && status.conditions.exists(c, has(c.type) && c.type == 'Ready' && has(c.status) && c.status == 'True')
+      kind: Workspace
+  interval: 10m
+  path: ./cluster/generated/github-tf/crossplane-cdviz-github-webhook
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: github-tf
+    namespace: ducktape-flux
+  timeout: 20m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cdviz
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: cdviz-database
+      namespace: ducktape-flux
+    - name: crossplane-cdviz-github-webhook
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: grafana-operator
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/cdviz/app
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: cdviz
+    namespace: ducktape-flux
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -3525,6 +3618,31 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: buildbuddy-kvm-worker
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: buildbuddy-executor
+      namespace: ducktape-flux
+    - name: kubevirt
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/buildbuddy-kvm-worker
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: buildbuddy-kvm-worker
+    namespace: ducktape-flux
+  suspend: false
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: cpap-sync
   namespace: ducktape-flux
 spec:
@@ -3581,6 +3699,33 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Authenticated upstream sessions and scoped proxies.
+  name: platform-sessions
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: flux-image-automation-ghcr
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/platform-sessions
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: platform-sessions
+    namespace: ducktape-flux
+  suspend: false
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Image automation for images hosted in our Forgejo registry (authenticated scans via the reflected ducktape-ci credential).
   name: flux-image-automation-forgejo
   namespace: ducktape-flux
@@ -3599,7 +3744,38 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: github-api-proxy
+  annotations:
+    description: Platform Sessions gateway and separate providers.
+  name: platform-sessions-remote
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: platform-sessions
+      namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
+    - name: flux-image-automation-forgejo
+      namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/platform-sessions-remote
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: platform-sessions-remote
+    namespace: ducktape-flux
+  suspend: false
+  wait: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Disposable CNPG-backed view of Restic session imports and owner-authenticated browser.
+  name: ai-session-archive
   namespace: ducktape-flux
 spec:
   decryption:
@@ -3608,21 +3784,30 @@ spec:
       name: sops-age-cluster-secrets
   deletionPolicy: Orphan
   dependsOn:
+    - name: session-backup
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: cert-manager
+    - name: forgejo-images
       namespace: ducktape-flux
-    - name: monitoring-crds
+    - name: crossplane-sso-providers
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: flux-image-automation-forgejo
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/github-api-proxy
+  path: ./cluster/generated/ai-session-archive
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: github-api-proxy
+    name: ai-session-archive
     namespace: ducktape-flux
-  timeout: 5m
+  targetNamespace: session-backup
+  timeout: 30m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -3870,6 +4055,8 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-operator
+      namespace: ducktape-flux
+    - name: piraeus-cluster
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache
@@ -4134,33 +4321,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-egress-proxy
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/agents/haku-egress-proxy
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-egress-proxy
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-ui-image-webhook
   namespace: ducktape-flux
 spec:
@@ -4283,8 +4443,6 @@ spec:
   dependsOn:
     - name: haku-rbac
       namespace: ducktape-flux
-    - name: haku-egress-proxy
-      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
@@ -4337,7 +4495,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, runner template, and operator RBAC.
+    description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, environment-tools template, and operator RBAC.
   name: agentplane-staging
   namespace: ducktape-flux
 spec:
@@ -4357,6 +4515,8 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
     - name: litellm-crossplane-keys
       namespace: ducktape-flux
   healthCheckExprs:
@@ -4370,6 +4530,9 @@ spec:
     - apiVersion: v1
       kind: Namespace
       name: agentplane-staging-egress-credentials
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-staging-k8s-accounts
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       name: postgres
@@ -4398,6 +4561,10 @@ spec:
       kind: Database
       name: session-dispatcher
       namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: central-sampler
+      namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
       name: electric
@@ -4413,6 +4580,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: history-service
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: central-sampler
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
@@ -4440,11 +4611,39 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
+      name: haku-ci-egress
+      namespace: haku-ci
+    - apiVersion: apps/v1
+      kind: Deployment
       name: policy-controller
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
+      name: agentplane-runner-gateway
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: llm-ingress-workload
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: agentplane-egress-proxy
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
       name: agentplane-egress-root-ca
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: history-service-workload
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: actions-workload
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: notifications-workload
       namespace: agentplane-staging
     - apiVersion: trust.cert-manager.io/v1alpha1
       kind: Bundle
@@ -4475,6 +4674,10 @@ spec:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: litellm-key-agentplane-staging
+      namespace: agentplane-staging
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: agentplane-staging-anthropic-api-key
       namespace: agentplane-staging
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret

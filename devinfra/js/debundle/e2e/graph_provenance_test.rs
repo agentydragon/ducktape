@@ -1,10 +1,12 @@
 //! Real CLI checks that a saved graph is joined only to its analyzed inputs.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, program_graph_path};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, GraphFixture, TreeFixture, debundler_path, run_fixture, run_tree_fixture,
+    FixtureOpts, TreeFixture, debundler_path, run_fixture, run_tree_graph_fixture, tree_spec_args,
 };
 use tempfile::TempDir;
 
@@ -22,6 +24,251 @@ fn assert_mismatch(fixture: &GraphFixture, expected: &str) -> serde_json::Value 
     json
 }
 
+struct AliasGraphFixture {
+    _root: TempDir,
+    source_root: std::path::PathBuf,
+    source_file: std::path::PathBuf,
+    modules: std::path::PathBuf,
+    graph: std::path::PathBuf,
+}
+
+impl AliasGraphFixture {
+    fn new() -> Self {
+        let root = TempDir::new().unwrap();
+        let source_root = root.path().join("snapshot");
+        let source_file = source_root.join("provider.js");
+        fs::create_dir_all(&source_root).unwrap();
+        fs::write(&source_file, "const value = 42;\nconsole.log(value);\n").unwrap();
+        fs::write(
+            root.path().join("js-files.txt"),
+            "provider.js\tvirtual/chunk.js\n",
+        )
+        .unwrap();
+
+        let modules = root.path().join("modules/provider");
+        fs::create_dir_all(&modules).unwrap();
+        fs::write(
+            modules.join("provider.yaml"),
+            "source_matches:\n  - match: 'const value = 42;'\n    bindings: [value]\n",
+        )
+        .unwrap();
+
+        let config = root.path().join("spec_config.yaml");
+        fs::write(
+            &config,
+            "main_chunk_id: provider\nmodule_roots:\n  provider: provider\ninputs:\n  root: snapshot\n  js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n  provider: { kind: inline_in_entry }\n",
+        )
+        .unwrap();
+        let vendor_marks = root.path().join("vendor_marks.yaml");
+        fs::write(&vendor_marks, "vendor_marks: []\n").unwrap();
+        let out_root = root.path().join("out");
+        let output = Command::new(debundler_path())
+            .arg("run")
+            .arg("--graphs")
+            .args(tree_spec_args(root.path()))
+            .arg("--out-root")
+            .arg(&out_root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        Self {
+            graph: out_root.join("reports/tree/provider/dependency_graph.json.gz"),
+            _root: root,
+            source_root,
+            source_file,
+            modules,
+        }
+    }
+
+    fn command(
+        &self,
+        args: &[&str],
+        selector_root: Option<&Path>,
+        graph_source_root: Option<&Path>,
+    ) -> std::process::Output {
+        let mut command = Command::new(debundler_path());
+        command
+            .args(args)
+            .arg("--graph")
+            .arg(&self.graph)
+            .arg("--modules")
+            .arg(&self.modules)
+            .args(["--format", "json"]);
+        if let Some(selector_root) = selector_root {
+            command.arg("--source-root").arg(selector_root);
+        }
+        if let Some(graph_source_root) = graph_source_root {
+            command.arg("--graph-source-root").arg(graph_source_root);
+        }
+        command.output().unwrap()
+    }
+}
+
+fn assert_success(output: &std::process::Output) {
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        stderr(output)
+    );
+}
+
+fn query_json(output: &std::process::Output) -> serde_json::Value {
+    assert_success(output);
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn assert_graph_mismatch(output: &std::process::Output, expected: &str) {
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(output));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["kind"], "graph_compatibility");
+    assert_eq!(json["mismatch"]["reason"], expected);
+}
+
+#[test]
+fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
+    let fixture = AliasGraphFixture::new();
+
+    // The authored source_match is resolved by coverage and proposal queries.
+    for output in [
+        fixture.command(&["coverage"], None, None),
+        fixture.command(&["coverage"], Some(&fixture.source_root), None),
+        fixture.command(&["modules", "propose"], Some(&fixture.source_root), None),
+    ] {
+        let report = query_json(&output);
+        assert!(report["rows"].as_array().is_some() || report["proposals"].as_array().is_some());
+    }
+    let coverage = query_json(&fixture.command(&["coverage"], None, None));
+    assert_eq!(
+        coverage["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+
+    let describe =
+        query_json(&fixture.command(&["describe", "value"], Some(&fixture.source_root), None));
+    assert_eq!(describe["source_unit_ids"], serde_json::json!(["unit:0"]));
+    let inspected = query_json(&fixture.command(&["inspect-source", "--id", "unit:0"], None, None));
+    assert!(
+        inspected["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
+    );
+}
+
+#[test]
+fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
+    let fixture = AliasGraphFixture::new();
+    let output = fixture.command(&["bindings", "assign", "value:next"], None, None);
+    assert_success(&output);
+    assert!(fixture.modules.join("next.yaml").is_file());
+
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], None, None),
+        "yaml_membership",
+    );
+}
+
+#[test]
+fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
+    let fixture = AliasGraphFixture::new();
+    let wrong_root = TempDir::new().unwrap();
+    fs::copy(&fixture.source_file, wrong_root.path().join("provider.js")).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(wrong_root.path()), None),
+        "selector_source_root",
+    );
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(&fixture.source_file), None),
+        "selector_source_root",
+    );
+
+    let logical_shadow = fixture.source_root.join("virtual/chunk.js");
+    fs::create_dir_all(logical_shadow.parent().unwrap()).unwrap();
+    fs::copy(&fixture.source_file, &logical_shadow).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(&fixture.source_root), None),
+        "selector_source_root",
+    );
+    fs::remove_file(logical_shadow).unwrap();
+
+    let logical_directory = fixture.source_root.join("virtual/chunk.js");
+    fs::create_dir_all(&logical_directory).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(&fixture.source_root), None),
+        "selector_source_root",
+    );
+    fs::remove_dir_all(logical_directory).unwrap();
+
+    let fallback_shadow = fixture.modules.parent().unwrap().join("virtual/chunk.js");
+    fs::create_dir_all(fallback_shadow.parent().unwrap()).unwrap();
+    fs::copy(&fixture.source_file, &fallback_shadow).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], None, None),
+        "selector_source_root",
+    );
+    fs::remove_file(fallback_shadow).unwrap();
+
+    let relocated_root = fixture._root.path().join("relocated-source");
+    fs::create_dir_all(relocated_root.join("snapshot")).unwrap();
+    fs::copy(
+        &fixture.source_file,
+        relocated_root.join("snapshot/provider.js"),
+    )
+    .unwrap();
+    fs::copy(
+        fixture._root.path().join("js-files.txt"),
+        relocated_root.join("js-files.txt"),
+    )
+    .unwrap();
+    fs::remove_file(&fixture.source_file).unwrap();
+    let relocated_coverage =
+        query_json(&fixture.command(&["coverage"], None, Some(&relocated_root)));
+    assert_eq!(
+        relocated_coverage["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+    let relocated_selector_root = relocated_root.join("snapshot");
+    let relocated_inspection = query_json(&fixture.command(
+        &["inspect-source", "--id", "unit:0"],
+        Some(&relocated_selector_root),
+        Some(&relocated_root),
+    ));
+    assert!(
+        relocated_inspection["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
+    );
+    let relocated_coverage_with_selector_root = query_json(&fixture.command(
+        &["coverage"],
+        Some(&relocated_selector_root),
+        Some(&relocated_root),
+    ));
+    assert_eq!(
+        relocated_coverage_with_selector_root["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+
+    fs::write(
+        relocated_root.join("snapshot/provider.js"),
+        "const value = 43;\nconsole.log(value);\n",
+    )
+    .unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], None, Some(&relocated_root)),
+        "file",
+    );
+}
+
 #[test]
 fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -35,7 +282,7 @@ fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
     let graph = fixture
         .report_root
         .join(&fixture.chunk_id)
-        .join("dependency_graph.json");
+        .join("dependency_graph.json.gz");
     let unit = fixture
         .dependency_graph()
         .nodes
@@ -169,6 +416,18 @@ fn existing_added_and_deleted_yaml_reject_before_edit() {
 }
 
 #[test]
+fn initializer_source_only_edit_invalidates_saved_graph_authority() {
+    let fixture = GraphFixture::acyclic_pair();
+    fixture.assert_success(&["coverage", "--format", "json"]);
+    let module = fixture.modules.join("a.yaml");
+    let mut yaml = fs::read_to_string(&module).unwrap();
+    yaml.push_str("annotations:\n  alpha:\n    initializer_binding_effects: source_only\n");
+    fs::write(&module, yaml).unwrap();
+    let rejection = assert_mismatch(&fixture, "file");
+    assert_eq!(rejection["mismatch"]["path"], module.to_str().unwrap());
+}
+
+#[test]
 fn config_assumption_and_engine_change_reject() {
     let fixture = GraphFixture::acyclic_pair();
     let config = fixture.root().join("spec_config.yaml");
@@ -178,16 +437,16 @@ fn config_assumption_and_engine_change_reject() {
     assert_mismatch(&fixture, "file");
 
     let fixture = GraphFixture::acyclic_pair();
-    let mut graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.graph).unwrap()).unwrap();
-    graph["provenance"]["engine_sha256"] = "wrong-engine".into();
-    fs::write(&fixture.graph, serde_json::to_vec(&graph).unwrap()).unwrap();
+    let path = program_graph_path(&fixture.graph);
+    let mut program_graph: serde_json::Value = report_io::read_json_gzip(&path).unwrap();
+    program_graph["provenance"]["engine_sha256"] = "wrong-engine".into();
+    report_io::write_json_gzip(&path, &program_graph).unwrap();
     assert_mismatch(&fixture, "engine");
 }
 
 #[test]
 fn provider_chunk_analysis_option_invalidates_consumer_graph() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 ("main", "const mainValue = 1; console.log(mainValue);"),
@@ -208,7 +467,7 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
     fs::write(config, text).unwrap();
     let output = std::process::Command::new(debundler_path())
         .args(["coverage", "--graph"])
-        .arg(run.report_root.join("main/dependency_graph.json"))
+        .arg(run.report_root.join("main/dependency_graph.json.gz"))
         .arg("--modules")
         .arg(run.root().join("modules/main"))
         .args(["--format", "json"])
@@ -222,10 +481,10 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
 #[test]
 fn missing_metadata_cannot_authorize_edit_but_graph_only_read_works() {
     let fixture = GraphFixture::acyclic_pair();
-    let mut graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.graph).unwrap()).unwrap();
-    graph.as_object_mut().unwrap().remove("provenance");
-    fs::write(&fixture.graph, serde_json::to_vec(&graph).unwrap()).unwrap();
+    let path = program_graph_path(&fixture.graph);
+    let mut program_graph: serde_json::Value = report_io::read_json_gzip(&path).unwrap();
+    program_graph.as_object_mut().unwrap().remove("provenance");
+    report_io::write_json_gzip(&path, &program_graph).unwrap();
     fixture.assert_success(&["atoms", "--format", "json"]);
     assert_mismatch(&fixture, "missing_provenance");
 }
@@ -252,7 +511,7 @@ fn preview_and_no_op_keep_graph_compatible() {
 
 #[test]
 fn wrong_chunk_scope_with_same_binding_is_rejected() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 ("main", "const shared = 1; console.log(shared);"),
@@ -273,7 +532,7 @@ fn wrong_chunk_scope_with_same_binding_is_rejected() {
         &[],
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let wrong = run.root().join("modules/dependency");
     let output = std::process::Command::new(debundler_path())
         .arg("coverage")
@@ -313,7 +572,7 @@ fn explicit_roots_allow_relocated_graph_and_spec() {
     copy_tree(fixture.root(), relocated.path());
     let graph = relocated
         .path()
-        .join("out/reports/tree/main/dependency_graph.json");
+        .join("out/reports/tree/main/dependency_graph.json.gz");
     let output = fixture
         .process(&[
             "--spec-root",
@@ -351,7 +610,7 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
     fs::create_dir(relocated.path().join("out-regenerated")).unwrap();
     let graph = relocated
         .path()
-        .join("out/reports/tree/main/dependency_graph.json");
+        .join("out/reports/tree/main/dependency_graph.json.gz");
     let output = std::process::Command::new(debundler_path())
         .args([
             "--spec-root",
@@ -460,6 +719,7 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
         .current_dir(fixture.root())
         .args([
             "run",
+            "--graphs",
             "--tree-config",
             "spec_config.yaml",
             "--tree-modules",
@@ -472,9 +732,10 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
         .output()
         .unwrap();
     assert!(result.status.success(), "{}", stderr(&result));
-    let graph = out.join("reports/tree/main/dependency_graph.json");
-    let report: serde_json::Value = serde_json::from_slice(&fs::read(&graph).unwrap()).unwrap();
-    let provenance = &report["provenance"];
+    let graph = out.join("reports/tree/main/dependency_graph.json.gz");
+    let program_graph: serde_json::Value =
+        report_io::read_json_gzip(&program_graph_path(&graph)).unwrap();
+    let provenance = &program_graph["provenance"];
     assert_eq!(
         provenance["generation_cwd"],
         fixture.root().to_str().unwrap()

@@ -1,17 +1,56 @@
 # Pre-built container images for Testcontainers-based tests.
 #
 # These images are bundled as Bazel deps so hermetic tests don't need Docker Hub
-# access. Test fixtures use crane to push OCI layout dirs into the Docker daemon.
+# access. Test fixtures load OCI layout dirs into the Docker daemon.
 #
-# Each image is one `py_library` carrying both its `IMAGE` constant and the image itself,
+# Each image is one `py_library` carrying its `LAYOUT_RLOCATION` and the image itself,
 # so a test names it once:
 #
 #     deps = ["//third_party/containers:postgres_18"]
 #     from third_party.containers import postgres_18
 
 load("@rules_oci//oci:defs.bzl", "oci_load")
-load("//devinfra/oci:defs.bzl", "oci_image_py")
-load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
+
+py_test(
+    name = "test_image_descriptor",
+    srcs = ["test_image_descriptor.py"],
+    deps = [
+        "//:conftest",
+        "//third_party/containers:debian_slim",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+oci_layout_py(
+    name = "grafana_visual",
+    testonly = True,
+    image = "@grafana_visual_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "prometheus_visual",
+    testonly = True,
+    image = "@prometheus_visual_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "cdviz_collector",
+    testonly = True,
+    image = "@cdviz_collector_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "cdviz_db_migration",
+    testonly = True,
+    image = "@cdviz_db_migration_linux_amd64",
+    visibility = ["//visibility:public"],
+)
 
 py_library(
     name = "fixtures",
@@ -19,41 +58,60 @@ py_library(
     srcs = ["fixtures.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//devinfra/oci",
         "//third_party/containers:debian_slim",
-        "//util:oci",
         "@pypi//pytest",
     ],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "postgres_18",
     testonly = True,
     image = "@postgres_18_linux_amd64",
-    tag = "postgres:18",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+# The Go fixture passes these language-neutral layout pointers to the shared
+# Python loader. Python consumers use the generated descriptors directly.
+oci_layout_rloc(
+    name = "postgres_18_rloc",
+    testonly = True,
+    image = "@postgres_18_linux_amd64",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+oci_layout_rloc(
+    name = "ryuk_rloc",
+    testonly = True,
+    image = "@ryuk_linux_amd64",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+oci_layout_py(
     name = "pgvector_pg18",
     testonly = True,
     image = "@pgvector_pg18_linux_amd64",
-    tag = "pgvector/pgvector:pg18",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
+    name = "timescaledb_pg18",
+    testonly = True,
+    image = "@timescaledb_pg18_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
     name = "registry_3",
     testonly = True,
     image = "@registry_3_linux_amd64",
-    tag = "registry:3",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "ryuk",
     testonly = True,
     image = "@ryuk_linux_amd64",
-    tag = RYUK_TAG,
     visibility = ["//visibility:public"],
 )
 
@@ -75,48 +133,44 @@ oci_load(
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "python_3_14_slim",
     testonly = True,
     image = "@python_3_14_slim_linux_amd64",
-    tag = "python:3.14-slim",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "grocy",
     image = "@grocy_linux_amd64",
-    tag = "linuxserver/grocy:v4.6.0-ls318",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "debian_slim",
     image = "@debian_trixie_slim_linux_amd64",
-    tag = "debian-slim:test",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+# Electric's original digest is absent from mirror.gcr.io and its upstream Docker Hub
+# repository is broken. The pin uses the published electricsql/electric-temp image.
+oci_layout_py(
     name = "electric_1_8_1",
     testonly = True,
     image = "@electric_1_8_1_linux_amd64",
-    tag = "electricsql/electric:1.8.1",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "nginx_unprivileged",
     testonly = True,
     image = "@nginx_unprivileged_linux_amd64",
-    tag = "nginx-unprivileged:test",
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "blackbox_exporter",
     testonly = True,
     image = "@blackbox_exporter_linux_amd64",
-    tag = "quay.io/prometheus/blackbox-exporter:v0.28.0",
     visibility = ["//visibility:public"],
 )

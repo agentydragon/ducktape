@@ -3,11 +3,16 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -22,31 +27,57 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	Namespace                   string         `mapstructure:"sandbox_namespace"`
-	DispatcherDatabaseURL       string         `mapstructure:"dispatcher_database_url"`
-	PodName                     string         `mapstructure:"pod_name"`
-	PodIP                       string         `mapstructure:"pod_ip"`
-	RunnerTokenFile             string         `mapstructure:"runner_token_file"`
-	Kubeconfig                  string         `mapstructure:"kubeconfig"`
-	ListenAddress               string         `mapstructure:"listen_address"`
-	HTTPListenAddress           string         `mapstructure:"http_listen_address"`
-	ProxyPort                   int            `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate string         `mapstructure:"runner_control_target_template"`
-	DispatcherAudience          string         `mapstructure:"dispatcher_audience"`
-	GatewayAudience             string         `mapstructure:"gateway_audience"`
-	RunnerAudience              string         `mapstructure:"runner_audience"`
-	DispatcherCallers           []auth.Account `mapstructure:"dispatcher_callers"`
-	GatewayCallers              []auth.Account `mapstructure:"gateway_callers"`
-	WakeCallers                 []auth.Account `mapstructure:"wake_callers"`
-	ControllerAccount           *auth.Account  `mapstructure:"sandbox_controller_account"`
-	QueueCap                    int            `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int            `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int            `mapstructure:"runner_request_timeout_seconds"`
+	RunnerSecurity environment_runtime_transport.Security `mapstructure:"runner_security"`
+	Namespace      string                                 `mapstructure:"sandbox_namespace"`
+	// PolicyNamespace holds the Identities a workload SVID may name; empty refuses Identity callers.
+	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+	// (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	PolicyNamespace              string                                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL        string                                   `mapstructure:"dispatcher_database_url"`
+	PodName                      string                                   `mapstructure:"pod_name"`
+	PodIP                        string                                   `mapstructure:"pod_ip"`
+	RunnerTokenFile              string                                   `mapstructure:"runner_token_file"`
+	Kubeconfig                   string                                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS          float32                                  `mapstructure:"kubernetes_client_qps"`
+	RPC                          listener.Config                          `mapstructure:"rpc"`
+	GatewayTLS                   *environment_runtime_transport.ClientTLS `mapstructure:"gateway_tls"`
+	ProxyPort                    int                                      `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate  string                                   `mapstructure:"runner_control_target_template"`
+	DispatcherAudience           string                                   `mapstructure:"dispatcher_audience"`
+	GatewayAudience              string                                   `mapstructure:"gateway_audience"`
+	EnvironmentReaders           []auth.Account                           `mapstructure:"environment_readers"`
+	EnvironmentManagers          []auth.Account                           `mapstructure:"environment_managers"`
+	EnvironmentLaunchers         []auth.Account                           `mapstructure:"environment_launchers"`
+	EnvironmentDefaultPolicySets []string                                 `mapstructure:"environment_default_policy_sets"`
+	DispatcherCallers            []auth.Account                           `mapstructure:"dispatcher_callers"`
+	Delegation                   *delegationConfig                        `mapstructure:"delegation"`
+	GatewayCallers               []auth.Account                           `mapstructure:"gateway_callers"`
+	WakeCallers                  []auth.Account                           `mapstructure:"wake_callers"`
+	OperatorCallers              []auth.Account                           `mapstructure:"operator_callers"`
+	ControllerAccount            *auth.Account                            `mapstructure:"sandbox_controller_account"`
+	QueueCap                     int                                      `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds            int                                      `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds         int                                      `mapstructure:"runner_request_timeout_seconds"`
+
+	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
+	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
+	RuntimeCatalog  runtimeconfig.Catalog     `mapstructure:"runtime_catalog"`
+}
+
+// delegationConfig is an independent trust grant. It does not inherit the direct caller or wake
+// allowlists, and its method list contains exact full gRPC method names served by this process.
+type delegationConfig struct {
+	Actor            auth.Account `mapstructure:"actor"`
+	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
+	// IdentityCallers lets the actor assert Identities in policy_namespace, a grant separate from
+	// caller_namespaces. It requires policy_namespace.
+	IdentityCallers bool     `mapstructure:"identity_callers"`
+	Methods         []string `mapstructure:"methods"`
 }
 
 func defaultConfig() config {
 	return config{
-		ListenAddress: ":8080", ProxyPort: sandboxapi.ControlServicePort,
+		ProxyPort:                   sandboxapi.ControlServicePort,
 		RunnerControlTargetTemplate: sandboxapi.ControlServiceTargetTemplate(),
 		QueueCap:                    1000, WatchLeaseSeconds: 300, RunnerTimeoutSeconds: 10,
 	}
@@ -65,9 +96,14 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("could not read Runner Gateway settings file")
 		}
 	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	decodeHook := mapstructure.ComposeDecodeHookFunc(
+		mapstructure.TextUnmarshallerHookFunc(),
+		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
+	)
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
+	c.RuntimeCatalog.Models.NormalizeHarnessNames()
 	if c.PodName == "" {
 		var err error
 		if c.PodName, err = os.Hostname(); err != nil {
@@ -88,19 +124,54 @@ func (c *config) validate() error {
 		{"runner_token_file", c.RunnerTokenFile},
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},
-		{"runner_audience", c.RunnerAudience},
-		{"listen_address", c.ListenAddress},
 		{"runner_control_target_template", c.RunnerControlTargetTemplate},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
 	}
+	if err := c.RunnerSecurity.Validate(); err != nil {
+		return fmt.Errorf("runner_security: %w", err)
+	}
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc: %w", err)
+	}
+	if !c.RPC.Has(listener.SPIFFE) || !c.RPC.Has(listener.KubernetesBearer) {
+		return errors.New("rpc.auth must include spiffe and kubernetes_bearer")
+	}
+	if c.DispatcherAudience == c.GatewayAudience || !c.RPC.AllowsBearerAudience(c.DispatcherAudience) || !c.RPC.AllowsBearerAudience(c.GatewayAudience) {
+		return errors.New("rpc kubernetes_bearer audiences must include distinct dispatcher_audience and gateway_audience")
+	}
+	if len(c.rpcBearerAudiences()) != 2 {
+		return errors.New("rpc kubernetes_bearer must configure exactly dispatcher_audience and gateway_audience")
+	}
+	if c.GatewayTLS == nil {
+		return errors.New("gateway_tls is required for the Gateway's control-Service calls")
+	}
+	if err := c.GatewayTLS.Validate(); err != nil {
+		return fmt.Errorf("gateway_tls: %w", err)
+	}
+	if c.GatewayTLS.ServerURI != environment_runtime_transport.SessionDispatcherURI {
+		return errors.New("gateway_tls.server_uri must identify the Session Dispatcher service")
+	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
 	}
+	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
+		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
+	}
+	if c.Delegation != nil && c.Delegation.IdentityCallers && c.PolicyNamespace == "" {
+		return errors.New("delegation.identity_callers requires policy_namespace")
+	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return errors.New("proxy_port must be between 1 and 65535")
+	}
+	if math.IsNaN(float64(c.KubernetesClientQPS)) || math.IsInf(float64(c.KubernetesClientQPS), 0) {
+		return errors.New("kubernetes_client_qps must be finite")
+	}
+	if c.KubernetesClientQPS < 0 && c.KubernetesClientQPS != -1 {
+		return errors.New("kubernetes_client_qps must be -1 or nonnegative")
 	}
 	for _, positive := range []struct {
 		name  string
@@ -114,10 +185,62 @@ func (c *config) validate() error {
 			return fmt.Errorf("%s must be positive", positive.name)
 		}
 	}
+	for _, account := range c.EnvironmentReaders {
+		if account.Namespace == "" || account.Name == "" {
+			return errors.New("environment_readers requires namespace and name")
+		}
+	}
+	for _, account := range c.EnvironmentManagers {
+		if account.Namespace == "" || account.Name == "" {
+			return errors.New("environment_managers requires namespace and name")
+		}
+	}
+	for _, account := range c.EnvironmentLaunchers {
+		if account.Namespace == "" || account.Name == "" {
+			return errors.New("environment_launchers requires namespace and name")
+		}
+	}
 	for _, account := range c.WakeCallers {
 		if !slices.Contains(c.DispatcherCallers, account) {
 			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
+	for _, account := range c.OperatorCallers {
+		if !slices.Contains(c.DispatcherCallers, account) {
+			return fmt.Errorf("operator caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
+		}
+	}
+	if target := c.CentralSampler; target != nil && (target.Target == "" || target.TokenFile == "") {
+		return errors.New("central_sampler requires a target and token_file")
+	}
+
 	return nil
+}
+
+func (c config) rpcBearerAudiences() []string {
+	for _, method := range c.RPC.Auth {
+		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok && bearer != nil {
+			return bearer.Audiences
+		}
+	}
+	return nil
+}
+
+// rpcForMethodAudience binds a method family to its own audience and caller mode on the shared listener.
+func (c config) rpcForMethodAudience(audience string, allowSVID bool) listener.Config {
+	result := c.RPC
+	result.Auth = nil
+	for _, method := range c.RPC.Auth {
+		switch method := method.(type) {
+		case *listener.SPIFFEAuth:
+			if allowSVID {
+				result.Auth = append(result.Auth, &listener.SPIFFEAuth{CAFile: method.CAFile})
+			}
+		case *listener.KubernetesBearerAuth:
+			if c.RPC.AllowsBearerAudience(audience) {
+				result.Auth = append(result.Auth, &listener.KubernetesBearerAuth{Audiences: []string{audience}})
+			}
+		}
+	}
+	return result
 }

@@ -10,34 +10,29 @@ import zipfile
 from pathlib import Path
 
 import pytest_bazel
-
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
 # gazelle:include_dep //devinfra/pr_visuals:publisher
-WHEEL = get_required_path(own_repo_rlocation("devinfra/pr_visuals/pr_visuals-0.1.0-py3-none-any.whl"))
 EXPECTED_ENTRY_POINTS = {
     "pr-visuals-announce": "devinfra.pr_visuals.check_run:main",
     "pr-visuals-publish": "devinfra.pr_visuals.publisher:main",
 }
 
 
-def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_path: Path) -> None:
-    with zipfile.ZipFile(WHEEL) as wheel:
+def test_wheel_contains_import_closure_templates_and_runnable_entry_points(runfiles: Runfiles, tmp_path: Path) -> None:
+    root = runfiles.root()
+    with zipfile.ZipFile(root / os.environ["PR_VISUALS_WHEEL_RLOCATION"]) as wheel:
         files = set(wheel.namelist())
-        assert {
-            "devinfra/pr_visuals/check_run.py",
-            "devinfra/pr_visuals/publisher.py",
-            "devinfra/pr_visuals/gallery.css",
-            "devinfra/pr_visuals/gallery_sort.js",
-            "devinfra/pr_visuals/gallery_slider.css",
-            "devinfra/pr_visuals/gallery_slider.js",
-            "devinfra/pr_visuals/pr_visual_test.html.j2",
-            "devinfra/pr_visuals/pr_visuals.html.j2",
-            "devinfra/ci/invocation_ids.py",
-            "util/visual_diff.py",
-            "util/visual_review.py",
-        } <= files
+        assert "devinfra/pr_visuals/issue_provenance.j2" in files
         assert "devinfra/pr_visuals/determinism.py" not in files
+        assert {
+            "devinfra/testing/bazel_snapshot_extension.py",
+            "devinfra/testing/output_writer.py",
+            "devinfra/testing/pytest_outputs.py",
+            "devinfra/testing/sharding.py",
+            "devinfra/testing/undeclared_outputs.py",
+        }.isdisjoint(files)
+        assert not any(name.startswith("devinfra/testing/test_") for name in files)
 
         entry_points_files = [name for name in files if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_points_files) == 1
@@ -90,10 +85,10 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
             sys.executable,
             "-S",
             "-P",
-            str(get_required_path("_main/devinfra/pr_visuals/wheel_render_probe.py")),
-            str(install_root),
-            str(tmp_path / "fixture"),
-            str(tmp_path / "site"),
+            root / "ducktape/devinfra/pr_visuals/wheel_render_probe.py",
+            install_root,
+            tmp_path / "fixture",
+            tmp_path / "site",
         ],
         cwd=tmp_path,
         env=child_env,

@@ -1,18 +1,17 @@
-//! Project syntax placement from the exact assignment accepted by the gate.
-//! Requested whole-statement moves are checked against that assignment before
-//! becoming emission instructions; binding destinations are read from source units.
+//! Emitter-facing maps from the shared, checked source-placement projection.
 
-use source_identity::{SourceUnitOrdinal, StatementId};
+use source_identity::StatementId;
 use std::collections::{BTreeMap, HashMap};
 
-use analysis::{BindingKind, ChunkId, ModuleId, SourceUnitClass};
-use anyhow::{Context, Result, bail, ensure};
-use gate::{AssignmentAnalysis, ValidatedAssignment};
-use js_ast::statements_for_source_unit_ordinals;
-use swc_ecma_ast::{Id, ModuleItem};
+use analysis::{ModuleId, PlacementProjection, PlacementProjectionViolation};
+use anyhow::{Context, Result, ensure};
+use gate::AssignmentAnalysis;
+use swc_ecma_ast::Id;
 
-/// Immutable placement instructions tied to the assignment that produced them.
-/// Only projection from a validated assignment constructs this type.
+/// Immutable placement instructions tied to the exact assignment the shared
+/// analysis kernel checked. A legacy-rejected but structurally mappable
+/// candidate can use these maps for inspection output; an unmappable result
+/// has no emitter placement.
 pub(super) struct EmissionPlacement<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     bindings: HashMap<Id, usize>,
@@ -20,108 +19,120 @@ pub(super) struct EmissionPlacement<'a> {
 }
 
 impl<'a> EmissionPlacement<'a> {
-    pub(super) fn from_validated(
-        validated: &'a ValidatedAssignment<'_>,
-        chunk_identity: ChunkId,
-        body: &[ModuleItem],
-        module_count: usize,
-        requested_statements: &BTreeMap<StatementId, usize>,
+    pub(super) fn from_projection(
+        assignment_analysis: &'a AssignmentAnalysis,
+        projection: &PlacementProjection<'_>,
     ) -> Result<Self> {
-        let assignment_analysis = validated.assignment_analysis();
-        let graph = assignment_analysis.inputs().dependency_graph();
-        let assignment = assignment_analysis.assignment();
-        let entry_module_id = assignment.entry_destination().module_id();
-        let ordinals: Vec<SourceUnitOrdinal> = graph
-            .iter_nodes()
-            .map(|unit| unit.statement_ordinal)
-            .collect();
-        let body_indices = statements_for_source_unit_ordinals(body, &ordinals);
-        let mut binding_destinations = HashMap::<Id, ModuleId>::new();
-        let mut statement_destinations = BTreeMap::<StatementId, ModuleId>::new();
-        for (unit, body_index) in graph.iter_nodes().zip(body_indices) {
-            let body_index = body_index.with_context(|| {
-                format!(
-                    "reconstruction: source unit {} has no original body item",
-                    unit.id.0
-                )
-            })?;
-            let destination = assignment.of(unit.id);
-            ensure!(
-                destination == entry_module_id || destination.0 < module_count,
-                "reconstruction: source unit {} targets unknown module {}",
-                unit.id.0,
-                destination.0
-            );
-            for binding in &unit.declared {
-                if let Some(previous) = binding_destinations.insert(binding.clone(), destination) {
-                    ensure!(
-                        previous == destination,
-                        "reconstruction: declaration sites of `{}` have different validated destinations",
-                        binding.0
-                    );
-                }
-            }
-            if requested_statements.contains_key(&body_index) {
-                if let Some(previous) = statement_destinations.insert(body_index, destination) {
-                    ensure!(
-                        previous == destination,
-                        "reconstruction: whole-statement claim at body index {body_index} spans differently assigned source units"
-                    );
-                }
-            } else if unit.class() == SourceUnitClass::AnonymousStatement
-                && destination != entry_module_id
-            {
-                bail!(
-                    "reconstruction: source unit {} targets module {} without a whole-statement plan",
-                    unit.id.0,
-                    destination.0
-                );
-            }
-        }
-        // Import construction reads this catalogue too. Prove its binding
-        // destinations agree with syntax placement, including shared var sites.
-        let local_bindings = assignment_analysis
-            .inputs()
-            .local_bindings(chunk_identity)?;
-        for (binding, kind) in local_bindings.as_map() {
-            if let BindingKind::Owned { module } = kind {
-                ensure!(
-                    binding_destinations.get(binding) == Some(module),
-                    "reconstruction: binding `{}` disagrees with its validated source-unit destination",
-                    binding.0
-                );
-            }
-        }
-        let mut statements = BTreeMap::new();
-        for (&body_index, &requested) in requested_statements {
-            let destination = statement_destinations.get(&body_index).with_context(|| format!(
-                "reconstruction: whole-statement claim at body index {body_index} has no source unit"
-            ))?;
-            ensure!(
-                *destination != entry_module_id && destination.0 == requested,
-                "reconstruction: whole-statement claim at body index {body_index} disagrees with its validated destination"
-            );
-            statements.insert(body_index, destination.0);
-        }
-        let bindings = binding_destinations
-            .into_iter()
-            .filter(|(_, destination)| *destination != entry_module_id)
-            .map(|(binding, destination)| (binding, destination.0))
-            .collect();
+        ensure!(
+            std::ptr::eq(assignment_analysis.assignment(), projection.assignment()),
+            "reconstruction: placement maps belong to a different immutable assignment"
+        );
+        let maps = projection.emission_maps().with_context(|| {
+            let violations = projection
+                .assessment()
+                .violations()
+                .iter()
+                .map(|violation| diagnostic_with_destination_context(assignment_analysis, violation))
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!(
+                "reconstruction: source/destination placement projection is unmappable; typed violation(s): {violations}; unresolved checks: {:?}",
+                projection.assessment().unresolved_checks(),
+            )
+        })?;
         Ok(Self {
             assignment_analysis,
-            bindings,
-            statements,
+            bindings: maps.bindings().clone(),
+            statements: maps.statements().clone(),
         })
     }
 
-    pub(super) fn assignment_analysis(&self) -> &AssignmentAnalysis {
+    pub(super) fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
+
     pub(super) fn bindings(&self) -> &HashMap<Id, usize> {
         &self.bindings
     }
+
     pub(super) fn statements(&self) -> &BTreeMap<StatementId, usize> {
         &self.statements
     }
+}
+
+fn diagnostic_with_destination_context(
+    assignment_analysis: &AssignmentAnalysis,
+    violation: &PlacementProjectionViolation,
+) -> String {
+    let mut destinations = match violation {
+        PlacementProjectionViolation::DestinationOutOfRange { destination, .. }
+        | PlacementProjectionViolation::OwnedBindingMissingSourceProjection {
+            destination, ..
+        } => vec![*destination],
+        PlacementProjectionViolation::BindingDestinationMismatch { destinations, .. }
+        | PlacementProjectionViolation::DestructuringDestinationSplit { destinations, .. }
+        | PlacementProjectionViolation::NestedVarDestinationSplit { destinations, .. }
+        | PlacementProjectionViolation::StatementSourceDestinationSplit { destinations, .. }
+        | PlacementProjectionViolation::StableSetIntervalDestinationSplit {
+            destinations, ..
+        } => destinations.clone(),
+        PlacementProjectionViolation::OwnedBindingDestinationMismatch {
+            declared_destination,
+            source_destination,
+            ..
+        } => vec![*declared_destination, *source_destination],
+        PlacementProjectionViolation::WholeStatementDestinationMismatch {
+            requested_destination,
+            source_destination,
+            ..
+        } => vec![ModuleId(*requested_destination), *source_destination],
+        PlacementProjectionViolation::MissingWholeStatementClaim { destination, .. } => {
+            vec![*destination]
+        }
+        PlacementProjectionViolation::WholeStatementWithoutSourceUnit {
+            requested_destination,
+            ..
+        } => vec![ModuleId(*requested_destination)],
+        PlacementProjectionViolation::SourceUnitLayout { .. }
+        | PlacementProjectionViolation::DeclaratorGroupLocationMismatch { .. }
+        | PlacementProjectionViolation::DeclaratorGroupMissingLayout { .. }
+        | PlacementProjectionViolation::DeclaratorGroupBindingsMismatch { .. }
+        | PlacementProjectionViolation::NestedVarMissingOwner { .. }
+        | PlacementProjectionViolation::NestedVarMissingSourceProjection { .. }
+        | PlacementProjectionViolation::NestedVarMissingWholeStatementClaim { .. }
+        | PlacementProjectionViolation::StableSetIntervalMissingSourceProjection { .. } => {
+            Vec::new()
+        }
+    };
+    destinations.sort_unstable();
+    destinations.dedup();
+
+    let diagnostic = violation.diagnostic();
+    if destinations.is_empty() {
+        return diagnostic;
+    }
+
+    let destination_context = destinations
+        .into_iter()
+        .map(|destination| {
+            let is_entry = destination
+                == assignment_analysis
+                    .assignment()
+                    .entry_destination()
+                    .module_id();
+            let is_planned_output = assignment_analysis
+                .inputs()
+                .planned_modules()
+                .get(destination.0)
+                .is_some();
+            let path = if is_entry || is_planned_output {
+                assignment_analysis.module_path(destination).to_string()
+            } else {
+                format!("<out-of-range ModuleId({})>", destination.0)
+            };
+            format!("ModuleId({})=`{path}`", destination.0)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{diagnostic} [referenced destinations: {destination_context}]")
 }

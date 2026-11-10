@@ -1,0 +1,38 @@
+// Canonical Kubernetes identities shared across Agentplane services.
+syntax = "proto3";
+
+package agentplane.proto;
+
+// A namespaced Kubernetes ServiceAccount reference. It does not pin a particular incarnation.
+message ServiceAccount {
+  string namespace = 1;
+  string name = 2;
+}
+
+// A ServiceAccount pinned to the Kubernetes object incarnation that was authenticated.
+message ServiceAccountIdentity {
+  ServiceAccount account = 1;
+  string uid = 2;
+}
+
+// One incarnation of an Identity in the policy namespace: its name and the UID that fences it, as a
+// workload SVID naming it was resolved.
+message Identity {
+  string name = 1;
+  string uid = 2;
+}
+
+// Exactly identifies one environment resource incarnation. Collection selectors have a separate shape.
+message EnvironmentTarget {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+
+// Identifies one exact environment target together with the ServiceAccount relation used by its caller.
+message SandboxDestination {
+  ServiceAccount owner = 1;
+  reserved 2, 3;
+  reserved "sandbox", "sandbox_uid";
+  EnvironmentTarget target = 4;
+}

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
 from x.wt.server.worktree_service import WorktreeService
 
 
@@ -101,7 +101,7 @@ class TestWorktreeService:
         repo_path = repo_factory.create_repo()
 
         script_path = repo_path / "test_script.sh"
-        script_path.write_text(get_required_path("_main/x/wt/testing/post_create.sh").read_text())
+        script_path.write_text((Runfiles.CreateOrRaise().root() / "ducktape/x/wt/testing/post_create.sh").read_text())
         script_path.chmod(0o755)
 
         service, config = self._make_service(

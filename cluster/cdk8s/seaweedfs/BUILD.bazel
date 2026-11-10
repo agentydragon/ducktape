@@ -91,8 +91,8 @@ py_library(
         ":public_s3",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/seaweedfs:namespace",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -143,9 +143,9 @@ py_library(
     srcs = ["filer_db.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/seaweedfs:namespace",
         "@pypi//cdk8s",
@@ -224,6 +224,7 @@ py_test(
         ":namespace",
         ":s3",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -238,6 +239,7 @@ py_test(
     deps = [
         ":cluster",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:stateful_infra",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

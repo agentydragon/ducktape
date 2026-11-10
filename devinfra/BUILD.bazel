@@ -1,7 +1,7 @@
 # gazelle:resolve py devinfra.skills.reverse_engineer.reverse_engineer_skill_spec //devinfra/skills/reverse_engineer:reverse_engineer_skill_spec
 # gazelle:exclude ci
 # ci/ is excluded, so pin the one module indexed code imports from it.
-# gazelle:resolve py devinfra.ci.invocation_ids //devinfra/ci:invocation_ids
+# gazelle:resolve py devinfra.buildbuddy.ci.invocation_ids //devinfra/buildbuddy/ci:invocation_ids
 # gazelle:exclude nixos_bazel_test/testdata
 # gazelle:exclude x
 
@@ -43,6 +43,7 @@ gazelle_binary(
         "@bazel_gazelle//language/proto",
         "@rules_python_gazelle_plugin//python",
     ],
+    race = "off",
 )
 
 gazelle(
@@ -59,25 +60,6 @@ prettier_bin.prettier_binary(
         "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
     ],
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "bbr",
-    srcs = ["bbr.py"],
-    visibility = ["//:__pkg__"],
-    deps = ["@pypi//pygit2"],
-)
-
-py_test(
-    name = "test_bbr",
-    srcs = ["test_bbr.py"],
-    deps = [
-        ":bbr",
-        "//:conftest",
-        "@pypi//pygit2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(

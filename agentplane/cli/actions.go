@@ -22,7 +22,10 @@ import (
 // own budget because the deadline may be what lost the response.
 const recoveryTimeout = 10 * time.Second
 
-const actionsHelp = `Calls the generated ActionService client (AGENTPLANE_ACTIONS_URL, AGENTPLANE_ACTIONS_CREDENTIAL).
+const actionsHelp = `Live commands call the generated ActionService client (AGENTPLANE_ACTIONS_URL; optional AGENTPLANE_ACTIONS_CREDENTIAL bearer).
+
+Read bundled Action workflow guidance with guide [NAME]; it makes no service call. Omit NAME for the
+index, or choose session_delegation, action_lifecycle, recovery, or kubernetes.
 
 Discover with groups, list, show and policy; submit an Action and follow it with submit --wait, wait,
 result, get and events; withdraw it with cancel. Approval is not success: wait and result exit 0 only
@@ -31,8 +34,9 @@ ran out first. Whatever a succeeded Action's result says, the exit status is 0.`
 
 func (a *app) actionsCommand() *cobra.Command {
 	return group("actions", "Discover, submit, follow and cancel Actions", actionsHelp,
-		a.groupsCommand(), a.listCommand(), a.showCommand(), a.policyCommand(), a.submitCommand(),
-		a.getCommand(), a.resultCommand(), a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
+		a.groupsCommand(), a.listCommand(), a.showCommand(), a.policyCommand(),
+		a.actionsGuideCommand(), a.submitCommand(), a.getCommand(), a.resultCommand(),
+		a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
 }
 
 func protoJSON(message proto.Message) ([]byte, error) {
@@ -150,7 +154,7 @@ func (a *app) policyCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "policy",
 		Short: "Show this account's Action auto-approval policy",
-		Long:  "Calls ActionService.GetActionPolicy for the ServiceAccount the credential proves.",
+		Long:  "Calls ActionService.GetActionPolicy for the authenticated caller's ServiceAccount.",
 		Args:  cobra.NoArgs,
 		RunE: a.actionCommand(func(ctx context.Context, client action_servicepb.ActionServiceClient, _ []string) error {
 			response, err := client.GetActionPolicy(ctx, &action_servicepb.GetActionPolicyRequest{})

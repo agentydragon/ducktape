@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
@@ -24,7 +25,6 @@ from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, Situation, situation
 from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
-from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture
@@ -225,7 +225,7 @@ def test_actual_study_cli_runs_on_generated_placeholder_paths(tmp_path: Path) ->
     output = tmp_path / "cli-comparison"
     subprocess.run(
         [
-            get_required_path("_main/finance/augur/x/bounded_spending/compare_bin"),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/bounded_spending/compare_bin"),
             "--synthetic",
             "--equity-share",
             "1",

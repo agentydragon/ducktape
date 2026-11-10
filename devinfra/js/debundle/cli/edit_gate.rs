@@ -17,10 +17,9 @@
 //! Both checks share the same `PostEditSpec` view: a list of surviving
 //! module paths, each with the binding names and anonymous source unit ids
 //! it declares. Each verb projects its planned documents or deletions into a
-//! `PostEditSpec` and then calls
-//! `gate_post_edit_assignment` which is the single entry point
-//! responsible for verdict + diagnostic rendering. The function bails
-//! with a [`GateRejection`] error carrying the same
+//! `PostEditSpec`, then uses [`Gate::check`], [`Gate::check_expected`], or
+//! [`Gate::check_source_units`]. These share
+//! the gate path that returns a [`GateRejection`] error carrying the same
 //! `render_cycle_summary` / `render_atomic_group_conflict_summary`
 //! text the materializer emits when its own gate rejects, so authors
 //! see one consistent diagnostic regardless of whether the rejection
@@ -32,37 +31,41 @@
 //!
 //! On rejection the gate also writes the same on-disk artifacts the
 //! pipeline writes — `cycles.json` / `atomic_group_conflicts.json` as
-//! siblings of the supplied `dependency_graph.json` (the location
+//! siblings of the supplied `dependency_graph.json.gz` (the location
 //! `debundle gate list/describe` reads by default) — so the
 //! documented `gate` follow-up queries work after an edit-gate or
 //! `--dry-run` rejection. Stale artifacts from a previous rejection
 //! are removed when the gate passes (or when the rejection kind
 //! changes), keeping `gate list` consistent with the latest verdict.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ::gate::{
     BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
     validate_assignment,
 };
+use analysis::assignment_assembly::detect_atomic_group_conflict;
 use analysis::{
-    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim, DepKind,
-    DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
-    compute_atomic_groups,
+    AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport, ModuleAssignment,
+    ModuleId, compute_atomic_groups,
 };
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
+use graph_provenance::VerifiedGraphSourceContext;
 use serde::Serialize;
+use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
-    ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
-    module_path_from_file, read_module_claims,
+    ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, is_module_yaml,
+    module_claims, module_path_from_file, read_module_claims,
 };
 use spec_tree::ModuleTreeScope;
 
@@ -89,13 +92,16 @@ pub struct GraphEditArgs {
     #[arg(long, value_enum)]
     pub format: Option<peel::OutputFormat>,
 }
-
 impl GraphEditArgs {
-    pub fn gate(&self) -> Result<Gate<'_>> {
+    pub fn gate<'a>(
+        &'a self,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+    ) -> Result<Gate<'a>> {
         Gate::from_cli(
             self.no_verify,
             self.dependency_graph_path.as_deref(),
             self.source_root.as_deref(),
+            source_context,
         )
     }
 }
@@ -104,18 +110,27 @@ impl GraphEditArgs {
 /// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
 /// `(false, None)` combination used to silently skip the
 /// realizability gate.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum Gate<'a> {
     /// Run name-collision checks and the post-edit realizability +
     /// atom-split gate against this dependency graph.
     Run {
-        graph: &'a Path,
+        graph_path: &'a Path,
+        input: Arc<DependencyGraphInput>,
         /// Root used to resolve relative `source_location.source_path`
         /// values when the gate resolves source-backed selectors.
         source_root: Option<&'a Path>,
+        /// The graph-preflighted physical source and retained input bytes.
+        source_context: Option<&'a VerifiedGraphSourceContext>,
     },
     /// `--no-verify`: skip all validation.
     Skip,
+}
+
+#[derive(Clone, Copy)]
+struct EditSourceLookup<'a> {
+    root: Option<&'a Path>,
+    verified: Option<&'a VerifiedGraphSourceContext>,
 }
 
 impl<'a> Gate<'a> {
@@ -125,14 +140,20 @@ impl<'a> Gate<'a> {
         no_verify: bool,
         graph: Option<&'a Path>,
         source_root: Option<&'a Path>,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
     ) -> Result<Self> {
         if no_verify {
             return Ok(Self::Skip);
         }
         match graph {
-            Some(graph) => Ok(Self::Run { graph, source_root }),
+            Some(graph) => Ok(Self::Run {
+                graph_path: graph,
+                input: Arc::new(DependencyGraphInput::read(graph)?),
+                source_root,
+                source_context,
+            }),
             None => bail!(
-                "realizability gate requires --graph (path to dependency_graph.json) or --no-verify"
+                "realizability gate requires --graph (path to dependency_graph.json.gz) or --no-verify"
             ),
         }
     }
@@ -146,7 +167,7 @@ impl<'a> Gate<'a> {
     /// validation mode.
     pub fn outcome(&self) -> crate::outcome::GateOutcome {
         match self {
-            Self::Run { .. } => crate::outcome::GateOutcome::Passed,
+            Self::Run { .. } => crate::outcome::GateOutcome::ClaimsChecked,
             Self::Skip => crate::outcome::GateOutcome::Skipped,
         }
     }
@@ -171,18 +192,63 @@ impl<'a> Gate<'a> {
         expected: &[ExpectedResolvedMember],
     ) -> Result<()> {
         match self {
-            Self::Run { graph, source_root } => gate_post_edit_assignment_with_expected(
-                graph,
+            Self::Run {
+                graph_path,
+                input,
+                source_root,
+                source_context,
+            } => gate_post_edit_assignment_with_expected(
+                graph_path,
+                input,
                 modules_root,
-                *source_root,
+                EditSourceLookup {
+                    root: *source_root,
+                    verified: *source_context,
+                },
                 &post_spec()?,
-                expected,
-                None,
-                None,
+                ExpectedPostEditClaims::Members(expected),
             ),
             Self::Skip => Ok(()),
         }
     }
+
+    /// Prove the complete resolved assignment, including source units that stay
+    /// residual, against the same graph used to plan the edit.
+    pub fn check_source_units(
+        &self,
+        modules_root: &Path,
+        post_spec: &PostEditSpec,
+        assignments: &SourceUnitModuleAssignments,
+        scope: Option<&ModuleTreeScope>,
+    ) -> Result<()> {
+        match self {
+            Self::Run {
+                graph_path,
+                input,
+                source_root,
+                source_context,
+            } => gate_post_edit_assignment_with_expected(
+                graph_path,
+                input,
+                modules_root,
+                EditSourceLookup {
+                    root: *source_root,
+                    verified: *source_context,
+                },
+                post_spec,
+                ExpectedPostEditClaims::SourceUnits { assignments, scope },
+            ),
+            Self::Skip => Ok(()),
+        }
+    }
+}
+
+enum ExpectedPostEditClaims<'a> {
+    Members(&'a [ExpectedResolvedMember]),
+    SourceUnits {
+        assignments: &'a SourceUnitModuleAssignments,
+        scope: Option<&'a ModuleTreeScope>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -211,7 +277,7 @@ pub enum GateRejectionReport {
     },
 }
 
-/// Error returned by [`gate_post_edit_assignment`] on rejection. The
+/// Error returned when a post-edit assignment is rejected. The
 /// `Display` text is the terse one-line verdict (the blame report has
 /// already gone to stderr); `report` is the structured payload CLI
 /// dispatchers serialize to stdout under a JSON format.
@@ -242,10 +308,8 @@ fn write_rejection_artifact<T: Serialize>(
         .with_context(|| format!("writing {}", path.display()))
 }
 
-/// Remove a stale rejection artifact so `gate list` reflects the
-/// latest gate verdict (a missing `cycles.json` is the documented
-/// clean state). A pass clears both artifacts; each rejection kind
-/// clears the other kind's file.
+/// Remove the previous gate result when replacing it with a completed
+/// post-edit assignment report.
 fn remove_rejection_artifact(dependency_graph_path: &Path, filename: &str) -> Result<()> {
     let path = rejection_artifact_path(dependency_graph_path, filename);
     if path.exists() {
@@ -368,53 +432,28 @@ pub struct SourceUnitClaimProjection {
 }
 
 /// Per-projection index for mapping local binding spellings to declaration
-/// source units. The report is scanned once; claim resolution then visits only
-/// source units and co-declaration edges for the requested spelling.
-struct LocalBindingIndex {
+/// source units. Connectivity is read from the canonical graph; report metadata
+/// supplies the declaration and edge binding names.
+struct LocalBindingIndex<'a> {
+    input: &'a DependencyGraphInput,
     source_units_by_binding: BTreeMap<String, BTreeSet<SourceUnitId>>,
-    co_declaration_neighbors: BTreeMap<String, BTreeMap<SourceUnitId, BTreeSet<SourceUnitId>>>,
 }
 
-impl LocalBindingIndex {
-    fn from_report(report: &DependencyGraphReport) -> Self {
+impl<'a> LocalBindingIndex<'a> {
+    fn new(input: &'a DependencyGraphInput) -> Self {
         let mut source_units_by_binding = BTreeMap::<String, BTreeSet<SourceUnitId>>::new();
-        let mut source_unit_by_report_id = HashMap::<&str, SourceUnitId>::new();
-        for (index, node) in report.nodes.iter().enumerate() {
-            let source_unit = SourceUnitId(index);
-            source_unit_by_report_id.insert(node.id.as_str(), source_unit);
-            for binding in &node.declared_bindings {
+        for node in input.graph().iter_nodes() {
+            for binding in &input.source_unit_report(node.id).declared_bindings {
                 source_units_by_binding
                     .entry(binding.binding.to_string())
                     .or_default()
-                    .insert(source_unit);
+                    .insert(node.id);
             }
-        }
-
-        let mut co_declaration_neighbors =
-            BTreeMap::<String, BTreeMap<SourceUnitId, BTreeSet<SourceUnitId>>>::new();
-        for edge in &report.edges {
-            if edge.edge_kind != DepKind::CoDeclaration {
-                continue;
-            }
-            let Some(binding) = edge.binding.as_ref() else {
-                continue;
-            };
-            let (Some(&source), Some(&target)) = (
-                source_unit_by_report_id.get(edge.source.as_str()),
-                source_unit_by_report_id.get(edge.target.as_str()),
-            ) else {
-                continue;
-            };
-            let neighbors = co_declaration_neighbors
-                .entry(binding.to_string())
-                .or_default();
-            neighbors.entry(source).or_default().insert(target);
-            neighbors.entry(target).or_default().insert(source);
         }
 
         Self {
+            input,
             source_units_by_binding,
-            co_declaration_neighbors,
         }
     }
 
@@ -434,16 +473,28 @@ impl LocalBindingIndex {
         let start = *candidates.first().expect("multiple candidates exist");
         reached.insert(start);
         let mut pending = vec![start];
-        if let Some(neighbors_by_source_unit) = self.co_declaration_neighbors.get(binding_name) {
-            while let Some(source_unit) = pending.pop() {
-                for next in neighbors_by_source_unit
-                    .get(&source_unit)
-                    .into_iter()
-                    .flatten()
+        let graph = self.input.graph();
+        while let Some(source_unit) = pending.pop() {
+            // Co-declaration is an equality relation, including when the saved
+            // report retains only one direction of an edge.
+            for edge_id in graph
+                .out_edges_of(source_unit)
+                .iter()
+                .chain(graph.in_edges_of(source_unit))
+            {
+                let edge = graph.edge(*edge_id);
+                if edge.reason.kind != DepKind::CoDeclaration
+                    || self.input.edge_report(*edge_id).binding.as_deref() != Some(binding_name)
                 {
-                    if candidates.contains(next) && reached.insert(*next) {
-                        pending.push(*next);
-                    }
+                    continue;
+                }
+                let next = if edge.from == source_unit {
+                    edge.to
+                } else {
+                    edge.from
+                };
+                if candidates.contains(&next) && reached.insert(next) {
+                    pending.push(next);
                 }
             }
         }
@@ -472,9 +523,9 @@ pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceC
 
 /// Resolve typed binding claims to source unit identities. Direct imports remain
 /// distinct from local declarations, and repeated local declarations are
-/// joined only when `dependency_graph.json` carries matching `CoDeclaration` edges.
+/// joined only when `dependency_graph.json.gz` carries matching `CoDeclaration` edges.
 pub fn project_source_unit_claims(
-    dependency_graph_report: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     post_spec: &PostEditSpec,
     resolved_claims: &[ResolvedSourceClaims],
 ) -> Result<SourceUnitClaimProjection> {
@@ -482,7 +533,7 @@ pub fn project_source_unit_claims(
         post_spec.modules.len() == resolved_claims.len(),
         "resolved selector results do not match the post-edit module list"
     );
-    let binding_index = LocalBindingIndex::from_report(dependency_graph_report);
+    let binding_index = LocalBindingIndex::new(input);
     let mut projection = SourceUnitClaimProjection::default();
     for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
         let mut module_projection = ModuleClaimProjection::default();
@@ -666,7 +717,7 @@ pub fn source_unit_module_assignments_from_projection(
     for node in &dependency_graph_report.nodes {
         anyhow::ensure!(
             assignments.insert(node.id.clone(), None).is_none(),
-            "dependency_graph.json repeats source unit ID {:?}",
+            "dependency_graph.json.gz repeats source unit ID {:?}",
             node.id
         );
     }
@@ -700,13 +751,13 @@ fn assign_source_unit_module(
         .get(source_unit.0)
         .with_context(|| {
             format!(
-                "resolved source unit index {} is absent from dependency_graph.json",
+                "resolved source unit index {} is absent from dependency_graph.json.gz",
                 source_unit.0
             )
         })?;
     let destination = assignments.get_mut(&node.id).with_context(|| {
         format!(
-            "resolved source unit {:?} is absent from dependency_graph.json",
+            "resolved source unit {:?} is absent from dependency_graph.json.gz",
             node.id
         )
     })?;
@@ -784,75 +835,17 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
     read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
 }
 
-/// Reconstruct the `DependencyGraph` from `dependency_graph_path`, build the
-/// `ModuleAssignment` implied by `post_spec`, and run BOTH realizability
-/// gates: the cross-module init-order check (cycles) AND the
-/// atom-split check (every `AtomicGroup`'s members must co-locate).
-/// Returns `Ok(())` when both verdicts are clean. Prints the
-/// `render_cycle_summary` / `render_atomic_group_conflict_summary`
-/// blame report to stderr and returns an `anyhow::Error` when either
-/// rejects, so the CLI exit code is non-zero and the caller bails
-/// before writing.
-pub fn gate_post_edit_assignment(
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    post_spec: &PostEditSpec,
-) -> Result<()> {
-    gate_post_edit_assignment_with_expected(
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        post_spec,
-        &[],
-        None,
-        None,
-    )
-}
-
-/// Run the normal gate and prove the entire resolved post-edit source-unit assignment
-/// is exactly the reviewed assignment, including source units that remain residual.
-pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    post_spec: &PostEditSpec,
-    expected_source_unit_modules: &SourceUnitModuleAssignments,
-    scope: Option<&ModuleTreeScope>,
-) -> Result<()> {
-    gate_post_edit_assignment_with_expected(
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        post_spec,
-        &[],
-        Some(expected_source_unit_modules),
-        scope,
-    )
-}
-
 fn gate_post_edit_assignment_with_expected(
     dependency_graph_path: &Path,
+    input: &DependencyGraphInput,
     modules_root: &Path,
-    source_root: Option<&Path>,
+    source_lookup: EditSourceLookup<'_>,
     post_spec: &PostEditSpec,
-    expected: &[ExpectedResolvedMember],
-    expected_source_unit_modules: Option<&SourceUnitModuleAssignments>,
-    scope: Option<&ModuleTreeScope>,
+    expected: ExpectedPostEditClaims<'_>,
 ) -> Result<()> {
-    let dependency_graph_report = crate::load_dependency_graph_report(dependency_graph_path)?;
-
-    // The gate algorithm walks edges + assignment, not declared sets:
-    // `from_report` leaves `declared` empty, which is fine for
-    // `check_realizability`/`validate_assignment` (both consume the
-    // assignment we build below, not the per-source-unit declared field).
-    let dependency_graph =
-        DependencyGraph::from_report(&dependency_graph_report).with_context(|| {
-            format!(
-                "reconstructing dependency graph {}",
-                dependency_graph_path.display()
-            )
-        })?;
+    ensure_unaliased_module_tree(modules_root)?;
+    let dependency_graph_report = input.report();
+    let dependency_graph = input.graph();
 
     // Source-backed claims resolve to the chunk-top bindings and anonymous
     // source units they claim. A claim the gate cannot resolve (missing chunk
@@ -860,63 +853,70 @@ fn gate_post_edit_assignment_with_expected(
     // source unit must never silently fall to residual.
     let claim_sets = source_claim_sets_from_post_spec(post_spec);
     let resolved_claims = resolve_source_claims(
-        &dependency_graph_report,
+        dependency_graph_report,
         dependency_graph_path,
         modules_root,
-        source_root,
+        source_lookup.root,
+        source_lookup.verified,
         &claim_sets,
     )?;
-    let claim_projection =
-        project_source_unit_claims(&dependency_graph_report, post_spec, &resolved_claims)?;
+    let claim_projection = project_source_unit_claims(input, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
-    if let Some(expected_source_unit_modules) = expected_source_unit_modules {
-        let actual_source_unit_modules = source_unit_module_assignments_from_projection(
-            &dependency_graph_report,
-            modules_root,
-            post_spec,
-            &claim_projection,
+    match expected {
+        ExpectedPostEditClaims::SourceUnits {
+            assignments: expected_source_unit_modules,
             scope,
-        )?;
-        if &actual_source_unit_modules != expected_source_unit_modules {
-            let source_unit_ids = actual_source_unit_modules
-                .keys()
-                .chain(expected_source_unit_modules.keys())
-                .collect::<BTreeSet<_>>();
-            let first_mismatch = source_unit_ids.into_iter().find(|source_unit_id| {
-                actual_source_unit_modules.get(*source_unit_id)
-                    != expected_source_unit_modules.get(*source_unit_id)
-            });
-            if let Some(source_unit_id) = first_mismatch {
+        } => {
+            let actual_source_unit_modules = source_unit_module_assignments_from_projection(
+                dependency_graph_report,
+                modules_root,
+                post_spec,
+                &claim_projection,
+                scope,
+            )?;
+            if &actual_source_unit_modules != expected_source_unit_modules {
+                let source_unit_ids = actual_source_unit_modules
+                    .keys()
+                    .chain(expected_source_unit_modules.keys())
+                    .collect::<BTreeSet<_>>();
+                let first_mismatch = source_unit_ids.into_iter().find(|source_unit_id| {
+                    actual_source_unit_modules.get(*source_unit_id)
+                        != expected_source_unit_modules.get(*source_unit_id)
+                });
+                if let Some(source_unit_id) = first_mismatch {
+                    bail!(
+                        "post-edit selector resolution changed the reviewed source unit assignment for {source_unit_id:?}: requested {:?}, resolved {:?}",
+                        expected_source_unit_modules.get(source_unit_id),
+                        actual_source_unit_modules.get(source_unit_id)
+                    );
+                }
                 bail!(
-                    "post-edit selector resolution changed the reviewed source unit assignment for {source_unit_id:?}: requested {:?}, resolved {:?}",
-                    expected_source_unit_modules.get(source_unit_id),
-                    actual_source_unit_modules.get(source_unit_id)
+                    "post-edit source unit assignment does not match the reviewed complete candidate"
                 );
             }
-            bail!(
-                "post-edit source unit assignment does not match the reviewed complete candidate"
-            );
         }
-    }
-    for target in expected {
-        let module_idx = post_spec
-            .modules
-            .iter()
-            .position(|module| module.path == target.module_path)
-            .with_context(|| {
-                format!("expected module {} is absent", target.module_path.display())
-            })?;
-        let actual = resolved_claims[module_idx]
-            .member_bindings
-            .get(&target.export_name);
-        if actual != Some(&target.binding_name) {
-            bail!(
-                "selector for {} in {} resolved binding {:?}, expected {:?}",
-                target.export_name,
-                target.module_path.display(),
-                actual,
-                target.binding_name,
-            );
+        ExpectedPostEditClaims::Members(expected) => {
+            for target in expected {
+                let module_idx = post_spec
+                    .modules
+                    .iter()
+                    .position(|module| module.path == target.module_path)
+                    .with_context(|| {
+                        format!("expected module {} is absent", target.module_path.display())
+                    })?;
+                let actual = resolved_claims[module_idx]
+                    .member_bindings
+                    .get(&target.export_name);
+                if actual != Some(&target.binding_name) {
+                    bail!(
+                        "selector for {} in {} resolved binding {:?}, expected {:?}",
+                        target.export_name,
+                        target.module_path.display(),
+                        actual,
+                        target.binding_name,
+                    );
+                }
+            }
         }
     }
 
@@ -959,31 +959,63 @@ fn gate_post_edit_assignment_with_expected(
         })
     };
 
-    // Check 1 — atom splits. Run before cycles so the diagnostic
-    // surfaces the structural co-location violation first; an
-    // atom-split commonly induces a cycle in the module quotient, and
-    // the cycle diagnostic is less actionable for the author than
-    // "here is the atomic group you split".
-    let atomic_groups = compute_atomic_groups(&dependency_graph);
-    let atomic_conflicts =
-        detect_atomic_group_conflicts(&atomic_groups, &assignment, &dependency_graph_report);
+    // Atom splits remain the primary diagnosis; the shared validation below
+    // supplies any co-occurring cycle report as secondary evidence.
+    let atomic_groups = compute_atomic_groups(dependency_graph);
+    let atomic_conflicts = atomic_groups
+        .iter()
+        .filter_map(|atomic_group| {
+            detect_atomic_group_conflict(
+                atomic_group,
+                |source_unit| assignment.of(source_unit),
+                |source_unit| {
+                    dependency_graph_report
+                        .nodes
+                        .get(source_unit.0)
+                        .map(|node| {
+                            node.declared_bindings
+                                .iter()
+                                .map(|binding| binding.binding.clone())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let report = validate_assignment(dependency_graph, &assignment, &module_path);
+
+    // Replace artifacts only after this candidate's assignment and shared
+    // realizability report are complete. A preflight error keeps the last
+    // completed gate result available instead of leaving partial evidence.
+    remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
+    remove_rejection_artifact(
+        dependency_graph_path,
+        output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
+    )?;
+
     if !atomic_conflicts.is_empty() {
         let conflicts = AtomicGroupConflictReport::from_conflicts(
             &atomic_conflicts,
             &module_path,
-            &dependency_graph,
+            dependency_graph,
+            &|id| input.edge_report(id).clone(),
         );
         write_rejection_artifact(
             dependency_graph_path,
             output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
             &conflicts,
         )?;
-        remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
-        let summary = render_atomic_group_conflict_summary(
-            &atomic_conflicts,
-            &module_path,
-            &dependency_graph,
-        );
+        if !report.cycles.is_empty() {
+            let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
+            write_rejection_artifact(
+                dependency_graph_path,
+                output_layout::CYCLES_REPORT,
+                &blocking_sccs,
+            )?;
+        }
+        let summary =
+            render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, dependency_graph);
         eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },
@@ -993,17 +1025,12 @@ fn gate_post_edit_assignment_with_expected(
     }
 
     // Check 2 — module-quotient cycles.
-    let report = validate_assignment(&dependency_graph, &assignment, &module_path);
     if !report.cycles.is_empty() {
         let blocking_sccs = BlockingSccEntry::from_cycle_reports(&report.cycles);
         write_rejection_artifact(
             dependency_graph_path,
             output_layout::CYCLES_REPORT,
             &blocking_sccs,
-        )?;
-        remove_rejection_artifact(
-            dependency_graph_path,
-            output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
         )?;
         let summary = render_cycle_summary(&report.cycles);
         eprintln!("error: post-edit spec is unrealizable:\n{summary}");
@@ -1013,13 +1040,6 @@ fn gate_post_edit_assignment_with_expected(
         }
         .into());
     }
-    // Pass: clear stale rejection artifacts from a previous rejected
-    // edit/run so `gate list` reports the documented clean state.
-    remove_rejection_artifact(dependency_graph_path, output_layout::CYCLES_REPORT)?;
-    remove_rejection_artifact(
-        dependency_graph_path,
-        output_layout::ATOMIC_GROUP_CONFLICTS_REPORT,
-    )?;
     Ok(())
 }
 
@@ -1072,74 +1092,4 @@ fn reject_unresolved_projected_claims(projection: &SourceUnitClaimProjection) ->
         "post-edit binding claims are unresolved or do not match source:\n{}",
         mismatches.join("\n")
     )
-}
-
-/// Per-group atom-split detection over the post-edit assignment.
-///
-/// Mirrors `assignment_assembly::detect_atomic_group_conflict` but operates on
-/// `ModuleAssignment::of` rather than the explicit `claims` array
-/// `assemble_assignment` builds — the CLI gate's assignment already
-/// encodes "claim or fall back to residual" via
-/// `ModuleAssignment::from_assignments`, so this is structurally equivalent
-/// (each member's `ModuleAssignment::of` value IS the effective claim).
-///
-/// `report` supplies the wire-shape `declared_bindings` used to label
-/// each conflicting claim. The resulting `AtomicGroupConflict` mirrors
-/// the materializer's diagnostic shape exactly so spec authors see the
-/// same evidence regardless of whether the rejection came from
-/// `debundle run` or a CLI edit verb.
-fn detect_atomic_group_conflicts(
-    atomic_groups: &[AtomicGroup],
-    assignment: &ModuleAssignment,
-    report: &DependencyGraphReport,
-) -> Vec<AtomicGroupConflict> {
-    let mut conflicts = Vec::new();
-    for atomic_group in atomic_groups {
-        let resolved: Vec<(SourceUnitId, ModuleId)> = atomic_group
-            .members
-            .iter()
-            .map(|o| (*o, assignment.of(*o)))
-            .collect();
-        let mut first: Option<ModuleId> = None;
-        let mut split = false;
-        for &(_, m) in &resolved {
-            match first {
-                None => first = Some(m),
-                Some(existing) if existing != m => {
-                    split = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        if !split {
-            continue;
-        }
-        let claims: Vec<ConflictingClaim> = resolved
-            .into_iter()
-            .map(|(source_unit, module)| {
-                let binding_names: Vec<swc_atoms::Atom> = report
-                    .nodes
-                    .get(source_unit.0)
-                    .map(|n| {
-                        n.declared_bindings
-                            .iter()
-                            .map(|b| b.binding.clone())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                ConflictingClaim {
-                    source_unit,
-                    binding_names,
-                    module,
-                }
-            })
-            .collect();
-        conflicts.push(AtomicGroupConflict {
-            members: atomic_group.members.iter().copied().collect(),
-            claims,
-            causes: atomic_group.causes.clone(),
-        });
-    }
-    conflicts
 }

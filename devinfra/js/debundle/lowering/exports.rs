@@ -2,10 +2,11 @@
 //! duplicates, auto-grow residual exports for cross-module references,
 //! and convert binding maps into `export { ... }` ModuleItems.
 
-use crate::chunk_ast::{TopLevelDecl, binding_names};
 use crate::naturalize::NaturalizedModuleBody;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
+use binding_targets::binding_name_strings;
+use frontend_elaboration::chunk_ast::{ExportedNameOrigin, SourceExportIdentity, TopLevelDecl};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use source_identity::StatementId;
@@ -14,6 +15,58 @@ use swc_atoms::Atom;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+
+/// Literal ESM export names and the source binding (or source export site) that
+/// owns each name. Coarse residual planning may union surfaces only when every
+/// public name still has one origin; ordinary emitted-export validation
+/// remains the final check on the actual AST.
+#[derive(Debug, Clone, Default)]
+pub(super) struct PublicExportSurface {
+    origins_by_name: HashMap<String, HashSet<ExportedNameOrigin>>,
+}
+
+impl PublicExportSurface {
+    pub(super) fn add_binding(&mut self, public_name: String, binding: Id) {
+        self.origins_by_name
+            .entry(public_name)
+            .or_default()
+            .insert(ExportedNameOrigin::Binding(binding));
+    }
+
+    pub(super) fn add_source_identities(&mut self, exports: &[SourceExportIdentity]) {
+        for export in exports {
+            self.origins_by_name
+                .entry(export.public_name.clone())
+                .or_default()
+                .insert(export.origin.clone());
+        }
+    }
+
+    pub(super) fn is_compatible_with(&self, other: &Self) -> bool {
+        self.origins_by_name
+            .values()
+            .all(|origins| origins.len() == 1)
+            && other
+                .origins_by_name
+                .values()
+                .all(|origins| origins.len() == 1)
+            && self.origins_by_name.iter().all(|(name, origins)| {
+                other
+                    .origins_by_name
+                    .get(name)
+                    .is_none_or(|other_origins| origins == other_origins)
+            })
+    }
+
+    pub(super) fn merge(&mut self, other: &Self) {
+        for (name, origins) in &other.origins_by_name {
+            self.origins_by_name
+                .entry(name.clone())
+                .or_default()
+                .extend(origins.iter().cloned());
+        }
+    }
+}
 
 pub(super) fn trim_dead_named_specifiers(
     body: &mut [ModuleItem],
@@ -136,6 +189,18 @@ impl Visit for TargetedRefCollector<'_> {
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        binding_targets::record_assign_target(&node.left, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_head(&mut self, node: &ForHead) {
+        if let ForHead::Pat(pattern) = node {
+            binding_targets::record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
     fn visit_function(&mut self, node: &Function) {
@@ -145,7 +210,7 @@ impl Visit for TargetedRefCollector<'_> {
         let shadowed = node
             .params
             .iter()
-            .flat_map(|param| binding_names(&param.pat))
+            .flat_map(|param| binding_name_strings(&param.pat))
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
@@ -157,7 +222,7 @@ impl Visit for TargetedRefCollector<'_> {
         let shadowed = node
             .params
             .iter()
-            .flat_map(binding_names)
+            .flat_map(binding_name_strings)
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
@@ -182,6 +247,14 @@ impl Visit for TargetedRefCollector<'_> {
     fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
 
     fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
+}
+
+impl binding_targets::TargetAccessRecorder for TargetedRefCollector<'_> {
+    fn record_binding_write(&mut self, id: &Id) {
+        if self.targets.contains(&id.0) && !self.is_shadowed(id.0.as_ref()) {
+            self.found.insert(id.0.clone());
+        }
+    }
 }
 
 pub(super) fn export_named_for_bindings(
@@ -303,7 +376,7 @@ pub(super) fn entry_exports_for_moved_bindings(
 pub(super) const AUTO_GROWN_EXPORT_CONTRIBUTOR: &str = "auto-grown residual export";
 
 /// The entry-side facts `auto_grown_residual_exports` consults; see
-/// `LowerChunkSpecFacts` and `lower_chunk` for the field provenance.
+/// `LowerChunkSpecFacts` and `prepare_candidate_emission_plan` for the field provenance.
 pub(super) struct ExportGrowthFacts<'a> {
     pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,

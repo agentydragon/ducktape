@@ -16,3 +16,8 @@ filegroup(
     srcs = glob(["image-pins/**"]),
     visibility = ["//cluster/validation:__pkg__"],
 )
+
+exports_files(
+    ["agentplane-staging.k8s.yaml"],
+    visibility = ["//agentplane/app/go:__pkg__"],
+)

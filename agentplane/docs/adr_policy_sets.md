@@ -45,8 +45,11 @@ Policy Controller keeps. Deployed scope and the static grants around it:
   what another grants. Names and annotations identify the controller's objects, so it never adopts
   or deletes on name alone. A `roleRef` cannot be patched, so a changed role replaces the binding.
 - **Subjects** are ServiceAccounts only.
-- **Expiry.** The controller deletes the `PolicyBinding` at `expiresAt`, for every rule type, so
-  no reader handles expiry itself. A binding a GitOps tool owns never sets it.
+- **Expiry.** The controller deletes the `PolicyBinding` at `expiresAt`, for every rule type, and
+  is the only deleter. Amended 2026-11-09 (operator): the one shared reader
+  (`agentplane/policy/reader`) also treats a binding past its `expiresAt` as absent, so a
+  controller outage does not extend a grant; individual services still carry no expiry logic. A
+  binding a GitOps tool owns never sets it.
 
 ## Rejected alternatives
 

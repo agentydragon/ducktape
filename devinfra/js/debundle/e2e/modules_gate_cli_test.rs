@@ -1,6 +1,6 @@
 //! Module edits against dependency graphs generated from executable JS/specs.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
 #[test]

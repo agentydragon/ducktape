@@ -1,175 +1,82 @@
-# Gitea mirror + Docker exec integration
+# Gitea pull mirror MCP
 
-This document explains how to run a local Gitea instance, prepare pull mirrors,
-and expose them to the Docker exec MCP server as a read-only volume. Clients can
-then compose the `gitea_mirror` and `docker_exec` MCP servers to keep mirrors up
-to date and clone them inside sandboxed containers.
+This package provides a host-side FastMCP server that creates public Gitea pull
+mirrors and starts asynchronous syncs. See [server.py](server.py) for its tool
+behavior and [launcher.py](launcher.py) for its stdio entry point and options.
 
-## Overview
+## Mirror workflow
 
-```
-┌─────────────────┐  1. get_repo_info                ┌────────────────────┐
-│ gitea_mirror MCP │ ◀───────────────────────────────  │ Gitea (pull mirrors)│
-│                 │  2. trigger_mirror_sync          │                    │
-│                 │ ───────────────────────────────▶ │                    │
-│                 │  3. get_repo_info (poll)         │                    │
-│                 │ ◀───────────────────────────────  │                    │
-└─────────────────┘                                   └────────────────────┘
-          ▲                                                     │
-          │ owner/repo                                          │ host bind mount
-          │                                                     ▼
-┌─────────────────┐  git clone via exec tool        ┌────────────────────┐
-│ docker_exec MCP  │ ─────────────────────────────▶ │ /mnt/git-bare/<repo>│
-└─────────────────┘                                 └────────────────────┘
-```
+1. For an existing mirror, call `get_repo_info(owner, repo)` and save its
+   `mirror_updated` timestamp.
+2. Call `trigger_mirror_sync(url)` with the upstream HTTPS repository URL. The
+   server creates a public pull mirror if needed, starts a sync, and returns
+   immediately with an empty response.
+3. Poll `get_repo_info(owner, repo)` until `mirror_updated` changes.
+4. Clone `{owner}/{repo}.git` from the mirror store after the timestamp changes.
 
-1. `gitea_mirror` MCP is run on the host with access to the Gitea API.
-2. `docker_exec` MCP runs sandboxed containers with a read-only bind mount of
-   the mirror store (e.g. `/Users/<user>/.combo_mcp/gitea/git/repositories`).
-3. Agents call `get_repo_info` to get the initial repository state (GET `/repos/{owner}/{repo}`).
-4. Agents call `trigger_mirror_sync` with an HTTPS repository URL. The tool creates
-   a pull mirror (POST `/repos/migrate`), triggers an async sync (POST
-   `/repos/{owner}/{repo}/mirror-sync`), and returns immediately (empty response,
-   matching Gitea API).
-5. Agents poll `get_repo_info` until the `mirror_updated` timestamp changes,
-   indicating the sync is complete.
-6. Once synced, agents construct the mirror path as `{owner}/{repo}.git` and clone
-   from the read-only bind mount using `git clone --reference` for fast object reuse.
+`trigger_mirror_sync` uses the API token's Gitea user as owner and derives the
+mirror name from the upstream host and path (for example,
+`https://github.com/username/repo` becomes `github-com-username-repo`). A new
+mirror is public; only use this server for upstream repositories intended to be
+public in the Gitea instance. The token needs `write:repository` permission to
+create and sync mirrors. `get_repo_info` only accepts repositories configured as mirrors;
+the server recommends polling every 2-5 seconds (typical syncs take 5-60 seconds).
 
-## Running Gitea locally
+## Start the local Gitea instance
 
-A minimal docker-compose file is available at
-`src/adgn_llm/mcp/gitea/docker-compose.yml`:
+The compose file publishes Gitea at `http://localhost:3000` and stores its data
+under `${HOME}/.combo_mcp/gitea` on the host:
 
 ```bash
-docker compose -f src/adgn_llm/mcp/gitea/docker-compose.yml up -d
-open http://localhost:3000
+docker compose -f x/gitea/docker-compose.yml up -d
 ```
 
-Complete the initial setup, create an admin token, and record:
+The repository store is `${HOME}/.combo_mcp/gitea/git/repositories` on the host
+(`/data/git/repositories` in the container). The service container is named
+`public-git-gitea`. The init service writes an admin token to
+`${HOME}/.combo_mcp/gitea/admin.token` with `repo,write:repository` scope. Set
+the Gitea admin bootstrap values with `GITEA_ADMIN_USERNAME`,
+`GITEA_ADMIN_PASSWORD`, and `GITEA_ADMIN_EMAIL` before startup. The default admin
+password is `changeme`. Compose uses SQLite at `/data/gitea.db` and disables
+Gitea registration and SSH.
 
-- Base URL, e.g. `http://localhost:3000`
-- Access token with `write:repository` scope (required for migrate + sync API)
-- Mirror storage path inside the volume (`/data/git/repositories` inside the
-  container, bind-mounted on the host).
-
-To discover the host path of the mirror store when using Docker Desktop or
-Colima:
+Docker Desktop and Colima may report a different host-side bind path. Inspect
+the `/data` mount when you need the resolved path:
 
 ```bash
-docker inspect adgn-gitea --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}'
+docker inspect public-git-gitea --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}'
 ```
 
-Mount this path read-only into the Docker exec MCP containers.
+The command reports the host-side `/data` root; append `/git/repositories` for
+the mirror store.
 
-## Launching the MCP servers
+## Run the mirror server
 
-### Gitea mirror MCP
+Run the host-side stdio MCP server with the local URL and token file:
 
 ```bash
-export GITEA_BASE_URL="http://localhost:3000"
-export GITEA_TOKEN="<token>"
-adgn-mcp-gitea-mirror
+GITEA_BASE_URL=http://localhost:3000 \
+  bb run //x/gitea/mcp_mirror:gitea_mirror_launcher -- \
+  --token-file "$HOME/.combo_mcp/gitea/admin.token"
 ```
 
-The server exposes two tools:
+The launcher also accepts `--base-url` and `--token`; its environment options
+are `GITEA_BASE_URL`, `GITEA_TOKEN`, and `GITEA_TOKEN_FILE`.
+The base URL must be reachable from the host process running this MCP server.
 
-- `get_repo_info`: Returns full repository information from Gitea API (matches GET /repos/{owner}/{repo})
-- `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns empty (matches POST /repos/{owner}/{repo}/mirror-sync)
+## Clone from the mirror store
 
-### Docker exec MCP
+The MCP server manages mirrors through Gitea's API; a separate container runner
+must execute Git. Give that runner an image with `git`, disable its network
+(`--network none` in Docker), and mount the host repository store read-only
+(`:ro`). Keep the Gitea token with the host MCP process. The clone container only
+needs read access to its local mirror path:
 
 ```bash
-MIRROR_ROOT="$(docker inspect adgn-gitea \
-  --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')/git/repositories"
-
-adgn-mcp-docker-exec \
-  --image ghcr.io/agentydragon/public-git-runner:latest \
-  --working-dir /workspace \
-  --network-mode none \
-  --volumes "$MIRROR_ROOT:/mnt/git-bare:ro"
+git clone --reference /mnt/git-bare/agentydragon/github-com-username-repo.git \
+  file:///mnt/git-bare/agentydragon/github-com-username-repo.git /workspace/repos/repo
 ```
 
-Flags of note:
-
-- `--image` must include `git` and other tools needed inside the container.
-- `--network-mode none` keeps containers offline; change if API access is
-  required.
-- `--volumes` accepts comma-separated bind specs (`host:container[:mode]`). Use
-  `:ro` to keep the mirror read-only inside the container.
-
-## Client workflow
-
-1. **Get initial state**: Call `get_repo_info` to get the initial mirror state:
-
-   ```json
-   {
-     "owner": "agentydragon",
-     "repo": "github-com-username-repo"
-   }
-   ```
-
-   Response (full Gitea Repository object - showing key fields):
-
-   ```json
-   {
-     "id": 42,
-     "name": "github-com-username-repo",
-     "full_name": "agentydragon/github-com-username-repo",
-     "description": "Example repository",
-     "mirror": true,
-     "mirror_updated": "2024-01-15T10:30:00Z",
-     "mirror_interval": "8h0m0s",
-     "size": 1234,
-     "default_branch": "main",
-     "clone_url": "https://gitea.example.com/agentydragon/github-com-username-repo.git",
-     "html_url": "https://gitea.example.com/agentydragon/github-com-username-repo",
-     "stars_count": 0,
-     "forks_count": 0,
-     "created_at": "2024-01-15T10:00:00Z",
-     "updated_at": "2024-01-15T10:30:00Z",
-     ...
-   }
-   ```
-
-   Save the `mirror_updated` timestamp.
-
-2. **Trigger the sync**: Call `trigger_mirror_sync` with the upstream URL:
-
-   ```json
-   {
-     "url": "https://github.com/username/repo"
-   }
-   ```
-
-   Response: Empty (matching Gitea's mirror-sync endpoint)
-
-   ```json
-   {}
-   ```
-
-3. **Poll for completion**: Repeatedly call `get_repo_info` until `mirror_updated` changes:
-
-   ```json
-   {
-     "owner": "agentydragon",
-     "repo": "github-com-username-repo"
-   }
-   ```
-
-   When `mirror_updated` differs from the initial timestamp, the sync is complete.
-
-4. **Clone from mirror**: Construct mirror path as `{owner}/{repo}.git` and use the `exec` tool:
-
-   ```json
-   {
-     "cmd": [
-       "sh",
-       "-lc",
-       "mkdir -p /workspace/repos && git clone --reference /mnt/git-bare/agentydragon/github-com-username-repo.git file:///mnt/git-bare/agentydragon/github-com-username-repo.git /workspace/repos/repo"
-     ]
-   }
-   ```
-
-5. **Work with the repo**: Subsequent `exec` calls can operate inside the checkout
-   (e.g. run tests or edit files under `/workspace/repos/repo`).
+Mount `${HOME}/.combo_mcp/gitea/git/repositories` at `/mnt/git-bare` or update the
+clone paths to match the mount. This package provides the Gitea API manager; it
+does not launch the container runner.

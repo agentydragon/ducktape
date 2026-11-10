@@ -1,0 +1,46 @@
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+ts_library(
+    name = "watch",
+    srcs = ["watch.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "watch_test",
+    srcs = ["watch.test.tsx"],
+    deps = [
+        ":watch",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/proto:identity_pb",
+    ],
+)

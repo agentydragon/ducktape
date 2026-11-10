@@ -1,37 +1,31 @@
-"""Shared Thread fixtures and event values used by app and thread-store tests."""
+"""HTTP observations and mutations of real Go app Threads."""
 
-from __future__ import annotations
-
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
 
+import httpx
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.threads.models import Thread
-from agentplane.app.threads.store import ThreadStore
-from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
+from agentplane.app import app_service_pb2
+from agentplane.app.testing.models import ThreadMetadata
+from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 
-
-@dataclass(frozen=True)
-class Replica:
-    """Another app replica's stores, over its own connection pool on the same database."""
-
-    store: ThreadStore
-    event_logs: SeededEventLogStore
-    operator_sessions: OperatorSessionStore
-
-
-SPEC = runner_pb2.SessionSpec(
-    harness=runner_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
+SPEC = session_pb2.SessionSpec(
+    placement=session_pb2.SessionPlacement(
+        environment_hosted=session_pb2.EnvironmentHostedPlacement(
+            environment=session_pb2.ExactEnvironment(name="test-sandbox", uid="test-sandbox-uid"),
+            harness=session_pb2.HARNESS_CLAUDE,
+        )
+    ),
+    cwd="/state/work",
+    model="test-model",
+    reasoning_effort="low",
 )
 
 
 def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
-    """One runner event at `cursor`, timestamped from it so a thread's order is its cursor order."""
     at = Timestamp()
     at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
     event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
@@ -40,8 +34,48 @@ def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
     )
 
 
-async def seed_thread(engine: AsyncEngine, *, public_id: UUID | None = None) -> UUID:
-    thread_id = public_id if public_id is not None else uuid4()
-    async with async_sessionmaker(engine).begin() as session:
-        session.add(Thread(id=thread_id))
-    return thread_id
+class ThreadHTTP:
+    def __init__(self, http: httpx.AsyncClient) -> None:
+        self.http = http
+
+    async def wait(self, thread_id: UUID) -> None:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                metadata = await self.http.get(f"/upstream/app/v1/threads/{thread_id}")
+                assert metadata.status_code == 200, metadata.text
+                summary = await self.http.get(f"/upstream/history/v1/sessions/{thread_id}/summary")
+                assert summary.status_code == 200, summary.text
+
+    async def rename(self, thread_id: UUID, name: str) -> None:
+        await self.wait(thread_id)
+        request = app_service_pb2.RenameThreadRequest(thread_id=str(thread_id), name=name)
+        response = await self.http.patch(f"/upstream/app/v1/threads/{thread_id}", json=MessageToDict(request))
+        response.raise_for_status()
+
+    async def archive(self, thread_id: UUID) -> None:
+        request = app_service_pb2.ThreadMetadataTarget(thread_id=str(thread_id))
+        response = await self.http.post(f"/upstream/app/v1/threads/{thread_id}/archive", json=MessageToDict(request))
+        response.raise_for_status()
+
+    async def list_threads(self, *, sandbox: str | None = None) -> list[ThreadMetadata]:
+        params = {"include_archived": "true", "limit": "200"}
+        threads: list[ThreadMetadata] = []
+        while True:
+            response = await self.http.get("/upstream/app/v1/threads", params=params)
+            response.raise_for_status()
+            page = response.json()
+            for row in page.get("threads", []):
+                metadata = ThreadMetadata.model_validate(row)
+                summary = await self.http.get(f"/upstream/history/v1/sessions/{metadata.thread_id}/summary")
+                if summary.status_code == httpx.codes.NOT_FOUND:
+                    continue
+                summary.raise_for_status()
+                history_sandbox = (summary.json().get("sandbox") or {}).get("name")
+                if sandbox is None or history_sandbox == sandbox:
+                    threads.append(metadata)
+            page_token = page.get("nextPageToken")
+            if not page_token:
+                return threads
+            params["page_token"] = page_token

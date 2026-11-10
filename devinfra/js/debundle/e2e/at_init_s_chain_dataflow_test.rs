@@ -3,14 +3,16 @@
 //! top-level statements only when the earlier one writes a cell the later
 //! one reads or writes.
 //!
-//! Each test builds a fixture, inspects `dependency_graph.json::edges`, and
+//! Each test builds a fixture, inspects `dependency_graph.json.gz::edges`, and
 //! asserts that no `Sequenced` edge connects the two non-interacting
 //! statements in either direction. Patterns: disjoint global property
 //! writes; a fresh-local allocation after a global write; independent
 //! cross-module inits of a local class whose constructor only touches
 //! `this`.
 
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::DependencyGraphReport;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn trusted_dataflow_opts<'a>(
@@ -119,15 +121,45 @@ export { tagA, boxedB };
 
 #[test]
 fn unproven_constructor_calls_keep_conservative_s_edge() {
-    // Two modules each call a constructor the purity classifier
-    // can't prove pure (`new <chunk class>` is `UnknownNew` without
-    // a `pure_new` annotation). An unproven call/new may touch any
-    // cell — the opaque-call rule keeps the conservative S edge
+    // Two modules each call a constructor the checked-constructor shape
+    // refuses: its body calls a function. An unproven call/new may touch
+    // any cell — the opaque-call rule keeps the conservative S edge
     // between the two statements even though their syntactic cell
     // sets are disjoint. This deliberately pins the conservative
     // behavior: relaxing it requires proving the constructor
-    // cell-confined (e.g. a `pure_new` spec annotation), not
-    // assuming it.
+    // cell-confined (the kernel's construct rule, or a `pure_new` spec
+    // annotation), not assuming it.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function kind(value) { return value; }
+class Holder1 { constructor() { this.kind = kind("h1"); } }
+class Holder2 { constructor() { this.kind = kind("h2"); } }
+const instA = new Holder1();
+const instB = new Holder2();
+console.log(instA.kind, instB.kind);
+export { Holder1, Holder2, instA, instB };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
+                logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain(),
+    );
+    assert_entry_output(&fixture, "h1 h2\n");
+
+    let graph = fixture.dependency_graph();
+    let source_unit_a = source_unit_for_binding(&graph, "instA");
+    let source_unit_b = source_unit_for_binding(&graph, "instB");
+    assert_kept_sequenced_between(&graph, source_unit_a, source_unit_b);
+}
+
+#[test]
+fn checked_constructor_calls_need_no_trusted_summary() {
+    // The kernel's construct rule runs each checked constructor body
+    // (one store to the fresh instance) and covers both initializers
+    // without the trusted dataflow assumption: their cell sets are
+    // disjoint, so no S-edge joins them.
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"class Holder1 { constructor() { this.kind = "h1"; } }
@@ -149,7 +181,12 @@ export { Holder1, Holder2, instA, instB };
     let graph = fixture.dependency_graph();
     let source_unit_a = source_unit_for_binding(&graph, "instA");
     let source_unit_b = source_unit_for_binding(&graph, "instB");
-    assert_kept_sequenced_between(&graph, source_unit_a, source_unit_b);
+    let offending = sequenced_edges_between(&graph, source_unit_a, source_unit_b);
+    assert!(
+        offending.is_empty(),
+        "covered constructor calls touching disjoint cells need no S-edge. \
+         Offending edges: {offending:#?}\n\nFull graph: {graph:#?}",
+    );
 }
 
 #[test]

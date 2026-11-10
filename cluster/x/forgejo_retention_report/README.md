@@ -37,6 +37,10 @@ image/version. Old ReplicaSets, Jobs, CronJobs, VM and sandbox templates contrib
 live references. External consumers and additional custom resource kinds still
 need an inventory before deletion could be considered.
 
+The report also lists every version the policy can never select (other owners, non-`devel-*` tag schemes,
+upload sessions, internal records) grouped by owner/type/tag shape, with exclusively-held bytes. A tag
+matching no known scheme is flagged `UNRECOGNIZED` rather than silently retained.
+
 Package accounting reads Forgejo's `package*` tables in a repeatable-read,
 read-only transaction with a 30-second statement timeout. A schema change fails
 the collection. Queries read package metadata, not S3 object contents or a bucket
@@ -53,3 +57,22 @@ Byte counts represent logical package blobs. They exclude Actions artifacts/logs
 LFS, attachments, replication, and deleted data awaiting SeaweedFS vacuum. Source,
 registry, and workload snapshots are taken separately. A candidate list is an
 investigation result, not a validated deletion plan.
+
+## Applying a candidate list
+
+Nothing here deletes. To apply one by hand, from the report JSON's `candidate: true`
+versions (re-run it first; candidates age out of the snapshot):
+
+1. `DELETE /api/v1/packages/<owner>/container/<name>/<version>` as the Forgejo admin
+   (`forgejo-admin-password` Secret), through `kubectl port-forward svc/forgejo-http`.
+   Mint no token. Delete one version first and confirm a follow-up `GET` returns 404;
+   stop on the first unexpected status.
+2. Forgejo frees blobs only in its `cleanup_packages` cron (nightly). Run it now with
+   `POST /api/v1/admin/cron/cleanup_packages`; blobs referenced by no version are then
+   removed from the bucket.
+3. Compact: `volume.vacuum -collection forgejo`, then confirm no orphans per
+   <../../docs/runbooks/seaweedfs_orphan_chunks.md>.
+
+The report's gaps carry over: rollback history needs a full clone (the scan times out
+on a partial one), and repos not passed with `--repo`, such as `haku-state`, protect
+nothing. Check a deleted-tag list against them before step 1.

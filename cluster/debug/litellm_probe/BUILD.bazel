@@ -5,11 +5,11 @@ py_library(
     name = "probe_models",
     srcs = ["probe_models.py"],
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//jinja2",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

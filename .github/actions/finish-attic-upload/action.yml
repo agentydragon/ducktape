@@ -1,0 +1,29 @@
+name: Finish Attic upload
+description: >-
+  Stop setup-nix-attic's `attic watch-store` and push every store path added since setup, so
+  nothing the watcher had not yet uploaded is lost. Run last, with `if: always()`, in jobs that
+  set up with `upload: true`; a build that failed or was cancelled still caches its finished
+  paths.
+
+runs:
+  using: composite
+  steps:
+    - name: Push remaining new store paths to Attic
+      shell: bash
+      run: |
+        set -euo pipefail
+        before="$RUNNER_TEMP/attic-store-paths-before"
+        if [[ ! -f "$before" ]]; then
+          echo "setup-nix-attic did not start an upload; nothing to finish"
+          exit 0
+        fi
+        pkill -f 'attic watch-store' || true
+        echo "::group::attic watch-store log"
+        cat "$RUNNER_TEMP/attic-watch-store.log"
+        echo "::endgroup::"
+        # Paths already in Attic (uploaded by the watcher, or substituted from it) are skipped.
+        nix path-info --all | LC_ALL=C sort | LC_ALL=C comm -13 "$before" - > "$RUNNER_TEMP/attic-new-paths"
+        echo "$(wc -l < "$RUNNER_TEMP/attic-new-paths") store paths added since setup"
+        if [[ -s "$RUNNER_TEMP/attic-new-paths" ]]; then
+          attic push --jobs 1 --stdin ducktape:main < "$RUNNER_TEMP/attic-new-paths"
+        fi

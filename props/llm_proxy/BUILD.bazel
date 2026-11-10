@@ -7,15 +7,27 @@ load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
 py_library(
+    name = "database",
+    srcs = ["database.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:async_database",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "routes",
     srcs = ["routes.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":database",
         "//openai_utils:api_shape",
         "//openai_utils:model",
         "//props:config",
         "//props/backend:auth",
         "//props/backend:deps",
+        "//props/db:async_database",
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -30,8 +42,8 @@ py_library(
     deps = [
         ":routes",
         "//props:config",
+        "//props/db:async_database",
         "//props/db:config",
-        "//props/db:database",
         "//util:logging",
         "@pypi//fastapi",
     ],
@@ -45,6 +57,33 @@ py_library(
         ":app",
         "@pypi//typer",
         "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_async_proxy",
+    srcs = ["test_async_proxy.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":routes",
+        "//:conftest",
+        "//props:config",
+        "//props:conftest",
+        "//props/core:agent_types",
+        "//props/db:async_database",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/orchestration:agent_credentials",
+        "//props/testing:constants",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -76,10 +115,13 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
+        "//props/db:async_database",
         "//props/db:database",
         "//props/db:models",
         "//props/testing:constants",
+        "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -97,8 +139,11 @@ py_test(
         "//openai_utils:api_shape",
         "//props:config",
         "//props:conftest",
+        "//props/db:async_database",
         "//props/db:database",
         "//props/db:models",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

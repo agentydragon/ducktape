@@ -7,14 +7,11 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-bazel/action.yml"
-      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
       - "devinfra/bazel/**"
+      - "devinfra/buildbuddy/setup.sh"
       - "devinfra/nixos_bazel_test/**"
-      - "devinfra/secrets/_common.sh"
-      - "devinfra/secrets/ci_env.sh"
-      - "devinfra/setup_buildbuddy.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/attic-pubkeys.json"
@@ -26,14 +23,11 @@ on:
     paths:
       # keep-sorted start
       - ".github/actions/setup-bazel/action.yml"
-      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
       - "devinfra/bazel/**"
+      - "devinfra/buildbuddy/setup.sh"
       - "devinfra/nixos_bazel_test/**"
-      - "devinfra/secrets/_common.sh"
-      - "devinfra/secrets/ci_env.sh"
-      - "devinfra/setup_buildbuddy.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/attic-pubkeys.json"
@@ -63,7 +57,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-attic
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          attic_token: ${{ secrets.ATTIC_READ_TOKEN }}
 
       # Run first to verify independence from host Bazel setup: the NixOS image
       # supplies Bazelisk, and run.sh mounts credentials separately.

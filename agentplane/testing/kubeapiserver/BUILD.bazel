@@ -1,4 +1,15 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+copy_to_directory(
+    name = "envtest_assets_tree",
+    srcs = ["@envtest_kubernetes_linux_amd64//:assets"],
+    out = "envtest_assets_tree",
+    # Bzlmod's canonical repo spelling is not stable. These are the only source files, so
+    # include their external repository without pinning its canonical name.
+    include_external_repositories = ["*"],
+    visibility = ["//agentplane:__subpackages__"],
+)
 
 go_library(
     name = "kubeapiserver",
@@ -8,13 +19,17 @@ go_library(
         "reviews.go",
     ],
     data = [
-        "//agentplane/crds",
-        "@envtest_kubernetes_linux_amd64//:assets",
+        ":envtest_assets_tree",
+        "//agentplane/crds:crds_tree",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver",
     visibility = ["//agentplane:__subpackages__"],
+    x_defs = {
+        "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver.crdsRlocation": "$(rlocationpath //agentplane/crds:crds_tree)",
+        "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver.envtestRlocation": "$(rlocationpath :envtest_assets_tree)",
+    },
     deps = [
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",

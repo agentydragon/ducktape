@@ -138,13 +138,12 @@ spec:
         - cli-proxy-api
         - cpap-sync
         - flux-system
-        - github-api-proxy
         - google-mcp
         - grocy-sf
         - grocy-vallejo
         - ha-mcp
+        - haku-ci
         - haku-console
-        - haku-egress-proxy
         - haku-mailbox
         - home-assistant
         - litellm
@@ -153,9 +152,12 @@ spec:
         - monitoring
         - nix-cache
         - plaid-mcp
+        - platform-sessions
         - props
         - public-coder-agent
+        - quest-diagnostics
         - sdr
+        - session-backup
         - ssh-mcp
         - study-casino
         - tana-mcp

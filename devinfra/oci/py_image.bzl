@@ -7,6 +7,7 @@ exec's the Python interpreter, so the base image must provide /bin/bash.
 """
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer")
+load("@rules_pkg//pkg:providers.bzl", "PackageSymlinkInfo")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 _PY_IMAGE_ENV = {
@@ -30,12 +31,13 @@ def py_image_entrypoint(binary_name, binary_package = None):
 def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
     """Standard env dict for py_image_layer containers.
 
-    When binary_name is provided, sets PATH and PYTHONPATH so that
-    `python3` is findable and `import props` works from bare exec calls.
+    When binary_name is provided, sets PATH so that `python3` resolves to the
+    binary's initialized virtual environment for bare exec calls. The aspect
+    py_binary launcher adds first-party imports to that venv via its .pth file.
 
     Args:
         binary_name: Name of the aspect_py_binary target. When set, adds
-            the venv bin/ to PATH and runfiles _main/ to PYTHONPATH.
+            the venv bin/ to PATH.
         binary_package: Bazel package path. Defaults to calling BUILD's package.
         extra_env: Additional env vars to merge.
 
@@ -51,30 +53,64 @@ def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
         # subprocess exec calls inherit the correct python3 after the entrypoint
         # has initialised the venv.
         venv_bin = "/{}/{}.runfiles/.{}.venv/bin".format(pkg, binary_name, binary_name)
-        runfiles_main = "/{}/{}.runfiles/_main".format(pkg, binary_name)
         env["PATH"] = "{}:/usr/local/bin:/usr/bin:/bin".format(venv_bin)
-        env["PYTHONPATH"] = runfiles_main
     env.update(extra_env)
     return env
 
-# Keep this in sync with MODULE.bazel's default Python 3.14 toolchain. Bazel's runfiles
-# repository name is also embedded in aspect_rules_py launchers, so the alias below must
-# preserve that exact component for rlocation().
-_PYTHON_RUNTIME_REPO = "rules_python++python+python_3_14_x86_64-unknown-linux-gnu"
-_PYTHON_RUNTIME_ROOT = "devinfra/oci/python_runtime/runtime_image_bin.runfiles"
-_PYTHON_INTERPRETER_GROUP = "\\\\.runfiles/[^/]*python_?[0-9]+_[0-9]+(_[0-9]+)?_[a-z0-9_]+[_-](unknown|apple|pc)[_-][^/]*/"
+_PY_TOOLCHAIN_TYPE = "@bazel_tools//tools/python:toolchain_type"
+
+PyImageRuntimeInfo = provider(fields = ["interpreter_repo_name"])
+
+def _py_image_runtime_aspect_impl(_target, ctx):
+    runtime = ctx.toolchains[_PY_TOOLCHAIN_TYPE].py3_runtime
+    if runtime == None or runtime.interpreter == None:
+        fail("py_image requires a Python toolchain with a hermetic py3 interpreter")
+    return [PyImageRuntimeInfo(interpreter_repo_name = runtime.interpreter.owner.repo_name)]
+
+_py_image_runtime_aspect = aspect(
+    implementation = _py_image_runtime_aspect_impl,
+    toolchains = [_PY_TOOLCHAIN_TYPE],
+)
+
+def _runtime_alias_impl(ctx):
+    binary = ctx.attr.binary.label
+    runtime_repo = ctx.attr.binary[PyImageRuntimeInfo].interpreter_repo_name
+    runtime_binary = ctx.attr.runtime_binary.label
+    shared_runtime_repo = ctx.attr.runtime_binary[PyImageRuntimeInfo].interpreter_repo_name
+    if runtime_repo != shared_runtime_repo:
+        fail("shared Python image layer uses interpreter repo {!r}, but binary {} uses {!r}".format(
+            shared_runtime_repo,
+            binary,
+            runtime_repo,
+        ))
+    return [PackageSymlinkInfo(
+        attributes = {},
+        destination = "{}/{}.runfiles/{}".format(binary.package, binary.name, runtime_repo),
+        target = "/{}/{}.runfiles/{}".format(runtime_binary.package, runtime_binary.name, runtime_repo),
+    )]
+
+_runtime_alias = rule(
+    implementation = _runtime_alias_impl,
+    attrs = {
+        "binary": attr.label(mandatory = True, aspects = [_py_image_runtime_aspect]),
+        "runtime_binary": attr.label(
+            default = Label("//devinfra/oci/python_runtime:runtime_image_bin"),
+            aspects = [_py_image_runtime_aspect],
+        ),
+    },
+)
 
 def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
     """Return OCI layers with the binary's interpreter resolved from the shared runtime tree.
 
     aspect_rules_py embeds a binary-specific runfiles path in its launcher and creates its
     venv alongside that launcher. Keep the per-binary runfiles tree and add a symlink at the
-    original interpreter-repository path; ship the Python toolchain files once from the
-    canonical runtime binary.
+    selected interpreter repository path; ship the Python toolchain files once from the
+    shared runtime binary.
 
     Args:
         name: Name passed to py_image_layer, usually `<binary>_layers`.
-        binary: Local label of the aspect py_binary.
+        binary: Label of the aspect py_binary.
         owner: UID for image files.
         group: GID for image files.
 
@@ -86,23 +122,20 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
         binary = binary,
         group = group,
         owner = owner,
-        layer_groups = {"binary_interpreter": _PYTHON_INTERPRETER_GROUP},
     )
 
-    pkg = native.package_name()
-    binary_name = binary.split(":")[-1]
     alias_name = name + "_runtime_alias"
+    _runtime_alias(
+        name = alias_name + "_symlink",
+        binary = binary,
+        visibility = ["//visibility:private"],
+    )
     pkg_tar(
         name = alias_name,
         create_parents = False,
         owner = owner + "." + group,
         package_dir = "/",
-        symlinks = {
-            "{}/{}.runfiles/{}".format(pkg, binary_name, _PYTHON_RUNTIME_REPO): "/{}/{}".format(
-                _PYTHON_RUNTIME_ROOT,
-                _PYTHON_RUNTIME_REPO,
-            ),
-        },
+        srcs = [":" + alias_name + "_symlink"],
     )
 
     return [
@@ -132,32 +165,4 @@ def py_python3_symlink(name, binary_name, binary_package = None):
     pkg_tar(
         name = name,
         symlinks = {"/usr/local/bin/python3": venv_python},
-    )
-
-def py_image_bytecode_layer(name, layers, owner = "1000", group = "1000"):
-    """A layer of precompiled `.pyc` files for the `py_image_layer` tars in `layers`.
-
-    The images set `PYTHONDONTWRITEBYTECODE` and run as a user that cannot write the layers, so
-    without this every start compiles every module. The files are compiled by the interpreter
-    the layers ship, with `unchecked-hash` invalidation: the layers are immutable, so Python need
-    not stat or hash the source. `co_filename` is rewritten to the in-image path.
-
-    Args:
-        name: Target name; the output is `<name>.tar.gz`.
-        layers: The `py_image_layer` tar targets, interpreter layer included.
-        owner: uid owning the files.
-        group: gid owning the files.
-    """
-    native.genrule(
-        name = name,
-        srcs = layers,
-        outs = [name + ".tar.gz"],
-        cmd = """
-set -eu
-root=$$(mktemp -d)
-for layer in $(SRCS); do tar -xzf $$layer -C $$root; done
-python=$$(find $$root -regextype posix-extended -type f -regex '.*/bin/python3[.][0-9]+' -print -quit)
-$$python -m compileall -q -j0 --invalidation-mode unchecked-hash -s $$root -p / $$root
-(cd $$root && find . -path '*/__pycache__/*.pyc' -print0 | tar --null -T - --owner={owner} --group={group} -czf - ) > $@
-""".format(owner = owner, group = group),
     )

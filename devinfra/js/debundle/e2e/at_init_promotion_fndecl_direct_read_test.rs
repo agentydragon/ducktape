@@ -13,7 +13,8 @@
 //!
 //! Fixture: `f` lives in `mod_f`; residual reads it eagerly at top level.
 
-use analysis::DepKind;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 #[test]

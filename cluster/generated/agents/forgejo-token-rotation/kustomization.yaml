@@ -13,7 +13,22 @@ configMapGenerator:
           - name: haku
             credentials_dir: /var/run/secrets/forgejo/haku
             sops_file: secrets/haku-forgejo-tea-token.yaml
+            token_field: token
             token_prefix: forgejo-tea-haku
+            scopes:
+              - write:activitypub
+              - write:issue
+              - write:misc
+              - write:notification
+              - write:organization
+              - write:package
+              - write:repository
+              - write:user
+            rotate_after_days: 30
+            keep_previous: 1
+            api_url: http://forgejo-http.forgejo:3000
+            tea_url: https://git.allegedly.works
+            login_name: forgejo
             tea_secret:
               path: cluster/k8s/haku/forgejo-tea/haku-forgejo-tea.sops.yaml
               name: haku-forgejo-tea
@@ -23,11 +38,43 @@ configMapGenerator:
                 reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-ci
                 reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
                 reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-ci
+              config_key: config.yml
+              token_key: token
+              username_key: username
+              url_key: url
+              token_name_key: token-name
+              token_last_eight_key: token-last-eight
           - name: claude
             credentials_dir: /var/run/secrets/forgejo/claude
             sops_file: secrets/claude-forgejo-tea-token.yaml
+            token_field: token
             token_prefix: forgejo-tea-claude
+            scopes:
+              - write:activitypub
+              - write:issue
+              - write:misc
+              - write:notification
+              - write:organization
+              - write:package
+              - write:repository
+              - write:user
+            rotate_after_days: 30
+            keep_previous: 1
+            api_url: http://forgejo-http.forgejo:3000
+            tea_url: https://git.allegedly.works
+            login_name: forgejo
             tea_secret:
               path: cluster/k8s/agents/claude-sandbox-secrets/claude-forgejo-tea.sops.yaml
               name: claude-forgejo-tea
               namespace: claude-sandbox
+              annotations: {}
+              config_key: config.yml
+              token_key: token
+              username_key: username
+              url_key: url
+              token_name_key: token-name
+              token_last_eight_key: token-last-eight
+        github_repo: agentydragon/ducktape
+        sops_config: .sops.yaml
+        git_author_name: forgejo-token-rotation
+        git_author_email: noreply@allegedly.works

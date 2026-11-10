@@ -34,6 +34,10 @@ from finance.augur.model.series import IssuerId
 from finance.evidence.markets import Platform
 
 
+class _CatalogModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class Mappability(StrEnum):
     EXACT = "exact"
     CORRELATE = "correlate"
@@ -45,28 +49,23 @@ class Mappability(StrEnum):
 # ---------------------------------------------------------------------------
 
 
-class ManifoldRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ManifoldRef(_CatalogModel):
     platform: Literal[Platform.MANIFOLD] = Platform.MANIFOLD
     manifold_id: str
 
 
-class PolymarketRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PolymarketRef(_CatalogModel):
     platform: Literal[Platform.POLYMARKET] = Platform.POLYMARKET
     polymarket_id: str
 
 
-class KalshiRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class KalshiRef(_CatalogModel):
     platform: Literal[Platform.KALSHI] = Platform.KALSHI
     kalshi_id: str
 
 
 PlatformRef = Annotated[ManifoldRef | PolymarketRef | KalshiRef, Field(discriminator="platform")]
+PositiveFiniteFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
 def _extract_platform_ref(data: dict[str, Any]) -> dict[str, Any]:
@@ -115,17 +114,22 @@ class CatalogMetadata(BaseModel):
     # series is absent here, `macro_anchors.resolve_anchors` derives the spot from the scraped
     # exogenous evidence (read at `AUGUR_EVIDENCE_DIR`), the single source of truth shared with the model fit.
     anchors: dict[str, float] = Field(default_factory=dict)
-    # OPTIONAL override of the real CPI-U index for the months immediately BEFORE
-    # `model_anchor_date`, oldest first (last entry = the month before the anchor observation;
-    # the anchor value is `anchors.inflation`, same units). Lets an `inflation_yoy` market whose
-    # year-ending date is within a year of as_of look back to real data instead of resolving
-    # UNRESOLVED. When empty, derived from the vendored CPI series by `resolve_anchors`.
-    inflation_history: list[float] = Field(default_factory=list)
+    # OPTIONAL replacement for derived CPI-U history. Keys are first-of-month dates before
+    # `model_anchor_date`; values are index levels. Missing months stay missing and make only
+    # lookbacks requiring those months unresolved.
+    inflation_history: dict[date, PositiveFiniteFloat] = Field(default_factory=dict)
 
     @property
     def model_anchor_date(self) -> date:
         """Date month indices for `resolution_deadline`s are measured from."""
         return self.augur_model_as_of or self.as_of
+
+    @model_validator(mode="after")
+    def validate_inflation_history_months(self) -> CatalogMetadata:
+        anchor_month = self.model_anchor_date.replace(day=1)
+        if any(month.day != 1 or month >= anchor_month for month in self.inflation_history):
+            raise ValueError("inflation_history keys must be first-of-month dates before model_anchor_date")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +137,8 @@ class CatalogMetadata(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class _MarketBase(BaseModel):
+class _MarketBase(_CatalogModel):
     """Market metadata shared by every mappability variant."""
-
-    model_config = ConfigDict(extra="forbid")
 
     # The catalog stores ONLY the stable mapping + provenance. A market's human-readable text
     # (`question`/title, verbatim resolution criterion) and its platform metadata (`outcome_type`,
@@ -179,37 +181,33 @@ class _MarketBase(BaseModel):
 _ISSUER_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
 
-class IpoByDateMapping(BaseModel):
+class IpoByDateMapping(_CatalogModel):
     """An IPO / public-listing (PUBLIC_MARKET_OPEN) event occurs for `issuer` by `by_date`."""
 
-    model_config = ConfigDict(extra="forbid")
     kind: Literal["ipo_by_date"] = "ipo_by_date"
     issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
     by_date: date
 
 
-class PreIpoFailureMapping(BaseModel):
+class PreIpoFailureMapping(_CatalogModel):
     """An absorbing COLLAPSED/ACQUIRED exit for `issuer` before any PUBLIC_MARKET_OPEN."""
 
-    model_config = ConfigDict(extra="forbid")
     kind: Literal["pre_ipo_failure"] = "pre_ipo_failure"
     issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
 
 
-class ValuationByDateMapping(BaseModel):
+class ValuationByDateMapping(_CatalogModel):
     """`issuer`'s valuation `V(m) >= threshold_usd` for some month m <= `by_date` (opt-in M2 channel)."""
 
-    model_config = ConfigDict(extra="forbid")
     kind: Literal["valuation_by_date"] = "valuation_by_date"
     issuer: IssuerId = Field(pattern=_ISSUER_PATTERN)
     threshold_usd: float
     by_date: date
 
 
-class LevelAtDateMapping(BaseModel):
+class LevelAtDateMapping(_CatalogModel):
     """A point-in-time threshold on a level series: `value(at_date) {direction} threshold`."""
 
-    model_config = ConfigDict(extra="forbid")
     kind: Literal["level_at_date"] = "level_at_date"
     series: str  # level-series wire id ("security:SPY", "inflation")
     threshold: float
@@ -217,10 +215,9 @@ class LevelAtDateMapping(BaseModel):
     at_date: date
 
 
-class InflationYoyMapping(BaseModel):
+class InflationYoyMapping(_CatalogModel):
     """Trailing year-over-year change of an index series: `yoy(at_date) {direction} threshold`."""
 
-    model_config = ConfigDict(extra="forbid")
     kind: Literal["inflation_yoy"] = "inflation_yoy"
     series: str  # level-series wire id ("inflation")
     threshold: float  # a fraction, e.g. 0.03 for 3%
@@ -229,11 +226,10 @@ class InflationYoyMapping(BaseModel):
     window_months: int = 12
 
 
-class LevelByDateMapping(BaseModel):
+class LevelByDateMapping(_CatalogModel):
     """An ever-by-date ("touch") threshold on a level series: the value reaches `direction`'s side
     of `threshold` at SOME month on/before `by_date` (e.g. "BTC reaches $150k by D", "S&P ATH by D")."""
 
-    model_config = ConfigDict(extra="forbid")
     kind: Literal["level_by_date"] = "level_by_date"
     series: str  # level-series wire id ("security:SPY", "security:btc")
     threshold: float
@@ -291,7 +287,7 @@ MarketSpec = Annotated[ExactMarket | CorrelateMarket | UnmappableMarket, Field(d
 # ---------------------------------------------------------------------------
 
 
-class BucketMember(BaseModel):
+class BucketMember(_CatalogModel):
     """One mutually-exclusive bucket of a categorical family: a half-open `[low, high)` interval.
 
     `low=None` is an open lower end (`-inf`, the platform's "below X" bucket);
@@ -300,15 +296,13 @@ class BucketMember(BaseModel):
     separately-priced market on the platform).
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     market_id: str
     label: str
     low: float | None = None
     high: float | None = None
 
 
-class BucketFamily(BaseModel):
+class BucketFamily(_CatalogModel):
     """A family of mutually-exclusive buckets over one level series at a single date.
 
     Scored as a categorical: each bucket's live binary price is normalized into a
@@ -318,8 +312,6 @@ class BucketFamily(BaseModel):
     require it but uncovered rollouts are simply uncounted.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     family_id: str
     question: str
     platform: Platform
@@ -328,7 +320,7 @@ class BucketFamily(BaseModel):
     buckets: list[BucketMember] = Field(min_length=2)
 
 
-class ThresholdLadderMember(BaseModel):
+class ThresholdLadderMember(_CatalogModel):
     """One cumulative threshold contract in a ladder family.
 
     Example: Kalshi CPI YoY has separate binary contracts for "Above 3.0%",
@@ -336,13 +328,11 @@ class ThresholdLadderMember(BaseModel):
     are survival/CDF points that must be differenced into buckets before scoring.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     market_id: str
     threshold: float
 
 
-class ThresholdLadderFamily(BaseModel):
+class ThresholdLadderFamily(_CatalogModel):
     """A cumulative threshold ladder over one level-derived quantity.
 
     The child markets represent cumulative probabilities (`value > threshold` for
@@ -351,8 +341,6 @@ class ThresholdLadderFamily(BaseModel):
     a one-of-N bucket distribution, then scores that distribution as one categorical
     row against the model's bucket counts.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     family_id: str
     question: str
@@ -365,7 +353,7 @@ class ThresholdLadderFamily(BaseModel):
     thresholds: list[ThresholdLadderMember] = Field(min_length=2)
 
 
-class DateLadderMember(BaseModel):
+class DateLadderMember(_CatalogModel):
     """One cumulative date-threshold event contract in a ladder family.
 
     Example: "OpenAI IPO before Sep 1", "before Oct 1", ... . These are CDF
@@ -373,13 +361,11 @@ class DateLadderMember(BaseModel):
     differences adjacent fitted points into timing buckets.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     market_id: str
     by_date: date
 
 
-class DateLadderFamily(BaseModel):
+class DateLadderFamily(_CatalogModel):
     """A cumulative event-timing ladder over one private-equity issuer.
 
     The child markets represent `P(event occurs by date)` for increasing dates.
@@ -387,8 +373,6 @@ class DateLadderFamily(BaseModel):
     dates into one-of-N timing buckets, then scores that distribution as one
     categorical row against the issuer's rollout event timings.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     family_id: str
     question: str
@@ -398,9 +382,7 @@ class DateLadderFamily(BaseModel):
     dates: list[DateLadderMember] = Field(min_length=2)
 
 
-class MarketCatalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class MarketCatalog(_CatalogModel):
     metadata: CatalogMetadata
     markets: list[MarketSpec]
     bucket_families: list[BucketFamily] = Field(default_factory=list)

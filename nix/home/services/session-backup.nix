@@ -24,9 +24,8 @@ let
     export RESTIC_REST_USERNAME="$(cat ${config.sops.secrets.ai_session_backup_rest_username.path})"
     export RESTIC_REST_PASSWORD="$(cat ${config.sops.secrets.ai_session_backup_rest_password.path})"
     export RESTIC_PASSWORD_FILE=${lib.escapeShellArg config.sops.secrets.ai_session_backup_restic_password.path}
-    exec ${pkgs.bash}/bin/bash ${./session_backup.sh} \
+    exec ${pkgs.python3}/bin/python ${./session_backup.py} \
       ${pkgs.restic}/bin/restic \
-      ${pkgs.python3}/bin/python \
       ${sqliteSnapshotScript} \
       ${lib.escapeShellArg home} \
       ${lib.escapeShellArg claudeHome} \

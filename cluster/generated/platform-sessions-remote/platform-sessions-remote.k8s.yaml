@@ -1,0 +1,2908 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-recorder-root-ca
+  namespace: platform-sessions
+spec:
+  commonName: platform-sessions-recorder-root-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-ca-bootstrap
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 8760h
+  secretName: platform-sessions-recorder-ca
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: platform-sessions-recorder-trust
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        key: ca.crt
+        name: cluster-root-ca-secret
+    - secret:
+        key: tls.crt
+        name: platform-sessions-recorder-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: Trust bundle for platform-session upstream recording
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - platform-sessions
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-openai-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-openai-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-openai-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-openai-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-openai-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-openai-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-openai-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-openai-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-openai-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-openai-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-openai-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-openai-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-openai
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-openai.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-openai-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-openai-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-openai-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-openai
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-openai
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-openai
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/openai-integration.json
+            - --instance-id
+            - openai
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+            - --route-grants
+            - /etc/platform-sessions/openai-routes.json
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-openai-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-openai-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-openai-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-openai-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-openai-piraeus
+        - emptyDir: {}
+          name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-openai-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-openai
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-openai
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-openai
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-openai
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-anthropic-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-anthropic-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-anthropic-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-anthropic-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-anthropic-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-anthropic-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-anthropic-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-anthropic-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-anthropic-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-anthropic-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-anthropic-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-anthropic-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-anthropic
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-anthropic.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-anthropic-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-anthropic-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-anthropic-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-anthropic
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-anthropic
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-anthropic
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/anthropic-integration.json
+            - --instance-id
+            - anthropic
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+            - --route-grants
+            - /etc/platform-sessions/anthropic-routes.json
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-anthropic-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-anthropic-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-anthropic-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-anthropic-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-anthropic-piraeus
+        - emptyDir: {}
+          name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-anthropic-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-anthropic
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-anthropic
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-anthropic
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-anthropic
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-chatgpt-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-chatgpt-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-chatgpt-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-chatgpt-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-chatgpt-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-chatgpt-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-chatgpt-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-chatgpt-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-chatgpt-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-chatgpt-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-chatgpt-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-chatgpt-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-chatgpt.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-chatgpt-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-chatgpt-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-chatgpt-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-chatgpt
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-chatgpt
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/chatgpt-integration.json
+            - --instance-id
+            - chatgpt
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+            - --route-grants
+            - /etc/platform-sessions/chatgpt-routes.json
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
+          image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-chatgpt-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-chatgpt-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-chatgpt-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-chatgpt-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-chatgpt-piraeus
+        - emptyDir: {}
+          name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-chatgpt-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-chatgpt
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-chatgpt
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-blueshield-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-blueshield-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-blueshield-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-blueshield-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-blueshield-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-blueshield-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-blueshield-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-blueshield-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-blueshield-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-blueshield-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-blueshield-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-blueshield-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-blueshield.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-blueshield-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-blueshield-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-blueshield-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-blueshield
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-blueshield
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/blueshield-integration.json
+            - --instance-id
+            - blueshield
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
+          image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-blueshield-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-blueshield-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-blueshield-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-blueshield-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-blueshield-piraeus
+        - emptyDir: {}
+          name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-blueshield-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-blueshield
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-blueshield
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-blueshield
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-quest-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-quest-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-quest-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-quest-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-quest-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-quest-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-quest-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-quest-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-quest-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-quest-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-quest-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-quest-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-quest
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-quest.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-quest-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-quest-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-quest-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-quest
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-quest
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-quest
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/quest-integration.json
+            - --instance-id
+            - quest
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+            - --route-grants
+            - /etc/platform-sessions/quest-routes.json
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
+          image: git.allegedly.works/ducktape-ci/platform-sessions-quest:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+            - containerPort: 9090
+              name: quest-metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-quest-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-quest-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-quest-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-quest-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-quest-piraeus
+        - emptyDir: {}
+          name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-quest-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-quest
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-quest
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-quest-provider
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+    - interval: 1m
+      path: /metrics
+      port: quest-metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-quest
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-thrive-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-thrive-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-thrive-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-thrive-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-thrive-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-thrive-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-thrive-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-thrive-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-thrive-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-thrive-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-thrive-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-thrive-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-thrive
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-thrive.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-thrive-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-thrive-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-thrive-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-thrive
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-thrive
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-thrive
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/thrive-integration.json
+            - --instance-id
+            - thrive
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+            - --route-grants
+            - /etc/platform-sessions/thrive-routes.json
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:18080
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:18080
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.svc.cluster.local
+            - name: SSL_CERT_FILE
+              value: /var/run/session-recorder-trust/ca-certificates.crt
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_CA_FILE
+              value: /var/run/session-recorder-ca/tls.crt
+          image: git.allegedly.works/ducktape-ci/platform-sessions-providers:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/run/session-recorder-ca
+              name: recorder-ca-public
+              readOnly: true
+            - mountPath: /var/run/session-recorder-trust
+              name: recorder-trust
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem
+          image: busybox:1.38
+          name: recorder-ca-init
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /ca
+              name: recorder-ca
+              readOnly: true
+            - mountPath: /config
+              name: recorder-config
+        - command:
+            - sh
+            - -c
+            - umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'
+          image: mitmproxy/mitmproxy:12.2.3
+          name: upstream-recorder
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - mountPath: /config
+              name: recorder-config
+            - mountPath: /captures
+              name: captures
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: platform-sessions-remote-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-thrive-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-thrive-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-thrive-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-thrive-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-thrive-piraeus
+        - emptyDir: {}
+          name: tmp
+        - name: captures
+          persistentVolumeClaim:
+            claimName: platform-sessions-thrive-captures
+        - name: recorder-ca
+          secret:
+            secretName: platform-sessions-recorder-ca
+        - name: recorder-ca-public
+          secret:
+            items:
+              - key: tls.crt
+                path: tls.crt
+            secretName: platform-sessions-recorder-ca
+        - configMap:
+            name: platform-sessions-recorder-trust
+          name: recorder-trust
+        - emptyDir: {}
+          name: recorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-thrive
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-thrive
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-thrive
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-thrive
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-blueshield
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-blueshield
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-blueshield
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-chatgpt
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-chatgpt
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-providers
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-providers
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-providers
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-providers
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions-quest
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-quest
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-quest
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-quest
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-sessions-gateway
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - platform-sessions-gateway.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-gateway-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions-gateway
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-gateway
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-gateway
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: PLATFORM_SESSIONS_PUBLIC_BASE_URL
+              value: https://platform-sessions.allegedly.works
+            - name: PLATFORM_SESSIONS_INTEGRATION_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  key: gateway-integrations.json
+                  name: platform-sessions-remote-config
+            - name: PLATFORM_SESSIONS_BEARERS
+              valueFrom:
+                configMapKeyRef:
+                  key: bearers.json
+                  name: platform-sessions-remote-config
+            - name: PLATFORM_SESSIONS_PROVIDER_CONNECTIONS
+              valueFrom:
+                configMapKeyRef:
+                  key: connections.json
+                  name: platform-sessions-remote-config
+            - name: PLATFORM_SESSIONS_GRPC_ADDRESS
+              value: 0.0.0.0:8444
+            - name: PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE
+              value: /var/run/platform-sessions/owner
+            - name: PLATFORM_SESSIONS_GRPC_TLS_CERT
+              value: /var/run/gateway-tls/tls.crt
+            - name: PLATFORM_SESSIONS_GRPC_TLS_KEY
+              value: /var/run/gateway-tls/tls.key
+          envFrom:
+            - secretRef:
+                name: platform-sessions-oidc
+          image: git.allegedly.works/ducktape-ci/platform-sessions-gateway:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          name: gateway
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8444
+              name: grpc
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/platform-sessions
+              name: bearers
+              readOnly: true
+            - mountPath: /var/run/provider-trust
+              name: trust
+              readOnly: true
+            - mountPath: /var/run/gateway-tls
+              name: tls
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: openai/control
+                  name: platform-sessions-openai-control
+              - secret:
+                  items:
+                    - key: token
+                      path: openai/owner
+                  name: platform-sessions-openai-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: openai/route
+                  name: platform-sessions-openai-route
+              - secret:
+                  items:
+                    - key: token
+                      path: anthropic/control
+                  name: platform-sessions-anthropic-control
+              - secret:
+                  items:
+                    - key: token
+                      path: anthropic/owner
+                  name: platform-sessions-anthropic-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: anthropic/route
+                  name: platform-sessions-anthropic-route
+              - secret:
+                  items:
+                    - key: token
+                      path: chatgpt/control
+                  name: platform-sessions-chatgpt-control
+              - secret:
+                  items:
+                    - key: token
+                      path: chatgpt/owner
+                  name: platform-sessions-chatgpt-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: chatgpt/route
+                  name: platform-sessions-chatgpt-route
+              - secret:
+                  items:
+                    - key: token
+                      path: blueshield/control
+                  name: platform-sessions-blueshield-control
+              - secret:
+                  items:
+                    - key: token
+                      path: blueshield/owner
+                  name: platform-sessions-blueshield-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: blueshield/route
+                  name: platform-sessions-blueshield-route
+              - secret:
+                  items:
+                    - key: token
+                      path: quest/control
+                  name: platform-sessions-quest-control
+              - secret:
+                  items:
+                    - key: token
+                      path: quest/owner
+                  name: platform-sessions-quest-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: quest/route
+                  name: platform-sessions-quest-route
+              - secret:
+                  items:
+                    - key: token
+                      path: thrive/control
+                  name: platform-sessions-thrive-control
+              - secret:
+                  items:
+                    - key: token
+                      path: thrive/owner
+                  name: platform-sessions-thrive-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: thrive/route
+                  name: platform-sessions-thrive-route
+        - name: bearers
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-owner-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: aiquota
+                  name: platform-sessions-aiquota-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: quest
+                  name: platform-sessions-quest-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: thrive-scraper
+                  name: platform-sessions-thrive-scraper-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: thrive-read
+                  name: platform-sessions-thrive-read-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: chatgpt-read
+                  name: platform-sessions-chatgpt-read-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: blueshield-read
+                  name: platform-sessions-blueshield-read-bearer
+        - configMap:
+            items:
+              - key: ca-certificates.crt
+                path: ca.crt
+            name: cluster-internal-ca-bundle
+          name: trust
+        - name: tls
+          secret:
+            secretName: platform-sessions-gateway-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions-gateway
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-gateway

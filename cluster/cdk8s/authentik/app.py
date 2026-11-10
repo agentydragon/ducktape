@@ -21,6 +21,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, opentofu
 from cluster.cdk8s.authentik import db
@@ -33,7 +34,6 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"
@@ -300,7 +300,7 @@ def _pod_monitor(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # The data dependency includes every blueprint in the source directory.
-    blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
+    blueprints = Runfiles.CreateOrRaise().root() / f"ducktape/{OUTPUT_DIR}/blueprints"
     ConfigMap(
         chart,
         "blueprints",

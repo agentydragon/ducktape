@@ -8,11 +8,22 @@ package(
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 ts_library(
+    name = "electric_entity",
+    srcs = ["electric_entity.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/history_service:history_service_pb",
+    ],
+)
+
+ts_library(
     name = "entity",
     srcs = ["entity.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/threads:thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -22,18 +33,22 @@ ts_library(
     srcs = ["state.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:client",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:thread_sync",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
 filegroup(
     name = "typed_lint_srcs",
     srcs = [
+        "electric_entity.ts",
         "entity.ts",
         "state.tsx",
     ],

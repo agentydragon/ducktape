@@ -12,6 +12,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -19,7 +20,6 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repo
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.namespaces import Vpa
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
@@ -60,11 +60,17 @@ _RUGGED_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "rug
 # The opened LUKS partition behind rugged's root (nix/nixos/hosts/rugged/default.nix crypttab).
 _RUGGED_DATA_DEVICE = "/dev/mapper/piraeus-ssd"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
-_REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
-_DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
+_RUNFILES_ROOT = Runfiles.CreateOrRaise().root()
+_REACTOR_CONFIG_PATCH = (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/piraeus-reactor-patch.yaml").read_text()
+_DRBD_ALLOY_CONFIG = (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/piraeus-drbd-metrics.alloy").read_text()
 _DRBD_ALLOY_CONFIG_MAP = "piraeus-drbd-alloy"
 _DRBD_ALLOY_IMAGE = "docker.io/grafana/alloy:v1.21.1"
 _DRBD_ALLOY_LABELS = {"app.kubernetes.io/name": "piraeus-drbd-metrics"}
+# Online discard hands blocks freed by deletes back to the overcommitted LVM-thin pools.
+# The CSI driver copies mountOpts into each volume's context at creation, so existing PVs
+# need spec.mountOptions instead. StorageClass parameters are immutable: changing this
+# means deleting the StorageClasses before the HelmRelease upgrade.
+_DISCARD_MOUNT_OPTS = {"linstor.csi.linbit.com/mountOpts": "discard"}
 # Reactor is loopback-only while the chart's satellite PodMonitor targets pod IP. This
 # release is scoped to piraeus-datastore; chart output omits metadata.namespace, so
 # the post-render target selects this one named monitor in this release.
@@ -385,6 +391,7 @@ def cluster_chart(app: App) -> Chart:
         thin_pool=_FIRST_NODE_THIN_POOL,
         storage_pool="ssd",
         name="piraeus-lvm-metrics-rugged",
+        only_when_node_ready="rugged",
     )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
@@ -631,6 +638,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "ssd",
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
@@ -642,6 +650,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "hdd",
                         "linstor.csi.linbit.com/placementCount": "1",
                         "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
@@ -662,6 +671,7 @@ def cluster_chart(app: App) -> Chart:
                     "volumeBindingMode": "WaitForFirstConsumer",
                     "allowVolumeExpansion": True,
                     "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
                         "linstor.csi.linbit.com/storagePool": "ssd",
                         "linstor.csi.linbit.com/placementCount": "2",
                         "linstor.csi.linbit.com/replicasOnSame": (
@@ -672,6 +682,27 @@ def cluster_chart(app: App) -> Chart:
                         ),
                         # Plain `DrbdOptions/...` keys, as proven on the auto-diskful canary
                         # (cluster/debug/drbd_canary/auto_diskful/).
+                        "DrbdOptions/auto-quorum": "suspend-io",
+                        "DrbdOptions/auto-diskful": "1",
+                        "DrbdOptions/auto-diskful-allow-cleanup": "true",
+                    },
+                },
+                {
+                    # Auto-diskful moves a replica to the consumer after it stays on an HDD node.
+                    "name": "piraeus-hdd-2",
+                    "reclaimPolicy": "Retain",
+                    "volumeBindingMode": "WaitForFirstConsumer",
+                    "allowVolumeExpansion": True,
+                    "parameters": {
+                        **_DISCARD_MOUNT_OPTS,
+                        "linstor.csi.linbit.com/storagePool": "hdd",
+                        "linstor.csi.linbit.com/placementCount": "2",
+                        "linstor.csi.linbit.com/replicasOnSame": (
+                            f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}"
+                        ),
+                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
+                            f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
+                        ),
                         "DrbdOptions/auto-quorum": "suspend-io",
                         "DrbdOptions/auto-diskful": "1",
                         "DrbdOptions/auto-diskful-allow-cleanup": "true",

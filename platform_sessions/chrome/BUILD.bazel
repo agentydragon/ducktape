@@ -1,0 +1,54 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "export",
+    srcs = ["export.py"],
+    deps = [":profile"],
+)
+
+py_library(
+    name = "profile",
+    srcs = ["profile.py"],
+    deps = [
+        ":cookies",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "cookies",
+    srcs = ["cookies.py"],
+    deps = ["@pypi//cryptography"],
+)
+
+py_test(
+    name = "profile_test",
+    srcs = ["profile_test.py"],
+    deps = [
+        ":profile",
+        "//:conftest",
+        "//platform_sessions/chrome/testing:cookie_db",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+rust_binary(
+    name = "chrome_storage",
+    srcs = ["chrome_storage.rs"],
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:rusty-leveldb",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "chrome_storage_test",
+    crate = ":chrome_storage",
+    data = [":chrome_storage"],
+)

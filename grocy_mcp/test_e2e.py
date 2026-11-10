@@ -136,8 +136,11 @@ async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
 async def test_system_info_tool(mcp_client: Client) -> None:
     """GET /system/info is exposed as an MCP tool."""
     data = unwrap_result(await mcp_client.call_tool("get_system_info", {}))
-    text = str(data)
-    assert "grocy_version" in text.lower() or "grocy" in text.lower(), f"Unexpected: {text[:200]}"
+    assert isinstance(data, dict)
+    assert isinstance(data["grocy_version"], dict)
+    version = data["grocy_version"]["Version"]
+    assert isinstance(version, str)
+    assert version
 
 
 # -- Reference data CRUD -----------------------------------------------------

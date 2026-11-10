@@ -130,8 +130,7 @@ def _format_allowance(allowance: AllowanceView) -> str:
             lines.append(
                 f"  {short_label} unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, currency)})"
             )
-    daily_reference = round(Decimal(allowance.monthly_minor_units) * 12 / Decimal("365.2425"))
-    lines.append(f"  Provisional leash rate: ~{_format_money(daily_reference, currency)}/day")
+    lines.append(f"  Provisional leash rate: ~{_format_money(allowance.daily_reference_minor_units, currency)}/day")
     lines.append("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
     lines.append("  History before activation informs pace but not the available balance.")
     lines.append(f"  Forecast basis: {allowance.forecast.basis_period.id.replace('_', ' ')}")

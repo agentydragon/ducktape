@@ -8,12 +8,9 @@ import pytest
 import pytest_bazel
 
 from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path
 
-
-@pytest.fixture(scope="module")
-def mesh() -> nebula_mesh.Mesh:
-    return nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
+# gazelle:include_dep //cluster/scripts:nebula_mesh_fixtures
+pytest_plugins = ("cluster.scripts.nebula_mesh_fixtures",)
 
 
 def test_global_mtu_consumer_uses_smallest_destination_constraint() -> None:
@@ -67,19 +64,19 @@ def test_destination_mtu_must_be_a_strict_integer(destination_mtu: object) -> No
         )
 
 
-def test_nebula_ips_are_valid_and_unique(mesh: nebula_mesh.Mesh) -> None:
+def test_nebula_ips_are_valid_and_unique(nebula_roster: nebula_mesh.Mesh) -> None:
     """nebula_ip must be a valid IPv4 in 10.42.0.0/16 and unique across hosts."""
     seen: dict[str, str] = {}
-    for name, host in mesh.hosts.items():
+    for name, host in nebula_roster.hosts.items():
         addr = ipaddress.IPv4Address(host.nebula_ip)
         assert addr in ipaddress.IPv4Network("10.42.0.0/16"), f"{name}: nebula_ip {host.nebula_ip} outside 10.42.0.0/16"
         assert host.nebula_ip not in seen, f"duplicate nebula_ip {host.nebula_ip}: {seen[host.nebula_ip]} vs {name}"
         seen[host.nebula_ip] = name
 
 
-def test_endpoints_are_host_port(mesh: nebula_mesh.Mesh) -> None:
+def test_endpoints_are_host_port(nebula_roster: nebula_mesh.Mesh) -> None:
     """Every endpoint parses as <ip-or-host>:4242, the port nebula.tf's drift check builds live endpoints with."""
-    for name, host in mesh.hosts.items():
+    for name, host in nebula_roster.hosts.items():
         if host.endpoint is None:
             continue
         head, _, tail = host.endpoint.rpartition(":")
@@ -87,25 +84,25 @@ def test_endpoints_are_host_port(mesh: nebula_mesh.Mesh) -> None:
         assert tail == "4242", f"{name}: endpoint {host.endpoint!r} must use the Nebula public port"
 
 
-def test_lighthouses_have_endpoints(mesh: nebula_mesh.Mesh) -> None:
+def test_lighthouses_have_endpoints(nebula_roster: nebula_mesh.Mesh) -> None:
     """A lighthouse must be reachable — i.e. have a public endpoint."""
-    for name, host in mesh.hosts.items():
+    for name, host in nebula_roster.hosts.items():
         if host.lighthouse:
             assert host.endpoint is not None, f"{name}: lighthouse=true requires endpoint"
 
 
-def test_at_least_two_reachable_lighthouses(mesh: nebula_mesh.Mesh) -> None:
+def test_at_least_two_reachable_lighthouses(nebula_roster: nebula_mesh.Mesh) -> None:
     """Roaming/laptop hosts need ≥2 lighthouses with public endpoints to avoid SPOF."""
-    reachable_lighthouses = [h for h in mesh.lighthouses() if h.endpoint is not None]
+    reachable_lighthouses = [h for h in nebula_roster.lighthouses() if h.endpoint is not None]
     assert len(reachable_lighthouses) >= 2, (
         f"need ≥2 reachable lighthouses, found {len(reachable_lighthouses)}: "
         f"{[h.nebula_ip for h in reachable_lighthouses]}"
     )
 
 
-def test_at_least_one_control_plane(mesh: nebula_mesh.Mesh) -> None:
+def test_at_least_one_control_plane(nebula_roster: nebula_mesh.Mesh) -> None:
     """k8s-worker.nix derives controlPlaneEndpoints from role=control-plane."""
-    cps = [h for h in mesh.hosts.values() if h.role == "control-plane"]
+    cps = [h for h in nebula_roster.hosts.values() if h.role == "control-plane"]
     assert cps, "roster must contain at least one role=control-plane host"
 
 
@@ -132,7 +129,7 @@ def test_public_kubernetes_nodes_are_reachable_cluster_members() -> None:
     assert mesh.control_planes() == {"cp": hosts["cp"]}
 
 
-def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:
+def test_host_names_have_no_dots(nebula_roster: nebula_mesh.Mesh) -> None:
     """Host names must be single DNS labels (no dots).
 
     Talos's HostnameConfig accepts FQDN-shaped strings but splits them at the
@@ -142,7 +139,7 @@ def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:
     breaks every downstream consumer (local-path-provisioner nodePathMap,
     nodeSelector pins, etc.). See plans/rename_ovh_nodes_role_neutral.md.
     """
-    for name in mesh.hosts:
+    for name in nebula_roster.hosts:
         assert "." not in name, (
             f"host name {name!r} contains a dot; Talos splits at the first dot, "
             f"so kubelet would register the node as {name.split('.', 1)[0]!r}. "

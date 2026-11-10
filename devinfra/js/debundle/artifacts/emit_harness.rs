@@ -5,14 +5,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use artifact::ChunkId;
 use artifact::metrics::OutputMetrics;
 use artifact::paths::module_path_from_path;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput, write_json};
-use artifact::script_output::materialize_artifact_scripts;
 use output_layout::DebundleOutputLayout;
-use reconstruction::ValidatedPlan;
-use write_tree::write_common_emission_reports;
+use reconstruction::{EmittablePlan, ValidatedPlan};
+use source_identity::ChunkId;
+use write_tree::{materialize_accepted_scripts, write_common_emission_reports};
 
 /// `chunk_records` carries the emission set only (the caller drops
 /// records of excluded chunks); the validated plan identifies chunks
@@ -28,29 +27,28 @@ pub fn emit_browser_harness(
     let browser = plan
         .browser_harness()
         .context("validated program has no browser harness")?;
-    let files = plan.files();
-    let excluded_chunk_ids = plan.excluded_chunk_ids();
     let layout = DebundleOutputLayout::new(&browser.out_dir);
     let app_root = layout.app_root();
     layout.prepare()?;
-    let materialized = materialize_artifact_scripts(
-        files,
-        &app_root,
-        &layout.tree_root(),
-        decomposition_by_chunk,
-        excluded_chunk_ids,
-    )?;
+    let materialized =
+        materialize_accepted_scripts(plan, &app_root, &layout.tree_root(), decomposition_by_chunk)?;
     let copied_assets =
         copy_snapshot_assets(&browser.snapshot_root, &app_root, &browser.asset_paths)?;
 
     fs::write(app_root.join("index.html"), &browser.index_html)?;
     fs::write(app_root.join("bootstrap.js"), &browser.bootstrap)?;
-    write_common_emission_reports(&layout, plan, chunk_records, decomposition_by_chunk)?;
+    write_common_emission_reports(
+        &layout,
+        EmittablePlan::Accepted(plan),
+        chunk_records,
+        decomposition_by_chunk,
+    )?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,
         entry_scripts: browser.entry_scripts.clone(),
         module_preloads: browser.module_preloads.clone(),
+        runtime_resources: &browser.runtime_resources,
         generated: HarnessGeneratedManifest {
             bootstrap: module_path_from_path(&PathBuf::from("bootstrap.js")),
             index_html: module_path_from_path(&PathBuf::from("index.html")),
@@ -81,7 +79,8 @@ pub fn emit_browser_harness(
 }
 
 #[derive(Serialize)]
-struct HarnessRuntimeReport {
+struct HarnessRuntimeReport<'a> {
+    runtime_resources: &'a [artifact::runtime_resources::RuntimeResourceResolution],
     app_root: String,
     copied_assets: Vec<String>,
     entry_scripts: Vec<String>,

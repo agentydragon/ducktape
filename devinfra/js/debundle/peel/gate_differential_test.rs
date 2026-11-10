@@ -18,11 +18,12 @@
 //! TDZ, module-granularity Pass 1) plus the clause-2 cross-rebind
 //! case.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DepKind, DependencyGraphReport, SourceUnitReport};
+use analysis::{DependencyGraphInput, DependencyGraphReport, SourceUnitReport};
 use gate::{
     LadderDecision, RealizabilityVerdict, SccRejection, check_realizability,
     check_realizability_touching,
@@ -36,6 +37,25 @@ use crate::quotient::testing::{greedy_step, module_group};
 use crate::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient};
 
 const CAP_LINES: usize = 10_000;
+
+fn quotient_with_partition(
+    report: &DependencyGraphReport,
+    cap_lines: usize,
+    groups: &[crate::quotient::testing::PartitionGroup],
+) -> (QuotientGraph, Vec<ClassId>) {
+    let input = DependencyGraphInput::from_report(report.clone()).unwrap();
+    QuotientGraph::from_graph_with_partition(&input, cap_lines, groups)
+}
+
+fn build_seed_quotient_from_report(
+    report: &DependencyGraphReport,
+    atomic_groups: &[analysis::AtomicGroupReport],
+    spec_modules: &[SpecModuleGroup],
+    cap_lines: usize,
+) -> (QuotientGraph, Vec<crate::quotient::SeedContractionRejected>) {
+    let input = DependencyGraphInput::from_report(report.clone()).unwrap();
+    build_seed_quotient(&input, atomic_groups, spec_modules, cap_lines)
+}
 
 // ---------------------------------------------------------------------
 // Independent reference projection.
@@ -296,8 +316,7 @@ fn gate_matches_reference_on_clean_chain() {
         module_group(vec![1]),
         module_group(vec![2]),
     ];
-    let (mut q, _) =
-        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
+    let (mut q, _) = quotient_with_partition(&report, CAP_LINES, &groups);
     let live: Vec<ClassId> = q.iter_classes().collect();
     for i in 0..live.len() {
         for j in (i + 1)..live.len() {
@@ -330,7 +349,8 @@ fn gate_accepts_residual_pile_cycle_merge() {
         ],
         vec![],
     );
-    let mut q = QuotientGraph::from_report(&report, CAP_LINES).unwrap();
+    let input = DependencyGraphInput::from_report(report.clone()).unwrap();
+    let mut q = QuotientGraph::from_graph(&input, CAP_LINES);
     let ca = q.class_of(q.source_unit_index_of("unit:a").unwrap());
     let cb = q.class_of(q.source_unit_index_of("unit:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
@@ -364,8 +384,7 @@ fn gate_rejects_pass2_tdz_merge() {
         vec![],
     );
     let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
+    let (mut q, group_ids) = quotient_with_partition(&report, CAP_LINES, &groups);
     let cx = group_ids[0];
     let ch = q.class_of(q.source_unit_index_of("unit:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
@@ -402,8 +421,7 @@ fn gate_rejects_module_granularity_pass1_cycle() {
         vec![],
     );
     let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
+    let (mut q, group_ids) = quotient_with_partition(&report, CAP_LINES, &groups);
     let ca = group_ids[0];
     let cb = q.class_of(q.source_unit_index_of("unit:b").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, cb).unwrap();
@@ -439,8 +457,7 @@ fn gate_rejects_promotion_created_cross_rebind() {
         vec![],
     );
     let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, CAP_LINES, &groups).unwrap();
+    let (mut q, group_ids) = quotient_with_partition(&report, CAP_LINES, &groups);
     let ca = group_ids[0];
     let ch = q.class_of(q.source_unit_index_of("unit:h").unwrap());
     let ladder = compare_gate_to_reference(&report, &mut q, ca, ch).unwrap();
@@ -588,7 +605,7 @@ fn randomized_gate_equals_reference() {
         let (report, spec) = random_report(&mut rng);
         promoted_edges += report.edges.iter().filter(|e| e.role.is_some()).count();
         let (mut q, _rejected) =
-            build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, CAP_LINES).unwrap();
+            build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &spec, CAP_LINES);
         for _round in 0..6 {
             assert_committed_verdict_matches_reference(&report, &q);
             let live: Vec<ClassId> = q.iter_classes().collect();

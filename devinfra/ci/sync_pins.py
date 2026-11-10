@@ -10,8 +10,10 @@ against the current pin, and updates nix/artifact-pins.json if the pin is stale.
 Expects: GH_TOKEN env var.
 """
 
+import io
 import os
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +22,43 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+import httpx
 from github import Auth, Github
 from github.GithubException import GithubException
 
 from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
 
+# gazelle:include_dep @pypi//httpx
+
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
+
+
+def missing_wheel_imports(util_wheel: bytes, consumers: dict[str, bytes]) -> list[str]:
+    """Keep old consumers paired with the utility modules their released wheels import."""
+    with zipfile.ZipFile(io.BytesIO(util_wheel)) as wheel:
+        available = set(wheel.namelist())
+
+    # CLEANUP(added 2026-11-03): remove once the pinned ws and gmail-archiver
+    # wheels no longer import util.agent_sandbox and util.fmt respectively.
+    uses = {
+        "ws": ("util.agent_sandbox", ("devinfra/ws/cli.py",)),
+        "gmail-archiver": ("util.fmt", ("gmail_archiver/main.py", "gmail_archiver/planners/doordash.py")),
+    }
+    missing = []
+    for name, (module, paths) in uses.items():
+        if module.replace(".", "/") + ".py" in available:
+            continue
+        with zipfile.ZipFile(io.BytesIO(consumers[name])) as wheel:
+            if any(module.encode() in wheel.read(path) for path in paths):
+                missing.append(f"{name} imports {module}")
+    return missing
+
+
+def download_wheel(url: str) -> bytes:
+    response = httpx.get(url, follow_redirects=True, timeout=30.0)
+    response.raise_for_status()
+    return response.content
 
 
 def release_is_on_devel(repo: Any, release: Any, devel_sha: str, reachable: dict[str, bool]) -> bool:
@@ -66,9 +98,8 @@ def main() -> None:
 
     sources = Sources.model_validate_json(sources_path().read_text())
 
-    updated = []
-    for artifact in ARTIFACTS:
-        release = next(
+    releases_by_package = {
+        artifact.pkg: next(
             (
                 r
                 for r in releases
@@ -77,6 +108,13 @@ def main() -> None:
             ),
             None,
         )
+        for artifact in ARTIFACTS
+    }
+    artifacts_by_package = {artifact.pkg: artifact for artifact in ARTIFACTS}
+
+    updated = []
+    for artifact in ARTIFACTS:
+        release = releases_by_package[artifact.pkg]
         if not release:
             print(f"{artifact.pkg}: no release from devel found, skipping")
             continue
@@ -86,6 +124,29 @@ def main() -> None:
         if pin and url == pin.url:
             print(f"{artifact.pkg}: up to date ({tag})")
             continue
+
+        if artifact.pkg == "ducktape-util":
+            consumers: dict[str, bytes] = {}
+            compatible = True
+            for name in ("ws", "gmail-archiver"):
+                candidate = releases_by_package[name]
+                if candidate:
+                    filename = artifacts_by_package[name].filename
+                    consumer_url = f"{BASE}/{candidate.tag_name}/{filename}"
+                elif current := sources.pins.get(name):
+                    consumer_url = current.url
+                else:
+                    print(f"{artifact.pkg}: no {name} wheel available; keeping the existing pin")
+                    compatible = False
+                    break
+                consumers[name] = download_wheel(consumer_url)
+            else:
+                missing = missing_wheel_imports(download_wheel(url), consumers)
+                if missing:
+                    print(f"{artifact.pkg}: keeping the existing pin; {', '.join(missing)}")
+                    compatible = False
+            if not compatible:
+                continue
 
         print(f"{artifact.pkg}: updating to {tag}")
         new_hash = url_sha256(url)

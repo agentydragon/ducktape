@@ -1,13 +1,17 @@
 //! Compile spec claims into request types and resolve those requests against source chunks.
 
-use analysis::facts::StructuralChunkAnalysis;
+use analysis::facts::StructuralChunkSourceFacts;
 use analysis::{AnalysisAssumptions, KnownEffect};
 use anyhow::{Result, bail};
+use selector_outcome::SelectorKind;
 use selector_resolve::{
     AnonymousStatement, Chunk, Member, MemberSelector, Projection, Resolution, SpecModule,
 };
 use source_match::ParsedSourceMatchSelector;
-use spec::{InitializerPurity, LogicalModule, MemberEffect, MemberPurity, UnassignedMode};
+use spec::{
+    InitializerBindingEffects, InitializerPurity, LogicalModule, MemberEffect, MemberPurity,
+    UnassignedMode,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -31,6 +35,8 @@ pub struct LogicalRequest {
 #[derive(Debug, Clone)]
 pub struct AnonymousStatementRequest {
     pub parsed_selector: source_match::ParsedSourceMatchSelector,
+    /// Optional timing premise for this exact selected anonymous call.
+    pub no_reentry_call: Option<spec::NoReentryCall>,
     /// Optional `comment:` text from the anonymous statement spec
     /// entry. `note:` is not emitted; it remains YAML scratch
     /// metadata.
@@ -57,6 +63,11 @@ pub struct MemberRequest {
     /// Trust annotation for this binding's variable initializer only; it does
     /// not affect later uses of the resulting value.
     pub initializer_purity: InitializerPurity,
+    /// Lexical-effect contract for this binding's variable initializer only.
+    /// It does not constrain heap, global, host, or future callback effects.
+    pub initializer_binding_effects: Option<InitializerBindingEffects>,
+    /// Author prototype premises for the source-checked local factory proof.
+    pub retained_record_factory: bool,
     /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
     /// asserts that recognized calls to the bound helper mutate only
     /// their target class/prototype, so the analyzer can model a local
@@ -96,25 +107,32 @@ impl MemberRequest {
         !self.selector.is_import_specifier()
     }
 
+    pub fn has_semantic_annotations(&self) -> bool {
+        self.purity != MemberPurity::Default
+            || self.initializer_purity != InitializerPurity::Default
+            || self.initializer_binding_effects.is_some()
+            || self.retained_record_factory
+            || self.effect != MemberEffect::Default
+            || !self.pure_members.is_empty()
+            || !self.no_sync_callback_members.is_empty()
+    }
+
     /// Extend `assumptions` with this member's spec-level trust assertions
     /// (purity, pure_members, effect). Spec annotations carried on any
     /// member form (logical-module member, chunk_renames member)
     /// propagate the same way — they are semantic trust assertions,
     /// not ownership claims; binding patches routed through
     /// chunk_renames still do not force proposer grouping.
-    pub fn has_analysis_assumptions(&self) -> bool {
-        self.purity != MemberPurity::Default
-            || self.initializer_purity != InitializerPurity::Default
-            || self.effect != MemberEffect::Default
-            || !self.pure_members.is_empty()
-            || !self.no_sync_callback_members.is_empty()
-    }
-
     pub fn collect_assumptions_for_binding(
         &self,
         assumptions: &mut AnalysisAssumptions,
         binding: &str,
     ) {
+        if self.retained_record_factory {
+            assumptions
+                .retained_record_factories
+                .insert(binding.to_string());
+        }
         if self.initializer_purity == InitializerPurity::Pure {
             assumptions
                 .declared_pure_initializers
@@ -181,6 +199,7 @@ pub fn logical_requests_for_chunk(
                     )?;
                     Ok(AnonymousStatementRequest {
                         parsed_selector,
+                        no_reentry_call: stmt.no_reentry_call.clone(),
                         comment: stmt.comment.clone(),
                     })
                 })
@@ -228,20 +247,8 @@ pub fn build_members(
     let mut requests = members
         .iter()
         .map(|m| {
-            let selected = m.selector.selected()?;
-            let kind_label = selected.selector_kind_label();
-            // A solver-resolved member's public export name can't default to a
-            // binding name — the binding isn't known until the selector resolves
-            // — so `name:` is required. The kind label colors the message.
-            let require_name = || {
-                m.name.clone().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "logical_module {request_id}: members[].selector.{kind_label} requires \
-                         `name:` because the public export name cannot default to a binding name \
-                         until the selector is resolved"
-                    )
-                })
-            };
+            let selected = m.selector.validate()?;
+            let origin = SelectorKind::from(&selected).origin(None);
             let binding = match &selected {
                 spec::MemberSelectorSpec::Binding(binding) => binding.name.clone(),
                 _ => String::new(),
@@ -250,21 +257,19 @@ pub fn build_members(
                 spec::MemberSelectorSpec::Binding(binding) => {
                     m.name.clone().unwrap_or_else(|| binding.name.clone())
                 }
-                _ => require_name()?,
-            };
-            let claim_origin = match &selected {
-                spec::MemberSelectorSpec::Binding(_) => {
-                    format!(
-                        "members[].selector.binding as `{}`",
-                        m.name.as_deref().unwrap_or(&binding)
+                // A solver-resolved member's public export name can't default to a
+                // binding name — the binding isn't known until the selector resolves
+                // — so `name:` is required.
+                _ => m.name.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "logical_module {request_id}: {origin} requires `name:` because the \
+                         public export name cannot default to a binding name until the \
+                         selector is resolved"
                     )
-                }
-                _ => format!(
-                    "members[].selector.{kind_label} as `{}`",
-                    m.name.as_deref().unwrap_or("<unnamed>")
-                ),
+                })?,
             };
-            let selector = member_from_spec(export_name.clone(), selected).selector;
+            let claim_origin = format!("{origin} as `{export_name}`");
+            let selector = MemberSelector::Authored(selected);
             Ok(MemberRequest {
                 binding,
                 export_name,
@@ -272,6 +277,8 @@ pub fn build_members(
                 selector,
                 purity: MemberPurity::Default,
                 initializer_purity: InitializerPurity::Default,
+                initializer_binding_effects: None,
+                retained_record_factory: false,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
@@ -300,6 +307,8 @@ pub fn build_members(
                 selector,
                 purity: MemberPurity::Default,
                 initializer_purity: InitializerPurity::Default,
+                initializer_binding_effects: None,
+                retained_record_factory: false,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
@@ -364,6 +373,8 @@ fn merge_binding_annotation(
         request.purity = annotation.purity;
     }
 
+    request.retained_record_factory |= annotation.retained_record_factory;
+
     if annotation.initializer_purity != InitializerPurity::Default {
         if request.initializer_purity != InitializerPurity::Default
             && request.initializer_purity != annotation.initializer_purity
@@ -371,6 +382,16 @@ fn merge_binding_annotation(
             bail_annotation_conflict(request_id, export_name, "initializer_purity")?;
         }
         request.initializer_purity = annotation.initializer_purity;
+    }
+
+    if let Some(effects) = annotation.initializer_binding_effects {
+        if request
+            .initializer_binding_effects
+            .is_some_and(|existing| existing != effects)
+        {
+            bail_annotation_conflict(request_id, export_name, "initializer_binding_effects")?;
+        }
+        request.initializer_binding_effects = Some(effects);
     }
 
     if annotation.effect != MemberEffect::Default {
@@ -442,7 +463,7 @@ pub fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffe
 
 /// Convert one parsed selector into the selector engine's module member.
 pub fn member_from_spec(export_name: String, selector: spec::MemberSelectorSpec) -> Member {
-    member_from_selector(export_name, MemberSelector::from_spec(selector))
+    member_from_selector(export_name, MemberSelector::Authored(selector))
 }
 
 /// Convert one compiled selector into the selector engine's module member.
@@ -506,7 +527,7 @@ pub struct ProjectedChunk<'a> {
 pub struct ResolvedChunk<'a> {
     pub resolution: Resolution,
     pub resolved_members: Vec<Vec<usize>>,
-    pub structural_analysis: StructuralChunkAnalysis<'a>,
+    pub structural_analysis: StructuralChunkSourceFacts<'a>,
 }
 
 /// Compile requests into selector-engine modules and project them against one

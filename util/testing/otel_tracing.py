@@ -21,8 +21,8 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.otel import JsonlSpanExporter
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 

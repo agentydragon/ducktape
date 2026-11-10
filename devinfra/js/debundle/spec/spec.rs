@@ -8,8 +8,8 @@
 //!
 //! A third per-chunk map, `unassigned_mode`, decides what happens to
 //! top-level statements that no `logical_modules` entry explicitly
-//! claims (catch-all to entry, catch-all to a separate file, or one
-//! synthetic atomic-group module per atomic group). See [`UnassignedMode`].
+//! claims (entry, catchall file, one module per unclaimed atomic group, or
+//! coarser residual groups). See [`UnassignedMode`].
 //!
 //! Pipeline stages run in a fixed canonical order; each stage is either
 //! always-on or gated by the contents of those maps / by the presence of a
@@ -30,11 +30,15 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct TransformSpec {
     pub inputs: LoadJsChunksArgs,
-    /// Loading contract used by the export-reentry proof. Native browser ESM
-    /// has no synchronous host API for obtaining an evaluating module namespace.
-    /// This is independent of whether a browser harness is emitted.
+    /// Declared behaviors of the embedding host (SPEC.md § Host behavior).
+    /// Omitted keys take their conservative value, so an absent block is the
+    /// generic host with no audited behavior.
     #[serde(default)]
-    pub execution_runtime: ExecutionRuntime,
+    pub host_behavior: HostBehavior,
+    /// Author premises about the analyzed program the engine cannot derive
+    /// (SPEC.md § Program premises). An absent block asserts nothing.
+    #[serde(default)]
+    pub program_premises: ProgramPremises,
 
     // --- declarative data sections ---
     #[serde(default)]
@@ -108,7 +112,431 @@ pub struct TransformSpec {
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
+/// Author-declared behaviors of the embedding host. Each key is one assertion
+/// with one engine reader; an omitted key takes its conservative value. The
+/// identity of the executable a behavior was audited against is provenance in
+/// `note` and the project's pinning doc, never an engine input.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostBehavior {
+    #[serde(default)]
+    pub synchronous_module_loader: SynchronousModuleLoader,
+    /// Only with [`SynchronousModuleLoader::Present`]; validated in the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loader_result_for_evaluating_module: Option<LoaderResultForEvaluatingModule>,
+    /// Only with [`SynchronousModuleLoader::Present`]; validated in the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synchronous_load_runs_app_callbacks: Option<SynchronousLoadRunsAppCallbacks>,
+    /// Only with [`SynchronousModuleLoader::Present`]; validated in the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synchronous_load_drains_microtasks: Option<SynchronousLoadDrainsMicrotasks>,
+    /// Closed Node builtin IDs whose bare and `node:` static import spellings
+    /// the author audited for resolver identity and no synchronous application
+    /// reentry during module evaluation. Independent of `reentry_free_operations`.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_builtin_modules: BTreeSet<NodeBuiltinModule>,
+    /// Closed host-provided non-Node module IDs the author audited the same
+    /// way, including that a bare request always resolves to the host module
+    /// rather than an installed package.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_bun_modules: BTreeSet<BunModule>,
+    /// Loaders the author audited as running no application code when the host
+    /// requires an embedded file it assigned that loader to.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_embedded_loaders: BTreeSet<EmbeddedLoader>,
+    /// Exact zero-argument host operations the author audited as unable to run
+    /// application code synchronously. Grants timing only, never purity.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reentry_free_operations: BTreeSet<ReentryFreeOperation>,
+    /// Which properties the host defines on the global object, own or
+    /// inherited through its host prototypes, before the program runs.
+    #[serde(default, skip_serializing_if = "PredefinedGlobals::is_unknown")]
+    pub predefined_globals: PredefinedGlobals,
+    /// Audit provenance (executable identity, revision, digest). YAML-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Author premises about the analyzed program itself, as opposed to its host.
+/// Each key is one assertion with one engine reader; an omitted key asserts
+/// nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProgramPremises {
+    #[serde(
+        default,
+        skip_serializing_if = "ProcessPrototypeChainAccessors::is_unknown"
+    )]
+    pub process_prototype_chain_accessors: ProcessPrototypeChainAccessors,
+    #[serde(default, skip_serializing_if = "NonLiteralLoaderCalls::is_unknown")]
+    pub non_literal_loader_calls: NonLiteralLoaderCalls,
+    /// The program writes no slot of these intrinsic families, beyond the
+    /// writes the native census sees on their exact objects (SPEC.md §
+    /// Intrinsics never written).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intrinsics_never_written: Option<IntrinsicsNeverWritten>,
+    /// Audit provenance. YAML-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// `program_premises.intrinsics_never_written`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntrinsicsNeverWritten {
+    pub families: IntrinsicFamilies,
+    /// Audit provenance: the generated audit list and the runtime probe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// `all`, or a list of census families.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum IntrinsicFamilies {
+    All(AllIntrinsicFamilies),
+    Listed(BTreeSet<IntrinsicFamily>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AllIntrinsicFamilies {
+    All,
+}
+
+/// A native census family, named by its global binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+pub enum IntrinsicFamily {
+    Error,
+    FinalizationRegistry,
+    Function,
+    Object,
+    Array,
+    Math,
+    RegExp,
+    Symbol,
+    Promise,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+}
+
+impl IntrinsicFamily {
+    pub const ALL: [Self; 13] = [
+        Self::Error,
+        Self::FinalizationRegistry,
+        Self::Function,
+        Self::Object,
+        Self::Array,
+        Self::Math,
+        Self::RegExp,
+        Self::Symbol,
+        Self::Promise,
+        Self::Map,
+        Self::Set,
+        Self::WeakMap,
+        Self::WeakSet,
+    ];
+}
+
+impl IntrinsicFamilies {
+    pub fn families(&self) -> BTreeSet<IntrinsicFamily> {
+        match self {
+            Self::All(_) => IntrinsicFamily::ALL.into_iter().collect(),
+            Self::Listed(families) => families.clone(),
+        }
+    }
+}
+
+/// Whether the program defines accessors on `process` or its prototype chain.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessPrototypeChainAccessors {
+    /// No code in the program defines or redefines an accessor property on
+    /// `process` or any object in its prototype chain, or changes that chain.
+    None,
+    #[default]
+    Unknown,
+}
+
+impl ProcessPrototypeChainAccessors {
+    fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+}
+
+/// What a loader call with a non-literal argument can load.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NonLiteralLoaderCalls {
+    /// Every such call fails or loads a native addon, and no native addon's
+    /// initializer calls application JavaScript or a module loader.
+    NativeAddonsOnly,
+    #[default]
+    Unknown,
+}
+
+impl NonLiteralLoaderCalls {
+    fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+}
+
+/// The global object's host-defined properties before the program runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PredefinedGlobals {
+    /// Any property, with any value.
+    #[default]
+    Unknown,
+    /// Only names in the standard global lists (SPEC.md § Predefined
+    /// globals), each with its standard definition.
+    Standard,
+    /// The standard names plus Bun's own globals (SPEC.md § Predefined
+    /// globals), each with its documented definition.
+    Bun,
+}
+
+impl PredefinedGlobals {
+    pub fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+}
+
+/// Whether any host API can synchronously obtain a module namespace while that
+/// module is evaluating. `none` is what native browser ESM provides.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynchronousModuleLoader {
+    None,
+    #[default]
+    Present,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoaderResultForEvaluatingModule {
+    Throws,
+    ReturnsPartialNamespace,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynchronousLoadRunsAppCallbacks {
+    Never,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynchronousLoadDrainsMicrotasks {
+    Never,
+    Unknown,
+}
+
+/// Exact zero-argument host operations recognized by the synchronous-effect
+/// interpreter (SPEC.md § Host behavior).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReentryFreeOperation {
+    AsyncLocalStorageConstruct,
+    PromiseResolve,
+}
+
+/// Exact Node builtin module identities admissible in
+/// `reentry_free_builtin_modules`. Unknown bare packages are absent; Bun's
+/// package replacements are [`BunModule`]s.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeBuiltinModule {
+    Assert,
+    AsyncHooks,
+    Buffer,
+    ChildProcess,
+    Constants,
+    Crypto,
+    Dns,
+    #[serde(rename = "dns/promises")]
+    DnsPromises,
+    Events,
+    Fs,
+    #[serde(rename = "fs/promises")]
+    FsPromises,
+    Http,
+    Http2,
+    Https,
+    Net,
+    Os,
+    Path,
+    #[serde(rename = "path/posix")]
+    PathPosix,
+    #[serde(rename = "path/win32")]
+    PathWin32,
+    PerfHooks,
+    Process,
+    Querystring,
+    Readline,
+    Stream,
+    #[serde(rename = "stream/consumers")]
+    StreamConsumers,
+    #[serde(rename = "stream/promises")]
+    StreamPromises,
+    StringDecoder,
+    #[serde(rename = "timers/promises")]
+    TimersPromises,
+    Tls,
+    Tty,
+    Url,
+    Util,
+    #[serde(rename = "util/types")]
+    UtilTypes,
+    Vm,
+    WorkerThreads,
+    Zlib,
+    Module,
+}
+
+impl NodeBuiltinModule {
+    /// Recognize only explicitly supported static-import spellings. This is not a
+    /// bare-package or `node:` prefix fallback resolver.
+    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+        Some(match specifier {
+            "assert" | "node:assert" => Self::Assert,
+            "async_hooks" | "node:async_hooks" => Self::AsyncHooks,
+            "buffer" | "node:buffer" => Self::Buffer,
+            "child_process" | "node:child_process" => Self::ChildProcess,
+            "constants" | "node:constants" => Self::Constants,
+            "crypto" | "node:crypto" => Self::Crypto,
+            "dns" | "node:dns" => Self::Dns,
+            "dns/promises" | "node:dns/promises" => Self::DnsPromises,
+            "events" | "node:events" => Self::Events,
+            "fs" | "node:fs" => Self::Fs,
+            "fs/promises" | "node:fs/promises" => Self::FsPromises,
+            "http" | "node:http" => Self::Http,
+            "http2" | "node:http2" => Self::Http2,
+            "https" | "node:https" => Self::Https,
+            "net" | "node:net" => Self::Net,
+            "os" | "node:os" => Self::Os,
+            "path" | "node:path" => Self::Path,
+            "path/posix" | "node:path/posix" => Self::PathPosix,
+            "path/win32" | "node:path/win32" => Self::PathWin32,
+            "perf_hooks" | "node:perf_hooks" => Self::PerfHooks,
+            "process" | "node:process" => Self::Process,
+            "querystring" | "node:querystring" => Self::Querystring,
+            "readline" | "node:readline" => Self::Readline,
+            "stream" | "node:stream" => Self::Stream,
+            "stream/consumers" | "node:stream/consumers" => Self::StreamConsumers,
+            "stream/promises" | "node:stream/promises" => Self::StreamPromises,
+            "string_decoder" | "node:string_decoder" => Self::StringDecoder,
+            "timers/promises" | "node:timers/promises" => Self::TimersPromises,
+            "tls" | "node:tls" => Self::Tls,
+            "tty" | "node:tty" => Self::Tty,
+            "url" | "node:url" => Self::Url,
+            "util" | "node:util" => Self::Util,
+            "util/types" | "node:util/types" => Self::UtilTypes,
+            "vm" | "node:vm" => Self::Vm,
+            "worker_threads" | "node:worker_threads" => Self::WorkerThreads,
+            "module" | "node:module" => Self::Module,
+            "zlib" | "node:zlib" => Self::Zlib,
+            _ => return None,
+        })
+    }
+}
+
+/// Exact host-provided modules outside Node's builtin namespace admissible in
+/// `reentry_free_bun_modules`: Bun's own `bun:` modules and the packages Bun
+/// replaces with built-in implementations.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+pub enum BunModule {
+    #[serde(rename = "bun:ffi")]
+    BunFfi,
+    #[serde(rename = "undici")]
+    Undici,
+    #[serde(rename = "ws")]
+    Ws,
+}
+
+impl BunModule {
+    /// Recognize only the exact request spellings.
+    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+        Some(match specifier {
+            "bun:ffi" => Self::BunFfi,
+            "undici" => Self::Undici,
+            "ws" => Self::Ws,
+            _ => return None,
+        })
+    }
+}
+
+/// A module the host provides itself, named in one of the closed lists.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum HostModule {
+    Node(NodeBuiltinModule),
+    Bun(BunModule),
+}
+
+impl HostModule {
+    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+        NodeBuiltinModule::from_static_specifier(specifier)
+            .map(Self::Node)
+            .or_else(|| BunModule::from_static_specifier(specifier).map(Self::Bun))
+    }
+}
+
+impl NodeBuiltinModule {
+    /// Building this builtin's namespace, or loading it, can run accessors the
+    /// program defines on `process` or its prototype chain.
+    pub fn reads_process_accessors(self) -> bool {
+        matches!(self, Self::Process | Self::WorkerThreads)
+    }
+}
+
+impl HostBehavior {
+    /// Whether the author declared `module` reentry-free.
+    pub fn admits(&self, module: HostModule) -> bool {
+        match module {
+            HostModule::Node(builtin) => self.reentry_free_builtin_modules.contains(&builtin),
+            HostModule::Bun(bun) => self.reentry_free_bun_modules.contains(&bun),
+        }
+    }
+
+    /// The declared reentry-free host module `specifier` names.
+    pub fn reentry_free_module(&self, specifier: &str) -> Option<HostModule> {
+        HostModule::from_static_specifier(specifier).filter(|module| self.admits(*module))
+    }
+}
+
 impl TransformSpec {
+    /// Provider ASTs needed to resolve source-bound premises, independently of
+    /// which chunks are selected for materialization.
+    pub fn source_premise_chunk_ids(&self) -> BTreeSet<String> {
+        let mut chunks: BTreeSet<String> = self
+            .chunk_analysis_options
+            .iter()
+            .filter(|(_, options)| {
+                !options.value_inputs.is_empty()
+                    || !options.native_operation_inputs.is_empty()
+                    || !options.initializer_call_effect_inputs.is_empty()
+                    || !options.imported_primitive_array_spread_inputs.is_empty()
+                    || !options.native_call_identity_inputs.is_empty()
+                    || !options.argument_inputs.is_empty()
+                    || !options.no_accessor_install_callables.is_empty()
+            })
+            .map(|(chunk, _)| chunk.clone())
+            .collect();
+        chunks.extend(
+            self.chunk_analysis_options
+                .values()
+                .flat_map(|options| &options.imported_primitive_array_spread_inputs)
+                .flat_map(|input| &input.operands)
+                .map(|operand| operand.provider_chunk.clone()),
+        );
+        chunks
+    }
+
     /// Chunk ids selected by the `materialize_logical_modules` stage.
     ///
     /// Keep this selection shared by the pipeline and commands that need to
@@ -122,17 +550,6 @@ impl TransformSpec {
             .cloned()
             .collect()
     }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionRuntime {
-    /// The embedding host may expose a synchronous module loader.
-    #[default]
-    Generic,
-    /// Modules execute through the browser's native ESM loader. Host code
-    /// cannot synchronously load the namespace of an evaluating module.
-    NativeBrowserEsm,
 }
 
 /// Author-asserted contracts for one defining chunk's exports. See
@@ -216,6 +633,11 @@ pub struct ChunkExportPurity {
     /// multiple retained callback arguments. See `RetainedCallbackSignature`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub retained_callback_factory_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
+    /// Audited direct imports which copy one fresh literal's own descriptors
+    /// into a fresh returned wrapper, then install the listed data methods.
+    /// This is a return-only callback timing assertion, never purity.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub descriptor_copy_factory_exports: BTreeMap<String, Vec<DescriptorCopyFactorySignature>>,
     /// The same stronger contract on direct static namespace member calls.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub retained_callback_factory_members:
@@ -251,6 +673,17 @@ pub struct ChunkExportPurity {
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// Exact provider operations that can otherwise observe an input accessor at
+/// registration or run a setter while installing returned methods.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DescriptorCopyFactorySignature {
+    pub argument_count: usize,
+    pub object_argument: usize,
+    pub eager_own_data_keys: BTreeSet<String>,
+    pub assigned_data_keys: BTreeSet<String>,
 }
 
 /// One exact callback-bearing call shape. Non-callback positions must be
@@ -293,20 +726,62 @@ impl<'de> Deserialize<'de> for RetainedCallbackSignature {
     }
 }
 
-/// Per-chunk dependency-graph build options. Each field defaults to the
+/// Per-chunk analysis and dependency-graph options. Each field defaults to the
 /// strictly-conservative behavior; opt-ins enable conditionally-correct
 /// inferences that hold only when the input satisfies a checkable
 /// precondition (see `devinfra/js/debundle/AGENTS.md` →
 /// "Conditionally-correct optimizations").
 ///
-/// Serves two roles with one type: it's the YAML surface for
-/// `TransformSpec::chunk_analysis_options` (each per-chunk entry
-/// deserializes into this), and it's the input to
-/// `analysis::build_dependency_graph_with`. The materializer threads it
-/// straight through — no per-chunk copy.
+/// The YAML authoring surface for per-chunk source-analysis and graph inputs.
+/// The stage boundary maps every field into the source-analysis inputs, graph
+/// options, commuting contracts, or normalized native-operation premises.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DependencyGraphOptions {
+    /// Author-conditioned value facts for exact top-level provider bindings.
+    /// These are resolved by the whole-program source analysis before graph
+    /// construction and never select emission roots.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub value_inputs: Vec<ValueInputContract>,
+    /// Author-certified native behavior for one exact initializer.
+    /// The author audits the ordinary initial global binding and every
+    /// synchronous initialization schedule admitted by emission. This is
+    /// neither a source inference nor a whole-lifetime integrity claim. See
+    /// docs/purity_soundness.md.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_operation_inputs: Vec<NativeOperationInputContract>,
+    /// Exact direct imported-call initializers whose provider invocation has
+    /// author-audited allocation-only nonlexical effects. This is independent
+    /// of call timing, result shape, purity, and callback retention contracts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initializer_call_effect_inputs: Vec<InitializerCallEffectInputContract>,
+    /// Exact-site author premise for spreading directly imported arrays whose
+    /// exported identity and contents otherwise remain mutable. The selected
+    /// provider declarations and import edges are resolved from source; this
+    /// input only supplies the explicit lifetime audit for the exact spread.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_primitive_array_spread_inputs: Vec<ImportedPrimitiveArraySpreadInputContract>,
+    /// Author-certified pairs of this chunk's source units whose synchronous
+    /// initialization effects are order-independent. Each endpoint selects
+    /// exactly one source unit; the pair is resolved and validated when the
+    /// chunk's dependency graph is built. See SPEC.md § Commuting statements.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commuting_statements: Vec<CommutingStatementsContract>,
+    /// Author-certified original native callee at one selected direct call in
+    /// a top-level function body. This supplies identity only; the modeled
+    /// operation must still pass its ordinary argument and effect guards.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_call_identity_inputs: Vec<NativeCallIdentityInputContract>,
+    /// Audited no-mutation/no-retention contract for one parameter of an
+    /// exact local helper. Calls and callbacks retain their ordinary effects.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub argument_inputs: Vec<ArgumentInputContract>,
+    /// Author-certified callables whose computed-key method calls never
+    /// install an accessor through `__defineGetter__` or `__defineSetter__`.
+    /// Each entry selects exactly one outermost function. See SPEC.md § Bundle-owned
+    /// globals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -396,6 +871,317 @@ pub struct DependencyGraphOptions {
     pub local_property_effects: bool,
 }
 
+/// A source-bound value premise attached to one exact provider chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ValueInputContract {
+    /// Structural selector for exactly one declared local binding.
+    pub source_match: SourceMatchClaim,
+    pub value: CapturedValueContract,
+    /// SHA-256 of the parser input bytes recorded for this provider entry.
+    pub audited_source_sha256: String,
+    /// Optional direct export name that must resolve to the selected local cell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_export: Option<String>,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Author premise for one exact native operation initializer.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(
+    try_from = "NativeOperationInputWire",
+    into = "NativeOperationInputWire"
+)]
+pub struct NativeOperationInputContract {
+    pub selector: SourceUnitSelector,
+    /// Operation whose original native binding the author has audited.
+    pub operation: NativeOperationKind,
+    /// SHA-256 of the parser input bytes recorded for this provider entry.
+    pub audited_source_sha256: String,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One source-selected provider invocation, with both parser inputs pinned.
+/// The author certifies that the selected call body reads no mutable
+/// application/global/host state, invokes no host operation, and writes only
+/// its fresh per-call wrapper/record allocations. Native metadata and
+/// inherited/provider slots used by that body remain as audited through
+/// every admitted synchronous initialization schedule. Callee and argument
+/// evaluation, completion, lexical effects, callback timing/retention, and
+/// later use of the returned value are separate obligations.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct InitializerCallEffectInputContract {
+    /// Existing logical-module owner in the importer chunk. Frontend
+    /// elaboration resolves its canonical claim to the actual local
+    /// declaration before validating the initializer shape.
+    pub resolved_member: ResolvedMemberSelector,
+    pub audited_source_sha256: String,
+    pub provider_chunk: String,
+    pub provider_export: String,
+    pub audited_provider_sha256: String,
+    /// Required when this exact export is emitted from a bundled partial
+    /// vendor swap. Pins the effective replacement independently of the
+    /// original provider parser input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_replacement: Option<InitializerCallEffectiveReplacement>,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Author-audited identity and own-content lifetime promise for one selected
+/// imported array spread. Every field is required and must be `true`; keeping
+/// the promises explicit makes the capability reviewable in saved specs.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedPrimitiveArrayLifetimeContract {
+    pub identity_unchanged_through_spread: bool,
+    pub dense_own_data_primitive_contents_unchanged_through_spread: bool,
+    pub ordinary_array_prototype_chain_unchanged_through_spread: bool,
+    pub no_own_iterator_or_accessors_through_spread: bool,
+    pub no_rebinding_through_spread: bool,
+}
+
+/// One source-selected imported array operand. `selector_local` is a stable
+/// placeholder from the consumer's source-match pattern, not a source local
+/// name. The provider declaration selector resolves the actual export cell.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedPrimitiveArrayOperandContract {
+    pub selector_local: String,
+    /// Configured chunk alias from the artifact/spec, not a physical filename.
+    pub provider_chunk: String,
+    pub provider_source_match: SourceMatchClaim,
+    pub audited_provider_source_sha256: String,
+}
+
+/// Source-bound, exact consumer spread input. Its selectors, digest and import
+/// edges locate source facts; only `lifetime` is the author assertion.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedPrimitiveArraySpreadInputContract {
+    pub source_match: SourceMatchClaim,
+    pub operands: Vec<ImportedPrimitiveArrayOperandContract>,
+    pub audited_source_sha256: String,
+    pub lifetime: ImportedPrimitiveArrayLifetimeContract,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct InitializerCallEffectiveReplacement {
+    pub package: String,
+    pub bundle_export: String,
+    pub symbol_kind: PartialSwapKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_export: Option<String>,
+    pub audited_bundle_sha256: String,
+}
+/// Author premise that two source units of one chunk commute: neither
+/// observes the other's synchronous initialization effect. Each endpoint
+/// selects exactly one source unit of the option's chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CommutingStatementsContract {
+    pub a: SourceUnitSelector,
+    pub b: SourceUnitSelector,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One selected source unit of a provider chunk, shared by every author input
+/// that anchors to a source unit (`native_operation_inputs`,
+/// `commuting_statements`). Each consumer applies its own shape checks to the
+/// selected unit; this type fixes only the selector grammar.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(try_from = "SourceUnitSelectorWire", into = "SourceUnitSelectorWire")]
+pub enum SourceUnitSelector {
+    /// A structural selector; `bindings` names at most one declared binding.
+    /// Without `bindings` it selects one anonymous (non-declaring) statement.
+    SourceMatch(SourceMatchClaim),
+    ResolvedMember(ResolvedMemberSelector),
+}
+
+/// A previously resolved logical member in this provider chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedMemberSelector {
+    pub module: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceUnitSelectorWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_match: Option<SourceMatchClaim>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_member: Option<ResolvedMemberSelector>,
+}
+
+impl TryFrom<SourceUnitSelectorWire> for SourceUnitSelector {
+    type Error = String;
+
+    fn try_from(wire: SourceUnitSelectorWire) -> std::result::Result<Self, Self::Error> {
+        match (wire.source_match, wire.resolved_member) {
+            (Some(source), None) => Ok(Self::SourceMatch(source)),
+            (None, Some(member)) => Ok(Self::ResolvedMember(member)),
+            _ => Err("exactly one of source_match or resolved_member is required".into()),
+        }
+    }
+}
+
+impl From<SourceUnitSelector> for SourceUnitSelectorWire {
+    fn from(selector: SourceUnitSelector) -> Self {
+        match selector {
+            SourceUnitSelector::SourceMatch(source) => Self {
+                source_match: Some(source),
+                resolved_member: None,
+            },
+            SourceUnitSelector::ResolvedMember(member) => Self {
+                source_match: None,
+                resolved_member: Some(member),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct NativeOperationInputWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_match: Option<SourceMatchClaim>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_member: Option<ResolvedMemberSelector>,
+    operation: NativeOperationKind,
+    audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+impl TryFrom<NativeOperationInputWire> for NativeOperationInputContract {
+    type Error = String;
+
+    fn try_from(wire: NativeOperationInputWire) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            selector: SourceUnitSelector::try_from(SourceUnitSelectorWire {
+                source_match: wire.source_match,
+                resolved_member: wire.resolved_member,
+            })?,
+            operation: wire.operation,
+            audited_source_sha256: wire.audited_source_sha256,
+            note: wire.note,
+        })
+    }
+}
+
+impl From<NativeOperationInputContract> for NativeOperationInputWire {
+    fn from(contract: NativeOperationInputContract) -> Self {
+        let SourceUnitSelectorWire {
+            source_match,
+            resolved_member,
+        } = contract.selector.into();
+        Self {
+            source_match,
+            resolved_member,
+            operation: contract.operation,
+            audited_source_sha256: contract.audited_source_sha256,
+            note: contract.note,
+        }
+    }
+}
+
+/// Exact source-selected native callee identity, scoped to every synchronous
+/// at-init activation of the selected call site across permitted schedules.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCallIdentityInputContract {
+    pub source_match: SourceMatchClaim,
+    pub callee: NativeCallIdentityKind,
+    pub audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One source-selected, SHA-bound local helper argument contract. The author
+/// certifies that an argument at `parameter_index` is never mutated, retained,
+/// returned, published, or exposed to callbacks or opaque callees by this
+/// helper or anything it invokes. This includes later activations of retained
+/// work and is independent of call purity and reentry.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArgumentInputContract {
+    pub source_match: SourceMatchClaim,
+    pub parameter_index: usize,
+    pub exact_arity: usize,
+    pub audited_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One source-selected callable whose computed-key method calls the author
+/// audited as never installing an accessor.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NoAccessorInstallCallableContract {
+    /// Selects one declaration whose statement contains exactly one outermost
+    /// function.
+    pub source_match: SourceMatchClaim,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Typed native callee models eligible for exact-site identity premises.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeCallIdentityKind {
+    ObjectFreeze,
+    SetEmptyPrivateField,
+}
+
+/// Native operations admitted by `native_operation_inputs`.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeOperationKind {
+    /// Direct zero-argument construction through the original global data binding.
+    TextEncoderEmpty,
+    MapEmpty,
+    WeakMapEmpty,
+    SetEmpty,
+    Symbol,
+    SymbolFor,
+    SetFromPrimitiveArray,
+    SetFromSetSpread,
+    /// One static own-data function property read on the original Object constructor.
+    ObjectOwnDataFunctionRead,
+    /// Exact well-known Symbol data reads in a direct class initializer's method keys.
+    SymbolWellKnownClassKeys,
+    /// Exact class-key reads of own data properties with unknown primitive values.
+    SymbolPrimitiveClassKeys,
+    ArraySpreadFromPrimitiveArrays,
+    PromiseResolve,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CapturedValueContract {
+    pub kind: CapturedValueKind,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapturedValueKind {
+    OrdinaryObject,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum BuiltinGlobalRoot {
     #[serde(rename = "globalThis")]
@@ -408,8 +1194,14 @@ pub enum BuiltinGlobalRoot {
 /// docs/design.md assumption it enforces. Used both as the
 /// spec-override list-element type and as the violation tag in
 /// admission diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+///
+/// `Display` is the spec-facing snake_case name (the `admission_overrides`
+/// list element spelling), for diagnostics.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum AdmissionCheck {
     /// A1: no `eval(...)` / `(0, eval)(...)` at module top level.
     A1Eval,
@@ -420,24 +1212,6 @@ pub enum AdmissionCheck {
     /// A5 (partial): no `import.meta` reflection beyond
     /// `import.meta.url` at module top level.
     A5ImportMeta,
-}
-
-impl AdmissionCheck {
-    /// The spec-facing snake_case name (the `admission_overrides`
-    /// list element spelling), for diagnostics.
-    pub fn spec_name(self) -> &'static str {
-        match self {
-            Self::A1Eval => "a1_eval",
-            Self::A3DynamicImport => "a3_dynamic_import",
-            Self::A5ImportMeta => "a5_import_meta",
-        }
-    }
-}
-
-impl fmt::Display for AdmissionCheck {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.spec_name())
-    }
 }
 
 /// Per-chunk escape hatch for the input-chunk admission scan: the set
@@ -501,6 +1275,53 @@ impl From<AdmissionOverrides> for Vec<AdmissionCheck> {
 pub struct LoadJsChunksArgs {
     pub input_root: PathBuf,
     pub js_list_path: PathBuf,
+    /// JSON object mapping each embedded file's input path to the loader the
+    /// host applies when it is required (the extractor's `--embedded-loaders`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedded_loaders_path: Option<PathBuf>,
+}
+
+/// A Bun `options.Loader`, as an embedded-loader manifest names it.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BunLoader {
+    Jsx,
+    Js,
+    Ts,
+    Tsx,
+    Css,
+    File,
+    Json,
+    Jsonc,
+    Toml,
+    Wasm,
+    Napi,
+    Base64,
+    Dataurl,
+    Text,
+}
+
+impl BunLoader {
+    /// The closed-list entry for a loader the host applies by the recorded
+    /// byte and that evaluates no JavaScript. A `file` entry is absent: the
+    /// host loads it by extension, so a `.js` or `.mjs` file runs as code.
+    pub fn reentry_free(self) -> Option<EmbeddedLoader> {
+        Some(match self {
+            Self::Text => EmbeddedLoader::Text,
+            Self::Napi => EmbeddedLoader::Napi,
+            _ => return None,
+        })
+    }
+}
+
+/// Embedded-file loaders admissible in `reentry_free_embedded_loaders`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbeddedLoader {
+    /// The file's text, as a string.
+    Text,
+    /// A native addon: the host runs only its initializer.
+    Napi,
 }
 
 /// Omitted fields take their value from the `Default` impl, so `{}` and an
@@ -652,14 +1473,14 @@ pub enum VendorLevel {
     BundledPartialSwap(BundledPartialSwapMark),
 }
 
-/// What [`TransformSpec::unassigned_mode`] means for a chunk's
-/// top-level statements that the YAML doesn't explicitly claim for
-/// any logical module. The atomic-group primitive in
-/// `analysis::atomic_groups` partitions the chunk's source_units into
-/// minimal co-location groups; this enum decides what destination
-/// each *unclaimed* atomic group lands in.
+/// What [`TransformSpec::unassigned_mode`] means for a chunk's top-level
+/// statements that the YAML doesn't explicitly claim for any logical module.
+/// The atomic-group primitive in `analysis::atomic_groups` partitions the
+/// chunk's source units into minimal co-location groups; this enum decides how
+/// unclaimed source units are routed, with an explicit named-owner completion
+/// opt-in available under [`CoarseAtomicGroups`](Self::CoarseAtomicGroups).
 ///
-/// The three variants are mutually exclusive — every chunk picks
+/// The variants are mutually exclusive — every chunk picks
 /// exactly one destination policy.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
@@ -688,6 +1509,19 @@ pub enum UnassignedMode {
     /// be peeled (typically empty for clean chunks). See
     /// `docs/design.md` §"Layered mental model" + §"Two classes of atom".
     PerAtomicGroup,
+    /// Merge wholly-unclaimed atomic groups with equal reachable fixed-owner
+    /// sets in the strict constraining module projection. Output paths use
+    /// `__auto/residual_groups/NNNN`. The final assignment still goes through
+    /// the ordinary realizability gate. Each listed authored module may also
+    /// adopt unclaimed source units from an atomic group when it is that group's
+    /// sole authored owner.
+    CoarseAtomicGroups {
+        /// Explicitly opted-in authored module paths allowed to adopt the
+        /// unclaimed remainder of atomic groups they already own. Every path
+        /// must name a module in this chunk's authored `logical_modules` map.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        complete_partial_atomic_groups_for: Vec<String>,
+    },
 }
 
 impl UnassignedMode {
@@ -700,6 +1534,17 @@ impl UnassignedMode {
                 Some(target.as_deref().unwrap_or(DEFAULT_RESIDUAL_MODULE_PATH))
             }
             _ => None,
+        }
+    }
+
+    /// Authored module paths explicitly allowed to complete a partial atomic
+    /// group under [`CoarseAtomicGroups`](Self::CoarseAtomicGroups).
+    pub fn partial_atomic_group_completion_owners(&self) -> &[String] {
+        match self {
+            UnassignedMode::CoarseAtomicGroups {
+                complete_partial_atomic_groups_for,
+            } => complete_partial_atomic_groups_for,
+            _ => &[],
         }
     }
 }
@@ -887,7 +1732,11 @@ pub struct LogicalModule {
     /// Module-level semantic annotations keyed by the final readable binding
     /// name. This keeps shared metadata out of repeated selector entries and
     /// lets source-match binding claims stay focused on ownership.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_unique_annotations",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
     pub annotations: BTreeMap<String, BindingAnnotation>,
     /// Anonymous (empty-`declared_bindings`) top-level statements
     /// the materializer must co-move into this module's body.
@@ -932,6 +1781,41 @@ impl LogicalModule {
     }
 }
 
+fn deserialize_unique_annotations<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, BindingAnnotation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct UniqueAnnotations;
+
+    impl<'de> serde::de::Visitor<'de> for UniqueAnnotations {
+        type Value = BTreeMap<String, BindingAnnotation>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a map with unique binding annotation names")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            let mut annotations = BTreeMap::new();
+            while let Some(name) = map.next_key::<String>()? {
+                if annotations.contains_key(&name) {
+                    return Err(serde::de::Error::custom(format!(
+                        "duplicate annotation key {name:?}"
+                    )));
+                }
+                annotations.insert(name, map.next_value()?);
+            }
+            Ok(annotations)
+        }
+    }
+
+    deserializer.deserialize_map(UniqueAnnotations)
+}
+
 /// Co-mover spec for a top-level anonymous side-effect statement.
 /// See [`LogicalModule::anonymous_statements`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -950,6 +1834,11 @@ pub struct AnonymousStatement {
     /// property names, and overall AST structure significant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_match: Option<SourceMatch>,
+    /// Author assertion that the selected top-level call (bare or the rightmost
+    /// operand of `&&`) cannot synchronously invoke callbacks or read caller
+    /// lexical state. Arguments remain exposed after the call; not purity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_reentry_call: Option<NoReentryCall>,
     /// Optional YAML-only note. Use this for provenance,
     /// uncertainty, and other scratch reverse-engineering notes that
     /// should survive spec edits without appearing in generated JS.
@@ -965,9 +1854,51 @@ pub struct AnonymousStatement {
     pub comment: Option<String>,
 }
 
+/// Callback positions on one source-selected top-level call. The matched
+/// source supplies the argument count; every other argument must satisfy the
+/// existing inert-primitive syntax admission.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NoReentryCall {
+    pub callback_arguments: Vec<usize>,
+}
+
+impl<'de> Deserialize<'de> for NoReentryCall {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct NoReentryCallFields {
+            callback_arguments: Vec<usize>,
+        }
+
+        let fields = NoReentryCallFields::deserialize(deserializer)?;
+        if fields.callback_arguments.is_empty() {
+            return Err(serde::de::Error::custom(
+                "no_reentry_call must list at least one callback argument position",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for position in &fields.callback_arguments {
+            if !seen.insert(*position) {
+                return Err(serde::de::Error::custom(format!(
+                    "duplicate no_reentry_call callback argument position {position}"
+                )));
+            }
+        }
+        Ok(Self {
+            callback_arguments: fields.callback_arguments,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct BindingAnnotation {
+    /// Audited prototype premises for a source-checked unary local constructor
+    /// factory: missing input fields are actually absent and instance assignments
+    /// successfully create ordinary own data properties. Source execution, eager reads and
+    /// effects remain checked; this does not imply purity or native integrity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retained_record_factory: bool,
     /// Spec-level purity annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_purity")]
     pub purity: MemberPurity,
@@ -975,6 +1906,10 @@ pub struct BindingAnnotation {
     /// variable initializer; it says nothing about later calls or construction.
     #[serde(default, skip_serializing_if = "is_default_initializer_purity")]
     pub initializer_purity: InitializerPurity,
+    /// Source-only lexical effect assertion for one selected top-level
+    /// variable initializer. Omission makes no assertion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initializer_binding_effects: Option<InitializerBindingEffects>,
     /// Spec-level local-effect annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_effect")]
     pub effect: MemberEffect,
@@ -1080,18 +2015,11 @@ impl AnonymousStatement {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[error("{message}")]
 pub struct AnonymousStatementSelectorError {
     message: &'static str,
 }
-
-impl fmt::Display for AnonymousStatementSelectorError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
-    }
-}
-
-impl std::error::Error for AnonymousStatementSelectorError {}
 
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SourceMatch {
@@ -1247,6 +2175,7 @@ impl ModulePath {
         if trimmed.is_empty() {
             return Err(err());
         }
+        // Not `relative-path`: its components skip the empty segments rejected here.
         if trimmed.split('/').any(|s| matches!(s, "" | "." | "..")) {
             return Err(err());
         }
@@ -1267,16 +2196,9 @@ impl std::fmt::Display for ModulePath {
 /// Carries the offending raw input; module paths only fail validation
 /// in one way from the caller's view (the value isn't a valid relative
 /// path), so no caller branches on a reason.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("not a valid relative module path: {0:?}")]
 pub struct ModulePathError(String);
-
-impl std::fmt::Display for ModulePathError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "not a valid relative module path: {:?}", self.0)
-    }
-}
-
-impl std::error::Error for ModulePathError {}
 
 #[cfg(test)]
 mod module_path_tests {
@@ -1329,12 +2251,16 @@ pub struct Member {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub name: Option<String>,
-    pub selector: MemberSelector,
+    /// Raw authored selector syntax. Keep this permissive so invalid YAML can
+    /// still be listed and repaired; semantic code validates it before use.
+    pub selector: RawMemberSelector,
 }
 
+/// The permissive selector shape stored in module YAML. It preserves missing
+/// and conflicting selector keys for validation diagnostics and repair tools.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MemberSelector {
+pub struct RawMemberSelector {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1372,7 +2298,7 @@ pub struct CrossRefSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated cross-reference target (`MemberSelector::selected` resolves the
+/// The validated cross-reference target (`RawMemberSelector::validate` resolves the
 /// `references`/`aliases` one-of into this).
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CrossRefTarget {
@@ -1438,7 +2364,7 @@ pub struct ReadsMemberSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `reads_member` target (`MemberSelector::selected` resolves the
+/// The validated `reads_member` target (`RawMemberSelector::validate` resolves the
 /// selector into this). `member` is always present; `object`/`kind` narrow it.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ReadsMemberTarget {
@@ -1485,7 +2411,7 @@ pub struct MemberOfModuleSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `member_of_module` target (`MemberSelector::selected` resolves
+/// The validated `member_of_module` target (`RawMemberSelector::validate` resolves
 /// the selector into this). `module`/`member` are always present; `kind` narrows.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MemberOfModuleTarget {
@@ -1545,7 +2471,7 @@ pub struct PassedToCallSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `passed_to_call` target (`MemberSelector::selected` resolves the
+/// The validated `passed_to_call` target (`RawMemberSelector::validate` resolves the
 /// selector into this). `callee_member` is always present; `object`/`arg_index`/
 /// `kind` narrow it.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -1596,7 +2522,7 @@ pub struct MakesDecorateCallSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `makes_decorate_call` target (`MemberSelector::selected` resolves
+/// The validated `makes_decorate_call` target (`RawMemberSelector::validate` resolves
 /// the selector into this). `class` is always present; `member`/`kind` narrow it.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MakesDecorateCallTarget {
@@ -1644,7 +2570,7 @@ pub struct IntrinsicAliasSelector {
     pub referenced_by: String,
 }
 
-/// The validated `intrinsic_alias` target (`MemberSelector::selected` resolves the
+/// The validated `intrinsic_alias` target (`RawMemberSelector::validate` resolves the
 /// selector into this). Both fields are always present.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct IntrinsicAliasTarget {
@@ -1670,8 +2596,12 @@ pub struct BindingSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-impl MemberSelector {
-    pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
+impl RawMemberSelector {
+    /// Normalize authored selector syntax into the existing semantic union.
+    /// This is intentionally fallible: callers that edit specs can retain the
+    /// raw value after reporting the error, while semantic consumers require
+    /// the returned `MemberSelectorSpec`.
+    pub fn validate(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
         match (
             &self.binding,
             &self.cross_ref,
@@ -1727,34 +2657,11 @@ pub enum MemberSelectorSpec {
     IntrinsicAlias(IntrinsicAliasTarget),
 }
 
-impl MemberSelectorSpec {
-    /// The `members[].selector.<field>` key this selector deserializes from,
-    /// used to label the claim origin and the `name:`-required diagnostic.
-    pub fn selector_kind_label(&self) -> &'static str {
-        match self {
-            Self::Binding(_) => "binding",
-            Self::CrossRef(_) => "cross_ref",
-            Self::ReadsMember(_) => "reads_member",
-            Self::MemberOfModule(_) => "member_of_module",
-            Self::PassedToCall(_) => "passed_to_call",
-            Self::MakesDecorateCall(_) => "makes_decorate_call",
-            Self::IntrinsicAlias(_) => "intrinsic_alias",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+#[error("{message}")]
 pub struct MemberSelectorError {
     message: &'static str,
 }
-
-impl fmt::Display for MemberSelectorError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
-    }
-}
-
-impl std::error::Error for MemberSelectorError {}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
@@ -1796,6 +2703,16 @@ pub enum InitializerPurity {
     #[default]
     Default,
     Pure,
+}
+
+/// Lexical effects allowed while evaluating one selected top-level variable
+/// initializer.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum InitializerBindingEffects {
+    /// Evaluation reads and rebinds no top-level lexical bindings beyond the
+    /// initializer's syntactic eager-read and rebind footprint.
+    SourceOnly,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
@@ -1858,24 +2775,24 @@ mod tests {
 
     #[test]
     fn cross_ref_requires_exactly_one_relation() {
-        let both: MemberSelector =
+        let both: RawMemberSelector =
             serde_json::from_str(r#"{ "cross_ref": { "references": "A", "aliases": "B" } }"#)
                 .unwrap();
-        assert!(both.selected().is_err(), "both relations must be rejected");
+        assert!(both.validate().is_err(), "both relations must be rejected");
 
-        let neither: MemberSelector =
+        let neither: RawMemberSelector =
             serde_json::from_str(r#"{ "cross_ref": { "kind": "class_declaration" } }"#).unwrap();
-        assert!(neither.selected().is_err(), "no relation must be rejected");
+        assert!(neither.validate().is_err(), "no relation must be rejected");
     }
 
     #[test]
     fn cross_ref_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
+        let selector: RawMemberSelector = serde_json::from_str(
             r#"{ "binding": { "name": "x" }, "cross_ref": { "references": "A" } }"#,
         )
         .unwrap();
         assert!(
-            selector.selected().is_err(),
+            selector.validate().is_err(),
             "a member must use exactly one selector kind",
         );
     }

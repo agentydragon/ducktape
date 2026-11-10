@@ -4,16 +4,15 @@ import fcntl
 import os
 import subprocess
 import threading
-import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s.iptables_rule import IptablesCommandError, ensure_rule
-from util.bazel.runfiles import get_required_path
 
 
 def _fake_iptables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, check_result: int) -> tuple[Path, Path]:
@@ -56,26 +55,29 @@ def test_only_a_missing_rule_is_appended(
 
 
 @pytest.fixture(scope="module")
-def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+def iptables_binary(k3s_binary: Path, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     work = tmp_path_factory.mktemp("k3s-iptables")
     data_dir = work / "data"
     log_path = work / "k3s.log"
-    binary = get_required_path(os.environ["K3S_BINARY_RLOCATION"])
     iptables = data_dir / "data/current/bin/aux/iptables"
     with log_path.open("wb") as log:
         process = subprocess.Popen(
-            [str(binary), "server", "--data-dir", str(data_dir), "--disable-agent", "--flannel-backend=none"],
+            [k3s_binary, "server", "--data-dir", data_dir, "--disable-agent", "--flannel-backend=none"],
             stdout=log,
             stderr=subprocess.STDOUT,
         )
         try:
-            deadline = time.monotonic() + 30
-            while not iptables.is_file():
-                if process.poll() is not None:
-                    raise AssertionError(f"k3s exited before extracting iptables:\n{log_path.read_text()}")
-                if time.monotonic() >= deadline:
-                    raise AssertionError(f"k3s did not extract iptables:\n{log_path.read_text()}")
-                time.sleep(0.02)
+            for attempt in Retrying(
+                stop=stop_after_delay(30),
+                wait=wait_fixed(0.02),
+                retry=retry_if_exception_type(LookupError),
+                reraise=True,
+            ):
+                with attempt:
+                    if process.poll() is not None:
+                        raise AssertionError(f"k3s exited before extracting iptables:\n{log_path.read_text()}")
+                    if not iptables.is_file():
+                        raise LookupError(f"k3s did not extract iptables:\n{log_path.read_text()}")
         finally:
             process.terminate()
             try:
@@ -102,29 +104,32 @@ def _chain_rules(iptables: Path, chain: str) -> list[str]:
     return [line for line in output.splitlines() if line.startswith("-A ")]
 
 
+def _helper_lock_fd_holder(expected_args: list[str], lock: os.stat_result) -> int:
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdecimal():
+            continue
+        try:
+            args = entry.joinpath("cmdline").read_bytes().rstrip(b"\0").decode().split("\0")
+            if args != expected_args:
+                continue
+            for fd in entry.joinpath("fd").iterdir():
+                try:
+                    opened = fd.stat()
+                except FileNotFoundError:
+                    continue
+                if (opened.st_dev, opened.st_ino) == (lock.st_dev, lock.st_ino):
+                    return int(entry.name)
+        except FileNotFoundError, PermissionError, ProcessLookupError:
+            continue
+    raise LookupError("helper's iptables check did not open the held xtables lock")
+
+
 def _wait_for_helper_lock_fd(iptables: Path, chain: str) -> int:
     expected_args = [str(iptables), "-w", "5", "-t", "filter", "-C", chain, "-j", "RETURN"]
     lock = Path("/run/xtables.lock").stat()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdecimal():
-                continue
-            try:
-                args = entry.joinpath("cmdline").read_bytes().rstrip(b"\0").decode().split("\0")
-                if args != expected_args:
-                    continue
-                for fd in entry.joinpath("fd").iterdir():
-                    try:
-                        opened = fd.stat()
-                    except FileNotFoundError:
-                        continue
-                    if (opened.st_dev, opened.st_ino) == (lock.st_dev, lock.st_ino):
-                        return int(entry.name)
-            except FileNotFoundError, PermissionError, ProcessLookupError:
-                continue
-        time.sleep(0.02)
-    raise AssertionError("helper's iptables check did not open the held xtables lock")
+    return Retrying(
+        stop=stop_after_delay(5), wait=wait_fixed(0.02), retry=retry_if_exception_type(LookupError), reraise=True
+    )(_helper_lock_fd_holder, expected_args, lock)
 
 
 def _hold_xtables_lock() -> int:

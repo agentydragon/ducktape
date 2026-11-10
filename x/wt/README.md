@@ -29,15 +29,11 @@ Install shell function: `eval "$(python -m x.wt.shell.install)"`
 
 ## Architecture
 
-**Client-server**: CLI parses args, delegates to background daemon via JSON-RPC over Unix socket.
-
-- **CLI** (`cli.py`): arg parsing, never calls GitHub APIs
-- **Daemon**: GitHub API, git status queries, auto-starts when needed
-- **Handlers** (`handlers.py`): pure functions with explicit deps
+**Client-server**: CLI and client handlers (`client/handlers.py`) call the background daemon over JSON-RPC on a Unix socket; the client never calls GitHub APIs, and the daemon auto-starts when needed. The daemon owns GitHub/status queries, path resolution, and worktree create/delete; RPC handlers under `server/handlers/` receive explicit `ServiceDependencies`.
 
 **Shell integration** uses fd3: CLI writes shell commands to fd3, shell function executes them after CLI exits. Exit codes: 0=success (execute), 1=uncontrolled error (skip), 2=controlled error (execute safe recovery).
 
-**Path preservation**: detects relative position, maintains same path in target worktree, walks up directory tree if path doesn't exist.
+**Navigation**: the daemon resolves the target path; the client emits the resulting `cd` through fd3. Teleport keeps the current relative directory when it exists in the target worktree, otherwise it returns the target root.
 
 ## Configuration
 

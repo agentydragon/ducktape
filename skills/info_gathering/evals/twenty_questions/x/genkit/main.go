@@ -22,6 +22,9 @@ import (
 	oai "github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
 
+// The Bazel binary target injects runfiles paths for these prompt templates.
+var firstUserMessageRlocation, scratchSystemNoteRlocation, simRlocation string
+
 func mustJSON(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -247,7 +250,7 @@ func loadRunfile(rlocationPath string) string {
 }
 
 func loadSimPrompt(v Variant) string {
-	template := loadRunfile("_main/skills/info_gathering/evals/twenty_questions/sim.txt")
+	template := loadRunfile(simRlocation)
 	r := strings.NewReplacer(
 		"{turn_limit}", fmt.Sprintf("%d", v.TurnLimit),
 		"{secret}", v.Secret,
@@ -256,7 +259,7 @@ func loadSimPrompt(v Variant) string {
 }
 
 func loadFirstUserMessage(v Variant) string {
-	template := loadRunfile("_main/skills/info_gathering/evals/twenty_questions/first_user_message.txt")
+	template := loadRunfile(firstUserMessageRlocation)
 	r := strings.NewReplacer(
 		"{domain_description}", v.DomainDescription,
 		"{turn_limit}", fmt.Sprintf("%d", v.TurnLimit),
@@ -265,7 +268,7 @@ func loadFirstUserMessage(v Variant) string {
 }
 
 func loadScratchSystemNote() string {
-	return loadRunfile("_main/skills/info_gathering/evals/twenty_questions/scratch_system_note.txt")
+	return loadRunfile(scratchSystemNoteRlocation)
 }
 
 // TODO: The Python implementations load SKILL.md and wrap it in XML tags via

@@ -9,12 +9,15 @@ import (
 	"math"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -41,7 +44,9 @@ var _ worker.Provider = (*Source)(nil)
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
-func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+//
+// An IdentityOwner follows only the requests its exact Identity incarnation submitted.
+func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
@@ -49,11 +54,22 @@ func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, request
 	if request == nil || request.GetActionRequest() == nil {
 		return nil, validationFailure()
 	}
-	caller, err := serviceAccount(request.GetActionRequest().GetCaller())
-	if err != nil {
-		return nil, err
+	submitted := request.GetActionRequest()
+	var owned bool
+	switch owner := owner.(type) {
+	case store.AccountOwner:
+		caller, err := serviceAccount(submitted.GetCaller())
+		if err != nil {
+			return nil, err
+		}
+		owned = caller == owner.Account && owner.AccountUID != "" && submitted.GetCallerUid() == owner.AccountUID
+	case store.IdentityOwner:
+		caller := submitted.GetCallerIdentity()
+		owned = owner.Identity.UID != "" && caller.GetName() == owner.Identity.Name && caller.GetUid() == owner.Identity.UID
+	default:
+		panic(fmt.Sprintf("unknown inbox owner %T", owner))
 	}
-	if caller != owner {
+	if !owned {
 		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	if afterSequence < 0 || afterSequence > maxEventSequence {
@@ -69,7 +85,7 @@ func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, request
 	if page == nil {
 		return nil, validationFailure()
 	}
-	events := make([]store.ActionEvent, len(page.GetEvents()))
+	events := make([]storagecodec.ActionEvent, len(page.GetEvents()))
 	for i, event := range page.GetEvents() {
 		if events[i], err = actionEvent(event); err != nil {
 			return nil, err
@@ -85,7 +101,7 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	if !ok || due.ActionsAfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
 	}
-	events, err := s.Events(ctx, claim.Owner, request.RequestID, *due.ActionsAfterSequence)
+	events, err := s.Events(ctx, claim.Holder(), request.RequestID, *due.ActionsAfterSequence)
 	if err != nil {
 		return err
 	}
@@ -96,26 +112,26 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func serviceAccount(account *sandboxespb.ServiceAccount) (model.ServiceAccount, error) {
+func serviceAccount(account *identitypb.ServiceAccount) (model.ServiceAccount, error) {
 	if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
 		return model.ServiceAccount{}, validationFailure()
 	}
 	return model.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
 }
 
-func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error) {
+func actionEvent(event *action_servicepb.ActionEvent) (storagecodec.ActionEvent, error) {
 	if event == nil || event.GetSequence() < 1 || event.GetAt() == nil || event.GetAt().CheckValid() != nil {
-		return store.ActionEvent{}, validationFailure()
+		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	state := event.GetState()
 	if !validActionState(state) {
-		return store.ActionEvent{}, validationFailure()
+		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	actor := event.GetActor()
 	if err := validateActionActor(actor); err != nil {
-		return store.ActionEvent{}, validationFailure()
+		return storagecodec.ActionEvent{}, validationFailure()
 	}
-	return store.ActionEvent{
+	return storagecodec.ActionEvent{
 		Sequence: int64(event.GetSequence()), State: state, At: event.GetAt().AsTime().UTC().Truncate(time.Microsecond), Actor: actor,
 	}, nil
 }

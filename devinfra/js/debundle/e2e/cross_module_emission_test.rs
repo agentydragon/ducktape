@@ -2,6 +2,7 @@
 //! modules produced by `materialize_logical_modules`.
 
 use debundle_e2e_support::*;
+use serde_json::json;
 use std::fs;
 use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
 
@@ -21,6 +22,39 @@ fn has_named_import(source: &str, expected: &str) -> bool {
             }
         })
     })
+}
+
+#[test]
+fn assignment_only_import_references_preserve_read_only_binding_failures() {
+    for statement in [
+        "target = 1;",
+        "target += 1;",
+        "[target] = [1];",
+        "({ value: target } = { value: 1 });",
+        "({ target } = { target: 1 });",
+        "for (target of [1]) {}",
+        "for (target in { value: 1 }) {}",
+    ] {
+        for extracted in [false, true] {
+            let source = if extracted {
+                format!(
+                    "import {{ value as target }} from './peer.js';\nfunction write() {{ {statement} }}\nwrite();\n"
+                )
+            } else {
+                format!("import {{ value as target }} from './peer.js';\n{statement}\n")
+            };
+            let modules = if extracted {
+                vec![logical_module("writer", &[Member::new("write")])]
+            } else {
+                vec![]
+            };
+            let fixture = run_fixture(FixtureOpts::new(&source, modules).with_extra_chunks(&[(
+                "static/peer",
+                "console.log('peer'); export const value = 0;\n",
+            )]));
+            assert_preserved_entry_error(&fixture, "TypeError");
+        }
+    }
 }
 
 #[test]
@@ -68,19 +102,9 @@ console.log(value);
 }
 
 #[test]
-fn folds_unclaimed_assigner_with_extracted_mutable_binding() {
-    // This is the minimal shape behind the an upstream boot-progress
-    // `Assignment to constant variable` failure: the spec peels a
-    // mutable binding, while a still-residual function assigns to
-    // that binding at runtime. Emitting `import { a } ...` into the
-    // residual entry and leaving `a = 1` there makes Node reject the
-    // assignment because imported ESM bindings are read-only in the
-    // importing module.
-    //
-    // Rebind-only atomic-group folding extends the explicit `state`
-    // destination to cover the unclaimed assigner `b`. That keeps the
-    // assignment local to the module that owns `a`; the residual entry
-    // imports and calls `b` instead of assigning an imported binding.
+fn explicitly_claimed_assigner_stays_with_extracted_mutable_binding() {
+    // Both the mutable cell and its writer are explicit members. The entry
+    // imports the writer instead of assigning through a read-only ESM import.
     let mut opts = FixtureOpts::new(
         r#"let a = 0;
 function b() {
@@ -90,7 +114,10 @@ b();
 console.log(a);
 export { a };
 "#,
-        vec![logical_module("state", &[Member::new("a")])],
+        vec![logical_module(
+            "state",
+            &[Member::new("a"), Member::new("b")],
+        )],
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
@@ -113,7 +140,169 @@ export { a };
         &["import { a, b }"],
         &["a = 1;"],
     );
-    assert_entry_output(&fixture, "1\n");
+    assert_preserved_entry_output(&fixture, "1\n");
+}
+
+const UNCLAIMED_WRITER_SOURCE: &str =
+    "let mutable = 0;\nfunction write() { mutable = 1; }\nwrite();\nconsole.log(mutable);\n";
+
+#[test]
+fn partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module() {
+    // Claiming only the mutable binding leaves its writer to the residual
+    // policy. The ordinary gate rejects the split as a cross-destination
+    // rebind; the emitted writer would assign through a read-only import.
+    for mode in [
+        unassigned_mode_inline(),
+        unassigned_mode_catchall_file(None),
+        unassigned_mode_per_atomic_group(),
+        unassigned_mode_coarse_atomic_groups(),
+    ] {
+        let rejected = run_emit_on_rejection_fixture(
+            FixtureOpts::new(
+                UNCLAIMED_WRITER_SOURCE,
+                vec![logical_module("state", &[Member::new("mutable")])],
+            )
+            .with_unassigned_mode(mode.clone()),
+        );
+
+        let conflicts = rejected.atomic_group_conflicts();
+        assert_eq!(conflicts.len(), 1, "{mode:?}: {conflicts:#?}");
+        assert!(
+            conflicts[0]["causes"]
+                .as_array()
+                .expect("atomic group causes")
+                .iter()
+                .any(|cause| cause == "lazy_rebind"),
+            "{mode:?}: the gate rejection must retain the rebinding cause: {conflicts:#?}"
+        );
+        let candidate = rejected.candidate_relocation_assessment();
+        assert_eq!(candidate["legacy_gate_accepts"], false, "{candidate:#}");
+        assert_eq!(candidate["placement"]["status"], "blocked", "{candidate:#}");
+        assert!(
+            !candidate["placement"]["cross_destination_rebinds"]
+                .as_array()
+                .expect("typed cross-destination rebind obligations")
+                .is_empty(),
+            "{mode:?}: {candidate:#}"
+        );
+
+        assert_node_output(
+            &rejected
+                .source_root
+                .join(format!("{}.js", rejected.chunk_id)),
+            "1\n",
+            "",
+        );
+        assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
+    }
+}
+
+#[test]
+fn wholly_unclaimed_rebind_group_keeps_its_configured_fallback_and_runtime() {
+    for (mode, module_path) in [
+        (unassigned_mode_inline(), None),
+        (
+            unassigned_mode_catchall_file(None),
+            Some("static/app/modules/residual/unhandled.js"),
+        ),
+        (
+            unassigned_mode_per_atomic_group(),
+            Some("static/app/modules/__auto/atomic_groups/0000.js"),
+        ),
+        (
+            unassigned_mode_coarse_atomic_groups(),
+            Some("static/app/modules/__auto/residual_groups/0000.js"),
+        ),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(UNCLAIMED_WRITER_SOURCE, vec![]).with_unassigned_mode(mode),
+        );
+        assert_preserved_entry_output(&fixture, "1\n");
+        if let Some(module_path) = module_path {
+            assert_module_source(
+                &fixture.out_root,
+                module_path,
+                &["let mutable = 0;", "function write()", "mutable = 1;"],
+                &[],
+            );
+        }
+    }
+}
+
+#[test]
+fn cross_destination_rebind_is_rejected_when_effect_order_does_not_change() {
+    // Keep the declaration and deferred writer in separate explicit
+    // destinations. The ESM statement order still matches source order, but
+    // the writer module would assign through an imported, read-only binding.
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+        r#"let mutable = 0;
+function write() {
+  mutable = 1;
+  return mutable;
+}
+write();
+console.log(mutable);
+export { mutable, write };
+"#,
+        vec![
+            logical_module("state", &[Member::new("mutable")]),
+            logical_module("writer", &[Member::new("write")]),
+        ],
+    ));
+
+    let effects = rejected.effect_translation_validation();
+    assert_eq!(effects["swapped_pairs"], 0, "{effects:#}");
+    assert_eq!(effects["decision"]["status"], "accepted", "{effects:#}");
+    assert_eq!(effects["decision"]["scope"], "no_reordering", "{effects:#}");
+    assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
+
+    let candidate = rejected.candidate_relocation_assessment();
+    assert_eq!(candidate["status"], "blocked_by_placement", "{candidate:#}");
+    assert_eq!(candidate["emitted_order"], effects["emitted_order"]);
+    assert_eq!(candidate["legacy_gate_accepts"], false, "{candidate:#}");
+    assert_eq!(
+        candidate["legacy_gate_ordering_veto"], false,
+        "{candidate:#}"
+    );
+    assert_eq!(candidate["decision"]["status"], "accepted", "{candidate:#}");
+    assert_eq!(candidate["swapped_pairs"], 0, "{candidate:#}");
+    assert_eq!(
+        candidate["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
+        "{candidate:#}"
+    );
+    assert_eq!(candidate["placement"]["status"], "blocked");
+    assert_eq!(
+        candidate["placement"]["cross_destination_rebinds"]
+            .as_array()
+            .expect("typed cross-destination rebind obligations")
+            .len(),
+        1,
+        "{candidate:#}"
+    );
+    assert_eq!(
+        candidate["placement"]["atomic_group_obligations"][0]["classification"],
+        "structural_constraint",
+        "{candidate:#}"
+    );
+
+    let conflicts = rejected.atomic_group_conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:#?}");
+    assert!(
+        conflicts[0]["causes"]
+            .as_array()
+            .expect("atomic group causes")
+            .iter()
+            .any(|cause| cause == "lazy_rebind"),
+        "the gate rejection must retain the rebinding cause: {conflicts:#?}"
+    );
+    assert_module_source(
+        &rejected.app_root(),
+        "static/app/modules/writer.js",
+        &["import { mutable as mutable$1 }", "mutable$1 = 1;"],
+        &[],
+    );
+    assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
 }
 
 #[test]
@@ -636,16 +825,14 @@ export { a, b, c };
             ),
         ],
     ));
-    let consumer = fs::read_to_string(fixture.out_root.join("static/app/modules/consumer.js"))
-        .expect("read consumer module");
-
-    assert!(
-        consumer.contains("sharedReadableName as sharedReadableName$1"),
-        "expected imported readable name to be aliased away from local function decl; got:\n{consumer}",
-    );
-    assert!(
-        consumer.contains("sharedReadableName$1() + \":\" + sharedReadableName()"),
-        "expected provider refs to use import alias and local refs to stay local; got:\n{consumer}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/consumer.js",
+        &[
+            "sharedReadableName as sharedReadableName$1",
+            "sharedReadableName$1() + \":\" + sharedReadableName()",
+        ],
+        &[],
     );
     assert_entry_output(&fixture, "provider:local\n");
 }
@@ -710,16 +897,11 @@ export { a };
     )];
     let fixture = run_fixture(opts);
 
-    let mod_x = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_x.js"))
-        .expect("read mod_x.js");
-
-    assert!(
-        mod_x.contains("import {") && mod_x.contains("Readable") && mod_x.contains("vendor"),
-        "mod_x.js must re-import the vendor binding under the readable name; got:\n{mod_x}",
-    );
-    assert!(
-        mod_x.contains("export {") && mod_x.contains("Readable"),
-        "mod_x.js must export Readable; got:\n{mod_x}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_x.js",
+        &["import {", "Readable", "vendor", "export {", "Readable"],
+        &[],
     );
 }
 
@@ -805,14 +987,14 @@ export { bridge };
     opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
     let fixture = run_fixture(opts);
 
-    let mod_b = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_b.js"))
-        .expect("read mod_b.js");
     // mod_b's bridge body references `a`; mod_b must carry a
     // source-chunk re-import for `a` (the vendor binding) so the
     // moved body resolves at link time.
-    assert!(
-        mod_b.contains("import") && mod_b.contains("vendor"),
-        "mod_b.js must re-import the vendor specifier; got:\n{mod_b}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["import", "vendor"],
+        &[],
     );
     // Behaviour preservation: `bridge()` returns the imported
     // vendor value. Without the filter narrowing this would
@@ -860,24 +1042,11 @@ export { St as B, Ite };
     )]);
     let fixture = run_fixture(opts);
 
-    let moved = fs::read_to_string(
-        fixture
-            .out_root
-            .join("static/app/modules/feature/consumer.js"),
-    )
-    .expect("read moved consumer module");
-
-    assert!(
-        moved.contains("B as entryHelper"),
-        "entry's public export B must be imported under its entry-local name; got:\n{moved}",
-    );
-    assert!(
-        moved.contains("o as vendorHelper"),
-        "vendor import local B must keep the vendor-helper readable name; got:\n{moved}",
-    );
-    assert!(
-        !moved.contains("B as vendorHelper"),
-        "entry export B must not be mistaken for the vendor binding; got:\n{moved}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/feature/consumer.js",
+        &["B as entryHelper", "o as vendorHelper"],
+        &["B as vendorHelper"],
     );
     assert_generated_module_after_entry_script(
         &fixture,

@@ -4,9 +4,9 @@
 //!
 //! The shared invariants:
 //!
-//! * `<sym>` accepts either the minified `selector.binding.name` form
-//!   or the readable `name:` form. If both forms could match different
-//!   members, the operation refuses with a structured list.
+//! * `<sym>` resolves against the spec: `selector.binding.name`, a source-match
+//!   template-local identifier, or an explicit readable `name:`. Graph query
+//!   aliases are separate. Ambiguous spec identifiers produce a list of matches.
 //! * Mutating commands validate-by-default (atomic post-batch state)
 //!   and refuse on collision / atom-split rejection.
 //! * Edits use the canonical module schema; changed YAML is reserialized.
@@ -16,89 +16,107 @@
 //! diagnostics) in `docs/cli.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, ModuleDestinationKind, SourceUnitId, StatementKind};
-use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
+use graph_provenance::VerifiedGraphSourceContext;
+use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
+use crate::candidate_assessment::EffectAssessmentUnavailable;
+use pipeline::{AnalysisArtifactInput, TransformRequest, assess_candidate_effect_relocation};
 use spec::{
-    AnonymousStatement, BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
+    BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath, SourceMatchBinding,
     SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
 };
-use spec_modules::{
-    coalesce_source_match_claims, collect_module_files, module_path_from_file, read_module_file,
-};
-use spec_tree::ModuleTreeScope;
+use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 use yaml_edit::write_yaml_atomic;
 
-use crate::edit_gate::{
-    Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
-    gate_post_edit_assignment_with_expected_source_unit_modules, post_edit_spec_from_docs,
-    project_source_unit_claims, source_claim_sets_from_post_spec,
-    source_unit_module_assignments_from_projection,
-};
+use crate::edit_gate::{Gate, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome};
 
-/// A chunk-top binding's public identity: the minified hygiene name
-/// (`selector.binding.name`, e.g. `_ab`) plus an optional readable
-/// `name:` the spec assigns (e.g. `parseUserId`).
+/// The source of a binding's current spec identity.
 ///
-/// Serializes internally-tagged so CLI JSON consumers can branch on
-/// `.kind` (`"minified"` | `"readable"`) and always read `.minified`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// A direct selector identifier and a source-match capture are both names used
+/// by the spec; neither spelling by itself says whether the name is volatile.
+/// Structural members have no direct binding identifier.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BindingName {
-    /// No readable name yet — still the minified hygiene identity.
-    Minified { minified: String },
-    /// Renamed: carries both the minified anchor and the readable name.
-    Readable { minified: String, name: String },
+pub enum BindingIdentity {
+    DirectBindingIdentifier { name: String },
+    SourceMatchCapture { local: String },
+    StructuralMember { selector: SelectorKind },
 }
 
-impl BindingName {
-    pub fn new(minified: String, readable: Option<String>) -> Self {
-        match readable {
-            Some(name) => Self::Readable { minified, name },
-            None => Self::Minified { minified },
-        }
-    }
-
-    /// The minified hygiene name (always present).
-    pub fn minified(&self) -> &str {
+impl BindingIdentity {
+    fn selector_identifier(&self) -> Option<&str> {
         match self {
-            Self::Minified { minified } | Self::Readable { minified, .. } => minified,
+            Self::DirectBindingIdentifier { name } => Some(name),
+            Self::SourceMatchCapture { local } => Some(local),
+            Self::StructuralMember { .. } => None,
         }
-    }
-
-    /// The readable name, if one was assigned.
-    pub fn readable(&self) -> Option<&str> {
-        match self {
-            Self::Minified { .. } => None,
-            Self::Readable { name, .. } => Some(name),
-        }
-    }
-
-    pub fn is_renamed(&self) -> bool {
-        matches!(self, Self::Readable { .. })
-    }
-
-    /// True when `query` matches either the minified or readable
-    /// spelling — the CLI's `<sym>` lookup rule.
-    pub fn matches(&self, query: &str) -> bool {
-        self.minified() == query || self.readable() == Some(query)
     }
 }
 
-/// A located member inside a module file. Returned by [`find_matches`]
+impl fmt::Display for BindingIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DirectBindingIdentifier { name } => {
+                write!(f, "direct binding identifier {name:?}")
+            }
+            Self::SourceMatchCapture { local } => write!(f, "source-match capture {local:?}"),
+            Self::StructuralMember { selector } => {
+                write!(f, "structural member ({})", selector.origin(None))
+            }
+        }
+    }
+}
+
+/// A spec identity and its optional explicitly configured readable name.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BindingLabel {
+    pub identity: BindingIdentity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readable_name: Option<String>,
+}
+
+impl BindingLabel {
+    pub(crate) fn new(identity: BindingIdentity, readable_name: Option<String>) -> Self {
+        Self {
+            identity,
+            readable_name,
+        }
+    }
+
+    pub(crate) fn effective_name(&self) -> &str {
+        self.readable_name
+            .as_deref()
+            .or_else(|| self.identity.selector_identifier())
+            .expect("a listed binding has an identity or readable name")
+    }
+
+    pub(crate) fn is_renamed(&self) -> bool {
+        self.readable_name.is_some()
+    }
+
+    /// Match a direct selector identifier, a source-match capture, or an
+    /// explicit readable name. Structural members match only by readable name.
+    fn matches(&self, query: &str) -> bool {
+        self.identity.selector_identifier() == Some(query)
+            || self.readable_name.as_deref() == Some(query)
+    }
+}
+
+/// A located member inside a module file. Returned by [`resolve_unambiguous`]
 /// and is the unit `assign` / `rename` inspect or mutate.
 #[derive(Debug, Clone)]
 pub struct BindingMatch {
     pub file: PathBuf,
     pub module_path: String,
     pub location: BindingLocation,
-    pub name: BindingName,
+    pub label: BindingLabel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -124,7 +142,7 @@ impl BindingLocation {
     }
 }
 
-type ModuleDocs = BTreeMap<String, (PathBuf, LogicalModule)>;
+pub(crate) type ModuleDocs = BTreeMap<String, (PathBuf, LogicalModule)>;
 
 /// Load one planning snapshot for resolution, collision checks, and edits.
 /// Batch persistence compares against this same pre-edit snapshot.
@@ -155,27 +173,46 @@ fn apply_module_edit(
     Ok(true)
 }
 
-fn binding_matches_in_doc(
+pub(crate) fn binding_matches_in_doc(
     file: &Path,
     module_path: &str,
     doc: &LogicalModule,
 ) -> Vec<BindingMatch> {
     let mut out = Vec::new();
-    let mut add = |location, name| {
+    let mut add = |location, label| {
         out.push(BindingMatch {
             file: file.to_path_buf(),
             module_path: module_path.to_string(),
             location,
-            name,
+            label,
         })
     };
     for (member_index, member) in doc.members.iter().enumerate() {
-        let minified = member_minified_name(member);
-        if minified.is_some() || member.name.is_some() {
-            add(
-                BindingLocation::Member { member_index },
-                BindingName::new(minified.unwrap_or_default(), member.name.clone()),
-            );
+        let identity = match member.selector.validate() {
+            Ok(MemberSelectorSpec::Binding(binding)) => {
+                BindingIdentity::DirectBindingIdentifier { name: binding.name }
+            }
+            Ok(structural) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::from(&structural),
+            },
+            // An invalid selector with a `binding.name` still resolves by that name.
+            Err(_) if let Some(binding) = &member.selector.binding => {
+                BindingIdentity::DirectBindingIdentifier {
+                    name: binding.name.clone(),
+                }
+            }
+            Err(_) => BindingIdentity::StructuralMember {
+                selector: SelectorKind::UnparsedMember,
+            },
+        };
+        let label = BindingLabel::new(identity, member.name.clone());
+        if label
+            .identity
+            .selector_identifier()
+            .is_some_and(|name| !name.is_empty())
+            || label.readable_name.is_some()
+        {
+            add(BindingLocation::Member { member_index }, label);
         }
     }
     for (claim_index, claim) in doc.source_matches.iter().enumerate() {
@@ -186,7 +223,12 @@ fn binding_matches_in_doc(
                         claim_index,
                         binding_index,
                     },
-                    BindingName::new(binding.local().to_string(), source_match_readable(binding)),
+                    BindingLabel::new(
+                        BindingIdentity::SourceMatchCapture {
+                            local: binding.local().to_string(),
+                        },
+                        source_match_readable(binding),
+                    ),
                 );
             }
         }
@@ -194,26 +236,25 @@ fn binding_matches_in_doc(
     out
 }
 
-fn binding_effective_name(name: &BindingName) -> &str {
-    name.readable().unwrap_or_else(|| name.minified())
+pub(crate) fn binding_effective_name(label: &BindingLabel) -> &str {
+    label.effective_name()
 }
 
-fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
+pub(crate) fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
     match binding {
         SourceMatchBinding::Local(_) => None,
         SourceMatchBinding::Detailed(detail) => detail.name.clone().filter(|name| !name.is_empty()),
     }
 }
 
-/// Find all members matching either the minified binding name or readable `name:`.
-pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
-    Ok(matches_in_docs(&load_module_docs(modules_root)?, sym))
-}
-
 pub(crate) fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
-    docs.iter()
-        .flat_map(|(module, (file, doc))| binding_matches_in_doc(file, module, doc))
-        .filter(|binding| binding.name.matches(sym))
+    let mut matches = Vec::new();
+    for (module, (file, doc)) in docs {
+        matches.extend(binding_matches_in_doc(file, module, doc));
+    }
+    matches
+        .into_iter()
+        .filter(|binding| binding.label.matches(sym))
         .collect()
 }
 
@@ -226,21 +267,26 @@ pub fn resolve_unambiguous(modules_root: &Path, sym: &str) -> Result<BindingMatc
 fn resolve_in_docs(modules_root: &Path, docs: &ModuleDocs, sym: &str) -> Result<BindingMatch> {
     let matches = matches_in_docs(docs, sym);
     match matches.len() {
-        0 => bail!(
-            "no binding named \"{sym}\" found under {}",
-            modules_root.display()
-        ),
+        0 => {
+            let modules_arg = modules_root.display().to_string();
+            let modules_arg = shlex::try_quote(&modules_arg)
+                .context("module path cannot be represented in a POSIX shell command")?;
+            bail!(
+                "no binding named \"{sym}\" found under {}\nList current spec identifiers with:\n  debundle bindings list --modules {modules_arg}",
+                modules_root.display()
+            );
+        }
         1 => Ok(matches.into_iter().next().unwrap()),
         _ => {
             let locations: Vec<String> = matches
                 .iter()
                 .map(|m| {
                     format!(
-                        "  {}#{} (binding={}, name={})",
+                        "  {}#{} (identity={}, readable_name={})",
                         m.file.display(),
                         m.location.describe(),
-                        m.name.minified(),
-                        m.name.readable().unwrap_or("-")
+                        m.label.identity,
+                        m.label.readable_name.as_deref().unwrap_or("-")
                     )
                 })
                 .collect();
@@ -264,13 +310,10 @@ pub struct BindingsListReport {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BindingEntry {
-    /// The binding's identity (minified, plus readable name if set).
-    /// Flattened into the entry, so JSON carries `kind`/`minified`/
-    /// (`name`) alongside `module`/`orphan`. The renamed/unrenamed
-    /// distinction is `name.kind`; there is no separate `unrenamed`
-    /// bool (it was a redundant restatement of `kind == "minified"`).
+    /// Direct binding identifiers, source-match captures, or structural members,
+    /// with an optional explicit readable name.
     #[serde(flatten)]
-    pub name: BindingName,
+    pub label: BindingLabel,
     pub module: String,
     /// `true` when this binding is the only member of its module.
     pub orphan: bool,
@@ -294,18 +337,25 @@ pub fn run_bindings_list(
         let bindings = binding_matches_in_doc(&file, &module_path, &doc);
         let orphan = bindings.len() == 1;
         entries.extend(bindings.into_iter().map(|binding| BindingEntry {
-            name: binding.name,
+            label: binding.label,
             module: module_path.clone(),
             orphan,
         }));
     }
     entries.retain(|e| {
         (filters.in_module.as_deref().is_none_or(|m| e.module == m))
-            && (!filters.unrenamed || !e.name.is_renamed())
+            && (!filters.unrenamed || !e.label.is_renamed())
             && (!filters.orphan || e.orphan)
     });
     entries.sort_by(|a, b| {
-        (a.module.as_str(), a.name.minified()).cmp(&(b.module.as_str(), b.name.minified()))
+        (
+            a.module.as_str(),
+            a.label.identity.selector_identifier().unwrap_or(""),
+        )
+            .cmp(&(
+                b.module.as_str(),
+                b.label.identity.selector_identifier().unwrap_or(""),
+            ))
     });
     Ok(BindingsListReport { bindings: entries })
 }
@@ -321,15 +371,15 @@ pub fn run_bindings_list(
 pub struct RenameOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
-    /// Minified binding name of the renamed member.
-    pub binding: String,
+    /// Typed spec identity of the renamed member.
+    pub identity: BindingIdentity,
     pub old_readable: Option<String>,
     pub new_readable: String,
 }
 
 /// Rename a single binding's readable `name:` without moving it.
 ///
-/// `original` accepts the minified or current readable form. `new`
+/// `original` accepts the current spec identifier or readable name. `new`
 /// must not collide with any other binding's readable name in the
 /// chunk (unless `no_verify`).
 pub fn rename_binding(
@@ -340,10 +390,7 @@ pub fn rename_binding(
     no_verify: bool,
 ) -> Result<RenameOutcome> {
     if original.contains(':') || new.contains(':') {
-        bail!(
-            "neither <original> nor <readable> may contain `:`; use --batch JSON for edge \
-             cases"
-        );
+        bail!("neither <original> nor <readable> may contain `:`");
     }
     let mut docs = load_module_docs(modules_root)?;
     let hit = resolve_in_docs(modules_root, &docs, original)?;
@@ -360,10 +407,8 @@ pub fn rename_binding(
         .get_mut(&hit.module_path)
         .expect("resolved module is loaded");
     let original_doc = doc.clone();
-    let old_readable = hit.name.readable().map(str::to_string);
-    let old_effective = old_readable
-        .clone()
-        .unwrap_or_else(|| hit.name.minified().to_string());
+    let old_readable = hit.label.readable_name.clone();
+    let old_effective = hit.label.effective_name().to_string();
     let annotation = doc.annotations.remove(&old_effective);
     set_readable_name(doc, &hit.location, new);
     insert_annotation(doc, new, annotation)?;
@@ -384,6 +429,7 @@ pub fn rename_binding(
             } else {
                 GateOutcome::NamesOnly
             },
+            needs_full_assessment: false,
             files_written: if changed {
                 vec![hit.file.display().to_string()]
             } else {
@@ -391,9 +437,182 @@ pub fn rename_binding(
             },
             files_deleted: Vec::new(),
         },
-        binding: hit.name.minified().to_string(),
+        identity: hit.label.identity.clone(),
         old_readable,
         new_readable: new.to_string(),
+    })
+}
+
+/// A names-only request resolved against the invocation's original spec.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rename {
+    pub sym: String,
+    pub readable: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RenameResult {
+    pub sym: String,
+    pub module: String,
+    pub identity: BindingIdentity,
+    pub old_readable: String,
+    pub new_readable: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RenameBatchOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
+    pub renames_applied: usize,
+    pub renames: Vec<RenameResult>,
+}
+
+/// Preflight the complete final map before replacing any file. Persistence is
+/// atomic per file, rather than a crash-atomic transaction across the tree.
+pub fn rename_bindings(
+    modules_root: &Path,
+    requests: Vec<Rename>,
+    dry_run: bool,
+    no_verify: bool,
+) -> Result<RenameBatchOutcome> {
+    let original_docs = load_module_docs(modules_root)?;
+    let mut resolved = BTreeMap::new();
+    for request in requests {
+        if request.readable.trim().is_empty() {
+            bail!("readable name must not be blank");
+        }
+        let hit = resolve_in_docs(modules_root, &original_docs, &request.sym)?;
+        let identity = (hit.module_path.clone(), hit.location);
+        if let Some((previous, _)) = resolved.get(&identity) {
+            let previous: &Rename = previous;
+            if previous.readable != request.readable {
+                bail!(
+                    "contradictory renames for {}#{}",
+                    hit.file.display(),
+                    hit.location.describe()
+                );
+            }
+            eprintln!(
+                "duplicate rename for {}#{} collapsed",
+                hit.file.display(),
+                hit.location.describe()
+            );
+        } else {
+            resolved.insert(identity, (request, hit));
+        }
+    }
+    // Only requested targets introduce a constraint: unrelated pre-existing
+    // duplicate names remain outside this edit's verdict.
+    if !no_verify {
+        for (identity, (request, _)) in &resolved {
+            for (module, (file, doc)) in &original_docs {
+                for binding in binding_matches_in_doc(file, module, doc) {
+                    let other = (module.clone(), binding.location);
+                    if &other == identity {
+                        continue;
+                    }
+                    let final_name = resolved
+                        .get(&other)
+                        .map(|(rename, _)| rename.readable.as_str())
+                        .unwrap_or_else(|| binding_effective_name(&binding.label));
+                    if final_name == request.readable {
+                        bail!(
+                            "name collision: \"{}\" used by {}#{}",
+                            request.readable,
+                            file.display(),
+                            binding.location.describe()
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let mut docs = original_docs.clone();
+    let mut annotations = BTreeMap::new();
+    // Remove every moving key before inserting any target key. Metadata belongs
+    // to a binding only when that old effective name has one owner in its module.
+    for (identity, (request, hit)) in &resolved {
+        let old = binding_effective_name(&hit.label);
+        if old == request.readable {
+            continue;
+        }
+        let (file, original) = &original_docs[&hit.module_path];
+        if original.annotations.contains_key(old) {
+            let owners = binding_matches_in_doc(file, &hit.module_path, original)
+                .into_iter()
+                .filter(|binding| binding_effective_name(&binding.label) == old)
+                .count();
+            if owners != 1 {
+                bail!(
+                    "ambiguous annotation ownership: {} annotations.{old}",
+                    file.display()
+                );
+            }
+        }
+        let (_, doc) = docs
+            .get_mut(&hit.module_path)
+            .expect("resolved module is loaded");
+        annotations.insert(identity.clone(), doc.annotations.remove(old));
+    }
+    let mut renames = Vec::new();
+    let mut renames_applied = 0;
+    for (identity, (request, hit)) in &resolved {
+        let old = binding_effective_name(&hit.label);
+        if old != request.readable {
+            let (_, doc) = docs
+                .get_mut(&hit.module_path)
+                .expect("resolved module is loaded");
+            if doc.annotations.contains_key(&request.readable) {
+                bail!(
+                    "annotations.{} already exists in {}",
+                    request.readable,
+                    hit.file.display()
+                );
+            }
+            set_readable_name(doc, &hit.location, &request.readable);
+            insert_annotation(
+                doc,
+                &request.readable,
+                annotations.remove(identity).flatten(),
+            )?;
+            renames_applied += 1;
+        }
+        renames.push(RenameResult {
+            sym: request.sym.clone(),
+            module: hit.module_path.clone(),
+            identity: hit.label.identity.clone(),
+            old_readable: old.to_string(),
+            new_readable: request.readable.clone(),
+        });
+    }
+    let (files_written, files_deleted) =
+        apply_doc_changes(&original_docs, &docs, &BTreeSet::new(), dry_run)?;
+    Ok(RenameBatchOutcome {
+        outcome: MutationOutcome {
+            verb: "rename",
+            action: if resolved.is_empty() {
+                "noop"
+            } else if files_written.is_empty() {
+                "unchanged"
+            } else if dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            gate: if resolved.is_empty() {
+                GateOutcome::NotRequired
+            } else if no_verify {
+                GateOutcome::Skipped
+            } else {
+                GateOutcome::NamesOnly
+            },
+            needs_full_assessment: false,
+            files_written,
+            files_deleted,
+        },
+        renames_applied,
+        renames,
     })
 }
 
@@ -409,12 +628,12 @@ fn find_readable_collisions(
             if file == self_file && &binding.location == self_location {
                 continue;
             }
-            if binding_effective_name(&binding.name) == new_readable {
+            if binding_effective_name(&binding.label) == new_readable {
                 clashes.push(format!(
-                    "  {}#{} (binding={}, module={})",
+                    "  {}#{} (identity={}, module={})",
                     file.display(),
                     binding.location.describe(),
-                    binding.name.minified(),
+                    binding.label.identity,
                     module_path
                 ));
             }
@@ -461,6 +680,17 @@ pub struct AssignOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub moves_applied: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
+}
+
+#[derive(Clone, Copy)]
+pub struct CandidateEffectAssessmentContext<'a> {
+    pub transform: &'a TransformRequest,
+    pub analysis: AnalysisArtifactInput<'a>,
+    pub graph_source: &'a VerifiedGraphSourceContext,
 }
 
 /// Parse a positional `<sym>:<module>[:<readable>]` triple.
@@ -600,7 +830,7 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///     `comment:` or `note:`, no remaining `source_matches:`, `annotations:`, or
 ///     `anonymous_statements:`.
 ///   * [`Gate::Run`] runs the unified realizability gate
-///     ([`crate::edit_gate::gate_post_edit_assignment`]) against the
+///     ([`Gate::check`]) against the
 ///     in-memory post-batch spec; cycle or atom-split rejections
 ///     bail before any file is written. [`Gate::Skip`] (`--no-verify`)
 ///     skips validation. The CLI dispatcher requires `--graph` unless
@@ -610,17 +840,22 @@ pub fn run_bindings_assign(
     moves: Vec<Move>,
     dry_run: bool,
     gate: Gate<'_>,
+    effect_assessment_context: Option<CandidateEffectAssessmentContext<'_>>,
 ) -> Result<AssignOutcome> {
-    if moves.is_empty() {
+    let no_moves = moves.is_empty();
+    if no_moves && effect_assessment_context.is_none() {
         return Ok(AssignOutcome {
             outcome: MutationOutcome {
                 verb: "assign",
                 action: "noop",
                 gate: GateOutcome::NotRequired,
+                needs_full_assessment: false,
                 files_written: Vec::new(),
                 files_deleted: Vec::new(),
             },
             moves_applied: 0,
+            effect_relocation_assessment: None,
+            effect_assessment_unavailable: Some(EffectAssessmentUnavailable::AnalysisNotSupplied),
         });
     }
 
@@ -645,7 +880,7 @@ pub fn run_bindings_assign(
             },
             source_module: hit.module_path.clone(),
             source_location: hit.location,
-            source_effective_name: binding_effective_name(&hit.name).to_string(),
+            source_effective_name: binding_effective_name(&hit.label).to_string(),
         };
         match by_identity.entry((hit.module_path, hit.location)) {
             std::collections::btree_map::Entry::Vacant(slot) => {
@@ -740,8 +975,8 @@ pub fn run_bindings_assign(
     }
 
     // Step 4: collision detection for renames, sharing the same
-    // effective-identity predicate `bindings rename` uses: an
-    // unrenamed member's minified binding name is its public
+    // effective-identity predicate `bindings rename` uses: an entry without
+    // an explicit readable name keeps its current spec identity as its public
     // identity, so a rename target that matches it is a clash.
     if gate.verify_names() {
         for p in &plan {
@@ -753,13 +988,14 @@ pub fn run_bindings_assign(
             let mut hits = Vec::new();
             for (mp, (file, doc)) in &docs {
                 for binding in binding_matches_in_doc(file, mp, doc) {
-                    if binding
-                        .name
-                        .readable()
+                    let effective_name = binding
+                        .label
+                        .readable_name
+                        .as_deref()
                         .filter(|name| !name.is_empty())
-                        .unwrap_or_else(|| binding.name.minified())
-                        == new_readable
-                    {
+                        .or_else(|| binding.label.identity.selector_identifier())
+                        .unwrap_or("");
+                    if effective_name == new_readable {
                         hits.push(format!(
                             "  {} ({}@{})",
                             file.display(),
@@ -835,676 +1071,56 @@ pub fn run_bindings_assign(
     // post-batch docs — the same `ModuleFile` claims model `debundle
     // run` loads, so canonical source_matches[] claims gate
     // identically. Runs before any file is written.
-    gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(path, _)| !to_delete.contains(*path))
+            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
+            .collect();
+        Some(assess_candidate_effect_relocation(
+            context.transform,
+            context.analysis,
+            context.graph_source,
+            modules_root,
+            &candidate_modules,
+        )?)
+    } else {
+        None
+    };
+    if let Some(assessment) = &effect_relocation_assessment {
+        pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
+    }
+    if !no_moves {
+        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    }
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
-        outcome: MutationOutcome {
-            verb: "assign",
-            action: if dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+        outcome: MutationOutcome::ownership_edit(
+            "assign",
+            if no_moves {
+                "noop"
+            } else if dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            if no_moves {
+                GateOutcome::NotRequired
+            } else {
+                gate.outcome()
+            },
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         moves_applied: plan.len(),
+        effect_assessment_unavailable: effect_relocation_assessment
+            .is_none()
+            .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
+        effect_relocation_assessment,
     })
-}
-
-/// One reviewed source unit reassignment. source units not listed keep their current
-/// destination. This command deliberately accepts only source units already claimed
-/// by the scoped module tree; it does not synthesize selectors for residuals.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SourceUnitAssignment {
-    pub unit_id: String,
-    pub module: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SourceUnitRefineOutcome {
-    #[serde(flatten)]
-    pub outcome: MutationOutcome,
-    pub source_units_reassigned: usize,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum SourceUnitClaimSlot {
-    Member(usize),
-    SourceMatch(usize, usize),
-    Anonymous(usize),
-}
-
-#[derive(Debug, Clone)]
-struct SourceUnitClaimLocation {
-    source_unit_id: String,
-    /// Exact key used by the in-memory document map and filesystem path.
-    physical_module: String,
-    /// Canonical logical module identity used by the complete source unit map.
-    logical_module: String,
-    slot: SourceUnitClaimSlot,
-}
-
-#[derive(Debug, Clone)]
-struct PlannedSourceUnitMove {
-    source_unit_ids: BTreeSet<String>,
-    source_module: String,
-    destination: String,
-    slot: SourceUnitClaimSlot,
-}
-
-/// Move complete existing source unit claims as one checked edit. Selector locations
-/// come from the canonical joint resolver; names, selector text, annotations,
-/// and anonymous-statement metadata are preserved from the original YAML.
-pub fn run_source_unit_refine(
-    modules_root: &Path,
-    dependency_graph_path: &Path,
-    source_root: &Path,
-    tree_config: Option<&Path>,
-    assignments: Vec<SourceUnitAssignment>,
-    dry_run: bool,
-) -> Result<SourceUnitRefineOutcome> {
-    if assignments.is_empty() {
-        bail!("source unit assignment batch is empty");
-    }
-
-    let dependency_graph = crate::load_dependency_graph_report(dependency_graph_path)?;
-    let scope = tree_config
-        .map(|path| ModuleTreeScope::from_config(path, &dependency_graph.chunk_id))
-        .transpose()?;
-    let mut original_docs = load_module_docs(modules_root)?;
-    if let Some(scope) = &scope {
-        original_docs.retain(|module, _| scope.contains(Path::new(module)));
-    }
-    let mut docs = original_docs.clone();
-    let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
-    let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
-    let resolved = resolve_source_claims(
-        &dependency_graph,
-        dependency_graph_path,
-        modules_root,
-        Some(source_root),
-        &claim_sets,
-    )?;
-    let claim_projection = project_source_unit_claims(&dependency_graph, &initial_spec, &resolved)?;
-    let current_source_unit_modules = source_unit_module_assignments_from_projection(
-        &dependency_graph,
-        modules_root,
-        &initial_spec,
-        &claim_projection,
-        scope.as_ref(),
-    )?;
-    check_graph_source_unit_destinations(
-        &dependency_graph,
-        &current_source_unit_modules,
-        scope.as_ref(),
-    )?;
-
-    let mut source_unit_index_by_id = BTreeMap::<String, SourceUnitId>::new();
-    for (index, node) in dependency_graph.nodes.iter().enumerate() {
-        let source_unit = SourceUnitId(index);
-        source_unit_index_by_id.insert(node.id.clone(), source_unit);
-    }
-
-    let locations = source_unit_claim_locations(
-        &dependency_graph,
-        modules_root,
-        &original_docs,
-        &initial_spec,
-        &resolved,
-        &claim_projection,
-        scope.as_ref(),
-    )?;
-    let mut locations_by_source_unit = BTreeMap::<String, Vec<SourceUnitClaimLocation>>::new();
-    for location in locations {
-        let expected_module = current_source_unit_modules
-            .get(&location.source_unit_id)
-            .and_then(Option::as_ref)
-            .with_context(|| {
-                format!(
-                    "source unit {:?} has a module claim location but resolves to residual",
-                    location.source_unit_id
-                )
-            })?;
-        anyhow::ensure!(
-            expected_module.as_str() == location.logical_module,
-            "source unit {:?} selector is stored in {}, but the complete spec resolves it to {}",
-            location.source_unit_id,
-            location.logical_module,
-            expected_module
-        );
-        locations_by_source_unit
-            .entry(location.source_unit_id.clone())
-            .or_default()
-            .push(location);
-    }
-
-    let mut requested_destinations = BTreeMap::<String, String>::new();
-    for assignment in assignments {
-        anyhow::ensure!(
-            source_unit_index_by_id.contains_key(&assignment.unit_id),
-            "source unit ID {:?} is absent from dependency_graph.json",
-            assignment.unit_id
-        );
-        anyhow::ensure!(
-            !requested_destinations.contains_key(&assignment.unit_id),
-            "source unit assignment batch repeats {:?}",
-            assignment.unit_id
-        );
-        let source_unit = source_unit_index_by_id[&assignment.unit_id];
-        let node = &dependency_graph.nodes[source_unit.0];
-        anyhow::ensure!(
-            !matches!(
-                node.statement_kind,
-                StatementKind::Import | StatementKind::Export
-            ),
-            "source unit {:?} is import/export scaffolding and cannot be moved by modules refine",
-            assignment.unit_id
-        );
-        let current_module = current_source_unit_modules
-            .get(&assignment.unit_id)
-            .and_then(Option::as_ref)
-            .with_context(|| {
-                format!(
-                    "source unit {:?} is currently unclaimed/residual; modules refine moves existing claims only",
-                    assignment.unit_id
-                )
-            })?;
-        anyhow::ensure!(
-            !is_residual_namespace_path(current_module.as_str()),
-            "source unit {:?} is claimed from a residual module and cannot be moved",
-            assignment.unit_id
-        );
-        let destination = if let Some(scope) = &scope {
-            scope.canonical_destination(&assignment.module)?
-        } else {
-            canonical_module_path(&assignment.module)?
-        };
-        anyhow::ensure!(
-            !is_residual_namespace_path(&destination),
-            "destination {:?} is a reserved residual path",
-            destination
-        );
-        requested_destinations.insert(assignment.unit_id, destination);
-    }
-
-    let mut expected_source_unit_modules = current_source_unit_modules.clone();
-    let mut planned_moves = Vec::<PlannedSourceUnitMove>::new();
-    let mut planned_move_by_slot = BTreeMap::<(String, SourceUnitClaimSlot), usize>::new();
-    let mut source_modules = BTreeSet::new();
-    let mut source_units_reassigned = 0;
-    let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
-    for (source_unit_id, destination) in &requested_destinations {
-        let source_logical_module = current_source_unit_modules[source_unit_id]
-            .as_ref()
-            .expect("requested source units were checked as claimed")
-            .as_str()
-            .to_string();
-        if destination == &source_logical_module {
-            continue;
-        }
-        source_units_reassigned += 1;
-        expected_source_unit_modules.insert(source_unit_id.clone(), Some(destination.clone()));
-        let source_unit_locations = locations_by_source_unit.get(source_unit_id).with_context(|| {
-            format!("source unit {source_unit_id:?} has no movable member or anonymous selector in the spec")
-        })?;
-        let mut physical_sources = BTreeSet::new();
-        for location in source_unit_locations {
-            anyhow::ensure!(
-                location.logical_module == source_logical_module,
-                "source unit {source_unit_id:?} has claims in more than one source module"
-            );
-            physical_sources.insert(location.physical_module.clone());
-        }
-        anyhow::ensure!(
-            physical_sources.len() == 1,
-            "source unit {source_unit_id:?} resolves to multiple physical module files with the same logical identity"
-        );
-        let source_module = physical_sources
-            .into_iter()
-            .next()
-            .expect("movable source unit has at least one location");
-        let destination_module = match existing_destinations.get(destination) {
-            Some(paths) if paths.len() == 1 => paths[0].clone(),
-            Some(paths) => anyhow::bail!(
-                "logical destination {destination:?} matches multiple module files: {}",
-                paths.join(", ")
-            ),
-            None => destination.clone(),
-        };
-        for location in source_unit_locations {
-            source_modules.insert(source_module.clone());
-            let key = (source_module.clone(), location.slot.clone());
-            if let Some(&move_index) = planned_move_by_slot.get(&key) {
-                let movement = &mut planned_moves[move_index];
-                anyhow::ensure!(
-                    movement.destination == destination_module,
-                    "one spec claim resolves to multiple requested destinations for source units {:?} and {:?}",
-                    movement.source_unit_ids,
-                    source_unit_id
-                );
-                movement.source_unit_ids.insert(source_unit_id.clone());
-            } else {
-                let move_index = planned_moves.len();
-                planned_move_by_slot.insert(key, move_index);
-                planned_moves.push(PlannedSourceUnitMove {
-                    source_unit_ids: BTreeSet::from([source_unit_id.clone()]),
-                    source_module: source_module.clone(),
-                    destination: destination_module.clone(),
-                    slot: location.slot.clone(),
-                });
-            }
-        }
-    }
-
-    let moved_members = planned_moves
-        .iter()
-        .filter_map(|movement| match movement.slot {
-            SourceUnitClaimSlot::Member(index) => Some((movement.source_module.clone(), index)),
-            _ => None,
-        });
-    let mut pulled_members = take_members(&mut docs, moved_members);
-    let moved_source_match_bindings =
-        planned_moves
-            .iter()
-            .filter_map(|movement| match movement.slot {
-                SourceUnitClaimSlot::SourceMatch(claim, binding) => {
-                    Some((movement.source_module.clone(), claim, binding))
-                }
-                _ => None,
-            });
-    let mut pulled_source_match_bindings =
-        take_source_match_bindings(&mut docs, moved_source_match_bindings);
-    let moved_anonymous = planned_moves
-        .iter()
-        .filter_map(|movement| match movement.slot {
-            SourceUnitClaimSlot::Anonymous(index) => Some((movement.source_module.clone(), index)),
-            _ => None,
-        });
-    let mut pulled_anonymous = take_anonymous_statements(&mut docs, moved_anonymous);
-
-    let mut destination_claims = BTreeMap::<(String, String, usize), usize>::new();
-    let mut moved_names_by_destination = BTreeMap::<String, BTreeSet<String>>::new();
-    for movement in &planned_moves {
-        match movement.slot {
-            SourceUnitClaimSlot::Member(index) => {
-                let member = pulled_members
-                    .remove(&(movement.source_module.clone(), index))
-                    .expect("planned member was extracted");
-                let name = member_effective_name(&member).with_context(|| {
-                    format!(
-                        "source unit(s) {:?} member has no binding name",
-                        movement.source_unit_ids
-                    )
-                })?;
-                moved_names_by_destination
-                    .entry(movement.destination.clone())
-                    .or_default()
-                    .insert(name.clone());
-                let annotation = docs
-                    .get_mut(&movement.source_module)
-                    .expect("source module remains loaded")
-                    .1
-                    .annotations
-                    .remove(&name);
-                let destination =
-                    ensure_source_unit_destination(&mut docs, modules_root, &movement.destination);
-                destination.members.push(member);
-                insert_annotation(destination, &name, annotation)?;
-            }
-            SourceUnitClaimSlot::SourceMatch(claim_index, binding_index) => {
-                let mut claim = pulled_source_match_bindings
-                    .remove(&(movement.source_module.clone(), claim_index, binding_index))
-                    .expect("planned source-match binding was extracted");
-                anyhow::ensure!(
-                    claim.bindings.len() == 1,
-                    "source-match split did not isolate one binding"
-                );
-                let binding = &claim.bindings[0];
-                let name =
-                    BindingName::new(binding.local().to_string(), source_match_readable(binding));
-                let effective_name = binding_effective_name(&name).to_string();
-                moved_names_by_destination
-                    .entry(movement.destination.clone())
-                    .or_default()
-                    .insert(effective_name.clone());
-                let annotation = docs
-                    .get_mut(&movement.source_module)
-                    .expect("source module remains loaded")
-                    .1
-                    .annotations
-                    .remove(&effective_name);
-                let destination =
-                    ensure_source_unit_destination(&mut docs, modules_root, &movement.destination);
-                let key = (
-                    movement.destination.clone(),
-                    movement.source_module.clone(),
-                    claim_index,
-                );
-                if let Some(index) = destination_claims.get(&key) {
-                    destination.source_matches[*index]
-                        .bindings
-                        .append(&mut claim.bindings);
-                } else {
-                    let index = destination.source_matches.len();
-                    destination.source_matches.push(claim);
-                    destination_claims.insert(key, index);
-                }
-                insert_annotation(destination, &effective_name, annotation)?;
-            }
-            SourceUnitClaimSlot::Anonymous(index) => {
-                let statement = pulled_anonymous
-                    .remove(&(movement.source_module.clone(), index))
-                    .expect("planned anonymous selector was extracted");
-                ensure_source_unit_destination(&mut docs, modules_root, &movement.destination)
-                    .anonymous_statements
-                    .push(statement);
-            }
-        }
-    }
-
-    for (destination, moved_names) in &moved_names_by_destination {
-        let (_, module) = docs
-            .get(destination)
-            .with_context(|| format!("destination module {destination:?} is missing"))?;
-        let mut counts = BTreeMap::<String, usize>::new();
-        for binding in binding_matches_in_doc(
-            &modules_root.join(format!("{destination}.yaml")),
-            destination,
-            module,
-        ) {
-            *counts
-                .entry(binding_effective_name(&binding.name).to_string())
-                .or_default() += 1;
-        }
-        for name in moved_names {
-            let count = counts.get(name).copied().unwrap_or_default();
-            anyhow::ensure!(
-                count == 1,
-                "moving a claim named {name:?} into {destination} would create a binding-name collision ({count} entries)"
-            );
-        }
-    }
-
-    // Normalize only the reviewed destinations, including an unchanged-owner
-    // request. Resolve this exact document through the complete identity gate.
-    let requested_modules: BTreeSet<_> = requested_destinations
-        .values()
-        .flat_map(|destination| {
-            existing_destinations
-                .get(destination)
-                .cloned()
-                .unwrap_or_else(|| vec![destination.clone()])
-        })
-        .collect();
-    for destination in requested_modules {
-        if let Some((_, module)) = docs.get_mut(&destination) {
-            coalesce_source_match_claims(module);
-        }
-    }
-
-    let to_delete = drained_source_modules(&docs, &source_modules);
-    let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
-    gate_post_edit_assignment_with_expected_source_unit_modules(
-        dependency_graph_path,
-        modules_root,
-        Some(source_root),
-        &post_spec,
-        &expected_source_unit_modules,
-        scope.as_ref(),
-    )?;
-
-    let (files_written, files_deleted) =
-        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
-    let action = if files_written.is_empty() && files_deleted.is_empty() {
-        "unchanged"
-    } else if dry_run {
-        "dry-run"
-    } else {
-        "applied"
-    };
-    Ok(SourceUnitRefineOutcome {
-        outcome: MutationOutcome {
-            verb: "refine",
-            action,
-            gate: GateOutcome::Passed,
-            files_written,
-            files_deleted,
-        },
-        source_units_reassigned,
-    })
-}
-
-fn source_unit_claim_locations(
-    dependency_graph: &DependencyGraphReport,
-    modules_root: &Path,
-    docs: &ModuleDocs,
-    post_spec: &crate::edit_gate::PostEditSpec,
-    resolved: &[anonymous_resolution::ResolvedSourceClaims],
-    projection: &SourceUnitClaimProjection,
-    scope: Option<&ModuleTreeScope>,
-) -> Result<Vec<SourceUnitClaimLocation>> {
-    anyhow::ensure!(
-        post_spec.modules.len() == resolved.len(),
-        "resolved selector results do not match the current module list"
-    );
-    anyhow::ensure!(
-        post_spec.modules.len() == projection.modules.len(),
-        "projected selector results do not match the current module list"
-    );
-    let mut locations = Vec::new();
-    for ((module, resolved), projected) in post_spec
-        .modules
-        .iter()
-        .zip(resolved)
-        .zip(&projection.modules)
-    {
-        let module_path = module_path_from_file(&module.path, modules_root);
-        let logical_module = logical_module_path(&module_path, scope)?;
-        let (_, doc) = docs.get(&module_path).with_context(|| {
-            format!(
-                "module {} is absent from the scoped spec",
-                module.path.display()
-            )
-        })?;
-        anyhow::ensure!(
-            doc.members.len() == projected.members.len(),
-            "projected member claims do not match module {}",
-            module.path.display()
-        );
-        for member_index in 0..doc.members.len() {
-            let projected_member = &projected.members[member_index];
-            if matches!(projected_member.kind, ProjectedBindingKind::ImportSpecifier) {
-                continue;
-            }
-            if let Some(crate::edit_gate::LocalBindingResolution::Resolved(source_units)) =
-                &projected_member.resolution
-            {
-                for source_unit in source_units {
-                    locations.push(SourceUnitClaimLocation {
-                        source_unit_id: dependency_graph.nodes[source_unit.0].id.clone(),
-                        physical_module: module_path.clone(),
-                        logical_module: logical_module.clone(),
-                        slot: SourceUnitClaimSlot::Member(member_index),
-                    });
-                }
-            }
-        }
-        for (claim_index, claim) in doc.source_matches.iter().enumerate() {
-            for (binding_index, binding) in claim.bindings.iter().enumerate() {
-                let resolved_binding = resolved
-                    .member_bindings
-                    .get(binding.name())
-                    .with_context(|| {
-                        format!(
-                            "source_matches[{claim_index}] binding {:?} in {module_path} did not resolve",
-                            binding.local()
-                        )
-                    })?;
-                // `local` is the selector-local name used by the source
-                // pattern. Under alpha-equivalent matching, the actual source
-                // declaration can have a different name; the canonical
-                // resolver's outcome is the authoritative binding identity.
-                if let Some(crate::edit_gate::LocalBindingResolution::Resolved(source_units)) =
-                    projected.local_bindings.get(resolved_binding)
-                {
-                    for source_unit in source_units {
-                        locations.push(SourceUnitClaimLocation {
-                            source_unit_id: dependency_graph.nodes[source_unit.0].id.clone(),
-                            physical_module: module_path.clone(),
-                            logical_module: logical_module.clone(),
-                            slot: SourceUnitClaimSlot::SourceMatch(claim_index, binding_index),
-                        });
-                    }
-                }
-            }
-        }
-        let mut selectors = BTreeSet::new();
-        for (statement_index, statement) in doc.anonymous_statements.iter().enumerate() {
-            let selector = statement.selector()?;
-            anyhow::ensure!(
-                selectors.insert(selector.clone()),
-                "module {module_path} repeats an anonymous selector, so its metadata cannot be assigned unambiguously"
-            );
-            let source_unit = resolved
-                .anonymous_selector_source_units
-                .get(&selector)
-                .with_context(|| {
-                    format!(
-                        "anonymous_statements[{statement_index}] in {module_path} did not resolve to an source unit"
-                    )
-                })?;
-            locations.push(SourceUnitClaimLocation {
-                source_unit_id: dependency_graph
-                    .nodes
-                    .get(source_unit.0)
-                    .with_context(|| {
-                        format!("anonymous source unit index {} is absent", source_unit.0)
-                    })?
-                    .id
-                    .clone(),
-                physical_module: module_path.clone(),
-                logical_module: logical_module.clone(),
-                slot: SourceUnitClaimSlot::Anonymous(statement_index),
-            });
-        }
-    }
-    Ok(locations)
-}
-
-fn logical_module_path(raw_path: &str, scope: Option<&ModuleTreeScope>) -> Result<String> {
-    if let Some(scope) = scope {
-        scope.canonical_destination(raw_path)
-    } else {
-        canonical_module_path(raw_path)
-    }
-}
-
-fn physical_modules_by_logical_destination(
-    docs: &ModuleDocs,
-    scope: Option<&ModuleTreeScope>,
-) -> Result<BTreeMap<String, Vec<String>>> {
-    let mut by_logical = BTreeMap::<String, Vec<String>>::new();
-    for physical in docs.keys() {
-        by_logical
-            .entry(logical_module_path(physical, scope)?)
-            .or_default()
-            .push(physical.clone());
-    }
-    Ok(by_logical)
-}
-
-fn check_graph_source_unit_destinations(
-    dependency_graph: &DependencyGraphReport,
-    spec_source_unit_modules: &SourceUnitModuleAssignments,
-    scope: Option<&ModuleTreeScope>,
-) -> Result<()> {
-    for node in &dependency_graph.nodes {
-        let graph_destination = dependency_graph
-            .module(&node.destination)
-            .with_context(|| {
-                format!("source unit {:?} has an unknown graph destination", node.id)
-            })?;
-        let expected = if matches!(
-            graph_destination.kind,
-            ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
-        ) {
-            None
-        } else {
-            Some(graph_destination.path.as_str().to_string())
-        };
-        let actual = spec_source_unit_modules
-            .get(&node.id)
-            .with_context(|| {
-                format!(
-                    "source unit {:?} is absent from the current spec mapping",
-                    node.id
-                )
-            })?
-            .as_ref()
-            .map(|path| {
-                let logical = if let Some(scope) = scope {
-                    scope.logical_destination(path)?
-                } else {
-                    path.as_str()
-                };
-                ModulePath::parse(logical, "")
-                    .map(|path| path.as_str().to_string())
-                    .map_err(|err| {
-                        anyhow!("invalid logical module path in source unit spec: {err}")
-                    })
-            })
-            .transpose()?;
-        anyhow::ensure!(
-            actual == expected,
-            "dependency graph is stale for {:?}: graph destination {:?}, current spec destination {:?}",
-            node.id,
-            expected,
-            actual
-        );
-    }
-    Ok(())
-}
-
-fn take_anonymous_statements(
-    docs: &mut ModuleDocs,
-    identities: impl IntoIterator<Item = (String, usize)>,
-) -> BTreeMap<(String, usize), AnonymousStatement> {
-    let mut by_module: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-    for (module, index) in identities {
-        by_module.entry(module).or_default().insert(index);
-    }
-    let mut taken = BTreeMap::new();
-    for (module, indices) in by_module {
-        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
-        for (index, statement) in std::mem::take(&mut doc.anonymous_statements)
-            .into_iter()
-            .enumerate()
-        {
-            if indices.contains(&index) {
-                taken.insert((module.clone(), index), statement);
-            } else {
-                doc.anonymous_statements.push(statement);
-            }
-        }
-    }
-    taken
-}
-
-fn ensure_source_unit_destination<'a>(
-    docs: &'a mut ModuleDocs,
-    modules_root: &Path,
-    destination: &str,
-) -> &'a mut LogicalModule {
-    &mut docs
-        .entry(destination.to_string())
-        .or_insert_with(|| {
-            (
-                modules_root.join(format!("{destination}.yaml")),
-                LogicalModule::default(),
-            )
-        })
-        .1
 }
 
 #[derive(Debug, Clone)]
@@ -1557,18 +1173,18 @@ pub(crate) fn canonical_module_path(raw: &str) -> Result<String> {
 }
 
 /// A member's effective public identity: the readable `name:` when
-/// set, else the minified `selector.binding.name`. `bindings rename`
-/// and `bindings assign` share this predicate so both treat an
-/// unrenamed member's minified name as a claimed identity.
-fn member_effective_name(member: &Member) -> Option<String> {
+/// set, else the direct `selector.binding.name`. `bindings rename` and
+/// `bindings assign` share this predicate so both treat the current spec
+/// identity as a claimed name.
+pub(crate) fn member_effective_name(member: &Member) -> Option<String> {
     member
         .name
         .clone()
         .filter(|name| !name.is_empty())
-        .or_else(|| member_minified_name(member))
+        .or_else(|| member_selector_binding_name(member))
 }
 
-fn insert_annotation(
+pub(crate) fn insert_annotation(
     doc: &mut LogicalModule,
     export_name: &str,
     annotation: Option<BindingAnnotation>,
@@ -1586,7 +1202,7 @@ fn insert_annotation(
     }
 }
 
-fn member_minified_name(member: &Member) -> Option<String> {
+fn member_selector_binding_name(member: &Member) -> Option<String> {
     member
         .selector
         .binding
@@ -1602,7 +1218,10 @@ fn member_minified_name(member: &Member) -> Option<String> {
 /// carries a module-level `comment:` or `note:`, `source_matches:`, `annotations:`,
 /// or `anonymous_statements:` (all of which are spec content the sweep must
 /// not destroy).
-fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) -> BTreeSet<String> {
+pub(crate) fn drained_source_modules(
+    docs: &ModuleDocs,
+    move_sources: &BTreeSet<String>,
+) -> BTreeSet<String> {
     move_sources
         .iter()
         .filter(|mp| {
@@ -1651,7 +1270,7 @@ pub(crate) fn apply_doc_changes(
 }
 
 /// Extract by snapshot identity without null sentinels or repeated Vec removals.
-fn take_members(
+pub(crate) fn take_members(
     docs: &mut ModuleDocs,
     identities: impl IntoIterator<Item = (String, usize)>,
 ) -> BTreeMap<(String, usize), Member> {
@@ -1677,7 +1296,7 @@ fn take_members(
 /// indices. The unselected bindings remain in the source claim. A fully moved
 /// claim disappears, while each selected binding carries its original template
 /// and claim-level note for destination grouping.
-fn take_source_match_bindings(
+pub(crate) fn take_source_match_bindings(
     docs: &mut ModuleDocs,
     identities: impl IntoIterator<Item = (String, usize, usize)>,
 ) -> BTreeMap<(String, usize, usize), SourceMatchClaim> {
@@ -1725,7 +1344,7 @@ fn bail_source_match_unassign<T>(hit: &BindingMatch) -> Result<T> {
         "bindings unassign does not yet support canonical source_matches[] bindings; `{}` resolved to \
          {}#{}. Use bindings assign to move this binding; removing its claim requires \
          source-match unassign support.",
-        hit.name.minified(),
+        hit.label.identity,
         hit.file.display(),
         hit.location.describe()
     )
@@ -1742,6 +1361,8 @@ pub struct UnassignOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub unassigned: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 /// Remove one or more bindings from their current modules as one validated batch.
@@ -1759,8 +1380,8 @@ pub struct UnassignOutcome {
 /// Contract:
 ///   * Each sym must resolve to exactly one member via
 ///     [`resolve_unambiguous`]; syms are deduplicated on the resolved
-///     member identity (warn on duplicates), so the minified and
-///     readable spelling of one member collapse to one removal.
+///     member identity (warn on duplicates), so its spec identifier and
+///     readable name collapse to one removal.
 ///   * Only modules that were sources of a removal in THIS batch are
 ///     swept after draining.
 ///   * [`Gate::Run`] gates the in-memory post-batch spec; cycle or
@@ -1770,17 +1391,21 @@ pub fn run_bindings_unassign(
     syms: Vec<String>,
     dry_run: bool,
     gate: Gate<'_>,
+    effect_assessment_context: Option<CandidateEffectAssessmentContext<'_>>,
 ) -> Result<UnassignOutcome> {
-    if syms.is_empty() {
+    let no_symbols = syms.is_empty();
+    if no_symbols && effect_assessment_context.is_none() {
         return Ok(UnassignOutcome {
             outcome: MutationOutcome {
                 verb: "unassign",
                 action: "noop",
                 gate: GateOutcome::NotRequired,
+                needs_full_assessment: false,
                 files_written: Vec::new(),
                 files_deleted: Vec::new(),
             },
             unassigned: 0,
+            effect_relocation_assessment: None,
         });
     }
 
@@ -1821,23 +1446,57 @@ pub fn run_bindings_unassign(
         .collect();
     let to_delete = drained_source_modules(&docs, &move_sources);
 
+    // Assess the exact typed post-edit documents before the legacy gate or any
+    // writes. The pipeline resolves this candidate through the same canonical
+    // selector and emitter-planning path as `run --analysis`.
+    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(path, _)| !to_delete.contains(*path))
+            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
+            .collect();
+        Some(assess_candidate_effect_relocation(
+            context.transform,
+            context.analysis,
+            context.graph_source,
+            modules_root,
+            &candidate_modules,
+        )?)
+    } else {
+        None
+    };
+
     // Step 5: gate the in-memory post-batch spec (cycles +
     // atom-split) before any file is written. Built from the mutated
     // docs through the run pipeline's claims model, so source_matches[]
     // claims in surviving modules stay claimed.
-    gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    if !no_symbols {
+        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    }
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
-        outcome: MutationOutcome {
-            verb: "unassign",
-            action: if dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+        outcome: MutationOutcome::ownership_edit(
+            "unassign",
+            if no_symbols {
+                "noop"
+            } else if dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            if no_symbols {
+                GateOutcome::NotRequired
+            } else {
+                gate.outcome()
+            },
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         unassigned: plan.len(),
+        effect_relocation_assessment,
     })
 }
 
@@ -1863,7 +1522,8 @@ fn set_readable_name(doc: &mut LogicalModule, location: &BindingLocation, name: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{DepKind, SourceUnitReport};
+    use analysis::SourceUnitReport;
+    use analysis_model::DepKind;
     use peel::propose::propose;
     use report_fixtures::{
         active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
@@ -1968,7 +1628,8 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = propose(&graph, active_claims, 10_000).unwrap();
+        let input = analysis::DependencyGraphInput::from_report(graph).unwrap();
+        let report = propose(&input, active_claims, 10_000).unwrap();
         parse_batch_json(&serde_json::to_string(&report).unwrap())
     }
 

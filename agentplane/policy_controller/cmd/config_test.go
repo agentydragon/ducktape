@@ -11,6 +11,7 @@ const settingPrefix = "AGENTPLANE_POLICY_CONTROLLER_"
 var required = map[string]string{
 	"POLICY_NAMESPACE":   "agentplane",
 	"SUBJECT_NAMESPACES": "agentplane",
+	"ACCOUNTS_NAMESPACE": "agentplane-accounts",
 }
 
 func setEnvironment(t *testing.T, environment map[string]string) {
@@ -22,15 +23,16 @@ func setEnvironment(t *testing.T, environment map[string]string) {
 
 func TestEverySettingComesFromTheEnvironment(t *testing.T) {
 	setEnvironment(t, map[string]string{
-		"POLICY_NAMESPACE": "policies", "SUBJECT_NAMESPACES": "agents,tools",
+		"POLICY_NAMESPACE": "policies", "SUBJECT_NAMESPACES": "agents,tools", "ACCOUNTS_NAMESPACE": "accounts",
 		"METRICS_BIND_ADDRESS": ":9090", "HEALTH_PROBE_BIND_ADDRESS": ":9091",
+		"WRITER_ACCOUNTS": "policies/app",
 	})
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) ||
-		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" {
+	if c.PolicyNamespace != "policies" || !slices.Equal(c.SubjectNamespaces, []string{"agents", "tools"}) || c.AccountsNamespace != "accounts" ||
+		c.MetricsBindAddress != ":9090" || c.HealthProbeBindAddress != ":9091" || !slices.Equal(c.WriterAccounts, []string{"policies/app"}) {
 		t.Fatalf("settings were not read: %+v", c)
 	}
 }
@@ -70,5 +72,30 @@ func TestANamespaceNameThatCannotExistIsRefused(t *testing.T) {
 				t.Fatal("started with a namespace name that cannot exist")
 			}
 		})
+	}
+}
+
+func TestWorkloadIssuanceIsConfiguredWhole(t *testing.T) {
+	for name, environment := range map[string]map[string]string{
+		"an issuer without namespaces": {"WORKLOAD_ISSUER": "test-workload-issuer"},
+		"namespaces without an issuer": {"WORKLOAD_NAMESPACES": "agents"},
+		"an invalid namespace":         {"WORKLOAD_ISSUER": "test-workload-issuer", "WORKLOAD_NAMESPACES": "Agents"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setEnvironment(t, required)
+			setEnvironment(t, environment)
+			if _, err := loadConfig(); err == nil {
+				t.Fatal("started with partial workload issuance settings")
+			}
+		})
+	}
+	setEnvironment(t, required)
+	setEnvironment(t, map[string]string{"WORKLOAD_ISSUER": "test-workload-issuer", "WORKLOAD_NAMESPACES": "agents,tools"})
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkloadIssuer != "test-workload-issuer" || !slices.Equal(c.WorkloadNamespaces, []string{"agents", "tools"}) {
+		t.Fatalf("workload issuance settings were not read: %+v", c)
 	}
 }

@@ -20,24 +20,24 @@ func requireConstraint(t *testing.T, err error, code pq.ErrorCode, constraint st
 }
 
 func (g githubFixture) creation(source model.GitHubSource, key string) model.Subscribe {
-	return model.Subscribe{DestinationRef: g.destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7}
+	return model.Subscribe{DestinationRef: g.destination, SessionID: g.sessionID, IdempotencyKey: key, Source: source, LifetimeDays: 7}
 }
 
 func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	github := body("github")
+	github := f.body("github")
 	github.Source = model.GitHubSource{Repository: "owner/repository", Subject: model.PullRequestSubject{Number: 1}}
 	access := GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
 	invalidAccess := []GitHubAccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
 	for _, bad := range invalidAccess {
-		if _, err := f.Subscribe(t.Context(), f.owner, github, &bad); !errors.Is(err, model.ErrInvalid) {
+		if _, err := f.Subscribe(t.Context(), f.owner, github, &bad, "test-account-uid"); !errors.Is(err, model.ErrInvalid) {
 			t.Errorf("access %+v: error = %v, want model.ErrInvalid", bad, err)
 		}
 	}
-	if _, err := f.Subscribe(t.Context(), f.owner, github, nil); err == nil {
+	if _, err := f.Subscribe(t.Context(), f.owner, github, nil, "test-account-uid"); err == nil {
 		t.Error("a GitHub subscription was created without the access it was authorized under")
 	}
-	if _, err := f.Subscribe(t.Context(), f.owner, body("actions"), &access); err == nil {
+	if _, err := f.Subscribe(t.Context(), f.owner, f.body("actions"), &access, "test-account-uid"); err == nil {
 		t.Error("an Actions subscription was created bound to GitHub access")
 	}
 	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
@@ -117,7 +117,7 @@ func TestGitHubSubscriptionStateIsSourceSpecific(t *testing.T) {
 	subscription := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	for _, column := range []string{"actions_after_sequence = 0", "github_start_position = NULL", "github_app_id = NULL"} {
 		_, err := g.db.ExecContext(t.Context(), `UPDATE subscription SET `+column+` WHERE id = $1`, subscription.ID)
-		requireConstraint(t, err, "23514", "subscription_source_state")
+		requireConstraint(t, err, "23514", "subscription_typed_source_state")
 	}
 }
 
@@ -128,9 +128,18 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		model.EventFilter{Event: model.EventIssueComment, Actions: []string{"created", "edited"}},
 		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}},
 	), "follow")
-	original, err := g.Subscribe(t.Context(), g.owner, created, ptr(g.access()))
+	original, err := g.Subscribe(t.Context(), g.owner, created, ptr(g.access()), "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
+	}
+	var provider string
+	var hasTypedCreation bool
+	if err := g.db.QueryRowContext(t.Context(), `SELECT source_provider, creation_proto IS NOT NULL
+		FROM subscription WHERE id = $1`, original.ID).Scan(&provider, &hasTypedCreation); err != nil {
+		t.Fatal(err)
+	}
+	if provider != "github" || !hasTypedCreation {
+		t.Fatalf("new GitHub subscription storage = (provider %q, typed %t), want typed GitHub creation", provider, hasTypedCreation)
 	}
 
 	reordered := created
@@ -140,7 +149,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		model.EventFilter{Event: model.EventIssueComment, Actions: []string{"edited", "created", "edited"}},
 		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}},
 	)
-	replayed, err := g.Subscribe(t.Context(), g.owner, reordered, ptr(g.access()))
+	replayed, err := g.Subscribe(t.Context(), g.owner, reordered, ptr(g.access()), "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,13 +157,14 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		t.Fatalf("a replay with the filters reordered and repeated made subscription %s, not %s", replayed.ID, original.ID)
 	}
 
-	// Stored creations are read with the same set semantics, whatever order they were written in.
-	g.exec(t, `
-		UPDATE subscription SET creation = jsonb_set(creation, '{source,events}',
-			'[{"event": "issue_comment", "actions": ["edited", "created"]}, {"event": "check_run", "actions": ["completed"]}]')
-		WHERE id = $1`, original.ID)
-	if again, err := g.Subscribe(t.Context(), g.owner, created, ptr(g.access())); err != nil || again.ID != original.ID {
-		t.Fatalf("a replay against a creation stored in another order = %+v, %v; want subscription %s", again, err, original.ID)
+	stored, err := g.GetSubscription(t.Context(), g.incarnation(), original.ID)
+	if err != nil || !model.SourcesEqual(stored.Source, created.Source) {
+		t.Fatalf("stored typed GitHub creation = %+v, %v; want %+v", stored.Source, err, created.Source)
+	}
+
+	// Idempotency still compares normalized filter sets regardless of their order or duplicates.
+	if again, err := g.Subscribe(t.Context(), g.owner, created, ptr(g.access()), "test-account-uid"); err != nil || again.ID != original.ID {
+		t.Fatalf("a normalized replay = %+v, %v; want subscription %s", again, err, original.ID)
 	}
 
 	changed := created
@@ -163,7 +173,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		model.EventFilter{Event: model.EventIssueComment, Actions: []string{"deleted"}},
 		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}},
 	)
-	if _, err := g.Subscribe(t.Context(), g.owner, changed, ptr(g.access())); !errors.Is(err, ErrIdempotencyKeyReused) {
+	if _, err := g.Subscribe(t.Context(), g.owner, changed, ptr(g.access()), "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
 		t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 	}
 }
@@ -189,7 +199,7 @@ func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T
 		t.Fatalf("model.Source after ingress = %+v, %v; want generation 1", due, err)
 	}
 
-	actions := g.subscribe(t, body("actions"))
+	actions := g.subscribe(t, g.body("actions"))
 	requireEqual(t, actions.InboxID != uuid.Nil, true)
 	g.exec(t, `UPDATE subscription SET cancelled = true WHERE id = $1`, subscription.ID)
 	actionsClaim := g.claimInbox(t, actions.InboxID)

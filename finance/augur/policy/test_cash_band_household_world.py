@@ -53,12 +53,15 @@ REINVEST = Reinvest(rebalance_tolerance_ppb=None)
 
 @dataclass(frozen=True)
 class OpeningLot:
-    """Whole units of one of Alice's holdings, bought two years before the path starts."""
+    """One of Alice's opening public-security lots."""
 
     lot_id: LotId
     asset_id: AssetId
     units: int
     basis: int
+    account_id: AccountId = HOLDINGS
+    quantity_scale: int = 1
+    purchase_month: int = -24
 
 
 @dataclass
@@ -74,6 +77,7 @@ class Situation:
     # The opening cohort of Alice's managed index portfolio, when she has one.
     managed: TlhOpeningCohort | None = None
     horizon_months: int = 1
+    pool_scale: int = 1
 
 
 def reinvesting(*sleeves: Sleeve, ceiling: int, tolerance: int | None) -> CashBandHousehold:
@@ -102,20 +106,28 @@ def run(case: Situation) -> FinancialOutput:
         ),
         horizon_months=case.horizon_months,
     )
-    for agent_id, account_id, opening in ((ALICE, CASH, case.opening_cash), (ALICE, HOLDINGS, 0), (CREDITOR, CASH, 0)):
+    accounts = (
+        (ALICE, CASH, case.opening_cash),
+        *((ALICE, account_id, 0) for account_id in case.household.source_account_ids if account_id != CASH),
+        (CREDITOR, CASH, 0),
+    )
+    for agent_id, account_id, opening in accounts:
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=opening)
     # Every security sleeve gets a pool: the household reads its quotes off the positions it observes.
     for target in case.household.sleeves:
         if isinstance(target, SecuritySleeve):
-            world.declare_pool(agent_id=ALICE, account_id=HOLDINGS, asset_id=target.asset_id, quantity_scale=1)
+            for account_id in case.household.source_account_ids:
+                world.declare_pool(
+                    agent_id=ALICE, account_id=account_id, asset_id=target.asset_id, quantity_scale=case.pool_scale
+                )
     for held in case.lots:
         world.hold_lot(
             lot_id=held.lot_id,
             agent_id=ALICE,
-            account_id=HOLDINGS,
+            account_id=held.account_id,
             asset_id=held.asset_id,
-            purchase_month=-24,
-            quantity_scale=1,
+            purchase_month=held.purchase_month,
+            quantity_scale=held.quantity_scale,
             units=held.units,
             basis=held.basis,
         )
@@ -161,6 +173,56 @@ def balance(book: Book, agent_id: AgentId, account_id: AccountId = CASH) -> int:
 
 def holding(book: Book, lot_id: LotId) -> SecurityLotState:
     return one(row for row in book.lots if row.lot_id == lot_id)
+
+
+def test_household_funds_claim_from_grouped_security_in_source_and_lot_order() -> None:
+    second_account = AccountId("second-holdings")
+    first = AssetId("first")
+    second = AssetId("second")
+    household = CashBandHousehold(
+        ALICE,
+        cash_account_id=CASH,
+        floor=0,
+        ceiling=0,
+        sleeves=(SecuritySleeve(asset_id=first, weight=1), SecuritySleeve(asset_id=second, weight=1)),
+        source_account_ids=(HOLDINGS, second_account),
+        reinvest=None,
+        cause_id_prefix="fund",
+    )
+    output = run(
+        Situation(
+            prices={"first": 3, "second": 3},
+            household=household,
+            upkeep=3,
+            pool_scale=10,
+            lots=(
+                OpeningLot(LotId("newer"), first, units=4, basis=1, purchase_month=-12, quantity_scale=10),
+                OpeningLot(LotId("older"), first, units=3, basis=1, quantity_scale=10),
+                OpeningLot(
+                    LotId("other-account"), first, units=10, basis=3, account_id=second_account, quantity_scale=10
+                ),
+                OpeningLot(LotId("other-security"), second, units=10, basis=3, quantity_scale=10),
+            ),
+        )
+    )
+    assert [
+        (sale.source_account_id, sale.lot_id, sale.units, sale.basis, sale.proceeds) for sale in output.dispositions
+    ] == [
+        (HOLDINGS, LotId("older"), 3, 1, 1),
+        (HOLDINGS, LotId("newer"), 4, 1, 1),
+        (second_account, LotId("other-account"), 3, 1, 1),
+    ]
+    closed = output.months[1]
+    assert (balance(closed, ALICE), balance(closed, CREDITOR)) == (0, 3)
+    assert (
+        holding(closed, LotId("other-account")).units_remaining,
+        holding(closed, LotId("other-account")).basis_remaining,
+    ) == (7, 2)
+    assert (
+        holding(closed, LotId("other-security")).units_remaining,
+        holding(closed, LotId("other-security")).basis_remaining,
+    ) == (10, 3)
+    assert [claim.amount_paid for claim in output.obligations] == [3]
 
 
 def test_a_purchase_is_sized_to_what_the_months_claim_payment_leaves() -> None:

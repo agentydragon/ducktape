@@ -1,6 +1,6 @@
 # Running the sync in the cluster
 
-[`cluster/cdk8s/claude_session_sync`](../../../../cluster/cdk8s/claude_session_sync/app.py) deploys two web replicas
+[`cluster/cdk8s/claude_session_sync.py`](../../../../cluster/cdk8s/claude_session_sync.py) deploys two web replicas
 and one private control replica in the `claude-session-sync` namespace, writing to a two-instance CNPG database
 (`claude-session-sync-db`) in the same zone. The page is at <https://claude-session-sync.allegedly.works>, behind an
 Authentik login that admits only the owner. Web Pods serve the login-protected page and proxy pairing/status/sync

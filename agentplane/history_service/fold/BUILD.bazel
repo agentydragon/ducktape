@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
@@ -6,7 +6,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     # The browser syncs these tables through the app's Electric proxy, so app tests read and seed
-    # their rows; the app's own migration tests recreate the copies its retired projection held.
+    # their rows.
     visibility = [
         "//agentplane/app:__subpackages__",
         "//agentplane/history_service:__subpackages__",
@@ -15,10 +15,37 @@ py_library(
 )
 
 py_library(
-    name = "views",
-    srcs = ["views.py"],
-    visibility = ["//agentplane:__subpackages__"],
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
     deps = [
-        "@pypi//pydantic",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/history_service/testing:history",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_recording",
+    size = "medium",
+    srcs = ["test_recording.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        "//:conftest",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/testing:history",
+        "//agentplane/history_service/testing:protojson",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

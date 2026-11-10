@@ -2,6 +2,7 @@ package policy
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,11 +18,17 @@ import (
 type Request struct {
 	Method string
 	Host   string
+	Port   int
+	// TLS is whether the proxy reaches the upstream over TLS, which it verifies.
+	TLS bool
 	// Path is the request target of a request inside a tunnel; a CONNECT has none.
 	Path    string
 	Headers http.Header
 	// Body is the request body when a JSON credential could be presented in it, else nil.
 	Body []byte
+	// APIServerToken reads the proxy's own bearer for LocalAPIServer, once per admission so every
+	// evaluation of one request sees the same value; nil leaves that bearer unavailable.
+	APIServerToken func() (string, error)
 }
 
 func (r Request) isConnect() bool { return r.Method == http.MethodConnect }
@@ -29,11 +36,10 @@ func (r Request) isConnect() bool { return r.Method == http.MethodConnect }
 // WorkloadContext is credential material retained only after the proxy authenticated this
 // request or tunnel. Its tokens are never printed.
 type WorkloadContext struct {
-	Bearer string
-	Caller policyapi.ServiceAccountRef
+	Caller reader.Subject
 	PodUID string
 	// Projected maps an audience to the token the sidecar presented for it, each already reviewed as
-	// belonging to the same Pod as the hop bearer. An audience that did not review is absent rather
+	// belonging to the Sandbox's bound Pod. An audience that did not review is absent rather
 	// than present and unusable, so a rule naming it denies `credential-unavailable` at the point
 	// of use.
 	Projected map[string]string
@@ -57,6 +63,8 @@ type Allowed struct {
 	// ClusterInternal is whether the deciding rule declared its hosts cluster-internal, which the
 	// dial needs: the address check happens where the connection is made, not here.
 	ClusterInternal bool
+	// Impersonated is the ServiceAccount the proxy acts as on the API server, or nil.
+	Impersonated *policyapi.ServiceAccountRef
 }
 
 // Denied is a request no rule admits, and why.
@@ -80,7 +88,7 @@ type match struct {
 // credential; one presenting none is decided by the first matching rule and is forwarded as it
 // came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
 // credential away from it.
-func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext) Decision {
+func (i *Index) Evaluate(caller reader.Subject, request Request, workload *WorkloadContext) Decision {
 	grants := i.Rules.Grants(caller)
 	if len(grants) == 0 {
 		return Denied{decision.NoBinding}
@@ -125,7 +133,13 @@ func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, wo
 	// `resolves` admitted exactly one presented credential, and every presented one is in the index.
 	name := *decided.rule.CredentialRef
 	credential := i.credentials[name]
-	value, ok := i.credentialValue(credential, caller, workload)
+	account, impersonating := credential.Source.(resources.KubernetesServiceAccount)
+	// The proxy's bearer may act only as the account the credential names: a caller's own
+	// impersonation request would ride on the proxy's rights instead.
+	if impersonating && suppliesImpersonation(request.Headers) {
+		return Denied{decision.ImpersonationForbidden}
+	}
+	value, ok := i.credentialValue(credential, caller, request, workload)
 	if !ok {
 		return Denied{decision.CredentialUnavailable}
 	}
@@ -133,7 +147,7 @@ func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, wo
 	if err != nil {
 		return Denied{decision.CredentialUnavailable}
 	}
-	return Allowed{
+	allowed := Allowed{
 		Binding:         decided.binding,
 		Policy:          decided.policy,
 		Rule:            decided.number,
@@ -141,6 +155,29 @@ func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, wo
 		BodyRewrite:     bodyRewrite,
 		ClusterInternal: decided.rule.ClusterInternal,
 	}
+	if impersonating {
+		// One decision carries the bearer and the header naming the account, so the proxy's own
+		// token is never forwarded without it.
+		allowed.Rewrites = append(allowed.Rewrites, presentation.HeaderRewrite{
+			Header: ImpersonateUserHeader, Values: []string{account.Username()},
+		})
+		allowed.Impersonated = &policyapi.ServiceAccountRef{Namespace: account.Namespace, Name: account.Name}
+	}
+	return allowed
+}
+
+// ImpersonateUserHeader is the Kubernetes impersonation header naming the user to act as.
+const ImpersonateUserHeader = "Impersonate-User"
+
+// suppliesImpersonation reports whether the request carries any Kubernetes impersonation header:
+// Impersonate-User, -Group, -Uid or an Impersonate-Extra-* key.
+func suppliesImpersonation(headers http.Header) bool {
+	for key := range headers {
+		if len(key) >= len("impersonate-") && strings.EqualFold(key[:len("impersonate-")], "impersonate-") {
+			return true
+		}
+	}
+	return false
 }
 
 // demandsBody reports whether an invalid body must fail the request: some matching rule authorizes
@@ -195,11 +232,12 @@ func resolves(rule resources.Rule, presented map[string]presentation.Presentatio
 	return ok
 }
 
-// credentialValue is the real value of a credential. Both token sources are the caller's own
-// identity, so each is usable only while the context still belongs to the caller being decided; a
-// Secret is the proxy's and needs no such binding.
+// credentialValue is the real value of a credential. A projected token is the caller's own
+// identity, so it is usable only while the context still belongs to the caller being decided; a
+// Secret is the proxy's and needs no such binding. The proxy's own API server bearer goes only to
+// that server, over verified TLS.
 func (i *Index) credentialValue(
-	credential resources.Credential, caller policyapi.ServiceAccountRef, workload *WorkloadContext,
+	credential resources.Credential, caller reader.Subject, request Request, workload *WorkloadContext,
 ) (string, bool) {
 	bound := workload != nil && workload.Caller == caller
 	switch source := credential.Source.(type) {
@@ -215,11 +253,21 @@ func (i *Index) credentialValue(
 		}
 		token, ok := workload.Projected[source.Audience]
 		return token, ok
-	case resources.AuthenticatedWorkloadToken:
-		if !bound {
+	case resources.KubernetesServiceAccount:
+		// The proxy's own bearer is for the API server LocalAPIServer configures and nowhere else.
+		server := i.LocalAPIServer
+		if server == nil || !request.TLS || request.Port != server.Port || !strings.EqualFold(request.Host, server.Host) {
 			return "", false
 		}
-		return workload.Bearer, true
+		if request.APIServerToken == nil {
+			return "", false
+		}
+		token, err := request.APIServerToken()
+		if err != nil {
+			slog.Warn("API server token unreadable; refusing", "error", err)
+			return "", false
+		}
+		return token, token != ""
 	}
 	return "", false
 }

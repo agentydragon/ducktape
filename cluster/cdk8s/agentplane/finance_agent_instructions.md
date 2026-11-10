@@ -66,7 +66,7 @@ to SELECT on `aiquota.aiquota_windows`, `aiquota.token_activity_daily` and
 current egress rules before either request; no auth token or raw provider payload
 belongs in a public repo. The `finance-agent` sandbox
 preset grants `aiquota-read`, which covers both routes, to new sandboxes;
-verify the actual live `/v1/rules` before using either route. A minimal
+verify the actual live `agentplane egress rules` before using either route. A minimal
 read-only history probe is `SELECT count() FROM aiquota.aiquota_windows` via
 GET with URL-encoded `query=`.
 These typed windows report observed **usage against a Claude cap**, not purchases,

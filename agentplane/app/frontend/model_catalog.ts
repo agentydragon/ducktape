@@ -1,39 +1,42 @@
-import type { Harness, ModelCatalog, ModelOption } from "./api/schema";
-import { api, ok } from "./client";
+import type { ListModelsResponse, ModelOption } from "../app_service_pb";
+import { Harness } from "../../proto/session_pb";
 
 /** An empty model list disables new-session selection, not the native harness. */
-export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {
-  const harnesses: { value: Harness; label: string }[] = [
-    { value: "HARNESS_CLAUDE", label: "Claude" },
-    { value: "HARNESS_CODEX", label: "Codex" },
-  ];
-  return harnesses.map(({ value, label }) => {
-    const disabled = !catalog?.harnesses[value]?.length;
-    return { value, label: disabled && catalog ? `${label} (no models offered)` : label, disabled };
+export function harnessOptions(
+  catalog: ListModelsResponse | null
+): { value: string; label: string; disabled: boolean }[] {
+  const harnesses = [Harness.CLAUDE, Harness.CODEX];
+  if (catalog?.harnesses.some((offer) => offer.harness === Harness.CENTRAL_SAMPLER))
+    harnesses.push(Harness.CENTRAL_SAMPLER);
+  return harnesses.map((harness) => {
+    const label = harnessLabel(harness);
+    const disabled = !catalog?.harnesses.find((offer) => offer.harness === harness)?.models.length;
+    return { value: String(harness), label: disabled && catalog ? `${label} (no models offered)` : label, disabled };
   });
 }
 
-/** A harness as the pages name it; null while a Thread has no runner attachment to say. */
-export function harnessLabel(harness: Harness | null): string {
+/** A harness as pages name it; absent metadata or an unknown enum has no display name. */
+export function harnessLabel(harness: Harness | undefined): string {
   switch (harness) {
-    case "HARNESS_CLAUDE":
+    case Harness.CLAUDE:
       return "Claude";
-    case "HARNESS_CODEX":
+    case Harness.CODEX:
       return "Codex";
-    case null:
+    case Harness.CENTRAL_SAMPLER:
+      return "Central sampler";
+    case Harness.UNSPECIFIED:
+    case undefined:
+    default:
       return "Unknown harness";
   }
 }
 
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`
  * list via its `harnesses` id references. */
-export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {
+export function modelsForHarness(catalog: ListModelsResponse, harness: Harness): ModelOption[] {
   const byId = new Map(catalog.models.map((option) => [option.model, option]));
-  return (catalog.harnesses[harness] ?? []).flatMap((id) => {
+  return (catalog.harnesses.find((offer) => offer.harness === harness)?.models ?? []).flatMap((id) => {
     const option = byId.get(id);
     return option ? [option] : [];
   });
-}
-export async function models(): Promise<ModelCatalog> {
-  return ok(await api.GET("/models"));
 }

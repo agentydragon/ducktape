@@ -38,13 +38,13 @@ py_library(
         "//grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
         "//mcp_infra:request_scoped_openapi",
         "//util:net",
-        "//util/bazel:runfiles",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )
 

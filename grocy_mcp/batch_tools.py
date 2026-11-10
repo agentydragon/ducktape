@@ -1,10 +1,4 @@
-"""Batch operation tools for Grocy MCP server.
-
-Custom tools that replace several single-shot OpenAPI-generated tools with
-batch/enriched versions. Each operation fans out concurrently via asyncio.gather
-and collects results (continue-and-collect, never fail-fast).
-
-Concurrency is bounded by an asyncio.Semaphore so that large batches don't
+"""Concurrency is bounded by an asyncio.Semaphore so that large batches don't
 overwhelm Grocy's PHP/SQLite backend. The authenticated backend client is a
 FastMCP dependency resolved once before the batch tool body, then shared by its
 item workers. Reads retry transient errors with exponential backoff.

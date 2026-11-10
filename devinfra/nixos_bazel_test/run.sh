@@ -74,9 +74,31 @@ build_image() {
   echo "=== Image $IMAGE_NAME imported ==="
 }
 
-run_container() {
+run_container() (
   local credential_rc=""
+  local container_id=""
+  local scratch_dir
+  scratch_dir=$(mktemp -d)
+  local cid_file="$scratch_dir/container.id"
+  cleanup() {
+    if [[ -z "$container_id" && -s "$cid_file" ]]; then
+      read -r container_id <"$cid_file" || true
+    fi
+    if [[ -n "$container_id" ]]; then
+      docker rm -f "$container_id" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$credential_rc" ]]; then
+      rm -f -- "$credential_rc"
+    fi
+    rm -f -- "$cid_file"
+    rmdir -- "$scratch_dir"
+  }
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
   local -a docker_args=(
+    --cidfile "$cid_file"
     --network=host
     --privileged
     --cgroupns=host
@@ -96,8 +118,8 @@ run_container() {
       echo "BUILDBUDDY_API_KEY is required for the RBE integration test" >&2
       return 2
     fi
-    credential_rc="$(mktemp)"
-    chmod 0600 "$credential_rc"
+    credential_rc="$scratch_dir/credential.bazelrc"
+    umask 077
     printf 'common:rbe --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >"$credential_rc"
     # Mount at a neutral path (not ~/.bazelrc): the smoke test runs bazel with
     # --nohome_rc and imports the credential explicitly via CREDENTIAL_RC.
@@ -108,7 +130,6 @@ run_container() {
   if [[ "${1:-}" == "test" ]]; then
     echo "=== Running NixOS to BuildBuddy RBE integration test ==="
     # Start the NixOS container (systemd activates everything), then exec commands
-    local container_id
     container_id=$(docker run -d "${docker_args[@]}" "$IMAGE_NAME:latest" /init)
     # Wait for activation to complete
     echo "Waiting for NixOS activation..."
@@ -117,8 +138,6 @@ run_container() {
     if [[ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != "true" ]]; then
       echo "NixOS container exited during activation" >&2
       docker logs "$container_id" >&2
-      docker rm -f "$container_id" >/dev/null 2>&1 || true
-      rm -f "$credential_rc"
       return 1
     fi
 
@@ -130,8 +149,6 @@ run_container() {
     if ((exit_code != 0)); then
       docker logs "$container_id" >&2
     fi
-    docker rm -f "$container_id" >/dev/null 2>&1 || true
-    rm -f "$credential_rc"
     return $exit_code
   else
     echo "=== Starting NixOS container ==="
@@ -139,7 +156,6 @@ run_container() {
     echo "Exec into it with: docker exec -it <container> bash -l"
     echo ""
     # Start systemd, then exec into the container interactively
-    local container_id
     container_id=$(docker run -d "${docker_args[@]}" "$IMAGE_NAME:latest" /init)
     echo "Waiting for NixOS activation..."
     sleep 3
@@ -150,24 +166,25 @@ run_container() {
       -w /workspace \
       "$container_id" /run/current-system/sw/bin/bash
     echo "Stopping container..."
-    docker rm -f "$container_id" >/dev/null 2>&1 || true
   fi
-}
+)
 
-case "${1:-shell}" in
-  build)
-    build_image
-    ;;
-  test)
-    build_image
-    run_container test
-    ;;
-  shell | "")
-    build_image
-    run_container
-    ;;
-  *)
-    echo "Usage: $0 [build|test|shell]"
-    exit 1
-    ;;
-esac
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  case "${1:-shell}" in
+    build)
+      build_image
+      ;;
+    test)
+      build_image
+      run_container test
+      ;;
+    shell | "")
+      build_image
+      run_container
+      ;;
+    *)
+      echo "Usage: $0 [build|test|shell]"
+      exit 1
+      ;;
+  esac
+fi

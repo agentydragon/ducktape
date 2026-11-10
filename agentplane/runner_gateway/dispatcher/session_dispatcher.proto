@@ -4,8 +4,11 @@ syntax = "proto3";
 
 package agentplane.runner_gateway.dispatcher;
 
+import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
-import "agentplane/proto/runner.proto";
+import "agentplane/proto/identity.proto";
+import "agentplane/proto/environment_lifecycle.proto";
+import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -24,21 +27,26 @@ service SessionDispatcher {
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:changeReasoningEffort" body: "*"};
   }
-  // Not stored or queued: delivered at once to a Ready Sandbox. A stale turn is rejected
-  // by the runner with FAILED_PRECONDITION; unavailable Sandbox behavior remains explicit below.
+  // The exact turn is checked at Runtime admission, including after delayed delivery.
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:interruptTurn" body: "*"};
   }
-  // Stores the request and answers with the Session's `SessionOpening` in
-  // `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; the opening is delivered once the Sandbox is `Ready`, before any
-  // command for the Session. `session_id` is the idempotency key: a retry with the same Sandbox and request
-  // answers with the same `SessionOpening`, and the same ID with another Sandbox or request fails
-  // `ALREADY_EXISTS`. A Sandbox that does not exist fails `NOT_FOUND`.
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
-    option (google.api.http) = {post: "/v1/sessions/{session_id}:open" body: "*"};
+  // Stores the request and answers with the Session in waiting materialization; creation is delivered once the Sandbox is `Ready`, before any
+  // command for the Session. The selected placement must include its exact Sandbox UID; a missing Sandbox fails
+  // `NOT_FOUND`, and a different current UID fails `FAILED_PRECONDITION` before recording. `session_id` must be a
+  // canonical lowercase UUID and is the idempotency key: a retry with the same placement, exact execution target and request answers
+  // with the same Session;
+  // conflicting requests under that ID fail `ALREADY_EXISTS`.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
+    option (google.api.http) = {post: "/v1/sessions" body: "*"};
   }
-  rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse) {
-    option (google.api.http) = {get: "/v1/sessions/{session_id}/opening"};
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}"};
+  }
+  // Discovers current Sessions, including waiting and failed materialization.
+  // Uses retained owner authority and does not contact the environment or History.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions"};
   }
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
@@ -52,8 +60,8 @@ service SessionDispatcher {
   rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse) {
     option (google.api.http) = {get: "/v1/dispatches"};
   }
-  // Only while the Dispatch is `DELIVERY_STATE_QUEUED_IN_DISPATCHER`: once a delivery began its outcome
-  // is the runner's.
+  // Only before possible forwarding. QUEUED alone is insufficient: a lost reply or recovery
+  // can requeue an attempted command. Such cancellation fails FAILED_PRECONDITION.
   rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse) {
     option (google.api.http) = {post: "/v1/dispatches/{command_id}:cancel" body: "*"};
   }
@@ -62,23 +70,14 @@ service SessionDispatcher {
 // Where a Dispatch is. The one vocabulary of every dispatch.
 enum DeliveryState {
   DELIVERY_STATE_UNSPECIFIED = 0;
-  DELIVERY_STATE_QUEUED_IN_DISPATCHER = 1;     // stored, not sent; `reason` says what it waits for
+  DELIVERY_STATE_QUEUED_IN_DISPATCHER = 1;     // awaiting delivery or same-ID reconciliation; not proof of non-admission
   DELIVERY_STATE_DELIVERING_TO_RUNNER = 2;     // a call to the runner is in flight
   DELIVERY_STATE_RUNNER_ADMITTED = 3;          // the runner journaled it
   DELIVERY_STATE_HARNESS_CONFIRMED = 4;        // it reached the model's context
   DELIVERY_STATE_NO_OP = 5;                    // nothing to do; `reason` says where that was decided
   DELIVERY_STATE_FAILED = 6;                   // terminal; `reason` names where it failed
   DELIVERY_STATE_CANCELLED_IN_DISPATCHER = 7;  // cancelled before delivery began; `reason` says by whom
-  DELIVERY_STATE_UNKNOWN = 8;                  // the Sandbox was deleted; the outcome can no longer be read
-}
-
-enum Operation {
-  OPERATION_UNSPECIFIED = 0;
-  OPERATION_SUBMIT_INPUT = 1;
-  OPERATION_CHANGE_MODEL = 2;
-  OPERATION_CHANGE_REASONING_EFFORT = 3;
-  reserved 4;
-  reserved "OPERATION_STOP_RUNNER_SESSION";
+  DELIVERY_STATE_UNKNOWN = 8;                  // execution/effect is unconfirmed; any known journal admission is retained
 }
 
 message Dispatch {
@@ -87,22 +86,28 @@ message Dispatch {
   string sandbox = 3;  // the Sandbox's name
   // The Sandbox this was queued for, which a recreated Sandbox of the same name is not.
   string sandbox_uid = 4;
-  Operation operation = 5;
+  agentplane.proto.Operation operation = 5;
   DeliveryState state = 6;
   optional string reason = 7;
-  // The runner journal's `CommandAdmitted` entry, once the runner admitted it.
+  // The runner journal's `CommandAdmitted` entry, once observed; retained even if state becomes
+  // UNKNOWN because later execution/effects could not be established.
   optional agentplane.proto.EventEntry admission = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+  // The environment condition currently preventing delivery, independent of delivery state.
+  agentplane.proto.DeliveryBlocker delivery_blocker = 11;
+  // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the command.
+  agentplane.proto.WakeAssessment wake_assessment = 12;
 }
 
 message SubmitInputRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string text = 4;
-  // The expected Sandbox incarnation; requests cannot cross a same-name replacement.
-  string sandbox_uid = 5;
+  // Optional authorization precondition for brokers whose grant is scoped to one incarnation.
+  string expected_sandbox_uid = 5;
 }
 
 message SubmitInputResponse {
@@ -112,9 +117,10 @@ message SubmitInputResponse {
 message ChangeModelRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string model = 4;
-  string sandbox_uid = 5;
+  string expected_sandbox_uid = 5;
 }
 
 message ChangeModelResponse {
@@ -124,9 +130,10 @@ message ChangeModelResponse {
 message ChangeReasoningEffortRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string effort = 4;
-  string sandbox_uid = 5;
+  string expected_sandbox_uid = 5;
 }
 
 message ChangeReasoningEffortResponse {
@@ -136,16 +143,14 @@ message ChangeReasoningEffortResponse {
 message InterruptTurnRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string turn_id = 4;
-  string sandbox_uid = 5;
+  string expected_sandbox_uid = 5;
 }
 
 message InterruptTurnResponse {
-  // `DELIVERY_STATE_RUNNER_ADMITTED` with `admission`, or `DELIVERY_STATE_NO_OP` with `reason`.
-  DeliveryState state = 1;
-  optional string reason = 2;
-  optional agentplane.proto.EventEntry admission = 3;
+  Dispatch dispatch = 1;
 }
 message GetDispatchRequest {
   string command_id = 1;
@@ -195,34 +200,85 @@ message CancelDispatchResponse {
   Dispatch dispatch = 1;
 }
 
-message OpenSessionRequest {
-  string session_id = 1;  // minted by the caller
-  string sandbox = 2;
+message CreateSessionRequest {
+  // Caller-minted canonical lowercase UUID; never deliberately reuse it after deletion.
+  string session_id = 1;
+  reserved 2, 5;
+  reserved "sandbox", "sandbox_uid";
   agentplane.proto.SessionSpec spec = 3;
   optional string setup_script = 4;  // selected only at creation
+  reserved 6, 7, 8;
+  reserved "environment_hosted", "central_sampler", "initial_executor";
 }
 
-// Where a Session's opening is, in the vocabulary of `DeliveryState`: `DELIVERY_STATE_RUNNER_ADMITTED` is
-// opened.
-message SessionOpening {
+// The current materialization of a Session by its placement owner. Acceptance is durable owner
+// admission, not proof of harness readiness or completion.
+message SessionStatus {
+  enum Materialization {
+    SESSION_MATERIALIZATION_UNSPECIFIED = 0;
+    SESSION_MATERIALIZATION_WAITING = 1;
+    SESSION_MATERIALIZATION_IN_PROGRESS = 2;
+    SESSION_MATERIALIZATION_ACCEPTED = 3;
+    SESSION_MATERIALIZATION_FAILED = 4;
+    SESSION_MATERIALIZATION_UNKNOWN = 5;
+  }
+  enum RequiredEnvironment {
+    REQUIRED_ENVIRONMENT_UNSPECIFIED = 0;
+    REQUIRED_ENVIRONMENT_AVAILABLE = 1;
+    REQUIRED_ENVIRONMENT_DELETED = 2;
+  }
+  Materialization materialization = 1;
+  optional string reason = 2;
+  agentplane.proto.DeliveryBlocker delivery_blocker = 3;
+  agentplane.proto.WakeAssessment wake_assessment = 4;
+  // The exact Environment selected at creation. DELETED never adopts a same-name replacement.
+  RequiredEnvironment required_environment = 5;
+}
+
+// A minimal authorized read projection; immutable SessionSpec instructions remain private.
+message Session {
   string session_id = 1;
-  string sandbox = 2;
-  string sandbox_uid = 3;
-  DeliveryState state = 4;
-  optional string reason = 5;
-  reserved 6;
+  reserved 2, 3;
+  reserved "sandbox", "sandbox_uid";
+  SessionStatus status = 4;
+  reserved 5, 6, 9, 10;
+  reserved "state", "reason", "delivery_blocker", "wake_assessment";
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  reserved 11, 13, 14;
+  reserved "harness", "initial_executor", "environment_hosted", "central_sampler_v1";
+  // Read-only projection of the placement stored in SessionSpec, without exposing instructions.
+  agentplane.proto.SessionPlacement placement = 12;
+  // The exact ServiceAccount bound to this Session, if established. Absence means its identity
+  // is not yet known, not that a current account with the same name owns it.
+  agentplane.proto.ServiceAccountIdentity execution_identity = 15;
+  // The Identity incarnation this Session executes as, recorded from its Sandbox's
+  // `spec.identity` at creation beside execution_identity; absent when the Sandbox named none.
+  agentplane.proto.Identity identity = 16;
 }
 
-message OpenSessionResponse {
-  SessionOpening opening = 1;
+message CreateSessionResponse {
+  Session session = 1;
 }
 
-message GetSessionOpeningRequest {
+message GetSessionRequest {
   string session_id = 1;
 }
 
-message GetSessionOpeningResponse {
-  SessionOpening opening = 1;
+message GetSessionResponse {
+  Session session = 1;
+}
+
+message ListSessionsRequest {
+  // Maximum returned Sessions, 1-100; zero selects 50.
+  uint32 limit = 1;
+  // Opaque continuation from a previous page. Carries no authority.
+  string page_token = 2;
+}
+
+message ListSessionsResponse {
+  // Ascending Session ID order. Pages read current records, not a frozen snapshot;
+  // concurrent changes can add/remove entries, but cannot reorder existing IDs.
+  repeated Session sessions = 1;
+  string next_page_token = 2;
 }

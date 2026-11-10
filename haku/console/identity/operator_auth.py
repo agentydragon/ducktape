@@ -85,7 +85,6 @@ class SignedOperatorSession:
     operator_id: UUID
     identity_id: UUID
     username: str
-    browser_session_id: str
     expires_at: datetime.datetime
 
 
@@ -94,7 +93,6 @@ class OperatorSession:
     operator_id: UUID
     identity_id: UUID
     username: str
-    browser_session_id: str
     expires_at: datetime.datetime
 
 
@@ -163,10 +161,6 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
     if not isinstance(username, str) or not username:
         _rejected(conn, "malformed_username")
         return None
-    browser_session_id = raw.get("browser_session_id")
-    if not isinstance(browser_session_id, str) or not browser_session_id:
-        _rejected(conn, "malformed_browser_session")
-        return None
     expires_at = raw.get("expires_at")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool):
         _rejected(conn, "malformed_expiry")
@@ -182,7 +176,6 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
         operator_id=operator_id,
         identity_id=identity_id,
         username=username,
-        browser_session_id=browser_session_id,
         expires_at=datetime.datetime.fromtimestamp(expires_at, tz=datetime.UTC),
     )
 
@@ -202,7 +195,6 @@ async def operator_session(conn: HTTPConnection) -> OperatorSession | None:
         operator_id=identity.operator_id,
         identity_id=identity.identity_id,
         username=signed.username,
-        browser_session_id=signed.browser_session_id,
         expires_at=signed.expires_at,
     )
 
@@ -370,8 +362,8 @@ async def callback(request: Request) -> Response:
         "operator_id": str(identity.operator_id),
         "identity_id": str(identity.identity_id),
         "username": username,
-        # Enrollment interactions bind to this random browser session, not merely to possession of
-        # a server-generated form nonce or to the Operator identity shared across browser devices.
+        # CLEANUP(added 2026-11-07): Remove after the minimum supported rollback image no longer
+        # requires this field to accept newly issued session cookies.
         "browser_session_id": secrets.token_urlsafe(32),
         # An absolute deadline signed into the payload itself, so the authorization cannot outlive
         # Authentik reauthentication however the cookie's own lifetime is managed. `/auth/me`

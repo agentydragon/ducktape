@@ -1,26 +1,26 @@
 # gazelle:ignore
 
-load("//devinfra/oci:defs.bzl", "oci_image_py")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
-oci_image_py(
+oci_layout_py(
     name = "upstream_test_image",
     testonly = True,
     image = "@litellm_upstream_linux_amd64",
-    tag = "litellm-upstream:attribution-test",
 )
 
 py_test(
     name = "test_attribution_export",
+    size = "medium",
     srcs = ["test_attribution_export.py"],
     data = ["attribution_export_smoke.py"],
     requires_docker = True,
     deps = [
         ":upstream_test_image",
-        "//util:oci",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
     ],
 )
@@ -95,11 +95,7 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":config",
         ":database",
@@ -142,11 +138,11 @@ py_library(
     name = "database",
     srcs = ["database.py"],
     deps = [
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )
@@ -154,10 +150,15 @@ py_library(
 py_library(
     name = "secrets",
     srcs = ["secrets.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -174,9 +175,11 @@ py_test(
     deps = [
         ":config",
         ":proxy",
+        ":secrets",
         ":upstreams",
         "//:conftest",
         "//model_catalog:catalog",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//litellm",
     ],

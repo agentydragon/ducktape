@@ -3,9 +3,6 @@ package linkage_test
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,8 +13,12 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -37,34 +38,10 @@ func link(t *testing.T, authority *linkage.Authority, serverID string) *operator
 	return linked
 }
 
-// routes serves the authority's public routes.
-func routes(t *testing.T, authority *linkage.Authority) string {
+// callback uses the public gRPC implementation, whose state is the single-use capability.
+func callback(t *testing.T, service *linkage.Service, state, code string) (*linkage_servicepb.CompleteCallbackResponse, error) {
 	t.Helper()
-	mux := http.NewServeMux()
-	authority.Mount(mux)
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	return server.URL
-}
-
-func get(t *testing.T, target string) (*http.Response, []byte) {
-	t.Helper()
-	response, err := http.Get(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return response, body
-}
-
-func callback(t *testing.T, base, state, code string) (int, []byte) {
-	t.Helper()
-	response, body := get(t, base+linkage.CallbackPath+"?"+url.Values{"state": {state}, "code": {code}}.Encode())
-	return response.StatusCode, body
+	return service.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{State: state, Code: code})
 }
 
 func TestTheAuthorizationURLKeepsTheEndpointsQueryButTheFlowsParameters(t *testing.T) {
@@ -124,7 +101,7 @@ func TestALinkReplacesTheTokenAndADisconnectDiscardsIt(t *testing.T) {
 	f := newFixture(t)
 	provider := oauthprovider.New(t, oauthprovider.Options{ExpiresIn: 3600})
 	authority := f.authority(t, provider.Server(testServer))
-	base := routes(t, authority)
+	base := linkage.NewService(authority)
 	for i, want := range []struct {
 		tokenRevision int
 		token         string
@@ -147,20 +124,21 @@ func TestALinkReplacesTheTokenAndADisconnectDiscardsIt(t *testing.T) {
 			t.Fatal(err)
 		}
 		state := oauthprovider.State(t, started.GetAuthorizationUrl())
-		status, body := callback(t, base, state, "test-code")
-		if status != http.StatusOK {
-			t.Fatalf("callback %d: %s", status, body)
+		response, err := callback(t, base, state, "test-code")
+		if err != nil {
+			t.Fatal(err)
 		}
 		f.changed(t, "a link")
+		linked := response.GetLinkage()
+		body, err := protojson.Marshal(linked)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if strings.Contains(string(body), want.token) {
 			t.Error("the callback's answer carries the access token")
 		}
-		var linked operator_action_servicepb.McpServerLinkage
-		if err := protojson.Unmarshal(body, &linked); err != nil {
-			t.Fatal(err)
-		}
 		if linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
-			t.Errorf("link %d: the linkage is %v", i, &linked)
+			t.Errorf("link %d: the linkage is %v", i, linked)
 		}
 		if revision := f.tokenRevision(t, testServer); revision != want.tokenRevision {
 			t.Errorf("link %d: the token's revision is %d, want %d", i, revision, want.tokenRevision)
@@ -168,8 +146,8 @@ func TestALinkReplacesTheTokenAndADisconnectDiscardsIt(t *testing.T) {
 		if token, err := authority.Token(t.Context(), testServer); err != nil || token.AccessToken != want.token {
 			t.Errorf("link %d: the token is %+v, %v", i, token, err)
 		}
-		if status, _ := callback(t, base, state, "test-code"); status != http.StatusConflict {
-			t.Errorf("link %d: a replayed callback answered %d", i, status)
+		if _, err := callback(t, base, state, "test-code"); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("link %d: a replayed callback answered %v", i, err)
 		}
 	}
 }
@@ -181,9 +159,16 @@ func TestARefusedCodeIsReportedAndLeavesTheServerUnlinked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, body := callback(t, routes(t, authority), oauthprovider.State(t, started.GetAuthorizationUrl()), oauthprovider.RefusedCode)
-	if status != http.StatusBadGateway || !strings.Contains(string(body), oauthprovider.RefusedError) {
-		t.Errorf("the callback answered %d: %s", status, body)
+	_, err = callback(t, linkage.NewService(authority), oauthprovider.State(t, started.GetAuthorizationUrl()), oauthprovider.RefusedCode)
+	if status.Code(err) != codes.Unavailable || strings.Contains(err.Error(), oauthprovider.RefusedError) {
+		t.Fatalf("the callback answered %v", err)
+	}
+	details := status.Convert(err).Details()
+	if len(details) != 1 {
+		t.Fatalf("the callback error details are %v", details)
+	}
+	if info, ok := details[0].(*errdetails.ErrorInfo); !ok || info.GetReason() != "MCP_TOKEN_EXCHANGE_FAILED" || info.GetDomain() != "agentplane.actions" {
+		t.Errorf("the callback error details are %v", details)
 	}
 	if linked := linkageOf(t, authority, testServer); linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_UNLINKED {
 		t.Errorf("the linkage is %v", linked)
@@ -194,33 +179,32 @@ func TestACallbackItCannotFinishIsRefused(t *testing.T) {
 	f := newFixture(t)
 	provider := oauthprovider.New(t, oauthprovider.Options{})
 	authority := f.authority(t, provider.Server(testServer))
-	base := routes(t, authority)
+	base := linkage.NewService(authority)
 	started, err := authority.Start(t.Context(), testServer, nil, operator)
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := oauthprovider.State(t, started.GetAuthorizationUrl())
-	if response, _ := get(t, base+linkage.CallbackPath+"?state="+state); response.StatusCode != http.StatusBadRequest {
-		t.Errorf("a callback without a code answered %d", response.StatusCode)
+	if _, err := callback(t, base, state, ""); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("a callback without a code answered %v", err)
 	}
-	if status, _ := callback(t, base, "test-unknown-state", "test-code"); status != http.StatusConflict {
-		t.Errorf("a callback of an unknown flow answered %d", status)
+	if _, err := callback(t, base, "test-unknown-state", "test-code"); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("a callback of an unknown flow answered %v", err)
 	}
 	if _, err := f.db.ExecContext(t.Context(), "UPDATE mcp_linkage_flow SET expires_at = now() - interval '1 second'"); err != nil {
 		t.Fatal(err)
 	}
-	if status, _ := callback(t, base, state, "test-code"); status != http.StatusConflict {
-		t.Errorf("a callback of an expired flow answered %d", status)
+	if _, err := callback(t, base, state, "test-code"); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("a callback of an expired flow answered %v", err)
 	}
-	// A flow started before its server was removed from the settings.
 	started, err = authority.Start(t.Context(), testServer, nil, operator)
 	if err != nil {
 		t.Fatal(err)
 	}
 	other := provider.Server("test-other-server")
-	status, _ := callback(t, routes(t, f.authority(t, other)), oauthprovider.State(t, started.GetAuthorizationUrl()), "test-code")
-	if status != http.StatusNotFound {
-		t.Errorf("a callback of a removed server's flow answered %d", status)
+	_, err = callback(t, linkage.NewService(f.authority(t, other)), oauthprovider.State(t, started.GetAuthorizationUrl()), "test-code")
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("a removed server's flow answered %v", err)
 	}
 	if len(provider.Requests("authorization_code")) != 0 {
 		t.Error("a refused callback exchanged its code")
@@ -243,10 +227,11 @@ func TestTheSharedClientIDMetadataDocumentNamesEveryRedirectOfItsServers(t *test
 		cimdServer(provider, "test-second", oauthprovider.RedirectURI),
 		cimdServer(provider, "test-third", oauthprovider.RedirectURI),
 		provider.Server("test-registered"))
-	response, body := get(t, routes(t, authority)+linkage.ClientMetadataPath)
-	if response.StatusCode != http.StatusOK || response.Header.Get("Cache-Control") != "public, max-age=3600" {
-		t.Errorf("the document answered %d with Cache-Control %q", response.StatusCode, response.Header.Get("Cache-Control"))
+	response, err := linkage.NewService(authority).GetClientMetadata(t.Context(), &linkage_servicepb.GetClientMetadataRequest{})
+	if err != nil {
+		t.Fatal(err)
 	}
+	body := response.GetJsonDocument()
 	var document map[string]any
 	if err := json.Unmarshal(body, &document); err != nil {
 		t.Fatal(err)
@@ -263,8 +248,8 @@ func TestTheSharedClientIDMetadataDocumentNamesEveryRedirectOfItsServers(t *test
 	}
 
 	none := f.authority(t, provider.Server(testServer))
-	if response, _ := get(t, routes(t, none)+linkage.ClientMetadataPath); response.StatusCode != http.StatusNotFound {
-		t.Errorf("without a shared client the document answered %d", response.StatusCode)
+	if _, err := linkage.NewService(none).GetClientMetadata(t.Context(), &linkage_servicepb.GetClientMetadataRequest{}); status.Code(err) != codes.NotFound {
+		t.Errorf("without a shared client the document answered %v", err)
 	}
 }
 

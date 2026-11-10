@@ -6,6 +6,18 @@ _COMMIT = "a07198b9707dc26cbce3827d807da6854a978638"
 _PREFIX = "buildbuddy-" + _COMMIT
 
 def _buildbuddy_protos_impl(_ctx):
+    # Match kythe.io's replacement in the pinned BuildBuddy go.mod.
+    http_archive(
+        name = "kythe_protos",
+        url = "https://github.com/buildbuddy-io/kythe/archive/refs/tags/v0.0.72.tar.gz",
+        integrity = "sha256-dtUWF7fP+tYyzvjUT3LkGHCQCIZ0VsfNRBFQCMn9ABs=",
+        strip_prefix = "kythe-0.0.72",
+        build_file = "//third_party/kythe:BUILD.protos.bazel",
+        patch_cmds = [
+            # The overlay owns the four proto packages needed by BuildBuddy.
+            "find . -mindepth 2 \\( -name BUILD -o -name BUILD.bazel \\) -delete",
+        ],
+    )
     http_archive(
         name = "buildbuddy_protos",
         url = "https://github.com/buildbuddy-io/buildbuddy/archive/{}.tar.gz".format(_COMMIT),

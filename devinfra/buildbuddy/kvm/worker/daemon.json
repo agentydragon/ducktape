@@ -1,0 +1,5 @@
+{
+  "data-root": "/buildbuddy/docker",
+  "seccomp-profile": "/etc/docker/buildbuddy-seccomp.json",
+  "insecure-registries": ["oci-cache.oci-cache.svc.cluster.local:80"]
+}

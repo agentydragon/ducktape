@@ -178,3 +178,10 @@ direct-reader diagnostics.
 The retired public-coder devbox was the controlled host for Agentplane's manual live acceptance
 targets. No replacement host is implied by this guide; choose an explicitly authorized environment
 and identity before running those targets.
+
+## Egress rules
+
+Run `agentplane egress rules` to inspect this workload's current access and credential
+presentations. `agentplane egress guide` and `agentplane egress guide credentials` print the
+workflow guides. The local gRPC route supplies this Pod's identity; keep proxy settings and CA
+trust for subsequent outbound requests.

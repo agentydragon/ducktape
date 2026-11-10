@@ -8,6 +8,7 @@ from datetime import UTC
 
 import httpx
 import sqlparse
+from python.runfiles import Runfiles
 
 from aiquota.models import (
     FetchError,
@@ -21,10 +22,9 @@ from aiquota.models import (
     TokenActivityObservation,
     history_capture_key,
 )
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _DATASET = "aiquota"
-_SCHEMA = "aiquota/schema.sql"
+_SCHEMA = "ducktape/aiquota/schema.sql"
 # `ON CLUSTER` DDL returns once every replica has applied it.
 _SCHEMA_TIMEOUT = 60.0
 
@@ -58,7 +58,7 @@ class ClickHouseSnapshotSink:
 
         One request per statement: the HTTP interface refuses a body holding several.
         """
-        statements = schema_statements(get_required_path(own_repo_rlocation(_SCHEMA)).read_text())
+        statements = schema_statements((Runfiles.CreateOrRaise().root() / _SCHEMA).read_text())
         async with httpx.AsyncClient(
             auth=(self._username, self._password), timeout=_SCHEMA_TIMEOUT, transport=self._transport
         ) as client:

@@ -19,10 +19,13 @@ from agentplane.app.testing.replication_source import SANDBOX, SESSION, Replicat
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
+
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 _SLOT = "electric_slot_agentplane_history"
 _WAL_CAP_BYTES = 1024 * 1024

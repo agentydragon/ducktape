@@ -1,90 +1,38 @@
-# postscanmail_mcp_server
+# PostScan Mail MCP server
 
-Hand-authored FastMCP server fronting the [PostScan Mail Developer
-API](https://github.com/PostScanMail/api-docs). PostScan Mail publishes no
-OpenAPI/Swagger spec — the docs repo is markdown-only and the live API serves
-neither `/openapi.json` nor `/swagger.json` — so the eleven REST endpoints are
-wrapped as typed Python tools in <server.py>. Each tool's docstring links its
-upstream endpoint doc; the two reads return typed Pydantic models (see
-[Response schemas](#response-schemas)), and mutating/action tools return the
-upstream JSON verbatim.
+Hand-written FastMCP wrappers for the PostScan Mail API. The API has no published
+OpenAPI spec, so read results use models based on observed payloads; mutating
+and action tools return opaque upstream JSON. See [server.py](server.py) for the
+current tools, parameters, and endpoint documentation.
 
-The server itself holds a single account-wide `x-api-key` and does **no**
-per-caller authentication. Its Kubernetes app is decommissioned and its manifests
-are parked at <../../cluster/parked/postscanmail-mcp/>. The former deployment
-used an `mcp-oauth-facade` sidecar and a Terraform-managed Authentik client. The
-OAuth client is being retired; this source is not currently registered with
-haku-console or exposed through a deployed OAuth facade. Any revival must restore
-an authentication boundary before exposing the server.
+The server uses one account-wide `x-api-key` and has no per-caller
+authentication. The app is decommissioned, its manifests are parked at
+<../../cluster/parked/postscanmail-mcp/>, and haku-console does not register this
+server. Any revival must restore an authentication boundary before exposure.
 
-## Tool surface
+## Observed response behavior
 
-| Tool                                | Upstream                                                  |
-| ----------------------------------- | --------------------------------------------------------- |
-| `list_items(sort_order, page)`      | `GET /items`                                              |
-| `list_automation_rules(...)`        | `GET /user-defined-rules/system-user-defined-rules`       |
-| `set_automation_rule(name, active)` | `PUT /user-defined-rules/update-system-user-defined-rule` |
-| `request_open(addr, ids)`           | `POST /addresses/{addr}/items/actions/open` (paid)        |
-| `cancel_open(addr, ids)`            | `POST /addresses/{addr}/items/actions/open/cancel`        |
-| `request_discard(addr, ids)`        | `POST /addresses/{addr}/items/actions/discard`            |
-| `cancel_discard(addr, ids)`         | `POST /addresses/{addr}/items/actions/discard/cancel`     |
-| `request_rescan(addr, ids)`         | `POST /addresses/{addr}/items/actions/rescan` (paid)      |
-| `cancel_rescan(addr, ids)`          | `POST /addresses/{addr}/items/actions/rescan/cancel`      |
-| `request_shred(addr, ids)`          | `POST /addresses/{addr}/items/actions/shred`              |
-| `cancel_shred(addr, ids)`           | `POST /addresses/{addr}/items/actions/shred/cancel`       |
+`list_items` includes PostScan Mail's own `ai_summary` and signed
+`cover_image`/`pdf_content` URLs when a piece has been opened or scanned. The
+tool lists these URLs; it does not download the content. The read models reflect
+observed payloads because PostScan Mail documents no response schemas.
 
-Base URL: `https://api.postscanmail.com/api/account-docs/v2/`.
-
-Reads return typed models (`MailItemsPage`, `AutomationRulesPage`); mutating/action tools
-return the upstream JSON unchanged (`object`) — PostScan Mail documents no response shape
-for them. Every tool's docstring links its upstream endpoint doc.
-
-## Response schemas
-
-Built from observed payloads (PostScan Mail documents no shapes — "responses vary depending
-on account data"). Both reads share a Laravel `LengthAwarePaginator` envelope: `current_page`,
-`last_page`, `per_page`, `total`, `next_page_url`, `prev_page_url`.
-
-- `list_items` → `MailItemsPage` with `items: list[MailItem]`. Each `MailItem` carries
-  `mail_id`, `sender_name`, `address_id`, `ai_summary` (PostScan Mail's own per-piece summary,
-  `list[str]`), signed `cover_image`/`pdf_content` URLs (absent until opened/scanned — this
-  tool lists them, it does not download the content), and `pdf_metadata` (`received_at`,
-  `current_status`, `current_folder_name`, `uploaded_from_address`).
-- `list_automation_rules` → `AutomationRulesPage` with `rules: list[AutomationRule]`
-  (`auto_scan`/`auto_shred`/`auto_discard`/`auto_ai_summary` booleans, per user).
-
-## Tool annotations
-
-Each tool declares [`ToolAnnotations`](../../mcp_infra/docs/tool_annotations.md) so MCP
-clients (claude.ai / Claude Code) can group it and relax approval prompts. The hints are
-advisory and are not a security boundary; an integrating server must enforce its own
-approval policy.
-
-| Tool(s)                               | Annotations                                                    |
-| ------------------------------------- | -------------------------------------------------------------- |
-| `list_items`, `list_automation_rules` | `readOnlyHint=true` (pure GET reads)                           |
-| `set_automation_rule`                 | `idempotentHint=true, destructiveHint=false` (PUT toggle)      |
-| `cancel_open/discard/rescan/shred`    | `idempotentHint=true, destructiveHint=false` (abort a pending) |
-| `request_open`, `request_rescan`      | `destructiveHint=false` (paid, additive scan)                  |
-| `request_discard`, `request_shred`    | `destructiveHint=true` (remove/destroy mail)                   |
-
-## Deployment status
-
-The PostScanMail MCP app is decommissioned. The server source and tests remain here for
-possible revival; haku-console does not currently register this server. The tool
-annotations below describe intended client behavior, not an active approval boundary.
+Tool annotations are client hints that may affect approval prompts, not a
+security boundary. Integrating servers must enforce their own approval policy;
+see [tool annotation guidance](../../mcp_infra/docs/tool_annotations.md).
 
 ## Running locally
 
+Set `POSTSCANMAIL_API_KEY` to the account-wide API key, then run:
+
 ```bash
-POSTSCANMAIL_API_KEY=... bb run //x/postscanmail_mcp_server:server -- --help
-curl -X POST http://localhost:8080/mcp \
-  -H 'Accept: application/json,text/event-stream' \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+bb run //x/postscanmail_mcp_server:server_cli
 ```
 
-## When PostScan Mail ships an OpenAPI spec
+The default endpoint is `http://localhost:8080/mcp`.
 
-No spec exists today (verified against the docs repo and the live API). If one ships, switch
-to `FastMCP.from_openapi` (the grocy_mcp pattern in <../grocy_mcp/server.py>) and delete the
-hand-rolled tool wrappers and response models.
+## OpenAPI follow-up
+
+If PostScan Mail publishes an OpenAPI spec, consider `FastMCP.from_openapi`
+(see the [grocy MCP server](../../grocy_mcp/server.py)) and remove the hand-written
+wrappers and observed response models.

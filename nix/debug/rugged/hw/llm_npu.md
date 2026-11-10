@@ -47,12 +47,13 @@ shape mismatch. See <gemma4.md>.
 ## Real-hardware status (2026-09-17): disabled, NPU not actually reached
 
 First real-hardware test of the Nix-native service (`rugged-npu-llm.service`).
-Two bugs found, both real, neither yet fixed. `ducktape.localLlm.npu.enable`
-is now `false` pending both.
+The September test exposed library discovery and unbounded-context problems.
+Both configuration changes have since landed, but the service remains disabled
+until a fresh GGUF service test verifies device execution and bounded memory.
 
-**1. NPU device is unreachable at the Level Zero layer** (tracked in <npu.md>
-§ Known issues — same root cause for anything touching the NPU on this host,
-not specific to this service). The OpenVINO backend logs this and silently
+**1. NPU discovery failed at the Level Zero layer in September.** The
+[October driver investigation](../../../../cluster/docs/inference/rugged_npu_driver.md)
+identified missing library search paths, which the service now declares. The OpenVINO backend logs this and silently
 continues on CPU rather than failing loudly:
 
 ```text
@@ -68,8 +69,8 @@ llama-3.2-1b almost certainly also ran on CPU, not NPU — treat every inference
 number produced during tonight's test as a CPU-fallback number, not a real NPU
 measurement, until this is re-verified with the driver actually fixed.
 
-**2. No explicit `--ctx-size` cap, which turned the silent CPU fallback into a
-near system hang.** `local_llm_npu.nix`'s `ExecStart` sets no `-c`/`--ctx-size`,
+**2. The September service had no explicit `--ctx-size` cap, turning silent CPU
+fallback into a near system hang.** Its `ExecStart` supplied no `-c`/`--ctx-size`,
 so llama-server sized the KV cache close to the model's full trained context —
 the `qwen3-4b` request loaded with `n_ctx = 198912` (of `n_ctx_train = 262144`)
 across 4 parallel slots. Running that on CPU drove the process to **26.5G RSS
@@ -83,37 +84,16 @@ even a working NPU path should have an explicit, bounded context size (the
 "NPU constraints" section below already recommended small contexts; the
 service just didn't apply that).
 
-**Before re-enabling**: fix (1) — probably means chasing the driver-version-lag
-angle in <npu.md>, or finding what differs from whatever let the old Docker
-benchmarks above actually reach the NPU — and fix (2) by adding an explicit,
-conservative `--ctx-size` (and probably `--parallel`) to the router presets in
-`local_llm_npu.nix`, regardless of which backend ends up serving requests.
-
-### Models
-
-Standard GGUF files work. Q4_0 is the primary supported quantization on NPU.
-Download from HuggingFace:
-
-```bash
-wget https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
-```
-
-Validated models: Llama 3.2 1B, Llama 3.1 8B, Phi-3-mini, Qwen 2.5 1.5B,
-Qwen3-8B, MiniCPM-1B, Mistral 7B, DeepSeek-R1-Distill-Llama-8B.
-
-Not currently usable: Gemma 4 E2B QAT. It loads and offloads 36/36 layers to
-OpenVINO, but the first prompt fails with:
-
-```text
-Can't set the input tensor with index: 3, because the model input (shape=[1,1,2,256]) and the tensor (shape=(1.35.17.256)) are incompatible
-```
+**Before re-enabling**: exercise this service's GGUF models with the corrected
+library paths and `--ctx-size 2048 --parallel 1`. Verify actual NPU execution,
+absence of silent CPU fallback, and bounded memory. The separate OpenVINO GenAI
+success does not validate this llama.cpp service.
 
 ## TODO
 
-- Root-cause and fix the Level Zero driver init failure (see "Real-hardware
-  status" above and <npu.md> § Known issues) — the actual blocker now.
-- Add an explicit `--ctx-size` cap to `local_llm_npu.nix`'s router presets
-  (see "Real-hardware status" above) before ever re-enabling the service.
+- Verify the Nix-native service's GGUF path reaches the NPU with bounded
+  context and memory; the driver-discovery and context-cap configuration fixes
+  have landed, but no fresh service acceptance is recorded.
 - Test larger models (Qwen 2.5 1.5B, Phi-3-mini) on NPU
 - Compare NPU vs Arc GPU vs CPU on same model sizes
 - Retest Gemma 4 after llama.cpp/OpenVINO backend updates

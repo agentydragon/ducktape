@@ -7,9 +7,9 @@ py_library(
     testonly = True,
     srcs = ["driver.py"],
     deps = [
+        "//devinfra/oci",
         "//third_party/containers:postgres_18",
-        "//util:oci",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 

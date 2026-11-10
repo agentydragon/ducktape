@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu, terraform
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.nix_cache import ci_token
 
 NAME = "github-secrets-sync"
 WORKSPACE_NAME = f"crossplane-{NAME}"
@@ -25,6 +26,8 @@ def chart(app: App) -> Chart:
             # keep-sorted start
             "buildbuddy-api-key",
             "ci-age-key",
+            "ducktape-automation-github-app",
+            "gaffer-repo-fetch-pat",
             "github-secrets-sync-pat",
             "pr-visuals-s3-credentials",
             # keep-sorted end
@@ -32,6 +35,20 @@ def chart(app: App) -> Chart:
     )
     opentofu.secret_access(
         chart, "forgejo-images-secrets", identity=identity, namespace="forgejo-images", read=["forgejo-images-creds"]
+    )
+    opentofu.secret_access(
+        chart,
+        "attic-ci-token",
+        identity=identity,
+        namespace=ci_token.WRITER.namespace,
+        read=[ci_token.GAFFER_WRITER.name, ci_token.READER.name, ci_token.WRITER.name],
+    )
+    opentofu.secret_access(
+        chart,
+        "drivefs-artifacts-s3-credentials",
+        identity=identity,
+        namespace="seaweedfs-credentials",
+        read=["drivefs-artifacts-s3-credentials"],
     )
     opentofu.gitops_workspace(
         chart,

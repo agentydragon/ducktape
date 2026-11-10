@@ -18,6 +18,8 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//props:py_test.bzl", "py_test")
+load("//props/testing:exec_properties.bzl", "CONTAINER_E2E_EXEC_PROPERTIES")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 exports_files(
     ["prompt.md.mako"],
@@ -106,18 +108,20 @@ py_test(
     name = "test_critic_sql_integration",
     size = "medium",
     srcs = ["test_critic_sql_integration.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
         "//:conftest",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/core:ids",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
         "//props/db:snapshots",
+        "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -128,18 +132,20 @@ py_test(
     name = "test_reported_issues_constraints",
     size = "medium",
     srcs = ["test_reported_issues_constraints.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
         "//:conftest",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/core:ids",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
         "//props/db:snapshots",
+        "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -156,19 +162,26 @@ py_test(
         ":image",
         "//props/agents/grader:image",
     ],
+    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
         ":main",
         "//:conftest",
         "//agent_core/testing:responses",
+        "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/db:database",
         "//props/db:models",
         "//props/testing:constants",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
+        "//props/testing/fixtures:scopes",
+        "//util/testing:postgres_fixtures",
         "@pypi//pyhamcrest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

@@ -25,6 +25,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecNetworks,
     VirtualMachineSpecTemplateSpecNetworksPod,
+    VirtualMachineSpecTemplateSpecTolerations,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
 )
@@ -62,6 +63,7 @@ def container_disk_template(
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
     controller_attached_disks: Sequence[str] = (),
     affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
+    tolerations: Sequence[VirtualMachineSpecTemplateSpecTolerations] | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachineSpecTemplate:
@@ -76,6 +78,7 @@ def container_disk_template(
         spec=VirtualMachineSpecTemplateSpec(
             node_selector=dict(node_selector) if node_selector is not None else None,
             affinity=affinity,
+            tolerations=list(tolerations) if tolerations is not None else None,
             domain=VirtualMachineSpecTemplateSpecDomain(
                 cpu=cpu,
                 resources=resources,
@@ -124,17 +127,18 @@ def container_disk_vm(
     image: str,
     cpu: VirtualMachineSpecTemplateSpecDomainCpu,
     resources: VirtualMachineSpecTemplateSpecDomainResources,
-    node_selector: Mapping[str, str],
+    node_selector: Mapping[str, str] | None = None,
     ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
     run_strategy: str = "Always",
     annotations: Mapping[str, str] | None = None,
     affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
+    tolerations: Sequence[VirtualMachineSpecTemplateSpecTolerations] | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachine:
     """A VM (always running by default) on `container_disk_template`, which takes the remaining
-    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)` too.
+    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)`.
     """
     labels = {"app.kubernetes.io/name": name}
     return VirtualMachine(
@@ -151,6 +155,7 @@ def container_disk_vm(
             ports=ports,
             disks=disks,
             affinity=affinity,
+            tolerations=tolerations,
             host_devices=host_devices,
             autoattach_graphics_device=autoattach_graphics_device,
         ),

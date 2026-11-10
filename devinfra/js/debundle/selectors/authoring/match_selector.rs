@@ -33,20 +33,19 @@ use selector_outcome::{Outcome, SelectorOutcome, SelectorOutcomeReport};
 use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
 use source_match::ParsedSourceMatchSelector;
-use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, is_hole_keyword,
-};
+use source_match_holes::{ARRAY_ELEMENTS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, is_hole_keyword};
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
-use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     ArrayLit, ArrowExpr, ArrowFunctionBody, BlockStmt, CallExpr, Class, ClassMember, Constructor,
-    Expr, ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat,
-    ObjectPatProp, Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
+    Expr, ExprOrSpread, Function, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp,
+    Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::render::{anything_expr, class_member_hole, ident_node, object_props_pat_prop};
+use crate::render::{
+    anything_expr, args_hole, class_member_hole, ident_node, object_props_pat_prop,
+    object_props_prop, stmt_list_stmt,
+};
 
 pub struct MatchSelectorConfig {
     pub source_file: Option<PathBuf>,
@@ -334,7 +333,7 @@ impl VisitMut for Relaxer<'_> {
         {
             for stmt in &mut body.stmts {
                 if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_hole();
+                    *stmt = stmt_list_stmt();
                     break;
                 }
             }
@@ -348,7 +347,7 @@ impl VisitMut for Relaxer<'_> {
         {
             for stmt in &mut body.stmts {
                 if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_hole();
+                    *stmt = stmt_list_stmt();
                     break;
                 }
             }
@@ -362,7 +361,7 @@ impl VisitMut for Relaxer<'_> {
         {
             for stmt in &mut body.stmts {
                 if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_hole();
+                    *stmt = stmt_list_stmt();
                     break;
                 }
             }
@@ -400,7 +399,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropObjectProp {
             for prop in object.props.iter_mut() {
                 if self.take(is_droppable_prop(prop)) {
-                    *prop = object_props_hole();
+                    *prop = object_props_prop();
                     break;
                 }
             }
@@ -436,7 +435,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropStatement {
             for stmt in block.stmts.iter_mut() {
                 if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_hole();
+                    *stmt = stmt_list_stmt();
                     break;
                 }
             }
@@ -577,28 +576,10 @@ fn object_pat_prop_binds_name(prop: &ObjectPatProp, name: &str) -> bool {
     }
 }
 
-fn object_props_hole() -> PropOrSpread {
-    PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
-}
-
-fn args_hole() -> ExprOrSpread {
-    ExprOrSpread {
-        spread: None,
-        expr: Box::new(Expr::Ident(ident_node(ARGS_HOLE_KEYWORD))),
-    }
-}
-
 /// The comma-sequence run hole, emitted as a bare identifier element — the only
 /// spelling the matcher accepts in sequence-element position.
 fn seq_exprs_hole() -> Expr {
     Expr::Ident(ident_node(SEQ_EXPRS_HOLE_KEYWORD))
-}
-
-fn stmt_list_hole() -> Stmt {
-    Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
-    })
 }
 
 pub fn render_match_selector_text(report: &MatchSelectorReport, out: &mut String) {

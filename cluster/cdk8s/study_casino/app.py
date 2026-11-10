@@ -29,7 +29,8 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -57,7 +58,7 @@ _SERVICE = ServiceRef(
     port=Port(name="http", number=8080),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-POSTGRES = cnpg.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
+POSTGRES = cluster.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
 _OIDC = SecretRef(namespace=_NAMESPACE, name="study-casino-oidc")
 _DATABASE = "studycasino"
 _READONLY_ROLE = "study_casino_ro"
@@ -94,15 +95,15 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         scope,
         "database",
         ref=POSTGRES,
         annotations={"description": "CNPG Postgres for study-casino state."},
         # Preserve the existing mixed-class 1Gi PVCs; Piraeus applies to the new claim only.
-        instances=3,
+        instances=2,
         image_name=None,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="1Gi",
         resize_in_use_volumes=False,
         # CNPG creates the read-only role on first reconcile and sets its password from
@@ -122,10 +123,10 @@ def _database(scope: Construct) -> None:
                 )
             ]
         ),
-        initdb=cnpg.same_owner_initdb(_DATABASE),
+        initdb=cluster.same_owner_initdb(_DATABASE),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, retention="30d")
+    backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, retention="30d")
 
 
 def _readonly_credentials(scope: Construct) -> None:

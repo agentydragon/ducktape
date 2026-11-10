@@ -83,7 +83,7 @@ for the batch, invoke `describe --batch "$QUERY_PROFILE_ROOT/ids.json"`.
 Both use these explicit options:
 
 ```sh
---graph "$QUERY_PROFILE_ROOT/output/reports/tree/main/dependency_graph.json" \
+--graph "$QUERY_PROFILE_ROOT/output/reports/tree/main/dependency_graph.json.gz" \
 --modules "$QUERY_PROFILE_ROOT/modules/main" \
 --source-root "$QUERY_PROFILE_ROOT/snapshot" --limit 20 --format json
 ```

@@ -15,14 +15,18 @@ import json
 import math
 import os
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from functools import reduce
 from itertools import pairwise
 from pathlib import Path
 from typing import assert_never
 
 import polars as pl
 
+from finance.calendar_months import is_next_calendar_month as _is_next_calendar_month
+from finance.evidence import sources
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 
 
@@ -42,8 +46,121 @@ def source_bytes(evidence_dir: Path, source: EvidenceSource) -> bytes:
     return path.read_bytes()
 
 
+class EvidenceFrameCache:
+    """Read and parse each requested source once, retaining its source-shaped Polars frame."""
+
+    def __init__(self, evidence_dir: Path) -> None:
+        self.evidence_dir = evidence_dir
+        self._frames: dict[EvidenceSource, pl.DataFrame] = {}
+        self._monthly_frames: dict[EvidenceSource, pl.DataFrame] = {}
+
+    def frame(self, source: EvidenceSource) -> pl.DataFrame:
+        if source not in self._frames:
+            self._frames[source] = evidence_series_frame(source_bytes(self.evidence_dir, source), source)
+        return self._frames[source]
+
+    def monthly_frame(self, source: EvidenceSource) -> pl.DataFrame:
+        if source not in self._monthly_frames:
+            self._monthly_frames[source] = monthly_last(self.frame(source))
+        return self._monthly_frames[source]
+
+
+def align_monthly_frames(frames: dict[str, pl.DataFrame], *, value_column: str) -> pl.DataFrame:
+    """Inner-join `{name: (month, <value_column>)}` frames on month.
+
+    Series are joined only after each consumer has selected and transformed the columns it
+    needs from the source-shaped frames. Missing observations stay missing: the join keeps only
+    months present in every selected series.
+    """
+    if not frames:
+        raise ValueError("at least one monthly series is required")
+    renamed = []
+    for name, frame in frames.items():
+        if name == "month":
+            raise ValueError("monthly series names cannot be 'month'")
+        if "month" not in frame.columns or value_column not in frame.columns:
+            raise ValueError(f"{name} must contain 'month' and {value_column!r} columns")
+        selected = frame.select("month", pl.col(value_column).cast(pl.Float64, strict=False).alias(name))
+        if any(count > 0 for count in selected.null_count().row(0)):
+            raise ValueError(f"{name} contains null month or value entries")
+        if not bool(selected.select(pl.col(name).is_finite().all()).item()):
+            raise ValueError(f"{name} contains a nonfinite value")
+        if selected.get_column("month").n_unique() != selected.height:
+            raise ValueError(f"{name} contains duplicate month keys")
+        renamed.append(selected)
+    aligned = reduce(lambda left, right: left.join(right, on="month", how="inner", validate="1:1"), renamed).sort(
+        "month"
+    )
+    if aligned.is_empty():
+        raise ValueError("monthly series have no shared months")
+    return aligned
+
+
+def require_contiguous_months(months: Sequence[date], *, series_name: str) -> None:
+    """Reject an aligned monthly axis with missing or repeated months.
+
+    Consumers that treat adjacent rows as adjacent months (for example, replay windows and
+    trailing-year inflation) must not bridge a dropped month as if no time had passed.
+    """
+    if not months:
+        raise ValueError(f"{series_name} has no shared months")
+    segments = contiguous_month_segments(months)
+    if len(segments) > 1:
+        boundary = segments[1][0]
+        raise ValueError(f"{series_name} has a gap or duplicate between {months[boundary - 1]} and {months[boundary]}")
+
+
+def contiguous_month_segments(months: Sequence[date]) -> tuple[tuple[int, int], ...]:
+    """Return half-open index ranges for each run of consecutive calendar months."""
+
+    if not months:
+        return ()
+    segments = []
+    start = 0
+    for index, (earlier, later) in enumerate(pairwise(months), start=1):
+        if not _is_next_calendar_month(earlier, later):
+            segments.append((start, index))
+            start = index
+    segments.append((start, len(months)))
+    return tuple(segments)
+
+
+def compound_monthly_returns(frame: pl.DataFrame, *, return_column: str) -> pl.DataFrame:
+    """Compound one monthly simple-return column into a `(month, value)` level frame."""
+    if "month" not in frame.columns or return_column not in frame.columns:
+        raise ValueError(f"monthly return frame must contain 'month' and {return_column!r} columns")
+    selected = frame.select("month", pl.col(return_column).cast(pl.Float64, strict=False).alias("value"))
+    if any(count > 0 for count in selected.null_count().row(0)):
+        raise ValueError(f"{return_column} contains null month or return entries")
+    if not bool(selected.select(pl.col("value").is_finite().all()).item()):
+        raise ValueError(f"{return_column} contains a nonfinite return")
+    if selected.get_column("month").n_unique() != selected.height:
+        raise ValueError(f"{return_column} contains duplicate month keys")
+    require_contiguous_months(selected.get_column("month").to_list(), series_name=return_column)
+    if selected.filter(pl.col("value") <= -1.0).height:
+        raise ValueError(f"{return_column} contains a return at or below -100%")
+    return selected.sort("month").with_columns((1.0 + pl.col("value")).cum_prod().alias("value"))
+
+
+def require_positive_levels(levels: pl.DataFrame, *, series_name: str) -> None:
+    """Reject levels that cannot be used as prices or index values in a log/ratio operation."""
+    values = levels.get_column("value")
+    if len(values) == 0 or values.null_count() or not values.is_finite().all() or not (values > 0).all():
+        raise ValueError(f"{series_name} must contain only finite positive levels")
+
+
+def monthly_levels(monthly: pl.DataFrame) -> list[MonthlyLevel]:
+    """Convert an aligned monthly `(month, value)` frame at the model boundary."""
+    if "month" not in monthly.columns or "value" not in monthly.columns:
+        raise ValueError("monthly levels must contain 'month' and 'value' columns")
+    return [
+        MonthlyLevel(month=month, value=value)
+        for month, value in zip(monthly["month"].to_list(), monthly["value"].to_list(), strict=True)
+    ]
+
+
 def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
-    """Parse a FRED graph CSV down to a sorted, positive `(date, value)` frame."""
+    """Parse a FRED graph CSV down to a sorted, finite `(date, value)` frame."""
     column = source.series_id  # a FRED CSV is headed by its series id
     frame = pl.read_csv(data, infer_schema=False)
     if "observation_date" not in frame.columns or column not in frame.columns:
@@ -54,21 +171,51 @@ def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
             pl.col(column).cast(pl.Float64, strict=False).alias("value"),
         )
         .drop_nulls("value")
-        .filter(pl.col("value") > 0)
+        .filter(pl.col("value").is_finite())
         .sort("date")
     )
     if out.is_empty():
-        raise ValueError(f"{source.provenance_label} contains no positive observations for {column}")
+        raise ValueError(f"{source.provenance_label} contains no finite numeric observations for {column}")
     return out
 
 
-def zillow_city_series_frame(data: bytes, source: EvidenceSource, *, region_name: str, state: str) -> pl.DataFrame:
-    """One Zillow city's monthly `(month, value)` series.
+def evidence_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
+    """Parse an ordinary one-series FRED/Yahoo source or one supported French return file."""
+    match source.kind:
+        case EvidenceKind.FRED:
+            return fred_series_frame(data, source)
+        case EvidenceKind.YAHOO:
+            return yahoo_adjusted_close_frame(data, source)
+        case EvidenceKind.FRENCH:
+            if source == sources.FRENCH_FACTORS:
+                return french_factors_frame(data, source)
+            if source == sources.FRENCH_INTERNATIONAL_INDICES:
+                return french_international_market_frame(data, source)
+            raise ValueError(f"no evidence frame parser for French source {source.provenance_label}")
+        case EvidenceKind.ZILLOW:
+            return zillow_city_table(data, source)
+        case _ as unreachable:
+            assert_never(unreachable)
+
+
+def zillow_city_table(data: bytes, source: EvidenceSource) -> pl.DataFrame:
+    """Parse Zillow's source-wide city table once, before choosing any city."""
+    frame = pl.read_csv(data, infer_schema=False)
+    required = {"RegionType", "RegionName", "State"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"{source.provenance_label} city table is missing columns: {sorted(missing)}")
+    return frame
+
+
+def zillow_city_series_frame(
+    frame: pl.DataFrame, source: EvidenceSource, *, region_name: str, state: str
+) -> pl.DataFrame:
+    """Select one Zillow city's monthly `(month, value)` series.
 
     The Zillow city CSV is wide (a row per region, a column per month named YYYY-MM-DD); take the one
     city row, unpivot its date columns into rows, truncate each to its month, and keep positive values.
     """
-    frame = pl.read_csv(data, infer_schema=False)
     date_columns = [c for c in frame.columns if len(c) == 10 and c[4] == "-" and c[7] == "-"]
     row = frame.filter(
         (pl.col("RegionType") == "city") & (pl.col("RegionName") == region_name) & (pl.col("State") == state)
@@ -161,12 +308,7 @@ _FRENCH_COLUMN_COUNT = 5
 
 
 def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
-    """Ken French's factors ZIP to a monthly `(month, market_total_return, risk_free_rate)` frame.
-
-    Both returned columns are DECIMAL monthly simple returns; the file publishes percent.
-    `market_total_return` is `Mkt-RF + RF` — the CRSP value-weighted return on all listed US
-    equity, dividends included — and `risk_free_rate` is the one-month T-bill, which is why one
-    fetch supplies both the equity leg and the short rate back to 1926-07.
+    """Parse the French factors monthly table, preserving its four columns in percent.
 
     **The annual section is the trap.** It repeats the same four column names further down the
     same file, and its rows look like plausible monthly returns (`29.44` for 1927). Appending
@@ -184,24 +326,31 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
         text = archive.read(names[0]).decode("latin-1")
 
     months: list[date] = []
-    market: list[float] = []
-    risk_free: list[float] = []
+    values: list[list[float]] = []
+    header_seen = False
     for line in text.splitlines():
         fields = [field.strip() for field in line.split(",")]
+        if fields == ["", "Mkt-RF", "SMB", "HML", "RF"]:
+            header_seen = True
+            continue
         if len(fields) != _FRENCH_COLUMN_COUNT:
             continue
         stamp = fields[0]
         if len(stamp) != FRENCH_MONTHLY_DATE_WIDTH or not stamp.isdigit():
             continue
+        if not header_seen:
+            raise ValueError(f"{source.provenance_label} monthly rows have no recognized factors header")
         months.append(date(int(stamp[:4]), int(stamp[4:]), 1))
-        market.append((float(fields[1]) + float(fields[4])) / 100.0)
-        risk_free.append(float(fields[4]) / 100.0)
+        values.append([float(field) for field in fields[1:]])
 
     if not months:
         raise ValueError(f"{source.provenance_label} contains no monthly rows")
     frame = pl.DataFrame(
-        {"month": months, "market_total_return": market, "risk_free_rate": risk_free},
-        schema={"month": pl.Date, "market_total_return": pl.Float64, "risk_free_rate": pl.Float64},
+        {
+            "month": months,
+            **{name: [row[i] for row in values] for i, name in enumerate(("Mkt-RF", "SMB", "HML", "RF"))},
+        },
+        schema={"month": pl.Date, "Mkt-RF": pl.Float64, "SMB": pl.Float64, "HML": pl.Float64, "RF": pl.Float64},
     ).sort("month")
 
     span = (months[-1].year - months[0].year) * 12 + months[-1].month - months[0].month + 1
@@ -211,6 +360,16 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
             f"({months[0]}..{months[-1]}); the series must be gapless"
         )
     return frame
+
+
+def french_market_returns(factors: pl.DataFrame) -> pl.DataFrame:
+    """Select CRSP total-market monthly simple returns as decimals, including dividends."""
+    return factors.select("month", ((pl.col("Mkt-RF") + pl.col("RF")) / 100.0).alias("market_total_return"))
+
+
+def french_risk_free_returns(factors: pl.DataFrame) -> pl.DataFrame:
+    """Select the one-month Treasury bill return as a decimal."""
+    return factors.select("month", (pl.col("RF") / 100.0).alias("risk_free_rate"))
 
 
 FRENCH_INTERNATIONAL_MEMBER = "Ind_all.Dat"
@@ -287,16 +446,16 @@ def french_international_market_frame(data: bytes, source: EvidenceSource) -> pl
 
 
 def monthly_last(series: pl.DataFrame) -> pl.DataFrame:
-    """Collapse a `(date, value)` frame to `(month, value)` keeping the last observation per month."""
+    """Collapse a `(date, value)` frame to `(month, value)` keeping each month's last finite observation."""
     out = (
-        series.with_columns(pl.col("date").dt.truncate("1mo").alias("month"))
+        series.filter(pl.col("value").is_finite())
+        .with_columns(pl.col("date").dt.truncate("1mo").alias("month"))
         .group_by("month")
         .agg(pl.col("value").sort_by("date").last())
-        .filter(pl.col("value") > 0)
         .sort("month")
     )
     if out.is_empty():
-        raise ValueError("monthly series contains no positive observations")
+        raise ValueError("monthly series contains no finite observations")
     return out
 
 
@@ -339,7 +498,7 @@ def read_french_market_levels(evidence_dir: Path, source: EvidenceSource) -> lis
     callers at ("compound the column you want"), fixed to `market_total_return` since there is
     no `risk_free_rate`-as-a-level need yet.
     """
-    factors = french_factors_frame(source_bytes(evidence_dir, source), source)
+    factors = french_market_returns(french_factors_frame(source_bytes(evidence_dir, source), source))
     multiplier = 1.0
     levels: list[MonthlyLevel] = []
     for month, monthly_return in zip(factors["month"].to_list(), factors["market_total_return"].to_list(), strict=True):

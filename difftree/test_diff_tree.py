@@ -5,34 +5,11 @@ from dataclasses import replace
 
 import pytest
 import pytest_bazel
-from rich.console import Console
-from rich.segment import Segment
-from rich.text import Text
 
 from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
 from difftree.conftest import make_diff_tree, render_to_string
-from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
-
-
-def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
-    """Render tree and return lines as Rich Text objects."""
-    console = Console(record=True, width=width)
-    console.print(diff_tree)
-
-    segments = console._record_buffer
-    lines = list(Segment.split_lines(segments))
-
-    text_lines = []
-    for line_segments in lines:
-        text = Text()
-        for seg in line_segments:
-            if not seg.is_control:
-                text.append(seg.text, style=seg.style)
-        text_lines.append(text)
-
-    return text_lines
 
 
 def _find_line_with(lines: list[str], substring: str) -> str:
@@ -44,20 +21,6 @@ def _find_tree_pos(line: str) -> int:
     """Find position of first tree decoration character, or -1 if not found."""
     positions = [line.find(char) for char in [".", "└", "├", "│"] if char in line]
     return min(positions) if positions else -1
-
-
-def _assert_column_before(result: str, filename: str, first: str, second: str, first_desc: str, second_desc: str):
-    """Assert that first marker appears before second marker in line containing filename."""
-    line = _find_line_with(result.split("\n"), filename)
-
-    first_pos = line.find(first) if first in line else -1
-
-    second_pos = _find_tree_pos(line) if second == "tree_char" else line.find(second) if second in line else -1
-
-    if first_pos != -1 and second_pos != -1:
-        assert first_pos < second_pos, (
-            f"Expected {first_desc} before {second_desc}, but got {first_desc} at {first_pos}, {second_desc} at {second_pos}"
-        )
 
 
 def test_render_with_max_depth(sample_changes):
@@ -173,33 +136,21 @@ def test_tree_column_never_wraps():
                 pytest.fail(f"Line {i} appears to have wrapped:\n  Line {i}: {line!r}\n  Line {i + 1}: {next_line!r}")
 
 
-def test_column_ordering():
-    """Test that columns appear in the order specified in config."""
+@pytest.mark.parametrize(
+    ("columns", "first", "second"),
+    [
+        ([Column.BARS, Column.TREE, Column.COUNTS], "bars", "tree"),
+        ([Column.TREE, Column.BARS, Column.COUNTS], "tree", "bars"),
+        ([Column.COUNTS, Column.TREE], "counts", "tree"),
+    ],
+)
+def test_column_ordering(columns, first, second):
     changes = [FileChange(path="file.py", additions=10, deletions=5)]
-
-    # Test bars before tree
-    config = RenderConfig(columns=[Column.BARS, Column.TREE, Column.COUNTS])
+    config = RenderConfig(columns=columns)
     result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
-    _assert_column_before(result, "file.py", "█", "tree_char", "bars", "tree")
-
-    # Test tree before bars (standard order)
-    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.COUNTS])
-    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
-
     line = _find_line_with(result.split("\n"), "file.py")
-    tree_pos = _find_tree_pos(line)
-    bar_pos = line.find("█") if "█" in line else -1
-    if bar_pos != -1 and tree_pos != -1:
-        assert tree_pos < bar_pos, f"Expected tree before bars, but got tree at {tree_pos}, bar at {bar_pos}"
-
-
-def test_column_ordering_counts_first():
-    """Test counts column can appear first."""
-    changes = [FileChange(path="file.py", additions=10, deletions=5)]
-
-    config = RenderConfig(columns=[Column.COUNTS, Column.TREE])
-    result = render_to_string(make_diff_tree(changes, config=config), width=80, force_terminal=False)
-    _assert_column_before(result, "file.py", "+10", "tree_char", "counts", "tree")
+    positions = {"tree": _find_tree_pos(line), "bars": line.find("█"), "counts": line.find("+10")}
+    assert 0 <= positions[first] < positions[second]
 
 
 def test_bar_proportionality():
@@ -222,88 +173,48 @@ def test_bar_proportionality():
     )
     diff_tree = make_diff_tree(changes, config=config)
 
+    bar_count_bounds = {"file1.py": ((7, 9), (4, 6)), "file2.py": ((1, 1), (4, 6)), "file3.py": ((1, 3), (0, 0))}
+
     # Render and extract plain text (no ANSI codes needed)
-    lines = _render_to_text_lines(diff_tree, width=80)
+    lines = render_to_string(diff_tree, width=80, force_terminal=False, color_system=None).splitlines()
 
     file_lines = {}
     for line in lines:
-        plain = line.plain
-        for file_path in ["file1.py", "file2.py", "file3.py"]:
-            if file_path in plain:
-                file_lines[file_path] = plain
+        for file_path in bar_count_bounds:
+            if file_path in line:
+                file_lines[file_path] = line
                 break
 
-    # Count '+' for additions and '-' for deletions
-    file1_plus = file_lines["file1.py"].count("+")
-    file1_minus = file_lines["file1.py"].count("-")
-    file2_plus = file_lines["file2.py"].count("+")
-    file2_minus = file_lines["file2.py"].count("-")
-    file3_plus = file_lines["file3.py"].count("+")
-    file3_minus = file_lines["file3.py"].count("-")
+    bar_counts = {file_path: (line.count("+"), line.count("-")) for file_path, line in file_lines.items()}
+    for file_path, (plus_bounds, minus_bounds) in bar_count_bounds.items():
+        plus_count, minus_count = bar_counts[file_path]
+        assert plus_bounds[0] <= plus_count <= plus_bounds[1], (
+            f"{file_path} '+' count outside {plus_bounds}: {plus_count}"
+        )
+        assert minus_bounds[0] <= minus_count <= minus_bounds[1], (
+            f"{file_path} '-' count outside {minus_bounds}: {minus_count}"
+        )
 
-    # The bars are scaled to max values across all files:
-    # max_additions = 50 + 1 + 10 = 61 (including root aggregation)
-    # max_deletions = 10 + 10 + 0 = 20 (including root aggregation)
-
-    # File1: +50 -10
-    # Expected green bar: 50/61 ≈ 82% of 10 blocks ≈ 8 blocks
-    # Expected red bar: 10/20 = 50% of 10 blocks = 5 blocks
-    assert file1_plus >= 7, f"file1.py should have at least 7 '+', got {file1_plus}"
-    assert file1_plus <= 9, f"file1.py should have at most 9 '+', got {file1_plus}"
-    assert file1_minus >= 4, f"file1.py should have at least 4 '-', got {file1_minus}"
-    assert file1_minus <= 6, f"file1.py should have at most 6 '-', got {file1_minus}"
-
-    # File2: +1 -10
-    # Expected green bar: 1/61 ≈ 1.6% ≈ minimal sliver (1 char)
-    # Expected red bar: 10/20 = 50% = 5 blocks
-    assert file2_plus == 1, f"file2.py should have exactly 1 '+' (minimal sliver), got {file2_plus}"
-    assert file2_minus >= 4, f"file2.py should have at least 4 '-', got {file2_minus}"
-    assert file2_minus <= 6, f"file2.py should have at most 6 '-', got {file2_minus}"
-
-    # File2 and file1 should have same '-' count (both have 10 deletions at same scale)
-    assert abs(file2_minus - file1_minus) <= 1, (
-        f"file2.py and file1.py both have 10 deletions, should have similar '-' counts: "
-        f"file1={file1_minus}, file2={file2_minus}"
-    )
-
-    # File3: +10 -0
-    # Expected green bar: 10/61 ≈ 16.4% ≈ 1.6 blocks
-    # Expected red bar: 0/20 = 0% = 0 blocks
-    assert file3_plus >= 1, f"file3.py should have at least 1 '+', got {file3_plus}"
-    assert file3_plus <= 3, f"file3.py should have at most 3 '+', got {file3_plus}"
-    assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
+    assert abs(bar_counts["file2.py"][1] - bar_counts["file1.py"][1]) <= 1
 
 
 def test_percentage_calculation():
     """Test that percentage column shows correct ratio of file changes to total changes."""
     changes = [
-        FileChange(path="file1.py", additions=100, deletions=50),  # 150 total
-        FileChange(path="file2.py", additions=30, deletions=20),  # 50 total
-        FileChange(path="file3.py", additions=200, deletions=0),  # 200 total
+        FileChange(path="file1.py", additions=100, deletions=50),
+        FileChange(path="file2.py", additions=30, deletions=20),
+        FileChange(path="file3.py", additions=200, deletions=0),
     ]
-
-    # Total changes across all files: 150 + 50 + 200 = 400
-    # file1: 150/400 = 37.5%
-    # file2: 50/400 = 12.5%
-    # file3: 200/400 = 50.0%
 
     config = RenderConfig(columns=[Column.TREE, Column.PERCENTAGES])
     diff_tree = make_diff_tree(changes, config=config)
     result = render_to_string(diff_tree, width=120, force_terminal=False)
 
     lines = result.split("\n")
-
-    # Find lines containing each file
-    file1_line = _find_line_with(lines, "file1.py")
-    file2_line = _find_line_with(lines, "file2.py")
-    file3_line = _find_line_with(lines, "file3.py")
-
-    # Extract percentage values
-    # Percentage should be at the end of each line
-    # Format is like " 37.5%" or "12.5%"
-    assert "37.5%" in file1_line, f"file1.py should show 37.5%, got: {file1_line}"
-    assert "12.5%" in file2_line, f"file2.py should show 12.5%, got: {file2_line}"
-    assert "50.0%" in file3_line, f"file3.py should show 50.0%, got: {file3_line}"
+    expected_percentages = {"file1.py": "37.5%", "file2.py": "12.5%", "file3.py": "50.0%"}
+    for file_path, expected in expected_percentages.items():
+        line = _find_line_with(lines, file_path)
+        assert expected in line, f"{file_path} should show {expected}, got: {line}"
 
 
 def test_deletion_bar_alignment():
@@ -324,14 +235,10 @@ def test_deletion_bar_alignment():
     diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text
-    lines = _render_to_text_lines(diff_tree, width=120)
+    lines = render_to_string(diff_tree, width=120, force_terminal=False, color_system=None).splitlines()
 
     # Get file lines (skip root which is first)
-    file_lines = []
-    for line in lines:
-        plain = line.plain
-        if any(f in plain for f in ["file1.py", "file2.py", "file3.py"]):
-            file_lines.append(plain)
+    file_lines = [line for line in lines if any(f in line for f in ["file1.py", "file2.py", "file3.py"])]
 
     # Expecting 3 file lines
     assert len(file_lines) == 3, f"Expected 3 file lines, got {len(file_lines)}"

@@ -50,8 +50,8 @@ py_library(
     srcs = ["model_catalog.py"],
     data = ["//cluster/cdk8s/agentplane:codex_upstream_models"],  # keep: the bundled catalog `bundled` reads
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//more_itertools",
+        "@rules_python//python/runfiles",
     ],
 )
 

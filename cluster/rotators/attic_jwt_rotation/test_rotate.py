@@ -11,9 +11,16 @@ import pygit2
 import pytest
 import pytest_bazel
 import yaml
+from pydantic import ValidationError
 
 from cluster.rotators.attic_jwt_rotation import rotate
-from cluster.rotators.attic_jwt_rotation.config import Config, Token
+from cluster.rotators.attic_jwt_rotation.config import (
+    Config,
+    KubernetesDestination,
+    MirroredDestination,
+    SopsDestination,
+    Token,
+)
 from cluster.rotators.attic_jwt_rotation.rotate import (
     _configure_ca_trust,
     _load_keypair,
@@ -22,9 +29,9 @@ from cluster.rotators.attic_jwt_rotation.rotate import (
     ensure_cache,
     mint_admin_jwt,
     mint_attic_token,
-    remaining_hours,
     rotate_one,
 )
+from cluster.rotators.sops_stamps import remaining_hours
 
 
 def _make_jwt(claims: dict) -> str:
@@ -33,9 +40,10 @@ def _make_jwt(claims: dict) -> str:
 
 
 class _Completed:
-    def __init__(self, stdout: str = "", stderr: str = ""):
+    def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0):
         self.stdout = stdout
         self.stderr = stderr
+        self.returncode = returncode
 
 
 class _FakeRun:
@@ -50,6 +58,215 @@ class _FakeRun:
         if "atticadm" in args:
             return _Completed(stdout=self._jwt + "\n")
         return _Completed()
+
+
+class _FakeKubernetesRun:
+    """Models the named Secret and Workspace calls made by one rotator invocation."""
+
+    def __init__(self, jwt: str):
+        self.jwt = jwt
+        self.secret: dict[str, Any] | None = {
+            "metadata": {
+                "name": "test-attic-token",
+                "namespace": "test-cache",
+                "uid": "test-secret-uid",
+                "resourceVersion": "1",
+                "annotations": {},
+            },
+            "data": {},
+        }
+        self.calls: list[list[str]] = []
+        self.workspace_values: list[str] = []
+        self.fail_secret_patch = False
+        self.fail_workspace_patch = False
+        self.fail_sops_encrypt = False
+        self.mint_count = 0
+
+    def __call__(self, args, **kwargs):
+        self.calls.append(list(args))
+        if "atticadm" in args:
+            self.mint_count += 1
+            return _Completed(stdout=self.jwt + "\n")
+        if "get" in args and "secret" in args:
+            return _Completed(stdout=json.dumps(self.secret) if self.secret is not None else "")
+        if "patch" in args and "secret" in args:
+            if self.fail_secret_patch:
+                self.fail_secret_patch = False
+                return _Completed(stderr=f"fake API diagnostic contains {self.jwt}", returncode=1)
+            assert self.secret is not None
+            patch = json.loads(kwargs["input"])
+            self.secret["data"].update(patch["data"])
+            self.secret["metadata"]["annotations"].update(patch["metadata"]["annotations"])
+            self.secret["metadata"]["resourceVersion"] = str(int(self.secret["metadata"]["resourceVersion"]) + 1)
+            return _Completed(stdout="secret updated")
+        if "workspaces.opentofu.upbound.io" in args:
+            if self.fail_workspace_patch:
+                self.fail_workspace_patch = False
+                return _Completed(stderr=f"fake API diagnostic contains {self.jwt}", returncode=1)
+            patch = json.loads(kwargs["input"])
+            self.workspace_values.extend(patch["metadata"]["annotations"].values())
+            return _Completed(stdout="workspace patched")
+        if args[0] == "sops":
+            if self.fail_sops_encrypt:
+                self.fail_sops_encrypt = False
+                raise rotate.subprocess.CalledProcessError(1, args, stderr=f"fake SOPS diagnostic contains {self.jwt}")
+            return _Completed()
+        return _Completed()
+
+
+def _kubernetes_publication() -> dict[str, Any]:
+    return {
+        "secret": {"namespace": "test-cache", "name": "test-attic-token", "key": "token"},
+        "notification": {"workspace": "test-github-secrets-sync", "annotation_key": "test.example/token-version"},
+    }
+
+
+def _make_kubernetes_token(sops_file: Path, **kwargs: Any) -> Token:
+    fields: dict[str, Any] = {
+        "name": "test Attic token",
+        "sub": "test-subject",
+        "validity": "1 year",
+        "pull": ["test-cache"],
+        "push": [],
+        "destination": {"storage": "mirrored", "sops_file": sops_file, **_kubernetes_publication()},
+    }
+    fields.update(kwargs)
+    token = Token.model_validate(fields)
+    assert isinstance(token.destination, MirroredDestination)
+    return token
+
+
+def _make_kubernetes_only_token(**kwargs: Any) -> Token:
+    fields: dict[str, Any] = {
+        "name": "test Attic token",
+        "sub": "test-subject",
+        "validity": "1 year",
+        "pull": ["test-cache"],
+        "push": [],
+        "destination": {"storage": "kubernetes", **_kubernetes_publication()},
+    }
+    fields.update(kwargs)
+    token = Token.model_validate(fields)
+    assert isinstance(token.destination, KubernetesDestination)
+    return token
+
+
+def _sops_file(token: Token) -> Path:
+    destination = token.destination
+    assert isinstance(destination, (SopsDestination, MirroredDestination))
+    return destination.sops_file
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        {"storage": "sops"},
+        {"storage": "sops", "sops_file": "x.sops.yaml", **_kubernetes_publication()},
+        {"storage": "kubernetes"},
+        {"storage": "kubernetes", "sops_file": "x.sops.yaml", **_kubernetes_publication()},
+        {"storage": "mirrored", "sops_file": "x.sops.yaml"},
+        {"storage": "unknown", "sops_file": "x.sops.yaml"},
+    ],
+)
+def test_config_rejects_missing_or_wrong_destination_fields(destination: dict[str, Any]):
+    with pytest.raises(ValidationError):
+        Config.model_validate(
+            {"tokens": [{"name": "x", "sub": "x", "validity": "1 year", "pull": [], "destination": destination}]}
+        )
+
+
+def test_config_rejects_mixed_flat_and_nested_destination():
+    with pytest.raises(ValidationError):
+        Config.model_validate(
+            {
+                "tokens": [
+                    {
+                        "name": "x",
+                        "sub": "x",
+                        "validity": "1 year",
+                        "pull": [],
+                        "sops_file": "legacy.sops.yaml",
+                        "destination": {"storage": "sops", "sops_file": "new.sops.yaml"},
+                    }
+                ]
+            }
+        )
+
+
+def test_kubernetes_only_empty_secret_publishes_without_sops_or_git_commit(monkeypatch):
+    token = _make_kubernetes_only_token()
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    fake = _FakeKubernetesRun(jwt)
+    config = Config(tokens=[token])
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+
+    rotated = [entry.name for entry in config.tokens if rotate_one(entry, config)]
+
+    assert rotated == []
+    assert fake.mint_count == 1
+    assert fake.workspace_values == ["test-secret-uid/2"]
+    assert not any(call[0] == "sops" for call in fake.calls)
+
+
+def test_kubernetes_only_fresh_secret_still_notifies_without_sops(monkeypatch):
+    token = _make_kubernetes_only_token()
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    fake = _FakeKubernetesRun(jwt)
+    _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+
+    assert rotate_one(token, Config(tokens=[token])) is False
+
+    assert fake.mint_count == 0
+    assert fake.workspace_values == ["test-secret-uid/1"]
+    assert not any(call[0] == "sops" for call in fake.calls)
+
+
+def test_kubernetes_only_scope_drift_mints_without_sops_or_git_commit(monkeypatch):
+    token = _make_kubernetes_only_token()
+    old_jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    new_jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=730)).timestamp())})
+    fake = _FakeKubernetesRun(new_jwt)
+    _seed_kubernetes_secret(fake, old_jwt, pull=["stale-cache"], push=[])
+    config = Config(tokens=[token])
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+
+    rotated = [entry.name for entry in config.tokens if rotate_one(entry, config)]
+
+    assert rotated == []
+    assert fake.mint_count == 1
+    assert fake.workspace_values == ["test-secret-uid/2"]
+    assert not any(call[0] == "sops" for call in fake.calls)
+
+
+def test_kubernetes_only_notification_retry_does_not_remint_or_write_sops(monkeypatch):
+    token = _make_kubernetes_only_token()
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    fake = _FakeKubernetesRun(jwt)
+    _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
+    fake.fail_workspace_patch = True
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+
+    with pytest.raises(RuntimeError):
+        rotate_one(token, Config(tokens=[token]))
+    assert rotate_one(token, Config(tokens=[token])) is False
+
+    assert fake.mint_count == 0
+    assert sum("workspaces.opentofu.upbound.io" in call for call in fake.calls) == 2
+    assert fake.workspace_values == ["test-secret-uid/1"]
+    assert not any(call[0] == "sops" for call in fake.calls)
+
+
+def _seed_kubernetes_secret(fake: _FakeKubernetesRun, jwt: str, *, pull: list[str], push: list[str]) -> None:
+    assert fake.secret is not None
+    payload = rotate.jwt_payload(jwt)
+    expires = datetime.fromtimestamp(payload["exp"], UTC)
+    fake.secret["data"]["token"] = base64.b64encode(jwt.encode()).decode()
+    fake.secret["metadata"]["annotations"] = {
+        rotate._SECRET_EXPIRY_ANNOTATION: rotate._iso_expiry(expires),
+        rotate._SECRET_PULL_ANNOTATION: json.dumps(sorted(pull), separators=(",", ":")),
+        rotate._SECRET_PUSH_ANNOTATION: json.dumps(sorted(push), separators=(",", ":")),
+    }
 
 
 def test_remaining_hours_missing_file_is_none(tmp_path: Path):
@@ -79,11 +296,11 @@ def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
 def test_mint_attic_token_builds_kubectl_exec_atticadm_argv(monkeypatch):
     token = Token(
         name="ducktape CI attic writer (main)",
-        sops_file=Path("secrets/ci/attic-main-writer.sops.yaml"),
         sub="ducktape-ci",
         validity="1 year",
         pull=["main", "gaffer"],
         push=["main"],
+        destination=SopsDestination(sops_file=Path("secrets/ci/attic-main-writer.sops.yaml")),
     )
     fake = _FakeRun(jwt="signed.token")
     monkeypatch.setattr(rotate.subprocess, "run", fake)
@@ -94,7 +311,7 @@ def test_mint_attic_token_builds_kubectl_exec_atticadm_argv(monkeypatch):
         "-n",
         "nix-cache",
         "exec",
-        "deploy/attic",
+        "deploy/attic-next",
         "--",
         "atticadm",
         "-f",
@@ -114,7 +331,9 @@ def test_mint_attic_token_builds_kubectl_exec_atticadm_argv(monkeypatch):
 
 
 def test_mint_attic_token_empty_output_raises(monkeypatch):
-    token = Token(name="x", sops_file=Path("s.yaml"), sub="x", validity="1 year", pull=[], push=[])
+    token = Token(
+        name="x", sub="x", validity="1 year", pull=[], push=[], destination=SopsDestination(sops_file=Path("s.yaml"))
+    )
     monkeypatch.setattr(rotate.subprocess, "run", _FakeRun(jwt=""))
     with pytest.raises(RuntimeError):
         mint_attic_token(token, Config(tokens=[]))
@@ -132,7 +351,14 @@ def test_rotate_one_skips_when_fresh_and_scope_matches(monkeypatch, tmp_path: Pa
             attic_token: old
             """)
     )
-    token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main", "gaffer"], push=[])
+    token = Token(
+        name="x",
+        sub="x",
+        validity="1 year",
+        pull=["main", "gaffer"],
+        push=[],
+        destination=SopsDestination(sops_file=sops_file),
+    )
     fake = _FakeRun(jwt="should-not-be-used")
     monkeypatch.setattr(rotate.subprocess, "run", fake)
     assert rotate_one(token, Config(tokens=[])) is False
@@ -155,7 +381,12 @@ def test_rotate_one_rotates_on_scope_drift_despite_fresh_expiry(monkeypatch, tmp
     exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
     jwt = _make_jwt({"sub": "x", "exp": exp})
     token = Token(
-        name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main", "gaffer"], push=["main", "public"]
+        name="x",
+        sub="x",
+        validity="1 year",
+        pull=["main", "gaffer"],
+        push=["main", "public"],
+        destination=SopsDestination(sops_file=sops_file),
     )
     fake = _FakeRun(jwt=jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
@@ -177,7 +408,9 @@ def test_rotate_one_rotates_when_scope_stamp_missing(monkeypatch, tmp_path: Path
     )
     exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
     jwt = _make_jwt({"sub": "x", "exp": exp})
-    token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main"], push=[])
+    token = Token(
+        name="x", sub="x", validity="1 year", pull=["main"], push=[], destination=SopsDestination(sops_file=sops_file)
+    )
     fake = _FakeRun(jwt=jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
     monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
@@ -187,7 +420,9 @@ def test_rotate_one_rotates_when_scope_stamp_missing(monkeypatch, tmp_path: Path
 def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     sops_file = tmp_path / "sub" / "t.yaml"
     jwt = _make_jwt({"sub": "x", "exp": 1_800_000_000})
-    token = Token(name="x", sops_file=sops_file, sub="x", validity="1 year", pull=["main"], push=[])
+    token = Token(
+        name="x", sub="x", validity="1 year", pull=["main"], push=[], destination=SopsDestination(sops_file=sops_file)
+    )
     fake = _FakeRun(jwt=jwt)
     formatted: list[Path] = []
     monkeypatch.setattr(rotate.subprocess, "run", fake)
@@ -203,11 +438,189 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
     assert written["push_unencrypted"] == []
 
 
+def test_kubernetes_destination_requires_the_precreated_secret(monkeypatch, tmp_path: Path):
+    expires = datetime.now(UTC) + timedelta(days=300)
+    sops_file = tmp_path / "token.sops.yaml"
+    sops_file.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            pull_unencrypted: [test-cache]
+            push_unencrypted: []
+            attic_token: encrypted-old-value
+            """)
+    )
+    token = _make_kubernetes_token(sops_file)
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    fake = _FakeKubernetesRun(jwt)
+    fake.secret = None
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+
+    with pytest.raises(RuntimeError):
+        rotate_one(token, Config(tokens=[]))
+
+    assert fake.mint_count == 0
+    assert len(fake.calls) == 1
+
+
+def test_empty_kubernetes_secret_is_minted_and_notified_without_token_in_argv(monkeypatch, tmp_path: Path):
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(jwt)
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    assert rotate_one(token, Config(tokens=[])) is True
+
+    assert fake.mint_count == 1
+    assert fake.secret is not None
+    assert base64.b64decode(fake.secret["data"]["token"]).decode() == jwt
+    assert fake.workspace_values == ["test-secret-uid/2"]
+    written = yaml.safe_load(_sops_file(token).read_text())
+    assert written["kubernetes_secret_uid_unencrypted"] == "test-secret-uid"
+    assert written["kubernetes_secret_resource_version_unencrypted"] == "2"
+    assert all(jwt not in " ".join(call) for call in fake.calls)
+
+
+def test_fresh_kubernetes_secret_retries_failed_notification_without_reminting(monkeypatch, tmp_path: Path):
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(jwt)
+    fake.fail_workspace_patch = True
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    with pytest.raises(RuntimeError) as failure:
+        rotate_one(token, Config(tokens=[]))
+    assert jwt not in str(failure.value)
+    assert rotate_one(token, Config(tokens=[])) is True
+
+    assert fake.mint_count == 1
+    assert sum("workspaces.opentofu.upbound.io" in call for call in fake.calls) == 2
+    assert fake.workspace_values == ["test-secret-uid/2"]
+    assert yaml.safe_load(_sops_file(token).read_text())["attic_token"] == jwt
+
+
+def test_kubernetes_scope_change_mints_even_when_secret_is_fresh(monkeypatch, tmp_path: Path):
+    old_jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    new_jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=730)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(new_jwt)
+    _seed_kubernetes_secret(fake, old_jwt, pull=["stale-cache"], push=[])
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    assert rotate_one(token, Config(tokens=[])) is True
+
+    assert fake.mint_count == 1
+    assert fake.secret is not None
+    assert base64.b64decode(fake.secret["data"]["token"]).decode() == new_jwt
+
+
+def test_kubernetes_expiry_threshold_mints_even_when_scope_matches(monkeypatch, tmp_path: Path):
+    near_expiry = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(hours=2)).timestamp())})
+    renewed = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(renewed)
+    _seed_kubernetes_secret(fake, near_expiry, pull=["test-cache"], push=[])
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    assert rotate_one(token, Config(tokens=[])) is True
+
+    assert fake.mint_count == 1
+    assert fake.secret is not None
+    assert base64.b64decode(fake.secret["data"]["token"]).decode() == renewed
+
+
+def test_failed_kubernetes_secret_patch_is_sanitized_and_retried(monkeypatch, tmp_path: Path):
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(jwt)
+    fake.fail_secret_patch = True
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    with pytest.raises(RuntimeError) as failure:
+        rotate_one(token, Config(tokens=[]))
+
+    assert jwt not in str(failure.value)
+    assert not _sops_file(token).exists()
+    assert rotate_one(token, Config(tokens=[])) is True
+    assert fake.mint_count == 2
+    assert all(jwt not in " ".join(call) for call in fake.calls)
+
+
+def test_workspace_is_notified_before_sops_failure_and_retry_repairs_output(monkeypatch, tmp_path: Path):
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(jwt)
+    fake.fail_sops_encrypt = True
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    with pytest.raises(RuntimeError) as failure:
+        rotate_one(token, Config(tokens=[]))
+
+    assert jwt not in str(failure.value)
+    assert not _sops_file(token).exists()
+    assert fake.workspace_values == ["test-secret-uid/2"]
+    assert rotate_one(token, Config(tokens=[])) is True
+
+    assert fake.mint_count == 1
+    assert fake.workspace_values == ["test-secret-uid/2", "test-secret-uid/2"]
+    assert yaml.safe_load(_sops_file(token).read_text())["attic_token"] == jwt
+
+
+def test_kubernetes_secret_repairs_stale_sops_after_uncommitted_rotation(monkeypatch, tmp_path: Path):
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(jwt)
+    _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
+    _sops_file(token).write_text(
+        "expires_unencrypted: '2030-01-01T00:00:00Z'\n"
+        "pull_unencrypted: [test-cache]\n"
+        "push_unencrypted: []\n"
+        "attic_token: old-encrypted-value\n"
+    )
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+
+    assert rotate_one(token, Config(tokens=[])) is True
+
+    written = yaml.safe_load(_sops_file(token).read_text())
+    assert written["attic_token"] == jwt
+    assert written["kubernetes_secret_uid_unencrypted"] == "test-secret-uid"
+    assert written["kubernetes_secret_resource_version_unencrypted"] == "1"
+    assert fake.mint_count == 0
+    assert fake.workspace_values == ["test-secret-uid/1"]
+
+
+def test_kubernetes_secret_response_requires_uid_and_resource_version(monkeypatch, tmp_path: Path):
+    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
+    fake = _FakeKubernetesRun(jwt)
+    _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
+    assert fake.secret is not None
+    del fake.secret["metadata"]["resourceVersion"]
+    monkeypatch.setattr(rotate.subprocess, "run", fake)
+
+    with pytest.raises(RuntimeError, match="invalid object or missing metadata") as failure:
+        rotate_one(token, Config(tokens=[]))
+
+    assert jwt not in str(failure.value)
+
+
 # --- pygit2 git ops (clone_repo / commit_and_push) ---
 
 
 def make_token(name: str = "x", sops_file: str = "s.yaml", **kw: Any) -> Token:
-    base: dict[str, Any] = {"name": name, "sops_file": sops_file, "sub": name, "validity": "1 year", "pull": ["main"]}
+    base: dict[str, Any] = {
+        "name": name,
+        "sub": name,
+        "validity": "1 year",
+        "pull": ["main"],
+        "destination": {"storage": "sops", "sops_file": sops_file},
+    }
     base.update(kw)
     return Token.model_validate(base)
 
@@ -294,14 +707,14 @@ def test_configure_ca_trust_loads_a_real_bundle():
 def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
     fake = _FakeRun(jwt="admin.jwt")
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    assert mint_admin_jwt("nix-cache", "deploy/attic", "/config/server.toml") == "admin.jwt"
+    assert mint_admin_jwt("nix-cache", "deploy/attic-next", "/config/server.toml") == "admin.jwt"
     (call,) = fake.calls
     assert call == [
         "kubectl",
         "-n",
         "nix-cache",
         "exec",
-        "deploy/attic",
+        "deploy/attic-next",
         "--",
         "atticadm",
         "-f",

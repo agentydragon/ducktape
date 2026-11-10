@@ -1,59 +1,10 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-py_library(
-    name = "listener",
-    srcs = ["listener.py"],
-    deps = [
-        "//util:db_url",
-        "@pypi//asyncpg",
-        "@pypi//sqlalchemy",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//util/testing:postgres_fixtures"],
-)
-
-py_test(
-    name = "test_listener",
-    srcs = ["test_listener.py"],
-    deps = [
-        ":conftest",
-        ":listener",
-        "//:conftest",
-        "@pypi//asyncpg",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "wakeups",
-    srcs = ["wakeups.py"],
-    deps = [
-        ":listener",
-        "//agentplane:changes",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_wakeups",
-    srcs = ["test_wakeups.py"],
-    deps = [
-        ":conftest",
-        ":wakeups",
-        "//:conftest",
-        "//util/testing:sqlalchemy_engines",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
+go_library(
+    name = "postgres",
+    srcs = ["postgres.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/postgres",
+    deps = ["@com_github_lib_pq//:pq"],
 )

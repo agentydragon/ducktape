@@ -12,4 +12,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO plaid_ro;
 GRANT CONNECT ON DATABASE plaidmcp TO plaid_spend;
 GRANT USAGE ON SCHEMA public TO plaid_spend;
 GRANT SELECT ON TABLE links, accounts, transactions, liability_credit_snapshots,
-    balance_snapshots, holding_snapshots, securities TO plaid_spend;
+    balance_snapshots, holding_snapshots, holding_captures, holding_capture_accounts,
+    securities TO plaid_spend;
+-- The incomplete-capture guard reads receipt metadata, never raw API payloads.
+GRANT SELECT (id, item_id, endpoint, status) ON TABLE plaid_api_events TO plaid_spend;

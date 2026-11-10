@@ -20,7 +20,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:service_ref",
         "//ssh_mcp_server:server",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -57,9 +57,16 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//cluster/cdk8s/agentplane/testing:fixtures"],
 )
 
 py_test(
@@ -75,10 +82,10 @@ py_test(
     deps = [
         ":backend",
         ":config",
+        ":conftest",
         "//:conftest",
-        "//cluster/cdk8s/agentplane:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pydantic",

@@ -154,6 +154,9 @@ let
         mcp = pkgs.callPackage ./mcp.nix {
           python3Packages = pyfinal;
         };
+        authlib = pkgs.callPackage ./authlib.nix {
+          python3Packages = pyfinal;
+        };
         inherit (fastmcpPackages) fastmcp fastmcp-slim;
       };
   };
@@ -164,9 +167,9 @@ let
   # This also keeps older pinned distribution names valid until sync-pins moves
   # them to the latest release.
   #
-  # `importsCheck` is required — at minimum list the modules backing each
-  # console-script entry point. buildPythonApplication imports them at build
-  # time, so a missing propagatedBuildInputs surfaces as a build failure
+  # Check modules backing each console script with `importsCheck`, or run the
+  # installed command with `entrypointChecks`. Both load the CLI at build time,
+  # so a missing propagatedBuildInputs surfaces as a build failure
   # instead of a runtime crash. See debug/aiquota-missing-atomicwrites.md.
   mkWheel =
     {
@@ -229,7 +232,7 @@ let
   pyrage = pkgs.callPackage ./pyrage.nix { };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
-    description = "Shared utility library (util.bazel, util.fs, etc.)";
+    description = "Shared utility library (devinfra.bazel, util.fs, etc.)";
     importsCheck = [ "util" ];
     propagatedBuildInputs = with python314Packages; [
       opentelemetry-api
@@ -347,9 +350,12 @@ rec {
 
   bbr = mkWheel {
     pname = "bbr";
-    description = "bb remote wrapper with repo-level config from devinfra/bbr.json";
+    description = "bb remote wrapper with session metadata and invocation tracking";
     mainProgram = "bbr";
-    importsCheck = [ "devinfra.bbr" ];
+    # Check the public entry point, including when the released pin still has
+    # the previous Python module layout.
+    importsCheck = [ ];
+    entrypointChecks = [ "bbr" ];
     propagatedBuildInputs = with python314Packages; [ pygit2 ];
   };
 
@@ -384,7 +390,6 @@ rec {
         pillow
         pydantic
         pygithub
-        tenacity
       ];
     }).overrideAttrs
       (old: {
@@ -477,7 +482,6 @@ rec {
 
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
-  gnome-shell-aiquota = aiquota;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
@@ -605,6 +609,8 @@ rec {
     importsCheck = [ "gmail_archiver.main" ];
     entrypointChecks = [ "gmail-archiver" ];
     # SYNC: requires in //gmail_archiver:gmail_archiver_wheel.
+    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
+    # requirements once the pinned Gmail wheel no longer imports util.fmt.
     propagatedBuildInputs = with python314Packages; [
       beautifulsoup4
       ducktape-util
@@ -655,6 +661,8 @@ rec {
       importsCheck = [ "devinfra.ws.cli" ];
       entrypointChecks = [ "ws" ];
       # SYNC: requires in //devinfra/ws:ws_wheel.
+      # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
+      # requirements once the pinned ws wheel no longer imports util.agent_sandbox.
       propagatedBuildInputs = [ ducktape-util ] ++ (with python314Packages; [ typer ]);
     }).overrideAttrs
       (old: {

@@ -4,7 +4,7 @@ The entry point builds each consumer's artifact before its Kustomization node, w
 reads `sourceRef` and `path` off it, and passes every artifact here last.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -35,17 +35,39 @@ _FLUX_SYSTEM_SOURCE = ArtifactGeneratorSpecSources(
 )
 
 
-def artifact(name: str, *directories: str) -> ArtifactGeneratorSpecArtifacts:
+def artifact(name: str, *directories: str, files: Mapping[str, str] | None = None) -> ArtifactGeneratorSpecArtifacts:
     """An artifact packaging `directories`, in copy order. The first is the consumer's
-    Kustomization directory; following ones are shared bases its Kustomization references."""
-    return ArtifactGeneratorSpecArtifacts(
-        name=name,
-        origin_revision="@repo",
-        copy=[
-            ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{directory}/**", to=f"@artifact/{directory}/")
-            for directory in directories
-        ],
-    )
+    Kustomization directory; following ones are shared bases its Kustomization references.
+    `files` maps exact repository file paths to paths inside the first directory. These files
+    are added only to the generated source artifact, not copied into the repository tree."""
+
+    def valid_path(path: str) -> bool:
+        return (
+            bool(path)
+            and not path.startswith("/")
+            and not any(
+                part in {"", ".", ".."} or any(character in part for character in "*?[]{}") for part in path.split("/")
+            )
+        )
+
+    if any(not valid_path(directory) for directory in directories):
+        raise ValueError(f"{name=}: artifact directory paths must be relative literal paths: {directories=}")
+
+    copies = [
+        ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{directory}/**", to=f"@artifact/{directory}/")
+        for directory in directories
+    ]
+    if files:
+        if not directories:
+            raise ValueError(f"{name=}: file copies need a first artifact directory")
+        root = directories[0]
+        for source, destination in files.items():
+            if not valid_path(source):
+                raise ValueError(f"{name=}: repository file path must stay relative: {source=}")
+            if not valid_path(destination) or not destination.startswith(f"{root}/"):
+                raise ValueError(f"{name=}: file destination must be inside {root}: {destination=}")
+            copies.append(ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source}", to=f"@artifact/{destination}"))
+    return ArtifactGeneratorSpecArtifacts(name=name, origin_revision="@repo", copy=copies)
 
 
 def artifact_generators(flux_chart: Chart) -> Kustomization:

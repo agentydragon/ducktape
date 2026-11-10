@@ -17,12 +17,11 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.policy_sets import FLUX_KUSTOMIZATION_LABEL, POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.sandboxes.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes import CustomObjectsClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.kubernetes import CustomObjectsClient
 
 TEMPLATE = "test-runner-template"
 RUNNER_IMAGE = "registry.test/runner:test"
@@ -65,7 +64,7 @@ class SandboxNamespace:
             "SandboxTemplate",
             TEMPLATE,
             {
-                "pod": {"spec": {"containers": [{"name": "runner", "image": RUNNER_IMAGE}]}},
+                "pod": {"spec": {"containers": [{"name": "environment-runtime", "image": RUNNER_IMAGE}]}},
                 "stateVolume": {"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}},
             },
         )
@@ -180,7 +179,7 @@ class SandboxNamespace:
                     ],
                 ),
                 spec=k8s_client.V1PodSpec(
-                    containers=[k8s_client.V1Container(name="runner", image=RUNNER_IMAGE)],
+                    containers=[k8s_client.V1Container(name="environment-runtime", image=RUNNER_IMAGE)],
                     node_name="test-node",
                     service_account_name=None if owner is None else owner["metadata"]["name"],
                 ),
@@ -201,7 +200,7 @@ class SandboxNamespace:
                     "conditions": [{"type": "Ready", "status": "True" if ready else "False"}],
                     "containerStatuses": [
                         {
-                            "name": "runner",
+                            "name": "environment-runtime",
                             "image": RUNNER_IMAGE,
                             "imageID": "",
                             "ready": ready,

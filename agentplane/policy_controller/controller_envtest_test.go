@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	corev1 "k8s.io/api/core/v1"
@@ -16,9 +17,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -26,7 +29,7 @@ import (
 
 func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) {
 	ctx := context.Background()
-	api, cached, r := startPolicyAPIServer(t)
+	api, cached, r := startPolicyAPIServer(t, false)
 	for _, name := range []string{policyNamespace, subjectNamespace, "test-team-a", "test-team-b"} {
 		if err := api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}); err != nil {
 			t.Fatal(err)
@@ -205,12 +208,12 @@ func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) 
 	if err := api.Get(ctx, client.ObjectKeyFromObject(collisionBinding), &loadedBinding); err != nil {
 		t.Fatal(err)
 	}
-	desired, _, _, err := r.expand(ctx, &loadedBinding)
-	if err != nil || len(desired) != 1 {
-		t.Fatalf("expand collision binding: desired=%d err=%v", len(desired), err)
+	expanded, err := r.expand(ctx, &loadedBinding)
+	if err != nil || len(expanded.desired) != 1 {
+		t.Fatalf("expand collision binding: desired=%d err=%v", len(expanded.desired), err)
 	}
 	var collided client.Object
-	for _, native := range desired {
+	for _, native := range expanded.desired {
 		collided = native.DeepCopyObject().(client.Object)
 		collided.SetLabels(map[string]string{"owner": "foreign"})
 		collided.SetAnnotations(map[string]string{"owner": "foreign"})
@@ -247,7 +250,81 @@ func TestAPIServerApplyDriftRevocationIdentityAndForeignCollision(t *testing.T) 
 	}
 }
 
-func startPolicyAPIServer(t *testing.T) (client.Client, client.Client, *Reconciler) {
+// TestRoleCreationBindsWhatTheBindingReportedMissing runs the controller with its watches: creating
+// each role a binding reported missing reconciles the binding again.
+func TestRoleCreationBindsWhatTheBindingReportedMissing(t *testing.T) {
+	ctx := context.Background()
+	api, _, _ := startPolicyAPIServer(t, true)
+	for _, name := range []string{policyNamespace, subjectNamespace, "test-team-a"} {
+		if err := api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: subjectNamespace, Name: "test-account"}}
+	if err := api.Create(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+	const localReader = "test-local-reader"
+	set := &policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-late-roles"},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{
+			{Type: "kubernetes_role_binding", Role: &policyapi.RoleRef{Kind: "Role", Name: localReader}, Namespaces: []string{"test-team-a"}},
+			{Type: "kubernetes_cluster_role_binding", ClusterRole: nodeReader},
+		}},
+	}
+	if err := api.Create(ctx, set); err != nil {
+		t.Fatal(err)
+	}
+	binding := testPolicyBinding("test-late-grant", account.Name, set.Name)
+	if err := api.Create(ctx, binding); err != nil {
+		t.Fatal(err)
+	}
+	clusterRole := policyapi.MissingRole{Kind: "ClusterRole", Name: nodeReader}
+	localRole := policyapi.MissingRole{Namespace: "test-team-a", Kind: "Role", Name: localReader}
+	waitForBindingStatus(t, api, binding.Name, metav1.ConditionFalse, []policyapi.MissingRole{clusterRole, localRole})
+
+	if err := api.Create(ctx, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: "test-team-a", Name: localReader}}); err != nil {
+		t.Fatal(err)
+	}
+	waitForBindingStatus(t, api, binding.Name, metav1.ConditionFalse, []policyapi.MissingRole{clusterRole})
+	if roleBindings, clusterBindings := nativeBindingsFor(t, api, binding.Name); len(roleBindings) != 1 || len(clusterBindings) != 0 {
+		t.Fatalf("native bindings after the Role appeared: RoleBindings=%v ClusterRoleBindings=%v", roleBindingKeys(roleBindings), clusterBindingKeys(clusterBindings))
+	}
+
+	if err := api.Create(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: nodeReader}}); err != nil {
+		t.Fatal(err)
+	}
+	waitForBindingStatus(t, api, binding.Name, metav1.ConditionTrue, nil)
+	if roleBindings, clusterBindings := nativeBindingsFor(t, api, binding.Name); len(roleBindings) != 1 || len(clusterBindings) != 1 {
+		t.Fatalf("native bindings after the ClusterRole appeared: RoleBindings=%v ClusterRoleBindings=%v", roleBindingKeys(roleBindings), clusterBindingKeys(clusterBindings))
+	}
+}
+
+func waitForBindingStatus(t *testing.T, c client.Client, name string, ready metav1.ConditionStatus, missingRoles []policyapi.MissingRole) {
+	t.Helper()
+	var binding *policyapi.PolicyBinding
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		binding = readPolicyBinding(t, c, name)
+		if condition := conditionFor(binding, KubernetesReady); condition != nil && condition.Status == ready && slices.Equal(binding.Status.MissingRoles, missingRoles) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("PolicyBinding %s status = %+v, want KubernetesReady %s and missingRoles %+v", name, binding.Status, ready, missingRoles)
+}
+
+// startPolicyAPIServer returns a direct client, the manager's cached client and a Reconciler over
+// it. With controller, the manager runs the Reconciler with its watches; otherwise tests call
+// Reconcile themselves.
+func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.Client, *Reconciler) {
+	t.Helper()
+	return startPolicyAPIServerAs(t, controller, "")
+}
+
+// startPolicyAPIServerAs is startPolicyAPIServer with the manager acting as user, an administrator
+// whom admission sees by name; "" keeps the envtest administrator.
+func startPolicyAPIServerAs(t *testing.T, controller bool, user string) (client.Client, client.Client, *Reconciler) {
 	t.Helper()
 	kube, err := kubeapiserver.Start()
 	if err != nil {
@@ -267,32 +344,55 @@ func startPolicyAPIServer(t *testing.T) (client.Client, client.Client, *Reconcil
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := egressapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	api, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatal(err)
 	}
 	managed := labels.Set(map[string]string{ManagedByLabel: FieldManager, PolicyNamespaceLbl: policyNamespace}).AsSelector()
-	manager, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme:                 scheme,
+	skipNameValidation := true
+	managerConfig := config
+	if user != "" {
+		managerConfig = rest.CopyConfig(config)
+		managerConfig.Impersonate = rest.ImpersonationConfig{UserName: user, Groups: []string{"system:masters"}}
+	}
+	manager, err := ctrl.NewManager(managerConfig, ctrl.Options{
+		Scheme: scheme,
+		// Controller names are unique per process, and each test starts its own manager.
+		Controller:             ctrlconfig.Controller{SkipNameValidation: &skipNameValidation},
 		Metrics:                server.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
 		WebhookServer:          webhook.NewServer(webhook.Options{Port: 0}),
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&policyapi.PolicySet{}:       {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&policyapi.PolicyBinding{}:   {Namespaces: map[string]cache.Config{policyNamespace: {}}},
-			&corev1.ServiceAccount{}:     {Namespaces: map[string]cache.Config{subjectNamespace: {}}},
-			&rbacv1.RoleBinding{}:        {Label: managed},
-			&rbacv1.ClusterRoleBinding{}: {Label: managed},
+			&policyapi.PolicySet{}:             {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.PolicyBinding{}:         {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.KubernetesRoleSet{}:     {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.ServiceAccountGrant{}:   {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&policyapi.ManagedServiceAccount{}: {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&egressapi.EgressCredential{}:      {Namespaces: map[string]cache.Config{policyNamespace: {}}},
+			&corev1.ServiceAccount{}:           {Namespaces: map[string]cache.Config{subjectNamespace: {}, accountsNamespace: {}}},
+			&rbacv1.RoleBinding{}:              {Label: managed},
+			&rbacv1.ClusterRoleBinding{}:       {Label: managed},
 		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	indexNativeBinding := func(obj client.Object) []string { return bindingIndex(obj) }
-	for _, object := range []client.Object{&rbacv1.RoleBinding{}, &rbacv1.ClusterRoleBinding{}} {
-		if err := manager.GetFieldIndexer().IndexField(context.Background(), object, nativeBindingIndex, indexNativeBinding); err != nil {
+	r := &Reconciler{
+		Client:            manager.GetClient(),
+		APIReader:         manager.GetAPIReader(),
+		PolicyNamespace:   policyNamespace,
+		SubjectNamespaces: []string{subjectNamespace},
+		AccountsNamespace: accountsNamespace,
+	}
+	if controller {
+		if err := r.SetupWithManager(manager); err != nil {
 			t.Fatal(err)
 		}
+	} else if err := r.IndexFields(context.Background(), manager.GetFieldIndexer()); err != nil {
+		t.Fatal(err)
 	}
 	managerCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -308,12 +408,7 @@ func startPolicyAPIServer(t *testing.T) (client.Client, client.Client, *Reconcil
 	if !manager.GetCache().WaitForCacheSync(syncCtx) {
 		t.Fatal("controller cache did not sync")
 	}
-	return api, manager.GetClient(), &Reconciler{
-		Client:            manager.GetClient(),
-		APIReader:         manager.GetAPIReader(),
-		PolicyNamespace:   policyNamespace,
-		SubjectNamespaces: []string{subjectNamespace},
-	}
+	return api, manager.GetClient(), r
 }
 
 func testPolicySet(name string, namespaces []string, includeClusterRole bool) *policyapi.PolicySet {
@@ -335,7 +430,7 @@ func testPolicyBinding(name, account, set string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: subjectNamespace, Name: account},
+			Subject:    policyapi.Subject{Namespace: subjectNamespace, Name: account},
 			PolicySets: []string{set},
 		},
 	}

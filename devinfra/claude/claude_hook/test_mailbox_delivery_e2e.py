@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from devinfra.claude.testing import container_e2e
-from util.bazel.runfiles import get_required_path
 
-_TEST_PROFILE = "_main/devinfra/claude/claude_hook/mailbox_test_profile.yaml"
+_TEST_PROFILE = "ducktape/devinfra/claude/claude_hook/mailbox_test_profile.yaml"
 _SESSION_ID = "mailbox-e2e-test"
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 _CONTAINER_NAME = "ducktape-mailbox-e2e"
@@ -29,7 +29,7 @@ _CONTAINER_NAME = "ducktape-mailbox-e2e"
 def staged_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    profile_src = get_required_path(_TEST_PROFILE)
+    profile_src = Runfiles.CreateOrRaise().root() / _TEST_PROFILE
     (project / "mailbox_test_profile.yaml").write_bytes(profile_src.read_bytes())
     (project / ".git").mkdir()
     return project

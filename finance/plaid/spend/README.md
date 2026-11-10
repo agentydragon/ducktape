@@ -22,6 +22,9 @@ service publishes their generated schema at `/openapi.json`; the browser generat
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
 authenticated detail view remain decimal strings in major units. Card percentages and sustainability rates are
 `Decimal` values serialized as strings. Browser calculations use Decimal.js until the display/chart boundary.
+The allowance response includes the required `daily_reference_minor_units` value, computed from the monthly credit and
+rounded once to the nearest minor unit using half-up rounding. The spending signal compares observed pace to the
+full-precision Decimal rate; clients display the supplied value without recalculating it.
 Server-side policy models and YAML loading live in [`configuration.py`](configuration.py), separate from the response
 models used by desktop clients. Loading preserves decimal tokens before validation, including tax rates and holding
 corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
@@ -37,13 +40,22 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   which cannot reliably identify a purchase instant. Date-only values are used
   unchanged. This purchase day controls allowance activation, spend/pace windows,
   and transaction-list dates. Statement totals and classification `date_range`
-  selectors still use the original Plaid `date`, exposed as `plaid_date` in the
+  selectors still use the original Plaid `date`, exposed as `transaction.plaid_date` in the
   transaction row and its expandable details. A change to an existing policy
   shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.
+- `GET /api/v1/pace-history` returns 30 daily points for 7- and 30-day recorded flexible-purchase averages and the
+  current daily leash. A point is null when its full window lacks account-history coverage, and an unavailable or
+  stale spending source has no series. It uses the same positive-purchase accounting as the allowance, including
+  pending and provisional purchases and holding unconfirmed credits outside spend. The latest incomplete day is
+  included. The series is reconstructed with current rules and reconciliations, not saved historical snapshots;
+  earlier values can change. Coverage is inferred from first recorded activity unless stronger account evidence is
+  configured, and provider data can lag. The endpoint returns null if no allowance is configured.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
-  credit cycle is unavailable, the response identifies the actual `rolling_30d` period.
+  credit cycle is unavailable, the response identifies the actual `rolling_30d` period. Each row groups displayed
+  transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement
+  effects under `statement`. Both effect objects are present even when their fields are unavailable or do not apply.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
 - Allowance views mark relevant unresolved full reversal pairs as `Provisional:` in their existing note field;
   transaction rows identify both matched legs. The active/unavailable lifecycle and wire shape stay compatible
@@ -100,23 +112,17 @@ Each card's `label` is its short display name. For spending accounts that are no
 falls back to the Plaid account name. Card IDs cannot also appear in `account_labels`, so each display name has one
 configured source.
 
-Allowance rules are evaluated in order; the first match determines the classification. A rule whose `scope` is
-`one_off` corrects specific observed transactions and is validated as such — a bounded `date_range` plus a
-name/category/amount condition, an `id`, and a note — but it is the same object matched in the same ordered list, not
-a second tier, and it never addresses a transaction by Plaid transaction ID, which relinking rewrites. See
-[one rule type, ordered](docs/allowance.md#one-rule-type-ordered-patterns-and-one-offs). `review` rules keep positive
-purchases in provisional spending and the unmatched total, while unverified negative credits remain separate from
-spending. Conditions can combine merchant or category matches, account type, merchant category code, counterparty type
-and name, and amount sign. Private analyses use the same ordered matcher and policy file as the app. Required
+Allowance rules are first-match-wins; one-offs are bounded rules in the same list, not Plaid-ID overrides (relinking
+rewrites those IDs). See [one rule type, ordered](docs/allowance.md#one-rule-type-ordered-patterns-and-one-offs) for
+the full rule contract. Review and negative-credit behavior is in the [allowance guide](docs/allowance.md). Conditions
+can combine merchant or category matches, account type, merchant category code, counterparty type and name, and amount
+sign. Private analyses use the same ordered matcher and policy file as the app. Required
 `allowance.analysis_categories` entries map stable analysis-category codes to a display label and color; include
 `unclassified` for purchases without a category. The Configuration API includes the catalog, and the Transactions
 API includes each transaction's resolved category metadata. Display metadata does not affect rule matching or
 allowance accounting.
 
-For a confirmed full posted reversal, `allowance.reversal_pairs` can match the positive debit to its negative credit.
-Both selectors must uniquely identify posted transactions with exactly opposite amounts in the allowance currency and
-the same account; unresolved, ambiguous, pending, or overlapping pairs suppress neither leg. Partial refunds are outside
-this feature. See [full reversal pair configuration](docs/allowance.md#explicit-full-reversal-pairs).
+See [full reversal pair configuration](docs/allowance.md#explicit-full-reversal-pairs) for matching constraints and unresolved-pair behavior.
 
 ## Runtime settings
 
@@ -164,6 +170,10 @@ is tax-inclusive funding divided by current eligible portfolio value, assuming n
 tax assumption, funding and withdrawal percentages remain unavailable; consumption amounts are still available.
 Rates are finite decimal fractions and are serialized as JSON strings; currency amounts remain integer minor units.
 The reference markers are scenarios, not guarantees of lifetime sustainability.
+
+If a portfolio valuation is unavailable, complete spending history remains visible in dollars. The chart can include
+modeled withdrawal taxes when a tax assumption exists; withdrawal percentages and reference comparisons remain hidden
+until a usable portfolio is available. Missing spending history is still shown as a gap.
 
 Reversal reconciliation is shared with private reports through typed reason codes, matched record references,
 purchase days and posting selector bounds. Resolve all retained history before selecting a report period.

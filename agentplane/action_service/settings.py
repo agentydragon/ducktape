@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Set
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import SettingsConfigDict
@@ -13,11 +13,13 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
+from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
-DEFAULT_MAX_WAIT_SECONDS = 30.0
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
 
@@ -44,6 +46,9 @@ class ServicePeer(BaseModel):
         min_length=1, description="The rotating projected ServiceAccount token for the peer's audience."
     )
     request_timeout_s: float = Field(gt=0, allow_inf_nan=False)
+    tls: ClientTLS | None = Field(
+        default=None, description="Verify the peer service SVID without presenting this service's client certificate."
+    )
 
 
 class Settings(YamlFileSettings):
@@ -65,10 +70,9 @@ class Settings(YamlFileSettings):
 
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
     log_levels: LogLevels
-    host: str = "127.0.0.1"
-    port: int = 8080
-    token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
+    rpc: Listener = Field(description="The single gRPC listener and its explicitly enabled authentication methods.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+
     policy_namespace: str = Field(
         description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "
         "it writes `ActionsReady` conditions only on those bindings."
@@ -83,23 +87,8 @@ class Settings(YamlFileSettings):
         allow_inf_nan=False,
         description="Maximum duration for orchestration_v1 Session operations.",
     )
-    policy_resync_seconds: int = Field(
-        default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
-    )
-    # CLEANUP(added 2026-10-27): Retained up to the generated maximum until the key is removed after rollout.
-    max_wait_seconds: float = Field(
-        default=DEFAULT_MAX_WAIT_SECONDS,
-        ge=0,
-        le=180,
-        allow_inf_nan=False,
-        description="Retired compatibility value; the MCP edge owns external receipt wait limits.",
-    )
     github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_oidc: OperatorOidcSettings | None = None
-    # CLEANUP(added 2026-10-27): Keep the generated false value until its manifest key is removed after rollout.
-    integrated_connection_service: Literal[False] = Field(
-        default=False, description="Retired; true is rejected and the Action Service serves no Connection API."
-    )
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
@@ -111,6 +100,13 @@ class Settings(YamlFileSettings):
     )
     history_service: ServicePeer | None = Field(
         default=None, description="Where orchestration_v1 groups read Sessions; set exactly when one exists."
+    )
+    session_delegation_dispatcher: ServicePeer | None = Field(
+        default=None,
+        description="Delegated Discovery and Session Dispatcher endpoint/audience for session_delegation groups.",
+    )
+    session_delegation_history: ServicePeer | None = Field(
+        default=None, description="Delegated History endpoint/audience for session_delegation groups."
     )
 
     @model_validator(mode="after")
@@ -135,5 +131,18 @@ class Settings(YamlFileSettings):
         if (self.session_dispatcher is None, self.history_service is None) != (not orchestration, not orchestration):
             raise ValueError(
                 "configure session_dispatcher and history_service exactly when an orchestration_v1 group calls them"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def session_delegation_peers(self) -> Settings:
+        delegated = any(
+            isinstance(group.executor, SessionDelegationExecutorBinding) for group in self.action_groups.values()
+        )
+        peers = (self.session_delegation_dispatcher, self.session_delegation_history)
+        if (peers[0] is None, peers[1] is None) != (not delegated, not delegated):
+            raise ValueError(
+                "configure session_delegation_dispatcher and session_delegation_history exactly when a "
+                "session_delegation group is configured"
             )
         return self

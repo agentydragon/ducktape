@@ -3,7 +3,10 @@
 
 load("//devinfra/python:defs.bzl", "py_library")
 
-package(default_testonly = True)
+package(
+    default_testonly = True,
+    default_visibility = ["//props:__subpackages__"],
+)
 
 py_library(
     name = "db",
@@ -18,7 +21,6 @@ py_library(
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_code_tar",
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_data_blob",
     ],
-    visibility = ["//props:__subpackages__"],
     deps = [
         "//openai_utils:model_metadata",
         "//props:config",
@@ -26,26 +28,27 @@ py_library(
         "//props/db:database",
         "//props/db/sync",
         "//props/db/sync:model_metadata",
-        "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
     ],
 )
 
 py_library(
     name = "e2e_container",
     srcs = ["e2e_container.py"],
-    visibility = ["//props:__subpackages__"],
     deps = [
+        "//devinfra/oci",
         "//openai_utils:model",
         "//openai_utils:model_metadata",
         "//props:config",
         "//props/backend:app",
         "//props/core:agent_types",
         "//props/core:oci_utils",
+        "//props/db:async_database",
         "//props/db:config",
         "//props/db:database",
         "//props/db/sync:model_metadata",
@@ -56,7 +59,6 @@ py_library(
         "//props/registry_proxy:app",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
-        "//util:oci",
         "//util/testing:asgi",
         "@pypi//aiodocker",
         "@pypi//pytest",
@@ -67,12 +69,11 @@ py_library(
 py_library(
     name = "e2e_infra",
     srcs = ["e2e_infra.py"],
-    visibility = ["//props:__subpackages__"],
     deps = [
+        "//devinfra/oci",
         "//props/db:models",
         "//third_party/containers:registry_3",
         "//third_party/containers:ryuk",
-        "//util:oci",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
@@ -83,7 +84,6 @@ py_library(
 py_library(
     name = "ground_truth",
     srcs = ["ground_truth.py"],
-    visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
         "//props/core/models:true_positive",
@@ -98,7 +98,6 @@ py_library(
 py_library(
     name = "credentials",
     srcs = ["credentials.py"],
-    visibility = ["//props:__subpackages__"],
     deps = [
         ":runs",
         "//props/db:database",
@@ -112,7 +111,6 @@ py_library(
 py_library(
     name = "runs",
     srcs = ["runs.py"],
-    visibility = ["//props:__subpackages__"],
     deps = [
         ":ground_truth",
         "//props/core:agent_types",
@@ -131,7 +129,6 @@ py_library(
 py_library(
     name = "scopes",
     srcs = ["scopes.py"],
-    visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
         "//props/core/models:examples",

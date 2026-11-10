@@ -2,7 +2,7 @@
 
 ## Goals
 
-1. **Bazel builds every registered JS frontend** (see `pnpm-workspace.yaml`)
+1. **Bazel builds every registered JS frontend** (see [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml))
 2. **Tests work under Bazel**, including visual tests that render PNG screenshots for PR review
 3. **Minimal duplication** - single source of truth for package versions
 4. **Frontends may share code in future** - don't bake in independence assumption
@@ -17,21 +17,11 @@
 
 ## Current State
 
-- Independent JS frontends include:
-  - **props/frontend**: React + Mantine SPA, bundled with esbuild
-  - **airlock/frontend**: React + Mantine bundled with esbuild
-  - **study_casino/frontend**: React
-- pnpm workspace with per-project package.json files
+- Workspace members: [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml); each member has its own `package.json`
 - aspect_rules_js for Bazel integration
 - Vite or esbuild via the Bazel rules, depending on the frontend
 - A React component harness with Playwright visual render-health tests (props/frontend)
 
-## Decisions Made
-
-- **Local pnpm dev can break** - Bazel is the source of truth
-
 ## Known Problems
 
-1. **Playwright module identity**: pnpm workspaces create separate node_modules trees per project, causing Playwright to load from different paths and crash
-2. **Module resolution in sandbox**: Tools expect node_modules relative to their working directory; flattening the workspace breaks this
-3. **Version duplication**: Dependencies declared in both root and per-project package.json
+See [`known_problems.md`](known_problems.md) for the Playwright module-identity investigation and the workspace, lockfile, and `chdir` caveats.

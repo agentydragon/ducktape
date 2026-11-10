@@ -20,7 +20,7 @@ JSON. Each stream carries three things at once:
 - a `testSummary` verdict per test target;
 - `bytestream://` URIs for fetching any of those files.
 
-`devinfra/ci/bes.py` reads it. `plan_releases.py` and `plan_image_pushes.py`
+`devinfra/buildbuddy/ci/bes.py` reads it. `plan_releases.py` and `plan_image_pushes.py`
 consume it. `bazel-ci` publishes its invocation ids as a workflow output and
 `ci.yml` passes them down. The test invocation also retains its lossless per-
 configuration summaries and provenance; the merged output view is never used as
@@ -129,7 +129,7 @@ suite or pattern had complete coverage.
 download returns an arbitrary subset of the requested outputs and exits 0 — 12
 files for 50 targets on devel `d4e6fe42`. The planners could not see what they
 had built, so they fell through to fail-open for 38 of 50 rows and published
-them anyway. See <../../debug/bb_remote_peers_exhausted.md>.
+them anyway. See <../../buildbuddy/debug/bb_remote_peers_exhausted.md>.
 
 This is the recurring failure of this pipeline, not a one-off: nearly every time
 the publish path has depended on `bb remote build` carrying bytes back across the

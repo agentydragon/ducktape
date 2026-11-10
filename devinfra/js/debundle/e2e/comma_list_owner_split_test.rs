@@ -323,9 +323,18 @@ export { x, y };
             logical_module("mod_y", &[Member::new("y")]),
         ],
     );
-    // The error names both claiming modules, so the spec author can find the
-    // conflicting pair without re-reading source.
-    expect_rejection_containing_all(opts, &["destructure", "mod_x", "mod_y"]);
+    // The common projection reports the typed conflict and retains both
+    // explicitly requested destination module paths in its refusal.
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "placement projection is unmappable",
+            "OwnedBindingDestinationMismatch",
+            "DestructuringDestinationSplit",
+            "mod_x",
+            "mod_y",
+        ],
+    );
 }
 
 #[test]
@@ -362,6 +371,33 @@ export { a, x, y, b };
         &[variable_declarator!(Const, Number, ["b"])],
     );
     assert_entry_output(&fixture, "1 10 20 2\n");
+}
+
+#[test]
+fn overlapping_shared_var_destructuring_groups_pull_from_later_claim() {
+    // The two declarators redeclare `b`, so the retained destructuring groups
+    // overlap on the same hygienic binding identity. Claiming only `c` in the
+    // later declarator must pull `b` and then `a` into the same module.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const first = { a: 10, b: 20 };
+const second = { b: 30, c: 40 };
+var { a, b } = first;
+var { b, c } = second;
+console.log(a, b, c);
+export { a, b, c };
+"#,
+        vec![logical_module("mod_group", &[Member::new("c")])],
+    ));
+
+    assert_module_variable_declarators(
+        &fixture.out_root,
+        "static/app/modules/mod_group.js",
+        &[
+            variable_declarator!(Var, Identifier, ["a", "b"]),
+            variable_declarator!(Var, Identifier, ["b", "c"]),
+        ],
+    );
+    assert_entry_output(&fixture, "10 30 40\n");
 }
 
 // --- Comma-list with side-effecting prior init affecting later sibling ---

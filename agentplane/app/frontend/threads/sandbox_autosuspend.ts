@@ -1,24 +1,26 @@
-import type { SandboxView } from "../api/schema";
+import { durationMs, timestampDate } from "@bufbuild/protobuf/wkt";
+
+import type { AutosuspendBlocker } from "../../../proto/environment_lifecycle_pb";
+import { SandboxPhase, type EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
+
 import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandbox_status";
 
 export interface AutosuspendHint {
   text: string;
   deadline: string | null;
-  blockers?: SandboxView["autosuspend_blockers"];
+  blockers?: AutosuspendBlocker[];
 }
 
 const SECONDS_PER_MINUTE = 60;
 
-export const AUTOSUSPEND_BLOCKER_LABELS: Record<
-  NonNullable<SandboxView["autosuspend_blockers"]>[number]["reason"],
-  string
-> = {
+export const AUTOSUSPEND_BLOCKER_LABELS: Record<string, string> = {
   ActiveTurn: "Turn running",
   PendingCommand: "Command pending",
   Setup: "Setup running",
   Activation: "Session starting",
   Bootstrap: "Sandbox bootstrap running",
   Admission: "Command being admitted",
+  ExecutorRelay: "Executor connected",
 };
 
 function compactDuration(seconds: number): string {
@@ -38,33 +40,45 @@ function compactDuration(seconds: number): string {
 }
 
 /** The sandbox inventory is authoritative for this hint; stale snapshots cannot tell the reader when it will act. */
-export function autosuspendHint(sandbox: SandboxView | undefined, fresh: boolean, now: number): AutosuspendHint | null {
+export function autosuspendHint(
+  sandbox: EnvironmentDescriptor | undefined,
+  fresh: boolean,
+  now: number
+): AutosuspendHint | null {
   if (!sandbox) return null;
   if (!fresh) return { text: "Autosuspend timing unavailable", deadline: null };
 
-  if (sandbox.phase === "Suspending") {
-    return { text: `Sandbox ${sandbox.suspended_by === "Idle" ? "suspending (idle)" : "suspending"}`, deadline: null };
+  if (sandbox.observedState?.phase === SandboxPhase.SUSPENDING) {
+    return {
+      text: `Sandbox ${sandbox.observedState?.suspendedBy === "Idle" ? "suspending (idle)" : "suspending"}`,
+      deadline: null,
+    };
   }
   if (sandboxSuspended(sandbox)) {
     const reason =
-      sandbox.suspended_by === "Idle" ? " (idle)" : sandbox.suspended_by === "Requested" ? " (on request)" : "";
+      sandbox.observedState?.suspendedBy === "Idle"
+        ? " (idle)"
+        : sandbox.observedState?.suspendedBy === "Requested"
+          ? " (on request)"
+          : "";
     return { text: `Sandbox suspended${reason}`, deadline: null };
   }
 
-  const suspendAfter = sandbox.idle_suspend_after_seconds;
-  if (suspendAfter === null || suspendAfter === undefined) return { text: "Autosuspend off", deadline: null };
+  const duration = sandbox.configuration?.idleSuspendAfter;
+  if (duration === undefined) return { text: "Autosuspend off", deadline: null };
+  const suspendAfter = durationMs(duration) / 1000;
   if (!Number.isFinite(suspendAfter) || suspendAfter < 60) {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
 
-  const deadline = sandbox.idle_suspend_at;
-  if (sandbox.phase === "Running") {
-    const blockers = sandbox.autosuspend_blockers ?? [];
+  const timestamp = sandbox.observedState?.idleSuspendAt;
+  if (sandbox.observedState?.phase === SandboxPhase.RUNNING) {
+    const blockers = sandbox.observedState?.autosuspendBlockers ?? [];
     const first = blockers[0];
     if (first) {
       const more = blockers.length > 1 ? ` · +${blockers.length - 1}` : "";
       return {
-        text: `Autosuspend waiting: ${AUTOSUSPEND_BLOCKER_LABELS[first.reason]}${more}`,
+        text: `Autosuspend waiting: ${AUTOSUSPEND_BLOCKER_LABELS[first.reason] ?? first.reason}${more}`,
         deadline: null,
         blockers,
       };
@@ -72,15 +86,17 @@ export function autosuspendHint(sandbox: SandboxView | undefined, fresh: boolean
   }
 
   if (sandboxStarting(sandbox)) return { text: "Autosuspend waiting: Sandbox starting", deadline: null };
-  if (sandbox.phase !== "Running" || !sandboxReady(sandbox)) {
+  if (sandbox.observedState?.phase !== SandboxPhase.RUNNING || !sandboxReady(sandbox)) {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
-  if (deadline === null || deadline === undefined) {
+  if (timestamp === undefined) {
     return { text: `Autosuspend after ${compactDuration(suspendAfter)} idle`, deadline: null };
   }
 
-  const deadlineMs = Date.parse(deadline);
+  const deadlineDate = timestampDate(timestamp);
+  const deadlineMs = deadlineDate.getTime();
   if (!Number.isFinite(deadlineMs)) return { text: "Autosuspend timing unavailable", deadline: null };
+  const deadline = deadlineDate.toISOString();
   if (deadlineMs <= now) return { text: "Autosuspend pending", deadline };
 
   return { text: `Sandbox autosuspends in ~${compactDuration((deadlineMs - now) / 1000)}`, deadline };

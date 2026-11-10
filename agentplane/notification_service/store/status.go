@@ -5,23 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
-const (
-	// MaxNoticeStateSessions is the most Sessions one SessionNoticeStates reads.
-	MaxNoticeStateSessions = 200
-	// maxInboxesPerSandbox is the most inboxes SandboxStatus reports for one Sandbox.
-	maxInboxesPerSandbox = 1000
-	// maxPendingEntrySummaries is the most entries SandboxStatus describes for one inbox.
-	maxPendingEntrySummaries = 100
-	// maxSummaryField is the longest an event's state, action or conclusion is shown, in characters.
-	maxSummaryField = 80
-)
+// maxPendingEntrySummaries bounds the retained entries returned by an inbox watch.
+const maxPendingEntrySummaries = 100
 
 // Debounce is when entries are announced to the agent: a quiet window after the newest entry no notice covers,
 // but never more than MaxWait after the oldest.
@@ -44,28 +37,6 @@ func (d Debounce) Window(times EntryTimes) Window {
 		window.Due = window.MaxWaitAt
 	}
 	return window
-}
-
-// NoticeProgress is how far an inbox's latest notice got.
-type NoticeProgress string
-
-const (
-	NoticePrepared  NoticeProgress = "prepared"
-	NoticeAttempted NoticeProgress = "attempted"
-	NoticeAdmitted  NoticeProgress = "admitted"
-	NoticeConfirmed NoticeProgress = "confirmed"
-)
-
-func (n Notice) Progress() NoticeProgress {
-	switch {
-	case n.Confirmed:
-		return NoticeConfirmed
-	case n.Admitted:
-		return NoticeAdmitted
-	case n.Attempted:
-		return NoticeAttempted
-	}
-	return NoticePrepared
 }
 
 // NoticeWaitReason is why an inbox's next notice waits.
@@ -131,21 +102,13 @@ func entriesBeyond(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int
 	return &EntryTimes{First: first.Time.UTC(), Last: last.Time.UTC()}, count, nil
 }
 
-// EntryProvider is the kind of source an entry came from.
-type EntryProvider string
-
-const (
-	EntryFromActions EntryProvider = "actions"
-	EntryFromGitHub  EntryProvider = "github"
-	EntryFromMessage EntryProvider = "message"
-)
-
 // EntrySummary describes an entry the agent has not acknowledged without its payload.
 type EntrySummary struct {
-	Cursor    int64
-	CreatedAt time.Time
-	Provider  EntryProvider
-	Summary   string
+	Cursor           int64
+	CreatedAt        time.Time
+	Event            model.EventIdentity
+	ActionState      *string
+	GitHubConclusion *string
 }
 
 // summarize describes an entry from its event identity and the few lifecycle fields of its payload that are
@@ -155,66 +118,54 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 	if err := json.Unmarshal(payload, &fields); err != nil {
 		return EntrySummary{}, fmt.Errorf("entry %d payload: %w", cursor, err)
 	}
-	summary := EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC()}
+	summary := EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}
 	switch event := event.(type) {
 	case model.ActionsEvent:
-		summary.Provider = EntryFromActions
-		summary.Summary = fmt.Sprintf("Action %s · event %d", event.RequestID, event.Sequence)
-		// Action state is a provider-owned lifecycle value, not arbitrary result content.
 		if state, ok := fields["state"].(string); ok {
-			summary.Summary += " · " + truncate(state)
+			summary.ActionState = &state
 		}
 	case model.GitHubEvent:
-		summary.Provider = EntryFromGitHub
-		summary.Summary = "GitHub " + string(event.Event)
-		if event.Action != nil && *event.Action != "" {
-			summary.Summary += " · " + truncate(*event.Action)
-		}
 		if event.Event == model.EventCheckRun || event.Event == model.EventWorkflowRun {
 			if check, ok := fields[string(event.Event)].(map[string]any); ok {
 				if conclusion, ok := check["conclusion"].(string); ok {
-					summary.Summary += " · " + truncate(conclusion)
+					switch conclusion {
+					case "action_required", "cancelled", "failure", "neutral", "skipped", "stale", "success", "timed_out", "startup_failure":
+						summary.GitHubConclusion = &conclusion
+					}
 				}
 			}
 		}
-	case model.GitHubObservationEvent:
-		summary.Provider = EntryFromGitHub
-		summary.Summary = fmt.Sprintf("GitHub %s observation · sequence %d", event.Event, event.Sequence)
-	case model.GitHubMergeabilityEvent:
-		summary.Provider = EntryFromGitHub
-		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability · sequence %d", event.PullRequestNumber, event.Sequence)
-	case model.GitHubMergeabilitySnapshotEvent:
-		summary.Provider = EntryFromGitHub
-		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability snapshot · version %d", event.PullRequestNumber, event.Version)
-	case model.MessageEvent:
-		// Who sent it is what the service authenticated; the body is never shown.
-		summary.Provider = EntryFromMessage
-		summary.Summary = fmt.Sprintf("Message from %s/%s", event.Sender.Namespace, event.Sender.Name)
+	case model.GitHubObservationEvent, model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent, model.MessageEvent:
 	default:
 		return EntrySummary{}, fmt.Errorf("entry %d: unknown event identity %T", cursor, event)
 	}
 	return summary, nil
 }
 
-func truncate(s string) string {
-	if characters := []rune(s); len(characters) > maxSummaryField {
-		return string(characters[:maxSummaryField])
+func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []byte, content storagecodec.EntryContentStorage, createdAt time.Time) (EntrySummary, error) {
+	if _, ok := event.(model.MessageEvent); ok {
+		return EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}, nil
 	}
-	return s
+	payload, err := storagecodec.EntryPayloadFromRead(event, githubPayload, content)
+	if err != nil {
+		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
+	}
+	return summarize(cursor, event, payload, createdAt)
 }
 
-// SubscriptionStatus is a subscription as the operator sees it.
-type SubscriptionStatus struct {
-	Subscription
-	// NextSourceCheckAt is when the source is next read, whatever the subscription's state; nil if never.
-	NextSourceCheckAt *time.Time
-}
+// Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in
+// the identity, so the SQL projection never fetches or decodes a Message body.
+const entryContentSummaryReadColumns = `action_state, action_at,
+	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject,
+	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
+	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
+	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, NULL::text, NULL::text`
 
 // InboxStatus is one inbox of a Sandbox, with what holds its next notice.
 type InboxStatus struct {
 	Inbox         Inbox
 	Notice        *Notice
-	Subscriptions []SubscriptionStatus
+	Subscriptions []Subscription
 	// UnannouncedCount is the entries no notice covers yet, and PendingAcknowledgementCount those the agent has
 	// not acknowledged, covered or not.
 	UnannouncedCount            int64
@@ -227,50 +178,63 @@ type InboxStatus struct {
 	NextWorkAt *time.Time
 }
 
-// SandboxNotificationStatus is the inboxes that name one incarnation of a Sandbox.
-type SandboxNotificationStatus struct {
-	ObservedAt time.Time
-	Inboxes    []InboxStatus
-}
-
-// SandboxStatus reads the inboxes whose destination is exactly `ref`, retired ones included, at most 1000 in
-// Session order. A Sandbox with the same name and another UID has none. Reading changes nothing.
-func (s *Store) SandboxStatus(ctx context.Context, ref model.DestinationRef, debounce Debounce) (SandboxNotificationStatus, error) {
-	var status SandboxNotificationStatus
+// SessionStatus reads the one inbox for a Session. A workload only sees its own current Sandbox
+// incarnation; the operator passes a nil owner. Missing and unauthorized inboxes both return nil.
+func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, owner Owner, debounce Debounce, entries, subscriptions bool) (*InboxStatus, time.Time, error) {
+	observed := now()
+	var result *InboxStatus
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
-		status.ObservedAt = now()
-		inboxes, nextWork, err := inboxesOf(ctx, tx, `
-			WHERE destination_ref->>'namespace' = $1 AND destination_ref->>'name' = $2 AND destination_ref->>'uid' = $3
-			ORDER BY session_id, id LIMIT $4`, ref.Namespace, ref.Name, ref.UID, maxInboxesPerSandbox)
+		clause := `WHERE destination_namespace = $1 AND session_id = $2`
+		args := []any{namespace, sessionID}
+		if owner != nil {
+			predicate, ownerArgs := ownerPredicate(owner, "", 3)
+			clause += ` AND ` + predicate
+			args = append(args, ownerArgs...)
+		}
+		inboxes, nextWork, err := inboxesOf(ctx, tx, clause, args...)
+		if err != nil || len(inboxes) == 0 {
+			return err
+		}
+		if len(inboxes) != 1 {
+			return fmt.Errorf("multiple inboxes for Session")
+		}
+		value, err := readInboxStatus(ctx, tx, inboxes[0], nextWork[0], observed, debounce, entries, subscriptions)
 		if err != nil {
 			return err
 		}
-		for i, inbox := range inboxes {
-			inboxStatus := InboxStatus{Inbox: inbox, NextWorkAt: nextWork[i]}
-			if inboxStatus.Subscriptions, err = subscriptionStatuses(ctx, tx, inbox.ID, status.ObservedAt); err != nil {
-				return err
-			}
-			if inboxStatus.Notice, err = latestNotice(ctx, tx, inbox.ID); err != nil {
-				return err
-			}
-			unannounced, unannouncedCount, err := entriesBeyond(ctx, tx, inbox.ID, max(inbox.Covered, inbox.Acknowledged, inbox.ExpiredThrough))
-			if err != nil {
-				return err
-			}
-			inboxStatus.UnannouncedCount = unannouncedCount
-			inboxStatus.NoticeWait = noticeWait(inbox, inboxStatus.Notice, unannounced, status.ObservedAt, debounce)
-			awaiting := max(inbox.Acknowledged, inbox.ExpiredThrough)
-			if _, inboxStatus.PendingAcknowledgementCount, err = entriesBeyond(ctx, tx, inbox.ID, awaiting); err != nil {
-				return err
-			}
-			if inboxStatus.PendingEntries, err = pendingEntrySummaries(ctx, tx, inbox.ID, awaiting); err != nil {
-				return err
-			}
-			status.Inboxes = append(status.Inboxes, inboxStatus)
-		}
+		result = &value
 		return nil
 	})
-	return status, err
+	return result, observed, err
+}
+
+func readInboxStatus(ctx context.Context, tx *sql.Tx, inbox Inbox, nextWork *time.Time, observed time.Time, debounce Debounce, entries, subscriptions bool) (InboxStatus, error) {
+	result := InboxStatus{Inbox: inbox, NextWorkAt: nextWork}
+	var err error
+	if subscriptions {
+		if result.Subscriptions, err = subscriptionStatuses(ctx, tx, inbox.ID, observed); err != nil {
+			return InboxStatus{}, err
+		}
+	}
+	if result.Notice, err = latestNotice(ctx, tx, inbox.ID); err != nil {
+		return InboxStatus{}, err
+	}
+	unannounced, count, err := entriesBeyond(ctx, tx, inbox.ID, max(inbox.Covered, inbox.Acknowledged, inbox.ExpiredThrough))
+	if err != nil {
+		return InboxStatus{}, err
+	}
+	result.UnannouncedCount = count
+	result.NoticeWait = noticeWait(inbox, result.Notice, unannounced, observed, debounce)
+	awaiting := max(inbox.Acknowledged, inbox.ExpiredThrough)
+	if _, result.PendingAcknowledgementCount, err = entriesBeyond(ctx, tx, inbox.ID, awaiting); err != nil {
+		return InboxStatus{}, err
+	}
+	if entries {
+		if result.PendingEntries, err = pendingEntrySummaries(ctx, tx, inbox.ID, awaiting); err != nil {
+			return InboxStatus{}, err
+		}
+	}
+	return result, nil
 }
 
 // inboxesOf reads the inboxes a WHERE and ORDER BY clause selects, with each one's next_attempt.
@@ -297,32 +261,40 @@ func inboxesOf(ctx context.Context, tx *sql.Tx, clause string, args ...any) ([]I
 	return inboxes, nextWork, rows.Err()
 }
 
-func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, observed time.Time) ([]SubscriptionStatus, error) {
+func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, observed time.Time) ([]Subscription, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT `+subscriptionColumns+`, s.next_attempt FROM subscription s WHERE s.inbox_id = $1 ORDER BY s.id`, inboxID)
+		`SELECT `+subscriptionColumns+` FROM subscription s WHERE s.inbox_id = $1 ORDER BY s.id`, inboxID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var statuses []SubscriptionStatus
+	var statuses []Subscription
 	for rows.Next() {
-		var next sql.NullTime
-		subscription, err := scanSubscription(rows, observed, &next)
+		subscription, err := scanSubscription(rows, observed)
 		if err != nil {
 			return nil, err
 		}
-		status := SubscriptionStatus{Subscription: subscription}
-		if next.Valid {
-			status.NextSourceCheckAt = utc(next.Time)
-		}
-		statuses = append(statuses, status)
+		statuses = append(statuses, subscription)
 	}
-	return statuses, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range statuses {
+		if err := loadGitHubStatus(ctx, tx, &statuses[i]); err != nil {
+			return nil, err
+		}
+	}
+	return statuses, nil
 }
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, event, payload, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
+		`SELECT cursor, `+eventIdentityReadColumns+`,
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentSummaryReadColumns+`, created_at FROM entry
+			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
 		return nil, err
@@ -331,99 +303,26 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 	var summaries []EntrySummary
 	for rows.Next() {
 		var cursor int64
-		var event, payload []byte
+		var identityRead eventIdentityRead
+		var payload []byte
+		var content storagecodec.EntryContentStorage
 		var createdAt time.Time
-		if err := rows.Scan(&cursor, &event, &payload, &createdAt); err != nil {
+		destinations := append([]any{&cursor}, identityRead.destinations()...)
+		destinations = append(destinations, &payload)
+		destinations = append(destinations, content.Destinations()...)
+		destinations = append(destinations, &createdAt)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		identity, err := model.DecodeEventIdentity(event)
+		identity, err := identityRead.event()
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
-		summary, err := summarize(cursor, identity, payload, createdAt)
+		summary, err := summarizeStored(cursor, identity, payload, content, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s: %w", inboxID, err)
 		}
 		summaries = append(summaries, summary)
 	}
 	return summaries, rows.Err()
-}
-
-// InboxNoticeState is one live inbox at a glance: what waits for a notice, what a notice covers that the agent
-// has not acknowledged, and how far the latest notice got.
-type InboxNoticeState struct {
-	InboxID   uuid.UUID
-	SessionID string
-	// Queued is the entries no notice covers yet.
-	Queued int64
-	// Unacknowledged is the entries a notice covers that the agent has not acknowledged.
-	Unacknowledged int64
-	// Notice is how far the latest notice got, nil before the first.
-	Notice *NoticeProgress
-	// NoticeWait carries, while debouncing, when a notice of the queued entries becomes due.
-	NoticeWait NoticeWait
-	// Error is the latest notice's error, or else the inbox's delivery error.
-	Error *string
-}
-
-// SessionNoticeStates are the live inboxes of the named Sessions.
-type SessionNoticeStates struct {
-	ObservedAt time.Time
-	Inboxes    []InboxNoticeState
-}
-
-// SessionNoticeStates reads the live inboxes of the named Sessions in `namespace`, whoever owns them, in
-// Session order. Reading changes nothing: only an agent's acknowledgement moves what counts as acknowledged.
-// More than MaxNoticeStateSessions distinct Sessions fail with model.ErrInvalid.
-func (s *Store) SessionNoticeStates(ctx context.Context, namespace string, sessionIDs []string, debounce Debounce) (SessionNoticeStates, error) {
-	// Never nil, so that it is a JSON array whatever the caller passes.
-	distinct := append([]string{}, sessionIDs...)
-	slices.Sort(distinct)
-	distinct = slices.Compact(distinct)
-	if len(distinct) > MaxNoticeStateSessions {
-		return SessionNoticeStates{}, model.Invalid("at most %d Sessions per read", MaxNoticeStateSessions)
-	}
-	wanted, err := json.Marshal(distinct)
-	if err != nil {
-		return SessionNoticeStates{}, err
-	}
-	var states SessionNoticeStates
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
-		states.ObservedAt = now()
-		inboxes, _, err := inboxesOf(ctx, tx, `
-			WHERE destination_ref->>'namespace' = $1 AND NOT retired
-				AND session_id IN (SELECT jsonb_array_elements_text($2::jsonb))
-			ORDER BY session_id, id`, namespace, string(wanted))
-		if err != nil {
-			return err
-		}
-		for _, inbox := range inboxes {
-			notice, err := latestNotice(ctx, tx, inbox.ID)
-			if err != nil {
-				return err
-			}
-			queued, queuedCount, err := entriesBeyond(ctx, tx, inbox.ID, max(inbox.Covered, inbox.Acknowledged, inbox.ExpiredThrough))
-			if err != nil {
-				return err
-			}
-			_, unacknowledgedCount, err := entriesBeyond(ctx, tx, inbox.ID, max(inbox.Acknowledged, inbox.ExpiredThrough))
-			if err != nil {
-				return err
-			}
-			state := InboxNoticeState{
-				InboxID: inbox.ID, SessionID: inbox.SessionID, Queued: queuedCount, Unacknowledged: unacknowledgedCount - queuedCount,
-				NoticeWait: noticeWait(inbox, notice, queued, states.ObservedAt, debounce), Error: inbox.DeliveryError,
-			}
-			if notice != nil {
-				progress := notice.Progress()
-				state.Notice = &progress
-				if notice.Error != nil {
-					state.Error = notice.Error
-				}
-			}
-			states.Inboxes = append(states.Inboxes, state)
-		}
-		return nil
-	})
-	return states, err
 }

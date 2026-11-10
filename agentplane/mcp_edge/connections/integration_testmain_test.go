@@ -13,14 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -62,7 +61,8 @@ var (
 type testGate struct {
 	mu       sync.Mutex
 	refused  map[string]bool
-	draining chan struct{}
+	draining context.Context
+	drain    context.CancelFunc
 }
 
 func subjectOf(ctx context.Context) string {
@@ -82,7 +82,7 @@ func (g *testGate) Recheck(ctx context.Context) error {
 	return nil
 }
 
-func (g *testGate) Draining() <-chan struct{} { return g.draining }
+func (g *testGate) DrainingContext() context.Context { return g.draining }
 
 // refuse stops accepting the operator's bearer, as the Gate does once a token expires.
 func (g *testGate) refuse(subject string) {
@@ -134,11 +134,7 @@ type served struct {
 func serve(t *testing.T) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
 	listening, err := url.Parse(dsn)
 	if err != nil {
@@ -152,33 +148,40 @@ func serve(t *testing.T) *served {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { updates.Close() })
+	draining, drain := context.WithCancel(context.Background())
+	t.Cleanup(drain)
 	s := &served{
 		db:      db,
-		gate:    &testGate{refused: map[string]bool{}, draining: make(chan struct{})},
+		gate:    &testGate{refused: map[string]bool{}, draining: draining, drain: drain},
 		callers: &testCallers{accounts: []auth.Account{callerAccount, otherAccount}},
 	}
 	s.store = NewStore(db, s.callers)
 	server := grpc.NewServer()
 	pb.RegisterConnectionServiceServer(server, NewService(s.store, s.gate, updates))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpFacade, err := facade.NewHandler(t.Context(), listener.Addr().String(), 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpFacade, err := facade.NewHandler(t.Context(), grpcListener.Addr().String(), 0, pb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpServer := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	facade.MountGRPC(httpServer, server)
-	go func() { _ = httpServer.Serve(listener) }()
+	go func() { _ = server.Serve(grpcListener) }()
+	t.Cleanup(server.Stop)
+	go func() { _ = httpServer.Serve(httpListener) }()
 	t.Cleanup(func() { httpServer.Close() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	s.client = pb.NewConnectionServiceClient(connection)
-	s.url = "http://" + listener.Addr().String()
+	s.url = "http://" + httpListener.Addr().String()
 	return s
 }
 

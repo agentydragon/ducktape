@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -39,7 +38,7 @@ func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 	}
 	for name, v := range golden.Views {
 		t.Run(name, func(t *testing.T) {
-			index := informer.NewIndex(time.Hour, nil)
+			index := informer.NewIndex(nil)
 			for _, set := range v.PolicySets {
 				index.Rules.PutPolicySet(&set)
 			}
@@ -47,17 +46,14 @@ func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 				index.Rules.PutBinding(&binding)
 			}
 			if v.Synced {
-				index.Freshness.MarkSynced()
-				for _, kind := range []reader.Kind{reader.PolicySets, reader.PolicyBindings} {
-					index.Freshness.RecordCycle(kind, time.Now())
-				}
+				index.Health.MarkSynced()
 			}
 			for viewer, written := range map[Reader]json.RawMessage{Workload: v.Workload, Operator: v.Operator} {
 				want := &action_servicepb.CallerActionPolicy{}
 				if err := protojson.Unmarshal(written, want); err != nil {
 					t.Fatal(err)
 				}
-				got := View(index, v.Subject, viewer)
+				got := View(index, reader.ServiceAccount(v.Subject), viewer)
 				// A refusal's reason is its parser's own text: only that the set is refused is compared.
 				for _, view := range []*action_servicepb.CallerActionPolicy{got, want} {
 					for _, binding := range view.GetBindings() {

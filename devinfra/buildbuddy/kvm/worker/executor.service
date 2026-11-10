@@ -1,0 +1,20 @@
+[Unit]
+Description=BuildBuddy remote execution worker
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+RequiresMountsFor=/buildbuddy /run/buildbuddy-key
+ConditionKernelCommandLine=apparmor=0
+ConditionPathExists=/etc/buildbuddy/executor.yaml
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/buildbuddy-kvm-worker/run-executor
+ExecStop=/usr/bin/docker stop --time 30 buildbuddy-kvm-worker-executor
+ExecStopPost=/usr/bin/rm -f /run/buildbuddy-executor/environment
+Restart=always
+RestartSec=10
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

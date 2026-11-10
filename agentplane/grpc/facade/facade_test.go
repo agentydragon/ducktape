@@ -28,8 +28,7 @@ type dispatcher struct {
 	filter        *dispatcherpb.DispatchFilter
 	submitted     *dispatcherpb.SubmitInputRequest
 	cancelled     string
-	unaryStarted  chan struct{}
-	unaryCanceled chan struct{}
+	blockUnary    bool
 	watchStarted  chan struct{}
 	watchCanceled chan struct{}
 }
@@ -38,10 +37,8 @@ func (d *dispatcher) GetDispatch(ctx context.Context, request *dispatcherpb.GetD
 	d.mu.Lock()
 	d.authorization = metadata.ValueFromIncomingContext(ctx, "authorization")
 	d.mu.Unlock()
-	if d.unaryStarted != nil {
-		close(d.unaryStarted)
+	if d.blockUnary {
 		<-ctx.Done()
-		close(d.unaryCanceled)
 		return nil, status.FromContextError(ctx.Err()).Err()
 	}
 	if request.GetCommandId() == "missing" {
@@ -115,17 +112,29 @@ func serveWithUnaryTimeout(t *testing.T, unaryTimeout time.Duration, servicer *d
 	return servicer, facade.URL
 }
 
-func TestUnaryTimeoutCancelsRPC(t *testing.T) {
-	servicer := &dispatcher{unaryStarted: make(chan struct{}), unaryCanceled: make(chan struct{})}
-	_, facade := serveWithUnaryTimeout(t, 50*time.Millisecond, servicer)
+func TestUnaryTimeoutReturnsGatewayTimeout(t *testing.T) {
+	_, facade := serveWithUnaryTimeout(t, 50*time.Millisecond, &dispatcher{blockUnary: true})
 	response := get(t, facade+"/v1/dispatches/command-1", "Bearer token-1")
 	if response.StatusCode != http.StatusGatewayTimeout {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusGatewayTimeout)
 	}
-	select {
-	case <-servicer.unaryCanceled:
-	case <-time.After(time.Second):
-		t.Fatal("configured unary timeout did not cancel the gRPC call")
+}
+
+func TestUnaryTimeoutCancelsInvocation(t *testing.T) {
+	// The deadline may expire before a network RPC reaches its servicer. Observe
+	// cancellation at the invoker boundary without depending on transport startup.
+	invoke := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+		<-ctx.Done()
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := unaryTimeoutInterceptor(50*time.Millisecond)(ctx, "/agentplane.session_dispatcher.SessionDispatcher/GetDispatch", nil, nil, nil, invoke)
+	if status.Code(err) != codes.DeadlineExceeded {
+		t.Fatalf("invocation error = %v, want DeadlineExceeded", err)
+	}
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("unary timeout canceled the parent context: %v", err)
 	}
 }
 
@@ -268,7 +277,7 @@ func TestServerStreamAnswersOneResultObjectPerLine(t *testing.T) {
 func TestCommandTakesSessionFromPathAndRestFromBody(t *testing.T) {
 	servicer, facade := serve(t)
 	response := send(t, http.MethodPost, facade+"/v1/sessions/session-1:submitInput", "Bearer token-1",
-		`{"commandId": "command-1", "sandbox": "sandbox-1", "text": "hello"}`)
+		`{"commandId": "command-1", "text": "hello"}`)
 	var body struct {
 		Dispatch struct{ State string } `json:"dispatch"`
 	}
@@ -280,7 +289,7 @@ func TestCommandTakesSessionFromPathAndRestFromBody(t *testing.T) {
 	}
 	servicer.mu.Lock()
 	defer servicer.mu.Unlock()
-	if got := servicer.submitted; got.GetSessionId() != "session-1" || got.GetCommandId() != "command-1" || got.GetSandbox() != "sandbox-1" || got.GetText() != "hello" {
+	if got := servicer.submitted; got.GetSessionId() != "session-1" || got.GetCommandId() != "command-1" || got.GetText() != "hello" {
 		t.Fatalf("servicer saw %v", got)
 	}
 }

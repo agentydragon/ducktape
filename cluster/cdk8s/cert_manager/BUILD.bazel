@@ -23,7 +23,10 @@ py_library(
 py_library(
     name = "cluster_ca",
     srcs = ["cluster_ca.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
     deps = [
         ":config",
         "//cluster/cdk8s/providers/cert_manager:bundle",
@@ -33,6 +36,7 @@ py_library(
         "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
         "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )
 

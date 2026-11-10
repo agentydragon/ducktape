@@ -1,21 +1,43 @@
+use source_identity::ChunkId;
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use artifact::ChunkId;
 use artifact::metrics::DecompositionMetrics;
 use artifact::reports::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
     PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
 };
-use artifact::script_output::materialize_artifact_scripts;
 use identifier_rename_queue::compute_identifier_rename_queue;
-use output_layout::DebundleOutputLayout;
-use reconstruction::ValidatedPlan;
+use output_layout::{DebundleOutputLayout, GATE_REJECTED_MARKER};
+use reconstruction::{EmittablePlan, RejectedPlan, ValidatedPlan};
+
+mod script_output;
+
+pub use script_output::MaterializedScripts;
+use script_output::materialize_artifact_scripts;
+
+/// Render only the immutable files owned by the accepted program. Rejected
+/// files go through `write_js_tree`, which writes their inspection marker first.
+pub fn materialize_accepted_scripts(
+    plan: &ValidatedPlan,
+    app_root: &Path,
+    report_tree_root: &Path,
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+) -> Result<MaterializedScripts> {
+    materialize_artifact_scripts(
+        plan.files(),
+        app_root,
+        report_tree_root,
+        decomposition_by_chunk,
+        plan.excluded_chunk_ids(),
+    )
+}
 
 pub struct WriteTreeInput<'a> {
-    pub plan: &'a ValidatedPlan,
+    pub plan: EmittablePlan<'a>,
     pub out_dir: &'a Path,
     pub lowerings: &'a [SelectedModuleLowering],
     pub counts: &'a ArtifactCounts,
@@ -32,6 +54,11 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     }
     let layout = DebundleOutputLayout::new(input.out_dir);
     layout.prepare()?;
+    // The marker precedes the files it describes, so an interrupted write
+    // never leaves an unmarked partial tree behind.
+    if let EmittablePlan::Rejected(rejected) = input.plan {
+        write_gate_rejected_marker(input.out_dir, rejected, RejectedArtifacts::ReadableTree)?;
+    }
 
     let materialized = materialize_artifact_scripts(
         input.plan.files(),
@@ -71,18 +98,66 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     Ok(())
 }
 
+/// The `GATE_REJECTED` marker: why the tree beside it is not runnable, and
+/// where the gate's evidence is.
+#[derive(Clone, Copy)]
+pub enum RejectedArtifacts {
+    ReadableTree,
+    ReportsOnly,
+}
+
+pub fn write_gate_rejected_marker(
+    out_dir: &Path,
+    rejected: &RejectedPlan,
+    artifacts: RejectedArtifacts,
+) -> Result<()> {
+    fs::create_dir_all(out_dir)?;
+    fs::write(
+        out_dir.join(GATE_REJECTED_MARKER),
+        render_gate_rejected_marker(rejected, artifacts),
+    )?;
+    Ok(())
+}
+
+fn render_gate_rejected_marker(rejected: &RejectedPlan, artifacts: RejectedArtifacts) -> String {
+    let mut text = format!(
+        "{GATE_REJECTED_MARKER}: this tree is NOT runnable.\n\
+         The realizability gate rejected the spec; `debundle run --emit-on-rejection` wrote the \
+         logical modules for reading only. No browser harness or vendor replacement assets were \
+         written. Fix the spec and rerun without the flag for runnable output.\n\n"
+    );
+    if matches!(artifacts, RejectedArtifacts::ReportsOnly) {
+        text = format!(
+            "{GATE_REJECTED_MARKER}: this output is NOT runnable.\nThe realizability gate rejected the spec. This reports-only export contains no emitted JS, browser harness or vendor assets.\n\n"
+        );
+    }
+    for rejection in rejected.rejections() {
+        text.push_str(&rejection.summary_line());
+        text.push('\n');
+        if let Some(path) = &rejection.dependency_graph_report {
+            text.push_str(&format!("  dependency graph: {}\n", path.display()));
+        }
+    }
+    text.push('\n');
+    text.push_str(&rejected.diagnostic());
+    text.push('\n');
+    text
+}
+
 /// The browser harness extends the same emitted tree with HTML and assets.
 /// Keep its chunks report, rename queue and package marker aligned with tree
 /// output.
 pub fn write_common_emission_reports(
     layout: &DebundleOutputLayout,
-    plan: &ValidatedPlan,
+    plan: EmittablePlan<'_>,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<()> {
-    let files = plan.files();
-    let excluded_chunk_ids = plan.excluded_chunk_ids();
-    let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
+    let queue = compute_identifier_rename_queue(
+        plan.files(),
+        decomposition_by_chunk,
+        plan.excluded_chunk_ids(),
+    )?;
     write_json(layout.rename_queue_report(), &queue)?;
     write_json(
         layout.chunks_report(),

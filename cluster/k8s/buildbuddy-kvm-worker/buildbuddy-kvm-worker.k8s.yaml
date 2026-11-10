@@ -1,0 +1,1282 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+data:
+  bootstrap.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    config_dir=/run/buildbuddy-config
+    install_dir=/usr/local/libexec/buildbuddy-kvm-worker
+    for path in /buildbuddy /run/buildbuddy-key "$config_dir"; do
+      mountpoint --quiet "$path"
+    done
+    test -s /run/buildbuddy-key/api-key
+    test "$(findmnt --noheadings --output FSTYPE --target /buildbuddy)" = ext4
+
+    install -Dm0644 "$config_dir/executor.yaml" /etc/buildbuddy/executor.yaml
+    install -Dm0644 "$config_dir/daemon.json" /etc/docker/daemon.json
+    install -Dm0644 "$config_dir/docker-seccomp.json" /etc/docker/buildbuddy-seccomp.json
+    install -Dm0644 "$config_dir/containerd.toml" /etc/containerd/config.toml
+    install -Dm0644 "$config_dir/containerd-mounts.conf" /etc/systemd/system/containerd.service.d/10-buildbuddy-work.conf
+    install -Dm0644 "$config_dir/executor.service" /etc/systemd/system/buildbuddy-executor.service
+    install -Dm0644 "$config_dir/modules-load.conf" /etc/modules-load.d/buildbuddy-kvm-worker.conf
+    install -Dm0644 "$config_dir/modprobe.conf" /etc/modprobe.d/buildbuddy-kvm-worker.conf
+    install -Dm0644 "$config_dir/sysctl.conf" /etc/sysctl.d/90-buildbuddy-kvm-worker.conf
+    install -Dm0644 "$config_dir/k3s.yaml" /etc/rancher/k3s/config.yaml
+    install -Dm0644 "$config_dir/registries.yaml" /etc/rancher/k3s/registries.yaml
+    install -Dm0755 "$config_dir/run-executor.sh" "$install_dir/run-executor"
+    if grep -qw svm /proc/cpuinfo; then
+      kvm_module=kvm_amd
+    elif grep -qw vmx /proc/cpuinfo; then
+      kvm_module=kvm_intel
+    else
+      echo "The guest CPU does not expose SVM or VMX" >&2
+      exit 1
+    fi
+    printf '%s\n' "$kvm_module" >>/etc/modules-load.d/buildbuddy-kvm-worker.conf
+    modprobe -a br_netfilter bridge ip6_tables ip6table_nat ip_tables iptable_nat \
+      "$kvm_module" loop nf_conntrack nf_nat overlay tun vhost_net vhost_vsock vxlan
+    case "$(cat "/sys/module/$kvm_module/parameters/nested")" in
+      1 | Y) ;;
+      *)
+        echo "Nested KVM is disabled for $kvm_module" >&2
+        exit 1
+        ;;
+    esac
+    udevadm settle
+    test -c /dev/kvm
+    test -c /dev/loop-control
+    test -b /dev/loop0
+    test -c /dev/net/tun
+    sysctl -p /etc/sysctl.d/90-buildbuddy-kvm-worker.conf
+
+    # Docker's default AppArmor profile denies the mounts K3s needs. This setting
+    # applies only to this dedicated guest. Cloud-init reboots after finishing setup.
+    install -d /etc/default/grub.d
+    cat >/etc/default/grub.d/90-buildbuddy-kvm-worker.cfg <<'GRUB'
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }apparmor=0 loop.max_loop=64"
+    GRUB
+    update-grub
+
+    # Administrative console access requires outer-cluster permissions; SSH stays off.
+    install -d /etc/systemd/system/serial-getty@ttyS0.service.d
+    cat >/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf <<'UNIT'
+    [Service]
+    ExecStart=
+    ExecStart=-/sbin/agetty --autologin root --noclear %I 115200,38400,9600 vt102
+    UNIT
+    systemctl mask --now ssh.service ssh.socket
+    systemctl stop docker.service docker.socket containerd.service
+    systemctl daemon-reload
+    systemctl restart containerd.service
+    systemctl enable docker.service
+    systemctl restart docker.service
+    apt-get clean
+    systemctl enable buildbuddy-executor.service
+    if grep --word-regexp --quiet 'apparmor=0' /proc/cmdline; then
+      systemctl start buildbuddy-executor.service
+    else
+      touch /run/reboot-required
+    fi
+  containerd-mounts.conf: |
+    [Unit]
+    RequiresMountsFor=/buildbuddy
+  containerd.toml: |
+    version = 2
+    root = "/buildbuddy/containerd"
+  daemon.json: |
+    {
+      "data-root": "/buildbuddy/docker",
+      "seccomp-profile": "/etc/docker/buildbuddy-seccomp.json",
+      "insecure-registries": ["oci-cache.oci-cache.svc.cluster.local:80"]
+    }
+  docker-seccomp.json: |
+    {
+      "defaultAction": "SCMP_ACT_ERRNO",
+      "defaultErrnoRet": 1,
+      "archMap": [
+        {
+          "architecture": "SCMP_ARCH_X86_64",
+          "subArchitectures": ["SCMP_ARCH_X86", "SCMP_ARCH_X32"]
+        },
+        {
+          "architecture": "SCMP_ARCH_AARCH64",
+          "subArchitectures": ["SCMP_ARCH_ARM"]
+        },
+        {
+          "architecture": "SCMP_ARCH_MIPS64",
+          "subArchitectures": ["SCMP_ARCH_MIPS", "SCMP_ARCH_MIPS64N32"]
+        },
+        {
+          "architecture": "SCMP_ARCH_MIPS64N32",
+          "subArchitectures": ["SCMP_ARCH_MIPS", "SCMP_ARCH_MIPS64"]
+        },
+        {
+          "architecture": "SCMP_ARCH_MIPSEL64",
+          "subArchitectures": ["SCMP_ARCH_MIPSEL", "SCMP_ARCH_MIPSEL64N32"]
+        },
+        {
+          "architecture": "SCMP_ARCH_MIPSEL64N32",
+          "subArchitectures": ["SCMP_ARCH_MIPSEL", "SCMP_ARCH_MIPSEL64"]
+        },
+        {
+          "architecture": "SCMP_ARCH_S390X",
+          "subArchitectures": ["SCMP_ARCH_S390"]
+        },
+        {
+          "architecture": "SCMP_ARCH_RISCV64",
+          "subArchitectures": null
+        }
+      ],
+      "syscalls": [
+        {
+          "names": [
+            "accept",
+            "accept4",
+            "access",
+            "adjtimex",
+            "alarm",
+            "bind",
+            "brk",
+            "cachestat",
+            "capget",
+            "capset",
+            "chdir",
+            "chmod",
+            "chown",
+            "chown32",
+            "clock_adjtime",
+            "clock_adjtime64",
+            "clock_getres",
+            "clock_getres_time64",
+            "clock_gettime",
+            "clock_gettime64",
+            "clock_nanosleep",
+            "clock_nanosleep_time64",
+            "close",
+            "close_range",
+            "connect",
+            "copy_file_range",
+            "creat",
+            "dup",
+            "dup2",
+            "dup3",
+            "epoll_create",
+            "epoll_create1",
+            "epoll_ctl",
+            "epoll_ctl_old",
+            "epoll_pwait",
+            "epoll_pwait2",
+            "epoll_wait",
+            "epoll_wait_old",
+            "eventfd",
+            "eventfd2",
+            "execve",
+            "execveat",
+            "exit",
+            "exit_group",
+            "faccessat",
+            "faccessat2",
+            "fadvise64",
+            "fadvise64_64",
+            "fallocate",
+            "fanotify_mark",
+            "fchdir",
+            "fchmod",
+            "fchmodat",
+            "fchmodat2",
+            "fchown",
+            "fchown32",
+            "fchownat",
+            "fcntl",
+            "fcntl64",
+            "fdatasync",
+            "fgetxattr",
+            "flistxattr",
+            "flock",
+            "fork",
+            "fremovexattr",
+            "fsetxattr",
+            "fstat",
+            "fstat64",
+            "fstatat64",
+            "fstatfs",
+            "fstatfs64",
+            "fsync",
+            "ftruncate",
+            "ftruncate64",
+            "futex",
+            "futex_requeue",
+            "futex_time64",
+            "futex_wait",
+            "futex_waitv",
+            "futex_wake",
+            "futimesat",
+            "getcpu",
+            "getcwd",
+            "getdents",
+            "getdents64",
+            "getegid",
+            "getegid32",
+            "geteuid",
+            "geteuid32",
+            "getgid",
+            "getgid32",
+            "getgroups",
+            "getgroups32",
+            "getitimer",
+            "getpeername",
+            "getpgid",
+            "getpgrp",
+            "getpid",
+            "getppid",
+            "getpriority",
+            "getrandom",
+            "getresgid",
+            "getresgid32",
+            "getresuid",
+            "getresuid32",
+            "getrlimit",
+            "get_robust_list",
+            "getrusage",
+            "getsid",
+            "getsockname",
+            "getsockopt",
+            "get_thread_area",
+            "gettid",
+            "gettimeofday",
+            "getuid",
+            "getuid32",
+            "getxattr",
+            "getxattrat",
+            "inotify_add_watch",
+            "inotify_init",
+            "inotify_init1",
+            "inotify_rm_watch",
+            "io_cancel",
+            "ioctl",
+            "io_destroy",
+            "io_getevents",
+            "io_pgetevents",
+            "io_pgetevents_time64",
+            "ioprio_get",
+            "ioprio_set",
+            "io_setup",
+            "io_submit",
+            "ipc",
+            "kill",
+            "landlock_add_rule",
+            "landlock_create_ruleset",
+            "landlock_restrict_self",
+            "lchown",
+            "lchown32",
+            "lgetxattr",
+            "link",
+            "linkat",
+            "listen",
+            "listmount",
+            "listxattr",
+            "listxattrat",
+            "llistxattr",
+            "_llseek",
+            "lremovexattr",
+            "lseek",
+            "lsetxattr",
+            "lstat",
+            "lstat64",
+            "madvise",
+            "map_shadow_stack",
+            "membarrier",
+            "memfd_create",
+            "memfd_secret",
+            "mincore",
+            "mkdir",
+            "mkdirat",
+            "mknod",
+            "mknodat",
+            "mlock",
+            "mlock2",
+            "mlockall",
+            "mmap",
+            "mmap2",
+            "mprotect",
+            "mq_getsetattr",
+            "mq_notify",
+            "mq_open",
+            "mq_timedreceive",
+            "mq_timedreceive_time64",
+            "mq_timedsend",
+            "mq_timedsend_time64",
+            "mq_unlink",
+            "mremap",
+            "mseal",
+            "msgctl",
+            "msgget",
+            "msgrcv",
+            "msgsnd",
+            "msync",
+            "munlock",
+            "munlockall",
+            "munmap",
+            "name_to_handle_at",
+            "nanosleep",
+            "newfstatat",
+            "_newselect",
+            "open",
+            "openat",
+            "openat2",
+            "pause",
+            "pidfd_open",
+            "pidfd_send_signal",
+            "pipe",
+            "pipe2",
+            "pkey_alloc",
+            "pkey_free",
+            "pkey_mprotect",
+            "poll",
+            "ppoll",
+            "ppoll_time64",
+            "prctl",
+            "pread64",
+            "preadv",
+            "preadv2",
+            "prlimit64",
+            "process_mrelease",
+            "pselect6",
+            "pselect6_time64",
+            "pwrite64",
+            "pwritev",
+            "pwritev2",
+            "read",
+            "readahead",
+            "readlink",
+            "readlinkat",
+            "readv",
+            "recv",
+            "recvfrom",
+            "recvmmsg",
+            "recvmmsg_time64",
+            "recvmsg",
+            "remap_file_pages",
+            "removexattr",
+            "removexattrat",
+            "rename",
+            "renameat",
+            "renameat2",
+            "restart_syscall",
+            "riscv_hwprobe",
+            "rmdir",
+            "rseq",
+            "rt_sigaction",
+            "rt_sigpending",
+            "rt_sigprocmask",
+            "rt_sigqueueinfo",
+            "rt_sigreturn",
+            "rt_sigsuspend",
+            "rt_sigtimedwait",
+            "rt_sigtimedwait_time64",
+            "rt_tgsigqueueinfo",
+            "sched_getaffinity",
+            "sched_getattr",
+            "sched_getparam",
+            "sched_get_priority_max",
+            "sched_get_priority_min",
+            "sched_getscheduler",
+            "sched_rr_get_interval",
+            "sched_rr_get_interval_time64",
+            "sched_setaffinity",
+            "sched_setattr",
+            "sched_setparam",
+            "sched_setscheduler",
+            "sched_yield",
+            "seccomp",
+            "select",
+            "semctl",
+            "semget",
+            "semop",
+            "semtimedop",
+            "semtimedop_time64",
+            "send",
+            "sendfile",
+            "sendfile64",
+            "sendmmsg",
+            "sendmsg",
+            "sendto",
+            "setfsgid",
+            "setfsgid32",
+            "setfsuid",
+            "setfsuid32",
+            "setgid",
+            "setgid32",
+            "setgroups",
+            "setgroups32",
+            "setitimer",
+            "setpgid",
+            "setpriority",
+            "setregid",
+            "setregid32",
+            "setresgid",
+            "setresgid32",
+            "setresuid",
+            "setresuid32",
+            "setreuid",
+            "setreuid32",
+            "setrlimit",
+            "set_robust_list",
+            "setsid",
+            "setsockopt",
+            "set_thread_area",
+            "set_tid_address",
+            "setuid",
+            "setuid32",
+            "setxattr",
+            "setxattrat",
+            "shmat",
+            "shmctl",
+            "shmdt",
+            "shmget",
+            "shutdown",
+            "sigaltstack",
+            "signalfd",
+            "signalfd4",
+            "sigprocmask",
+            "sigreturn",
+            "socketcall",
+            "socketpair",
+            "splice",
+            "stat",
+            "stat64",
+            "statfs",
+            "statfs64",
+            "statmount",
+            "statx",
+            "symlink",
+            "symlinkat",
+            "sync",
+            "sync_file_range",
+            "syncfs",
+            "sysinfo",
+            "tee",
+            "tgkill",
+            "time",
+            "timer_create",
+            "timer_delete",
+            "timer_getoverrun",
+            "timer_gettime",
+            "timer_gettime64",
+            "timer_settime",
+            "timer_settime64",
+            "timerfd_create",
+            "timerfd_gettime",
+            "timerfd_gettime64",
+            "timerfd_settime",
+            "timerfd_settime64",
+            "times",
+            "tkill",
+            "truncate",
+            "truncate64",
+            "ugetrlimit",
+            "umask",
+            "uname",
+            "unlink",
+            "unlinkat",
+            "uretprobe",
+            "utime",
+            "utimensat",
+            "utimensat_time64",
+            "utimes",
+            "vfork",
+            "vmsplice",
+            "wait4",
+            "waitid",
+            "waitpid",
+            "write",
+            "writev"
+          ],
+          "action": "SCMP_ACT_ALLOW"
+        },
+        {
+          "names": ["process_vm_readv", "process_vm_writev", "ptrace"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "minKernel": "4.8"
+          }
+        },
+        {
+          "names": ["socket"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 40,
+              "op": "SCMP_CMP_NE"
+            }
+          ]
+        },
+        {
+          "names": ["personality"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 0,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["personality"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 8,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["personality"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 131072,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["personality"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 131080,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["personality"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 4294967295,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["sync_file_range2", "swapcontext"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "arches": ["ppc64le"]
+          }
+        },
+        {
+          "names": ["arm_fadvise64_64", "arm_sync_file_range", "sync_file_range2", "breakpoint", "cacheflush", "set_tls"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "arches": ["arm", "arm64"]
+          }
+        },
+        {
+          "names": ["arch_prctl"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "arches": ["amd64", "x32"]
+          }
+        },
+        {
+          "names": ["modify_ldt"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "arches": ["amd64", "x32", "x86"]
+          }
+        },
+        {
+          "names": ["s390_pci_mmio_read", "s390_pci_mmio_write", "s390_runtime_instr"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "arches": ["s390", "s390x"]
+          }
+        },
+        {
+          "names": ["riscv_flush_icache"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "arches": ["riscv64"]
+          }
+        },
+        {
+          "names": ["open_by_handle_at"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_DAC_READ_SEARCH"]
+          }
+        },
+        {
+          "names": [
+            "bpf",
+            "clone",
+            "clone3",
+            "fanotify_init",
+            "fsconfig",
+            "fsmount",
+            "fsopen",
+            "fspick",
+            "lookup_dcookie",
+            "lsm_get_self_attr",
+            "lsm_list_modules",
+            "lsm_set_self_attr",
+            "mount",
+            "mount_setattr",
+            "move_mount",
+            "open_tree",
+            "perf_event_open",
+            "quotactl",
+            "quotactl_fd",
+            "setdomainname",
+            "sethostname",
+            "setns",
+            "syslog",
+            "umount",
+            "umount2",
+            "unshare"
+          ],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_ADMIN"]
+          }
+        },
+        {
+          "names": ["clone"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 2114060288,
+              "op": "SCMP_CMP_MASKED_EQ"
+            }
+          ],
+          "excludes": {
+            "caps": ["CAP_SYS_ADMIN"],
+            "arches": ["s390", "s390x"]
+          }
+        },
+        {
+          "names": ["clone"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 1,
+              "value": 2114060288,
+              "op": "SCMP_CMP_MASKED_EQ"
+            }
+          ],
+          "comment": "s390 parameter ordering for clone is different",
+          "includes": {
+            "arches": ["s390", "s390x"]
+          },
+          "excludes": {
+            "caps": ["CAP_SYS_ADMIN"]
+          }
+        },
+        {
+          "names": ["clone3"],
+          "action": "SCMP_ACT_ERRNO",
+          "errnoRet": 38,
+          "excludes": {
+            "caps": ["CAP_SYS_ADMIN"]
+          }
+        },
+        {
+          "names": ["reboot"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_BOOT"]
+          }
+        },
+        {
+          "names": ["chroot"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_CHROOT"]
+          }
+        },
+        {
+          "names": ["delete_module", "init_module", "finit_module"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_MODULE"]
+          }
+        },
+        {
+          "names": ["acct"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_PACCT"]
+          }
+        },
+        {
+          "names": ["kcmp", "pidfd_getfd", "process_madvise", "process_vm_readv", "process_vm_writev", "ptrace"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_PTRACE"]
+          }
+        },
+        {
+          "names": ["iopl", "ioperm"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_RAWIO"]
+          }
+        },
+        {
+          "names": ["settimeofday", "stime", "clock_settime", "clock_settime64"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_TIME"]
+          }
+        },
+        {
+          "names": ["vhangup"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_TTY_CONFIG"]
+          }
+        },
+        {
+          "names": ["get_mempolicy", "mbind", "set_mempolicy", "set_mempolicy_home_node"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_NICE"]
+          }
+        },
+        {
+          "names": ["syslog"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYSLOG"]
+          }
+        },
+        {
+          "names": ["bpf"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_BPF"]
+          }
+        },
+        {
+          "names": ["perf_event_open"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_PERFMON"]
+          }
+        },
+        {
+          "names": ["keyctl"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 1,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["keyctl"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 5,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["keyctl"],
+          "action": "SCMP_ACT_ALLOW",
+          "args": [
+            {
+              "index": 0,
+              "value": 6,
+              "op": "SCMP_CMP_EQ"
+            }
+          ]
+        },
+        {
+          "names": ["pivot_root"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_ADMIN"]
+          }
+        }
+      ]
+    }
+  executor.service: |
+    [Unit]
+    Description=BuildBuddy remote execution worker
+    Wants=network-online.target
+    After=network-online.target docker.service
+    Requires=docker.service
+    RequiresMountsFor=/buildbuddy /run/buildbuddy-key
+    ConditionKernelCommandLine=apparmor=0
+    ConditionPathExists=/etc/buildbuddy/executor.yaml
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/local/libexec/buildbuddy-kvm-worker/run-executor
+    ExecStop=/usr/bin/docker stop --time 30 buildbuddy-kvm-worker-executor
+    ExecStopPost=/usr/bin/rm -f /run/buildbuddy-executor/environment
+    Restart=always
+    RestartSec=10
+    TimeoutStopSec=45
+
+    [Install]
+    WantedBy=multi-user.target
+  executor.yaml: |
+    # Test actions run nested Kubernetes/KubeVirt with privileged pods. The executor
+    # lives inside a VM so those privileges are confined to the guest.
+    docker_cap_add: ALL
+    executor:
+      app_target: grpcs://remote.buildbuddy.io:443
+      api_key: "${BUILDBUDDY_API_KEY}"
+      millicpu: 4000
+      # 7 GiB of the VM's 8 GiB; sizing evidence is beside the VM memory in cluster/cdk8s/buildbuddy_kvm_worker.py.
+      memory_bytes: 7516192768
+      max_concurrent_tasks: 1
+      root_directory: /buildbuddy/remotebuilds
+      local_cache_directory: /buildbuddy/filecache
+      local_cache_size_bytes: 40000000000
+      docker_socket: /var/run/docker.sock
+      default_isolation_type: docker
+      enable_bare_runner: false
+      enable_firecracker: false
+      enable_oci: false
+      enable_podman: false
+      docker_inherit_user_ids: true
+      docker_volumes:
+        - /buildbuddy/k3s:/var/lib/k3s-env
+        - /etc/rancher/k3s:/etc/rancher/k3s:ro
+      docker_devices:
+        - path_on_host: /dev
+          path_in_container: /dev
+          cgroup_permissions: rwm
+      container_image_name_rewrites:
+        - prefix: ghcr.io/
+          replacement: oci-cache.oci-cache.svc.cluster.local:80/ghcr/
+  k3s.yaml: |
+    disable-default-registry-endpoint: true
+  modprobe.conf: |
+    options kvm_amd nested=1
+    options kvm_intel nested=1
+    options loop max_loop=64
+  modules-load.conf: |
+    br_netfilter
+    bridge
+    ip6_tables
+    ip6table_nat
+    ip_tables
+    iptable_nat
+    loop
+    nf_conntrack
+    nf_nat
+    overlay
+    tun
+    vhost_net
+    vhost_vsock
+    vxlan
+  registries.yaml: |
+    mirrors:
+      docker.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: docker-hub/$1
+      ghcr.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: ghcr/$1
+      quay.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: quay/$1
+      registry.k8s.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: k8s/$1
+      gcr.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: gcr/$1
+  run-executor.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    readonly key_file=/run/buildbuddy-key/api-key
+    readonly environment_dir=/run/buildbuddy-executor
+    readonly environment_file="$environment_dir/environment"
+    readonly executor_name=buildbuddy-kvm-worker-executor
+    readonly executor_image=buildbuddy.bbcr.io/public/buildbuddy-executor-enterprise@sha256:465d670159f7f2be756eb31815d7c6be54ce812de74a5cc49d3f6bda1fc7b078
+
+    if [[ ! -s "$key_file" ]]; then
+      echo "BuildBuddy API key is missing from the mounted bbkey disk" >&2
+      exit 1
+    fi
+
+    install -d -o root -g root -m 0700 "$environment_dir"
+    umask 077
+    api_key="$(/usr/bin/tr -d '\r\n' <"$key_file")"
+    if [[ -z "$api_key" ]]; then
+      echo "BuildBuddy API key is empty" >&2
+      exit 1
+    fi
+    printf 'BUILDBUDDY_API_KEY=%s\n' "$api_key" >"$environment_file"
+    unset api_key
+
+    if /usr/bin/docker container inspect "$executor_name" >/dev/null 2>&1; then
+      /usr/bin/docker container rm --force "$executor_name"
+    fi
+
+    exec /usr/bin/docker run \
+      --rm \
+      --name "$executor_name" \
+      --pull=missing \
+      --network host \
+      --env "MY_HOSTNAME=$(hostname)" \
+      --env MY_POOL=kvm-vm \
+      --env-file "$environment_file" \
+      --volume /etc/buildbuddy/executor.yaml:/config.yaml:ro \
+      --volume /var/run/docker.sock:/var/run/docker.sock \
+      --volume /buildbuddy:/buildbuddy \
+      "$executor_image" \
+      --config_file=/config.yaml \
+      --server_type=buildbuddy-executor
+  sysctl.conf: |
+    net.bridge.bridge-nf-call-iptables = 1
+    net.bridge.bridge-nf-call-ip6tables = 1
+    net.ipv4.ip_forward = 1
+    vm.overcommit_memory = 1
+    kernel.panic = 10
+    kernel.panic_on_oops = 1
+---
+apiVersion: pool.kubevirt.io/v1beta1
+kind: VirtualMachinePool
+metadata:
+  labels:
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  maxUnavailable: 1
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  virtualMachineTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
+    spec:
+      dataVolumeTemplates:
+        - metadata:
+            name: work
+          spec:
+            source:
+              blank: {}
+            storage:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 80Gi
+              storageClassName: piraeus-ssd-local
+              volumeMode: Filesystem
+      runStrategy: Always
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: buildbuddy-kvm-worker
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: cpu-feature.node.kubevirt.io/svm
+                        operator: In
+                        values:
+                          - "true"
+                  - matchExpressions:
+                      - key: cpu-feature.node.kubevirt.io/vmx
+                        operator: In
+                        values:
+                          - "true"
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: app.kubernetes.io/part-of
+                        operator: In
+                        values:
+                          - buildbuddy-kvm-worker
+                  topologyKey: kubernetes.io/hostname
+          domain:
+            cpu:
+              cores: 4
+              features:
+                - name: svm
+                  policy: optional
+                - name: vmx
+                  policy: optional
+              model: host-passthrough
+            devices:
+              autoattachGraphicsDevice: false
+              disks:
+                - bootOrder: 1
+                  disk:
+                    bus: virtio
+                  name: rootdisk
+                - disk:
+                    bus: virtio
+                  name: work
+                  serial: work
+                - disk:
+                    bus: virtio
+                  name: buildbuddy-key
+                  serial: bbkey
+                - disk:
+                    bus: virtio
+                  name: worker-config
+                  serial: bbconfig
+                - disk:
+                    bus: virtio
+                  name: cloudinit
+                  serial: cloudinit
+              interfaces:
+                - masquerade: {}
+                  name: default
+                  ports: []
+            firmware:
+              bootloader:
+                efi:
+                  secureBoot: false
+            resources:
+              limits:
+                cpu: "4"
+                memory: 8Gi
+              requests:
+                cpu: "4"
+                memory: 8Gi
+          networks:
+            - name: default
+              pod: {}
+          nodeSelector:
+            topology.kubernetes.io/region: hil
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              httpHeaders:
+                - name: server-type
+                  value: buildbuddy-executor
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+            successThreshold: 1
+          tolerations:
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/control-plane
+              operator: Exists
+          volumes:
+            - containerDisk:
+                image: quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4
+                imagePullPolicy: IfNotPresent
+              name: rootdisk
+            - dataVolume:
+                name: work
+              name: work
+            - name: buildbuddy-key
+              secret:
+                secretName: buildbuddy-api-key
+            - configMap:
+                name: buildbuddy-kvm-worker
+              name: worker-config
+            - cloudInitNoCloud:
+                userData: |
+                  #cloud-config
+                  apt:
+                    primary:
+                    - arches:
+                      - amd64
+                      uri: https://archive.ubuntu.com/ubuntu
+                    security:
+                    - arches:
+                      - amd64
+                      uri: https://security.ubuntu.com/ubuntu
+                  package_update: true
+                  packages:
+                  - docker.io
+                  fs_setup:
+                  - device: /dev/disk/by-id/virtio-work
+                    filesystem: ext4
+                    overwrite: false
+                  mounts:
+                  - - /dev/disk/by-id/virtio-work
+                    - /buildbuddy
+                    - ext4
+                    - defaults
+                    - '0'
+                    - '2'
+                  - - /dev/disk/by-id/virtio-bbkey
+                    - /run/buildbuddy-key
+                    - iso9660
+                    - ro
+                    - '0'
+                    - '0'
+                  - - /dev/disk/by-id/virtio-bbconfig
+                    - /run/buildbuddy-config
+                    - iso9660
+                    - ro
+                    - '0'
+                    - '0'
+                  runcmd:
+                  - - apt-get
+                    - install
+                    - -y
+                    - --no-install-recommends
+                    - prometheus-node-exporter
+                  - - bash
+                    - /run/buildbuddy-config/bootstrap.sh
+                  power_state:
+                    mode: reboot
+                    delay: now
+                    condition:
+                    - test
+                    - -f
+                    - /var/run/reboot-required
+                  ssh_pwauth: false
+                  disable_root: true
+              name: cloudinit
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: remote.buildbuddy.io
+        - matchName: buildbuddy.bbcr.io
+        - matchName: archive.ubuntu.com
+        - matchName: security.ubuntu.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - remote.buildbuddy.io
+            - buildbuddy.bbcr.io
+            - archive.ubuntu.com
+            - security.ubuntu.com
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: zot
+            k8s:io.kubernetes.pod.namespace: oci-cache
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy-node
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+            - port: "9100"
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  name: buildbuddy-kvm-worker-metrics
+  namespace: buildbuddy-executor
+spec:
+  ports:
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: 9090
+    - name: node-metrics
+      port: 9100
+      protocol: TCP
+      targetPort: 9100
+  selector:
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+    - path: /metrics
+      port: node-metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  groups:
+    - name: buildbuddy-kvm-worker
+      rules:
+        - alert: BuildBuddyKvmPoolEmpty
+          annotations:
+            description: No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting pool kvm-vm fail immediately instead of queueing.
+            summary: No KVM worker is ready
+          expr: absent(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1)
+          for: 2m
+          labels:
+            severity: critical

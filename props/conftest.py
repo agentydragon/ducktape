@@ -1,9 +1,4 @@
-"""Pytest configuration for props tests.
-
-This conftest.py imports fixtures from the testing package and exposes them
-for pytest auto-discovery. Tests anywhere in props/ will have access
-to these fixtures.
-"""
+"""Shared pytest configuration and tracing for Props tests."""
 
 import os
 from collections.abc import Generator
@@ -11,54 +6,16 @@ from collections.abc import Generator
 import pytest
 from opentelemetry import trace
 
-# Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core.testing.fixtures import *  # noqa: F403
-from agent_core.testing.mcp.fixtures import *  # noqa: F403
-from agent_core.testing.mcp.responses import *  # noqa: F403
-from agent_core.testing.responses import *  # noqa: F403
-from mcp_infra.testing.fixtures import *  # noqa: F403
-
-# Import fixtures from our testing package for pytest discovery
-# Re-export factory functions (not fixtures, but commonly used in tests)
-# Testcontainers fixtures - imported directly from defining module
-from props.testing.fixtures.db import (
-    TEST_FIXTURES_PATH,
-    db,
-    engine,
-    postgres_base_config,
-    postgres_template,
-    pytest_addoption,
-    session_monkeypatch,
-    synced_db,
-    synced_readonly_session,
-    synced_test_session,
-    test_specimens_base,
-)
-from props.testing.fixtures.ground_truth import (
-    example_multi_tp_orm,
-    example_subtract_orm,
-    fp_id,
-    fp_occurrence,
-    fp_occurrence_id,
-    get_tp_occurrences_for_snapshot,
-    make_fp_occurrence,
-    make_tp_occurrence,
-    tp_occurrence_single,
-    tp_occurrences_multi,
-    tp_single_id,
-    tp_single_occurrence_id,
-)
-from props.testing.fixtures.runs import (
-    test_snapshot,
-    test_train_example_with_runs,
-    test_trivial_snapshot,
-    test_valid_example_with_runs,
-    test_validation_snapshot,
-    test_validation_snapshot_slug,
-)
-from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
 from util.testing.otel_tracing import configure_tracing
-from util.testing.postgres_fixtures import database_names, postgres_container, postgres_image
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--keep-db",
+        action="store_true",
+        default=False,
+        help="Preserve test database on failure for debugging (does not drop test database after test)",
+    )
 
 
 @pytest.hookimpl(tryfirst=True)

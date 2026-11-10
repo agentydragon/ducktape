@@ -13,5 +13,5 @@ export function OperationSection({
   children: ReactNode;
   surface?: CodeBlockSurface;
 }): JSX.Element {
-  return <div className={`agentplane-operation-section agentplane-code-surface-${surface}`}>{children}</div>;
+  return <div className={`agentplane-operation-section ui-code-surface-${surface}`}>{children}</div>;
 }

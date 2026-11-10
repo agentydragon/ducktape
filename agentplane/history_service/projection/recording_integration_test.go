@@ -3,10 +3,8 @@ package projection
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -14,25 +12,9 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
-
-const (
-	testSource = "test-runner"
-	testEpoch  = "test-epoch"
-)
-
-func entry(cursor uint64, observation *eventpb.Event, sourceSequences ...uint64) *eventlogpb.EventEntry {
-	observation.SourceSequences = sourceSequences
-	return &eventlogpb.EventEntry{
-		Cursor: cursor,
-		Origin: &eventlogpb.EventOrigin{SourceId: testSource, Sequence: cursor},
-		Event:  observation,
-	}
-}
-
-func native(cursor uint64) *eventlogpb.EventEntry {
-	return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{Line: "{}"}}})
-}
 
 func turnStarted(cursor uint64) *eventlogpb.EventEntry {
 	return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "test-turn"}}})
@@ -60,122 +42,21 @@ func harnessStarted(cursor uint64) *eventlogpb.EventEntry {
 	return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}})
 }
 
-func pageOf(entries ...*eventlogpb.EventEntry) *historypb.ReadSessionEventsResponse {
-	return &historypb.ReadSessionEventsResponse{Entries: entries, LastCursor: entries[len(entries)-1].Cursor}
-}
-
-func withTx(t *testing.T, db *sql.DB, f func(tx *sql.Tx) error) error {
-	t.Helper()
-	tx, err := db.BeginTx(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f(tx); err != nil {
-		tx.Rollback()
-		return err
-	}
-	return tx.Commit()
-}
-
-func record(t *testing.T, db *sql.DB, threadID uuid.UUID, page *historypb.ReadSessionEventsResponse) error {
-	t.Helper()
-	return withTx(t, db, func(tx *sql.Tx) error {
-		return RecordThreadFold(context.Background(), tx, threadID, testSource, page, testEpoch)
-	})
-}
-
-func mustRecord(t *testing.T, db *sql.DB, threadID uuid.UUID, page *historypb.ReadSessionEventsResponse) {
-	t.Helper()
-	if err := record(t, db, threadID, page); err != nil {
-		t.Fatal(err)
-	}
-}
-
-type storedEntity struct {
-	kind, id         string
-	cursor, revision uint64
-	index            uint64
-	textRef          *threadfold.Reference
-	state            json.RawMessage
-}
-
-func entities(t *testing.T, db *sql.DB, threadID uuid.UUID) map[string]storedEntity {
-	t.Helper()
-	rows, err := db.Query(`SELECT entity_kind, entity_id, cursor, revision_cursor, entity_index, state, text_ref
-		FROM thread_entity WHERE thread_id = $1`, threadID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	found := map[string]storedEntity{}
-	for rows.Next() {
-		var entity storedEntity
-		var state, textRef []byte
-		if err := rows.Scan(&entity.kind, &entity.id, &entity.cursor, &entity.revision, &entity.index, &state, &textRef); err != nil {
-			t.Fatal(err)
-		}
-		entity.state = state
-		if textRef != nil {
-			reference, err := threadfold.ParseReference(textRef)
-			if err != nil {
-				t.Fatal(err)
-			}
-			entity.textRef = &reference
-		}
-		found[entity.kind+"/"+entity.id] = entity
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return found
-}
-
-// bodyOf reads the text a reference spans, straight from the chunk table.
-func bodyOf(t *testing.T, db *sql.DB, threadID uuid.UUID, reference threadfold.Reference) string {
-	t.Helper()
-	rows, err := db.Query(`SELECT text FROM thread_payload_chunk WHERE thread_id = $1 AND projection_epoch = $2
-		AND owner_cursor = $3 AND owner_id = $4 AND field = $5 AND generation = $6 AND chunk_index < $7
-		ORDER BY chunk_index`, threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID,
-		reference.Field, reference.Generation, reference.ChunkCount)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var body strings.Builder
-	for rows.Next() {
-		var encoded []byte
-		var chunk string
-		if err := rows.Scan(&encoded); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(encoded, &chunk); err != nil {
-			t.Fatal(err)
-		}
-		body.WriteString(chunk)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return body.String()
-}
-
 // completionOf is how the item finished, which stays nil while it streams.
 func completionOf(t *testing.T, entity storedEntity) *string {
 	t.Helper()
-	var state threadfold.StoredItemState
-	if err := json.Unmarshal(entity.state, &state); err != nil {
+	state := &historypb.ThreadItem{}
+	if err := protojson.Unmarshal(entity.state, state); err != nil {
 		t.Fatal(err)
 	}
-	return state.Completion
-}
-
-func count(t *testing.T, db *sql.DB, query string, args ...any) int {
-	t.Helper()
-	var n int
-	if err := db.QueryRow(query, args...).Scan(&n); err != nil {
-		t.Fatal(err)
+	switch state.Completion.(type) {
+	case *historypb.ThreadItem_Text:
+		return proto.String("text")
+	case *historypb.ThreadItem_Tool:
+		return proto.String("tool")
+	default:
+		return nil
 	}
-	return n
 }
 
 func cursorsOf(t *testing.T, db *sql.DB, query string, threadID uuid.UUID) []uint64 {
@@ -327,10 +208,10 @@ func TestBodiesKeepUnusualCharacters(t *testing.T) {
 
 func TestAnAppendOntoAnUnstoredBodyFails(t *testing.T) {
 	db := testDB(t)
-	missing := threadfold.PayloadRef{ProjectionEpoch: testEpoch, OwnerCursor: 2, OwnerID: "test-reply", Field: threadfold.FieldText, RevisionCursor: 3, Generation: 2}
+	missing := threadfold.PayloadRef{ProjectionEpoch: testEpoch, OwnerCursor: 2, OwnerID: "test-reply", Field: historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, RevisionCursor: 3, Generation: 2}
 	err := withTx(t, db, func(tx *sql.Tx) error {
 		return writePayloads(context.Background(), tx, uuid.New(), []threadfold.PayloadWrite{
-			threadfold.AppendPayload{Base: &missing, Reference: threadfold.PayloadRef{ProjectionEpoch: testEpoch, OwnerCursor: 2, OwnerID: "test-reply", Field: threadfold.FieldText, RevisionCursor: 4, Generation: 2}, Text: "x"},
+			threadfold.AppendPayload{Base: &missing, Reference: threadfold.PayloadRef{ProjectionEpoch: testEpoch, OwnerCursor: 2, OwnerID: "test-reply", Field: historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, RevisionCursor: 4, Generation: 2}, Text: "x"},
 		})
 	})
 	if !errors.Is(err, ErrInconsistentFold) {
@@ -383,7 +264,7 @@ func TestAPageSkippingACursorIsRefused(t *testing.T) {
 	}
 }
 
-func viewStateOf(t *testing.T, db *sql.DB, threadID uuid.UUID) (threadfold.StoredViewState, storedEntity) {
+func viewStateOf(t *testing.T, db *sql.DB, threadID uuid.UUID) (*historypb.ThreadViewState, storedEntity) {
 	t.Helper()
 	entity := entities(t, db, threadID)["view_state/current"]
 	view, err := threadfold.ReadViewState(entity.state)
@@ -411,7 +292,7 @@ func TestAnEmptyFoldIsMaterializedOnceAndAdoptsTheFirstSource(t *testing.T) {
 	}
 	source, through := checkpointOf(t, db, threadID)
 	view, entity := viewStateOf(t, db, threadID)
-	if source != nil || through != 0 || entity.index != 0 || view.Operational.Status != threadfold.StatusActive {
+	if source != nil || through != 0 || entity.index != 0 || view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE {
 		t.Fatalf("empty fold = source %v through %d index %d %+v", source, through, entity.index, view.Operational)
 	}
 
@@ -428,7 +309,7 @@ func TestAnEmptyFoldIsMaterializedOnceAndAdoptsTheFirstSource(t *testing.T) {
 func TestSetOperationalRecordsAndClearsAFeedFailure(t *testing.T) {
 	db := testDB(t)
 	threadID := uuid.New()
-	set := func(status threadfold.OperationalStatus, message *string, cursor *uint64) bool {
+	set := func(status historypb.ThreadFeedStatus, message *string, cursor *uint64) bool {
 		var changed bool
 		if err := withTx(t, db, func(tx *sql.Tx) (err error) {
 			changed, err = SetOperational(context.Background(), tx, threadID, status, message, cursor)
@@ -438,28 +319,34 @@ func TestSetOperationalRecordsAndClearsAFeedFailure(t *testing.T) {
 		}
 		return changed
 	}
-	if set(threadfold.StatusActive, nil, nil) {
+	if set(historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE, nil, nil) {
 		t.Fatal("a Thread without a fold was changed")
 	}
 
 	mustRecord(t, db, threadID, pageOf(harnessStarted(1), harnessStarted(2)))
+	if err := withTx(t, db, func(tx *sql.Tx) error {
+		_, err := SetOperational(context.Background(), tx, threadID, historypb.ThreadFeedStatus(99), nil, nil)
+		return err
+	}); err == nil {
+		t.Fatal("unknown feed status was accepted")
+	}
 	message, cursor := "test: projection stalled", uint64(2)
-	if !set(threadfold.StatusFailed, &message, &cursor) {
+	if !set(historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED, &message, &cursor) {
 		t.Fatal("a new failure did not change the row")
 	}
 	view, _ := viewStateOf(t, db, threadID)
-	if view.Operational.Status != threadfold.StatusFailed || view.Operational.LastVerifiedCursor != 2 ||
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.LastVerifiedCursor != 2 ||
 		view.Operational.FeedError == nil || view.Operational.FeedError.Message != message ||
 		view.Operational.FeedError.Cursor == nil || *view.Operational.FeedError.Cursor != 2 {
 		t.Fatalf("operational = %+v %+v", view.Operational, view.Operational.FeedError)
 	}
-	if set(threadfold.StatusFailed, &message, &cursor) {
+	if set(historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED, &message, &cursor) {
 		t.Fatal("the same failure changed the row again")
 	}
-	if !set(threadfold.StatusActive, nil, nil) {
+	if !set(historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE, nil, nil) {
 		t.Fatal("clearing the failure did not change the row")
 	}
-	if view, _ := viewStateOf(t, db, threadID); view.Operational.FeedError != nil || view.Operational.Status != threadfold.StatusActive {
+	if view, _ := viewStateOf(t, db, threadID); view.Operational.FeedError != nil || view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE {
 		t.Fatalf("operational after clearing = %+v", view.Operational)
 	}
 }
@@ -470,7 +357,7 @@ func TestRecordingKeepsTheStoredOperationalState(t *testing.T) {
 	mustRecord(t, db, threadID, pageOf(harnessStarted(1)))
 	message := "test: projection stalled"
 	if err := withTx(t, db, func(tx *sql.Tx) error {
-		_, err := SetOperational(context.Background(), tx, threadID, threadfold.StatusFailed, &message, nil)
+		_, err := SetOperational(context.Background(), tx, threadID, historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED, &message, nil)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -478,7 +365,7 @@ func TestRecordingKeepsTheStoredOperationalState(t *testing.T) {
 
 	mustRecord(t, db, threadID, pageOf(harnessStarted(2)))
 	view, entity := viewStateOf(t, db, threadID)
-	if entity.cursor != 2 || view.Operational.Status != threadfold.StatusFailed || view.Operational.LastVerifiedCursor != 1 ||
+	if entity.cursor != 2 || view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.LastVerifiedCursor != 1 ||
 		view.Operational.FeedError == nil || view.Operational.FeedError.Message != message {
 		t.Fatalf("view state at %d with operational %+v after a page", entity.cursor, view.Operational)
 	}

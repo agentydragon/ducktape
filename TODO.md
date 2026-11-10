@@ -33,12 +33,26 @@
 - [ ] Start Signal minimized (difficult: settings in encrypted sqlite)
 - [ ] Combine ActivityWatch + HALinuxCompanion to report: session events (login/logout, lock/unlock, suspend/resume), battery charge level, and other device telemetry
 
+## Agent scratch in `/tmp`
+
+- [ ] Enforce the <AGENTS.md> § Environment **Scratch** rule (one `${TMPDIR:-/tmp}/<slug>/` dir per
+      task) for tools that ignore instructions. On wyrm2 (2026-10-29), about 3,900 top-level
+      per-task dirs (`claude-*`, `tana-*`, `openclaw-*`, `tmp.*`, …) held 318 G, next to 6,200
+      loose files. Nothing scopes or ages them apart from the 14d `/tmp` rule. Candidate levers:
+  - Codex (<nix/home/codex/default.nix>): `exclude_slash_tmp = true`, plus
+    `shell_environment_policy` setting `TMPDIR=/tmp/codex-<uid>`. Hard-coded `/tmp/x` paths then
+    fail inside Codex, and `/tmp/ducktape-worktrees` needs to be a writable root.
+  - Claude Code: export `TMPDIR=<session scratchpad>` from the session-start hook
+    (<devinfra/claude/claude_hook>) via `$CLAUDE_ENV_FILE`. Today all sessions share
+    `/tmp/claude-<uid>`.
+  - Once the roots exist, give them their own short tmpfiles age (e.g. `bcmBM:3d`).
+
 ## Build System
 
 - [ ] Extend trusted fork CI to `main` if it becomes an active PR target. Branch protection
       requires checks there, but <.github/workflows/trusted-fork-pr-ci.yml> currently
       replaces fork checks only for `devel`; keep this deferred while `main` is unused.
-- [ ] File upstream BB issue + revert `--script` workaround in `bazel-ci.yml` once fixed. See <devinfra/debug/bb_remote_peers_exhausted.md> (post-run `downloadOutputs` fails with "Exhausted all peers"). Also audit `push-images.yml` which also uses `bb remote build … --remote_download_regex=…`.
+- [ ] File upstream BB issue + revert `--script` workaround in `bazel-ci.yml` once fixed. See <devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md> (post-run `downloadOutputs` fails with "Exhausted all peers"). Also audit `push-images.yml` which also uses `bb remote build … --remote_download_regex=…`.
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests and flat package structure)
 - [ ] Remove `--per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare` from `.bazelrc` once OR-Tools cleans up signed/unsigned comparisons in `external/or-tools+/`. Currently `or-tools 9.15`.
 - [ ] Pre-commit lint for <devinfra/ci/image_targets.json> completeness: fail if any in-cluster `oci_image` target lacks an entry, and warn on entries whose `target` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: extend `//devinfra/ci:test_plan_image_pushes` to run `bazel query 'kind("oci_image_rule", //...)'` and diff it against `load_images`.

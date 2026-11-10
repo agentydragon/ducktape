@@ -1,0 +1,156 @@
+"""Owner-authenticated read API and browser for archived workstation sessions."""
+
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Annotated, cast
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+from starlette import status
+
+from util.oidc_login import LoginConfig, install_login
+from x.ai_session_archive import queries
+from x.ai_session_archive.database import make_session_factory
+from x.ai_session_archive.models import (
+    EventDirection,
+    EventPage,
+    Harness,
+    Machine,
+    MachineImportProgress,
+    SessionKind,
+    SessionPage,
+    SessionSummary,
+    SessionVersion,
+)
+from x.ai_session_archive.web_settings import WebSettings
+
+
+class Machines(BaseModel):
+    data: list[Machine]
+
+
+class ImportProgress(BaseModel):
+    data: list[MachineImportProgress]
+
+
+class Versions(BaseModel):
+    data: list[SessionVersion]
+
+
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _archive_session(request: Request) -> Iterator[Session]:
+    factory = cast(sessionmaker[Session], request.app.state.session_factory)
+    with factory() as session:
+        yield session
+
+
+ArchiveSession = Annotated[Session, Depends(_archive_session)]
+
+
+def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | None = None) -> FastAPI:
+    app = FastAPI(title="Workstation session archive")
+    app.state.session_factory = make_session_factory(engine)
+    api = APIRouter(prefix="/api", dependencies=[Depends(_no_store)])
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @api.get("/machines")
+    def machines(db: ArchiveSession) -> Machines:
+        return Machines(data=queries.list_machines(db))
+
+    @api.get("/import-progress")
+    def import_progress(db: ArchiveSession) -> ImportProgress:
+        return ImportProgress(data=queries.list_import_progress(db))
+
+    @api.get("/sessions")
+    def sessions(
+        db: ArchiveSession,
+        machine_id: str | None = None,
+        harness: Harness | None = None,
+        kind: Annotated[list[SessionKind] | None, Query()] = None,
+        parent_session_id: UUID | None = None,
+        cursor: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    ) -> SessionPage:
+        try:
+            return queries.list_sessions(
+                db,
+                machine_id=machine_id,
+                harness=harness,
+                kinds=kind,
+                parent_session_id=parent_session_id,
+                cursor=cursor,
+                limit=limit,
+            )
+        except ValueError as invalid:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid session cursor") from invalid
+
+    @api.get("/sessions/{session_id}")
+    def session_detail(session_id: UUID, db: ArchiveSession) -> SessionSummary:
+        result = queries.get_session(db, session_id=session_id)
+        if result is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        return result
+
+    @api.get("/sessions/{session_id}/versions")
+    def versions(session_id: UUID, db: ArchiveSession) -> Versions:
+        if queries.get_session(db, session_id=session_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        return Versions(data=queries.list_versions(db, session_id=session_id))
+
+    @api.get("/sessions/{session_id}/versions/{version_id}/events")
+    def events(
+        session_id: UUID,
+        version_id: UUID,
+        db: ArchiveSession,
+        cursor: Annotated[int | None, Query(ge=0)] = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        direction: EventDirection = EventDirection.FORWARD,
+    ) -> EventPage:
+        page = queries.list_events(
+            db, session_id=session_id, version_id=version_id, cursor=cursor, limit=limit, direction=direction
+        )
+        if page is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session version not found")
+        return page
+
+    app.include_router(api)
+    install_login(
+        app,
+        LoginConfig(
+            issuer=settings.oidc_issuer,
+            client_id=settings.oidc_client_id,
+            client_secret=settings.oidc_client_secret,
+            session_secret=settings.oidc_session_secret,
+            session_seconds=settings.oidc_session_seconds,
+            public_base_url=settings.public_base_url,
+            cookie_name="ai-session-archive",
+            public_paths={"/healthz"},
+            signed_out_text="You are signed out.",
+            session_created_log=None,
+            allowed_subject=settings.oidc_allowed_subject,
+        ),
+    )
+    if frontend_dir is not None:
+        index = frontend_dir / "index.html"
+
+        @app.get("/", include_in_schema=False)
+        def home() -> FileResponse:
+            return FileResponse(index, headers={"Cache-Control": "no-store"})
+
+        @app.get("/sessions/{session_id}", include_in_schema=False)
+        def session_page(session_id: str) -> FileResponse:
+            return FileResponse(index, headers={"Cache-Control": "no-store"})
+
+        app.mount("/", StaticFiles(directory=frontend_dir), name="frontend")
+    return app

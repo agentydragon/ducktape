@@ -4,10 +4,13 @@
 //! level planning and gate checks that wrap this live in `materialize/`.
 
 use js_ast::import_decl_module_item;
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
-use super::module_output::{LoweredModuleOutput, ModuleEmissionInputs, emit_module};
+use super::module_output::{
+    LoweredModuleOutput, ModuleEmissionInputs, PreparedModuleEmission, prepare_module_emission,
+};
 use swc_common::{DUMMY_SP, GLOBALS};
 
 use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
@@ -20,13 +23,12 @@ use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
 };
 use super::util::remaining_item_after_selection;
-use crate::chunk_ast::{TopLevelDecl, top_level_declaration_names};
 use crate::exports::{
     ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
     export_named_for_bindings, trim_dead_named_specifiers,
 };
 use crate::imports::{
-    ArtifactSourceImportResolutionCache, RuntimeImportFacts, VendorReimportOracle,
+    ArtifactSourceImportResolutionCache, VendorReimportOracle,
     collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
 };
 use crate::naturalize::NaturalizedModuleBody;
@@ -40,10 +42,13 @@ use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
+use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
+use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
+use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMutWith, VisitWith};
 
@@ -59,7 +64,63 @@ pub(super) struct LoweredChunk {
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-/// Chunk-identity + file-path inputs to `lower_chunk`. Held in
+/// The exact entry and logical-module ASTs after import planning and body
+/// rewrites, ready for final file construction.
+pub(super) struct PreparedCandidateEmissionPlan<'a> {
+    files: Vec<JsFile>,
+    file_records: Vec<(String, FileRole)>,
+    modules: Vec<PreparedModuleEmission<'a>>,
+    cross_chunk_import_aliases: Vec<(String, String)>,
+}
+
+impl PreparedCandidateEmissionPlan<'_> {
+    /// Header lines are file metadata, so they can lead the entry file
+    /// without rebuilding any prepared body.
+    pub(super) fn prepend_entry_header_lines(&mut self, prefix: Vec<String>) {
+        let entry = self
+            .files
+            .first_mut()
+            .expect("a candidate emission plan always contains its entry file");
+        entry.header_lines = [prefix, std::mem::take(&mut entry.header_lines)].concat();
+    }
+
+    pub(super) fn emit(self) -> LoweredChunk {
+        let Self {
+            mut files,
+            mut file_records,
+            modules,
+            cross_chunk_import_aliases,
+        } = self;
+        // `swc_common::GLOBALS` is a `scoped_tls` thread-local; rayon
+        // workers re-set the parent thread's `Globals`.
+        let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| {
+            modules
+                .into_par_iter()
+                .map(|module| GLOBALS.set(globals, || module.emit()))
+                .collect()
+        });
+        let mut applied = Vec::new();
+        let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
+        for output in module_outputs {
+            files.push(output.file);
+            file_records.push(output.record);
+            let mut lowering = output.lowering;
+            lowering.cross_chunk_import_aliases = cross_chunk_import_aliases.clone();
+            applied.push(lowering);
+            for (key, count) in output.vendor_reference_rewrites {
+                *vendor_reference_rewrites.entry(key).or_insert(0) += count;
+            }
+        }
+        LoweredChunk {
+            files,
+            file_records,
+            applied,
+            vendor_reference_rewrites,
+        }
+    }
+}
+
+/// Chunk-identity + file-path inputs to `prepare_candidate_emission_plan`. Held in
 /// `LowerChunkInputs::context`.
 pub(super) struct LowerChunkContext<'a> {
     pub(super) artifact: &'a ChunkBundle,
@@ -84,9 +145,9 @@ pub(super) struct LowerChunkAst<'a> {
 /// Plan-side inputs: the per-chunk module plans and validated emission
 /// placement.
 /// Held in `LowerChunkInputs::plan`.
-pub(super) struct LowerChunkPlan<'a> {
-    pub(super) module_plans: &'a [ModulePlan],
-    pub(super) placement: &'a EmissionPlacement<'a>,
+pub(super) struct LowerChunkPlan<'output, 'placement> {
+    pub(super) module_plans: &'output [ModulePlan],
+    pub(super) placement: &'placement EmissionPlacement<'output>,
 }
 
 /// Spec-derived + chunk-AST-derived facts the lowerer consults at
@@ -122,14 +183,16 @@ pub(super) struct LowerChunkSpecFacts<'a> {
     pub(super) pre_existing_public_export_names: &'a HashSet<String>,
 }
 
-pub(super) struct LowerChunkInputs<'a> {
-    pub(super) context: LowerChunkContext<'a>,
-    pub(super) ast: LowerChunkAst<'a>,
-    pub(super) plan: LowerChunkPlan<'a>,
-    pub(super) spec_facts: LowerChunkSpecFacts<'a>,
+pub(super) struct LowerChunkInputs<'output, 'placement> {
+    pub(super) context: LowerChunkContext<'output>,
+    pub(super) ast: LowerChunkAst<'output>,
+    pub(super) plan: LowerChunkPlan<'output, 'placement>,
+    pub(super) spec_facts: LowerChunkSpecFacts<'output>,
 }
 
-pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
+pub(super) fn prepare_candidate_emission_plan<'output>(
+    inputs: LowerChunkInputs<'output, '_>,
+) -> Result<PreparedCandidateEmissionPlan<'output>> {
     let LowerChunkInputs {
         context,
         ast,
@@ -166,6 +229,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         pre_existing_entry_exports,
         pre_existing_public_export_names,
     } = spec_facts;
+    let unresolved_context = SyntaxContext::empty().apply_mark(runtime_ast.unresolved_mark);
     let is_module_owned = |name: &str| -> bool {
         binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
     };
@@ -331,15 +395,15 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .sort_entry_imports(&mut entry_imports);
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     // Capture probe: a read-only walk of the un-renamed entry body with
-    // the pending Chunk-scope map, reporting the precise capture facts
-    // seal validates (a target bound nested is harmless when the source
-    // is shadowed there — only a scope-aware walk can decide that). The
+    // the pending Chunk-scope map, reporting the reference-resolution
+    // conflicts seal validates. It uses parser-owned unresolved identity
+    // for reverse capture and scope tracking for target-shadow capture. The
     // probe replaces the pre-seal trial application; the body is mutated
     // only by the post-seal executor below.
     let entry_candidate_renames = entry_ledger.pending_renames(&RenameScope::Chunk);
     let mut entry_captured = BTreeSet::new();
     if !entry_candidate_renames.is_empty() {
-        let mut probe = RenameCaptureProbe::new(&entry_candidate_renames);
+        let mut probe = RenameCaptureProbe::new(&entry_candidate_renames, unresolved_context);
         for item in entry_body.iter() {
             item.visit_with(&mut probe);
         }
@@ -359,6 +423,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 module,
                 sealed_renames.module_renames_by_name(module),
                 chunk_top_level_mark,
+                unresolved_context,
             )
         })
         .collect::<Result<Vec<_>>>()?;
@@ -402,7 +467,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // entry-side rename. Chunk scope: conflicting targets (target name
     // already taken by a body local that isn't being renamed away, or
     // chosen by another chunk_renames entry, invalid as an identifier,
-    // or captured by a nested binding per the probe above) bail here
+    // or would change reference resolution per the probe above) bail here
     // with every violation listed, rather than producing invalid JS
     // silently. EntryPublicExports scope: a single contributor over a
     // set-deduped source set cannot conflict; the occupancy check
@@ -449,7 +514,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         for item in entry_body.iter_mut() {
             preserve_export_specifier_names(item, &entry_binding_renames_by_id);
         }
-        let mut renamer = IdentifierRenamer::new(&entry_binding_renames_by_id);
+        let mut renamer = IdentifierRenamer::new(&entry_binding_renames_by_id, unresolved_context);
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
@@ -583,7 +648,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         artifact_indexes,
     ));
 
-    let mut files = vec![JsFile {
+    let files = vec![JsFile {
         path: entry_file.to_string(),
         body: JsFileBody::Ast(ParsedJsModule {
             cm: runtime_ast.cm.clone(),
@@ -605,8 +670,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             source_path: source_path.to_string(),
         },
     }];
-    let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
-    let mut applied = Vec::new();
+    let file_records = vec![(entry_file.to_string(), FileRole::Entry)];
 
     // Filter chunk_renames down to entries the per-module emit path
     // should apply: bindings *not* claimed by any logical module.
@@ -622,25 +686,24 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    // Per-plan lowering: each plan's output (`JsFile`, file record,
-    // `SelectedModuleLowering`) is independent — the only shared
-    // mutable state the loop body touches is `source_import_cache`
-    // (memoization for source-chunk import resolution), wrapped in a
-    // `Mutex` above. Each worker consumes one naturalized body with its
-    // matching rename maps and facts, prepared upstream.
+    // Per-plan preparation is independent — the only shared mutable state
+    // the loop body touches is `source_import_cache` (memoization for
+    // source-chunk import resolution), wrapped in a `Mutex` above. Each
+    // worker consumes one naturalized body with its matching rename maps
+    // and facts and constructs the exact import/body AST used by emission.
     //
     // `swc_common::GLOBALS` is a `scoped_tls` thread-local; it does
     // NOT carry into rayon worker threads, so we capture the parent
     // thread's `Globals` and re-set it inside each worker closure.
     // Mirrors the chunk-level `par_iter` in `lowering/mod.rs`.
-    let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| -> Result<_> {
+    let modules: Vec<PreparedModuleEmission<'output>> = GLOBALS.with(|globals| -> Result<_> {
         naturalized_modules
             .into_par_iter()
             .zip(module_plans.par_iter())
             .enumerate()
             .map(|(index, (module, plan))| {
                 GLOBALS.set(globals, || {
-                    emit_module(ModuleEmissionInputs {
+                    prepare_module_emission(ModuleEmissionInputs {
                         index,
                         plan,
                         naturalized: module,
@@ -665,23 +728,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             })
             .collect()
     })?;
-    let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
-    for output in module_outputs {
-        files.push(output.file);
-        file_records.push(output.record);
-        let mut lowering = output.lowering;
-        lowering.cross_chunk_import_aliases = cross_chunk_import_aliases.clone();
-        applied.push(lowering);
-        for (key, count) in output.vendor_reference_rewrites {
-            *vendor_reference_rewrites.entry(key).or_insert(0) += count;
-        }
-    }
 
-    Ok(LoweredChunk {
+    Ok(PreparedCandidateEmissionPlan {
         files,
         file_records,
-        applied,
-        vendor_reference_rewrites,
+        modules,
+        cross_chunk_import_aliases,
     })
 }
 

@@ -1,0 +1,438 @@
+//! Read-only initialization effects for report-only translation validation.
+//!
+//! Recorded accesses and domain coverage are different facts. In particular,
+//! synchronous execution completeness and purity do not certify the absence
+//! of general property, callee-global, or host effects.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
+
+use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
+use super::sync_effects::noninvoking_initialization::CompletedInitialization;
+use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts, StatementKind};
+use crate::analysis_inputs::ProofDependencies;
+use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InitializationEffectEvidence {
+    #[serde(flatten)]
+    basis: InitializationEffectBasis,
+    /// Indexed may-accesses stay separate from the cell's existing evidence.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    global_may_accesses: Vec<GlobalMayAccess>,
+    #[serde(skip_serializing_if = "zero")]
+    global_may_access_count: usize,
+    #[serde(skip_serializing_if = "not_truncated")]
+    global_may_accesses_truncated: bool,
+}
+
+fn zero(value: &usize) -> bool {
+    *value == 0
+}
+fn not_truncated(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum InitializationEffectBasis {
+    Observed,
+    Fallback {
+        reason: AssumedEffectReason,
+    },
+    /// Composed heap summaries do not retain per-access execution provenance.
+    UnclassifiedCalleeHeap,
+    /// Canonical runtime may-accesses, including reordered/conditional lanes.
+    /// These never certify that an operation definitely executes.
+    IndexedMayAccess,
+}
+
+impl InitializationEffectEvidence {
+    pub fn is_observed(&self) -> bool {
+        matches!(self.basis, InitializationEffectBasis::Observed)
+    }
+
+    /// Bound only the presentation; retain the exact source-operation count.
+    pub fn sampled(&self, limit: usize) -> Self {
+        Self {
+            basis: self.basis.clone(),
+            global_may_accesses: self
+                .global_may_accesses
+                .iter()
+                .take(limit)
+                .cloned()
+                .collect(),
+            global_may_access_count: self.global_may_access_count,
+            global_may_accesses_truncated: self.global_may_accesses_truncated
+                || self.global_may_access_count > limit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnknownEffectCoverage {
+    GlobalProperties,
+    GeneralHeap,
+    HostEffects,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerInitializationCoverageRefusalReason {
+    UnsupportedOwnerKind,
+    ExportedOwner,
+    SplitDeclaration,
+    UnsupportedBindingShape,
+    MissingInitializer,
+    UnsupportedInitializer,
+    OwnerBindingMismatch,
+    InitializerResultUnproved,
+    /// A root `receiver.property = value` statement outside the admitted
+    /// root statements (`roots/operands`): its receiver is not an initialized
+    /// module record with a writable own data slot at its prefix (a global
+    /// publication, a new property, an unproved alias, an escaped record),
+    /// or the owner is excluded (dynamic scope, opaque, deferred global
+    /// write). A store whose value can run code keeps
+    /// `UnsupportedOwnerKind`.
+    UnprovedFieldStore,
+    /// A root `binding = value` statement storing to an imported binding,
+    /// which throws.
+    ImportedBindingStore,
+    /// A root `binding = value` statement storing to a `const`, which throws.
+    ConstBindingStore,
+    /// A root `binding = value` statement storing to a lexical binding still
+    /// in its TDZ at the statement's prefix, which throws.
+    UninitializedBindingStore,
+    /// A root `binding = value` statement storing to a binding some closure
+    /// reads: the closure's view of the binding is not a module-prefix value.
+    CapturedBindingStore,
+    /// A root `binding = value` statement storing to an exported binding,
+    /// which an importer can observe through its live binding.
+    ExportedBindingStore,
+    /// An admitted root statement's kernel attempt did not seal it, so the
+    /// flattened lane ran it instead.
+    UnprovedStatementOperation,
+    /// The owner's execution created a callback that captures a live
+    /// activation cell; a call that receives it has no effect receipt until
+    /// call-effect coverage follows live captures.
+    CallbackCapturesLiveCell,
+    UnknownCall,
+    PrecisionLoss,
+    UninitializedRead,
+    IncompleteExecution,
+    BindingNotInitialized,
+    NoExecutionSummary,
+    RefusalUnavailable,
+}
+
+/// Why a root's kernel attempt did not seal its owner, so the executor
+/// rewound it and the flattened lane ran (`roots/body.rs`). The first failing
+/// condition of the seal, in its check order.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAttemptRewind {
+    IncompleteExecution,
+    UnknownCall,
+    PrecisionLoss,
+    UninitializedRead,
+    FallbackOnlyEffect,
+    OpenEffectLedger,
+    LexicalReceiptUnsealed,
+}
+
+/// The outcome of one root's kernel attempt.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootAttempt {
+    Sealed,
+    Rewound(RootAttemptRewind),
+}
+
+/// Per chunk: how many roots the attempted lane ran, and why the rewound
+/// ones did not seal.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RootAttemptCounts {
+    pub sealed: usize,
+    pub rewound: BTreeMap<RootAttemptRewind, usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OwnerInitializationCoverageRefusal {
+    pub reason: OwnerInitializationCoverageRefusalReason,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InitializationEffects<'a> {
+    pub ordinal: SourceUnitOrdinal,
+    pub reads: BTreeMap<EffectCell, InitializationEffectEvidence>,
+    pub writes: BTreeMap<EffectCell, InitializationEffectEvidence>,
+    pub allocates: BTreeSet<EffectCell>,
+    /// Conditions of the exact owner's whole-evaluation coverage proof. An
+    /// import or direct function declaration executes no body and needs none.
+    pub coverage_dependencies: Option<&'a ProofDependencies>,
+    /// Missing semantic domains; independent of legacy timing opacity.
+    pub unknown_coverage: BTreeSet<UnknownEffectCoverage>,
+    pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
+    pub incomplete_execution: bool,
+    /// The report sweep borrows the retained statement ledger rather than
+    /// duplicating every loss and its source/proof evidence for the chunk.
+    pub execution_losses: &'a [ExecutionPrecisionLoss],
+    pub opaque_heap: bool,
+    pub owner_coverage_refusal: Option<OwnerInitializationCoverageRefusal>,
+    pub root_attempt: Option<RootAttempt>,
+}
+
+impl InitializationEffects<'_> {
+    pub fn has_havoc(&self) -> bool {
+        !self.unknown_coverage.is_empty()
+            || !self.dataflow_opacity.is_empty()
+            || self.incomplete_execution
+            || !self.execution_losses.is_empty()
+            || self.opaque_heap
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.reads.is_empty()
+            && self.writes.is_empty()
+            && self.allocates.is_empty()
+            && !self.has_havoc()
+    }
+}
+
+impl StatementFacts {
+    /// One view of this owner's completed-initialization receipt and the own
+    /// syntax-opacity bit it can discharge. The receipt is exact to this
+    /// source owner; it never changes explicit heap cells or callee effects.
+    pub(crate) fn own_heap_content_summary(&self) -> OwnHeapContentSummary<'_> {
+        let completed_initialization = self
+            .synchronous_calls
+            .as_ref()
+            .and_then(|calls| calls.completed_initialization.as_ref())
+            .filter(|proof| proof.covers(self.ordinal));
+        OwnHeapContentSummary {
+            opaque: self.heap_contents.observes_external_heap
+                || (self.heap_contents.opaque && completed_initialization.is_none()),
+            completed_initialization,
+        }
+    }
+
+    /// Shared with the binding timeline: module instantiation is not an
+    /// evaluation-time write. A variable initialized with a function remains
+    /// an evaluation-time initializer.
+    pub(crate) fn initializes_bindings_at_evaluation(&self) -> bool {
+        !matches!(self.kind, StatementKind::Import | StatementKind::FnDecl)
+            && !(self.kind == StatementKind::Export && self.declares_direct_function)
+            && self.export_linkage != Some(ExportLinkage::Local)
+    }
+
+    pub fn initialization_effects(&self) -> InitializationEffects<'_> {
+        let own_heap = self.own_heap_content_summary();
+        let mut effects = InitializationEffects {
+            ordinal: self.ordinal,
+            reads: BTreeMap::new(),
+            writes: BTreeMap::new(),
+            allocates: self.heap_contents.allocations.clone(),
+            coverage_dependencies: None,
+            unknown_coverage: BTreeSet::new(),
+            dataflow_opacity: self.dataflow_opacity(),
+            incomplete_execution: false,
+            execution_losses: &[],
+            opaque_heap: own_heap.opaque,
+            owner_coverage_refusal: None,
+            root_attempt: self
+                .synchronous_calls
+                .as_ref()
+                .and_then(|calls| calls.root_attempt),
+        };
+        // These statement kinds execute no body at module evaluation. In
+        // particular their lazy reads and export heap opacity are irrelevant.
+        // Neither does `var a, b;` without initializers: its bindings were
+        // instantiated with the module and keep their values. This view is
+        // report-only; the binding timeline keeps its own rule.
+        if !self.initializes_bindings_at_evaluation()
+            || (self.kind == StatementKind::VarDecl
+                && self.var_initializers.is_empty()
+                && self.declared.is_subset(&self.var_declared))
+        {
+            effects.allocates.clear();
+            effects.dataflow_opacity.clear();
+            effects.opaque_heap = false;
+            return effects;
+        }
+        let completed = own_heap.completed_initialization;
+        effects.coverage_dependencies = completed.map(|proof| proof.dependencies());
+        // Root statements only: an initializer seal does not yet rule out a
+        // member write outside its kernel ledger.
+        if completed.is_some() && self.kind == StatementKind::SideEffect {
+            // The receipt's general-heap domain is closed: every member write
+            // the owner executed was a modeled store whose exact cell is in
+            // its synchronous heap contents, recorded below. That attributes
+            // what the syntactic member-write bail could not. The bail itself
+            // stays: the legacy S-chain reads only syntactic cells.
+            effects
+                .dataflow_opacity
+                .remove(&DataflowOpacityCause::MemberWriteOrAlias);
+        }
+        if completed.is_none() {
+            effects.unknown_coverage.extend([
+                UnknownEffectCoverage::GlobalProperties,
+                UnknownEffectCoverage::GeneralHeap,
+                UnknownEffectCoverage::HostEffects,
+            ]);
+        }
+        for binding in &self.reads.eager {
+            record(
+                &mut effects.reads,
+                EffectCell::Binding(binding.clone()),
+                None,
+            );
+        }
+        for binding in self
+            .declared
+            .difference(&self.var_declared)
+            .chain(&self.var_initializers)
+            .chain(&self.rebinds.eager)
+        {
+            record(
+                &mut effects.writes,
+                EffectCell::Binding(binding.clone()),
+                None,
+            );
+        }
+        for key in &self.global_reads {
+            record(
+                &mut effects.reads,
+                EffectCell::GlobalProp(key.clone()),
+                None,
+            );
+        }
+        for key in &self.global_writes {
+            record(
+                &mut effects.writes,
+                EffectCell::GlobalProp(key.clone()),
+                None,
+            );
+        }
+        for cell in &self.heap_contents.reads {
+            record(&mut effects.reads, cell.clone(), None);
+        }
+        for cell in &self.heap_contents.writes {
+            record(&mut effects.writes, cell.clone(), None);
+        }
+        if let Some(calls) = &self.synchronous_calls {
+            for (site, evidence) in &calls.evaluation_effects.global_accesses {
+                let target = match site.access {
+                    GlobalAccessKind::Read => &mut effects.reads,
+                    GlobalAccessKind::Write => &mut effects.writes,
+                };
+                let entry = target.entry(EffectCell::GlobalProp(site.property.clone()));
+                let previous = entry.or_insert_with(|| InitializationEffectEvidence {
+                    basis: InitializationEffectBasis::IndexedMayAccess,
+                    global_may_accesses: Vec::new(),
+                    global_may_access_count: 0,
+                    global_may_accesses_truncated: false,
+                });
+                previous.global_may_accesses.push(GlobalMayAccess {
+                    site: site.clone(),
+                    evidence: evidence.clone(),
+                });
+                previous.global_may_access_count += 1;
+            }
+            effects.incomplete_execution = !calls.complete;
+            effects.execution_losses = &calls.precision_losses;
+            // Like the owner's own cells: a whole-owner coverage proof names
+            // every heap effect the executed callees had, so the syntactic
+            // callee summary's opacity is superseded by its recorded cells.
+            effects.opaque_heap |= calls.heap_contents.opaque && completed.is_none();
+            effects
+                .allocates
+                .extend(calls.heap_contents.allocations.iter().cloned());
+            for (binding, _) in &calls.reads {
+                record(
+                    &mut effects.reads,
+                    EffectCell::Binding(binding.clone()),
+                    calls.fallback_read(binding),
+                );
+            }
+            for binding in &calls.uninitialized_reads {
+                record(
+                    &mut effects.reads,
+                    EffectCell::Binding(binding.clone()),
+                    calls.fallback_uninitialized_read(binding),
+                );
+            }
+            for (binding, _) in &calls.rebinds {
+                record(
+                    &mut effects.writes,
+                    EffectCell::Binding(binding.clone()),
+                    calls.fallback_rebind(binding),
+                );
+            }
+            for (target, cells) in [
+                (&mut effects.reads, &calls.heap_contents.reads),
+                (&mut effects.writes, &calls.heap_contents.writes),
+            ] {
+                for cell in cells {
+                    target
+                        .entry(cell.clone())
+                        .or_insert_with(|| InitializationEffectEvidence {
+                            basis: InitializationEffectBasis::UnclassifiedCalleeHeap,
+                            global_may_accesses: Vec::new(),
+                            global_may_access_count: 0,
+                            global_may_accesses_truncated: false,
+                        });
+                }
+            }
+        } else {
+            effects.incomplete_execution = true;
+        }
+        if !effects.unknown_coverage.is_empty() {
+            let reason = match &self.synchronous_calls {
+                Some(calls) => calls
+                    .initialization_coverage_refusal
+                    .unwrap_or(OwnerInitializationCoverageRefusalReason::RefusalUnavailable),
+                None => OwnerInitializationCoverageRefusalReason::NoExecutionSummary,
+            };
+            effects.owner_coverage_refusal = Some(OwnerInitializationCoverageRefusal {
+                reason,
+                source_location: self.source_location.clone(),
+            });
+        }
+        effects
+    }
+}
+
+pub(crate) struct OwnHeapContentSummary<'a> {
+    pub(crate) opaque: bool,
+    pub(crate) completed_initialization: Option<&'a CompletedInitialization>,
+}
+
+fn record(
+    target: &mut BTreeMap<EffectCell, InitializationEffectEvidence>,
+    cell: EffectCell,
+    fallback: Option<&AssumedEffectReason>,
+) {
+    let evidence = fallback.map_or(InitializationEffectBasis::Observed, |reason| {
+        InitializationEffectBasis::Fallback {
+            reason: reason.clone(),
+        }
+    });
+    target
+        .entry(cell)
+        .and_modify(|previous| {
+            if matches!(evidence, InitializationEffectBasis::Observed) {
+                previous.basis = evidence.clone();
+            }
+        })
+        .or_insert(InitializationEffectEvidence {
+            basis: evidence,
+            global_may_accesses: Vec::new(),
+            global_may_access_count: 0,
+            global_may_accesses_truncated: false,
+        });
+}

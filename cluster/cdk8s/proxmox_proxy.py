@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
@@ -18,7 +19,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "proxmox-proxy"
 NAMESPACE = "proxmox-proxy"
@@ -35,7 +35,7 @@ _PROXMOX_UI_PORT = 8006
 
 def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
     nginx_conf = (
-        get_required_path(own_repo_rlocation("cluster/cdk8s/proxmox-proxy.conf"))
+        (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/proxmox-proxy.conf")
         .read_text()
         .replace("@PROXMOX_IP@", str(mesh.hosts[_PROXMOX_HOST].nebula_ip))
         .replace("@PROXMOX_PORT@", str(_PROXMOX_UI_PORT))

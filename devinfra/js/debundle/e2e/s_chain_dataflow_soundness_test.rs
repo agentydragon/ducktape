@@ -21,17 +21,12 @@
 //! - **window/self**: only the literal `globalThis` was treated as
 //!   the global object, despite README claiming otherwise.
 
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::DependencyGraphReport;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, source_unit_for_binding, source_unit_for_ordinal,
+};
 use debundle_e2e_support::*;
-
-fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| node.statement_ordinal.0 == ordinal)
-        .unwrap_or_else(|| panic!("no dependency graph node with ordinal {ordinal}"));
-    node.id.as_str()
-}
 
 /// Assert a `Sequenced` edge `later → earlier` exists (the
 /// "earlier must evaluate first" constraint).
@@ -76,7 +71,7 @@ export { snapshot, value };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
@@ -98,7 +93,7 @@ export { snapshot, value };
             logical_module("values/snapshot", &[Member::new("snapshot")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 
@@ -119,7 +114,7 @@ export { snapshot, value };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "0 42\n");
     let graph = fixture.dependency_graph();
@@ -141,7 +136,7 @@ export { snapshot, value };
             logical_module("values/snapshot", &[Member::new("snapshot")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 
@@ -162,7 +157,7 @@ export { snapshot, value };
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline());
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(colocated);
     assert_preserved_entry_output(&fixture, "true 42\n");
     let graph = fixture.dependency_graph();
@@ -179,7 +174,7 @@ export { snapshot, value };
             logical_module("values/snapshot", &[Member::new("snapshot")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 
@@ -373,6 +368,42 @@ export { g, got };
         source_unit_for_binding(&graph, "got"),
         source_unit_for_ordinal(&graph, 1),
     );
+}
+
+/// A settled alias read only through static members reads exactly those
+/// `GlobalProp` cells: it follows the writer of its cell, not an unrelated
+/// impure statement. Any other use of the alias keeps the conservative chain.
+#[test]
+fn settled_global_alias_member_read_is_a_precise_cell() {
+    for (reader, conservative) in [
+        ("const got = g.tag;", false),
+        ("const got = (globalThis.consume?.(g), g.tag);", true),
+        ("const got = g[globalThis.key];", true),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &format!(
+                    "const g = globalThis;\nglobalThis.tag = \"x\";\nglobalThis.other = \"y\";\n{reader}\nconsole.log(got);\nexport {{ g, got }};\n"
+                ),
+                vec![
+                    logical_module_with_anon("mod_w", &[], &[r#"globalThis.tag = "x";"#]),
+                    logical_module_with_anon("mod_o", &[], &[r#"globalThis.other = "y";"#]),
+                    logical_module("mod_read", &[Member::new("got")]),
+                ],
+            )
+            .with_dataflow_aware_s_chain(),
+        );
+        let graph = fixture.dependency_graph();
+        // ordinals: 0 = g, 1 = tag write, 2 = other write, 3 = got, 4 = log
+        let got = source_unit_for_binding(&graph, "got");
+        assert_sequenced_edge(&graph, got, source_unit_for_ordinal(&graph, 1));
+        let after_other = graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == got
+                && edge.target == source_unit_for_ordinal(&graph, 2)
+        });
+        assert_eq!(after_other, conservative, "{reader}");
+    }
 }
 
 /// window/self: an unshadowed `window` is the same object as

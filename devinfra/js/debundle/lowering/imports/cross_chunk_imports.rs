@@ -15,7 +15,7 @@ use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::module_export_name;
 use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};
-use swc_common::DUMMY_SP;
+use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMutWith, VisitWith};
 
@@ -61,9 +61,9 @@ pub fn naturalize_cross_chunk_imports(
         })
         .collect();
 
-    // Resolve original static source imports before mutating any files. This
-    // relies on the same chunk/source-path index used by lowering, not on
-    // guessed output-tree paths.
+    // Resolve original static source imports first, then emitted entry paths
+    // already produced by lowering. Both use artifact indexes; entry aliases
+    // never authorize changing an import from a different logical-module file.
     let mut pending = Vec::<PendingImportRename>::new();
     let resolver = artifact.source_import_resolver(indexes);
     for chunk in &artifact.chunks {
@@ -82,9 +82,32 @@ pub fn naturalize_cross_chunk_imports(
                 let Some(src) = import.src.value.as_str() else {
                     continue;
                 };
-                let Some((target_chunk, _, _)) = resolver.resolve(src, chunk.chunk_id, &file.path)
-                else {
-                    continue;
+                let target_chunk = if let Some((target_chunk, _, _)) =
+                    resolver.resolve(src, chunk.chunk_id, &file.path)
+                {
+                    target_chunk
+                } else {
+                    // Lowered modules already import emitted paths. The
+                    // aliases below describe the provider's entry exports,
+                    // so a resolved logical-module file is not eligible.
+                    let Some(target) = indexes.resolve_runtime_import_reference(
+                        src,
+                        chunk.chunk_id,
+                        &file.path,
+                        &artifact.chunk_table,
+                    ) else {
+                        continue;
+                    };
+                    let Some(provider) = artifact.find_chunk(target.target_chunk_id) else {
+                        continue;
+                    };
+                    if target.target_file != provider.js.entry_file {
+                        continue;
+                    }
+                    artifact
+                        .chunk_table
+                        .name(target.target_chunk_id)
+                        .to_string()
                 };
                 if target_chunk == chunk_name {
                     continue;
@@ -198,7 +221,8 @@ pub fn naturalize_cross_chunk_imports(
             });
         }
         let pending_renames = ledger.pending_renames(&RenameScope::Chunk);
-        let mut capture_probe = RenameCaptureProbe::new(&pending_renames);
+        let unresolved_context = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+        let mut capture_probe = RenameCaptureProbe::new(&pending_renames, unresolved_context);
         for item in &parsed.module.body {
             item.visit_with(&mut capture_probe);
         }
@@ -236,7 +260,7 @@ pub fn naturalize_cross_chunk_imports(
             })
             .collect();
         if !renames.is_empty() {
-            let mut renamer = IdentifierRenamer::new(&renames);
+            let mut renamer = IdentifierRenamer::new(&renames, unresolved_context);
             for item in &mut parsed.module.body {
                 item.visit_mut_with(&mut renamer);
             }

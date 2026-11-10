@@ -50,6 +50,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    deps = ["//gnome/testing:fake_daemon_js"],
 )
 
 eslint_test(
@@ -65,20 +66,20 @@ py_test(
         ":aiquota_zip",
         ":fake_daemon",
         "//aiquota/testing:fixtures",
-        "//gnome/test_image:gnome_shell_test",
     ],
     requires_docker = True,
     tags = ["visual"],
     deps = [
         "//:conftest",
         "//aiquota/testing:quota_fixtures",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:gnome",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/oci",
+        "//devinfra/testing:output_writer",
+        "//gnome/test_image:gnome_shell_test",
+        "//gnome/testing:fake_daemon",
+        "//gnome/testing:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -87,9 +88,13 @@ py_test(
 sh_binary(
     name = "devkit",
     srcs = ["devkit.sh"],
+    args = [
+        "$(rlocationpath :aiquota_zip)",
+        "$(rlocationpath //aiquota:desktop_bin)",
+    ],
     data = [
         ":aiquota_zip",
         "//aiquota:desktop_bin",
     ],
-    deps = ["@bazel_tools//tools/bash/runfiles"],
+    use_bash_launcher = True,
 )

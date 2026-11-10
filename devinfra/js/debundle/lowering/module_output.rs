@@ -1,10 +1,11 @@
 //! Emit one accepted logical-module plan. Chunk selection and entry construction stay in
 //! `lower`; this phase owns per-module imports, sealed renames, comments, and output metadata.
 
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
-use swc_common::{BytePos, DUMMY_SP, Spanned};
+use swc_common::{BytePos, DUMMY_SP, Spanned, SyntaxContext};
 
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
@@ -13,27 +14,28 @@ use super::scope_names::collect_local_binding_names;
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, RuntimeImportFacts, VendorReimportOracle,
-    cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls,
-    imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs,
-    plan_vendor_reimports, residual_entry_imports_for_moved_body,
-    source_chunk_imports_for_moved_body,
+    PlannedVendorReimports, VendorReimportOracle, cross_module_imports_for_plan,
+    final_module_exports, group_specifiers_into_import_decls, imported_binding_named_specifier,
+    phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
+    residual_entry_imports_for_moved_body, source_chunk_imports_for_moved_body,
 };
 use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
-use crate::visitors::IdentifierRenamer;
+use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
-use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
+use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
+use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
+use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
-use swc_ecma_visit::VisitMutWith;
+use swc_ecma_visit::{VisitMutWith, VisitWith};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -49,30 +51,34 @@ struct ModuleOutputContext<'a> {
     source_path: &'a str,
 }
 
-pub(super) struct ModuleEmissionInputs<'a> {
+/// Borrows kept by [`PreparedModuleEmission`] use `'output`. Planning-only
+/// views use `'planning`; the source-import cache borrow is short-lived while
+/// its artifact/index referents use the independent `'cache` lifetime, and the
+/// vendor oracle's borrowed data has its own `'vendor` lifetime.
+pub(super) struct ModuleEmissionInputs<'output, 'planning, 'cache, 'vendor> {
     pub(super) index: usize,
-    pub(super) plan: &'a ModulePlan,
+    pub(super) plan: &'output ModulePlan,
     pub(super) naturalized: NaturalizedModuleBody,
-    pub(super) assignment_analysis: &'a AssignmentAnalysis,
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
-    pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
-    pub(super) entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
-    pub(super) imported_reexports: &'a [super::imports::plan_references::ImportedReexport],
-    pub(super) selected_exports: Option<&'a BTreeMap<String, String>>,
-    pub(super) cross_module_chunk_renames: &'a BTreeMap<String, String>,
-    pub(super) source_import_cache: &'a Mutex<ArtifactSourceImportResolutionCache<'a>>,
-    pub(super) chunk_id: &'a str,
+    pub(super) assignment_analysis: &'output AssignmentAnalysis,
+    pub(super) declaration_by_name: &'planning HashMap<Id, Vec<StatementId>>,
+    pub(super) binding_assignment: &'planning HashMap<Id, usize>,
+    pub(super) runtime_import_facts: &'planning RuntimeImportFacts,
+    pub(super) entry_exports_by_original_local: &'planning HashMap<Id, EntryExport>,
+    pub(super) imported_reexports: &'planning [super::imports::plan_references::ImportedReexport],
+    pub(super) selected_exports: Option<&'planning BTreeMap<String, String>>,
+    pub(super) cross_module_chunk_renames: &'planning BTreeMap<String, String>,
+    pub(super) source_import_cache: &'planning Mutex<ArtifactSourceImportResolutionCache<'cache>>,
+    pub(super) chunk_id: &'output str,
     pub(super) chunk_id_interned: ChunkId,
-    pub(super) entry_file: &'a str,
-    pub(super) source_path: &'a str,
+    pub(super) entry_file: &'output str,
+    pub(super) source_path: &'output str,
     pub(super) chunk_top_level_mark: swc_common::Mark,
-    pub(super) runtime_ast: &'a ParsedJsModule,
-    pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
+    pub(super) runtime_ast: &'output ParsedJsModule,
+    pub(super) vendor_import_oracle: Option<&'planning VendorReimportOracle<'vendor>>,
 }
 
 /// One module plan's lowered output: the emitted file plus the
-/// per-plan bookkeeping `lower_chunk` rolls up.
+/// per-plan bookkeeping `PreparedCandidateEmissionPlan::emit` rolls up.
 pub(super) struct LoweredModuleOutput {
     pub(super) file: JsFile,
     pub(super) record: (String, FileRole),
@@ -80,7 +86,36 @@ pub(super) struct LoweredModuleOutput {
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredModuleOutput> {
+/// One module's exact body after import planning, sealed renames, and
+/// export construction. Rendering consumes it without repeating any planning.
+pub(super) struct PreparedModuleEmission<'a> {
+    plan: &'a ModulePlan,
+    body: Vec<ModuleItem>,
+    explicit_renames: BTreeMap<String, String>,
+    output_context: ModuleOutputContext<'a>,
+    vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+}
+
+impl PreparedModuleEmission<'_> {
+    pub(super) fn emit(self) -> LoweredModuleOutput {
+        let (file, record, lowering) = build_module_output(
+            self.plan,
+            self.body,
+            &self.explicit_renames,
+            &self.output_context,
+        );
+        LoweredModuleOutput {
+            file,
+            record,
+            lowering,
+            vendor_reference_rewrites: self.vendor_reference_rewrites,
+        }
+    }
+}
+
+pub(super) fn prepare_module_emission<'output>(
+    inputs: ModuleEmissionInputs<'output, '_, '_, '_>,
+) -> Result<PreparedModuleEmission<'output>> {
     let ModuleEmissionInputs {
         index,
         plan,
@@ -171,40 +206,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         missing_residual_exports,
         &mut import_rename_sink,
     )?;
-    // Seal the per-plan import ledger; the Module-scope projection is
-    // the import-local rename map the pre-ledger code accumulated
-    // across the two minting passes above. Seal asserts the mints
-    // stayed clear of every name bound anywhere in the body.
-    let module_import_renames = import_ledger
-        .seal(&SealValidation {
-            occupancy: BTreeMap::from([(
-                RenameScope::Module(module),
-                ScopeOccupancy::Body {
-                    label: plan.id.clone(),
-                    root: BTreeSet::new(),
-                    nested: module_local_names,
-                    captured: BTreeSet::new(),
-                },
-            )]),
-            reserved: BTreeSet::new(),
-        })?
-        .scope_renames(&RenameScope::Module(module))
-        .unwrap_or_default();
-    if !module_import_renames.is_empty() {
-        let mut renamer = IdentifierRenamer::new(&module_import_renames);
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut renamer);
-        }
-        // Import-local renames are minted from the ledger's taken set,
-        // which seal validated against every name bound anywhere in the
-        // body — a capture here would mean seal's guarantee broke.
-        debug_assert!(
-            renamer.captured.is_empty(),
-            "import-local renames for module {} captured despite seal validation: {:?}",
-            plan.id,
-            renamer.captured,
-        );
-    }
+    let unresolved_context = SyntaxContext::empty().apply_mark(runtime_ast.unresolved_mark);
     // Vendor consultation for the planned runtime re-imports: named re-imports whose source
     // directive targets a partially / bundled-partially swapped chunk
     // are constructed as package / facade imports straight from the
@@ -286,8 +288,54 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         .map(|(_, item)| item)
         .collect();
     combined.append(&mut runtime_reimports);
+    let original_module_body_start = combined.len();
     combined.append(&mut body);
     body = combined;
+    // Seal the per-plan import ledger against the exact assembled body;
+    // the Module-scope projection is the import-local rename map the
+    // pre-ledger code accumulated across the two minting passes above.
+    // Besides binding occupancy, the shared read-only probe finds an
+    // unchanged unresolved reference that a minted target would capture.
+    let pending_import_renames = import_ledger.pending_renames(&RenameScope::Module(module));
+    let mut import_capture_probe =
+        RenameCaptureProbe::new(&pending_import_renames, unresolved_context);
+    if !pending_import_renames.is_empty() {
+        for item in &body {
+            item.visit_with(&mut import_capture_probe);
+        }
+    }
+    let module_import_renames = import_ledger
+        .seal(&SealValidation {
+            occupancy: BTreeMap::from([(
+                RenameScope::Module(module),
+                ScopeOccupancy::Body {
+                    label: plan.id.clone(),
+                    root: BTreeSet::new(),
+                    nested: module_local_names,
+                    captured: import_capture_probe.captured,
+                },
+            )]),
+            reserved: BTreeSet::new(),
+        })?
+        .scope_renames(&RenameScope::Module(module))
+        .unwrap_or_default();
+    if !module_import_renames.is_empty() {
+        let mut renamer = IdentifierRenamer::new(&module_import_renames, unresolved_context);
+        // Preserve the existing execution boundary: synthesized import
+        // declarations already carry their minted locals, so only the
+        // original module body receives the source-Id rewrites.
+        for item in body.iter_mut().skip(original_module_body_start) {
+            item.visit_mut_with(&mut renamer);
+        }
+        // Import-local renames are minted from the ledger's taken-name set;
+        // a capture here means the seal probe and executor diverged.
+        debug_assert!(
+            renamer.captured.is_empty(),
+            "import-local renames for module {} captured despite seal validation: {:?}",
+            plan.id,
+            renamer.captured,
+        );
+    }
     // Apply chunk_renames to the assembled module body so that
     // import-specifier aliases and references in the moved code
     // both pick up the spec's rename. Without this, residual
@@ -305,16 +353,18 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
                 )
             })
             .collect();
-        let mut renamer = IdentifierRenamer::new(&cross_module_chunk_renames_by_id);
+        let mut renamer =
+            IdentifierRenamer::new(&cross_module_chunk_renames_by_id, unresolved_context);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
         if !renamer.captured.is_empty() {
             // The entry-side chunk_renames validation only sees
-            // entry's post-split body; a target can still collide
-            // with a binding nested inside this moved module body.
+            // entry's post-split body; a target can still conflict with a
+            // nested binding or capture an unresolved reference inside
+            // this moved module body.
             bail!(
-                "chunk_renames applied to module {} would be captured by a nested binding: {:?}",
+                "chunk_renames applied to module {} would change reference resolution: {:?}",
                 plan.id,
                 renamer.captured,
             );
@@ -336,7 +386,16 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         body.extend(vendor_external_imports);
         body.extend(tail);
     }
-    rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
+    let resource_destinations = source_import_cache
+        .lock()
+        .expect("source import cache")
+        .runtime_resource_destinations(chunk_id, entry_file, source_path)?;
+    rewrite_runtime_sources_for_target(
+        &mut body,
+        chunk_id,
+        &resource_destinations,
+        &plan.target_file,
+    );
     // Plan-driven vendor body replacements (member accesses off the
     // package / facade namespace, named-kind auto-renames). Not a
     // RenameLedger entry — ident→member-expression replacement is an
@@ -360,9 +419,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
             bindings: &bindings,
             references_by_symbol: &mut vendor_reference_rewrites,
         };
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut rewriter);
-        }
+        body.visit_mut_with(&mut rewriter);
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
     // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose
@@ -437,12 +494,11 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         entry_file,
         source_path,
     };
-    let (file, record, lowering) =
-        build_module_output(plan, body, &explicit_renames, &output_context);
-    Ok(LoweredModuleOutput {
-        file,
-        record,
-        lowering,
+    Ok(PreparedModuleEmission {
+        plan,
+        body,
+        explicit_renames,
+        output_context,
         vendor_reference_rewrites,
     })
 }
@@ -495,14 +551,12 @@ fn build_module_output(
     header.extend([
         LOWERING_FILE_PRAGMA.to_string(),
         LOWERING_GENERATOR_HEADER.to_string(),
-        format!(
-            "// Selected-module lowered region; original source_unit ids: {}.",
-            source_unit_ids.join(", ")
+        provenance_header(
+            "original source_unit ids",
+            &source_unit_ids,
+            context.chunk_id,
         ),
-        format!(
-            "// Selected-module lowered region; source bindings: {}.",
-            binding_names.join(", ")
-        ),
+        provenance_header("source bindings", &binding_names, context.chunk_id),
     ]);
     let leading_item_comments = anonymous_statement_comments_by_span(plan, context.runtime_ast);
     // `plan.binding_comments` is keyed by the member's ORIGINAL binding
@@ -559,6 +613,22 @@ fn build_module_output(
         target_path: plan.target_path.clone(),
     };
     (file, record, lowering)
+}
+
+fn provenance_header(label: &str, values: &[String], chunk_id: &str) -> String {
+    let prefix = format!("// Selected-module lowered region; {label}: ");
+    let inline_len = prefix.len()
+        + values.iter().map(String::len).sum::<usize>()
+        + values.len().saturating_sub(1) * 2
+        + 1;
+    if inline_len <= 160 {
+        format!("{prefix}{}.", values.join(", "))
+    } else {
+        format!(
+            "{prefix}{} entries; see {REPORTS_DIR}/{TREE_DIR}/{chunk_id}/{CHUNK_REPORT}.",
+            values.len()
+        )
+    }
 }
 
 fn anonymous_statement_comments_by_span(

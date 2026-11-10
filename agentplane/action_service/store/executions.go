@@ -16,6 +16,7 @@ import (
 
 // executionLock is an Execution's row, locked for update.
 type executionLock struct {
+	ID    uuid.UUID
 	State ExecutionState
 	// Lease is nil until the Execution is claimed.
 	Lease *Lease
@@ -28,8 +29,8 @@ func lockExecution(ctx context.Context, q querier, id uuid.UUID) (executionLock,
 	var executorID *string
 	var token uuid.NullUUID
 	err := q.QueryRowContext(ctx,
-		`SELECT state, executor_id, lease_token FROM action_execution WHERE request_id = $1 FOR UPDATE`, id).
-		Scan(&state, &executorID, &token)
+		`SELECT id, state, executor_id, lease_token FROM action_execution WHERE request_id = $1 FOR UPDATE`, id).
+		Scan(&lock.ID, &state, &executorID, &token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return executionLock{}, ErrNotFound
 	}
@@ -176,7 +177,10 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_RUNNING, at, nil); err != nil {
 			return err
 		}
-		payload = ExecutionRequest{RequestID: row.ID, Action: row.Action, Arguments: row.Arguments, Caller: row.Caller}
+		payload = ExecutionRequest{
+			RequestID: row.ID, ExecutionID: execution.ID, Action: row.Action, Arguments: row.Arguments,
+			Caller: row.Caller,
+		}
 		return nil
 	})
 	return payload, err
@@ -189,6 +193,10 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 // one attempt made.
 func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, outcome ExecutionOutcome) error {
 	if err := outcome.Validate(); err != nil {
+		return err
+	}
+	failure, err := encodeExecutionError(outcome.Error)
+	if err != nil {
 		return err
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
@@ -221,7 +229,7 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 			SET state = $2, result = $3::jsonb, error = $4::jsonb, completed_at = COALESCE($5, completed_at),
 				reconciled_at = COALESCE($6, reconciled_at)
 			WHERE request_id = $1`,
-			id, outcome.State, jsonParam(jsonValue(outcome.Result)), jsonParam(jsonValue(outcome.Error)), completedAt,
+			id, outcome.State, jsonParam(jsonValue(outcome.Result)), jsonParam(failure), completedAt,
 			reconciledAt); err != nil {
 			return err
 		}
@@ -232,8 +240,8 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 // ExpireStaleLeases ends the Executions in flight whose lease lapsed as unknown, and returns their requests in ID
 // order. It never replays them: the effect may have happened.
 //
-// The recorded reason tells an operator whether the executor is gone (UnknownExecutorLost: its own health heartbeat
-// is also older than executorHealthTimeout) or only this attempt stopped renewing (UnknownLeaseExpired). Both are
+// The recorded reason tells an operator whether the executor is gone (EXECUTOR_LOST: its own health heartbeat
+// is also older than executorHealthTimeout) or only this attempt stopped renewing (LEASE_EXPIRED). Both are
 // equally final.
 func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout time.Duration) ([]uuid.UUID, error) {
 	var expired []uuid.UUID
@@ -270,9 +278,9 @@ func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout tim
 			if err != nil {
 				return err
 			}
-			reason := UnknownLeaseExpired
+			reason := action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED
 			if silent {
-				reason = UnknownExecutorLost
+				reason = action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST
 			}
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE action_execution SET state = $2, error = $3::jsonb, completed_at = $4 WHERE request_id = $1`,

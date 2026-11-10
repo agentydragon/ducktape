@@ -24,6 +24,10 @@ from props.orchestration.agent_registry import BudgetExceededError, ImageResolut
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
 
@@ -155,6 +159,18 @@ def run_critic_client(synced_db: Database):
     return client, mock_registry
 
 
+def _critic_request(
+    *, definition_id: str = FAKE_CRITIC_DIGEST, snapshot_slug: str = "test-fixtures/train1", budget_usd: float = 1.0
+) -> dict[str, object]:
+    return {
+        "definition_id": definition_id,
+        "example": {"kind": "whole_snapshot", "snapshot_slug": snapshot_slug},
+        "critic_model": BUDGET_TEST_MODEL,
+        "timeout_seconds": 60,
+        "budget_usd": budget_usd,
+    }
+
+
 def test_run_critic_budget_exceeded_returns_422(run_critic_client) -> None:
     """POST /api/runs/critic returns 422 when budget exceeds parent's remaining."""
     client, mock_registry = run_critic_client
@@ -164,16 +180,7 @@ def test_run_critic_budget_exceeded_returns_422(run_critic_client) -> None:
         "Cannot spawn child with $5.00 budget: parent has $0.75 remaining ($1.25 spent of $2.00)"
     )
 
-    response = client.post(
-        "/api/runs/critic",
-        json={
-            "definition_id": FAKE_CRITIC_DIGEST,
-            "example": {"kind": "whole_snapshot", "snapshot_slug": "test-fixtures/train1"},
-            "critic_model": BUDGET_TEST_MODEL,
-            "timeout_seconds": 60,
-            "budget_usd": 5.0,
-        },
-    )
+    response = client.post("/api/runs/critic", json=_critic_request(budget_usd=5.0))
 
     assert response.status_code == 422
     assert "Cannot spawn child" in response.json()["detail"]
@@ -189,16 +196,7 @@ def test_run_critic_image_resolution_error_returns_422(run_critic_client) -> Non
 
     mock_registry.resolve_image.side_effect = ImageResolutionError("Image not found: critic:nonexistent")
 
-    response = client.post(
-        "/api/runs/critic",
-        json={
-            "definition_id": "nonexistent",
-            "example": {"kind": "whole_snapshot", "snapshot_slug": "test-fixtures/train1"},
-            "critic_model": BUDGET_TEST_MODEL,
-            "timeout_seconds": 60,
-            "budget_usd": 1.0,
-        },
-    )
+    response = client.post("/api/runs/critic", json=_critic_request(definition_id="nonexistent"))
 
     assert response.status_code == 422
     assert "Image not found" in response.json()["detail"]
@@ -209,34 +207,30 @@ def test_run_critic_registry_initializing_returns_503(run_critic_client) -> None
     client, _ = run_critic_client
     client.app.state.registry = None
 
-    response = client.post(
-        "/api/runs/critic",
-        json={
-            "definition_id": FAKE_CRITIC_DIGEST,
-            "example": {"kind": "whole_snapshot", "snapshot_slug": "test-fixtures/train1"},
-            "critic_model": BUDGET_TEST_MODEL,
-            "timeout_seconds": 60,
-            "budget_usd": 1.0,
-        },
-    )
+    response = client.post("/api/runs/critic", json=_critic_request())
 
     assert response.status_code == 503
+
+
+def test_run_critic_uses_registry_dependency_override(run_critic_client) -> None:
+    client, _ = run_critic_client
+    client.app.state.registry = None
+    registry = AsyncMock()
+    registry.resolve_image.side_effect = ImageResolutionError("override registry")
+    client.app.dependency_overrides[runs.get_registry] = lambda: registry
+
+    response = client.post("/api/runs/critic", json=_critic_request())
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "override registry"
+    registry.resolve_image.assert_awaited_once()
 
 
 def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
     """POST /api/runs/critic returns 404 when snapshot doesn't exist."""
     client, mock_registry = run_critic_client
 
-    response = client.post(
-        "/api/runs/critic",
-        json={
-            "definition_id": FAKE_CRITIC_DIGEST,
-            "example": {"kind": "whole_snapshot", "snapshot_slug": "nonexistent/snapshot"},
-            "critic_model": BUDGET_TEST_MODEL,
-            "timeout_seconds": 60,
-            "budget_usd": 1.0,
-        },
-    )
+    response = client.post("/api/runs/critic", json=_critic_request(snapshot_slug="nonexistent/snapshot"))
 
     assert response.status_code == 404
     # Snapshot validation happens before image resolution

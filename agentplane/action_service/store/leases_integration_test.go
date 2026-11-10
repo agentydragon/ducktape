@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 const healthWindow = 30 * time.Second
@@ -41,7 +42,7 @@ func TestMarkRunningCrossesTheNoReplayBoundary(t *testing.T) {
 	f.claim(t, allowed.ID)
 
 	payload := f.markRunning(t, allowed.ID)
-	if payload.RequestID != allowed.ID || payload.Action != body.Action || payload.Caller != caller.Account {
+	if payload.RequestID != allowed.ID || payload.Action != body.Action || accountOf(payload.Caller) != caller.Account {
 		t.Errorf("payload %+v", payload)
 	}
 	sameJSON(t, payload.Arguments, body.Arguments)
@@ -106,7 +107,7 @@ func TestHeartbeatRenewsOnlyTheOwnersLeaseOfAnExecutionInFlight(t *testing.T) {
 
 func TestFinishRecordsTheTerminalStatePythonMapsItTo(t *testing.T) {
 	result := json.RawMessage(`{"rows": [1, 2.50], "access_token": "test-access-token"}`)
-	failure := json.RawMessage(`{"kind": "test_failure", "message": "test message"}`)
+	failure := &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"}
 	for _, vector := range loadGolden(t).TerminalStates {
 		t.Run(vector.ExecutionState, func(t *testing.T) {
 			f := newFixture(t)
@@ -125,7 +126,10 @@ func TestFinishRecordsTheTerminalStatePythonMapsItTo(t *testing.T) {
 				t.Errorf("request %+v, execution %+v", got, execution)
 			}
 			sameJSON(t, execution.Result, result)
-			sameJSON(t, execution.Error, failure)
+			if !proto.Equal(execution.Error, failure) {
+				t.Errorf("error = %v, want %v", execution.Error, failure)
+			}
+			sameJSON(t, f.storedError(t, allowed.ID), []byte(`{"kind": "invalid_arguments", "message": "test message"}`))
 			if states := eventStates(f.events(t, allowed.ID)); states[len(states)-1] != got.State {
 				t.Errorf("events %v", states)
 			}
@@ -141,7 +145,7 @@ func TestFinishWithoutAResultOrAnErrorStoresNull(t *testing.T) {
 	// An attempt may finish before MarkRunning recorded its start.
 	f.finish(t, absent.ID, f.claim(t, absent.ID).Lease, ExecutionSucceeded)
 	if err := f.FinishExecution(t.Context(), jsonNull.ID, f.claim(t, jsonNull.ID).Lease,
-		ExecutionOutcome{State: ExecutionSucceeded, Result: json.RawMessage(`null`), Error: json.RawMessage(`null`)}); err != nil {
+		ExecutionOutcome{State: ExecutionSucceeded, Result: json.RawMessage(`null`)}); err != nil {
 		t.Fatal(err)
 	}
 	if f.count(t, `SELECT count(*) FROM action_execution WHERE state = 'succeeded' AND result IS NULL AND error IS NULL`) != 2 {
@@ -166,7 +170,7 @@ func TestFinishRefusesWhatItCannotRecord(t *testing.T) {
 		"a result that is not JSON": {allowed.ID, claim.Lease, ExecutionOutcome{State: ExecutionSucceeded, Result: json.RawMessage(`{`)}, func(err error) bool {
 			return errors.Is(err, ErrInvalid)
 		}},
-		"an error that is not an object": {allowed.ID, claim.Lease, ExecutionOutcome{State: ExecutionFailed, Error: json.RawMessage(`[1]`)}, func(err error) bool {
+		"an error without a kind it can store": {allowed.ID, claim.Lease, ExecutionOutcome{State: ExecutionFailed, Error: &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN}}, func(err error) bool {
 			return errors.Is(err, ErrInvalid)
 		}},
 		"another token": {allowed.ID, Lease{ExecutorID: claim.ExecutorID, Token: uuid.New()}, ExecutionOutcome{State: ExecutionSucceeded}, func(err error) bool {
@@ -241,11 +245,11 @@ func TestTheSweepEndsALapsedLeaseAsUnknownAndNeverReplaysIt(t *testing.T) {
 		started   bool
 		heartbeat time.Duration
 		recorded  bool
-		reason    UnknownOutcomeReason
+		reason    action_servicepb.ExecutionErrorKind
 	}{
-		{"before the start, no executor heartbeat", false, 0, false, UnknownExecutorLost},
-		{"after the start, a healthy executor", true, 0, true, UnknownLeaseExpired},
-		{"after the start, a silent executor", true, time.Hour, true, UnknownExecutorLost},
+		{"before the start, no executor heartbeat", false, 0, false, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST},
+		{"after the start, a healthy executor", true, 0, true, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED},
+		{"after the start, a silent executor", true, time.Hour, true, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -270,9 +274,12 @@ func TestTheSweepEndsALapsedLeaseAsUnknownAndNeverReplaysIt(t *testing.T) {
 				!execution.CompletedAt.Equal(got.UpdatedAt) || execution.ReconciledAt != nil {
 				t.Errorf("request %+v, execution %+v", got, execution)
 			}
+			if execution.Error.GetKind() != test.reason {
+				t.Errorf("error = %v, want kind %v", execution.Error, test.reason)
+			}
 			for _, vector := range loadGolden(t).UnknownOutcomes {
-				if vector.Reason == string(test.reason) {
-					sameJSON(t, execution.Error, vector.Error)
+				if vector.Reason == storedErrorKinds[test.reason] {
+					sameJSON(t, f.storedError(t, allowed.ID), vector.Error)
 				}
 			}
 			if len(f.pendingDispatches(t)) != 0 || len(f.expire(t)) != 0 {

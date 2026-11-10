@@ -4,9 +4,9 @@ use std::fmt;
 use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-use js_ast::item_var_decl;
+use js_ast::{GlobalUseElisions, ParsedGlobalUses, item_var_decl};
 use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, SourceMap};
+use swc_common::{BytePos, DUMMY_SP, SourceMap, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -20,7 +20,8 @@ fn strip_one_chunk(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
 ) -> Result<()> {
-    strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new())
+    strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new(), None)
+        .map(|_| ())
 }
 
 /// Residual strip for one partially-swapped vendor entry: drops
@@ -36,11 +37,13 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
-) -> Result<()> {
+    global_uses: Option<&ParsedGlobalUses>,
+) -> Result<GlobalUseElisions> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
+    let mut removed_global_uses = RemovedGlobalUseRecorder::new(global_uses);
 
     split_top_level_var_decls(module);
-    let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
+    let stripped = strip_export_specifiers(module, symbols, chunk_path, &mut removed_global_uses)?;
     let post_strip_exports = super::export_surface::collect_exported_names(module);
 
     sweep_unreachable_top_level(
@@ -49,6 +52,7 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         &stripped,
         chunk_path,
         replacement_import_locals,
+        &mut removed_global_uses,
     )?;
 
     // Phase 2 must not change the export surface relative to Phase 1.
@@ -78,7 +82,51 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
         );
     }
 
-    Ok(())
+    Ok(removed_global_uses.uses)
+}
+
+/// Mutation bookkeeping only: visit nodes the strip actually removes and
+/// intersect their identifier sites with the same chunk's prepared-parse
+/// inventory. This does not classify names or re-derive source uses. Sites
+/// match by span and spelling, so an AST re-parsed from the same bytes (with
+/// fresh hygiene marks) still lines up with the prepared parse.
+struct RemovedGlobalUseRecorder<'a> {
+    sites: BTreeMap<(BytePos, BytePos), &'a Id>,
+    uses: GlobalUseElisions,
+}
+
+impl<'a> RemovedGlobalUseRecorder<'a> {
+    fn new(manifest: Option<&'a ParsedGlobalUses>) -> Self {
+        let sites = manifest
+            .into_iter()
+            .flat_map(|manifest| &manifest.uses)
+            .flat_map(|(id, spans)| spans.iter().map(move |span| ((span.lo, span.hi), id)))
+            .collect();
+        Self {
+            sites,
+            uses: GlobalUseElisions::default(),
+        }
+    }
+
+    fn record<T: VisitWith<Self>>(&mut self, removed_node: &T) {
+        if !self.sites.is_empty() {
+            removed_node.visit_with(self);
+        }
+    }
+}
+
+impl Visit for RemovedGlobalUseRecorder<'_> {
+    fn visit_ident(&mut self, ident: &Ident) {
+        let Some(&id) = self.sites.get(&(ident.span.lo, ident.span.hi)) else {
+            return;
+        };
+        if id.0 == ident.sym {
+            let spans = self.uses.uses.entry(id.clone()).or_default();
+            if !spans.contains(&ident.span) {
+                spans.push(ident.span);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +153,7 @@ fn strip_export_specifiers(
     module: &mut Module,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
+    removed_global_uses: &mut RemovedGlobalUseRecorder<'_>,
 ) -> Result<BTreeMap<String, StrippedExport>> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
     let mut found: BTreeMap<String, StrippedExport> = BTreeMap::new();
@@ -151,6 +200,7 @@ fn strip_export_specifiers(
                                 )]),
                             },
                         );
+                        removed_global_uses.record(&spec);
                     } else {
                         kept.push(spec);
                     }
@@ -307,6 +357,7 @@ fn sweep_unreachable_top_level(
     stripped: &BTreeMap<String, StrippedExport>,
     chunk_path: &str,
     replacement_import_locals: &BTreeSet<Id>,
+    removed_global_uses: &mut RemovedGlobalUseRecorder<'_>,
 ) -> Result<()> {
     let analyses = analyze_prune_items(module, chunk_path)?;
 
@@ -496,9 +547,21 @@ fn sweep_unreachable_top_level(
     //   * a binding write is private unless some *retained* (`live`) item reads
     //     that binding; writes to a replacement-import local stay private
     //     (the old island configuring the new facade has no residual reader);
+    //   * an array or Set content write is private when that allocation is
+    //     born in a dropped item: the residual never creates it, and any live
+    //     path to it would cross a binding, global or content cell written by
+    //     a dropped item, which the other cases and the soundness gate above
+    //     check;
     //   * a statement the analyzer cannot summarize (dynamic `globalThis[expr]`,
     //     `eval`, `with`, `Function(...)`) may touch any cell and is never
-    //     private.
+    //     private;
+    //   * the cell summary covers the statement's own writes, not its
+    //     callees' in-place mutations (`registry[name] = deps` inside a called
+    //     function). A callee can only mutate state rooted at a binding it or
+    //     the statement reaches, so the effect is private only when none of
+    //     those bindings is retained state (`shared_roots`). External callees
+    //     see only what the statement hands them; replacing the package
+    //     promises their package-side effects.
     //
     // A swap-reachable observable effect that is not provably swap-private would
     // be silently deleted — an under-restriction soundness violation. Bail so
@@ -509,18 +572,223 @@ fn sweep_unreachable_top_level(
         .filter(|&(i, _)| live[i])
         .flat_map(|(_, an)| an.reads.iter().chain(an.local_effects.iter()).cloned())
         .collect();
-    let swap_private_effect = |i: usize| -> bool {
-        let an = &analyses[i];
-        if !an.effects_summarizable {
-            return false;
-        }
-        an.observable_writes.iter().all(|cell| match cell {
+    // Allocation origins are the allocation node's `span.lo`.
+    let born_in_dropped_item = |origin: u32| -> bool {
+        module.body.iter().zip(&live).any(|(item, &is_live)| {
+            let span = item.span();
+            !is_live && span.lo.0 <= origin && origin < span.hi.0
+        })
+    };
+    let private_cell = |cell: &EffectCell| -> bool {
+        match cell {
             EffectCell::GlobalProp(_) => false,
+            EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
+                born_in_dropped_item(*origin)
+            }
+            // Property origins can be shared by repeated factory allocations;
+            // source containment alone does not prove their results private.
+            EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_) => false,
             EffectCell::Binding(id) => {
                 replacement_import_locals.contains(id) || !live_reads.contains(id)
             }
-        })
+        }
     };
+    // Retained state the statement or its callees may mutate in place: a
+    // binding they reach that a retained item declares, unless its value is
+    // code or a primitive (shareable `{}` cells are state) and that some code
+    // could mutate (`ExposedBindings`). Callees follow
+    // at-init call promotion: a direct, never-rebound chunk function runs its
+    // first-order body; nested closures run only when handed to an unresolved
+    // call. What an unresolved call receives, and a chunk callee that is not
+    // a direct function, are followed through lexical reads instead.
+    let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
+    // Items whose code mutates the object a binding holds in place.
+    let mut writers: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
+    for (j, item) in module.body.iter().enumerate() {
+        let mut exposed = ExposedBindings::default();
+        item.visit_with(&mut exposed);
+        for root in exposed.mutated {
+            writers.entry(root).or_default().push(j);
+        }
+    }
+    // Each retained binding a dropped statement may mutate, with what exposes
+    // it.
+    let shared_roots = |i: usize| -> BTreeMap<Id, String> {
+        let an = &analyses[i];
+        let retained_state = |id: &Id| {
+            !replacement_import_locals.contains(id)
+                && declarer
+                    .get(id)
+                    .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
+        };
+        // The statement's own writes are its cells; what it reads at init
+        // matters only as an argument its callees may mutate.
+        let mut reached: Vec<&Id> = if an.at_init.calls.is_empty() {
+            Vec::new()
+        } else {
+            an.eager_bindings.iter().collect()
+        };
+        // What the statement hands only to a host receiver (a global outside
+        // the chunk) is followed as a value: host code calling back into it is
+        // outside the analysed program (SPEC § Partial vendor-swap ownership).
+        let host = HostCalls::of(&module.body[i], |id| declarer.contains_key(id));
+        let (handed_to_host, mut lexical): (Vec<&Id>, Vec<&Id>) = an
+            .at_init
+            .unresolved_sources
+            .iter()
+            .filter(|id| !host.host_aliases.contains(*id))
+            .partition(|id| host.handed_only_to_host(id));
+        reached.extend(handed_to_host);
+        let mut callees: Vec<&Id> = an.at_init.calls.iter().collect();
+        // A closure handed to an unresolved call at init (an IIFE among them)
+        // runs this statement's own first-order body, unless every such closure
+        // goes to a host receiver.
+        if an.at_init.unresolved_inline_fn && !host.only_host_closures() {
+            run_first_order_body(
+                an,
+                &module.body[i],
+                &mut reached,
+                &mut lexical,
+                &mut callees,
+            );
+        }
+        let mut entered = BTreeSet::new();
+        while let Some(callee) = callees.pop() {
+            let Some(&j) = declarer.get(callee) else {
+                continue;
+            };
+            let body = &analyses[j];
+            if !body.direct_function || rebound.contains(callee) {
+                lexical.push(callee);
+                continue;
+            }
+            if entered.insert(j) {
+                run_first_order_body(
+                    body,
+                    &module.body[j],
+                    &mut reached,
+                    &mut lexical,
+                    &mut callees,
+                );
+            }
+        }
+        // Follow every reached binding to the retained state behind it: a
+        // binding the statement does not retain may alias state through its
+        // initializer or what is written into it. Where unresolved code may
+        // run, functions it reaches may run too.
+        // Items whose code may run (`true`), or whose values only are followed.
+        let mut region: BTreeMap<usize, bool> = entered.into_iter().map(|j| (j, true)).collect();
+        region.insert(i, true);
+        let mut candidates = BTreeSet::new();
+        // Each item followed into the region: the binding that led there and
+        // the item that binding was read from (`None`: the statement's reach).
+        let mut via: BTreeMap<RegionStep, (&Id, Option<RegionStep>)> = BTreeMap::new();
+        let mut worklist: Vec<(&Id, bool, Option<RegionStep>)> = reached
+            .into_iter()
+            .map(|id| (id, false, None))
+            .chain(lexical.into_iter().map(|id| (id, true, None)))
+            .collect();
+        let mut seen = BTreeSet::new();
+        let mut expanded = BTreeSet::new();
+        while let Some((id, code_may_run, from)) = worklist.pop() {
+            if !seen.insert((id, code_may_run)) {
+                continue;
+            }
+            if retained_state(id) {
+                candidates.insert(id);
+                continue;
+            }
+            let Some(&j) = declarer.get(id) else {
+                continue;
+            };
+            if !code_may_run && item_declares_code_or_primitive(&module.body[j]) {
+                continue;
+            }
+            // Calling a native container's methods runs no chunk code, but what
+            // is stored in it may still alias retained state.
+            let code_may_run = code_may_run && !item_declares_native_container(&module.body[j]);
+            for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
+                if expanded.insert((k, code_may_run)) {
+                    *region.entry(k).or_default() |= code_may_run;
+                    via.insert((k, code_may_run), (id, from));
+                    // A value this statement itself computes (a loop variable,
+                    // say) derives from what it reads at init; its own calls
+                    // and closures are covered above.
+                    let step = Some((k, code_may_run));
+                    if k == i {
+                        worklist.extend(
+                            an.eager_bindings
+                                .iter()
+                                .filter(|read| !an.at_init.calls.contains(*read))
+                                .map(|read| (read, code_may_run, step)),
+                        );
+                    } else {
+                        worklist.extend(
+                            analyses[k]
+                                .reads
+                                .iter()
+                                .map(|read| (read, code_may_run, step)),
+                        );
+                    }
+                }
+            }
+        }
+        // Retained state is at risk only when the code that may run could
+        // mutate it: a member write, `delete`, method call or hand-off of it
+        // there, or a rebind anywhere.
+        let mut roots = BTreeMap::new();
+        for (&k, &code_may_run) in &region {
+            // Where only values are followed, code in closures never runs.
+            let mut exposed = ExposedBindings {
+                skip_closures: !code_may_run,
+                ..ExposedBindings::default()
+            };
+            module.body[k].visit_with(&mut exposed);
+            for id in candidates.iter().filter(|id| exposed.uses.contains(**id)) {
+                roots.entry((*id).clone()).or_insert_with(|| {
+                    let mut trail = Vec::new();
+                    let mut step = [(k, true), (k, false)]
+                        .into_iter()
+                        .find(|key| via.contains_key(key));
+                    while let Some(key) = step
+                        && let Some(&(binding, from)) = via.get(&key)
+                        && trail.len() < 12
+                    {
+                        let running = if key.1 { "" } else { " (value)" };
+                        trail.push(format!(
+                            "item {}{running} via `{}`",
+                            key.0,
+                            id_name(binding)
+                        ));
+                        step = from;
+                    }
+                    format!(
+                        "exposed by item {k} `{}`{}",
+                        module_item_snippet(&module.body[k]),
+                        if trail.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", reached as {}", trail.join(" <- "))
+                        }
+                    )
+                });
+            }
+        }
+        for id in candidates.into_iter().filter(|id| rebound.contains(*id)) {
+            roots
+                .entry(id.clone())
+                .or_insert_with(|| "rebound".to_string());
+        }
+        roots
+    };
+    let swap_private_effect = |i: usize| -> bool {
+        let an = &analyses[i];
+        an.effects_summarizable
+            && an.observable_writes.iter().all(private_cell)
+            && shared_roots(i).is_empty()
+    };
+    // Every refusal of the pass, so one run shows them all.
+    let mut refusals = Vec::new();
     for i in 0..analyses.len() {
         if live[i]
             || swapped_reachability[i].is_empty()
@@ -540,16 +808,60 @@ fn sweep_unreachable_top_level(
             .map(id_name)
             .collect::<Vec<_>>()
             .join(",");
+        let public_writes = if analyses[i].effects_summarizable {
+            analyses[i]
+                .observable_writes
+                .iter()
+                .filter(|cell| !private_cell(cell))
+                .map(format_effect_cell)
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            "unsummarizable".to_string()
+        };
+        let shared = shared_roots(i)
+            .iter()
+            .map(|(id, exposure)| {
+                format!(
+                    "`{}` (declared by retained item {}, {exposure})",
+                    id_name(id),
+                    declarer[id]
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let swapped_paths = swapped_reachability[i]
+            .iter()
+            .map(|package| {
+                format_swapped_trace(i, package, &analyses, &module.body, &swapped_reasons)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        refusals.push(format!(
+            "observable side-effect item {i} `{}` is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private; writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
+            module_item_snippet(&module.body[i]),
+        ));
+    }
+    if !refusals.is_empty() {
         bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s)",
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: {} side effect(s) would be silently dropped although they may write a global / external cell residual code may read — restructure the spec so they do not read swapped binding(s):\n{}",
+            refusals.len(),
+            refusals.join("\n"),
         );
     }
 
-    module.body = std::mem::take(&mut module.body)
+    let mut retained = Vec::with_capacity(module.body.len());
+    for (item, &is_live) in std::mem::take(&mut module.body)
         .into_iter()
         .zip(live.iter())
-        .filter_map(|(item, &is_live)| is_live.then_some(item))
-        .collect();
+    {
+        if is_live {
+            retained.push(item);
+        } else {
+            removed_global_uses.record(&item);
+        }
+    }
+    module.body = retained;
     Ok(())
 }
 
@@ -917,6 +1229,19 @@ fn format_live_trace(
     trace.join(" -> ")
 }
 
+fn format_effect_cell(cell: &EffectCell) -> String {
+    match cell {
+        EffectCell::Binding(id) => format!("binding `{}`", id_name(id)),
+        EffectCell::GlobalProp(key) => format!("global `{key}`"),
+        EffectCell::ArrayContents(origin) => format!("array contents #{origin}"),
+        EffectCell::SetContents(origin) => format!("set contents #{origin}"),
+        EffectCell::ObjectShape(origin) => format!("object shape #{}", origin),
+        EffectCell::OwnProperty { origin, property } => {
+            format!("own property `{property}` of allocation #{origin}")
+        }
+    }
+}
+
 fn format_item_summary(i: usize, analysis: &ItemAnalysis, item: &ModuleItem) -> String {
     let declared = analysis
         .declared
@@ -997,6 +1322,28 @@ struct ItemAnalysis {
     /// set is unreliable and the statement must be treated as touching
     /// every observable cell.
     effects_summarizable: bool,
+    /// Rebound bindings, eager or lazy.
+    rebinds: BTreeSet<Id>,
+    /// Bindings the statement reads or rebinds at init, outside closures.
+    eager_bindings: BTreeSet<Id>,
+    /// The statement's own at-init calls.
+    at_init: CallSites,
+    /// Identifier callees anywhere in the statement, closures included.
+    lazy_calls: BTreeSet<Id>,
+    /// Declares a function value directly (`function f`, `const f = () => …`).
+    direct_function: bool,
+    /// What one call of the declared function or class runs first-order.
+    first_order: CallSites,
+    /// Bindings that first-order body reads or rebinds.
+    first_order_bindings: BTreeSet<Id>,
+}
+
+/// Calls one code position makes: identifier callees, plus the bindings and
+/// inline closures handed to calls that do not resolve to an identifier.
+struct CallSites {
+    calls: BTreeSet<Id>,
+    unresolved_sources: BTreeSet<Id>,
+    unresolved_inline_fn: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1054,7 +1401,39 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         side_effect,
         shareable_helper: item_is_shareable_helper(item),
         observable_writes: fact.effects().writes,
-        effects_summarizable: fact.cell_writes_summarizable,
+        effects_summarizable: fact.cell_writes_summarizable(),
+        rebinds: fact
+            .rebinds
+            .eager
+            .iter()
+            .chain(&fact.rebinds.lazy)
+            .cloned()
+            .collect(),
+        eager_bindings: fact
+            .reads
+            .eager
+            .iter()
+            .chain(&fact.rebinds.eager)
+            .cloned()
+            .collect(),
+        at_init: CallSites {
+            calls: fact.calls.eager.clone(),
+            unresolved_sources: fact.at_init_unresolved_sources.clone(),
+            unresolved_inline_fn: fact.at_init_unresolved_inline_fn,
+        },
+        lazy_calls: fact.calls.lazy.clone(),
+        direct_function: fact.declares_direct_function,
+        first_order: CallSites {
+            calls: fact.first_order_calls().clone(),
+            unresolved_sources: fact.first_order_unresolved_sources().clone(),
+            unresolved_inline_fn: fact.first_order_unresolved_inline_fn(),
+        },
+        first_order_bindings: fact
+            .first_order_reads()
+            .iter()
+            .chain(fact.first_order_rebinds())
+            .cloned()
+            .collect(),
     }
 }
 
@@ -1104,6 +1483,481 @@ fn item_is_shareable_helper(item: &ModuleItem) -> bool {
         }
         _ => false,
     }
+}
+
+/// One synchronous run of `body`'s declared function, class constructor or
+/// at-init closure: its first-order bindings, callees and unresolved-call
+/// arguments. Everything lexically inside it counts when it hands a closure to
+/// an unresolved call or calls a function declared inside itself, whose body
+/// the first-order view does not cover.
+fn run_first_order_body<'a>(
+    body: &'a ItemAnalysis,
+    item: &ModuleItem,
+    reached: &mut Vec<&'a Id>,
+    lexical: &mut Vec<&'a Id>,
+    callees: &mut Vec<&'a Id>,
+) {
+    reached.extend(&body.first_order_bindings);
+    lexical.extend(&body.first_order.unresolved_sources);
+    callees.extend(&body.first_order.calls);
+    if body.first_order.unresolved_inline_fn || {
+        let mut nested = NestedFunctionNames::default();
+        item.visit_children_with(&mut nested);
+        body.first_order
+            .calls
+            .iter()
+            .any(|callee| nested.0.contains(callee))
+    } {
+        reached.extend(&body.reads);
+        callees.extend(&body.lazy_calls);
+    }
+}
+
+/// The at-init calls of one statement whose receiver is host code: a member
+/// call rooted at a name neither the chunk nor the statement declares
+/// (`__REACT_DEVTOOLS_GLOBAL_HOOK__.inject(internals)`), directly or through a
+/// variable the statement initializes from such a name. Calls inside nested
+/// functions are not at init and are not inspected.
+#[derive(Default)]
+struct HostCalls {
+    /// Names declared inside the statement: parameters and nested bindings.
+    locals: BTreeSet<Id>,
+    /// Statement variables initialized from a host name or a property path on
+    /// one (`var hook = globalThis.__HOOK__`).
+    host_aliases: BTreeSet<Id>,
+    /// Names appearing in arguments of host calls.
+    to_host: BTreeSet<Id>,
+    /// Names appearing anywhere else in an at-init call.
+    elsewhere: BTreeSet<Id>,
+    host_closures: usize,
+    other_closures: usize,
+}
+
+impl HostCalls {
+    fn of(item: &ModuleItem, chunk_declares: impl Fn(&Id) -> bool) -> Self {
+        let mut locals = LocalNames::default();
+        item.visit_with(&mut locals);
+        let mut calls = HostCallScan {
+            calls: HostCalls {
+                locals: locals.0,
+                ..HostCalls::default()
+            },
+            chunk_declares: &chunk_declares,
+            depth: 0,
+        };
+        item.visit_with(&mut calls);
+        calls.calls
+    }
+
+    fn handed_only_to_host(&self, id: &Id) -> bool {
+        self.to_host.contains(id) && !self.elsewhere.contains(id)
+    }
+
+    fn only_host_closures(&self) -> bool {
+        self.host_closures > 0 && self.other_closures == 0
+    }
+}
+
+#[derive(Default)]
+struct LocalNames(BTreeSet<Id>);
+
+impl Visit for LocalNames {
+    fn visit_function(&mut self, function: &Function) {
+        let mut inner = BindingNames(&mut self.0);
+        function.visit_children_with(&mut inner);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        let mut inner = BindingNames(&mut self.0);
+        arrow.visit_children_with(&mut inner);
+    }
+
+    fn visit_catch_clause(&mut self, clause: &CatchClause) {
+        let mut inner = BindingNames(&mut self.0);
+        clause.visit_children_with(&mut inner);
+    }
+}
+
+struct BindingNames<'a>(&'a mut BTreeSet<Id>);
+
+impl Visit for BindingNames<'_> {
+    fn visit_binding_ident(&mut self, ident: &BindingIdent) {
+        self.0.insert(ident.id.to_id());
+    }
+
+    fn visit_fn_decl(&mut self, decl: &FnDecl) {
+        self.0.insert(decl.ident.to_id());
+        decl.function.visit_with(self);
+    }
+
+    fn visit_class_decl(&mut self, decl: &ClassDecl) {
+        self.0.insert(decl.ident.to_id());
+        decl.class.visit_with(self);
+    }
+}
+
+struct HostCallScan<'a, F> {
+    calls: HostCalls,
+    chunk_declares: &'a F,
+    depth: u32,
+}
+
+impl<F: Fn(&Id) -> bool> HostCallScan<'_, F> {
+    fn is_host(&self, ident: &Ident) -> bool {
+        let id = ident.to_id();
+        self.calls.host_aliases.contains(&id)
+            || (!(self.chunk_declares)(&id) && !self.calls.locals.contains(&id))
+    }
+
+    fn record_arguments(&mut self, args: &[ExprOrSpread], host: bool) {
+        for arg in args {
+            let mut names = AllNames::default();
+            arg.expr.visit_with(&mut names);
+            let closure = matches!(arg.expr.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_));
+            if host {
+                self.calls.to_host.extend(names.0);
+                self.calls.host_closures += usize::from(closure);
+            } else {
+                self.calls.elsewhere.extend(names.0);
+                self.calls.other_closures += usize::from(closure);
+            }
+        }
+    }
+}
+
+impl<F: Fn(&Id) -> bool> Visit for HostCallScan<'_, F> {
+    fn visit_function(&mut self, function: &Function) {
+        self.depth += 1;
+        function.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.depth += 1;
+        arrow.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if self.depth == 0
+            && let Pat::Ident(name) = &declarator.name
+            && let Some(init) = declarator.init.as_deref().and_then(member_root)
+            && self.is_host(init)
+        {
+            self.calls.host_aliases.insert(name.id.to_id());
+        }
+        declarator.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if self.depth == 0 {
+            let host = match &call.callee {
+                Callee::Expr(callee) => match callee.unwrap_parens() {
+                    Expr::Member(member) => {
+                        member_root(&member.obj).is_some_and(|root| self.is_host(root))
+                    }
+                    _ => false,
+                },
+                _ => false,
+            };
+            if !host && let Callee::Expr(callee) = &call.callee {
+                let mut names = AllNames::default();
+                callee.visit_with(&mut names);
+                self.calls.elsewhere.extend(names.0);
+            }
+            self.record_arguments(&call.args, host);
+        }
+        call.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, new: &NewExpr) {
+        if self.depth == 0
+            && let Some(args) = &new.args
+        {
+            self.record_arguments(args, false);
+        }
+        new.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, tpl: &TaggedTpl) {
+        if self.depth == 0 {
+            let mut names = AllNames::default();
+            tpl.visit_with(&mut names);
+            self.calls.elsewhere.extend(names.0);
+            self.calls.other_closures += 1;
+        }
+        tpl.visit_children_with(self);
+    }
+}
+
+#[derive(Default)]
+struct AllNames(BTreeSet<Id>);
+
+impl Visit for AllNames {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.0.insert(ident.to_id());
+    }
+}
+
+/// An item followed into the swap-privacy region, and whether its code may run
+/// (`false`: only the values it holds are followed).
+type RegionStep = (usize, bool);
+
+/// How code uses bindings' values: every occurrence except a plain property
+/// read (`x.a`, `x.a.b`), `typeof`, or an identity check (`===`, `!==`,
+/// `instanceof`) exposes the binding — a member write
+/// or `delete` rooted at it, a method call on it (the callee gets it as
+/// `this`), or any use that hands the value on. Names are compared without
+/// scope resolution, so a shadowing local only adds exposures.
+#[derive(Default)]
+struct ExposedBindings {
+    /// Every exposing use.
+    uses: BTreeSet<Id>,
+    /// Roots of in-place mutations: member writes, `delete`, method calls.
+    mutated: BTreeSet<Id>,
+    /// Leave function and arrow bodies out.
+    skip_closures: bool,
+}
+
+impl ExposedBindings {
+    fn mutate(&mut self, root: &Ident) {
+        self.uses.insert(root.to_id());
+        self.mutated.insert(root.to_id());
+    }
+}
+
+fn member_root(expr: &Expr) -> Option<&Ident> {
+    match expr {
+        Expr::Ident(ident) => Some(ident),
+        Expr::Member(member) => member_root(&member.obj),
+        Expr::Paren(paren) => member_root(&paren.expr),
+        _ => None,
+    }
+}
+
+impl Visit for ExposedBindings {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.uses.insert(ident.to_id());
+    }
+
+    fn visit_function(&mut self, function: &Function) {
+        if !self.skip_closures {
+            function.visit_children_with(self);
+        }
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        if !self.skip_closures {
+            arrow.visit_children_with(self);
+        }
+    }
+
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        self.visit_read_chain(&member.obj);
+        member.prop.visit_with(self);
+    }
+
+    // Declared and rebound names are not values handed on; rebinds are
+    // counted separately (`rebound`).
+    fn visit_binding_ident(&mut self, _: &BindingIdent) {}
+
+    fn visit_member_prop(&mut self, prop: &MemberProp) {
+        if let MemberProp::Computed(computed) = prop {
+            computed.visit_with(self);
+        }
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.mutate(root);
+        }
+        call.visit_children_with(self);
+    }
+
+    fn visit_simple_assign_target(&mut self, target: &SimpleAssignTarget) {
+        if let SimpleAssignTarget::Member(member) = target
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.mutate(root);
+        }
+        target.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        if let Expr::Member(member) = &*update.arg
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.mutate(root);
+        }
+        update.visit_children_with(self);
+    }
+
+    // Identity checks read a value without handing it on.
+    fn visit_bin_expr(&mut self, bin: &BinExpr) {
+        if matches!(
+            bin.op,
+            BinaryOp::EqEqEq | BinaryOp::NotEqEq | BinaryOp::InstanceOf
+        ) {
+            self.visit_read_chain(&bin.left);
+            self.visit_read_chain(&bin.right);
+        } else {
+            bin.visit_children_with(self);
+        }
+    }
+
+    fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
+        if unary.op == UnaryOp::TypeOf {
+            self.visit_read_chain(&unary.arg);
+            return;
+        }
+        if unary.op == UnaryOp::Delete
+            && let Expr::Member(member) = &*unary.arg
+            && let Some(root) = member_root(&member.obj)
+        {
+            self.mutate(root);
+        }
+        unary.visit_children_with(self);
+    }
+}
+
+impl ExposedBindings {
+    /// The object of a property read: its root binding stays unexposed,
+    /// computed keys along the chain are ordinary uses.
+    fn visit_read_chain(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Ident(_) => {}
+            Expr::Member(member) => {
+                self.visit_read_chain(&member.obj);
+                member.prop.visit_with(self);
+            }
+            Expr::Paren(paren) => self.visit_read_chain(&paren.expr),
+            _ => expr.visit_with(self),
+        }
+    }
+}
+
+/// Function names declared inside an item's own bodies.
+#[derive(Default)]
+struct NestedFunctionNames(BTreeSet<Id>);
+
+impl Visit for NestedFunctionNames {
+    fn visit_function(&mut self, function: &Function) {
+        let mut inner = NestedFunctionDecls(&mut self.0);
+        function.body.visit_with(&mut inner);
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        let mut inner = NestedFunctionDecls(&mut self.0);
+        arrow.body.visit_with(&mut inner);
+    }
+}
+
+struct NestedFunctionDecls<'a>(&'a mut BTreeSet<Id>);
+
+impl Visit for NestedFunctionDecls<'_> {
+    fn visit_fn_decl(&mut self, decl: &FnDecl) {
+        self.0.insert(decl.ident.to_id());
+        decl.function.visit_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Pat::Ident(name) = &declarator.name
+            && matches!(
+                declarator.init.as_deref(),
+                Some(Expr::Fn(_) | Expr::Arrow(_))
+            )
+        {
+            self.0.insert(name.id.to_id());
+        }
+        declarator.visit_children_with(self);
+    }
+}
+
+/// A declaration whose value is a function or a primitive: nothing a callee
+/// can mutate in place (a function's body effects are followed separately).
+fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_)))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Fn(_), ..
+        })) => true,
+        _ => item_var_decl(item).is_some_and(|var| {
+            is_shareable_literal_var(var)
+                || is_shareable_function_var(var)
+                || is_shareable_intrinsic_alias_var(var)
+                || is_symbol_var(var)
+                || var
+                    .decls
+                    .iter()
+                    .all(|decl| decl.init.as_deref().is_some_and(is_primitive_valued_expr))
+        }),
+    }
+}
+
+/// An expression whose value is always a primitive: a non-regex literal, an
+/// untagged template, or a unary, update, arithmetic, comparison or bitwise
+/// operation (`nE * 60`). Logical operators and conditionals pass an operand
+/// through and are not included.
+fn is_primitive_valued_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => is_primitive_valued_expr(&paren.expr),
+        Expr::Lit(lit) => !matches!(lit, Lit::Regex(_)),
+        Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
+        Expr::Bin(bin) => !matches!(
+            bin.op,
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+        ),
+        _ => false,
+    }
+}
+
+/// `var seen = new Set()` (or `Map`, `WeakMap`, `WeakSet`, `[]`): a fresh
+/// native container. Its methods run no chunk code beyond the callbacks a
+/// call hands them, which the calling statement's own facts cover. Assumes
+/// the standard globals are not shadowed or patched (the `predefined_globals`
+/// host claim).
+fn item_declares_native_container(item: &ModuleItem) -> bool {
+    item_var_decl(item).is_some_and(|var| {
+        var.decls
+            .iter()
+            .all(|decl| match decl.init.as_deref().map(Expr::unwrap_parens) {
+                Some(Expr::New(new)) => {
+                    matches!(&*new.callee, Expr::Ident(ident)
+                    if matches!(ident.sym.as_ref(), "Set" | "Map" | "WeakMap" | "WeakSet"))
+                        && new.args.as_ref().is_none_or(|args| args.is_empty())
+                }
+                Some(Expr::Array(array)) => array.elems.is_empty(),
+                _ => false,
+            })
+    })
+}
+
+/// `var key = Symbol("description")` (or `Symbol.for(...)`): a primitive.
+fn is_symbol_var(var: &VarDecl) -> bool {
+    var.decls.iter().all(|decl| {
+        let Some(Expr::Call(call)) = decl.init.as_deref().map(Expr::unwrap_parens) else {
+            return false;
+        };
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let is_symbol = |expr: &Expr| matches!(expr, Expr::Ident(ident) if ident.sym == *"Symbol");
+        let symbol_callee = match callee.unwrap_parens() {
+            Expr::Member(member) => {
+                is_symbol(&member.obj)
+                    && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == *"for")
+            }
+            expr => is_symbol(expr),
+        };
+        symbol_callee
+            && call
+                .args
+                .iter()
+                .all(|arg| arg.spread.is_none() && is_primitive_literal_expr(&arg.expr))
+    })
 }
 
 fn item_is_vite_preload_dependency_cell(item: &ModuleItem) -> bool {
@@ -1870,6 +2724,7 @@ mod tests {
             &mk_symbols(&["swapped"]),
             "chunk.js",
             &replacement_import_locals,
+            None,
         )
         .unwrap();
         let emitted = emit(&module);
@@ -1895,6 +2750,7 @@ mod tests {
             &mk_symbols(&["swapped"]),
             "chunk.js",
             &replacement_import_locals,
+            None,
         )
         .unwrap();
         let emitted = emit(&module);

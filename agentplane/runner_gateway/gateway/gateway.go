@@ -5,27 +5,36 @@ import (
 	"fmt"
 	"time"
 
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
 	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
-	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Config contains the per-process Gateway role wiring. Callers and runner workloads use separate
-// TokenReview resolvers and audiences.
+// Config contains the per-process Gateway role wiring. Public callers use TokenReview;
+// runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
-	Namespace                string
-	CallerAccounts           []auth.Account
+	RunnerSecurity environment_runtime_transport.Security
+	Namespace      string
+	CallerAccounts []auth.Account
+	// DispatcherAccount is the combined Gateway/Dispatcher workload. Its Pod-bound
+	// projected token is the only public route to Runtime Session creation and commands.
+	DispatcherAccount        auth.Account
 	SandboxControllerAccount *auth.Account
 	HolderName               string
 	HolderIP                 string
 	ProxyPort                int32
 	ControlTiming            ControlTiming
+	// ExecutorCallers enables the typed execution API independently from the Runner proxy's
+	// caller allowlist. An empty set leaves the public service unregistered.
+	ExecutorCallers []auth.Account
 }
 
 // ControlTiming bounds stream liveness and Lease renewal work.
@@ -33,7 +42,6 @@ type ControlTiming struct {
 	HeartbeatInterval  time.Duration
 	LivenessTimeout    time.Duration
 	LeaseTouchInterval time.Duration
-	MaximumAge         time.Duration
 }
 
 func defaultControlTiming(timing ControlTiming) ControlTiming {
@@ -46,15 +54,12 @@ func defaultControlTiming(timing ControlTiming) ControlTiming {
 	if timing.LeaseTouchInterval == 0 {
 		timing.LeaseTouchInterval = 15 * time.Second
 	}
-	if timing.MaximumAge == 0 {
-		timing.MaximumAge = time.Hour
-	}
 	return timing
 }
 
 func validateControlTiming(timing ControlTiming) error {
 	if timing.HeartbeatInterval <= 0 || timing.LivenessTimeout <= 0 ||
-		timing.LeaseTouchInterval <= 0 || timing.MaximumAge <= 0 {
+		timing.LeaseTouchInterval <= 0 {
 		return fmt.Errorf("Gateway control timings must be positive")
 	}
 	if timing.HeartbeatInterval >= timing.LivenessTimeout ||
@@ -65,30 +70,36 @@ func validateControlTiming(timing ControlTiming) error {
 	return nil
 }
 
-// Gateway serves the per-Sandbox Runner proxy and accepts runner-initiated connections on the
-// separately registered control listener.
+// Gateway serves the per-Sandbox Runner proxy and dials each Runner's authenticated gRPC server.
 type Gateway struct {
 	config      Config
 	callerAuth  *auth.Resolver
-	runnerAuth  *auth.Resolver
-	callers     map[auth.Account]struct{}
 	sandboxes   *sandboxResolver
 	connections *connections
 	records     *connectionRecords
-	controller  *auth.Account
+	objects     client.Reader
+	// observerQueue holds the names of Sandboxes whose observer RunRunnerObservers must reconcile.
+	observerQueue workqueue.TypedRateLimitingInterface[string]
 }
 
+// New builds a Gateway reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
+// an informer cache whose health is objectsHealth.
 func New(
 	config Config,
 	callerAuth *auth.Resolver,
-	runnerAuth *auth.Resolver,
 	objects client.Reader,
-	core coreclient.CoreV1Interface,
+	objectsHealth *watchhealth.Health,
 	coordination coordinationclient.CoordinationV1Interface,
 	discovery discoveryclient.DiscoveryV1Interface,
 ) (*Gateway, error) {
-	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil || runnerAuth == nil {
+	if err := config.RunnerSecurity.Validate(); err != nil {
+		return nil, fmt.Errorf("runner security: %w", err)
+	}
+	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil {
 		return nil, fmt.Errorf("Gateway namespace, caller policy and token resolvers are required")
+	}
+	if config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "" {
+		return nil, fmt.Errorf("Gateway Dispatcher account is required")
 	}
 	if config.HolderName == "" || config.HolderIP == "" || config.ProxyPort < 1 {
 		return nil, fmt.Errorf("Gateway holder Pod name, IP and proxy port are required")
@@ -97,7 +108,7 @@ func New(
 	if err := validateControlTiming(config.ControlTiming); err != nil {
 		return nil, err
 	}
-	sandboxes, err := newSandboxResolver(config.Namespace, objects, core)
+	sandboxes, err := newSandboxResolver(config.Namespace, objects, objectsHealth)
 	if err != nil {
 		return nil, err
 	}
@@ -107,46 +118,79 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	callers := make(map[auth.Account]struct{}, len(config.CallerAccounts))
 	for _, account := range config.CallerAccounts {
 		if account.Namespace == "" || account.Name == "" {
 			return nil, fmt.Errorf("Gateway caller account namespace and name are required")
 		}
-		callers[account] = struct{}{}
 	}
-	var controller *auth.Account
+	for _, account := range config.ExecutorCallers {
+		if account.Namespace == "" || account.Name == "" {
+			return nil, fmt.Errorf("Gateway executor caller account namespace and name are required")
+		}
+	}
 	if config.SandboxControllerAccount != nil {
 		if config.SandboxControllerAccount.Namespace == "" || config.SandboxControllerAccount.Name == "" {
 			return nil, fmt.Errorf("Sandbox controller account namespace and name are required")
 		}
 		copy := *config.SandboxControllerAccount
-		controller = &copy
+		config.SandboxControllerAccount = &copy
 	}
 	return &Gateway{
-		config: config, callerAuth: callerAuth, runnerAuth: runnerAuth, callers: callers,
+		config: config, callerAuth: callerAuth, objects: objects,
 		sandboxes: sandboxes, connections: newConnections(), records: records,
-		controller: controller,
+		observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}, nil
 }
 
-// RegisterProxy installs the per-Sandbox Runner proxy. RunnerControl.Connect is deliberately
-// registered on a separate listener.
-func (g *Gateway) RegisterProxy(server *grpc.Server) {
-	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
+// Methods admits callers of the Environment Runtime proxy and the typed execution API. Only the Sandbox
+// controller may quiesce or change Firecracker suspension admission; with no controller configured, nobody may.
+func (g *Gateway) Methods() auth.Methods {
+	callers := auth.Accounts(g.callerAuth, g.config.CallerAccounts)
+	dispatcher := auth.Accounts(g.callerAuth, []auth.Account{g.config.DispatcherAccount})
+	var controllers []auth.Account
+	if g.config.SandboxControllerAccount != nil {
+		controllers = []auth.Account{*g.config.SandboxControllerAccount}
+	}
+	executors := auth.Accounts(g.callerAuth, g.config.ExecutorCallers)
+	return auth.Methods{
+		environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName:          callers,
+		environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:             callers,
+		environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName:         dispatcher,
+		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName:           dispatcher,
+		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName:           dispatcher,
+		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: dispatcher,
+		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:         dispatcher,
+		environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:               auth.Accounts(g.callerAuth, controllers),
+		environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:        auth.Accounts(g.callerAuth, controllers),
+		environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:       auth.Accounts(g.callerAuth, controllers),
+		executorpb.Executor_OpenSession_FullMethodName:                               executors,
+		executorpb.Executor_StartProcess_FullMethodName:                              executors,
+		executorpb.Executor_ReadProcess_FullMethodName:                               executors,
+		executorpb.Executor_WriteProcess_FullMethodName:                              executors,
+		executorpb.Executor_SignalProcess_FullMethodName:                             executors,
+		executorpb.Executor_TerminateProcess_FullMethodName:                          executors,
+		executorpb.Executor_GetFileMetadata_FullMethodName:                           executors,
+		executorpb.Executor_OpenFile_FullMethodName:                                  executors,
+		executorpb.Executor_ReadFile_FullMethodName:                                  executors,
+		executorpb.Executor_CloseFile_FullMethodName:                                 executors,
+	}
 }
 
-// RegisterRunnerControl serves the runner-initiated bidirectional connection, authenticated
-// with the Runner audience independently of the other services on this gRPC server.
-func (g *Gateway) RegisterRunnerControl(server *grpc.Server) {
-	runnercontrolpb.RegisterRunnerControlServer(server, &runnerControlServer{gateway: g})
+// RegisterProxy installs the per-Sandbox Environment Runtime proxy.
+func (g *Gateway) RegisterProxy(server *grpc.Server) {
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, &environmentRuntimeProxy{gateway: g})
+}
+
+// RegisterExecutor enables the typed execution path only when its own caller allowlist is
+// configured. Existing Gateway deployments therefore keep the RPC absent by default.
+func (g *Gateway) RegisterExecutor(server *grpc.Server) {
+	if len(g.config.ExecutorCallers) == 0 {
+		return
+	}
+	executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
 }
 
 // WatchConnectionLeases must sync before the public gRPC services start accepting requests.
 func (g *Gateway) WatchConnectionLeases(ctx context.Context, client kubernetes.Interface) error {
 	return watchConnectionLeases(ctx, client, g.config.Namespace, g.connections)
-}
-
-func (g *Gateway) authorize(ctx context.Context, allowed map[auth.Account]struct{}) error {
-	_, err := g.callerAuth.RequireAccount(ctx, allowed)
-	return err
 }

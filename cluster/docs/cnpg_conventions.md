@@ -16,21 +16,28 @@ Only these CNPG cluster profiles are permitted:
 
 | Profile             | Instances | Pin                                      | Storage                                            | Anti-affinity                      |
 | ------------------- | --------- | ---------------------------------------- | -------------------------------------------------- | ---------------------------------- |
-| **OVH-HA**          | 2         | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
+| **OVH-HA**          | 2 or 3    | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
+| **OVH-single**      | 1         | `topology.kubernetes.io/zone: hil-ovh`   | `piraeus-hdd-local`                                | n/a                                |
 | **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `piraeus-ssd-local`                                | n/a                                |
 | **Optiplex-single** | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
-nodes. Two instances on separate nodes.
+nodes. Instances run on separate nodes.
 
-**Placement** (callers choose a `cnpg.ClusterPlacement` preset): pod
+**OVH-single**: The session archive uses one CNPG instance on a single-copy HDD
+volume. Restic is the source of truth, but history present only in pruned snapshots
+cannot be rebuilt from the remaining backups.
+
+**Placement** (callers choose a `cluster.ClusterPlacement` preset): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
-and the selected `cnpg.ClusterPlacement` profile carries the node pin, storage
+and the selected `cluster.ClusterPlacement` profile carries the node pin, storage
 class, and control-plane tolerance together. Callers select one of these named
 profiles rather than deriving scheduling eligibility from the storage-class
 string:
 
-- `cnpg.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
+- `cluster.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
+  control-plane toleration.
+- `cluster.OVH_PIRAEUS_HDD`: `HIL_OVH`, `piraeus-hdd-local`, with the same
   control-plane toleration.
 
 The Piraeus SSD profile allows scheduling onto the current OVH SSD pool nodes,
@@ -64,6 +71,16 @@ host). The selected `ClusterPlacement` keeps the node pin, storage class, and
 control-plane tolerance explicit as one choice; changing storage topology
 requires reviewing that profile and the bound PVs together.
 
+For a multi-instance CNPG Cluster, each instance's Piraeus volume must have one diskful
+copy (`placementCount: 1`), with instances on distinct nodes. Do not put the same
+PostgreSQL replicas on a replicated StorageClass: `claude-session-sync-db` used
+`piraeus-hdd-2` for one of three instances, producing four diskful copies for three
+PostgreSQL instances ([#14932](https://github.com/agentydragon/ducktape/issues/14932)).
+Use `piraeus-hdd-local` or `piraeus-ssd-local`, and verify actual LINSTOR placement as
+well as the class. Changing the Cluster's StorageClass does not migrate existing PVCs;
+replace instances safely, one at a time, while preserving recoverability. A singleton may
+use replicated storage because it does not also replicate through CNPG.
+
 ### R4: `initdb.secret` must exist before the Cluster resource
 
 CNPG reads `bootstrap.initdb.secret` only at cluster creation time to set
@@ -96,13 +113,11 @@ No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;
 sweep them with:
 
 ```bash
-grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
+rg -l '^kind: Cluster$' cluster/k8s cluster/generated -g '*.yaml'
 ```
 
-Active Clusters are 2-instance OVH-HA on `piraeus-ssd-local`, except
-`attic-db` (`nix-cache/`) and `study-casino-db` (`generated/study-casino/`),
-which run 3 instances to tolerate one node loss without quorum or primary
-impact.
+Live instance counts and bound PVCs can differ from the declared configuration
+during migrations; inspect both before changing storage.
 
 Parked clusters (retained in Git; R2/R3 bind again on revival):
 

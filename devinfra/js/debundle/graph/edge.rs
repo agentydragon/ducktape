@@ -1,10 +1,18 @@
+use std::collections::BTreeSet;
+use std::fmt;
+
+use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
+use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use crate::ModuleId;
+use crate::analysis_inputs::CommutingStatementsRef;
+use crate::execution_evidence::AssumedEffectReason;
+use crate::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause, EffectCell};
 
-use super::dependency_graph::SourceUnitId;
+use super::build::PremiseVerdict;
 
 /// How an edge was emitted. Determines whether the gate / quotient /
 /// reports consumers project the edge through the lenient (drop
@@ -77,6 +85,8 @@ impl EdgeRole {
 /// - `CoDeclaration` is emitted in both directions between statements
 ///   declaring the same `var` binding. A split therefore forms a forbidden
 ///   constraining cycle; these edges express placement equality.
+/// - `CoLocation` keeps a spread's primitive-array producers with its
+///   consumer so the original same-declaration source interval is retained.
 /// - `Sequenced` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
@@ -87,12 +97,447 @@ impl EdgeRole {
 ///
 /// `role` (see [`EdgeRole`]) selects which projection rule the
 /// quotient/gate/reports consumers apply to the edge.
+///
+/// A `Sequenced` reason an author `commuting_statements` premise accepted is
+/// marked inert (`inerted_by`): the edge stays in the graph as the record of
+/// what source analysis found, but [`EdgeReason::constrains_init_order`] is
+/// `false`, so no gate, quotient, linker-order or atomic-group consumer
+/// treats it as a constraint. Only `Sequenced` reasons are ever inerted
+/// (`graph/build.rs::apply_commuting_statements`).
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub kind: DepKind,
     pub statement_ordinal: SourceUnitOrdinal,
     pub binding: Option<Id>,
     pub(crate) role: EdgeRole,
+    /// Present on every `Sequenced` edge built from facts: the emission
+    /// rule that produced it and how it classified both endpoints.
+    /// Boxed so the far more numerous binding edges stay small.
+    sequenced_cause: Option<Box<SequencedCause>>,
+    pub(crate) inerted_by: Option<CommutingStatementsRef>,
+    /// How a `commuting_statements` premise over this edge's endpoints would
+    /// treat it (`graph/build.rs::premise_verdict`); `None` for the kinds a
+    /// premise never considers. Boxed like `sequenced_cause`.
+    pub(crate) premise_verdict: Option<Box<PremiseVerdict>>,
+}
+
+/// Why a `Sequenced` edge `(from, to)` exists: the emission rule in
+/// `build_dependency_graph_with` that fired and the effect
+/// classification of the two source units it compared. Cycle reports
+/// surface it so a spec author can see why the engine refuses to
+/// commute the pair (`gate::CycleEdge::explanation`).
+///
+/// `from` is the later source unit; the edge reads "`from` must observe
+/// `to`'s work as complete". Where several rules would emit the same
+/// `(from, to)` pair, the first emitted cause is retained.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "rule", rename_all = "snake_case")]
+pub enum SequencedCause {
+    /// Strict S-chain (`dataflow_aware_s_chain: false`): `from` is the
+    /// impure top-level statement immediately after `to` in source
+    /// order. Both endpoints are `Purity::NotPure`; the reasons live on
+    /// the source-unit nodes.
+    StrictChain,
+    /// An ordering path through `via` used an edge made inert by the named
+    /// premise. Preserve the path's other endpoint ordering: the premise
+    /// certifies only its selected pair, not a swap with a third statement.
+    PreservedOrder {
+        via: SourceUnitOrdinal,
+        commuting_premise: CommutingStatementsRef,
+    },
+    /// Consecutive at-init accesses (initializer, eager read or eager
+    /// rebind) of a binding declared at several `var` sites. The cell is
+    /// hoisted, so the accesses keep source order even when every access
+    /// is pure.
+    /// `source` / `target` are the provenance of `from`'s / `to`'s access.
+    SharedVarAccess {
+        binding: Atom,
+        source: EffectProvenance,
+        target: EffectProvenance,
+    },
+    /// At-init binding timeline (`promote_at_init_calls`): `to` and
+    /// `from` are a writer and an observer (or two writers) of `binding`
+    /// that must keep source order. `source` / `target` are the provenance
+    /// of `from`'s / `to`'s effect named by `order`.
+    BindingTimeline {
+        binding: Atom,
+        order: BindingTimelineOrder,
+        source: EffectProvenance,
+        target: EffectProvenance,
+    },
+    /// A synchronous callee invoked by `to` observed `binding` before
+    /// `from`, the statement declaring it, ran; the pair keeps source
+    /// order so the TDZ / initial-`undefined` observation is preserved.
+    /// `observation` is the provenance of `to`'s observation; the
+    /// declaration side is syntax.
+    UninitializedObservation {
+        binding: Atom,
+        observation: EffectProvenance,
+    },
+    /// Cell timeline (dataflow-aware S-chain and array/Set content
+    /// order): `conflicts` names every reason the timeline made `from`
+    /// depend on `to`, given how each endpoint was classified.
+    CellOrder {
+        from: CellEffectClass,
+        to: CellEffectClass,
+        conflicts: BTreeSet<CellConflict>,
+    },
+}
+
+/// Whether the engine derived one endpoint's binding effect behind a
+/// binding-ordering edge or only assumed it (SPEC.md § Commuting statements).
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EffectProvenance {
+    /// Direct syntax or precise synchronous execution of code the statement
+    /// definitely runs.
+    Observed,
+    /// Contributed only by conservative paths that assume code may run;
+    /// `reason` names the first such path that contributed it.
+    Fallback { reason: AssumedEffectReason },
+}
+
+impl EffectProvenance {
+    pub(crate) fn from_fallback(reason: Option<&AssumedEffectReason>) -> Self {
+        reason.map_or(Self::Observed, |reason| Self::Fallback {
+            reason: reason.clone(),
+        })
+    }
+
+    /// Observed wins: an effect also derived precisely is a fact.
+    pub(crate) fn join(&mut self, other: &Self) {
+        if *other == Self::Observed {
+            *self = Self::Observed;
+        }
+    }
+}
+
+impl fmt::Display for EffectProvenance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Observed => f.write_str("observed"),
+            Self::Fallback { reason } => write!(f, "assumed by {reason}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BindingTimelineOrder {
+    /// `to` and `from` both write the binding; later writer last.
+    WriterAfterWriter,
+    /// `from` observes the binding after `to`, its nearest preceding writer.
+    ReaderAfterWriter,
+    /// `from` writes the binding after `to`, a preceding observer, read it.
+    WriterAfterReader,
+}
+
+/// How the cell timeline classified one source unit's effects.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CellEffectClass {
+    /// Exact `(reads, writes)` cell summary (`StatementEffectSummary`).
+    Summarized,
+    /// Not dataflow-summarizable (`causes` is the statement's
+    /// `havoc`): treated as touching every cell, so it
+    /// depends on every prior impure source unit and is the barrier
+    /// every later summarized source unit depends on.
+    OpaqueBarrier {
+        causes: BTreeSet<DataflowOpacityCause>,
+    },
+    /// Allocates array/Set cells; seeds their content timelines without
+    /// depending on earlier heap effects.
+    HeapAllocation,
+    /// Opaque array/Set content operation: depends on the live content
+    /// frontier and becomes the frontier for later observations.
+    /// `causes` are the disjuncts of `emit_heap_content_order`'s
+    /// opacity test that held.
+    HeapFrontier { causes: BTreeSet<HeapBarrierCause> },
+}
+
+/// One disjunct of the heap-content opacity test in
+/// `emit_heap_content_order` (docs/design.md "Emission modes").
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeapBarrierCause {
+    /// The array-content collector recorded an opaque at-init effect:
+    /// member write, mutating method call, escaped array, key
+    /// enumeration, optional call or tagged template.
+    ArrayContentEffects,
+    /// Impure and not dataflow-summarizable (unproven call/`new`,
+    /// member write through a binding, dynamic-dispatch shape).
+    NonSummarizableImpure,
+    /// Synchronous execution analysis reported incomplete effects
+    /// (`synchronous_execution.complete = false`).
+    IncompleteSynchronousExecution,
+    /// The body of a callable synchronous execution invoked is itself
+    /// heap-opaque.
+    CalleeHeapEffects,
+}
+
+/// One dependence the cell timeline found between `from` (later) and
+/// `to` (earlier). Read/write vocabulary follows docs/design.md
+/// "Emission modes".
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CellConflict {
+    /// `from` reads `cell`; `to` was the last writer to an overlapping footprint.
+    ReadAfterWrite {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `from` writes `cell`; `to` was the last writer to an overlapping footprint.
+    WriteAfterWrite {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `from` writes `cell`; `to` read an overlapping footprint since its last write.
+    WriteAfterRead {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `from` reads or writes `cell`; `to` allocated an overlapping footprint.
+    UseAfterAllocation {
+        cell: EffectCellReport,
+        overlap: CellOverlapReport,
+    },
+    /// `to` is the opaque barrier in force when `from` runs.
+    AfterBarrier,
+    /// `from` is an opaque barrier; `to` is a prior impure source unit.
+    BarrierAfterPrior,
+    /// `from` is an opaque heap operation; `to` allocated, wrote or read
+    /// `cell` on the live content frontier.
+    FrontierAfterCell { cell: EffectCellReport },
+}
+
+/// Serializable projection of [`EffectCell`]: binding cells carry the
+/// name only (the hygiene context is dropped, as everywhere on the
+/// wire; see docs/wire_format.md).
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EffectCellReport {
+    Binding { binding: Atom },
+    GlobalProp { key: String },
+    ArrayContents { origin: u32 },
+    SetContents { origin: u32 },
+    ObjectShape { origin: u32 },
+    OwnProperty { origin: u32, property: String },
+}
+
+/// The two access footprints and the address law that joined them.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct CellOverlapReport {
+    pub left: EffectCellReport,
+    pub right: EffectCellReport,
+    pub law: CellOverlapLaw,
+}
+
+impl From<&CellOverlap> for CellOverlapReport {
+    fn from(overlap: &CellOverlap) -> Self {
+        Self {
+            left: EffectCellReport::from(overlap.left()),
+            right: EffectCellReport::from(overlap.right()),
+            law: overlap.law(),
+        }
+    }
+}
+
+impl From<&EffectCell> for EffectCellReport {
+    fn from(cell: &EffectCell) -> Self {
+        match cell {
+            EffectCell::Binding(id) => Self::Binding {
+                binding: id.0.clone(),
+            },
+            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
+            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
+            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
+                origin: *origin,
+                property: property.clone(),
+            },
+        }
+    }
+}
+
+impl fmt::Display for EffectCellReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Binding { binding } => write!(f, "binding `{binding}`"),
+            Self::GlobalProp { key } => write!(f, "global property `{key}`"),
+            Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
+            Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
+            Self::ObjectShape { origin } => write!(f, "object shape #{origin}"),
+            Self::OwnProperty { origin, property } => {
+                write!(f, "own property `{property}` of allocation #{origin}")
+            }
+        }
+    }
+}
+
+impl fmt::Display for CellOverlapReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} overlaps {} ({:?})", self.left, self.right, self.law)
+    }
+}
+
+impl fmt::Display for CellEffectClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Summarized => f.write_str("summarized cells"),
+            Self::OpaqueBarrier { causes } => {
+                f.write_str("opaque barrier (")?;
+                for (i, cause) in causes.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(match cause {
+                        DataflowOpacityCause::MemberWriteOrAlias => "member write or alias",
+                        DataflowOpacityCause::DynamicCellWrites => "dynamic cell writes",
+                        DataflowOpacityCause::GlobalObjectAliasEscape => {
+                            "global-object alias escape"
+                        }
+                        DataflowOpacityCause::OpaqueAtInitCall => "unproven at-init call",
+                    })?;
+                }
+                f.write_str(")")
+            }
+            Self::HeapAllocation => f.write_str("heap allocation"),
+            Self::HeapFrontier { causes } => {
+                f.write_str("opaque heap barrier (")?;
+                for (i, cause) in causes.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(cause.label())?;
+                }
+                f.write_str(")")
+            }
+        }
+    }
+}
+
+impl HeapBarrierCause {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ArrayContentEffects => "array content effects",
+            Self::NonSummarizableImpure => "impure and not summarizable",
+            Self::IncompleteSynchronousExecution => "incomplete synchronous execution",
+            Self::CalleeHeapEffects => "heap-opaque callee body",
+        }
+    }
+}
+
+impl fmt::Display for CellConflict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ReadAfterWrite { overlap, .. } => write!(
+                f,
+                "reads {} overlapping target write {}",
+                overlap.right, overlap.left
+            ),
+            Self::WriteAfterWrite { overlap, .. } => write!(
+                f,
+                "writes {} overlapping target write {}",
+                overlap.right, overlap.left
+            ),
+            Self::WriteAfterRead { overlap, .. } => write!(
+                f,
+                "writes {} overlapping target read {}",
+                overlap.right, overlap.left
+            ),
+            Self::UseAfterAllocation { overlap, .. } => write!(
+                f,
+                "uses {} overlapping target allocation {}",
+                overlap.right, overlap.left
+            ),
+            Self::AfterBarrier => f.write_str("target is the opaque barrier in force"),
+            Self::BarrierAfterPrior => f.write_str("source is an opaque barrier after target"),
+            Self::FrontierAfterCell { cell } => write!(f, "heap barrier after target's {cell}"),
+        }
+    }
+}
+
+/// Suffix naming each endpoint effect that is only assumed; nothing when
+/// both are observed.
+fn write_assumed(
+    f: &mut fmt::Formatter<'_>,
+    source: &EffectProvenance,
+    target: &EffectProvenance,
+) -> fmt::Result {
+    for (side, provenance) in [("source", source), ("target", target)] {
+        if let EffectProvenance::Fallback { .. } = provenance {
+            write!(f, " ({side} effect {provenance})")?;
+        }
+    }
+    Ok(())
+}
+
+impl fmt::Display for SequencedCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StrictChain => {
+                f.write_str("strict S-chain: source is the next impure statement after target")
+            }
+            Self::PreservedOrder {
+                via,
+                commuting_premise,
+            } => write!(
+                f,
+                "preserved ordering through source unit #{} after {}.commuting_statements[{}]",
+                via.0, commuting_premise.defining_chunk, commuting_premise.input_index
+            ),
+            Self::SharedVarAccess {
+                binding,
+                source,
+                target,
+            } => {
+                write!(
+                    f,
+                    "consecutive at-init accesses of shared `var` `{binding}`"
+                )?;
+                write_assumed(f, source, target)
+            }
+            Self::BindingTimeline {
+                binding,
+                order,
+                source,
+                target,
+            } => {
+                let order = match order {
+                    BindingTimelineOrder::WriterAfterWriter => "writes after target wrote",
+                    BindingTimelineOrder::ReaderAfterWriter => "observes after target wrote",
+                    BindingTimelineOrder::WriterAfterReader => "writes after target observed",
+                };
+                write!(f, "at-init timeline of `{binding}`: source {order}")?;
+                write_assumed(f, source, target)
+            }
+            Self::UninitializedObservation {
+                binding,
+                observation,
+            } => {
+                write!(
+                    f,
+                    "target's synchronous callee observed `{binding}` before source declared it"
+                )?;
+                write_assumed(f, &EffectProvenance::Observed, observation)
+            }
+            Self::CellOrder {
+                from,
+                to,
+                conflicts,
+            } => {
+                write!(f, "cell order: source is {from}, target is {to}; ")?;
+                for (i, conflict) in conflicts.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str("; ")?;
+                    }
+                    write!(f, "{conflict}")?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 impl EdgeReason {
@@ -102,6 +547,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -110,6 +558,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -118,6 +569,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -126,6 +580,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -134,6 +591,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -142,6 +602,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -150,14 +613,31 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
-    pub(crate) fn sequenced(so: SourceUnitOrdinal) -> Self {
+    pub(crate) fn co_location(so: SourceUnitOrdinal, b: Id) -> Self {
+        Self {
+            kind: DepKind::CoLocation,
+            statement_ordinal: so,
+            binding: Some(b),
+            role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
+        }
+    }
+    pub(crate) fn sequenced(so: SourceUnitOrdinal, cause: SequencedCause) -> Self {
         Self {
             kind: DepKind::Sequenced,
             statement_ordinal: so,
             binding: None,
             role: EdgeRole::Direct,
+            sequenced_cause: Some(Box::new(cause)),
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
     pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -166,6 +646,9 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
     }
 
@@ -193,7 +676,42 @@ impl EdgeReason {
             statement_ordinal,
             binding: None,
             role,
+            sequenced_cause: None,
+            inerted_by: None,
+            premise_verdict: None,
         }
+    }
+
+    /// Reattach the retained cause of a `Sequenced` edge read back from
+    /// `dependency_graph.json.gz` (`DependencyEdgeReport::sequenced_cause`).
+    pub fn with_sequenced_cause(mut self, cause: Option<SequencedCause>) -> Self {
+        self.sequenced_cause = cause.map(Box::new);
+        self
+    }
+
+    /// Mark the reason inert under `premise`, or reattach a marker read
+    /// back from `dependency_graph.json.gz` (`DependencyEdgeReport::commuting_premise`).
+    pub fn with_commuting_premise(mut self, premise: Option<CommutingStatementsRef>) -> Self {
+        self.inerted_by = premise;
+        self
+    }
+
+    /// Retained emission cause of a `Sequenced` edge; `None` for every
+    /// other kind and for synthetic edges whose report lacked it.
+    pub fn sequenced_cause(&self) -> Option<&SequencedCause> {
+        self.sequenced_cause.as_deref()
+    }
+
+    /// The `commuting_statements` entry that made this edge inert.
+    pub fn commuting_premise(&self) -> Option<&CommutingStatementsRef> {
+        self.inerted_by.as_ref()
+    }
+
+    /// How a `commuting_statements` premise over this edge's endpoints would
+    /// treat it; `None` for kinds a premise never considers and for
+    /// synthetic edges.
+    pub fn premise_verdict(&self) -> Option<&PremiseVerdict> {
+        self.premise_verdict.as_deref()
     }
 
     /// The role this reason was emitted with. See [`EdgeRole`].
@@ -220,72 +738,19 @@ impl EdgeReason {
         self.kind == DepKind::Sequenced
     }
     /// Every kind except `LazyUse`, `HoistedUse` and `DeferredRebind` constrains
-    /// realizability. `DeferredRebind` writes never fire at module
+    /// realizability, unless an author `commuting_statements` premise made
+    /// the edge inert. `DeferredRebind` writes never fire at module
     /// init (the write site is nested ≥2 closures deep or past an
     /// await), so they impose no init-order constraint — but they
     /// still participate in cross-destination-rebind rejection and
     /// `G_atomic` co-location, because ESM imports are read-only at
     /// ANY time, not just during init.
     pub fn constrains_init_order(&self) -> bool {
-        !matches!(
-            self.kind,
-            DepKind::LazyUse | DepKind::HoistedUse | DepKind::DeferredRebind
-        )
-    }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    strum::IntoStaticStr,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumMessage,
-)]
-#[cfg_attr(test, derive(strum::EnumIter))]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum DepKind {
-    #[strum(message = "at-init")]
-    EagerUse,
-    #[strum(message = "lazy")]
-    LazyUse,
-    #[strum(message = "hoisted read")]
-    HoistedUse,
-    #[strum(message = "at-init rebind")]
-    EagerRebind,
-    #[strum(message = "lazy rebind")]
-    LazyRebind,
-    /// Rebinding write that only fires after module init (nested ≥2
-    /// closures deep, or past an `await` in an async body). Rejected
-    /// across destinations like the other rebinds (ESM imports are
-    /// read-only whenever the write fires), but excluded from
-    /// init-order constraints and the I-graph.
-    #[strum(message = "deferred rebind")]
-    DeferredRebind,
-    #[strum(message = "side-effect")]
-    Sequenced,
-    /// Two statements declare the same module-scoped var binding. Emitted in
-    /// both directions to require one destination without rewriting the AST.
-    #[strum(message = "shared var declaration")]
-    CoDeclaration,
-    #[strum(message = "local-effect")]
-    LocalEffect,
-}
-
-impl DepKind {
-    /// Short human-readable label used in cycle and gate diagnostics.
-    pub fn diagnostic_label(self) -> &'static str {
-        strum::EnumMessage::get_message(&self)
-            .expect("every dependency kind has a diagnostic message")
+        self.inerted_by.is_none()
+            && !matches!(
+                self.kind,
+                DepKind::LazyUse | DepKind::HoistedUse | DepKind::DeferredRebind
+            )
     }
 }
 
@@ -300,7 +765,8 @@ impl DepKind {
 /// [`DependencyEdgeId::report_key`].
 ///
 /// [`DependencyGraph::edges`]: super::dependency_graph::DependencyGraph
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(transparent)]
 pub struct DependencyEdgeId(pub usize);
 
 impl DependencyEdgeId {
@@ -315,20 +781,4 @@ pub struct DependencyEdge {
     pub from: SourceUnitId,
     pub to: SourceUnitId,
     pub reason: EdgeReason,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::DepKind;
-    use strum::IntoEnumIterator;
-
-    #[test]
-    fn every_dependency_kind_has_a_diagnostic_message() {
-        for kind in DepKind::iter() {
-            assert!(!kind.diagnostic_label().is_empty());
-        }
-        // Diagnostic messages must not replace the machine-readable spelling.
-        assert_eq!(DepKind::EagerUse.to_string(), "eager_use");
-        assert_eq!(DepKind::EagerUse.diagnostic_label(), "at-init");
-    }
 }

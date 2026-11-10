@@ -16,7 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -167,9 +167,9 @@ func (s *Service) CancelActionRequest(ctx context.Context, request *action_servi
 	if err != nil {
 		return nil, err
 	}
-	var owner store.CallerPrincipal
+	var owner store.Owner
 	switch principal := admitted(ctx).principal.(type) {
-	case store.CallerPrincipal:
+	case store.Owner:
 		owner = principal
 	case store.OperatorPrincipal:
 		return nil, status.Error(codes.PermissionDenied, "an operator cannot cancel a request")

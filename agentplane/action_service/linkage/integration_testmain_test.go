@@ -10,9 +10,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
@@ -42,11 +41,7 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	hub, err := wakeups.Listen(t.Context(), dsn, linkage.UpdatesChannel)
 	if err != nil {
 		t.Fatal(err)

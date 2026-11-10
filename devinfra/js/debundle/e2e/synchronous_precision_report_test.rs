@@ -1,4 +1,5 @@
 //! Report evidence comes from the same bounded execution used by the gate.
+use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 
@@ -33,11 +34,404 @@ fn complete_execution_has_no_precision_loss() {
         vec![],
     ));
     assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
+    assert_eq!(result["precision_losses"], serde_json::json!([]));
     assert_eq!(
-        execution(&fixture, "result"),
+        result["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    assert_eq!(
+        result["binding_effect_authority"]["receipt"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn incomplete_local_call_preserves_unrelated_own_data_reads() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const record = { name: "ready" };
+function ignore(value) {}
+ignore(...[{}]);
+const selected = [record.name];
+console.log(selected[0]);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
+    let selected = execution(&fixture, "selected");
+    assert_eq!(selected["complete"], true, "{selected}");
+    assert_eq!(selected["precision_losses"], serde_json::json!([]));
+    assert_eq!(
+        selected["binding_effect_authority"],
         serde_json::json!({
-            "complete": true, "precision_losses": []
+            "authority": "legacy_execution", "complete": true
         })
+    );
+}
+
+#[test]
+fn initialized_enum_own_data_read_is_complete_and_keeps_eager_dependency() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+const selected = [Status.READY];
+console.log(selected[0]);
+"#,
+        vec![],
+    ));
+
+    assert_preserved_entry_output(&fixture, "ready\n");
+    let selected = execution(&fixture, "selected");
+    assert_eq!(selected["complete"], true, "{selected}");
+    assert_eq!(selected["precision_losses"], serde_json::json!([]));
+    assert_eq!(
+        selected["binding_effect_authority"],
+        serde_json::json!({
+            "authority": "legacy_execution", "complete": true
+        })
+    );
+
+    let graph = fixture.dependency_graph();
+    let read = source_unit_for_binding(&graph, "selected");
+    let initializer = source_unit_for_binding(&graph, "Status");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == read
+                && edge.target == initializer
+                && edge.binding.as_deref() == Some("Status")
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
+                && edge.constrains_init_order
+        }),
+        "the member-read proof must keep the binding's eager initialization dependency"
+    );
+}
+
+#[test]
+fn enum_member_read_proof_rejects_mutation_escape_getter_unknown_key_and_reflection() {
+    let source = r#"var Changed = ((values) => ((values.READY = "ready"), values))(Changed || {});
+Changed.READY = "changed";
+const changed = [Changed.READY];
+
+var Escaped = ((values) => ((values.READY = "ready"), values))(Escaped || {});
+globalThis.consume = (value) => { globalThis.retained = value; };
+globalThis.consume(Escaped);
+const escaped = [Escaped.READY];
+
+const Accessor = { get READY() { return "getter"; } };
+const getter = [Accessor.READY];
+
+var Dynamic = ((values) => ((values.READY = "ready"), values))(Dynamic || {});
+const key = "READY";
+const dynamic = [Dynamic[key]];
+
+var Reflected = ((values) => ((values.READY = "ready"), values))(Reflected || {});
+Object.defineProperty(Reflected, "READY", { get() { return "reflected"; } });
+const reflected = [Reflected.READY];
+
+console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "changed ready getter ready reflected\n");
+
+    for binding in ["changed", "escaped", "getter", "dynamic", "reflected"] {
+        let report = execution(&fixture, binding);
+        assert_eq!(report["complete"], false, "{binding}: {report}");
+        assert!(
+            report["precision_losses"].as_array().is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    loss["reason"]["code"] == "unsupported_operation"
+                        && loss["reason"]["operation"] == "member_read"
+                })
+            }),
+            "{binding} should retain the conservative member-read path: {report}"
+        );
+    }
+}
+
+#[test]
+fn skipped_local_mutations_keep_later_property_reads_conservative() {
+    for (mutation, observed, output) in [
+        (
+            "Object.defineProperty(value, 'name', { get() { globalThis.observed = true; return 'changed'; } });",
+            "record.name",
+            "changed true\n",
+        ),
+        (
+            "value.name = 'changed';",
+            "record.name",
+            "changed undefined\n",
+        ),
+        (
+            "Object.defineProperty(value, 'name', { get() { globalThis.observed = true; return () => 'changed'; } });",
+            "record.name()",
+            "changed true\n",
+        ),
+    ] {
+        let source = format!(
+            "const record = {{ name: () => 'original' }};\n\
+             function change(value) {{ {mutation} }}\n\
+             change(...[record]);\n\
+             const selected = {observed};\n\
+             console.log(selected, globalThis.observed);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let report = execution(&fixture, "selected");
+        assert_eq!(report["complete"], false, "{mutation}: {report}");
+        assert!(
+            report["precision_losses"].as_array().is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    loss["reason"]["code"] == "unsupported_operation"
+                        && loss["reason"]["operation"] == "member_read"
+                        && loss["reach"]["kind"] == "global"
+                })
+            }),
+            "a skipped mutation may install a getter: {report}"
+        );
+    }
+}
+
+#[test]
+fn skipped_getter_installation_keeps_binding_effects_at_the_later_read() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const state = 'ready';
+const record = { name: 'original' };
+function change(value) {
+  Object.defineProperty(value, 'name', { get() { return state; } });
+}
+
+change(...[record]);
+const selected = record.name;
+console.log(selected);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "ready\n");
+    let graph = fixture.dependency_graph();
+    let reader = source_unit_for_binding(&graph, "selected");
+    let state = source_unit_for_binding(&graph, "state");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == reader
+                && edge.target == state
+                && edge.binding.as_deref() == Some("state")
+                && edge.constrains_init_order
+        }),
+        "the later read may invoke the installed getter and read state"
+    );
+}
+
+#[test]
+fn skipped_post_initializer_writes_disable_the_closed_enum_certificate() {
+    for mutation in [
+        "value.READY = 'changed';",
+        "Object.defineProperty(value, 'READY', { get() { return 'changed'; } });",
+    ] {
+        let source = format!(
+            "var Status = ((values) => ((values.READY = 'ready'), values))(Status || {{}});\n\
+             function change(value) {{ {mutation} }}\n\
+             change(...[Status]);\n\
+             const selected = Status.READY;\n\
+             console.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        let report = execution(&fixture, "selected");
+        assert_eq!(report["complete"], false, "{mutation}: {report}");
+    }
+}
+
+#[test]
+fn skipped_local_mutations_invalidate_reads_in_the_same_statement() {
+    for mutation in ["change(...[record])", "tag`${record}`"] {
+        let source = format!(
+            "const record = {{ name: 'original' }};\n\
+             function change(value) {{ value.name = 'changed'; }}\n\
+             function tag(_, value) {{ value.name = 'changed'; }}\n\
+             const selected = ({mutation}, record.name);\n\
+             console.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        let report = execution(&fixture, "selected");
+        assert_reason(
+            &report,
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+    }
+}
+
+#[test]
+fn opaque_body_does_not_cache_property_values_before_its_skipped_code() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function change(value) { value.name = { get current() { return state; }, toString() { return 'changed'; } }; }
+function read(record) {
+  const selected = (change(...[record]), record.name);
+  return selected;
+}
+
+const value = read({ name: 'original' });
+const observed = value.current;
+var state = 'late';
+const coerced = { [value]: true };
+console.log(observed, Object.keys(coerced)[0]);
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "undefined changed\n");
+    assert_reason(
+        &execution(&fixture, "observed"),
+        serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+    );
+    let graph = fixture.dependency_graph();
+    let observed = source_unit_for_binding(&graph, "observed");
+    let state = source_unit_for_binding(&graph, "state");
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source == observed && edge.target == state && edge.constrains_init_order
+    }));
+    let coerced = source_unit_for_binding(&graph, "coerced");
+    let node = graph.nodes.iter().find(|node| node.id == coerced).unwrap();
+    assert_eq!(
+        serde_json::to_value(node).unwrap()["purity"]["kind"],
+        "not_pure"
+    );
+}
+
+#[test]
+fn skipped_operation_events_preserve_same_owner_getter_effects() {
+    for source in [
+        "const record = { name: 'original' };\nfunction tag(_, value) { Object.defineProperty(value, 'name', { get() { return state; } }); }\nconst selected = (tag`${record}`, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
+        "const record = { name: 'original' };\nconst trigger = { get value() { return 0; }, set value(_) { Object.defineProperty(record, 'name', { get() { return state; } }); } };\nconst selected = (trigger.value++, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let report = execution(&fixture, "selected");
+        assert_reason(
+            &report,
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+        let graph = fixture.dependency_graph();
+        let selected = source_unit_for_binding(&graph, "selected");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == selected && edge.target == state && edge.constrains_init_order
+        }));
+    }
+}
+
+#[test]
+fn stable_ts_enum_primitive_member_is_safe_as_computed_property_key() {
+    let source = r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+const preferences = { [Status.READY]: true };
+console.log(preferences.ready);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "true\n");
+
+    let graph = fixture.dependency_graph();
+    let preferences_unit = source_unit_for_binding(&graph, "preferences");
+    let status_unit = source_unit_for_binding(&graph, "Status");
+    let preferences = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == preferences_unit)
+        .expect("preferences source unit");
+    assert_eq!(
+        serde_json::to_value(preferences).expect("serialize node")["purity"]["kind"],
+        "pure"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == preferences_unit
+                && edge.target == status_unit
+                && edge.binding.as_deref() == Some("Status")
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
+                && edge.constrains_init_order
+        }),
+        "the primitive enum proof must retain the eager binding dependency"
+    );
+}
+
+#[test]
+fn enum_property_key_proof_rejects_rebinds_mutations_unknown_keys_accessors_and_escapes() {
+    let source = r#"var Rebound = ((values) => ((values.READY = "ready"), values))(Rebound || {});
+let reboundCalls = 0;
+Rebound = { READY: { toString() { reboundCalls++; return "rebound"; } } };
+const rebound = { [Rebound.READY]: true };
+
+var Looped = ((values) => ((values.READY = "ready"), values))(Looped || {});
+let loopedCalls = 0;
+for (Looped of [{ READY: { toString() { loopedCalls++; return "looped"; } } }]) {}
+const looped = { [Looped.READY]: true };
+
+var Mutated = ((values) => ((values.READY = "ready"), values))(Mutated || {});
+Mutated.READY = { toString() { return "mutated"; } };
+const mutated = { [Mutated.READY]: true };
+
+var Dynamic = ((values) => ((values.READY = "ready"), values))(Dynamic || {});
+const memberName = "READY";
+const dynamic = { [Dynamic[memberName]]: true };
+
+let getterCalls = 0;
+const Accessor = { get READY() { getterCalls++; return "accessor"; } };
+const accessor = { [Accessor.READY]: true };
+
+var Escaped = ((values) => ((values.READY = "ready"), values))(Escaped || {});
+globalThis.retainEnum = (value) => value;
+globalThis.retainEnum(Escaped);
+const escaped = { [Escaped.READY]: true };
+
+console.log(rebound.rebound, reboundCalls, looped.looped, loopedCalls, mutated.mutated, dynamic.ready, accessor.accessor, getterCalls, escaped.ready);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "true 1 true 1 true true true 1 true\n");
+
+    let graph = fixture.dependency_graph();
+    for binding in [
+        "rebound", "looped", "mutated", "dynamic", "accessor", "escaped",
+    ] {
+        let unit = source_unit_for_binding(&graph, binding);
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == unit)
+            .expect("source unit");
+        let purity = serde_json::to_value(node).expect("serialize node")["purity"].clone();
+        assert_eq!(purity["kind"], "not_pure", "{binding}: {purity}");
+        assert!(
+            purity["reasons"].as_array().is_some_and(|reasons| {
+                reasons
+                    .iter()
+                    .any(|reason| reason["rule"] == "to_property_key_coercion")
+            }),
+            "{binding} must retain the coercion concern: {purity}"
+        );
+    }
+}
+
+#[test]
+fn enum_member_read_before_initializer_remains_a_throwing_read() {
+    let source = r#"const selected = [Status.READY];
+var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+console.log(selected[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+
+    assert_preserved_entry_error(&fixture, "TypeError");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("early", &[Member::new("selected")]),
+                logical_module("enum", &[Member::new("Status")]),
+            ],
+        ),
+        &["early", "enum"],
+        &["eager_use"],
     );
 }
 
@@ -50,6 +444,7 @@ fn nested_unknown_call_keeps_lexical_callsite_and_deduplicates_cached_execution(
     assert_entry_output(&fixture, "6\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "unknown_call_target"}));
+    assert_eq!(loss["reach"], global_reach("unknown_callee"));
     assert_eq!(loss["statement_ordinal"], 0);
     assert_eq!(loss["source_location"]["source_path"], "static/app.js");
     assert_eq!(loss["source_location"]["start_line"], 1);
@@ -77,6 +472,7 @@ fn unsupported_coercion_reports_its_operation() {
             "code": "unsupported_operation", "operation": "implicit_coercion"
         }),
     );
+    assert_eq!(loss["reach"], global_reach("unmodelled_operation"));
     assert_eq!(loss["statement_ordinal"], 1);
     assert_eq!(loss["source_location"]["start_line"], 2);
 }
@@ -102,8 +498,137 @@ fn acyclic_call_chain_reports_the_actual_depth_bound() {
             "code": "invocation_depth_limit", "limit": 64
         }),
     );
+    // The truncated chain calls only local functions.
+    assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
     assert_eq!(loss["statement_ordinal"], 64);
     assert_eq!(loss["source_location"]["start_line"], 65);
+}
+
+#[test]
+fn single_call_root_depth_limit_does_not_invent_a_caller_remainder() {
+    let mut source = String::new();
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return step{}(); }}\n",
+            index + 1
+        ));
+    }
+    source.push_str(
+        "function step66() { return 3; }\nconst result = step0();\nconsole.log(result);\n",
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_preserved_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    let loss = assert_reason(
+        &result,
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+    );
+    assert_eq!(
+        loss["reach"],
+        serde_json::json!({"kind": "bounded"}),
+        "{result:#}"
+    );
+    assert_eq!(loss["statement_ordinal"], 64);
+    assert_eq!(loss["source_location"]["start_line"], 65);
+    assert_eq!(
+        result["precision_losses"].as_array().unwrap().len(),
+        1,
+        "the exact terminal root keeps the child's depth loss without adding an opaque/global caller remainder: {result:#}"
+    );
+}
+
+#[test]
+fn compound_call_chains_preserve_output_at_the_depth_limit() {
+    // The literal suffix is supported by the ordered kernel even when the
+    // primitive operator requires the separate conservative fallback.
+    for tail in ["seed + 1", "8"] {
+        let mut source = String::from("const seed = 7;\n");
+        for index in 0..66 {
+            source.push_str(&format!(
+                "function step{index}() {{ return (step{}(), {tail}); }}\n",
+                index + 1
+            ));
+        }
+        source.push_str(&format!(
+            "function step66() {{ return {tail}; }}\nconst marker = 1;\nconst result = step0();\nconsole.log(result, marker);\n",
+        ));
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+
+        assert_preserved_entry_output(&fixture, "8 1\n");
+        let result = execution(&fixture, "result");
+        let loss = assert_reason(
+            &result,
+            serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+        );
+        assert_eq!(
+            loss["reach"],
+            serde_json::json!({"kind": "bounded"}),
+            "{result:#}"
+        );
+    }
+}
+
+#[test]
+fn compound_call_root_keeps_its_unexecuted_remainder_fallback() {
+    let mut source = String::from("const seed = 7;\n");
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return step{}(); }}\n",
+            index + 1
+        ));
+    }
+    source.push_str("function step66() { return 3; }\nfunction tail() { return seed; }\nconst result = (step0(), tail());\nconsole.log(result);\n");
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_preserved_entry_output(&fixture, "7\n");
+    let result = execution(&fixture, "result");
+    assert_reason(
+        &result,
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+    );
+    assert!(
+        result["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["reason"]["code"] == "unsupported_operation"
+                    && loss["reason"]["operation"] == "opaque_execution"
+            }),
+        "the second root operand still needs conservative remainder handling: {result:#}"
+    );
+}
+
+#[test]
+fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
+    let depth = 60;
+    let mut source = String::from("const seed = 3;\n");
+    for index in 0..depth {
+        let next = if index + 1 < depth {
+            format!("step{}(value)", index + 1)
+        } else {
+            "value".to_string()
+        };
+        source.push_str(&format!(
+            "function step{index}(value) {{ return {next}; }}\n"
+        ));
+    }
+    source.push_str("const result = step0(seed);\nconsole.log(result);\n");
+    let extra_chunks = [("static/peer", source.as_str())];
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&extra_chunks));
+
+    assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
+    assert_eq!(
+        result["precision_losses"],
+        serde_json::json!([]),
+        "{result:#}"
+    );
+    // The whole chain runs below the bound, so the root call seals its owner.
+    assert_eq!(
+        result["binding_effect_authority"]["authority"], "operation_receipt",
+        "{result:#}"
+    );
 }
 
 #[test]
@@ -115,10 +640,14 @@ fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
     assert_entry_output(&fixture, "7\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "recursive_invocation"}));
+    assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
     assert_eq!(loss["statement_ordinal"], 0);
     assert_eq!(
         execution(&fixture, "following"),
         serde_json::json!({
+            "binding_effect_authority": {
+                "authority": "legacy_execution", "complete": true
+            },
             "complete": true, "precision_losses": []
         })
     );
@@ -132,9 +661,223 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_entry_output(&fixture, "326\n");
     let result = execution(&fixture, "result");
+    let loss = assert_reason(
+        &result,
+        serde_json::json!({"code": "callback_pool_limit", "limit": 64, "pool_size": 65}),
+    );
+    assert_eq!(loss["reach"], global_reach("escaped_callback_pool"));
+}
+
+#[test]
+fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
+    for relay in [
+        "function relay(candidate) { candidate(); }",
+        "function factory(captured) { return function relay(candidate) { candidate(); captured(); }; }\nconst relay = factory(read);",
+    ] {
+        let source = format!(
+            "function read() {{ return later; }}\n{relay}\nconst result = JSON.stringify([relay, read]);\nconst later = 7;\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "[null,null]\n");
+        // Localize Top to this formal's invocation, not JSON.stringify or
+        // the captured callback's separate invocation.
+        let result_execution = execution(&fixture, "result");
+        let candidate_location = serde_json::json!({
+            "source_path": "static/app.js",
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": relay.find("candidate();").unwrap() + 1,
+        });
+        let matching = result_execution["precision_losses"]
+            .as_array()
+            .expect("precision losses")
+            .iter()
+            .filter(|loss| {
+                loss["reason"] == serde_json::json!({"code": "unknown_call_target"})
+                    && loss["statement_ordinal"] == 1
+                    && loss["source_location"] == candidate_location
+            })
+            .count();
+        assert_eq!(
+            matching, 1,
+            "formal invocation lost its unknown target at {candidate_location}: {result_execution}"
+        );
+        // The directly pooled reader also retains its early read. Argument
+        // forwarding equality follows from the unchanged callbacks + Top set.
+        let graph = fixture.dependency_graph();
+        let result = source_unit_for_binding(&graph, "result");
+        let later = source_unit_for_binding(&graph, "later");
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == result
+                    && edge.target == later
+                    && edge.binding.as_deref() == Some("later")
+            }),
+            "pool lost the early reader"
+        );
+    }
+}
+
+fn global_reach(cause: &str) -> Value {
+    serde_json::json!({"kind": "global", "cause": cause})
+}
+
+/// The reach of the rejected construction of `result` in `source`, whose
+/// entry prints `3`.
+fn construction_reach(source: &str, extra_chunks: &[(&str, &str)]) -> Value {
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks));
+    assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    result["precision_losses"]
+        .as_array()
+        .expect("losses")
+        .iter()
+        .find(|loss| loss["reason"]["code"] == "unsupported_construction")
+        .unwrap_or_else(|| panic!("missing construction loss in {result}"))["reach"]
+        .clone()
+}
+
+#[test]
+fn rejected_construction_of_local_code_with_inline_callback_is_bounded() {
+    assert_eq!(
+        construction_reach(
+            "class Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+            &[],
+        ),
+        serde_json::json!({"kind": "bounded"})
+    );
+}
+
+#[test]
+fn constructor_calling_a_global_function_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "globalThis.log = () => {};\nclass Box { constructor(read) { this.read = read; log(read); } }\nconst result = new Box(() => 3);\nconsole.log(result.read());",
+            &[],
+        ),
+        global_reach("unknown_callee")
+    );
+}
+
+#[test]
+fn constructor_reaching_an_import_through_a_local_helper_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "import { pass } from './lib.js';\nfunction helper(value) { return pass(value); }\nclass Box { constructor(read) { this.read = helper(read); } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+            &[(
+                "static/lib",
+                "export function pass(value) { return value; }"
+            )],
+        ),
+        global_reach("unknown_callee")
+    );
+}
+
+#[test]
+fn argument_escaped_to_opaque_code_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "class Box { constructor(read) { this.read = read; } }\nconst read = () => 3;\nJSON.stringify({ read });\nconst result = new Box(...[read]);\nconsole.log(result.read());",
+            &[],
+        ),
+        global_reach("tainted_input")
+    );
+}
+
+#[test]
+fn published_class_with_a_borrowed_method_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "class Box { constructor(read) { this.read = read; } get() { return this.read(); } }\nglobalThis.borrowed = Box.prototype.get;\nconst result = new Box(...[() => 3]);\nconsole.log(result.get());",
+            &[],
+        ),
+        global_reach("borrowed_receiver")
+    );
+}
+
+#[test]
+fn dynamic_scope_in_the_chunk_has_global_reach() {
+    assert_eq!(
+        construction_reach(
+            "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+            &[],
+        ),
+        global_reach("dynamic_scope")
+    );
+}
+
+/// Each fixture constructs `result` from a local class whose construction
+/// proof fails at one check; the loss names that check.
+fn assert_construction_rejection(source: &str, expected_output: &str, rejection: Value) {
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_entry_output(&fixture, expected_output);
+    let result = execution(&fixture, "result");
     assert_reason(
         &result,
-        serde_json::json!({"code": "callback_pool_limit", "limit": 64}),
+        serde_json::json!({"code": "unsupported_construction", "rejection": rejection}),
+    );
+}
+
+#[test]
+fn spread_construction_reports_spread_arguments() {
+    assert_construction_rejection(
+        "class Box { constructor(value) { this.value = value; } }\nconst inputs = [3];\nconst result = new Box(...inputs);\nconsole.log(result.value);",
+        "3\n",
+        serde_json::json!({"check": "spread_arguments"}),
+    );
+}
+
+#[test]
+fn aliased_class_reports_use_outside_construction() {
+    assert_construction_rejection(
+        "class Box { constructor(value) { this.value = value; } }\nconst alias = Box;\nconst result = new Box(3);\nconsole.log(result.value, alias === Box);",
+        "3 true\n",
+        serde_json::json!({"check": "class_used_outside_construction"}),
+    );
+}
+
+#[test]
+fn possible_object_prototype_field_reports_the_field() {
+    assert_construction_rejection(
+        "function define(name) { Object.defineProperty(Object.prototype, name, { value: 1 }); }\nclass Box { constructor(value) { this.value = value; } }\nconst result = new Box(3);\nconsole.log(result.value, typeof define);",
+        "3 function\n",
+        serde_json::json!({"check": "field_may_exist_on_object_prototype", "property": "value"}),
+    );
+}
+
+#[test]
+fn unknown_property_source_reports_its_parameter() {
+    assert_construction_rejection(
+        "class Box { constructor(config) { this.value = config.value; } }\nconst result = new Box(JSON.parse('{\"value\": 3}'));\nconsole.log(result.value);",
+        "3\n",
+        serde_json::json!({"check": "unchecked_property_source", "parameter": 0}),
+    );
+}
+
+#[test]
+fn wide_acyclic_execution_below_the_expansion_bound_remains_complete() {
+    let mut source = String::new();
+    let mut calls = String::new();
+    for index in 0..240 {
+        source.push_str(&format!("function step{index}() {{ return 3; }}\n"));
+        calls.push_str(&format!("step{index}();"));
+    }
+    source.push_str(&format!("function factory() {{ {calls} return 3; }}\nconst result = factory();\nconsole.log(result);\n"));
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
+    assert_eq!(result["precision_losses"], serde_json::json!([]));
+    assert_eq!(
+        result["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    assert_eq!(
+        result["binding_effect_authority"]["receipt"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        241
     );
 }
 
@@ -156,4 +899,633 @@ fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
             "code": "invocation_expansion_limit", "limit": 256
         }),
     );
+}
+
+#[test]
+fn property_absence_failure_reports_the_cross_chunk_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
+        vec![],
+    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
+    assert_entry_output(&fixture, "3\n");
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let witnesses = program_graph["native_integrity_witnesses"]
+        .as_array()
+        .expect("native mutation witnesses");
+    let witness = witnesses
+        .iter()
+        .find(|witness| witness["receiver_roots"] == serde_json::json!(["unknown_global_value"]))
+        .expect("unknown global receiver witness");
+    assert_eq!(witness["chunk_id"], "static/mutation");
+    assert_eq!(witness["statement_ordinal"], 0);
+    assert_eq!(
+        witness["source_location"]["source_path"],
+        "static/mutation.js"
+    );
+    assert_eq!(witness["source_location"]["start_line"], 1);
+    assert_eq!(witness["operation"], "property_assignment");
+    assert_eq!(witness["through_local_alias"], true);
+    assert_eq!(
+        witness["affected_roots"],
+        serde_json::json!(["global_object"])
+    );
+    let result = execution(&fixture, "result");
+    assert!(
+        result["native_prototype_property_checks"]
+            .as_array()
+            .expect("evaluated property guards")
+            .iter()
+            .any(|check| check["property"] == "value"
+                && check["intact"] == false
+                && check["blocking_mutation_count"] == 1),
+        "{result}"
+    );
+}
+
+#[test]
+fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
+            vec![],
+        )
+        .with_extra_chunks(&[("static/mutation", "const object = {}; export function mutate() { object.flag = 1; }")]),
+    );
+    assert_entry_output(&fixture, "3\n");
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert!(
+        program_graph.get("native_integrity_witnesses").is_none(),
+        "{program_graph}"
+    );
+    assert!(
+        execution(&fixture, "result")
+            .get("native_integrity_checks")
+            .is_none()
+    );
+}
+
+fn array_prefix_fixture(write: &str) -> Fixture {
+    let source = format!(
+        "function mutate() {{ Array.flag = 1; }}\n\
+         {write}\n\
+         const arrayResult = [1, 2].map(value => value + 1);\n\
+         console.log(arrayResult.join(','));"
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_entry_output(&fixture, "2,3\n");
+    fixture
+}
+
+fn prototype_prefix_fixture(write: &str) -> Fixture {
+    let source = format!(
+        "function mutate() {{ Object.prototype.prefixProbe = 1; }}\n\
+         {write}\n\
+         class Box {{ constructor(config) {{ this.prefixProbe = config.prefixProbe; }} }}\n\
+         const result = new Box({{ prefixProbe: 3 }});\n\
+         console.log(result.prefixProbe);"
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_entry_output(&fixture, "3\n");
+    fixture
+}
+
+fn prefix_observation(execution: &Value, guard: &str, property: Option<&str>) -> Value {
+    execution["native_prefix_observations"]
+        .as_array()
+        .expect("evaluated native prefix observations")
+        .iter()
+        .find(|observation| {
+            observation["guard"] == guard
+                && property.map_or(observation.get("property").is_none(), |property| {
+                    observation["property"] == property
+                })
+        })
+        .unwrap_or_else(|| panic!("missing {guard} {property:?} in {execution}"))
+        .clone()
+}
+
+fn assert_completed_native_integrity_inference(execution: &Value) {
+    assert_eq!(execution["complete"], true, "{execution}");
+    assert_eq!(
+        execution["precision_losses"],
+        serde_json::json!([]),
+        "{execution}"
+    );
+    assert!(
+        execution["inference_uses"].as_array().is_some_and(|uses| {
+            uses.iter().any(|use_| {
+                use_["conclusion"] == "native_integrity"
+                    && use_["derivation_rules"]
+                        .as_array()
+                        .is_some_and(|rules| rules.contains(&serde_json::json!("native_integrity")))
+            })
+        }),
+        "missing completed native-integrity inference in {execution}"
+    );
+}
+
+#[test]
+fn unused_deferred_native_writer_is_absent_from_prefix_observations() {
+    let fixture = array_prefix_fixture("");
+    let array = execution(&fixture, "arrayResult");
+    let observed = prefix_observation(&array, "array_intrinsics", None);
+    assert_eq!(
+        observed["prior_affected_roots"],
+        serde_json::json!([]),
+        "{array}"
+    );
+    assert_eq!(observed["uncertain_execution"], false);
+    // The callback's now-supported `value + 1` body completes with an
+    // explicit native-integrity inference. That whole-call evidence is
+    // separate from the runtime prefix observation above.
+    assert_completed_native_integrity_inference(&array);
+    let fixture = prototype_prefix_fixture("");
+    let result = execution(&fixture, "result");
+    let observed = prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
+    assert_eq!(
+        observed["prior_blocking_prototype_mutations"], 0,
+        "{result}"
+    );
+    assert!(
+        result["native_prototype_property_checks"]
+            .as_array()
+            .is_some()
+    );
+}
+
+#[test]
+fn foreign_dynamic_scope_starts_active_despite_a_local_deferred_write() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './mutation.js';\nfunction local() { globalThis.slot.value = 1; }\nclass Box { constructor(config) { this.prefixProbe = config.prefixProbe; } }\nconst result = new Box({ prefixProbe: 3 });\nconsole.log(result.prefixProbe);",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/mutation",
+            "export function uncertain() { eval('0'); }",
+        )]),
+    );
+    assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    let observed = prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
+    assert!(
+        observed["prior_affected_roots"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("global_object")),
+        "{result}"
+    );
+}
+
+#[test]
+fn invoked_and_direct_native_writes_are_present_before_later_guards() {
+    for write in ["mutate();", "Array.flag = 1;"] {
+        let fixture = array_prefix_fixture(write);
+        let array = execution(&fixture, "arrayResult");
+        let observed = prefix_observation(&array, "array_intrinsics", None);
+        assert!(
+            observed["prior_affected_roots"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("array")),
+            "{write}: {array}"
+        );
+    }
+    for write in ["mutate();", "Object.prototype.prefixProbe = 1;"] {
+        let fixture = prototype_prefix_fixture(write);
+        let result = execution(&fixture, "result");
+        let observed =
+            prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
+        assert!(
+            observed["prior_blocking_prototype_mutations"]
+                .as_u64()
+                .unwrap()
+                >= 1,
+            "{write}: {result}"
+        );
+    }
+}
+
+#[test]
+fn array_guard_references_a_direct_native_write_without_unknown_alias_widening() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './mutation.js';\nconst result = [1, 2].map(value => value + 1);\nconsole.log(result.join(','));",
+            vec![],
+        )
+        .with_extra_chunks(&[("static/mutation", "export function mutate() { Array.flag = 1; }")]),
+    );
+    assert_entry_output(&fixture, "2,3\n");
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let witnesses = program_graph["native_integrity_witnesses"]
+        .as_array()
+        .unwrap();
+    assert_eq!(witnesses.len(), 1, "{program_graph}");
+    assert_eq!(witnesses[0]["receiver_roots"], serde_json::json!(["array"]));
+    assert_eq!(witnesses[0]["affected_roots"], serde_json::json!(["array"]));
+    assert_eq!(witnesses[0]["through_local_alias"], false);
+    let result = execution(&fixture, "result");
+    // Foreign writes remain conservatively active with their known Array
+    // root. The completed callback introduces no unknown alias widening.
+    assert_completed_native_integrity_inference(&result);
+    let observed = prefix_observation(&result, "array_intrinsics", None);
+    assert!(
+        observed["prior_affected_roots"] == serde_json::json!(["array"])
+            && observed["uncertain_execution"] == false,
+        "{result}"
+    );
+}
+
+#[test]
+fn describe_bounds_cross_chunk_prototype_mutations() {
+    let fixture = GraphFixture::with_dependency(
+        "import './dependency.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
+        "export function mutate() { globalThis.slot.value = 1; globalThis.other.value = 2; }",
+        &[],
+    );
+    let bounded = fixture.json(&["describe", "result", "--limit", "1"]);
+    assert_eq!(
+        bounded["native_prototype_mutations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        bounded["native_prototype_mutations"][0]["chunk_id"],
+        "dependency"
+    );
+    assert_eq!(
+        bounded["limits"]["sections"]["native_prototype_mutations"],
+        serde_json::json!({"total": 2, "emitted": 1, "truncated": true})
+    );
+    let mutation = &bounded["native_prototype_mutations"][0];
+    assert_eq!(mutation["properties"], serde_json::json!(["value"]));
+    assert_eq!(mutation["source_location"]["start_line"], 1);
+    assert!(mutation.get("span").is_none());
+    let all = fixture.json(&["describe", "result", "--all"]);
+    assert_eq!(
+        all["native_prototype_mutations"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        all["limits"]["sections"]["native_prototype_mutations"],
+        serde_json::json!({"total": 2, "emitted": 2, "truncated": false})
+    );
+}
+
+#[test]
+fn mutation_witness_keeps_operation_and_known_native_alias_identity() {
+    for (body, operation, alias) in [
+        (
+            "const alias = Array; alias.flag = 1;",
+            "property_assignment",
+            true,
+        ),
+        ("Array.flag++;", "update", false),
+        ("delete Array.flag;", "delete", false),
+        (
+            "Object.defineProperty(Array, 'flag', { value: 1 });",
+            "mutation_call",
+            false,
+        ),
+    ] {
+        let source = format!("export function mutate() {{ {body} }}");
+        let fixture = run_fixture(
+            FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![])
+                .with_extra_chunks(&[("static/mutation", &source)]),
+        );
+        let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+        let witnesses = program_graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap();
+        assert_eq!(witnesses.len(), 1, "{program_graph}");
+        assert_eq!(witnesses[0]["operation"], operation);
+        assert_eq!(witnesses[0]["through_local_alias"], alias);
+        assert_eq!(witnesses[0]["receiver_roots"], serde_json::json!(["array"]));
+        assert_eq!(
+            witnesses[0]["source_location"]["source_path"],
+            "static/mutation.js"
+        );
+    }
+}
+
+#[test]
+fn refined_global_key_witness_explains_its_cross_chunk_native_dependency() {
+    for replacement in [
+        "export const value = 1;",
+        "export function replace() { Symbol.for = () => 'Array'; }",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![]).with_extra_chunks(&[
+            ("static/mutation", "import './replacement.js';\nconst key = Symbol.for('example.registry');\nexport function mutate() { globalThis[key] = 1; }"),
+            ("static/replacement", replacement),
+        ]));
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+        let witnesses = program_graph["native_integrity_witnesses"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let writes: Vec<_> = witnesses
+            .iter()
+            .filter(|witness| witness["chunk_id"] == "static/mutation")
+            .collect();
+        if replacement.starts_with("export const") {
+            assert!(writes.is_empty(), "{graph}");
+        } else {
+            assert_eq!(writes.len(), 1, "{graph}");
+            assert_eq!(writes[0]["statement_ordinal"], 2);
+            assert_eq!(writes[0]["source_location"]["start_line"], 3);
+            assert_eq!(
+                writes[0]["affected_roots"],
+                serde_json::json!(["global_object"])
+            );
+            assert!(
+                writes[0]["invalidated_key_dependencies"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!("symbol")),
+                "{graph}"
+            );
+            assert!(
+                witnesses
+                    .iter()
+                    .any(|witness| witness["chunk_id"] == "static/replacement"
+                        && witness["affected_roots"] == serde_json::json!(["symbol"]))
+            );
+        }
+    }
+}
+
+#[test]
+fn describe_follows_key_premises_to_the_other_chunk_write() {
+    let fixture = GraphFixture::with_dependency(
+        "import './dependency.js';\nexport function replace() { Symbol.for = () => 'Array'; }\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });",
+        "const key = Symbol.for('example.registry');\nexport function mutate() { globalThis[key] = 1; }",
+        &[],
+    );
+    let report = fixture.json(&["describe", "result", "--all"]);
+    let witnesses = report["native_integrity_witnesses"].as_array().unwrap();
+    assert!(
+        report["native_prototype_mutations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|mutation| mutation["chunk_id"] == "dependency"
+                && mutation["properties"].is_null()
+                && mutation["key_dependencies"]
+                    .as_array()
+                    .is_some_and(
+                        |dependencies| dependencies.contains(&serde_json::json!("symbol"))
+                    ))
+    );
+    assert!(witnesses.iter().any(|witness| witness["chunk_id"] == "main"
+        && witness["affected_roots"] == serde_json::json!(["symbol"])));
+}
+
+#[test]
+fn untracked_identity_paths_keep_prototype_absence_conservative() {
+    for capability in [
+        "host(({}).__proto__);",
+        "host(() => ({}).__proto__);",
+        "host({ get value() { return ({}).__proto__; } });",
+        "host({ get value() { return Object.prototype; } });",
+        "const { __proto__: prototype } = {}; host(prototype);",
+        "host(() => () => Object.prototype);",
+    ] {
+        let source = format!(
+            "function expose() {{ {capability} }}\nclass Box {{ constructor(config) {{ this.value = config.value; }} }}\nconst result = new Box({{value: 3}});"
+        );
+        let fixture = GraphFixture::new(&source, &[]);
+        let report = fixture.json(&["describe", "result", "--all"]);
+        assert!(
+            report["native_prototype_mutations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|mutation| mutation["kind"] == "escape"
+                    && mutation["statement_ordinal"] == 0
+                    && mutation["properties"].is_null()),
+            "{capability}: {report}"
+        );
+    }
+}
+
+#[test]
+fn silent_primitive_push_invalidates_contents_without_inventing_a_getter() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const record = [0];\nconst first = record.push(1);\nconst second = record.push(2);\nconst copied = record.map(value => value);\nconst snapshot = Object.getOwnPropertyDescriptors(record);\nconsole.log(copied.join(','), snapshot.length.value);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "0,1,2 3\n");
+    for binding in ["first", "second"] {
+        assert_eq!(execution(&fixture, binding)["complete"], true, "{binding}");
+    }
+    for binding in ["copied", "snapshot"] {
+        assert_eq!(execution(&fixture, binding)["complete"], false, "{binding}");
+    }
+}
+
+#[test]
+fn local_method_receiver_precision_excludes_implicit_captures() {
+    for body in [
+        "this.name = 'changed';",
+        "const change = () => { this.name = 'changed'; }; return change;",
+    ] {
+        let source = format!(
+            "const record = {{ name: 'original', change() {{ {body} }} }};\nconst returned = record.change();\nif (returned) returned();\nconst selected = record.name;\nconsole.log(selected);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "changed\n");
+        assert_reason(
+            &execution(&fixture, "selected"),
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+    }
+}
+
+#[test]
+fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
+    for source in [
+        "globalThis.syntheticHost = { get read() { return state; } };\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
+        "globalThis.syntheticHost = {};\nObject.defineProperty(globalThis.syntheticHost, 'read', { get() { return state; } });\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        assert_reason(
+            &execution(&fixture, "observed"),
+            serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+        );
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == observed && edge.target == state && edge.constrains_init_order
+        }));
+    }
+}
+
+#[test]
+fn external_binding_alias_proof_excludes_reassignment_private_and_skipped_values() {
+    for setup in [
+        "let alias = syntheticHost; alias = { get read() { return state; } };",
+        "const privateRecord = { get read() { return state; } }; const alias = privateRecord;",
+        "const alias = syntheticHost; function install(value) { Object.defineProperty(value, 'read', { get() { return state; } }); } install(...[alias]);",
+    ] {
+        let source = format!(
+            "globalThis.syntheticHost = {{ read: 'original' }};\n{setup}\nconst observed = alias.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == observed && edge.target == state && edge.constrains_init_order
+            }),
+            "the actual later getter read must retain state: {setup}"
+        );
+    }
+}
+
+#[test]
+fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
+    for (source, readers, expected) in [
+        (
+            "var shared = { label: 'shared' };\nfunction capture(record) { return () => [record, shared]; }\nconst first = { name: 'first' };\nconst second = { name: 'second' };\nconst callbacks = [capture(first), capture(second)];\nfunction install(callbacks) { for (const callback of callbacks) { const [record] = callback(); Object.defineProperty(record, 'name', { get() { return state; } }); } }\ninstall(...[callbacks]);\nconst left = first.name;\nconst right = second.name;\nvar state = 'late';\nconsole.log(left, right);\n",
+            vec!["left", "right"],
+            "undefined undefined\n",
+        ),
+        (
+            "let current = { name: 'first' };\nconst reader = () => current;\nfunction install(callback) { Object.defineProperty(callback(), 'name', { get() { return state; } }); }\ninstall(...[reader]);\nconst second = { name: 'second' };\nconst before = second.name;\ncurrent = second;\ninstall(...[reader]);\nconst observed = second.name;\nvar state = 'late';\nconsole.log(before, observed);\n",
+            vec!["observed"],
+            "second undefined\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+        if readers == ["observed"] {
+            assert_eq!(execution(&fixture, "before")["complete"], true);
+        }
+        let graph = fixture.dependency_graph();
+        let state = source_unit_for_binding(&graph, "state");
+        for reader in readers {
+            assert_reason(
+                &execution(&fixture, reader),
+                serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
+            );
+            let reader = source_unit_for_binding(&graph, reader);
+            assert!(graph.edges.iter().any(|edge| {
+                edge.source == reader && edge.target == state && edge.constrains_init_order
+            }));
+        }
+    }
+}
+
+#[test]
+fn completed_purity_retains_residual_evaluation_obligations() {
+    for (source, output, complete) in [
+        (
+            "function change() { globalThis.flag = 1; return 1; }\nconst value = change();\nconsole.log(value, globalThis.flag);\n",
+            "1 1\n",
+            Some(true),
+        ),
+        (
+            "const record = {};\nfunction fill(input) { input.flag = 1; return 1; }\nconst value = fill(record);\nconsole.log(value, record.flag);\n",
+            "1 1\n",
+            Some(true),
+        ),
+        (
+            "const value = ({ valueOf() { return 1; } }) + 1;\nconsole.log(value);\n",
+            "2\n",
+            None,
+        ),
+        (
+            "function fail() { throw 'sentinel'; }\nconst value = (() => { try { fail(); return 'wrong'; } catch (error) { return error; } })();\nconsole.log(value);\n",
+            "sentinel\n",
+            None,
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let graph = fixture.dependency_graph();
+        let value = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "value")
+            })
+            .unwrap();
+        assert!(!value.purity.is_pure(), "{source}: {:?}", value.purity);
+        let execution = value.synchronous_execution.as_ref().unwrap();
+        if let Some(complete) = complete {
+            assert_eq!(execution.complete, complete);
+        }
+        assert!(execution.purity_disagreement.is_none());
+    }
+    // The migrated host row can prove timing through its native slot census,
+    // while its purity requires the separately audited exact-site input.
+    for (constructor, pure, complete) in
+        [("TextEncoder", false, true), ("TextDecoder", true, false)]
+    {
+        let source = format!(
+            "const value = new {constructor}();\nconsole.log(value instanceof {constructor});\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "true\n");
+        let graph = fixture.dependency_graph();
+        let value = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "value")
+            })
+            .unwrap();
+        assert_eq!(
+            value.purity.is_pure(),
+            pure,
+            "{constructor}: {:?}",
+            value.purity
+        );
+        let execution = value.synchronous_execution.as_ref().unwrap();
+        assert_eq!(execution.complete, complete, "{constructor}: {execution:?}");
+        assert!(execution.purity_disagreement.is_none());
+    }
+}
+
+#[test]
+fn completed_owner_publication_retains_final_value_and_export_capabilities() {
+    for declaration in [
+        "const initialized = install();",
+        "export default install();",
+    ] {
+        let source = format!(
+            "const record = {{ value: () => 0 }};\nfunction install() {{ record.value = () => state; return 1; }}\n{declaration}\nconst observed = record.value();\nvar state = 'late';\nconsole.log(observed);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let graph = fixture.dependency_graph();
+        let observed = source_unit_for_binding(&graph, "observed");
+        let state = source_unit_for_binding(&graph, "state");
+        assert!(graph.edges.iter().any(|edge| {
+            edge.source == observed && edge.target == state && edge.constrains_init_order
+        }));
+        assert_eq!(
+            graph
+                .nodes
+                .iter()
+                .filter(|node| {
+                    node.synchronous_execution
+                        .as_ref()
+                        .is_some_and(|execution| execution.purity_disagreement.is_some())
+                })
+                .count(),
+            0
+        );
+    }
 }

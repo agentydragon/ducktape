@@ -5,25 +5,22 @@ from __future__ import annotations
 from textwrap import dedent
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "monitoring-rules"
+_PROMQL_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring"
 NAMESPACE = "monitoring"
 
 _CONTROL_PLANE_IO = [
     Rule.record(
         "cluster:talos_system_disk_device_info",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-system-disk-device-info.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "control-plane-system-disk-device-info.promql").read_text(),
     ),
     Rule.alert(
         "ControlPlaneSystemDiskBusy",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-system-disk-busy-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "control-plane-system-disk-busy-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Control-plane system disk {{ $labels.device_path }} is busy on {{ $labels.node }}",
@@ -34,9 +31,7 @@ _CONTROL_PLANE_IO = [
     ),
     Rule.alert(
         "ControlPlanePodSystemDiskWriterHigh",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-pod-system-disk-writer-high-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "control-plane-pod-system-disk-writer-high-warning.promql").read_text(),
         for_="10m",
         labels={"severity": "warning"},
         summary="Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to {{ $labels.device_path }}",
@@ -59,9 +54,7 @@ _CONTROL_PLANE_IO = [
     # plane, and `instance` cannot be added to `equal` without diverging from the stock rule.
     Rule.alert(
         "ControlPlaneLeasePutLatency",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-lease-put-latency-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "control-plane-lease-put-latency-warning.promql").read_text(),
         for_="10m",
         labels={"severity": "warning"},
         summary="Apiserver lease PUT latency is high on {{ $labels.instance }}",
@@ -72,9 +65,7 @@ _CONTROL_PLANE_IO = [
     ),
     Rule.alert(
         "ControlPlaneLeasePutLatency",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/control-plane-lease-put-latency-critical.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "control-plane-lease-put-latency-critical.promql").read_text(),
         for_="5m",
         labels={"severity": "critical"},
         summary="Apiserver lease PUT latency is critical on {{ $labels.instance }}",
@@ -111,9 +102,7 @@ _EXTERNAL_SECRETS = [
     ),
     Rule.alert(
         "ExternalSecretsControllerBacklogged",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/external-secrets-controller-backlogged-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "external-secrets-controller-backlogged-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="External Secrets {{ $labels.controller }} controller is saturated with queued work",
@@ -139,24 +128,14 @@ _EXTERNAL_SECRETS = [
 ]
 
 _FLUX = [
-    # Suspending a Flux object does not clear its Ready condition, so anything
-    # deliberately disabled reports Ready=False indefinitely. Before this exclusion
-    # 13 of the 18 firing FluxKustomizationNotReady alerts were suspended services
-    # (harbor/*, openhands/*, tandoor, sdr, ...) -- a permanent floor of ~156 ntfy
-    # messages/day that exhausted the provider's daily quota and took *all* paging
-    # down for 23h on 2026-08-05, criticals included.
-    #
-    # Gotcha: `unless` matches on label sets, NOT values, so the `== 1` inside the
-    # parens is load-bearing. Flux omits spec.suspend when unset (no series, which
-    # excludes nothing -- correct), but an object carrying an explicit
-    # `suspend: false` produces the series with value 0, and a bare
-    # `unless on (...) kube_..._suspended` would silently suppress a genuinely
-    # broken service.
+    # Suspension leaves an existing `Ready=False` condition in place. Before this
+    # exclusion, 13/18 firing `FluxKustomizationNotReady` alerts came from suspended
+    # services, exhausting ntfy's quota in the 2026-08-05 outage.
+    # `unless` matches label sets, not values: require `== 1`. Unset suspend has no
+    # series; explicit `suspend: false` yields 0 and must not suppress a broken service.
     Rule.alert(
         "FluxKustomizationNotReady",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/flux-kustomization-not-ready-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "flux-kustomization-not-ready-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -167,9 +146,7 @@ _FLUX = [
     ),
     Rule.alert(
         "FluxHelmReleaseNotReady",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/flux-helm-release-not-ready-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "flux-helm-release-not-ready-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -180,9 +157,7 @@ _FLUX = [
     ),
     Rule.alert(
         "FluxGitRepositoryNotReady",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/flux-git-repository-not-ready-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "flux-git-repository-not-ready-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -251,9 +226,7 @@ _GITHUB_QUOTA = [
         # errors, which the exporter exposes as HTTP 502). Only suppress when
         # ALL current targets are down: a failed old pod must not hide a healthy
         # replacement that returns no quota gauge.
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/github-graphql-quota-observations-missing-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "github-graphql-quota-observations-missing-warning.promql").read_text(),
         labels={"severity": "warning"},
         summary="GitHub GraphQL quota observations for {{ $labels.github_account }} are missing",
         description=(
@@ -284,7 +257,7 @@ _IO_PRESSURE = [
     # the rest of the node runs fine.
     Rule.alert(
         "NodeIOPressure",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/node-io-pressure-warning.promql")).read_text(),
+        (_PROMQL_DIR / "node-io-pressure-warning.promql").read_text(),
         for_="1h",
         labels={"severity": "warning"},
         summary="{{ $labels.node }} is stalled on disk I/O",
@@ -299,9 +272,7 @@ _IO_PRESSURE = [
     # none.
     Rule.alert(
         "ContainerPageCacheThrash",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/container-page-cache-thrash-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "container-page-cache-thrash-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="{{ $labels.namespace }}/{{ $labels.pod }} {{ $labels.container }} is thrashing its page cache",
@@ -316,14 +287,8 @@ _IO_PRESSURE = [
 ]
 
 _MCP_AUTH = [
-    # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
-    # refresh a client's token against Authentik or persist refreshed OAuth
-    # state. Before the
-    # RetryableRefreshOIDCProxy fix this instantly killed the claude.ai connector
-    # (invalid_grant is terminal); now transient failures answer 503, but
-    # each one still means claude.ai saw an error and the connector may
-    # need a manual Reconnect. RCA:
-    # cluster/debug/2026_06_claude_ai_connector_deauth.md
+    # Even transient 503 refresh failures may leave the claude.ai connector needing
+    # manual reconnect; see cluster/debug/2026_06_claude_ai_connector_deauth.md.
     Rule.alert(
         "McpUpstreamTokenRefreshFailed",
         "increase(mcp_auth_upstream_refresh_failures_total[1h]) > 0",
@@ -344,40 +309,18 @@ _MCP_AUTH = [
     )
 ]
 
-# Forks of kube-prometheus-stack rules, switched off via `defaultRules.disabled`
-# in cluster/cdk8s/monitoring/stack.py. The only change is excluding roaming nodes;
-# the existing node rules are copied verbatim from chart version 82.3.0, and
-# the workload/kubelet rules below are copied from chart version 91.3.0.
-#
-# Why fork rather than suppress by alertname in the Alertmanager route: the
-# alertname denylist is all-or-nothing, so denying an alert here also silenced
-# it for the *control plane* -- a node going NotReady paged nobody. Excluding
-# by taint keeps the alert for every non-roaming node.
-#
-# Why the taint and not the node names: `iguana` and `rugged` are defined in
-# several places at once and hardcoding a third would be one more thing to
-# forget. All of these describe the same set today:
-#   - node taint `node-role.kubernetes.io/roaming=true:NoSchedule`  <- keyed on here
-#   - node label `topology.kubernetes.io/region=roaming`
-#   - `terraform/main/home-nodes.tf` (the declarations)
-#   - `nebula-mesh.json` at the repo root (mesh roster)
-#   - the Node Types table in <cluster/README.md>
-# The taint wins because it is the *operational* statement -- a node tainted
-# roaming is one the scheduler is told may vanish, which is exactly the
-# property that makes NotReady uninteresting. Taint a new laptop and it is
-# covered here with no edit. (Note README currently says only `rugged` carries
-# the taint; both do, verified 2026-08-06.)
-#
-# CLEANUP(added 2026-08-06): re-diff against the chart on every
-# kube-prometheus-stack bump -- a forked rule silently keeps the old expression
-# when upstream fixes theirs. Sources: `kubernetes-system-kubelet` for
-# KubeNodeNotReady/KubeNodeUnreachable, `general.rules` for TargetDown.
+# Fork only the kube-prometheus-stack rules that need roaming exclusions; they are
+# disabled in `stack.py`. Node rules match chart 82.3.0; workload/kubelet rules match
+# 91.3.0. `kubernetes-system-kubelet` supplies `KubeNodeNotReady`/`KubeNodeUnreachable`;
+# `general.rules` supplies `TargetDown`. Re-diff these expressions on every chart bump.
+# Match the operational `node-role.kubernetes.io/roaming=true:NoSchedule` taint, not
+# host names: it marks nodes expected to disappear and covers any newly tainted laptop.
+# A global Alertmanager denylist would also silence failures on always-on nodes; the
+# region label and mesh roster describe location/membership, not this rule's key.
 _ROAMING_NODE = [
     Rule.alert(
         "KubeNodeNotReady",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/kube-node-not-ready-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "kube-node-not-ready-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Node is not ready.",
@@ -393,9 +336,7 @@ _ROAMING_NODE = [
     # bolting on a second mechanism.
     Rule.alert(
         "KubeNodeUnreachable",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/kube-node-unreachable-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "kube-node-unreachable-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         summary="Node is unreachable.",
@@ -461,70 +402,49 @@ _DISK_USAGE = [
     ),
     # The host path behind each pod's PVC: `host_path` for local-path-provisioner volumes, `local_path`
     # for static local PVs. CSI volumes have neither and drop out.
-    Rule.record(
-        "disk_usage:pvc_path:info",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-pvc-path-info.promql")).read_text(),
-    ),
+    Rule.record("disk_usage:pvc_path:info", (_PROMQL_DIR / "disk-usage-pvc-path-info.promql").read_text()),
     # Longest mountpoint prefix of the PVC path wins; mountpoints deeper than three components are not
     # matched and fall through to a shorter enclosing mount.
-    Rule.record(
-        "disk_usage:pvc_filesystem:info",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-pvc-filesystem-info.promql")
-        ).read_text(),
-    ),
+    Rule.record("disk_usage:pvc_filesystem:info", (_PROMQL_DIR / "disk-usage-pvc-filesystem-info.promql").read_text()),
     # Workload-scoped pod-to-PVC joins avoid duplicate matches from unrelated pods; Seaweed volume-server
     # replicas are separate physical copies and are counted once on each backing filesystem.
     Rule.record(
         "disk_usage:seaweedfs_volume_server_used_bytes",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-disk-usage.promql")).read_text(),
+        (_PROMQL_DIR / "seaweedfs-disk-usage.promql").read_text(),
         labels={"category": "SeaweedFS"},
     ),
     Rule.record(
         "disk_usage:seaweedfs_deleted_volume_server_used_bytes",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/seaweedfs-deleted-disk-usage.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "seaweedfs-deleted-disk-usage.promql").read_text(),
         labels={"category": "SeaweedFS deleted, awaiting vacuum", "component": "SeaweedFS deleted, awaiting vacuum"},
     ),
     # MergeTree parts only. ClickHouse's DiskUsed is the whole filesystem's used bytes, shared
     # with everything else on the disk.
     Rule.record(
         "disk_usage:clickhouse_merge_tree_used_bytes",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/clickhouse-disk-usage.promql")).read_text(),
+        (_PROMQL_DIR / "clickhouse-disk-usage.promql").read_text(),
         labels={"category": "ClickHouse", "component": "ClickHouse"},
     ),
     # Database files on each instance's PGDATA volume; WAL and other PostgreSQL files are not counted.
     Rule.record(
         "disk_usage:cnpg_database_used_bytes",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/postgres-disk-usage.promql")).read_text(),
+        (_PROMQL_DIR / "postgres-disk-usage.promql").read_text(),
         labels={"category": "Postgres (CNPG)"},
     ),
     Rule.record(
-        "disk_usage:application_used_bytes",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-application-used-bytes.promql")
-        ).read_text(),
+        "disk_usage:application_used_bytes", (_PROMQL_DIR / "disk-usage-application-used-bytes.promql").read_text()
     ),
     # The filesystem total and application detail overlap. Use kubelet only as a fallback for a PVC
     # without application attribution; otherwise adding CSI joins would count its bytes twice.
     Rule.record(
         "disk_usage:kubelet_pvc_fallback_used_bytes",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/pvc-disk-usage.promql")).read_text(),
+        (_PROMQL_DIR / "pvc-disk-usage.promql").read_text(),
         labels={"category": "Kubelet-measured PVCs"},
     ),
     Rule.record(
-        "disk_usage:component_used_bytes",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-component-used-bytes.promql")
-        ).read_text(),
+        "disk_usage:component_used_bytes", (_PROMQL_DIR / "disk-usage-component-used-bytes.promql").read_text()
     ),
-    Rule.record(
-        "disk_usage:unattributed_bytes",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/disk-usage-unattributed-bytes.promql")
-        ).read_text(),
-    ),
+    Rule.record("disk_usage:unattributed_bytes", (_PROMQL_DIR / "disk-usage-unattributed-bytes.promql").read_text()),
 ]
 
 # Piraeus copies belong to storage nodes, regardless of where a PVC is mounted. Native LINSTOR
@@ -541,37 +461,17 @@ _PIRAEUS = [
     ),
     Rule.record("disk_usage:pool_used_bytes", "disk_usage:pool_capacity_bytes - disk_usage:pool_free_bytes"),
     Rule.record(
-        "disk_usage:volume_definition_size_bytes",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-definition-size.promql")
-        ).read_text(),
+        "disk_usage:volume_definition_size_bytes", (_PROMQL_DIR / "piraeus-volume-definition-size.promql").read_text()
     ),
     # PV claim references survive release; retain their resource/PV identity and phase rather than
     # silently attributing an old retained resource to a newly created PVC with the same name.
+    Rule.record("disk_usage:piraeus_volume:info", (_PROMQL_DIR / "piraeus-volume-info.promql").read_text()),
     Rule.record(
-        "disk_usage:piraeus_volume:info",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-info.promql")).read_text(),
+        "disk_usage:diskful_volume:info", (_PROMQL_DIR / "piraeus-diskful-volume-state-info.promql").read_text()
     ),
-    Rule.record(
-        "disk_usage:diskful_volume:info",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-diskful-volume-state-info.promql")
-        ).read_text(),
-    ),
-    Rule.record(
-        "disk_usage:volume:info",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-diskful-volume-info.promql")
-        ).read_text(),
-    ),
-    Rule.record(
-        "disk_usage:volume_allocated_bytes",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-allocated.promql")).read_text(),
-    ),
-    Rule.record(
-        "disk_usage:volume_capacity_bytes",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/piraeus-volume-capacity.promql")).read_text(),
-    ),
+    Rule.record("disk_usage:volume:info", (_PROMQL_DIR / "piraeus-diskful-volume-info.promql").read_text()),
+    Rule.record("disk_usage:volume_allocated_bytes", (_PROMQL_DIR / "piraeus-volume-allocated.promql").read_text()),
+    Rule.record("disk_usage:volume_capacity_bytes", (_PROMQL_DIR / "piraeus-volume-capacity.promql").read_text()),
     Rule.record(
         "disk_usage:pool_committed_bytes",
         "sum by (node, storage_pool) (disk_usage:volume_capacity_bytes)\n"
@@ -599,14 +499,47 @@ _PIRAEUS = [
 ]
 
 _ROAMING_NODE_WORKLOAD = [
+    Rule.alert(
+        "AlloyNodeUnavailable",
+        dedent("""\
+            max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1)
+            unless on (node)
+            max by (node) (
+              kube_pod_info{namespace="monitoring",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+              * on (namespace, pod) group_left
+                max by (namespace, pod) (kube_pod_status_ready{namespace="monitoring",condition="true"} == 1)
+              * on (namespace, pod) group_left
+                max by (namespace, pod) (up{namespace="monitoring",service="alloy-node"} == 1)
+            )
+        """).strip(),
+        for_="10m",
+        labels={"severity": "warning"},
+        summary="Node-local Alloy is unavailable on {{ $labels.node }}",
+        description=(
+            "This Ready node has no Ready alloy-node pod successfully scraping and forwarding its own metrics. "
+            "Offline nodes are excluded."
+        ),
+    ),
+    Rule.alert(
+        "AlloyNodeRolloutStalled",
+        dedent("""\
+            count(max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1))
+            > scalar(max(kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}))
+        """).strip(),
+        for_="15m",
+        labels={"severity": "warning"},
+        summary="Node-local Alloy rollout has not reached all online nodes",
+        description=(
+            "Fewer Alloy pods have the new template than there are Ready nodes. Offline nodes are excluded, "
+            "but an updated pod on an offline node can mask an outdated online pod; check revisions after upgrades."
+        ),
+    ),
     # The stock rule has no node label. Join through kube_pod_info so a pod
     # on a tainted roaming node disappears from the alert, while the same
     # pod condition remains alertable on ordinary nodes.
     Rule.alert(
         "KubePodNotReady",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/kube-pod-not-ready-warning.promql"))
-        .read_text()
-        .removesuffix("\n"),
+        (_PROMQL_DIR / "kube-pod-not-ready-warning.promql").read_text().removesuffix("\n"),
         for_="15m",
         labels={"severity": "warning"},
         description=(
@@ -620,9 +553,7 @@ _ROAMING_NODE_WORKLOAD = [
     # exclusion used by KubeNodeNotReady applies directly here.
     Rule.alert(
         "KubeletInstanceUnreachable",
-        get_required_path(
-            own_repo_rlocation("cluster/cdk8s/monitoring/kubelet-instance-unreachable-warning.promql")
-        ).read_text(),
+        (_PROMQL_DIR / "kubelet-instance-unreachable-warning.promql").read_text(),
         for_="15m",
         labels={"severity": "warning"},
         description="A Kubelet instance has been unreachable for more than 15 minutes.",
@@ -631,26 +562,16 @@ _ROAMING_NODE_WORKLOAD = [
             "runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeletinstanceunreachable"
         },
     ),
-    # Same exclusion, applied to the scrape-target ratio. The `unless` reaches
-    # only the kubelet job by construction: `up` carries `node` for kubelet but
-    # not for node-exporter or app targets, and a series without `node` matches
-    # on the empty string, which never equals a real node name -- so everything
-    # else passes through with stock behaviour. Verified 2026-08-06: stock fired
-    # for kubelet + node-exporter + seaweedfs-volume-peer, this fires for the
-    # latter two only, and the kubelet down-ratio goes 22.2% -> 0%.
-    #
-    # Excluded from BOTH sides of the ratio on purpose. Filtering only the
-    # numerator would leave roaming targets padding the denominator, diluting
-    # the percentage and making a real outage LESS likely to cross the 10%
-    # threshold -- a silent desensitisation, which is worse than the noise.
-    #
-    # TargetDown stays on the Alertmanager denylist for now: node-exporter has
-    # no `node` label to filter on (it would need an instance->IP->node join via
-    # kube_node_status_addresses) and seaweedfs-volume-peer is genuinely down.
-    # This removes one of the three reasons it cannot be re-enabled.
+    # The `unless` filters targets only when `up` carries `node`; at the 2026-08-06
+    # check only kubelet did. Missing labels cannot match a real taint, so others pass.
+    # Apply it to both sides or roaming targets pad the denominator and dilute outages.
+    # Verified 2026-08-06: kubelet's down-ratio fell 22.2% -> 0%; node-exporter and
+    # seaweedfs-volume-peer still fired. At that check, the remaining causes were
+    # node-exporter's missing `node` label (requiring an instance -> IP -> node join)
+    # and a genuinely down SeaweedFS peer; re-check both before removing the denylist.
     Rule.alert(
         "TargetDown",
-        get_required_path(own_repo_rlocation("cluster/cdk8s/monitoring/target-down-warning.promql")).read_text(),
+        (_PROMQL_DIR / "target-down-warning.promql").read_text(),
         for_="10m",
         labels={"severity": "warning"},
         summary="One or more targets are unreachable.",

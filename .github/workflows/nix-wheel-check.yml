@@ -20,8 +20,11 @@ on:
       BUILDBUDDY_API_KEY:
         description: "BuildBuddy remote execution and cache credential"
         required: true
-      SOPS_AGE_KEY:
-        description: "SOPS age key, for decrypting the Attic reader token (nix substituter cache)"
+      ATTIC_TOKEN:
+        description: "Attic writer token for runs that upload to the private cache"
+        required: false
+      ATTIC_READ_TOKEN:
+        description: "Attic reader token for private cache access without uploads"
         required: true
     inputs:
       environment:
@@ -107,14 +110,13 @@ jobs:
       # toolchain on every run and blows the timeout (#5749).
       - uses: ./.github/actions/setup-nix-attic
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          attic_token: ${{ secrets[github.event_name != 'pull_request_target' && 'ATTIC_TOKEN' || 'ATTIC_READ_TOKEN'] }}
+          # Fork revisions (pull_request_target, via trusted-fork-pr-ci.yml) never write
+          # to the shared cache.
+          upload: ${{ github.event_name != 'pull_request_target' }}
 
-      # The remote build only needs bb; use the same pin and checksum as Bazel CI.
-      - name: Install pinned BuildBuddy CLI
-        run: |
-          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
-            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
-          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+      - name: Install pinned BuildBuddy CLIs
+        run: nix profile install .#bb .#bbapi
 
       # Derive the Bazel target list + nix package list from the SSOT.
       # A release is in-gate when its `nixPackage: true`; every pin in an
@@ -150,7 +152,7 @@ jobs:
       - name: Choose artifact build invocation
         id: invocation
         run: |
-          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+          invocation_id="$(python3 devinfra/buildbuddy/ci/invocation_ids.py \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build)"
           echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
 
@@ -179,51 +181,18 @@ jobs:
               runner_recycling_key: ducktape-nix-wheel-v2
               run_from_commit: ${{ steps.source.outputs.sha }}
 
-      - name: Fetch artifacts
+      - name: Fetch artifacts and assemble overrides
+        id: overrides
         env:
           INVOCATIONS: ${{ steps.invocation.outputs.id }}
         run: |
           set -euo pipefail
-          overrides_file="$RUNNER_TEMP/nix-wheel-artifact-overrides.tsv"
-          python3 -m devinfra.ci.release_assets nix-overrides \
-            --invocations "$INVOCATIONS" > "$overrides_file"
-          mapfile -t outputs < <(cut -f2 "$overrides_file")
-          python3 -m devinfra.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
-
-      # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
-      # in an in-gate release gets an override entry (including every asset in
-      # a multi-asset release). The TSV was resolved from the build's stream,
-      # then the fetch step materialized those files from CAS.
-      - name: Assemble artifact overrides
-        id: overrides
-        shell: bash
-        run: |
-          set -euo pipefail
-          json='{}'
-          while IFS=$'\t' read -r pin rel; do
-            if [[ ! -f "$rel" ]]; then
-              echo "::error::missing artifact for pin '$pin' at $rel"
-              exit 1
-            fi
-            abs=$(readlink -f "$rel")
-            json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
-          done < "$RUNNER_TEMP/nix-wheel-artifact-overrides.tsv"
+          overrides="$(python3 -m devinfra.ci.nix_artifact_overrides --invocations "$INVOCATIONS")"
           {
             echo 'overrides<<EOF'
-            echo "$json"
+            echo "$overrides"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
-
-      # Upload every path this run adds to the store as soon as it lands, so a
-      # cold rebuild that times out or fails still leaves its finished paths in
-      # Attic for the next run. Fork revisions (pull_request_target, via
-      # trusted-fork-pr-ci.yml) never write to the shared cache.
-      - name: Start incremental Attic upload
-        if: github.event_name != 'pull_request_target'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
 
       # Each marker depends on the complete source-built package and its checks.
       # Cache hits need only the marker; misses build the package as before.
@@ -236,13 +205,6 @@ jobs:
             ${{ steps.inputs.outputs.nix_checks }} > "$RUNNER_TEMP/artifact-check-paths"
           cat "$RUNNER_TEMP/artifact-check-paths"
 
-      # Publish the source-override results: ordinary pinned-artifact builds can
-      # have different store paths even when they contain the same wheel bytes.
-      # The watcher may still be uploading; this push covers the markers' full
-      # closures before the job ends.
-      - name: Cache source artifact checks in Attic
-        if: github.event_name != 'pull_request_target'
-        run: |
-          mapfile -t checks < "$RUNNER_TEMP/artifact-check-paths"
-          test "${#checks[@]}" -gt 0
-          attic push ducktape:main "${checks[@]}"
+      - name: Finish Attic upload
+        if: always() && github.event_name != 'pull_request_target'
+        uses: ./.github/actions/finish-attic-upload

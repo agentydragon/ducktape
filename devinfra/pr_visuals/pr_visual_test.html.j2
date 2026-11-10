@@ -1,3 +1,5 @@
+{% import "issue_provenance.j2" as provenance -%}
+{% macro issue_list(items) %}<ul>{% for issue in items %}<li>{{ provenance.issue_details(issue, issue.source.invocation_label if issue.source else none, issue.source.configuration_label if issue.source else none) }}</li>{% endfor %}</ul>{% endmacro %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -10,10 +12,22 @@
   <body class="gallery-test">
     <header>
       <a href="../../index.html">All visual tests</a>
-      <h1>{{ title }}</h1>
-      <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
+      <h1>{% if title == target_label %}<code>{{ target_label }}</code>{% else %}{{ title }}{% endif %}</h1>
+      <div>{% if title != target_label %}<code>{{ target_label }}</code> · {% endif %}{{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
     </header>
     <main>
+      {% if issues %}<div role="alert"><strong>Incomplete visual results</strong>{{ issue_list(issues) }}</div>{% endif %}
+      {% if notices %}<details><summary>Retries and execution notices</summary>{{ issue_list(notices) }}</details>{% endif %}
+      {% for asset in assets if asset.classification == "unstable" %}
+      <figure id="{{ asset.path }}">
+        <figcaption>{{ asset.label }}<span class="badge modified">unstable across runs</span></figcaption>
+        {% for variant in asset.variants %}
+        <div><div class="variant-provenance">{% for source in variant.provenance %}{{ provenance.variant_provenance(source) }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
+          <a class="sample-frame" href="{{ variant.url }}"><img src="{{ variant.url }}" alt="{{ asset.label }} variant {{ loop.index }}" loading="lazy"></a>
+        </div>
+        {% endfor %}
+      </figure>
+      {% endfor %}
       {% if base_sha %}
         {% set modified = assets | selectattr("classification", "equalto", "modified") | list %}
         {% set new_assets = assets | selectattr("classification", "equalto", "new") | list %}
@@ -71,7 +85,7 @@
         </details>
         {% endif %}
       {% else %}
-        {% for asset in assets %}
+        {% for asset in assets if asset.classification != "unstable" %}
         <figure id="{{ asset.path }}">
           <a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a>
           <figcaption>{{ asset.label }}</figcaption>

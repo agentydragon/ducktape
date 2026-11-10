@@ -20,11 +20,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecResourcesRequests,
 )
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.seaweedfs import namespace
 from cluster.cdk8s.secret_ref import SecretRef
 
-POSTGRES = cnpg.PostgresRef(
+POSTGRES = cluster.PostgresRef(
     name="seaweedfs-filer-db-ssd",
     namespace=namespace.NAME,
     # The application role's credentials, which the filer authenticates with too. The -creds
@@ -36,7 +36,7 @@ POSTGRES = cnpg.PostgresRef(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=POSTGRES,
@@ -48,7 +48,7 @@ def chart(app: App) -> Chart:
         },
         # Existing local-path SSD replicas remain pinned by their PVs. A new Piraeus-local
         # replica uses the current pool on ovh-ns1001419.
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="12Gi",
         resize_in_use_volumes=False,
         # QoS / eviction protection. Without these the instance pods are BestEffort -- the
@@ -77,7 +77,7 @@ def chart(app: App) -> Chart:
         # does not exist` because no "app" role was cloned. CNPG keeps the seaweedfs role's
         # password in sync with this Secret -- a no-op, since the Secret holds the value
         # physically replicated from the source.
-        initdb=cnpg.same_owner_initdb("seaweedfs", secret=POSTGRES.app_secret),
+        initdb=cluster.same_owner_initdb("seaweedfs", secret=POSTGRES.app_secret),
         wal_archive=False,
     )
     return chart

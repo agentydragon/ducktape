@@ -11,18 +11,20 @@ import pygohcl
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
 
-_SHARED = yaml.safe_load(get_required_path("_main/haku/runtime/x/managed_agent/agent_shared.yaml").read_text())
-_SELF_HOSTED = yaml.safe_load(
-    get_required_path("_main/haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml").read_text()
-)
-_CLOUD = pygohcl.loads(
-    get_required_path("_main/haku/runtime/x/managed_agent/anthropic_hosted/terraform/main.tf").read_text()
-)["resource"]["claude-managed-agents_agent"]["haku_cloud"]
-
-_SURFACES = {"self_hosted": _SELF_HOSTED, "cloud": _CLOUD}
+@pytest.fixture(scope="module")
+def surfaces(runfiles: Runfiles) -> tuple[dict, dict[str, dict]]:
+    root = runfiles.root()
+    shared = yaml.safe_load((root / "ducktape/haku/runtime/x/managed_agent/agent_shared.yaml").read_text())
+    self_hosted = yaml.safe_load(
+        (root / "ducktape/haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml").read_text()
+    )
+    cloud = pygohcl.loads(
+        (root / "ducktape/haku/runtime/x/managed_agent/anthropic_hosted/terraform/main.tf").read_text()
+    )["resource"]["claude-managed-agents_agent"]["haku_cloud"]
+    return shared, {"self_hosted": self_hosted, "cloud": cloud}
 
 
 def _normalize(surface: dict) -> dict:
@@ -40,9 +42,10 @@ def _normalize(surface: dict) -> dict:
     }
 
 
-@pytest.mark.parametrize("surface", _SURFACES.values(), ids=list(_SURFACES))
-def test_surface_matches_ssot(surface):
-    assert _normalize(surface) == _SHARED
+@pytest.mark.parametrize("surface_name", ["self_hosted", "cloud"])
+def test_surface_matches_ssot(surface_name: str, surfaces: tuple[dict, dict[str, dict]]) -> None:
+    shared, by_name = surfaces
+    assert _normalize(by_name[surface_name]) == shared
 
 
 if __name__ == "__main__":

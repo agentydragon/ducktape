@@ -3,7 +3,7 @@
 Goals
 - Single-ish construction point for OpenAI-backed clients used by CLIs/services
 - Optional HTTP logging via a small wrapper (single JSONL per process/run)
-- Return the provider-agnostic interface `ResponsesClient` consumed by agents
+- Return the shared `Model` interface consumed by agents
 
 Environment knobs
 - ADGN_OPENAI_HTTP_LOG: if set to a filepath, enable raw HTTP logging there
@@ -17,7 +17,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 
 from openai_utils.http_logging import make_logger_logging_httpx_async_client, make_logging_httpx_async_client
-from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
+from openai_utils.model import Model, ResponsesModel
 from openai_utils.types import ReasoningEffort
 
 OPENAI_MAX_RETRIES = 2
@@ -47,7 +47,7 @@ def build_client(
     log_http_path: Path | None = None,
     enable_debug_logging: bool = False,
     reasoning_effort: ReasoningEffort | None = None,
-) -> OpenAIModelProto:
+) -> Model:
     """Create a typed Responses client for the given model.
 
     - Respects ADGN_OPENAI_HTTP_LOG if log_http_path is not provided
@@ -57,4 +57,4 @@ def build_client(
         env_path = os.environ.get("ADGN_OPENAI_HTTP_LOG")
         log_http_path = Path(env_path) if env_path else None
     inner = get_async_openai(log_path=log_http_path, base_url=base_url, enable_debug_logging=enable_debug_logging)
-    return BoundOpenAIModel(client=inner, model=model, reasoning_effort=reasoning_effort)
+    return ResponsesModel(client=inner, model=model, reasoning_effort=reasoning_effort)

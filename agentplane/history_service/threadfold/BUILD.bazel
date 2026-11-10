@@ -5,11 +5,16 @@ package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 go_library(
     name = "threadfold",
     srcs = [
+        "entity_proto.go",
         "fold.go",
         "rows.go",
         "types.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/threadfold",
+    visibility = [
+        "//agentplane/central_sampler:__pkg__",
+        "//agentplane/history_service:__subpackages__",
+    ],
     deps = [
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/settledcursors",
@@ -26,6 +31,7 @@ go_library(
 go_test(
     name = "fold_test",
     srcs = [
+        "entity_proto_test.go",
         "fold_test.go",
         "golden_test.go",
     ],

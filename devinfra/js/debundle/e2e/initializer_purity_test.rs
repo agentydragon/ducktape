@@ -1,6 +1,7 @@
 //! Initializer-scoped purity must address the initializer expression only,
 //! while unresolved callback reads remain eager dependencies.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn opaque_factory_source() -> &'static str {
@@ -74,7 +75,7 @@ fn initializer_override_keeps_callback_read_dependency() {
         .filter(|edge| {
             edge.source == caller_source_unit
                 && edge.target == seed_source_unit
-                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
                 && edge.binding.as_deref() == Some("seed")
                 && matches!(
                     edge.role,

@@ -1,0 +1,183 @@
+"""One agent messages another, which reads and acknowledges it, each from its own Sandbox.
+
+The sender runs `agentplane notifications send` through the local gRPC route. The sidecar presents the
+Sandbox SVID, and the Notification Service verifies it to identify the caller. The fixture's `send_grant`
+is a `session_inbox_access` rule to an inbox tag the recipient carries, as staging's inbox groups are.
+The recipient learns of the message only from the notice the platform delivers, and reads and
+acknowledges its inbox through the CLI, as the inbox-handling guide tells an agent to.
+
+What is checked is what the Notification Service recorded, never what either agent said: the entry names
+the sender's ServiceAccount, which only the service's own authentication of the caller can put there, and the
+sender's view of its message is covered but unacknowledged while the recipient holds the notice, and
+acknowledged once the recipient acknowledged its inbox.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import shlex
+from typing import Any
+from uuid import UUID, uuid4
+
+from google.protobuf.json_format import ParseDict
+from google.protobuf.message import Message
+from more_itertools import one
+from pydantic import BaseModel
+
+from agentplane.app.testing.client import Client
+from agentplane.notification_service import notifications_pb2
+from agentplane.proto import session_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.deployment import send_grant
+from agentplane.system_tests.driver.agent import Agent
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
+from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
+
+BODY = "Test message: the change is ready for review."
+# What a notice's user message starts with, before its JSON (agentplane/notification_service/store/notices.go).
+NOTICE_PREFIX = "Agentplane inbox notice: "
+
+
+class Notice(BaseModel):
+    """The JSON a notice carries."""
+
+    inbox_id: UUID
+    acknowledged_at_preparation: int
+    through_at_preparation: int
+
+
+def _first_json(text: str) -> tuple[Any, int]:
+    """The JSON value at the first `{` of `text`, and where it ends: a harness may wrap a command's output."""
+    start = text.find("{")
+    assert start >= 0, f"no JSON object in {text!r}"
+    value, end = json.JSONDecoder().raw_decode(text, start)
+    return value, end
+
+
+def _parsed[M: Message](output: str, message: M) -> M:
+    """A service's JSON answer, printed by a command in the Sandbox, as its message."""
+    return ParseDict(_first_json(output)[0], message)
+
+
+def _notice(request: ModelRequest[Any]) -> Notice:
+    text = one(text for text in request.user_texts if NOTICE_PREFIX in text)
+    start = text.index(NOTICE_PREFIX) + len(NOTICE_PREFIX)
+    _, end = _first_json(text[start:])
+    return Notice.model_validate_json(text[start : start + end])
+
+
+def _output(request: ModelRequest[Any], call: ShellCall) -> str:
+    return "\n".join(one(output for output in request.tool_outputs if output.call_id == call.call_id).blocks)
+
+
+def _shell(command: str) -> ShellCall:
+    return ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command)
+
+
+async def _follow(agent: Agent, model: ScriptedModel[Any], message_id: str) -> notifications_pb2.Message:
+    """The sender's own view of its message."""
+    turn = await agent.run_shell(model, f"agentplane --json notifications message {message_id}")
+    return _parsed(turn.tool_outputs[-1], notifications_pb2.Message())
+
+
+async def an_agent_messages_another_which_reads_and_acknowledges_it(
+    cluster: Cluster,
+    client: Client,
+    dispatcher: SessionDispatcherClient,
+    sandbox: Sandboxes,
+    harness: session_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
+) -> None:
+    async with asyncio.TaskGroup() as starting:
+        recipient_started = starting.create_task(
+            sandbox(f"systest-msg-to-{harness}", inbox_tags=[send_grant.INBOX_TAG])
+        )
+        sender_started = starting.create_task(sandbox(f"systest-msg-from-{harness}", policies=[send_grant.POLICY_SET]))
+    recipient, sender = recipient_started.result(), sender_started.result()
+    assert recipient.kubernetes_diagnostics.HasField("pod")
+    assert sender.kubernetes_diagnostics.HasField("pod")
+    recipient_model = scripted.model(recipient.kubernetes_diagnostics.pod.name, harness)
+    sender_model = scripted.model(sender.kubernetes_diagnostics.pod.name, harness)
+    recipient_agent = await Agent.create(
+        client,
+        dispatcher,
+        sandbox=recipient.target.name,
+        sandbox_uid=recipient.target.uid,
+        harness=harness,
+        model=offered_model,
+    )
+    sender_agent = await Agent.create(
+        client,
+        dispatcher,
+        sandbox=sender.target.name,
+        sandbox_uid=sender.target.uid,
+        harness=harness,
+        model=offered_model,
+    )
+
+    send = (
+        f"agentplane --json notifications send {recipient_agent.thread_id}"
+        f" --key test-message-1 --body {shlex.quote(BODY)}"
+    )
+    with tracer.start_as_current_span(
+        "system_test.agent_messaging.send", record_exception=False, set_status_on_exception=False
+    ):
+        sending = await sender_agent.run_shell(sender_model, send)
+        sent = _parsed(sending.tool_outputs[-1], notifications_pb2.Message())
+    assert sent.destination_ref.uid == str(recipient.target.uid), sending.transcript
+
+    async with asyncio.TaskGroup() as turns:
+        turns.create_task(recipient_agent.next_turn())
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.notice_wait", record_exception=False, set_status_on_exception=False
+        ):
+            notice_request = await recipient_model.request()
+            notice = _notice(notice_request)
+
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.sender_state", record_exception=False, set_status_on_exception=False
+        ):
+            held = await _follow(sender_agent, sender_model, sent.id)
+        assert held.covered, f"the recipient holds a notice, but the sender's message is not covered: {held}"
+        assert not held.acknowledged, f"acknowledged before the recipient acknowledged anything: {held}"
+
+        read = _shell(
+            f"agentplane --json notifications inbox read {recipient_agent.thread_id} "
+            f"--after {notice.acknowledged_at_preparation} --limit 128"
+        )
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.read_inbox", record_exception=False, set_status_on_exception=False
+        ):
+            await recipient_model.reply(notice_request, read)
+            read_request = await recipient_model.request()
+            inbox = _parsed(_output(read_request, read), notifications_pb2.ReadInboxResponse())
+        assert inbox.inbox.session_id == str(recipient_agent.thread_id), inbox.inbox
+        entry = one(entry for entry in inbox.entries if entry.event.message.message_id == sent.id)
+        assert entry.event.message.sender == sender.execution_account.account, entry
+        assert entry.payload["body"] == BODY, entry
+        assert entry.payload["from_session"] == str(sender_agent.thread_id), entry
+
+        acknowledge = _shell(
+            f"agentplane --json notifications inbox ack {recipient_agent.thread_id} --through {entry.cursor}"
+        )
+        with tracer.start_as_current_span(
+            "system_test.agent_messaging.acknowledge", record_exception=False, set_status_on_exception=False
+        ):
+            await recipient_model.reply(read_request, acknowledge)
+            await recipient_model.reply(await recipient_model.request(), Text("Read and acknowledged."))
+
+    with tracer.start_as_current_span(
+        "system_test.agent_messaging.verify_sender_state", record_exception=False, set_status_on_exception=False
+    ):
+        followed = await _follow(sender_agent, sender_model, sent.id)
+    assert followed.covered, followed
+    assert followed.acknowledged, f"the recipient acknowledged its inbox through the message: {followed}"
+
+
+# `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf

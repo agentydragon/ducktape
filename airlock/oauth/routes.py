@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 
 from airlock.auth import OperatorSession, OperatorSessionDependency
 from airlock.oauth.k8s_client import K8sTokenStore
-from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, generate_pkce_pair
+from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider
 from airlock.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -50,17 +50,13 @@ def create_oauth_router(
         for expired_state in [state for state, pending in pending_states.items() if pending.expires_at <= now]:
             pending_states.pop(expired_state, None)
         state = provider.generate_state()
-        code_verifier: str | None = None
-        code_challenge: str | None = None
-        if provider.config.use_pkce:
-            code_verifier, code_challenge = generate_pkce_pair()
+        url, code_verifier = await provider.build_authorize_url(state)
         pending_states[state] = _PendingState(
             provider_name=provider_name,
             code_verifier=code_verifier,
             operator_subject=operator.subject,
             expires_at=now + _PENDING_STATE_TTL_SECONDS,
         )
-        url = provider.build_authorize_url(state, code_challenge=code_challenge)
         return RedirectResponse(url, status_code=303)
 
     async def _complete(request: Request, operator: OperatorSession) -> RedirectResponse:

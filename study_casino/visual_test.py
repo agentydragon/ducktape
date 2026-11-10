@@ -1,8 +1,7 @@
 """Render-health checks + PR-visuals publication for each casino view.
 
 Every (view, viewport) case boots the real server, waits for load-bearing DOM,
-captures once, and fails on any browser page error. The rendered PNGs plus a
-`visual-review.json` manifest go to undeclared outputs,
+captures once, and fails on any browser page error. The rendered PNGs and structured output records go to undeclared outputs,
 where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
 visuals" workflow) publishes them as a browsable bundle, diffs them against the
 merge-base baseline, and comments on the PR.
@@ -19,26 +18,27 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 import pytest_bazel
 from playwright.async_api import Playwright, ViewportSize
+from python.runfiles import Runfiles
 
+from devinfra.testing.output_writer import BoundTestOutputs
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
-from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
+from util.testing.frontend_visual.capture import VisualPage, open_visual_page
+from util.testing.frontend_visual.context import deterministic_browser_context
 from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
 
-pytest_plugins = ("util.playwright", "util.testing.visual_fixtures")
+pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
 
 
 # Two viewports per case: a desktop width that exercises the two-column casino
@@ -55,20 +55,16 @@ FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 @pytest.fixture
 async def view(
-    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, capture_name: str
+    playwright: Playwright, casino_server: str, viewport: ViewportSize, query: str, test_outputs: BoundTestOutputs
 ) -> AsyncIterator[VisualPage]:
-    async with deterministic_browser_context(
-        playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
-    ) as context:
-        page = await context.new_page()
-        view = VisualPage(
-            page, output_dir=undeclared_outputs_dir(), title="Study Casino views", capture_name=capture_name
-        )
-        await page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
-        try:
-            yield view
-        finally:
-            view.errors.assert_none(context=query)
+    async with (
+        deterministic_browser_context(
+            playwright, viewport=viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
+        ) as context,
+        open_visual_page(context, test_outputs, title="Study Casino views") as view,
+    ):
+        await view.page.goto(f"{casino_server}/{query}", wait_until="domcontentloaded", timeout=30_000)
+        yield view
 
 
 @pytest.fixture(scope="module")
@@ -76,7 +72,9 @@ def casino_server(request: pytest.FixtureRequest, casino_database_template: Post
     """uvicorn-backed casino server with a writable database for the visual suite."""
     db_name = DatabaseNames(request.node.nodeid)()
     with casino_database_template.clone(db_name) as db_url:
-        frontend_dist = get_required_path("_main/study_casino/frontend/dist/index.html").parent
+        frontend_dist = Path(
+            str(Runfiles.CreateOrRaise().root() / "ducktape/study_casino/frontend/dist/index.html")
+        ).parent
 
         # The rendered views want a non-empty UI for prizes/stats. Seed a few
         # sessions and a token balance via the server's own action endpoints

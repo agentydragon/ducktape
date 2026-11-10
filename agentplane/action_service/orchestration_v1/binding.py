@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.runner.harness import Harness
+from agentplane.env.runtime.harness import Harness
 
 
 class PresetLaunch(BaseModel):
@@ -25,7 +25,7 @@ class PresetLaunch(BaseModel):
 
 
 class PresetSessionSpec(BaseModel):
-    """The `open_session` spec a preset stands for."""
+    """The `create_session` spec a preset stands for."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -50,7 +50,7 @@ class LaunchPreset(BaseModel):
 
     title: str = Field(min_length=1)
     launch: PresetLaunch
-    open_session: PresetSession
+    create_session: PresetSession
 
 
 class OrchestrationExecutorBinding(BaseModel):
@@ -64,13 +64,4 @@ class OrchestrationExecutorBinding(BaseModel):
     namespace: str = Field(
         min_length=1, description="Namespace Sandboxes launch in: the Action Service's `policy_namespace`."
     )
-    default_policy_sets: frozenset[str] = Field(
-        default_factory=frozenset,
-        description="PolicySets every launched Sandbox is bound to, as the app's launches are.",
-    )
     presets: dict[str, LaunchPreset] = Field(default_factory=dict)
-
-    @field_serializer("default_policy_sets")
-    def _sorted_policy_sets(self, policy_sets: frozenset[str]) -> list[str]:
-        # The generator writes this binding into a ConfigMap that has to come out the same on every run.
-        return sorted(policy_sets)

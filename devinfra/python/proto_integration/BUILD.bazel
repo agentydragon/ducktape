@@ -1,0 +1,50 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+# gazelle:resolve py devinfra.python.proto_integration.status_envelope_pb2 //devinfra/python/proto_integration:status_envelope_pb2
+# gazelle:resolve py google.rpc.status_pb2 //devinfra/python/proto_integration:status_envelope_pb2
+# gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto
+
+package(default_testonly = True)
+
+# Smoke integration for first-party Python protobufs importing a canonical external proto:
+# generation, transitive mypy stubs, and runtime runfiles imports.
+proto_library(
+    name = "status_envelope_proto",
+    srcs = ["status_envelope.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["@googleapis//google/rpc:status_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "status_envelope_pb2",
+    deps = [
+        ":status_envelope_proto",
+        "@googleapis//google/rpc:status_proto",
+    ],
+)
+
+py_library(
+    name = "status_consumer",
+    srcs = ["status_consumer.py"],
+    # Generated stubs reference google.protobuf; its direct dependency selects types-protobuf.
+    deps = [
+        "//devinfra/python/proto_integration:status_envelope_pb2",
+        "@pypi//protobuf",  # keep: generated stubs need the configured types-protobuf mapping
+    ],
+)
+
+py_test(
+    name = "test_canonical_proto_binding_smoke",
+    srcs = ["test_canonical_proto_binding_smoke.py"],
+    tags = [
+        "integration",
+        "smoke",
+    ],
+    deps = [
+        ":status_consumer",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)

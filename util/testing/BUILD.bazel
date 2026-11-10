@@ -1,35 +1,9 @@
 # gazelle:resolve py _pytest.fixtures @pypi//pytest
 """Testing utility libraries."""
 
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
-
-py_library(
-    name = "undeclared_outputs",
-    testonly = True,
-    srcs = ["undeclared_outputs.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "pytest_logfile",
-    testonly = True,
-    srcs = ["pytest_logfile.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":undeclared_outputs",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "jsonl",
-    testonly = True,
-    srcs = ["jsonl.py"],
-    visibility = ["//visibility:public"],
-)
 
 py_library(
     name = "otel_tracing",
@@ -37,30 +11,11 @@ py_library(
     srcs = ["otel_tracing.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "//util:otel",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
     ],
-)
-
-py_library(
-    name = "bazel_snapshot_extension",
-    testonly = True,
-    srcs = ["bazel_snapshot_extension.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//pytest",
-        "@pypi//syrupy",
-    ],
-)
-
-py_library(
-    name = "sharding",
-    testonly = True,
-    srcs = ["sharding.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pytest"],
 )
 
 py_library(
@@ -71,7 +26,6 @@ py_library(
     deps = [
         "//util:db_migrations",
         "//util:db_url",
-        "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
@@ -102,11 +56,11 @@ py_library(
     deps = [
         ":postgres",
         ":sqlalchemy_engines",
-        ":undeclared_outputs",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
         "//util:db_migrations",
-        "//util:oci",
         "@pypi//opentelemetry_api",
         "@pypi//psycopg",
         "@pypi//pytest",
@@ -121,64 +75,8 @@ py_library(
     srcs = ["container_logs.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//testcontainers",
-    ],
-)
-
-py_library(
-    name = "visual_review",
-    testonly = True,
-    srcs = ["visual_review.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//util:visual_review",
-    ],
-)
-
-# Chromium launch flags, frozen-clock init script and animation-pinning CSS. They live at this level
-# (not in frontend_visual/) because a data file there would turn the directory into a namespace
-# package shadowing frontend_visual.py for mypy.
-filegroup(
-    name = "browser_launcher_assets",
-    srcs = [
-        "chromium-flags.json",
-        "chromium-font-preferences.json",
-        "disable-animations.css",
-        "frozen-clock.js",
-        "@chrome_headless_shell//:executable",
-    ],
-    visibility = ["//util/testing/frontend_visual:__pkg__"],
-)
-
-py_library(
-    name = "frontend_visual",
-    testonly = True,
-    srcs = ["frontend_visual.py"],
-    # chromium-flags.json is read at import time — it must ride along with
-    # every consumer, not be re-declared per test.
-    data = [":browser_launcher_assets"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//playwright",
-    ],
-)
-
-py_test(
-    name = "test_frontend_visual",
-    srcs = ["test_frontend_visual.py"],
-    data = [
-        "//util:playwright",
-    ],
-    tags = ["visual"],
-    deps = [
-        ":frontend_visual",
-        "//:conftest",
-        "//util:playwright",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -188,10 +86,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":container_logs",
-        ":undeclared_outputs",
         "//:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:debian_slim",
-        "//util:oci",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -223,30 +121,6 @@ py_library(
 )
 
 py_test(
-    name = "test_visual_review",
-    srcs = ["test_visual_review.py"],
-    deps = [
-        ":visual_review",
-        "//:conftest",
-        "//util:visual_review",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_sharding",
-    srcs = ["test_sharding.py"],
-    deps = [
-        "//:conftest",
-        "//util/testing:sharding",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_asgi",
     srcs = ["test_asgi.py"],
     deps = [
@@ -262,112 +136,6 @@ py_test(
 )
 
 py_library(
-    name = "page_capture",
-    srcs = ["page_capture.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//playwright"],
-)
-
-py_test(
-    name = "test_page_capture",
-    srcs = ["test_page_capture.py"],
-    deps = [
-        ":page_capture",
-        "//:conftest",
-        "//util:playwright",
-        "@pypi//pillow",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "visual_capture",
-    srcs = ["visual_capture.py"],
-    data = [
-        "capture-diagnostics.js",
-        ":capture_diagnostics_js",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":frontend_visual",
-        ":page_capture",
-        ":viewports",
-        ":visual_review",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//playwright",
-        "@pypi//pydantic",
-    ],
-)
-
-js_library(
-    name = "capture_diagnostics_js",
-    testonly = True,
-    srcs = ["capture-diagnostics.js"],
-)
-
-js_library(
-    name = "capture_diagnostics_fixture_js",
-    testonly = True,
-    srcs = ["capture-diagnostics-fixture.js"],
-)
-
-py_library(
-    name = "visual_fixtures",
-    srcs = ["visual_fixtures.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":page_capture",
-        ":undeclared_outputs",
-        ":viewports",
-        ":visual_capture",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_visual_capture",
-    srcs = ["test_visual_capture.py"],
-    data = [
-        "capture-diagnostics-fixture.js",
-        ":capture_diagnostics_fixture_js",
-    ],
-    deps = [
-        ":viewports",
-        ":visual_capture",
-        "//:conftest",
-        "//util:playwright",
-        "//util/bazel:runfiles",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "viewports",
-    srcs = ["viewports.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//playwright"],
-)
-
-py_library(
-    name = "gnome",
-    srcs = ["gnome.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":undeclared_outputs",
-        ":visual_review",
-        "@pypi//docker",
-        "@pypi//pillow",
-    ],
-)
-
-py_library(
     name = "sqlalchemy_engines",
     testonly = True,
     srcs = ["sqlalchemy_engines.py"],
@@ -376,11 +144,4 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "postgres_schema",
-    srcs = ["postgres_schema.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
 )

@@ -9,12 +9,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core/testing:responses",
-        "//mcp_infra/testing:matchers",
         "//openai_utils:model",
         "//props/agents/critic_dev:loop",
         "//props/core:eval_api_models",
         "//props/testing",
-        "@pypi//pyhamcrest",
     ],
 )
 

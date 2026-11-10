@@ -52,6 +52,7 @@ py_test(
         ":cluster_policy",
         ":clusterpolicy",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

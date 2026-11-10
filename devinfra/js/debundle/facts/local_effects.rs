@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use binding_targets::{
-    TargetAccessRecorder, binding_names, record_assign_target, record_update_target,
+    SimpleWriteTarget, TargetAccessRecorder, binding_names, record_assign_target,
+    record_update_target, simple_write_target, transparent_target_expr,
 };
 use swc_common::Spanned;
 use swc_ecma_ast::*;
@@ -168,7 +169,8 @@ impl LocalEffectContext {
             // READS the property, and a read on a written-through (so
             // non-PlainData) object may fire a getter.
             Expr::Assign(assign) if assign.op == AssignOp::Assign => {
-                let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
+                let Some(SimpleWriteTarget::Member(member)) = simple_write_target(&assign.left)
+                else {
                     return false;
                 };
                 let Some(root) = static_member_write_root(member) else {
@@ -208,14 +210,18 @@ fn static_member_write_root(member: &MemberExpr) -> Option<Id> {
     {
         return None;
     }
-    match member.obj.unwrap_parens() {
+    match transparent_target_expr(&member.obj) {
         Expr::Ident(root) => Some(root.to_id()),
         Expr::Member(inner) => static_member_write_root(inner),
         _ => None,
     }
 }
 
-fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id> {
+/// Identifier declarators of `item` whose initializer satisfies `matches`.
+fn ident_declarators_initialized_by(
+    item: &ModuleItem,
+    matches: impl Fn(&Expr) -> bool,
+) -> BTreeSet<Id> {
     let Some(var) = var_decl_of_item(item) else {
         return BTreeSet::new();
     };
@@ -225,14 +231,13 @@ fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id
             let Pat::Ident(local) = &decl.name else {
                 return None;
             };
-            let init = decl.init.as_deref()?;
-            if vendor_prune_intrinsic_local_effect_member(init) {
-                Some(local.to_id())
-            } else {
-                None
-            }
+            matches(decl.init.as_deref()?).then(|| local.to_id())
         })
         .collect()
+}
+
+fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id> {
+    ident_declarators_initialized_by(item, vendor_prune_intrinsic_local_effect_member)
 }
 
 fn vendor_prune_intrinsic_local_effect_member(expr: &Expr) -> bool {
@@ -249,23 +254,7 @@ fn vendor_prune_intrinsic_local_effect_member(expr: &Expr) -> bool {
 }
 
 fn vendor_prune_commonjs_module_bindings(item: &ModuleItem) -> BTreeSet<Id> {
-    let Some(var) = var_decl_of_item(item) else {
-        return BTreeSet::new();
-    };
-    var.decls
-        .iter()
-        .filter_map(|decl| {
-            let Pat::Ident(local) = &decl.name else {
-                return None;
-            };
-            let init = decl.init.as_deref()?;
-            if vendor_prune_commonjs_module_init(init) {
-                Some(local.to_id())
-            } else {
-                None
-            }
-        })
-        .collect()
+    ident_declarators_initialized_by(item, vendor_prune_commonjs_module_init)
 }
 
 fn vendor_prune_commonjs_module_init(expr: &Expr) -> bool {
@@ -303,25 +292,9 @@ fn vendor_prune_target_first_local_effect_wrappers(
         {
             BTreeSet::from([function.ident.to_id()])
         }
-        _ => {
-            let Some(var) = var_decl_of_item(item) else {
-                return BTreeSet::new();
-            };
-            var.decls
-                .iter()
-                .filter_map(|decl| {
-                    let Pat::Ident(local) = &decl.name else {
-                        return None;
-                    };
-                    let init = decl.init.as_deref()?;
-                    if vendor_prune_target_first_wrapper_expr(init, local_effect_context) {
-                        Some(local.to_id())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
+        _ => ident_declarators_initialized_by(item, |init| {
+            vendor_prune_target_first_wrapper_expr(init, local_effect_context)
+        }),
     }
 }
 
@@ -858,14 +831,14 @@ fn local_namespace_iife_arg_target(expr: &Expr) -> Option<Id> {
     match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
-            let AssignTarget::Simple(SimpleAssignTarget::Ident(target)) = &assign.left else {
+            let Some(SimpleWriteTarget::Binding(target)) = simple_write_target(&assign.left) else {
                 return None;
             };
             if matches!(
                 assign.right.unwrap_parens(),
                 Expr::Object(obj) if obj.props.is_empty()
             ) {
-                Some(target.to_id())
+                Some(target)
             } else {
                 None
             }
@@ -889,8 +862,8 @@ fn is_namespace_iife_arg_fallback_for(expr: &Expr, target: &Id) -> bool {
         Expr::Object(obj) => obj.props.is_empty(),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
             matches!(
-                &assign.left,
-                AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) if ident.to_id() == *target
+                simple_write_target(&assign.left),
+                Some(SimpleWriteTarget::Binding(id)) if id == *target
             ) && matches!(
                 assign.right.unwrap_parens(),
                 Expr::Object(obj) if obj.props.is_empty()
@@ -1004,7 +977,7 @@ fn commonjs_iife_param_effect_expr(
             .iter()
             .all(|expr| commonjs_iife_param_effect_expr(expr, param, local_bindings, saw_write)),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
-            let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
+            let Some(SimpleWriteTarget::Member(member)) = simple_write_target(&assign.left) else {
                 return false;
             };
             let Some(root) = local_member_source_unit(&member.obj) else {
@@ -1147,11 +1120,11 @@ fn namespace_iife_param_write_expr(expr: &Expr, param: &str, saw_write: &mut boo
             .iter()
             .all(|expr| namespace_iife_param_write_expr(expr, param, saw_write)),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
-            let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
+            let Some(SimpleWriteTarget::Member(member)) = simple_write_target(&assign.left) else {
                 return false;
             };
             if !matches!(
-                member.obj.unwrap_parens(),
+                transparent_target_expr(&member.obj),
                 Expr::Ident(ident) if ident.sym.as_ref() == param
             ) {
                 return false;
@@ -1167,7 +1140,7 @@ fn namespace_iife_param_write_expr(expr: &Expr, param: &str, saw_write: &mut boo
 }
 
 fn local_member_source_unit(expr: &Expr) -> Option<Id> {
-    match expr.unwrap_parens() {
+    match transparent_target_expr(expr) {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Member(member) => local_member_source_unit(&member.obj),
         _ => None,

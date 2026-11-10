@@ -7,15 +7,12 @@ use serde::Deserialize;
 use output_layout::DebundleOutputLayout;
 use spec::{
     BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity,
-    ChunkRenameMember, ChunkRenameSelector, ChunkRenames, DependencyGraphOptions,
-    EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig,
-    Member, ModulePath, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
-    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
-    WrapperShape, WriteJsTreeConfig,
+    ChunkRenames, DependencyGraphOptions, EmitBrowserHarnessConfig, LoadJsChunksArgs,
+    LogicalModule, MaterializeLogicalModulesConfig, ModulePath, PartialSwapMark,
+    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
+    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape, WriteJsTreeConfig,
 };
-use spec_modules::{
-    collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
-};
+use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileSpecTreeOptions {
@@ -38,7 +35,9 @@ struct AuthoringConfig {
     module_roots: BTreeMap<PathBuf, String>,
     inputs: AuthoringInputs,
     #[serde(default)]
-    execution_runtime: spec::ExecutionRuntime,
+    host_behavior: spec::HostBehavior,
+    #[serde(default)]
+    program_premises: spec::ProgramPremises,
     /// Optional: only meaningful for a browser-delivered chunk. Omit for a
     /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
     /// browser-harness emit step entirely.
@@ -67,6 +66,10 @@ struct AuthoringConfig {
     /// `TransformSpec::chunk_export_purity`.
     #[serde(default)]
     chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
+    /// Canonical per-chunk in-place renames from `TransformSpec`.
+    /// Entries may target any configured input chunk.
+    #[serde(default)]
+    chunk_renames: BTreeMap<String, ChunkRenames>,
 }
 
 /// The authored YAML subtrees that belong to one graph chunk. A graph-backed
@@ -153,6 +156,8 @@ impl ModuleTreeScope {
 struct AuthoringInputs {
     root: PathBuf,
     js_list_path: PathBuf,
+    #[serde(default)]
+    embedded_loaders_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -234,29 +239,30 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let source_root = options.source_root.as_deref();
     let input_root = source_path(source_root, config.inputs.root);
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
+    let embedded_loaders_path = config
+        .inputs
+        .embedded_loaders_path
+        .map(|path| source_path(source_root, path));
     let layout = DebundleOutputLayout::new(&options.out_root);
     let module_sources = load_module_sources(
         &options.modules_root,
         &config.main_chunk_id,
         &config.module_roots,
     )?;
-    let binding_patch_members = load_binding_patch_members(&options.modules_root)?
-        .into_iter()
-        .filter(|member| !is_trivial_binding_patch(member))
-        .collect();
-
     Ok(TransformSpec {
-        execution_runtime: config.execution_runtime,
+        host_behavior: config.host_behavior,
+        program_premises: config.program_premises,
         inputs: LoadJsChunksArgs {
             input_root: input_root.clone(),
             js_list_path,
+            embedded_loaders_path,
         },
         vendor: vendor_map(
             read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks,
             source_root,
         )?,
         logical_modules: logical_modules_map(module_sources)?,
-        chunk_renames: chunk_renames_map(&config.main_chunk_id, binding_patch_members),
+        chunk_renames: config.chunk_renames,
         unassigned_mode: config.unassigned_mode,
         chunk_analysis_options: config.chunk_analysis_options,
         chunk_export_purity: config.chunk_export_purity,
@@ -304,6 +310,7 @@ pub fn require_relative_source_paths(options: &CompileSpecTreeOptions) -> Result
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
     let vendor: VendorMarksFile = read_yaml(&options.vendor_marks_path)?;
     let mut paths = vec![config.inputs.root, config.inputs.js_list_path];
+    paths.extend(config.inputs.embedded_loaders_path);
     if let Some(browser) = config.browser_harness {
         paths.push(browser.asset_summary_path);
     }
@@ -335,8 +342,12 @@ fn source_path(source_root: Option<&Path>, path: PathBuf) -> PathBuf {
 }
 
 fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
-        .with_context(|| format!("parsing {}", path.display()))
+    let yaml = graph_provenance::read_to_string(path)?;
+    // Typed map fields can overwrite duplicate YAML keys. serde_yaml's Value
+    // mapping visitor rejects duplicates recursively and keeps a source location.
+    let _: serde_yaml::Value =
+        serde_yaml::from_str(&yaml).with_context(|| format!("parsing {}", path.display()))?;
+    serde_yaml::from_str(&yaml).with_context(|| format!("parsing {}", path.display()))
 }
 
 fn load_module_sources(
@@ -422,17 +433,6 @@ fn load_chunk_modules(
     }
     active.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(active)
-}
-
-fn is_trivial_binding_patch(member: &Member) -> bool {
-    let Some(binding) = &member.selector.binding else {
-        return false;
-    };
-    let binding_name = &binding.name;
-    member
-        .name
-        .as_ref()
-        .is_none_or(|export_name| export_name == binding_name)
 }
 
 fn vendor_map(
@@ -672,34 +672,6 @@ fn logical_modules_map(
     Ok(out)
 }
 
-fn chunk_renames_map(
-    main_chunk_id: &str,
-    binding_patch_members: Vec<Member>,
-) -> BTreeMap<String, ChunkRenames> {
-    let members = binding_patch_members
-        .into_iter()
-        .map(|member| ChunkRenameMember {
-            name: member.name,
-            selector: ChunkRenameSelector {
-                binding: member
-                    .selector
-                    .binding
-                    .expect("validated binding patch selector"),
-            },
-        })
-        .collect::<Vec<_>>();
-    if members.is_empty() {
-        return BTreeMap::new();
-    }
-    BTreeMap::from([(
-        main_chunk_id.to_string(),
-        ChunkRenames {
-            members,
-            annotations: BTreeMap::new(),
-        },
-    )])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -727,6 +699,14 @@ browser_harness:
 unassigned_mode:
   static/main:
     kind: inline_in_entry
+chunk_renames:
+  static/main:
+    members:
+      - name: PatchedThing
+        selector:
+          binding:
+            name: d
+            kind: function_declaration
 "#,
         );
         write_file(
@@ -752,16 +732,6 @@ unassigned_mode:
         kind: variable_declarator
 "#,
         );
-        write_file(
-            &root.join("binding_patches.yaml"),
-            r#"members:
-  - name: PatchedThing
-    selector:
-      binding:
-        name: d
-        kind: function_declaration
-"#,
-        );
         CompileSpecTreeOptions {
             config_path: config,
             modules_root: modules,
@@ -772,7 +742,7 @@ unassigned_mode:
     }
 
     #[test]
-    fn legacy_single_chunk_tree_compiles_unchanged() {
+    fn single_chunk_tree_compiles_canonical_chunk_renames() {
         let temp = tempfile::tempdir().unwrap();
         let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
 
@@ -979,35 +949,6 @@ unassigned_mode:
                 "module_roots entries `left` and `right` both define module `shared` of chunk `cli`"
             ),
             "{error:#}"
-        );
-    }
-
-    #[test]
-    fn drops_trivial_binding_patches() {
-        let temp = tempfile::tempdir().unwrap();
-        let options = fixture(temp.path());
-        write_file(
-            &temp.path().join("binding_patches.yaml"),
-            r#"members:
-  - name: same
-    selector:
-      binding:
-        name: same
-        kind: variable_declarator
-  - name: UsefulName
-    selector:
-      binding:
-        name: min
-        kind: function_declaration
-"#,
-        );
-
-        let spec = compile_spec_tree(&options).unwrap();
-
-        assert_eq!(spec.chunk_renames["static/main"].members.len(), 1);
-        assert_eq!(
-            spec.chunk_renames["static/main"].members[0].name.as_deref(),
-            Some("UsefulName")
         );
     }
 

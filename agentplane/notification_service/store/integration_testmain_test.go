@@ -4,11 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -20,10 +27,47 @@ func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTests(
 		migrations.Up,
 		func(database *postgres.Database) int {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if err := database.PrepareCloneTemplate(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "prepare pristine PostgreSQL clone template:", err)
+				return 1
+			}
 			integrationDatabase = database
 			return m.Run()
 		},
 	))
+}
+
+func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db, t.Context()
+}
+
+func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
+	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
+	if err != nil {
+		return "", err
+	}
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			_ = rows.Close()
+			return "", err
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return "", err
+	}
+	return plan.String(), nil
 }
 
 func defaultQuotas() Quotas {
@@ -37,36 +81,106 @@ type fixture struct {
 	db         *sql.DB
 	owner      model.ServiceAccount
 	sandboxUID string
+	sessionID  string
 }
 
 func newFixture(t *testing.T, quotas Quotas) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
+	db := postgres.Open(t, integrationDatabase.URL)
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
+	t.Helper()
+	db := postgres.Open(t, integrationDatabase.Clone(t))
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
+	t.Helper()
+	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID, sessionID: uuid.NewString()}
 }
 
 func newOwner() model.ServiceAccount {
 	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
+func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	f.exec(t, `
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
+			destination_namespace, destination_name, destination_uid, session_id,
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), 'test-account-uid')`,
+		id, f.owner.Namespace, f.owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID)
+	return id
+}
+
+func entryPayloadForTest(t *testing.T, event model.EventIdentity) string {
+	t.Helper()
+	var value any
+	switch event := event.(type) {
+	case model.ActionsEvent:
+		value = storagecodec.ActionEvent{
+			Sequence: event.Sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "https://issuer.example", Subject: "subject-123",
+			}}},
+		}
+	case model.GitHubEvent:
+		return `{}`
+	case model.GitHubObservationEvent:
+		return `{"id":17,"appId":1,"repositoryId":2,"name":"build","headSha":"0123456789abcdef0123456789abcdef01234567"}`
+	case model.GitHubMergeabilityEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case model.GitHubMergeabilitySnapshotEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case model.MessageEvent:
+		fromSession := "sender-session"
+		value = struct {
+			Body        string  `json:"body"`
+			FromSession *string `json:"from_session,omitempty"`
+		}{Body: "stored message", FromSession: &fromSession}
+	default:
+		t.Fatalf("unsupported entry test identity %T", event)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func testMergeabilityPayload(pullRequestNumber int64) storagecodec.MergeabilityPayload {
+	return storagecodec.MergeabilityPayload{
+		Repository: "owner/repository", PullRequestNumber: pullRequestNumber,
+		BaseRef: "main", HeadSHA: "head", BaseSHA: "base",
+		PreviousMergeability: model.GitHubMergeabilityUnknown, Mergeability: model.GitHubConflicting,
+		ObservedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
 // testSandboxUID is the Sandbox incarnation body's destination names.
 const testSandboxUID = "test-uid"
 
 // incarnation is the fixture's owner as its Sandbox incarnation.
-func (f fixture) incarnation() Owner {
-	return Owner{Account: f.owner, SandboxUID: f.sandboxUID}
+func (f fixture) incarnation() AccountOwner {
+	return AccountOwner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: f.sandboxUID}
 }
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
-func body(key string) model.Subscribe {
+func (f fixture) body(key string) model.Subscribe {
+	return sessionBody(key, f.sessionID)
+}
+
+// sessionBody is a creation for the given Session.
+func sessionBody(key, sessionID string) model.Subscribe {
 	return model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
-		SessionID:      "test-session",
+		SessionID:      sessionID,
 		IdempotencyKey: key,
 		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
@@ -75,7 +189,7 @@ func body(key string) model.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation model.Subscribe) Subscription {
 	t.Helper()
-	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil)
+	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,4 +289,13 @@ func (f fixture) cleanAll(t *testing.T) {
 		}
 		after = last
 	}
+}
+
+func countQuery(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }

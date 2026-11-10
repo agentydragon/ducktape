@@ -16,15 +16,17 @@ from typing import Any
 import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
+from python.runfiles import Runfiles
 
 from devinfra.claude.claude_api.hooks.output import HookOutput
-from util.bazel.runfiles import get_required_path
-from util.json_schema import inline_refs
+from devinfra.claude.claude_api.json_schema import inline_refs
 
 
 def _load_zod_json_schema() -> dict[str, Any]:
     """Load the Zod-derived JSON Schema for hookOutput from runfiles."""
-    path = get_required_path("_main/devinfra/claude/claude_api/hooks/schemas/2.1.105/hook_output.json")
+    path = (
+        Runfiles.CreateOrRaise().root() / "ducktape/devinfra/claude/claude_api/hooks/schemas/2.1.105/hook_output.json"
+    )
     return json.loads(path.read_text())  # type: ignore[no-any-return]
 
 

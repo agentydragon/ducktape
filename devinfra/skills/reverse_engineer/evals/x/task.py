@@ -47,10 +47,10 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import Tool, ToolDef, bash, tool
 from inspect_ai.util import SandboxEnvironmentSpec, sandbox
 from pydantic import TypeAdapter, ValidationError
+from python.runfiles import Runfiles
 
 from devinfra.skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as RE_SKILL_SPEC
 from skills.eval_infra.skill_staging import stage_skill
-from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,10 @@ logger = logging.getLogger(__name__)
 # (`garble_binary`); the skill archive comes from the generated
 # `RE_SKILL_SPEC` (`skill_package`).
 _TARGET_BINARY_RLOCATION = (
-    "_main/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
+    "ducktape/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
 )
-_COMPOSE_RLOCATION = "_main/devinfra/skills/reverse_engineer/evals/x/compose.yaml"
-_SPECIMEN_DIR_RLOCATION = "_main/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server"
+_COMPOSE_RLOCATION = "ducktape/devinfra/skills/reverse_engineer/evals/x/compose.yaml"
+_SPECIMEN_DIR_RLOCATION = "ducktape/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server"
 _RUBRIC_RLOCATION = f"{_SPECIMEN_DIR_RLOCATION}/RUBRIC.yaml"
 _SPEC_RLOCATION = f"{_SPECIMEN_DIR_RLOCATION}/SPEC.md"
 
@@ -129,7 +129,7 @@ def _stage_target_binary() -> Path:
     """Copy the garbled binary to a stable temp path so Sample.files can
     refer to it. (Inspect resolves Sample.files paths against its own CWD,
     not against runfiles, so we make the path absolute here.)"""
-    src = get_required_path(_TARGET_BINARY_RLOCATION)
+    src = Runfiles.CreateOrRaise().root() / _TARGET_BINARY_RLOCATION
     dest_dir = Path(tempfile.mkdtemp(prefix="re_eval_input_"))
     dest = dest_dir / "target"
     shutil.copy(src, dest)
@@ -223,6 +223,17 @@ _GRADER_INSTRUCTIONS = dedent(
                would prevent bit-identical reproduction
            2 = full: a faithful re-implementation of the agent's output
                would produce identical observable behavior
+         Apply each item's checks independently. Give 2 only when all
+         behaviors required by that item are supported by the recovered
+         implementation; give 1 when substantial parts are right but a
+         required behavior is absent or incomplete. In particular, keep
+         encoding separate from decoding, MAC generation separate from
+         full-tag verification, and endpoint outcomes separate from merely
+         having the underlying helpers. For endpoint items, trace the route
+         through its called decoder and verifier implementations. A stub or
+         unconditional helper cannot support full endpoint credit even when
+         the route has the expected branches; cite the relevant helper files
+         as well as the route file in the justification.
       4. Once you have grades for every rubric item, call `submit_grade`
          exactly ONCE. Justifications must cite which reference file vs
          which (or absent) recovered file you compared. Do not call
@@ -338,13 +349,13 @@ def _grader_bash_tool(box: _GraderContainer) -> Tool:
         async def execute(command: str) -> str:
             """Run a bash command in the read-only grader container.
 
-                        Available paths: /grade/recovered, /grade/reference,
-                        /grade/spec, /grade/rubric. Stdout and stderr are returned
+            Available paths: /grade/recovered, /grade/reference,
+            /grade/spec, /grade/rubric. Stdout and stderr are returned
             together. Container is `python:3.14-slim` with standard
-                        tools (find, cat, diff, grep, wc, head, tail).
+            tools (find, cat, diff, grep, wc, head, tail).
 
-                        Args:
-                            command: The bash command to execute.
+            Args:
+                command: The bash command to execute.
             """
             return await box.exec_text(command)
 
@@ -421,13 +432,14 @@ def rubric_judge(*, judge_model: str = _DEFAULT_JUDGE_MODEL, max_messages: int =
     `Score.metadata['per_item']` carries the full `{item_id, score,
     justification}` dict; per-item metrics can be added later.
     """
-    rubric_yaml_text = get_required_path(_RUBRIC_RLOCATION).read_text()
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    rubric_yaml_text = (runfiles_root / _RUBRIC_RLOCATION).read_text()
     rubric = yaml.safe_load(rubric_yaml_text)
     weights = {it["id"]: it["weight"] for it in rubric["items"]}
     weight_total = sum(weights.values())
-    rubric_path = get_required_path(_RUBRIC_RLOCATION)
-    spec_path = get_required_path(_SPEC_RLOCATION)
-    reference_dir = get_required_path(_SPECIMEN_DIR_RLOCATION)
+    rubric_path = runfiles_root / _RUBRIC_RLOCATION
+    spec_path = runfiles_root / _SPEC_RLOCATION
+    reference_dir = runfiles_root / _SPECIMEN_DIR_RLOCATION
 
     async def score(state: TaskState, target: Target) -> Score:
         recovered_dir = _resolve_recovered_dir(state)
@@ -553,7 +565,7 @@ def reverse_engineer_go_crypto(
     """Recover compilable Go source from a garbled go_crypto_server binary."""
     skill_dir = _stage_skill()
     target_binary = _stage_target_binary()
-    compose_path = get_required_path(_COMPOSE_RLOCATION)
+    compose_path = Runfiles.CreateOrRaise().root() / _COMPOSE_RLOCATION
 
     skill_md = (skill_dir / "SKILL.md").read_text()
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(skill_md=skill_md, skill_path=_SKILL_PATH)
@@ -642,14 +654,14 @@ def _reference_recovered_dir() -> Path:
     to discover the rubric inside the recovery dir. Copy only the *.go
     files; that's what a well-graded recovery should look like.
     """
-    src = get_required_path(_SPECIMEN_DIR_RLOCATION)
+    src = Runfiles.CreateOrRaise().root() / _SPECIMEN_DIR_RLOCATION
     dst = Path(tempfile.mkdtemp(prefix="re_eval_reference_recovered_"))
     for f in sorted(src.glob("*.go")):
         shutil.copy(f, dst / f.name)
     return dst
 
 
-def _validation_task(*, sample_id: str, recovered_dir: Path) -> Task:
+def _validation_task(*, sample_id: str, recovered_dir: Path, judge_model: str = _DEFAULT_JUDGE_MODEL) -> Task:
     """Common task body for the two validation variants.
 
     No docker sandbox is declared — the scorer's grader container is the
@@ -664,7 +676,7 @@ def _validation_task(*, sample_id: str, recovered_dir: Path) -> Task:
     return Task(
         dataset=MemoryDataset([sample]),
         solver=[_identity_solver()],
-        scorer=rubric_judge(),
+        scorer=rubric_judge(judge_model=judge_model),
         # No agent runs, so no message_limit. We deliberately omit
         # time_limit too: Inspect splits `time_limit` into `time_limit/2`
         # for scoring (`_eval/task/run.py`), which strangles the judge
@@ -675,13 +687,15 @@ def _validation_task(*, sample_id: str, recovered_dir: Path) -> Task:
 
 
 @task
-def validate_empty_work() -> Task:
+def validate_empty_work(*, judge_model: str = _DEFAULT_JUDGE_MODEL) -> Task:
     """Judge floor: empty `/grade/recovered/`. Expected score ~0.0."""
-    return _validation_task(sample_id="empty_work", recovered_dir=_empty_recovered_dir())
+    return _validation_task(sample_id="empty_work", recovered_dir=_empty_recovered_dir(), judge_model=judge_model)
 
 
 @task
-def validate_reference_work() -> Task:
+def validate_reference_work(*, judge_model: str = _DEFAULT_JUDGE_MODEL) -> Task:
     """Judge ceiling: `/grade/recovered/` contains the reference *.go.
     Expected score >0.85."""
-    return _validation_task(sample_id="reference_work", recovered_dir=_reference_recovered_dir())
+    return _validation_task(
+        sample_id="reference_work", recovered_dir=_reference_recovered_dir(), judge_model=judge_model
+    )

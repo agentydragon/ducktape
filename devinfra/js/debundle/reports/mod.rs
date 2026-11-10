@@ -1,8 +1,13 @@
+pub mod author_inputs;
+pub mod saved;
 pub mod schema;
+pub mod spec_lint;
 
 use std::collections::BTreeSet;
 
-use crate::graph::{DependencyEdgeId, SourceUnitId};
+use source_identity::SourceUnitId;
+
+use crate::graph::DependencyEdgeId;
 use crate::ids::ModuleId;
 use crate::reports::schema::ModuleKey;
 

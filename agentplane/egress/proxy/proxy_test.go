@@ -19,6 +19,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,46 +30,42 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+	"github.com/google/uuid"
 	"golang.org/x/net/http2"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
-	fixtureHost       = "upstream.test"
+	fixtureHost = "upstream.test"
+	// policyNamespace holds the lab's PolicySets, PolicyBindings and Identities.
+	policyNamespace   = "test-policy"
 	hopAudience       = "test-egress"
 	projectedAudience = "https://kubernetes.test.invalid"
-	staleAfter        = time.Hour
 )
 
 var (
-	kube   *kubeapiserver.Server
-	runner = auth.Account{Namespace: "test-workloads", Name: "test-runner"}
-	// runnerPod is the Pod hopToken and projectedToken are bound to.
-	runnerPod                *corev1.Pod
-	hopToken, projectedToken string
+	kube           *kubeapiserver.Server
+	runner         = auth.Account{Namespace: "test-workloads"}
+	runnerPod      *corev1.Pod
+	hopToken       string // Retained only to prove Proxy-Authorization cannot authenticate.
+	projectedToken string
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
+	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) error {
 		kube = server
-		ctx := context.Background()
-		if runnerPod, err = server.Pod(ctx, runner); err != nil {
-			return err
-		}
-		if hopToken, err = server.PodToken(ctx, runnerPod, hopAudience); err != nil {
-			return err
-		}
-		if projectedToken, err = server.PodToken(ctx, runnerPod, projectedAudience); err != nil {
-			return err
-		}
-		bearerHeader = http.Header{"Proxy-Authorization": {"Bearer " + hopToken}}
-		validBearer = "Proxy-Authorization: Bearer " + hopToken + "\r\n"
 		return nil
 	}))
 }
@@ -85,29 +82,6 @@ func runnerToken(t *testing.T, audience string) (*corev1.Pod, string) {
 		t.Fatal(err)
 	}
 	return pod, token
-}
-
-// hopReviews passes the proxy's hop reviews to the API server, unless a test injects one of two
-// faults the API server cannot produce: being unreachable, or, rebound, answering that a token it
-// accepts proves another Pod than it did before, where the API server binds a token to one Pod for
-// life.
-type hopReviews struct {
-	auth.TokenReviews
-	unreachable atomic.Bool
-	rebound     atomic.Bool
-}
-
-func (h *hopReviews) Create(ctx context.Context, review *authenticationv1.TokenReview, options metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	if h.unreachable.Load() {
-		return nil, errors.New("test API server unreachable")
-	}
-	answer, err := h.TokenReviews.Create(ctx, review, options)
-	if err != nil || !h.rebound.Load() || !answer.Status.Authenticated {
-		return answer, err
-	}
-	answer.Status.User.Extra["authentication.kubernetes.io/pod-name"] = authenticationv1.ExtraValue{"test-replacement-pod"}
-	answer.Status.User.Extra["authentication.kubernetes.io/pod-uid"] = authenticationv1.ExtraValue{"test-replacement-pod-uid"}
-	return answer, nil
 }
 
 type countedListener struct {
@@ -160,17 +134,21 @@ func (r *records) all() []decision.Record {
 }
 
 type lab struct {
-	index      *policy.Index
-	hop        *hopReviews
-	records    *records
-	options    Options
-	proxy      *Proxy
-	address    string
-	roots      *x509.CertPool
-	upstreamCA tls.Certificate
+	index          *policy.Index
+	records        *records
+	options        Options
+	proxy          *Proxy
+	address        string
+	roots          *x509.CertPool
+	proxyClientTLS *tls.Config
+	proxyCA        *transporttesting.CA
+	workload       workloadauthtesting.Workload
+	upstreamCA     tls.Certificate
 	// lookup answers the proxy's DNS lookups; replace it before sending traffic.
 	lookup      func(host string) []netip.Addr
 	resolutions atomic.Int64
+	// skew moves the resolver's clock forward, to expire the pins it holds.
+	skew atomic.Int64
 }
 
 var keyCredential = resources.Credential{
@@ -178,22 +156,56 @@ var keyCredential = resources.Credential{
 	Targets: []resources.Target{resources.WholeValue{Header: "x-api-key"}},
 }
 
+// failWatch makes kind's list or watch fail, as an unreachable API server does.
+func failWatch(l *lab, kind watchhealth.Kind) {
+	l.index.Health.RecordFailure(kind, errors.New("test: the watch failed"))
+}
+
 func newLab(t *testing.T) *lab {
 	t.Helper()
 	intercept, interceptRoot := makeCA(t, "interception")
 	upstreamCA, upstreamRoot := makeCA(t, "upstream")
+	name := "runner-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	workload := workloadauthtesting.NewWorkload(t, kube, runner.Namespace, name)
+	runner = workload.Principal.Account
+	runnerPod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: runner.Namespace, Name: workload.Principal.PodName, UID: types.UID(workload.Principal.PodUID),
+	}, Spec: corev1.PodSpec{ServiceAccountName: runner.Name}}
+	var err error
+	if hopToken, err = kube.PodToken(t.Context(), runnerPod, hopAudience); err != nil {
+		t.Fatal(err)
+	}
+	if projectedToken, err = kube.PodToken(t.Context(), runnerPod, projectedAudience); err != nil {
+		t.Fatal(err)
+	}
+	proxyCA := transporttesting.NewCA(t)
+	proxyLeaf := proxyCA.Issue(t, environment_runtime_transport.EgressProxyURI)
+	proxyTLS, err := proxyLeaf.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyTLS.NextProtos = []string{"http/1.1"}
+	clientLeaf := proxyCA.Issue(t, workload.URI)
+	proxyClientTLS, err := clientLeaf.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyClientTLS.NextProtos = []string{"http/1.1"}
+	svids, err := resolver.New(workload.Objects, []string{runner.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
 	l := &lab{
-		index:      policy.NewIndex(staleAfter),
-		hop:        &hopReviews{TokenReviews: kube.TokenReviews()},
-		records:    &records{},
-		roots:      interceptRoot,
-		upstreamCA: upstreamCA,
-		lookup:     func(string) []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} },
+		index:          policy.NewIndex(),
+		records:        &records{},
+		roots:          interceptRoot,
+		proxyClientTLS: proxyClientTLS,
+		proxyCA:        proxyCA,
+		workload:       workload,
+		upstreamCA:     upstreamCA,
+		lookup:         func(string) []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} },
 	}
-	for _, kind := range []reader.Kind{policy.Credentials, reader.PolicySets, reader.PolicyBindings, policy.Secrets} {
-		l.index.Freshness.RecordCycle(kind, time.Now())
-	}
-	l.index.Freshness.MarkSynced()
+	l.index.Health.MarkSynced()
 	l.index.PutCredential(keyCredential)
 	l.index.PutSecret(resources.NewSecret("keys", map[string]string{"key": "real-secret"}))
 	l.allow(policyapi.Rule{
@@ -201,42 +213,49 @@ func newLab(t *testing.T) *lab {
 		Paths: []string{"/allowed", "/stream", "/sse", "/ws", "/cancel"},
 	})
 	// These tests revoke and rebind tokens between requests, so every call reviews its bearer.
-	hop, err := auth.NewResolver(l.hop, hopAudience, []string{runner.Namespace}, auth.WithVerdictTTL(0))
+	projected, err := auth.NewResolver(kube.TokenReviews(), projectedAudience, []string{runner.Namespace}, auth.WithVerdictTTL(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	projected, err := auth.NewResolver(kube.TokenReviews(), projectedAudience, []string{runner.Namespace}, auth.WithVerdictTTL(0))
+	authentication, err := identity.NewAuthenticator(listener.Config{
+		ListenAddress: "127.0.0.1:8888",
+		TLS:           &listener.TLS{CertFile: proxyLeaf.CertFile, KeyFile: proxyLeaf.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: proxyCA.RootFile}},
+	}, identity.NewVerifier(map[string]*auth.Resolver{projectedAudience: projected}), svids)
 	if err != nil {
 		t.Fatal(err)
 	}
 	l.options = Options{
 		CA: intercept, UpstreamRoots: upstreamRoot, Policy: l.index, Record: l.records.record,
-		Identity: identity.NewVerifier(hop, map[string]*auth.Resolver{projectedAudience: projected}),
-		Upstream: upstream.NewResolver([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, upstream.WithLookup(
-			func(_ context.Context, host string) ([]netip.Addr, error) {
+		Authentication: authentication,
+		// Loopback addresses stand in for upstream hosts.
+		Upstream: upstream.NewResolver(
+			[]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+			upstream.WithLookup(func(_ context.Context, host string) ([]netip.Addr, error) {
 				l.resolutions.Add(1)
 				return l.lookup(host), nil
-			},
-		)),
+			}),
+			upstream.WithClock(func() time.Time { return time.Now().Add(time.Duration(l.skew.Load())) }),
+		),
 	}
-	l.start(t)
+	l.start(t, proxyTLS)
 	return l
 }
 
 // allow grants runner exactly rules, replacing what it was granted.
 func (l *lab) allow(rules ...policyapi.Rule) {
 	l.index.Rules.PutPolicySet(&policyapi.PolicySet{
-		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: "rules"}, Spec: policyapi.PolicySetSpec{Rules: rules},
+		ObjectMeta: metav1.ObjectMeta{Name: "egress", Namespace: policyNamespace}, Spec: policyapi.PolicySetSpec{Rules: rules},
 	})
 	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "rules"},
+		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: policyNamespace},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.ServiceAccountRef{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
+			Subject: policyapi.Subject{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
 		},
 	})
 }
 
-func (l *lab) start(t *testing.T) {
+func (l *lab) start(t *testing.T, tlsConfig *tls.Config) {
 	t.Helper()
 	proxy, err := New(l.options)
 	if err != nil {
@@ -247,14 +266,25 @@ func (l *lab) start(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.proxy, l.address = proxy, listener.Addr().String()
-	go proxy.Serve(listener)
+	go proxy.Serve(tls.NewListener(listener, tlsConfig))
 	t.Cleanup(func() { proxy.Drain(context.Background()) })
 }
 
 func (l *lab) upstream(t *testing.T, name string, tlsEnabled bool, handler http.Handler) (*httptest.Server, *countedListener) {
 	t.Helper()
+	return l.upstreamOn(t, "127.0.0.1:0", name, tlsEnabled, handler)
+}
+
+// upstreamOn is upstream listening on address.
+func (l *lab) upstreamOn(t *testing.T, address, name string, tlsEnabled bool, handler http.Handler) (*httptest.Server, *countedListener) {
+	t.Helper()
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewUnstartedServer(handler)
-	counted := &countedListener{Listener: server.Listener, closed: make(chan struct{}, 16)}
+	server.Listener.Close()
+	counted := &countedListener{Listener: listener, closed: make(chan struct{}, 16)}
 	server.Listener = counted
 	server.EnableHTTP2 = true
 	if tlsEnabled {
@@ -285,17 +315,16 @@ func (l *lab) tunnel(t *testing.T, port string, tlsEnabled bool) (net.Conn, *htt
 	return l.tunnelPresenting(t, port, tlsEnabled, "")
 }
 
-// tunnelPresenting opens a tunnel whose CONNECT carries the valid hop bearer and, verbatim, extra
-// header lines.
+// tunnelPresenting opens a tunnel with the lab's SVID and, verbatim, extra untrusted hop headers.
 func (l *lab) tunnelPresenting(t *testing.T, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
 	t.Helper()
-	return l.tunnelAs(t, hopToken, port, tlsEnabled, extra)
+	return l.tunnelWith(t, l.proxyClientTLS, port, tlsEnabled, extra)
 }
 
-// tunnelAs opens a tunnel whose CONNECT carries the hop bearer token and, verbatim, extra header lines.
-func (l *lab) tunnelAs(t *testing.T, token, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
+// tunnelWith opens a tunnel presenting the client certificate of proxyTLS.
+func (l *lab) tunnelWith(t *testing.T, proxyTLS *tls.Config, port string, tlsEnabled bool, extra string) (net.Conn, *http2.ClientConn) {
 	t.Helper()
-	connection, response := l.connect(t, fixtureHost+":"+port, "Proxy-Authorization: Bearer "+token+"\r\n"+extra)
+	connection, response := l.connectWithTLS(t, proxyTLS, fixtureHost+":"+port, extra)
 	if response.StatusCode != 200 {
 		t.Fatalf("CONNECT: %s", response.Status)
 	}
@@ -318,7 +347,12 @@ func (l *lab) tunnelAs(t *testing.T, token, port string, tlsEnabled bool, extra 
 // on a 200 the connection is the open tunnel.
 func (l *lab) connect(t *testing.T, authority, headers string) (net.Conn, *http.Response) {
 	t.Helper()
-	connection, err := net.Dial("tcp", l.address)
+	return l.connectWithTLS(t, l.proxyClientTLS, authority, headers)
+}
+
+func (l *lab) connectWithTLS(t *testing.T, tlsConfig *tls.Config, authority, headers string) (net.Conn, *http.Response) {
+	t.Helper()
+	connection, err := tls.Dial("tcp", l.address, tlsConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,14 +378,10 @@ func request(ctx context.Context, port, path string, tlsEnabled bool, body io.Re
 	return req
 }
 
-// tunnelStatus sends the allowed request through the tunnel, presenting hop as its Proxy-Authorization
-// unless hop is empty, and returns the response status.
-func tunnelStatus(t *testing.T, client *http2.ClientConn, port, hop string) int {
+// tunnelStatus sends the allowed request through the authenticated tunnel.
+func tunnelStatus(t *testing.T, client *http2.ClientConn, port string) int {
 	t.Helper()
 	req := request(bounded(t), port, "/allowed", true, nil)
-	if hop != "" {
-		req.Header.Set("Proxy-Authorization", hop)
-	}
 	response, err := client.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
@@ -378,8 +408,34 @@ func (l *lab) send(t *testing.T, method, port, path string, header http.Header, 
 
 // client returns a client whose plain-HTTP proxy requests share one connection to the proxy.
 func (l *lab) client() *http.Client {
-	proxyURL, _ := url.Parse("http://" + l.address)
-	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	return &http.Client{Transport: l.clientTransport(l.proxyClientTLS, &tls.Config{RootCAs: l.roots})}
+}
+
+func (l *lab) clientTransport(proxyTLS, originTLS *tls.Config) *http.Transport {
+	proxyURL, _ := url.Parse("https://" + l.address)
+	return &http.Transport{
+		Proxy:           http.ProxyURL(proxyURL),
+		TLSClientConfig: originTLS,
+		DialTLSContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if address != l.address {
+				return nil, fmt.Errorf("unexpected TLS endpoint %q", address)
+			}
+			connection, err := (&net.Dialer{}).DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return tls.Client(connection, proxyTLS.Clone()), nil
+		},
+	}
+}
+
+func (l *lab) clientWithoutSVID() *http.Client {
+	tlsConfig := l.proxyClientTLS.Clone()
+	tlsConfig.Certificates = nil
+	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return &tls.Certificate{}, nil
+	}
+	return &http.Client{Transport: l.clientTransport(tlsConfig, &tls.Config{RootCAs: l.roots})}
 }
 
 func (l *lab) sendOn(t *testing.T, client *http.Client, method, port, path string, header http.Header, body io.Reader) *http.Response {
@@ -505,32 +561,75 @@ func TestInteractiveH2AndH2CTrailersCredentialAndCancellation(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("client cancellation never reached upstream")
 			}
-			// Both requests reuse the address the CONNECT pinned.
-			if counted.accepts.Load() != 2 || l.resolutions.Load() != 1 {
+			// Both requests go to the address the CONNECT pinned, on one pooled connection.
+			if counted.accepts.Load() != 1 || l.resolutions.Load() != 1 {
 				t.Fatalf("TCP=%d DNS=%d", counted.accepts.Load(), l.resolutions.Load())
 			}
 		})
 	}
 }
 
-func TestUpstreamConnectionIsReleasedAfterItsOnlyResponse(t *testing.T) {
+// get sends one request for path on a tunnel of its own and returns the body.
+func (l *lab) get(t *testing.T, port, path string, encrypted bool) string {
+	t.Helper()
+	_, client := l.tunnel(t, port, encrypted)
+	response, err := client.RoundTrip(request(bounded(t), port, path, encrypted, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil || response.StatusCode != 200 {
+		t.Fatalf("%s: status %d, %v", path, response.StatusCode, err)
+	}
+	return string(body)
+}
+
+func TestUpstreamConnectionIsReusedAcrossTunnelsForOnePinAndClosedOnDrain(t *testing.T) {
 	for _, encrypted := range []bool{true, false} {
 		t.Run(fmt.Sprint("tls=", encrypted), func(t *testing.T) {
 			l := newLab(t)
 			upstream, counted := l.upstream(t, fixtureHost, encrypted, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("done")) }))
-			_, client := l.tunnel(t, portOf(upstream), encrypted)
-			response, err := client.RoundTrip(request(bounded(t), portOf(upstream), "/allowed", encrypted, nil))
-			if err != nil {
+			for range 3 {
+				l.get(t, portOf(upstream), "/allowed", encrypted)
+			}
+			if counted.accepts.Load() != 1 {
+				t.Fatalf("%d upstream connections for one pin, want 1", counted.accepts.Load())
+			}
+			if err := l.proxy.Drain(bounded(t)); err != nil {
 				t.Fatal(err)
 			}
-			io.Copy(io.Discard, response.Body)
-			response.Body.Close()
 			select {
 			case <-counted.closed:
 			case <-time.After(5 * time.Second):
-				t.Fatal("upstream connection stayed open after its only response")
+				t.Fatal("idle upstream connection stayed open after drain")
 			}
 		})
+	}
+}
+
+func TestUpstreamConnectionIsNotReusedOnceTheHostIsPinnedElsewhere(t *testing.T) {
+	l := newLab(t)
+	handler := func(answer string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(answer)) })
+	}
+	first, firstConnections := l.upstream(t, fixtureHost, true, handler("first"))
+	_, secondConnections := l.upstreamOn(t, net.JoinHostPort("127.0.0.2", portOf(first)), fixtureHost, true, handler("second"))
+	var address atomic.Pointer[netip.Addr]
+	address.Store(new(netip.MustParseAddr("127.0.0.1")))
+	l.lookup = func(string) []netip.Addr { return []netip.Addr{*address.Load()} }
+	if body := l.get(t, portOf(first), "/allowed", true); body != "first" {
+		t.Fatalf("first admission reached %q", body)
+	}
+	// The pin expires and the host now resolves elsewhere: the next request goes there, although a
+	// connection to the old address sits idle.
+	address.Store(new(netip.MustParseAddr("127.0.0.2")))
+	l.skew.Store(int64(time.Hour))
+	if body := l.get(t, portOf(first), "/allowed", true); body != "second" {
+		t.Fatalf("re-pinned admission reached %q", body)
+	}
+	if firstConnections.accepts.Load() != 1 || secondConnections.accepts.Load() != 1 {
+		t.Fatalf("connections: first=%d second=%d", firstConnections.accepts.Load(), secondConnections.accepts.Load())
 	}
 }
 
@@ -611,7 +710,7 @@ func TestRevocationDuringDNSAndMixedForbiddenAnswersNeverDial(t *testing.T) {
 				}
 				return addresses
 			}
-			response := l.send(t, "GET", portOf(upstream), "/allowed", bearerHeader, nil)
+			response := l.send(t, "GET", portOf(upstream), "/allowed", nil, nil)
 			refusal := l.records.all()[0]
 			if response.StatusCode != want.status || *refusal.Reason != want.reason || counted.accepts.Load() != 0 {
 				t.Fatalf("denied after DNS: status=%d reason=%v TCP=%d", response.StatusCode, *refusal.Reason, counted.accepts.Load())
@@ -626,34 +725,41 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 		first, later decision.Reason
 	}{
 		"binding":             {http.StatusForbidden, decision.NoBinding, decision.NoBinding},
-		"stale":               {http.StatusBadGateway, decision.Unavailable, decision.Unavailable},
-		"invalid-replacement": {http.StatusForbidden, decision.TokenMissing, decision.TokenMissing},
-		"changed-principal":   {http.StatusForbidden, decision.PodMismatch, decision.TokenMissing},
+		"failing watch":       {http.StatusBadGateway, decision.Unavailable, decision.Unavailable},
+		"revoked credential":  {http.StatusForbidden, decision.TokenRejected, decision.TokenRejected},
+		"changed incarnation": {http.StatusForbidden, decision.TokenRejected, decision.TokenRejected},
 	} {
 		t.Run(change, func(t *testing.T) {
 			l := newLab(t)
 			upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("allowed")) }))
 			_, client := l.tunnel(t, portOf(upstream), true)
-			send := func(header string) int { return tunnelStatus(t, client, portOf(upstream), header) }
-			if got := send(""); got != 200 {
+			send := func() int { return tunnelStatus(t, client, portOf(upstream)) }
+			if got := send(); got != 200 {
 				t.Fatalf("initial request=%d", got)
 			}
 			switch change {
 			case "binding":
 				l.index.Rules.DeleteBinding("runner")
-			case "stale":
-				l.index.Freshness.RecordCycle(policy.Secrets, time.Now().Add(-2*staleAfter))
-			case "changed-principal":
-				l.hop.rebound.Store(true)
+			case "failing watch":
+				failWatch(l, policy.Secrets)
+			case "revoked credential", "changed incarnation":
+				if change == "revoked credential" {
+					l.workload.Issue(t, "0123456789abcdef0123456789abcdef")
+				} else {
+					// The owner accepted another Pod: the one presenting this certificate is no longer it.
+					record := l.workload.Record
+					replacement := types.UID("00000000-0000-4000-8000-0000000000aa")
+					record.Spec.Binding = &workloadapi.Binding{PodUID: replacement}
+					record.Spec.Pod = &workloadapi.PodRef{Name: "test-replacement-pod", UID: replacement}
+					if err := l.workload.Objects.Update(t.Context(), record); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
-			header := ""
-			if change == "invalid-replacement" {
-				header = "invalid"
-			}
-			if got := send(header); got != c.status {
+			if got := send(); got != c.status {
 				t.Fatalf("revoked request=%d", got)
 			}
-			if got := send(""); got != c.status {
+			if got := send(); got != c.status {
 				t.Fatalf("later request recovered stale auth/policy=%d", got)
 			}
 			if counted.accepts.Load() != 1 {
@@ -707,8 +813,9 @@ func TestIncrementalSSEAndWebSocket(t *testing.T) {
 	}
 	// WebSocket upgrades require HTTP/1 on both legs; HTTP/2 extended CONNECT is
 	// a different protocol and intentionally outside this spike.
-	proxyURL, _ := url.Parse("http://" + l.address)
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{RootCAs: l.roots}, ProxyConnectHeader: bearerHeader}}
+	client := &http.Client{Transport: l.clientTransport(
+		l.proxyClientTLS, &tls.Config{RootCAs: l.roots, NextProtos: []string{"http/1.1"}},
+	)}
 	req, _ := http.NewRequestWithContext(bounded(t), "GET", "https://"+fixtureHost+":"+portOf(upstream)+"/ws", nil)
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
@@ -740,14 +847,10 @@ func TestManySequentialHTTP1RequestsOnOneTunnelAreEachDecidedOnTheirOwn(t *testi
 	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(r.URL.Path))
 	}))
-	proxyURL, err := url.Parse("http://" + l.address)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// A TLS config of its own keeps the client on HTTP/1.1, which sends every request down the one tunnel.
-	client := &http.Client{Transport: &http.Transport{
-		Proxy: http.ProxyURL(proxyURL), ProxyConnectHeader: bearerHeader, TLSClientConfig: &tls.Config{RootCAs: l.roots},
-	}}
+	client := &http.Client{Transport: l.clientTransport(
+		l.proxyClientTLS, &tls.Config{RootCAs: l.roots, NextProtos: []string{"http/1.1"}},
+	)}
 	t.Cleanup(client.CloseIdleConnections)
 
 	for n := range requests {

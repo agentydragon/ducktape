@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::SourceUnitId;
 use analysis::graph::{
     ChunkConstrainingEdgeSet, DependencyEdge, DependencyEdgeId, DependencyGraph, EndpointView,
     project_endpoints,
@@ -14,6 +13,7 @@ use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
 use rustc_hash::FxHashSet;
+use source_identity::SourceUnitId;
 
 use crate::counted_digraph::CountedDiGraph;
 

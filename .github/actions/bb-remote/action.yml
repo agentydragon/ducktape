@@ -1,18 +1,19 @@
 # Wrapper around `bb remote` that ensures --config=rbe is always passed.
 #
-# We use `bb remote` directly instead of `bbr` (devinfra/bbr.py) in CI to
-# avoid a chicken-and-egg: bbr reads the RBE image pin from
-# devinfra/image_pins.json, but CI workflows may need to build/push the RBE
-# image itself. This action centralizes the --config=rbe flag so individual
-# workflows don't forget it (without RBE, actions run in linux-sandbox on the
-# runner VM which lacks tools like cpio).
+# Direct `bb remote` keeps a bootstrap path independent of the pinned bbr wheel.
+# Runner defaults come from the workspace .bbrc, shared with interactive bbr.
+# Disable whole-run CLI retries: a log-stream error can occur after the remote
+# script has already started, and replaying it can duplicate CI work or writes.
+# The action image comes from devinfra/image_pins.json.
+# Centralize --config=rbe here so workflows do not fall back to linux-sandbox
+# on a runner VM lacking action tools such as cpio.
 #
 # Two modes, mutually exclusive:
-# - `args`:   `bb remote <args> --config=rbe --config=ci ...`
+# - `args`:   `bb remote <command> <defaults> <caller arguments>`
 #             (e.g. args="build //..."). Triggers `bb`'s post-run
 #             `downloadOutputs` path for `build` and local `run` commands,
 #             which currently fails with "Exhausted all peers" — see
-#             devinfra/debug/bb_remote_peers_exhausted.md.
+#             devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md.
 # - `script`: `bb remote --script="<script>"`. Runs an arbitrary shell
 #             script on the runner VM. Prefer this for combined Bazel
 #             invocations and any workload that doesn't need build outputs
@@ -28,18 +29,12 @@ inputs:
       Bazel subcommand and arguments (e.g. 'build //...' or 'run //target').
       Mutually exclusive with `script`.
 
-      GOTCHA: these are placed BEFORE `--config=rbe --config=ci`, and Bazel's
-      last-one-wins ordering means anything those configs set silently overrides
-      what you pass here. `--remote_download_outputs=toplevel` used to be passed
-      by four callers and never took effect once — the build log says so:
-      "option '--remote_download_minimal' (source expanded from --config=rbe) was
-      expanded and now overrides the explicit option
-      --remote_download_outputs=toplevel". Use `script` when you need a flag to win.
+      The first word is the Bazel subcommand. RBE, CI, and action-image defaults
+      follow it; the remaining caller arguments come last so explicit options
+      override defaults. For `run`, arguments after `--` go to the built program.
 
-      Note also that this flag would not have controlled what reaches the GitHub
-      runner even if it had applied: `bb`'s post-run download resolves outputs
-      from the invocation's build events and fetches them from CAS, independently
-      of what Bazel materialized on the runner VM.
+      Bazel's download options control files on the remote VM. The bb CLI's
+      post-run output download to the GitHub runner is separate.
     required: false
     default: ""
   script:
@@ -52,11 +47,12 @@ inputs:
   env_overrides:
     description: >
       Newline-separated KEY=VALUE pairs forwarded to the runner via
-      x-buildbuddy-platform.env-overrides. Only still used by the
-      props-agents job in .github/workflows/push-images.yml, which pushes
-      to the private props registry from inside the BB runner VM. The GHCR
-      push path (the matrix in the same workflow) downloads OCI layouts to
-      the runner and calls `crane push` directly, so it doesn't need this.
+      x-buildbuddy-platform.env-overrides. Active bazel-ci.yml forwards PR
+      identity and BuildBuddy invocation IDs this way because the remote VM
+      does not inherit the GitHub Actions environment. The disabled
+      props-agents job in push-images.yml also uses it for registry access.
+      The GHCR image matrix downloads OCI layouts to the GitHub runner and
+      calls `crane push` there.
     required: false
     default: ""
   runner_container_image:
@@ -101,7 +97,7 @@ inputs:
       and skips workspace patch sync entirely. Only safe when the workspace is a clean
       checkout of that commit (the patch path's "drops uncommitted changes" caveat
       doesn't apply). See .github/workflows/bazel-ci.yml and
-      devinfra/docs/bb_remote_internals.md.
+      devinfra/buildbuddy/docs/remote.md.
     required: false
     default: ""
 
@@ -137,6 +133,7 @@ runs:
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
         INPUT_BAZEL_INVOCATION_IDS: ${{ inputs.bazel_invocation_ids }}
         INPUT_RUN_FROM_COMMIT: ${{ inputs.run_from_commit }}
+        SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
       run: |
         set -euo pipefail
 
@@ -178,22 +175,15 @@ runs:
           pin_digest=$(jq -r '.rbe_container.digest' devinfra/image_pins.json)
           RBE_CONTAINER_IMAGE="${pin_image}@${pin_digest}"
         fi
-        RUNNER_CONTAINER_IMAGE="$INPUT_RUNNER_CONTAINER_IMAGE"
-        if [[ -z "$RUNNER_CONTAINER_IMAGE" ]]; then
-          runner_image=$(jq -r '.buildbuddy_remote_runner.image' devinfra/image_pins.json)
-          runner_digest=$(jq -r '.buildbuddy_remote_runner.digest' devinfra/image_pins.json)
-          RUNNER_CONTAINER_IMAGE="${runner_image}@${runner_digest}"
+        BB_IMAGE_ARGS=()
+        if [[ -n "$INPUT_RUNNER_CONTAINER_IMAGE" ]]; then
+          BB_IMAGE_ARGS+=(--container_image="docker://${INPUT_RUNNER_CONTAINER_IMAGE}")
         fi
-        BB_IMAGE_ARGS=(--container_image="docker://${RUNNER_CONTAINER_IMAGE}")
 
+        # Override only CI-specific resources; bb reads shared defaults from .bbrc.
         RUNNER_EXEC_PROPS=(
           --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
-          --runner_exec_properties=workload-isolation-type=firecracker
-          --runner_exec_properties=init-dockerd=true
-          --runner_exec_properties=recycle-runner=true
-          --runner_exec_properties=remote-snapshot-save-policy=always
-          --runner_exec_properties=snapshot-read-policy=newest
         )
         if [[ -n "$INPUT_RUNNER_RECYCLING_KEY" ]]; then
           RUNNER_EXEC_PROPS+=(--runner_exec_properties=runner-recycling-key="$INPUT_RUNNER_RECYCLING_KEY")
@@ -205,6 +195,11 @@ runs:
         RUN_FROM_COMMIT_ARGS=()
         if [[ -n "$INPUT_RUN_FROM_COMMIT" ]]; then
           RUN_FROM_COMMIT_ARGS=(--run_from_commit="$INPUT_RUN_FROM_COMMIT")
+          # A commit alone leaves BRANCH_NAME empty in the runner's bazelrc.
+          # Keep the event's branch identity while the exact SHA remains authoritative.
+          if [[ -n "$SOURCE_BRANCH" ]]; then
+            RUN_FROM_COMMIT_ARGS+=(--run_from_branch="$SOURCE_BRANCH")
+          fi
         fi
 
         if [[ -n "$INPUT_SCRIPT" ]]; then
@@ -212,6 +207,7 @@ runs:
           ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_CONTAINER_IMAGE=${RBE_CONTAINER_IMAGE}")
           BB_REMOTE_COMMAND=(
             bb remote
+            --disable_retry=true
             "${RUNNER_EXEC_PROPS[@]}"
             "${ENV_ARGS[@]}"
             "${BB_IMAGE_ARGS[@]}"
@@ -224,25 +220,27 @@ runs:
           INPUT_ARGS_ARRAY=($INPUT_ARGS)
           BB_REMOTE_COMMAND=(
             bb remote
+            --disable_retry=true
             "${RUNNER_EXEC_PROPS[@]}"
             "${ENV_ARGS[@]}"
             "${BB_IMAGE_ARGS[@]}"
             "${RUN_FROM_COMMIT_ARGS[@]}"
-            "${INPUT_ARGS_ARRAY[@]}"
+            "${INPUT_ARGS_ARRAY[0]}"
             --config=rbe
             --config=ci
             "${BAZEL_IMAGE_ARGS[@]}"
+            "${INPUT_ARGS_ARRAY[@]:1}"
           )
         fi
 
         set +e
         # Source in this step's shell: GitHub sends cancellation to that process.
-        source devinfra/ci/bb_remote_log.sh "$LOG_PATH" "${BB_REMOTE_COMMAND[@]}"
+        source devinfra/buildbuddy/ci/remote_log.sh "$LOG_PATH" "${BB_REMOTE_COMMAND[@]}"
         BB_REMOTE_STATUS=$?
         set -e
 
         LINKAGE_STATUS=0
-        python3 devinfra/ci/emit_bb_remote_linkage.py \
+        python3 devinfra/buildbuddy/ci/emit_remote_linkage.py \
           --log "$LOG_PATH" \
           --out "$LINKAGE_JSON_PATH" \
           --roles "$INPUT_LINKAGE_ROLES" \

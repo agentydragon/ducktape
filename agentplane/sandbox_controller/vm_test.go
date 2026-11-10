@@ -2,11 +2,16 @@ package sandboxcontroller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,7 +22,53 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var vmGuestContractRlocation string
+
 const workspaceVolume = "workspace"
+
+type vmGuestContract struct {
+	Disks struct {
+		Launch struct {
+			VolumeName string `json:"volume_name"`
+			Serial     string `json:"serial"`
+			Mount      string `json:"mount"`
+		} `json:"launch"`
+	} `json:"disks"`
+	State struct {
+		VolumeName string `json:"volume_name"`
+	} `json:"state"`
+	Files struct {
+		Launch string `json:"launch"`
+	} `json:"files"`
+	EnvironmentRuntimeTLS struct {
+		VolumeName  string `json:"volume_name"`
+		RuntimePath string `json:"runtime_path"`
+	} `json:"environment_runtime_tls"`
+	EnvironmentRuntimeTrust struct {
+		VolumeName string `json:"volume_name"`
+		Mount      string `json:"mount"`
+	} `json:"environment_runtime_trust"`
+	EnvironmentRuntimeWorkloadTrust struct {
+		VolumeName string `json:"volume_name"`
+	} `json:"environment_runtime_workload_trust"`
+}
+
+func readVMGuestContract(t *testing.T) vmGuestContract {
+	t.Helper()
+	path, err := runfiles.Rlocation(vmGuestContractRlocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract vmGuestContract
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatal(err)
+	}
+	return contract
+}
 
 func testVMTemplate(image string) *sandboxapi.SandboxTemplate {
 	template := testTemplate(image)
@@ -25,7 +76,7 @@ func testVMTemplate(image string) *sandboxapi.SandboxTemplate {
 	template.Spec.VM = &kubevirtv1.VirtualMachineSpec{
 		DataVolumeTemplates: []kubevirtv1.DataVolumeTemplateSpec{{ObjectMeta: metav1.ObjectMeta{Name: workspaceVolume}}},
 		Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner-vm"}},
+			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-environment-vm"}},
 			Spec: kubevirtv1.VirtualMachineInstanceSpec{
 				Domain: kubevirtv1.DomainSpec{Devices: kubevirtv1.Devices{Disks: []kubevirtv1.Disk{{Name: "root"}, {Name: workspaceVolume}}}},
 				Volumes: []kubevirtv1.Volume{
@@ -139,6 +190,7 @@ func controllerRef(kind, name string, uid types.UID) metav1.OwnerReference {
 }
 
 func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
+	contract := readVMGuestContract(t)
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
 
@@ -155,16 +207,57 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	if !vmRunning(vm) {
 		t.Errorf("VM run strategy = %v, want Always", vm.Spec.RunStrategy)
 	}
-	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-runner-vm" {
+	if labels := vm.Spec.Template.ObjectMeta.Labels; labels[sandboxapi.SandboxLabel] != sandboxName || labels["app.kubernetes.io/name"] != "test-environment-vm" {
 		t.Errorf("VMI template labels = %v; the VMI and its virt-launcher Pod need the Sandbox label", labels)
 	}
-	state := volume(vm, "state")
+	state := volume(vm, contract.State.VolumeName)
 	if state == nil || state.PersistentVolumeClaim == nil || state.PersistentVolumeClaim.ClaimName != StateVolumeName(sandboxName) {
 		t.Fatalf("VM state volume = %v, want the state PVC", state)
 	}
 	filesystems := vm.Spec.Template.Spec.Domain.Devices.Filesystems
-	if len(filesystems) != 1 || filesystems[0].Name != "state" || filesystems[0].Virtiofs == nil {
-		t.Errorf("VM filesystems = %v, want the state volume over virtiofs", filesystems)
+	filesystemNames := make(map[string]bool, len(filesystems))
+	for _, filesystem := range filesystems {
+		filesystemNames[filesystem.Name] = filesystem.Virtiofs != nil
+	}
+	for _, tag := range []string{
+		contract.State.VolumeName,
+		contract.EnvironmentRuntimeTLS.VolumeName,
+		contract.EnvironmentRuntimeTrust.VolumeName,
+		contract.EnvironmentRuntimeWorkloadTrust.VolumeName,
+	} {
+		if got := len([]byte(tag)); got > maxVirtiofsTagBytes {
+			t.Errorf("contract virtiofs tag %q is %d bytes, QEMU allows at most %d", tag, got, maxVirtiofsTagBytes)
+		}
+	}
+	for _, filesystem := range filesystems {
+		if got := len([]byte(filesystem.Name)); got > maxVirtiofsTagBytes {
+			t.Errorf("emitted virtiofs tag %q is %d bytes, QEMU allows at most %d", filesystem.Name, got, maxVirtiofsTagBytes)
+		}
+	}
+	if len(filesystems) != 4 || !filesystemNames[contract.State.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTLS.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeTrust.VolumeName] || !filesystemNames[contract.EnvironmentRuntimeWorkloadTrust.VolumeName] {
+		t.Errorf("VM filesystems = %v, want state and runner TLS/trust/workload trust volumes over virtiofs", filesystems)
+	}
+	if trust := volume(vm, contract.EnvironmentRuntimeTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != RunnerTrustBundleName {
+		t.Errorf("VM trust volume = %v, want the cluster bundle", trust)
+	}
+	if trust := volume(vm, contract.EnvironmentRuntimeWorkloadTrust.VolumeName); trust == nil || trust.ConfigMap == nil || trust.ConfigMap.Name != RunnerWorkloadTrustBundleName {
+		t.Errorf("VM workload trust volume = %v, want the workload CA bundle", trust)
+	}
+	if LaunchDiskSerial != contract.Disks.Launch.Serial || LaunchMountPath != contract.Disks.Launch.Mount || LaunchFile != contract.Files.Launch {
+		t.Fatalf("launch disk contract = serial %q, mount %q, file %q; want %q, %q, %q", LaunchDiskSerial, LaunchMountPath, LaunchFile, contract.Disks.Launch.Serial, contract.Disks.Launch.Mount, contract.Files.Launch)
+	}
+	launchDisk := slices.IndexFunc(vm.Spec.Template.Spec.Domain.Devices.Disks, func(disk kubevirtv1.Disk) bool {
+		return disk.Serial == contract.Disks.Launch.Serial && disk.Name == contract.Disks.Launch.VolumeName
+	})
+	if launchDisk < 0 {
+		t.Fatalf("VM disks = %v, want launch disk %s with serial %s", vm.Spec.Template.Spec.Domain.Devices.Disks, contract.Disks.Launch.VolumeName, contract.Disks.Launch.Serial)
+	}
+	launchVolume := volume(vm, contract.Disks.Launch.VolumeName)
+	if launchVolume == nil || launchVolume.ConfigMap == nil || launchVolume.ConfigMap.Name != LaunchConfigMapName(sandboxName) {
+		t.Fatalf("VM launch volume = %v, want the Sandbox launch ConfigMap", launchVolume)
+	}
+	if EnvironmentRuntimeTLSMountPath != contract.EnvironmentRuntimeTLS.RuntimePath || EnvironmentRuntimeTrustMountPath != contract.EnvironmentRuntimeTrust.Mount {
+		t.Fatalf("Runtime credential paths = TLS %q, trust %q; want %q and %q", EnvironmentRuntimeTLSMountPath, EnvironmentRuntimeTrustMountPath, contract.EnvironmentRuntimeTLS.RuntimePath, contract.EnvironmentRuntimeTrust.Mount)
 	}
 	// One template serves many Sandboxes, and DataVolume names are per namespace.
 	workspace := sandboxName + "-" + workspaceVolume
@@ -176,6 +269,20 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 	}
 	if reason := runningReason(t, c); reason != "Starting" {
 		t.Errorf("Running reason = %s, want Starting", reason)
+	}
+}
+
+func TestRenderVMRejectsVirtiofsTagsOverQEMULimit(t *testing.T) {
+	template := testVMTemplate("test-guest:v1")
+	template.Spec.StateVolume.Name = strings.Repeat("s", maxVirtiofsTagBytes-1) + "é"
+	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName}}
+
+	vm, blocked := renderVM(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret})
+	if vm != nil {
+		t.Fatal("rendered a VM with an overlength virtiofs tag")
+	}
+	if blocked == nil || blocked.reason != "TemplateInvalid" || !strings.Contains(blocked.message, "37 UTF-8 bytes") {
+		t.Fatalf("blocked = %v, want TemplateInvalid for a 37-byte QEMU virtiofs tag", blocked)
 	}
 }
 
@@ -232,8 +339,8 @@ func TestStopHaltsTheVMAndKeepsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
-	if reason := runningReason(t, c); reason != "Stopped" {
-		t.Errorf("Running reason = %s, want Stopped", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageStopped {
+		t.Errorf("stopStage = %q, want Stopped", stage)
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("stopping deleted the state PVC")

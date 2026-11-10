@@ -9,16 +9,41 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for the central
+// samplers' delegated Identity callers.
+func kubernetesIdentityUIDs(kubeConfig *rest.Config, policyNamespace string) (auth.IdentityUIDReader, error) {
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	return auth.KubernetesIdentityUIDs(objects, policyNamespace)
+}
 
 func main() {
 	c, err := loadConfig()
@@ -51,62 +76,123 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return errors.New("could not create Kubernetes client")
 	}
-	resolver, err := auth.NewResolver(authentication.TokenReviews(), c.TokenAudience, c.AllowedServiceAccountNamespaces)
+	callers, err := auth.NewResolver(authentication.TokenReviews(), c.TokenAudience, c.AllowedServiceAccountNamespaces)
 	if err != nil {
 		return err
 	}
-	handler, err := newIngressHandler(c, resolver, logger)
+	var svidResolver *auth.SVIDResolver
+	if c.RPC.Has(authlistener.SPIFFE) {
+		var identities *resolver.Identities
+		if c.PolicyNamespace != "" {
+			identities = &resolver.Identities{PolicyNamespace: c.PolicyNamespace}
+		}
+		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces, identities)
+		if err != nil {
+			return err
+		}
+	}
+	callers, err = callers.WithListenerAuthentication(c.RPC, svidResolver)
 	if err != nil {
 		return err
 	}
-	defer handler.backend.CloseIdleConnections()
-	address := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
-	listener, err := net.Listen("tcp", address)
+	var identityUIDs auth.IdentityUIDReader
+	if c.CentralSamplerIdentityCallers {
+		if identityUIDs, err = kubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace); err != nil {
+			return err
+		}
+	}
+	handler, err := newIngressHandler(c, callers, identityUIDs, logger)
 	if err != nil {
-		return fmt.Errorf("could not listen on configured address: %w", err)
+		return err
+	}
+	defer handler.transport.CloseIdleConnections()
+	tlsConfig, err := c.RPC.TLSConfig(environment_runtime_transport.LLMIngressURI)
+	if err != nil {
+		return err
+	}
+	if tlsConfig == nil {
+		return errors.New("rpc.tls is required")
+	}
+	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(tlsConfig)
+	if err != nil {
+		return err
+	}
+	tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+	listener, err := net.Listen("tcp", c.RPC.ListenAddress)
+	if err != nil {
+		return err
 	}
 	defer listener.Close()
-	server := &http.Server{
-		Handler:           observability.HTTPHandler(handler),
-		ReadHeaderTimeout: 10 * time.Second,
+	models := make(map[string]modelConfig, len(c.Models))
+	for _, model := range c.Models {
+		models[model.Model] = model
 	}
-	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
-	serveResult := make(chan error, 1)
-	go func() { serveResult <- server.Serve(listener) }()
+	grpcServer := newModelConfigServer(callers, &modelConfigService{models: models})
+	server := &http.Server{
+		Handler:           observability.HTTPHandler(rpcHandler(grpcServer, handler)),
+		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig:         tlsConfig,
+		ConnState:         connState,
+	}
+	stopped := make(chan error, 1)
+	go func() { stopped <- server.ServeTLS(listener, "", "") }()
+	logger.Info("serving authenticated model inference and configuration", "address", c.RPC.ListenAddress)
+	shutdown := func() error {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := server.Shutdown(shutdownContext)
+		if err != nil {
+			_ = server.Close()
+		}
+		graceful.Stop(shutdownContext, grpcServer)
+		return err
+	}
 	select {
-	case err := <-serveResult:
+	case err := <-stopped:
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		return errors.Join(err, shutdown())
+	case <-ctx.Done():
+		if err := shutdown(); err != nil {
+			return err
+		}
+		err := <-stopped
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("HTTP listener failed: %w", err)
-	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			_ = server.Close()
-			return errors.New("HTTP server shutdown exceeded five seconds")
-		}
-		if err := <-serveResult; !errors.Is(err, http.ErrServerClosed) && err != nil {
-			return fmt.Errorf("HTTP listener stopped with an error: %w", err)
-		}
-		return nil
+		return err
 	}
 }
 
+func rpcHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.ProtoMajor == 2 && strings.HasPrefix(request.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(writer, request)
+			return
+		}
+		httpHandler.ServeHTTP(writer, request)
+	})
+}
+
+// newModelConfigServer serves budgets to any caller the resolver authenticates; the handler never
+// reads the caller, so an Identity caller is served as a ServiceAccount one is.
+func newModelConfigServer(callers *auth.Resolver, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
+	methods := auth.HealthMethods()
+	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnySubject(callers)
+	server := grpc.NewServer(append(methods.ServerOptions(10*time.Second), observability.GRPCServerOption())...)
+	modelconfigpb.RegisterModelConfigServiceServer(server, service)
+	healthpb.RegisterHealthServer(server, health.NewServer())
+	return server
+}
+
 func kubernetesConfig(c config) (*rest.Config, error) {
-	var kubeconfig *rest.Config
-	var err error
-	if c.Kubeconfig != "" {
-		kubeconfig, err = clientcmd.BuildConfigFromFlags("", c.Kubeconfig)
-	} else {
-		kubeconfig, err = rest.InClusterConfig()
-	}
+	kubeconfig, err := kubeclient.Config(c.Kubeconfig)
 	if err != nil {
 		return nil, errors.New("could not load Kubernetes client configuration")
 	}
 	kubeconfig.ContentType = "application/json"
 	kubeconfig.AcceptContentTypes = "application/json"
-	kubeconfig.WrapTransport = observability.WrapHTTPTransport(kubeconfig.WrapTransport)
 	return kubeconfig, nil
 }
 

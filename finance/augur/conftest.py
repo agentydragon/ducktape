@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
+from python.runfiles import Runfiles
 
 from finance.augur.api.config import Config, load_augur_config
+from finance.augur.api.portfolio import BondHoldingConfig, PortfolioAccountConfig, PortfolioConfig
 from finance.augur.fit.synthetic_evidence import synthetic_evidence_dir
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.model.testing import (
@@ -13,14 +17,36 @@ from finance.augur.model.testing import (
     level_matrix_with_month_override,
 )
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
-from util.bazel.runfiles import get_required_path
+from finance.augur.sim.ids import AccountId, AgentId
 
 _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
 
 
 @pytest.fixture(scope="module")
 def augur_config() -> Config:
-    return load_augur_config(get_required_path("_main/finance/augur/api/testdata/config.yaml"))
+    return load_augur_config(Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/testdata/config.yaml")
+
+
+@pytest.fixture
+def bond_portfolio() -> Callable[..., PortfolioConfig]:
+    def make(**overrides: object) -> PortfolioConfig:
+        bond = {
+            "bond_id": "tips_rung",
+            "account_id": "brokerage",
+            "character": {"kind": "treasury"},
+            "face_value": 100_000,
+            "purchase_price": 100_000,
+            "annual_coupon_rate": 0.02,
+            "inflation_indexed": True,
+            "holding_period_months_at_start": 24,
+            "months_to_maturity_at_start": 96,
+        } | overrides
+        return PortfolioConfig(
+            accounts=(PortfolioAccountConfig(account_id=AccountId("brokerage"), owner_agent_id=AgentId("alice")),),
+            bonds=(BondHoldingConfig.model_validate(bond),),
+        )
+
+    return make
 
 
 @pytest.fixture

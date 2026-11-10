@@ -1,5 +1,6 @@
 //! Render finalized JavaScript artifacts and write script and tree reports.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
@@ -8,10 +9,12 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use swc_common::GLOBALS;
 
-use crate::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
-use crate::paths::{join_module_path, path_from_module_path};
-use crate::reports::{ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering, write_json};
-use crate::{ChunkBundle, ChunkId, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
+use artifact::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
+use artifact::paths::{join_module_path, path_from_module_path};
+use artifact::reports::{
+    ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering, write_json,
+};
+use artifact::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
 use output_layout::CHUNK_REPORT;
 
 pub struct MaterializedScripts {
@@ -19,7 +22,7 @@ pub struct MaterializedScripts {
     pub file_metrics: Vec<OutputFileMetric>,
 }
 
-pub fn materialize_artifact_scripts(
+pub(super) fn materialize_artifact_scripts(
     files: &EmissionFiles,
     app_root: &Path,
     report_tree_root: &Path,
@@ -41,7 +44,7 @@ pub fn materialize_artifact_scripts(
     // carry into rayon worker threads, and `render_source()` on
     // `JsFileBody::Ast` calls `emit_js_module_with_comments`, which drives
     // the swc emitter. Capture the parent thread's globals and re-set
-    // inside each worker closure — mirrors `lower_chunk` and
+    // inside each worker closure — mirrors `prepare_candidate_emission_plan` and
     // `vendor::emission::apply_emission_rewrites`.
     let file_metrics: Vec<OutputFileMetric> = GLOBALS
         .with(|globals| -> Result<Vec<_>> {

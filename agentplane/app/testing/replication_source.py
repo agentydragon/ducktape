@@ -13,15 +13,24 @@ from uuid import NAMESPACE_URL, uuid5
 
 import grpc
 
+from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
 from agentplane.history_service.testing.history import History
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
-from agentplane.runner import runner_service_pb2, runner_service_pb2_grpc
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-replication-sandbox"
 SESSION = "test-replication-session"
-SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model-before", cwd="/test-workspace")
+SPEC = session_pb2.SessionSpec(
+    placement=session_pb2.SessionPlacement(
+        environment_hosted=session_pb2.EnvironmentHostedPlacement(
+            environment=session_pb2.ExactEnvironment(name=SANDBOX, uid="test-sandbox-uid"),
+            harness=session_pb2.HARNESS_CODEX,
+        )
+    ),
+    model="test-model-before",
+    cwd="/test-workspace",
+)
 
 
 @dataclass
@@ -35,8 +44,8 @@ class ReplicationSource:
     def __init__(self) -> None:
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.entries: list[event_log_pb2.EventEntry] = []
-        self.attached = runner_pb2.Attached(
-            session_id=SESSION, spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING
+        self.attached = session_pb2.Attached(
+            session_id=SESSION, spec=SPEC, harness_state=session_pb2.HARNESS_STATE_RUNNING
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.runner = Runner(self)
@@ -65,7 +74,7 @@ class ReplicationSource:
             while True:
                 self._appended.clear()
                 if copied < len(self.entries):
-                    entries, attached = self.entries[copied:], runner_pb2.Attached()
+                    entries, attached = self.entries[copied:], session_pb2.Attached()
                     # The runner's snapshot at the last copied cursor, taken with the entries it covers.
                     attached.CopyFrom(self.attached)
                     await history.record(self.session_id, entries, attached=attached)
@@ -83,10 +92,10 @@ class ReplicationSource:
 
 def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
     """Registers the scripted Runner service used by the app's control proxy client."""
-    runner_service_pb2_grpc.add_RunnerServicer_to_server(source.runner, server)
+    environment_runtime_pb2_grpc.add_EnvironmentRuntimeServicer_to_server(source.runner, server)
 
 
-class Runner(runner_service_pb2_grpc.RunnerServicer):
+class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
     """A scripted Runner whose per-operation RPCs append command admissions to retained history."""
 
     def __init__(self, source: ReplicationSource) -> None:
@@ -95,12 +104,39 @@ class Runner(runner_service_pb2_grpc.RunnerServicer):
         self._admissions: dict[str, event_log_pb2.EventEntry] = {}
 
     @override
-    async def ListSessions(
-        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
-        return runner_pb2.ListSessionsResponse(
+    async def CreateSession(
+        self, request: environment_runtime_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.CreateSessionResponse:
+        if (
+            request.session_id != str(self.source.session_id)
+            or request.spec != self.source.attached.spec
+            or request.HasField("setup_script")
+        ):
+            await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting scripted Session")
+        attached = session_pb2.Attached()
+        attached.CopyFrom(self.source.attached)
+        attached.session_id = request.session_id
+        return environment_runtime_pb2.CreateSessionResponse(attached=attached)
+
+    @override
+    async def GetStatus(
+        self, request: session_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
+    ) -> session_pb2.EnvironmentRuntimeStatus:
+        return session_pb2.EnvironmentRuntimeStatus(
             sessions=[
-                runner_pb2.SessionSummary(
+                session_pb2.SessionStatus(
+                    session_id=str(self.source.session_id), busy=bool(self.source.attached.active_turn_id)
+                )
+            ]
+        )
+
+    @override
+    async def ListSessions(
+        self, request: session_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> session_pb2.ListSessionsResponse:
+        return session_pb2.ListSessionsResponse(
+            sessions=[
+                session_pb2.SessionSummary(
                     session_id=str(self.source.session_id),
                     spec=self.source.attached.spec,
                     last_cursor=self.source.attached.last_cursor,
@@ -122,37 +158,37 @@ class Runner(runner_service_pb2_grpc.RunnerServicer):
 
     @override
     async def SubmitInput(
-        self, request: runner_service_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
-    ) -> runner_service_pb2.SubmitInputResponse:
+        self, request: environment_runtime_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.SubmitInputResponse:
         command = command_pb2.Command(
             command_id=request.command_id, submit_input=command_pb2.SubmitInput(text=request.text)
         )
-        return runner_service_pb2.SubmitInputResponse(admission=await self.admit(command, context))
+        return environment_runtime_pb2.SubmitInputResponse(admission=await self.admit(command, context))
 
     @override
     async def ChangeModel(
-        self, request: runner_service_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
-    ) -> runner_service_pb2.ChangeModelResponse:
+        self, request: environment_runtime_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.ChangeModelResponse:
         command = command_pb2.Command(
             command_id=request.command_id, change_model=command_pb2.ChangeModel(model=request.model)
         )
-        return runner_service_pb2.ChangeModelResponse(admission=await self.admit(command, context))
+        return environment_runtime_pb2.ChangeModelResponse(admission=await self.admit(command, context))
 
     @override
     async def ChangeReasoningEffort(
-        self, request: runner_service_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
-    ) -> runner_service_pb2.ChangeReasoningEffortResponse:
+        self, request: environment_runtime_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.ChangeReasoningEffortResponse:
         command = command_pb2.Command(
             command_id=request.command_id,
             change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=request.effort),
         )
-        return runner_service_pb2.ChangeReasoningEffortResponse(admission=await self.admit(command, context))
+        return environment_runtime_pb2.ChangeReasoningEffortResponse(admission=await self.admit(command, context))
 
     @override
     async def InterruptTurn(
-        self, request: runner_service_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
-    ) -> runner_service_pb2.InterruptTurnResponse:
+        self, request: environment_runtime_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.InterruptTurnResponse:
         command = command_pb2.Command(
             command_id=request.command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=request.turn_id)
         )
-        return runner_service_pb2.InterruptTurnResponse(admission=await self.admit(command, context))
+        return environment_runtime_pb2.InterruptTurnResponse(admission=await self.admit(command, context))

@@ -12,9 +12,9 @@ py_library(
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//util:net",
-        "//util/bazel:runfiles",
         "@pypi//aiohttp",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -24,8 +24,10 @@ py_library(
     deps = [
         "//agentplane/egress:settings",
         "//agentplane/testing:go_process",
+        "//agentplane/workload_auth:listener",
+        "//util:db_url",
         "//util:net",
-        "//util/bazel:runfiles",
-        "@pypi//sqlalchemy",
+        "@pypi//grpcio",
+        "@rules_python//python/runfiles",
     ],
 )

@@ -18,7 +18,8 @@ py_library(
     visibility = ["//airlock:__subpackages__"],
     deps = [
         ":config",
-        "@pypi//httpx",
+        "@pypi//authlib",
+        "@pypi//httpx2",
         "@pypi//pydantic",
     ],
 )
@@ -65,10 +66,10 @@ py_test(
         ":config",
         ":provider",
         "//:conftest",
-        "@pypi//httpx",
+        "@pypi//authlib",
+        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//respx",
     ],
 )
 

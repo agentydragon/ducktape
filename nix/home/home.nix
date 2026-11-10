@@ -12,6 +12,8 @@
 }:
 let
   toTOML = (pkgs.formats.toml { }).generate;
+  codexTempDir = "/tmp/codex-${config.home.username}";
+  claudeTempDir = "/tmp/claude-${config.home.username}";
 
   ducktapePackages = import ../packages {
     inherit lib pkgs pkgsUnstable;
@@ -60,6 +62,8 @@ let
       }
     ]
   );
+  gatewayWrappers = config.ducktape.claudeGatewayWrappers;
+  gatewayEnabled = name: lib.elem name gatewayWrappers;
 in
 {
   _module.args.ducktapePackages = ducktapePackages;
@@ -85,10 +89,10 @@ in
     # ./gemini_cli.nix
     ./shell/oh-my-posh.nix
     ./modules/gnome-custom-keybindings.nix
+    ./modules/claude-gateway-wrappers.nix
     ./modules/attic.nix
     ./modules/atuin.nix
     ./modules/buildbuddy.nix
-    ./modules/github-api-proxy.nix
     ./modules/sops-env.nix
     ./services/activitywatch.nix
     ./services/session-backup.nix
@@ -100,6 +104,37 @@ in
   ];
   # Workstations use the local (gpt-oss) Codex model profiles.
   ducktape.codex.localModels.enable = true;
+  ducktape.codex.temporaryDirectory = codexTempDir;
+  programs.claude-code.settings.env = {
+    CLAUDE_CODE_TMPDIR = claudeTempDir;
+    TMPDIR = claudeTempDir;
+  };
+
+  systemd.user.tmpfiles.rules = [
+    "d ${codexTempDir} 0700 - - -"
+    "d ${claudeTempDir} 0700 - - -"
+  ];
+  # System tmpfiles may otherwise remove an idle /tmp parent after 14 days,
+  # leaving agent settings pointed at a missing directory. Keep the parents
+  # fresh without changing the timestamps of their contents.
+  systemd.user.services.agent-temp-roots = {
+    Unit.Description = "Keep agent temporary directory roots available";
+    Service = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "agent-temp-roots" ''
+        set -euo pipefail
+        ${pkgs.systemd}/bin/systemd-tmpfiles --user --create --prefix=${codexTempDir} --prefix=${claudeTempDir}
+        ${pkgs.coreutils}/bin/touch -a -- ${codexTempDir} ${claudeTempDir}
+        ${pkgs.bash}/bin/bash ${../nixos/modules/tmp-leak-reaper.sh} \
+          ${codexTempDir} ${claudeTempDir} ${claudeTempDir}/claude-"$(${pkgs.coreutils}/bin/id -u)"
+      '';
+    };
+  };
+  systemd.user.timers.agent-temp-roots = {
+    Unit.Description = "Refresh agent temporary directory roots";
+    Timer.OnCalendar = "daily";
+    Install.WantedBy = [ "timers.target" ];
+  };
   ducktape.sopsEnv = {
     HF_TOKEN = {
       sopsFile = ../../secrets/shared/huggingface.yaml;
@@ -119,10 +154,8 @@ in
     };
   };
 
-  # Claude gateway wrappers are paused: do not install codex-claude, tana-claude,
-  # gemini-claude, antigravity-claude, or litellm-claude in home.packages. Their
-  # renderers in ./claude_code/ and key declarations below remain for re-enabling.
-  # Direct Claude Code and Codex installations are unaffected.
+  # Gateway wrappers are paused by default. Enable each wrapper through
+  # ducktape.claudeGatewayWrappers so its package and key are installed together.
   #
   # LiteLLM virtual keys for the Claude Code gateway wrappers. Declared as plain secrets
   # rather than through ducktape.sopsEnv because each wrapper cats its own file at exec
@@ -130,28 +163,37 @@ in
   # shell and everything a shell spawns. The upstream credentials each key stands in for
   # -- the cli-proxy client key, GEMINI_API_KEY, the Claude OAuth session -- stay
   # in-cluster and never reach the laptop.
-  sops.secrets = {
-    litellm_tana_key = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
-      key = "litellm_tana_key";
+  sops.secrets =
+    lib.optionalAttrs (gatewayEnabled "tana-claude") {
+      litellm_tana_key = {
+        sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
+        key = "litellm_tana_key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "codex-claude") {
+      litellm_codex_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "gemini-claude") {
+      litellm_gemini_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-gemini-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "antigravity-claude") {
+      litellm_antigravity_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-antigravity-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
+    }
+    // lib.optionalAttrs (gatewayEnabled "litellm-claude") {
+      litellm_claude_subscription_key = {
+        sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-claude-subscription-clients-key.sops.yaml;
+        key = "stringData/api-key";
+      };
     };
-    litellm_codex_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-codex-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-    litellm_gemini_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-gemini-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-    litellm_antigravity_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-antigravity-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-    litellm_claude_subscription_key = {
-      sopsFile = ../../cluster/k8s/litellm/crossplane-keys/litellm-claude-subscription-clients-key.sops.yaml;
-      key = "stringData/api-key";
-    };
-  };
 
   home.username = "agentydragon";
   home.homeDirectory = "/home/agentydragon";
@@ -457,7 +499,8 @@ in
 
       gnome-tweaks
       dconf-editor
-    ];
+    ]
+    ++ map (name: import (./claude_code + "/${name}.nix") { inherit config pkgs; }) gatewayWrappers;
 
   targets.genericLinux.enable = !isNixOS;
 

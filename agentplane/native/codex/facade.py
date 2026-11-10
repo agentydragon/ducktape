@@ -48,7 +48,7 @@ class CodexHarness:
         *,
         cwd: str,
         model: str,
-        effort: str,
+        effort: str | None,
         persist: bool = False,
         config: dict[str, Any] | None = None,
         instructions: str = "",

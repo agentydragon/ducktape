@@ -1,0 +1,6 @@
+#!/usr/bin/busybox sh
+set -eux
+workspace=/state/workspaces
+chown 107:107 "$workspace"
+chmod 2770 "$workspace"
+setfacl -m d:user:107:rwx,d:group:107:rwx "$workspace"

@@ -58,6 +58,9 @@ func groupView(key string, group *catalog.Group, healthDetail bool) (*action_ser
 	case catalog.OrchestrationBinding:
 		view.ExecutorKind = action_servicepb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1
 		view.ExecutorDescription = executor.Description
+	case catalog.SessionDelegationBinding:
+		view.ExecutorKind = action_servicepb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION
+		view.ExecutorDescription = executor.Description
 	}
 	if group.Health != nil {
 		view.Health = proto.CloneOf(group.Health)
@@ -119,6 +122,8 @@ func (s *Service) GetAction(_ context.Context, request *action_servicepb.GetActi
 // not see, such as a workload's view of McpHealth.detail, sends nothing.
 func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionGroupsResponse]) error {
 	ctx := stream.Context()
+	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	defer stopWrites()
 	healthDetail := showsHealthDetail(ctx)
 	// shown is each group as the client holds it; nil until the snapshot is sent.
 	var shown map[string]*action_servicepb.ActionGroup
@@ -132,7 +137,7 @@ func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest
 			return view.GetExecutorKind() != action_servicepb.ExecutorKind_EXECUTOR_KIND_MCP
 		})
 		if shown == nil {
-			if err := s.sendGroupSnapshot(ctx, stream, mcp); err != nil {
+			if err := s.sendGroupSnapshot(ctx, writeCtx, stream, mcp); err != nil {
 				return err
 			}
 			shown = make(map[string]*action_servicepb.ActionGroup, len(mcp))
@@ -144,7 +149,7 @@ func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest
 				if proto.Equal(shown[view.GetKey()], view) {
 					continue
 				}
-				if err := send(ctx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
+				if err := send(ctx, writeCtx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
 					Frame: &action_servicepb.WatchActionGroupsResponse_Upsert{Upsert: view},
 				}); err != nil {
 					return err
@@ -155,7 +160,7 @@ func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest
 		if err := (follower{gate: s.gate, updates: changed}).changed(ctx); err != nil {
 			if errors.Is(err, errDraining) {
 				// A planned renewal, as for WatchActionRequests.
-				return send(ctx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
+				return send(ctx, ctx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
 					Frame: &action_servicepb.WatchActionGroupsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
 				})
 			}
@@ -165,15 +170,15 @@ func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest
 }
 
 // sendGroupSnapshot sends the groups as snapshot frames of at most snapshotChunk groups, then snapshot_complete.
-func (s *Service) sendGroupSnapshot(ctx context.Context, stream grpc.ServerStreamingServer[action_servicepb.WatchActionGroupsResponse], groups []*action_servicepb.ActionGroup) error {
+func (s *Service) sendGroupSnapshot(ctx, writeCtx context.Context, stream grpc.ServerStreamingServer[action_servicepb.WatchActionGroupsResponse], groups []*action_servicepb.ActionGroup) error {
 	for chunk := range slices.Chunk(groups, snapshotChunk) {
-		if err := send(ctx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
+		if err := send(ctx, writeCtx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
 			Frame: &action_servicepb.WatchActionGroupsResponse_Snapshot{Snapshot: &action_servicepb.ActionGroupChunk{ActionGroups: chunk}},
 		}); err != nil {
 			return err
 		}
 	}
-	return send(ctx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
+	return send(ctx, writeCtx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
 		Frame: &action_servicepb.WatchActionGroupsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}},
 	})
 }

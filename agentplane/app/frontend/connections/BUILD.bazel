@@ -21,23 +21,10 @@ filegroup(
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 ts_library(
-    name = "models",
-    srcs = ["models.ts"],
+    name = "service_accounts",
+    srcs = ["service_accounts.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
-    ],
-)
-
-ts_library(
-    name = "caller_grants_client",
-    srcs = ["caller_grants_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":models",
-        "//agentplane/app/frontend:client",
-    ],
+    deps = ["//agentplane/proto:identity_pb"],
 )
 
 ts_library(
@@ -45,12 +32,11 @@ ts_library(
     srcs = ["connection_service_client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":models",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -60,12 +46,15 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":connection_service_client",
-        ":models",
+        ":service_accounts",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/mcp_edge:connection_service_pb",
     ],
 )
 
@@ -75,12 +64,16 @@ agentplane_vitest_test(
     deps = [
         ":connection_service_client",
         ":consent",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/connections/testing:test_support",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -89,15 +82,14 @@ ts_library(
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":caller_grants_client",
-        ":models",
+        ":service_accounts",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/bindings:table",
+        "//agentplane/app/frontend/policy:watch",
+        "//agentplane/proto:identity_pb",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -107,7 +99,7 @@ agentplane_vitest_test(
     srcs = ["caller_grants.test.tsx"],
     deps = [
         ":caller_grants",
-        ":models",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -115,7 +107,9 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend/policy:watch",
+        "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -130,17 +124,18 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":caller_grants",
-        ":caller_grants_client",
         ":connection_service_client",
         ":management_css",
-        ":models",
+        ":service_accounts",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:inline_name",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -150,7 +145,7 @@ agentplane_vitest_test(
     deps = [
         ":connection_service_client",
         ":management",
-        ":models",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -158,5 +153,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/actions/testing:harness",
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/connections/testing:test_support",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )

@@ -1,8 +1,8 @@
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
-oci_layout_rloc(
-    name = "freecad_test",
+oci_layout_py(
+    name = "freecad_test_image",
     image = "@freecad_test_linux_amd64",
 )
 
@@ -15,9 +15,10 @@ py_library(
         # SkillSpec read by stage_skill().
         "//skills/eval_infra:skill_staging",
         "//skills/freecad:freecad_skill_spec",
-        "//util:oci",
-        "//util/bazel:runfiles",
+        "//skills/freecad/eval:freecad_test_image",
+        "@rules_python//python/runfiles",
         "@pypi//claude_agent_sdk",
+        "//devinfra/oci",
     ],
 )
 
@@ -26,7 +27,6 @@ py_binary(
     data = [
         "baseplate/CHECKLIST.md",
         "baseplate/TASK.md",
-        ":freecad_test",
         "//mcp_infra/exec:docker_launcher",
     ],
     main_module = "skills.freecad.eval.run_eval",

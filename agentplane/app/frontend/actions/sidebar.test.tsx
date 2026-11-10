@@ -1,17 +1,26 @@
 // @vitest-environment happy-dom
 
-import { act, type JSX } from "react";
+import { act, type JSX, type ReactNode } from "react";
 import { Link, MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
+import { create } from "@bufbuild/protobuf";
 
+import { ActionIdentitySchema, ActionState, type ActionRequest } from "../../../action_service/action_service_pb";
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { mount, request, send, unmountLast } from "./testing/harness";
-import type { ActionRequestView } from "./types";
 
 function CurrentPath(): JSX.Element {
   const location = useLocation();
   return <div data-testid="current-path">{location.pathname}</div>;
+}
+
+function ActionsTestApp({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>{children}</ActionRequestsProvider>
+    </MemoryRouter>
+  );
 }
 
 /** The shell's placement: hidden, not unmounted, on the Actions pages. */
@@ -35,14 +44,12 @@ afterEach(async () => {
 
 it("resizes the open Actions area with the keyboard and remembers its height", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
-  await send([request("decision_pending", 1)]);
+  await send([request(ActionState.DECISION_PENDING, 1)]);
 
   const separator = container.querySelector<HTMLElement>('[role="separator"][aria-label="Resize Actions area"]');
   if (!separator) throw new Error("missing Actions area resize separator");
@@ -57,15 +64,13 @@ it("resizes the open Actions area with the keyboard and remembers its height", a
 
 it("keeps the Actions section available and suppresses auto-open until the pending queue clears", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
-  const first = request("decision_pending", 1);
-  const second = request("decision_pending", 2);
+  const first = request(ActionState.DECISION_PENDING, 1);
+  const second = request(ActionState.DECISION_PENDING, 2);
   const toggle = container.querySelector<HTMLButtonElement>(".agentplane-actions-sidebar-toggle");
   if (!toggle) throw new Error("missing always-visible Actions section");
 
@@ -92,22 +97,20 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
 
 it("expands a compact action preview and only offers a decision on the compact card to eligible actions", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const pod = {
-    ...request("decision_pending", 1),
-    action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+    ...request(ActionState.DECISION_PENDING, 1),
+    action: create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" }),
     arguments: { namespace: "test-namespace", labelSelector: "app=example" },
     title: "List pods in namespace test-namespace",
   };
   const ssh = {
-    ...request("decision_pending", 2),
-    action: { group: "ssh", name: "exec" },
+    ...request(ActionState.DECISION_PENDING, 2),
+    action: create(ActionIdentitySchema, { group: "ssh", name: "exec" }),
     arguments: { host: "test-host.example", user: "test-user", command: "systemctl restart backup" },
   };
 
@@ -148,17 +151,15 @@ it("expands a compact action preview and only offers a decision on the compact c
 
 it("shows approval widgets for Kubernetes resource, pod-list, and log reads", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
-  const reads: { request: ActionRequestView; visible: string[]; expands: boolean }[] = [
+  const reads: { request: ActionRequest; visible: string[]; expands: boolean }[] = [
     {
       request: {
-        ...request("decision_pending", 3),
-        action: { group: "kubernetes_admin", name: "resources_get" },
+        ...request(ActionState.DECISION_PENDING, 3),
+        action: create(ActionIdentitySchema, { group: "kubernetes_admin", name: "resources_get" }),
         arguments: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
         title: "inspect deployment",
       },
@@ -167,8 +168,8 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
     },
     {
       request: {
-        ...request("decision_pending", 4),
-        action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+        ...request(ActionState.DECISION_PENDING, 4),
+        action: create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" }),
         arguments: {
           namespace: "test-namespace",
           labelSelector: "app=example",
@@ -181,8 +182,8 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
     },
     {
       request: {
-        ...request("decision_pending", 5),
-        action: { group: "kubernetes_admin", name: "pods_log" },
+        ...request(ActionState.DECISION_PENDING, 5),
+        action: create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_log" }),
         arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
         title: "inspect pod logs",
       },
@@ -191,8 +192,8 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
     },
     {
       request: {
-        ...request("decision_pending", 7),
-        action: { group: "gmail", name: "threads_list" },
+        ...request(ActionState.DECISION_PENDING, 7),
+        action: create(ActionIdentitySchema, { group: "gmail", name: "threads_list" }),
         arguments: { q: "from:deployments@example.com", maxResults: 5 },
         title: "search deployment mail",
       },
@@ -214,21 +215,19 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
 
 it("leaves the disclosure off a card whose opened version would add nothing", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const read = {
-    ...request("decision_pending", 8),
-    action: { group: "sandbox", name: "get" },
+    ...request(ActionState.DECISION_PENDING, 8),
+    action: create(ActionIdentitySchema, { group: "sandbox", name: "get" }),
     arguments: { name: "test-sandbox" },
     title: "inspect the test sandbox",
   };
   const unparsed = {
-    ...request("decision_pending", 9),
+    ...request(ActionState.DECISION_PENDING, 9),
     action: read.action,
     arguments: { name: "test-sandbox", test_extra: "shown on opening" },
     title: "inspect the test sandbox with an unknown argument",
@@ -255,15 +254,13 @@ it("leaves the disclosure off a card whose opened version would add nothing", as
 
 it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const read = {
-    ...request("decision_pending", 6),
-    action: { group: "kubernetes_admin", name: "resources_get" },
+    ...request(ActionState.DECISION_PENDING, 6),
+    action: create(ActionIdentitySchema, { group: "kubernetes_admin", name: "resources_get" }),
     arguments: { apiVersion: "v1", kind: "Pod", name: "api-0" },
     title: "inspect pod",
   };
@@ -275,16 +272,14 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
 
 it("shows the first two pending requests in the closed-sidebar strip and the rest behind its expansion", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <ActionsAttentionBar visible />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <ActionsAttentionBar visible />
+    </ActionsTestApp>
   );
-  const [first, second, third] = [1, 2, 3].map((index) => request("decision_pending", index)) as [
-    ActionRequestView,
-    ActionRequestView,
-    ActionRequestView,
+  const [first, second, third] = [1, 2, 3].map((index) => request(ActionState.DECISION_PENDING, index)) as [
+    ActionRequest,
+    ActionRequest,
+    ActionRequest,
   ];
   const shown = (): (string | undefined)[] =>
     Array.from(container.querySelectorAll<HTMLAnchorElement>(".agentplane-actions-sidebar-request-heading a"), (link) =>
@@ -319,13 +314,11 @@ it("shows the first two pending requests in the closed-sidebar strip and the res
 
 it("keeps the strip's expansion across a visit to a details page that decides one request", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <StripOutsideActionPages />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <StripOutsideActionPages />
+    </ActionsTestApp>
   );
-  const pending = [1, 2, 3, 4].map((index) => request("decision_pending", index));
+  const pending = [1, 2, 3, 4].map((index) => request(ActionState.DECISION_PENDING, index));
   const decided = pending[2]!;
   await send(pending);
   const expansion = (): HTMLButtonElement | null =>

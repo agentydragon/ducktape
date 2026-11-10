@@ -2,7 +2,7 @@
 
 - [ ] Decide on Node.js version management strategy
   - **Current state**: NVM and Bun are NOT installed (directories don't exist)
-  - **Current approach**: Node.js from Nix (`nodejs_22` package, v22.17.1)
+  - **Current approach**: Node.js from Nix (`nodejs_24` package)
   - **All NVM/Bun init code removed** from shell initialization
   - **Decision needed**: Keep using Nix-only, or install a version manager?
   - **Alternatives if multiple versions needed**:
@@ -10,9 +10,6 @@
     - `fnm`: Fast, cross-platform, works with `.node-version` files
     - `Volta`: Rust-based, uses package.json for version config
     - Direct Nix shells: Create `shell.nix` per project
-- [ ] Evaluate full Neovim HM integration (plugins & settings) vs lazy.nvim
-  - Current: HM deploys `config/nvim/`, lazy handles plugins at runtime
-  - Future option: use `programs.neovim.plugins` and disable lazy bootstrap
 - [ ] Learn ranger + consider HM-managed config
   - Maybe port ranger rc/colors over to `nix/home/config/ranger/`
 - [ ] Fold readline/inputrc tweaks into Home Manager
@@ -23,19 +20,7 @@
 - [ ] Consider using Home Manager for GitHub CLI (`gh`) config
   - Capture auth/hosts config (if feasible) and any gh extensions
 
-## Infrastructure
-
-- [ ] Set up personal Nix binary cache on homelab
-  - Options: `nix-serve`, `attic`, `harmonia`, or `cachix` self-hosted
-  - Host on atlas or k3s cluster
-  - Share cache between all personal machines via Nebula mesh
-
 ## Ansible migration items
-
-- [ ] Migrate tuxguitar to Nix when swt build issue is fixed
-  - Currently broken in nixpkgs: swt-4.34 fails to build (deprecated gdk-pixbuf APIs)
-  - Kept in Ansible apt packages for now
-  - Issue: https://github.com/NixOS/nixpkgs/issues/...
 
 - install cli packages
 - zsh as login shell

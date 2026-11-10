@@ -1,4 +1,4 @@
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import { EventSchema, ItemKind, TurnStatus } from "../../../proto/event_pb";
@@ -11,27 +11,19 @@ import {
   setupProgress,
 } from "./history_rows";
 import { testEntity, testItem } from "./testing/entity";
-import type { ThreadEntity } from "./thread_sync";
+import type { ThreadEntity } from "../../../history_service/history_service_pb";
 
 /** A lifecycle entity carrying a real, parseable `Event`: grouping a lifecycle observation depends
  * on what it says, not just its kind. */
-function lifecycleItem(
-  cursor: number,
-  observation: string,
-  value: MessageInitShape<typeof EventSchema>["observation"]
-): ThreadEntity {
-  return testEntity(cursor, "lifecycle", {
-    observation,
-    event: toJson(EventSchema, create(EventSchema, { observation: value })),
-  });
+function lifecycleItem(cursor: number, value: MessageInitShape<typeof EventSchema>["observation"]): ThreadEntity {
+  return testEntity(cursor, { case: "lifecycle", value: { event: create(EventSchema, { observation: value }) } });
 }
 
-const TURN_STARTED = (turnId: string) => lifecycleItem(1, "turn_started", { case: "turnStarted", value: { turnId } });
-const HARNESS_STARTED = (cursor: number) =>
-  lifecycleItem(cursor, "harness_started", { case: "harnessStarted", value: {} });
+const TURN_STARTED = (turnId: string) => lifecycleItem(1, { case: "turnStarted", value: { turnId } });
+const HARNESS_STARTED = (cursor: number) => lifecycleItem(cursor, { case: "harnessStarted", value: {} });
 const TURN_COMPLETED = (cursor: number, status: TurnStatus = TurnStatus.COMPLETED) =>
-  lifecycleItem(cursor, "turn_completed", { case: "turnCompleted", value: { status } });
-const HARNESS_LOST = (cursor: number) => lifecycleItem(cursor, "harness_lost", { case: "harnessLost", value: {} });
+  lifecycleItem(cursor, { case: "turnCompleted", value: { status } });
+const HARNESS_LOST = (cursor: number) => lifecycleItem(cursor, { case: "harnessLost", value: {} });
 
 describe("historyRows", () => {
   it("runs consecutive tool calls and reasoning together, leaving other entities standing alone", () => {
@@ -63,7 +55,7 @@ describe("historyRows", () => {
       testItem(1, ItemKind.TOOL_CALL),
       TURN_COMPLETED(2),
       testItem(3, ItemKind.TOOL_CALL),
-      testEntity(4, "confirmed_input", { harness_message_id: "test-input", origin_command_ids: [] }),
+      testEntity(4, { case: "confirmedInput", value: { harnessMessageId: "test-input", originCommandIds: [] } }),
       testItem(5, ItemKind.TOOL_CALL),
     ];
     expect(historyRows(segments).map((row) => row.kind)).toEqual(["run", "lifecycle_group", "run", "entity", "run"]);
@@ -100,12 +92,12 @@ describe("historyRows", () => {
 
   it("folds setup output into one readable row while retaining every event", () => {
     const segments = [
-      lifecycleItem(1, "setup_started", { case: "setupStarted", value: {} }),
-      lifecycleItem(2, "setup_output", {
+      lifecycleItem(1, { case: "setupStarted", value: {} }),
+      lifecycleItem(2, {
         case: "setupOutput",
         value: { stream: { case: "stdout", value: new Uint8Array([111, 107]) } },
       }),
-      lifecycleItem(3, "setup_finished", { case: "setupFinished", value: { exitCode: 7 } }),
+      lifecycleItem(3, { case: "setupFinished", value: { exitCode: 7 } }),
       HARNESS_STARTED(4),
     ];
     expect(historyRows(segments).map((row) => row.kind)).toEqual(["setup", "lifecycle_group"]);
@@ -116,9 +108,9 @@ describe("historyRows", () => {
 });
 
 describe("setupProgress", () => {
-  const started = lifecycleItem(1, "setup_started", { case: "setupStarted", value: {} });
+  const started = lifecycleItem(1, { case: "setupStarted", value: {} });
   const output = (cursor: number, channel: "stdout" | "stderr", bytes: Uint8Array) =>
-    lifecycleItem(cursor, "setup_output", {
+    lifecycleItem(cursor, {
       case: "setupOutput",
       value: { stream: { case: channel, value: bytes } },
     });
@@ -133,10 +125,7 @@ describe("setupProgress", () => {
     ];
     expect(setupProgress(partial.slice(0, 2))).toEqual(["Cloning into repo...", "Updating files: 10%"]);
     expect(setupProgress(partial)).toEqual(["Cloning into repo...", "Preparing workspace", "Updating files: 100%"]);
-    const finished = [
-      ...partial,
-      lifecycleItem(5, "setup_finished", { case: "setupFinished", value: { exitCode: 7 } }),
-    ];
+    const finished = [...partial, lifecycleItem(5, { case: "setupFinished", value: { exitCode: 7 } })];
     expect(setupProgress(finished)).toEqual(setupProgress(partial));
     expect(summarizeSetup(finished)).toBe("Thread setup failed (exit 7)");
     expect(historyRows(finished)[0]?.entities).toEqual(finished); // Raw evidence remains available on expansion.
@@ -151,9 +140,10 @@ describe("setupProgress", () => {
       output(4, "stderr", euro.slice(1)),
     ];
     expect(setupProgress(partial)).toEqual(["Ready", "€"]);
-    expect(
-      setupProgress([...partial, lifecycleItem(5, "setup_interrupted", { case: "setupInterrupted", value: {} })])
-    ).toEqual(["Ready", "€"]);
+    expect(setupProgress([...partial, lifecycleItem(5, { case: "setupInterrupted", value: {} })])).toEqual([
+      "Ready",
+      "€",
+    ]);
   });
 });
 

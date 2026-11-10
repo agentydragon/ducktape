@@ -14,8 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 CREDENTIALS_PLURAL = "egresscredentials"
-# The `PolicySet` rule type this proxy enforces.
-EGRESS_RULE_TYPE = "egress"
 
 
 class _Wire(BaseModel):
@@ -127,20 +125,11 @@ Target = Annotated[
 ]
 
 
-class AuthenticatedWorkloadTokenSource(_Wire):
-    """The bearer retained from this request's successful workload authentication."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
-
-
 class ProjectedWorkloadTokenSource(_Wire):
-    """A token for another audience, projected into the sidecar and presented on the hop.
+    """A destination-audience token projected into the sidecar and presented on the hop.
 
-    The hop bearer proves the caller to this proxy and carries the proxy's own audience, so a
-    destination validating its own -- the API server against `--api-audiences` above all -- refuses
-    it. This source is the same Pod's identity minted for that destination instead: the sidecar
-    holds it, the workload never does, and the proxy substitutes it only after reviewing it as the
-    very Pod that authenticated.
+    The proxy uses only the token explicitly presented for this audience and reviewed as the same
+    Pod that authenticated the hop; it never implicitly reuses the hop credential.
     """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
@@ -152,21 +141,34 @@ class ProjectedWorkloadTokenSource(_Wire):
     )
 
 
+class KubernetesServiceAccountSource(_Wire):
+    """A ServiceAccount the proxy acts as by impersonation on its own in-cluster API server.
+
+    The proxy presents its own bearer with `Impersonate-User` naming this account; no token for the
+    account is minted or held.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    namespace: str = Field(min_length=1, description="Namespace of the impersonated ServiceAccount.")
+    name: str = Field(min_length=1, description="Name of the impersonated ServiceAccount.")
+
+
 class CredentialSource(_Wire):
     """Exactly one tagged source for the value substituted at a declared target."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     secret_ref: SecretKeyRef | None = None
-    authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = None
     projected_workload_token: ProjectedWorkloadTokenSource | None = None
+    kubernetes_service_account: KubernetesServiceAccountSource | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> CredentialSource:
-        sources = (self.secret_ref, self.authenticated_workload_token, self.projected_workload_token)
+        sources = (self.secret_ref, self.projected_workload_token, self.kubernetes_service_account)
         if sum(source is not None for source in sources) != 1:
             raise ValueError(
-                "source must set exactly one of secretRef, authenticatedWorkloadToken or projectedWorkloadToken"
+                "source must set exactly one of secretRef, projectedWorkloadToken or kubernetesServiceAccount"
             )
         return self
 

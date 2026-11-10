@@ -7,6 +7,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecHealthChecks,
 )
 from pydantic import BaseModel
+from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
@@ -14,7 +15,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.gitlab_spike import runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 GITOPS_NAME = "gitlab-spike-gitops"
 GITOPS_DIR = f"{GENERATED_ROOT}/gitlab-spike/gitops"
@@ -32,15 +32,14 @@ class Variables(BaseModel):
 
 def gitops_chart(app: App, *, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, GITOPS_NAME, disable_resource_name_hashes=True)
+    runfiles_root = Runfiles.CreateOrRaise().root()
     terraform.gitops_terraform(
         chart,
         "terraform",
         module=module,
         variables=Variables(
             human_ssh_keys={
-                host: SshKey(
-                    key=get_required_path(own_repo_rlocation(f"ssh_keys/{host}-forgejo.pub")).read_text().strip()
-                )
+                host: SshKey(key=(runfiles_root / f"ducktape/ssh_keys/{host}-forgejo.pub").read_text().strip())
                 for host in ("atlas", "iguana", "rugged", "wyrm2")
             }
         ),

@@ -192,10 +192,10 @@ moved from a temporary HDD claim to `ovh-ns1001419`:
    HDD source only after acceptance.
 
 The deployed operator exposes a shared master persistence template, not an
-ordinal-specific SC selector, and that template still names `local-path-ovh-ssd`.
-Pod deletion reuses a pre-created Piraeus claim; **PVC deletion does not preserve
-the override**. A template-default change must handle immutable StatefulSet
-claim templates without rolling unaffected masters.
+ordinal-specific SC selector; its template names `piraeus-ssd-local`. Pod deletion
+reuses the existing claim. Deleting a PVC does not guarantee its data or Raft
+identity will be reattached; follow the cold-copy procedure above. A template-default change must handle
+immutable StatefulSet claim templates without rolling unaffected masters.
 
 For later master handoffs, use the same cold-copy/identity checks with explicit
 member control. The last-ordinal scale trick applies to master-2 only. Do not
@@ -252,13 +252,15 @@ it. Verify both data and Keeper health before moving another affected member.
 
 For fresh native MergeTree storage, replay captured `CREATE` definitions after
 guarded `SYSTEM DROP REPLICA` for the exact retired, inactive replica.
-The captured `traces_30d_amt_mv` and `traces_7d_amt_mv`
-were already orphaned on the `102453` survivor: their source/target dependencies
-were absent. Only for those verified orphans, restore the exact captured DDL/UUIDs
-with client per-command
-[`--allow_materialized_view_with_bad_select=1`](https://clickhouse.com/docs/reference/settings/session-settings/allow#allow_materialized_view_with_bad_select).
-Keep the setting out of global configuration and compare `SHOW CREATE` with the
-captured definitions before acceptance.
+The historical `traces_30d_amt_mv` and `traces_7d_amt_mv` definitions were
+orphaned: their source and target tables were absent. The one-time guarded Flux
+cleanup ran to completion on 2026-11-01 and has been retired. Current replicas
+were checked separately; [the investigation](../../debug/clickhouse_orphan_views.md)
+records the endpoint mapping and read-only view counts. Keep the captured
+definitions for recovery, but verify current Langfuse migrations and view
+dependencies before restoring any old definition. A partially initialized
+replica can retain its own local copies, so check it separately before accepting
+its schema.
 
 #### Forgejo Valkey replica
 
@@ -289,10 +291,9 @@ The revised replica-1 handoff preserved the serving master's Pod UID:
    its temporary hold. Recheck native roles, link, offsets, master Pod UID and
    unchanged Pod template after reconciliation resumes.
 
-The shared StatefulSet claim template still selects local-path. Pod recreation
-reuses the replica's pre-created Piraeus claim; PVC deletion loses that override.
-Record it for recovery until a separately reviewed immutable-template handoff
-changes the shared default.
+The shared StatefulSet claim template selects `piraeus-ssd-local`. Pod recreation
+reuses the existing claim; deleting a PVC does not guarantee its data will be
+reattached. Follow the cold-copy and native replication checks above.
 
 For a primary on the target node, use native coordinated `FAILOVER TO <replica-IP>
 6379 TIMEOUT 5000` without `FORCE`, accepting the caught-up converted primary

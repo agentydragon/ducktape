@@ -7,6 +7,23 @@ package(default_visibility = [
     "//devinfra/precommit:__pkg__",
 ])
 
+# Shared inputs for tests that walk the hand-written manifest roots or render Flux paths.
+# Each package glob stops at its Bazel package boundary; this filegroup makes those inputs
+# available at their repo-relative paths in the Linux runfiles tree.
+filegroup(
+    name = "cluster_k8s_inputs",
+    testonly = True,
+    srcs = [
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s/agentplane-staging:manifests",
+        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
+        "//cluster/k8s/cli-proxy-api:manifests",
+        "//cluster/k8s/flux/flux-system:flux_system_files",
+        "//cluster/k8s/home-assistant/app:manifests",
+        "//cluster/k8s/litellm/app:manifests",
+    ],
+)
+
 py_test(
     name = "test_cluster",
     srcs = ["test_cluster.py"],
@@ -29,21 +46,15 @@ py_library(
 )
 
 py_library(
-    name = "tool_resolve",
-    srcs = ["tool_resolve.py"],
-    deps = ["//util/bazel:runfiles"],
-)
-
-py_library(
     name = "kustomize",
     testonly = True,
     srcs = ["kustomize.py"],
     data = ["@multitool//tools/kustomize"],
     deps = [
         ":k8s",
-        ":tool_resolve",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -53,10 +64,11 @@ py_library(
     data = ["@multitool//tools/flux"],
     deps = [
         ":k8s",
-        ":tool_resolve",
         "//cluster/cdk8s:manifest_roots",
+        "@pypi//durationpy",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -131,8 +143,7 @@ py_library(
         "@multitool//tools/helm",
     ],
     deps = [
-        ":tool_resolve",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -150,10 +161,11 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = ["//:MODULE.bazel"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -174,11 +186,11 @@ py_test(
     data = ["//cluster/k8s/agentplane-staging:image_pins"],
     deps = [
         ":kustomize",
-        ":tool_resolve",
-        "//util/bazel:runfiles",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -202,6 +214,8 @@ py_test(
     deps = [
         ":flux",
         ":flux_bootstrap_auth",
+        "@pypi//durationpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -267,8 +281,9 @@ py_test(
     srcs = ["test_nebula_mesh.py"],
     data = ["//:nebula-mesh.json"],
     deps = [
+        "//:conftest",
         "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
+        "//cluster/scripts:nebula_mesh_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -279,16 +294,10 @@ py_test(
     size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
+        ":cluster_k8s_inputs",
+        "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s/agentplane-staging:manifests",
-        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
-        "//cluster/k8s/cli-proxy-api:manifests",
-        "//cluster/k8s/flux/flux-system:flux_bootstrap_files",
-        "//cluster/k8s/flux/flux-system:flux_system_files",
-        "//cluster/k8s/home-assistant/app:manifests",
-        "//cluster/k8s/litellm/app:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -303,12 +312,12 @@ py_test(
         ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -323,9 +332,9 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//cluster/cdk8s/authentik:jwt_rotation",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -347,25 +356,21 @@ py_test(
     name = "test_flux_build",
     # The whole cluster manifest tree below is fetched inside this test's own clock on RBE,
     # which is minutes against the ~7s the test itself spends; see
-    # <devinfra/debug/2026_08_rbe_small_test_timeouts.md>.
+    # <devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md>.
     size = "medium",
     srcs = ["test_flux_build.py"],
     # validate_flux_build needs the whole tree the root kustomization references.
     # cluster_all_files' glob stops at package boundaries, so each local package
-    # supplies its Kustomize inputs through a filegroup. :flux carries the CLI.
+    # supplies its Kustomize inputs through a filegroup. :cluster_k8s_inputs collects them;
+    # :flux carries the CLI.
     data = [
+        ":cluster_k8s_inputs",
         "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s/agentplane-staging:manifests",
-        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
-        "//cluster/k8s/cli-proxy-api:manifests",
-        "//cluster/k8s/flux/flux-system:flux_system_files",
-        "//cluster/k8s/home-assistant/app:manifests",
-        "//cluster/k8s/litellm/app:manifests",
     ],
     deps = [
+        ":conftest",
         ":flux",
-        "//util/bazel:runfiles",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -386,13 +391,13 @@ py_test(
     name = "test_generator_namespace",
     srcs = ["test_generator_namespace.py"],
     data = [
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s/agentplane-staging:manifests",
+        ":cluster_k8s_inputs",
+        "//agentplane/crds:manifests",
     ],
     deps = [
+        ":conftest",
+        "//:conftest",
         "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

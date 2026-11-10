@@ -2,66 +2,54 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import signal
-import tarfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.testing import events, launches
-from agentplane.runner.testing.driver import RunnerDriver
-from agentplane.runner.testing.process_fixtures import RunnerProcess
+from agentplane.env.e2e.testing import events, launches
+from agentplane.env.e2e.testing.driver import RunnerDriver
+from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from agentplane.x.runner_layering import tools_rootfs
+from agentplane.x.runner_layering.local_vm import extract_oci_rootfs
 
 # gazelle:include_dep @pypi//protobuf
 
 
-def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
-    """Expand the layers from a Bazel OCI layout into a disposable child root."""
-    reference = get_required_path(own_repo_rlocation(rloc_file))
-    layout = get_required_path(reference.read_text().strip())
-    index = json.loads((layout / "index.json").read_text())
-    (descriptor,) = index["manifests"]
-    manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
-    manifest = json.loads(manifest_path.read_text())
-    for layer in manifest["layers"]:
-        layer_path = layout / "blobs" / layer["digest"].replace(":", "/")
-        with tarfile.open(layer_path, "r:*") as archive:
-            archive.extractall(destination, filter="data")
-
-
-@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
+@pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
-    harness: runner_pb2.Harness,
+    runfiles: Runfiles,
+    harness: session_pb2.Harness,
     model: ScriptedModel,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     driver: RunnerDriver,
     tmp_path: Path,
 ) -> None:
     """Pinned Codex runs a workload-image tool and keeps workspace/session state across restart."""
-    child_spec = runner_pb2.SessionSpec()
+    child_spec = session_pb2.SessionSpec()
     child_spec.CopyFrom(spec)
     child_spec.cwd = "/workspace"
     child_root = tmp_path / "child-root"
-    codex = get_required_path(launches.CODEX_BINARY)
+    runfiles_root = runfiles.root()
+    codex = runfiles_root / launches.CODEX_BINARY
     binary_dir = child_root / "opt/bin"
     binary_dir.mkdir(parents=True)
     shutil.copyfile(codex, binary_dir / "codex")
     (binary_dir / "codex").chmod(0o555)
-    codex_bwrap = get_required_path("agentplane_codex_cli_linux_x64/codex-resources/bwrap")
+    codex_bwrap = runfiles_root / "agentplane_codex_cli_linux_x64/codex-resources/bwrap"
     resources_dir = child_root / "opt/codex-resources"
     resources_dir.mkdir()
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
     (resources_dir / "bwrap").chmod(0o555)
-    _extract_oci_rootfs("agentplane/x/runner_layering/tools_rootfs.rloc", child_root)
+    extract_oci_rootfs(runfiles_root / tools_rootfs.LAYOUT_RLOCATION, child_root)
     assert (child_root / "usr/local/bin/workload-tool").is_file()
 
     state_dir = tmp_path / "state"
@@ -70,9 +58,10 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     private_sentinel.write_text("runner-owned\n")
     workload_proof = Path(spec.cwd) / "workload-image-proof.txt"
     assert not workload_proof.exists()
-    child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/child_exec_/child_exec"))
+    child_exec = runfiles_root / "ducktape/agentplane/x/runner_layering/child_exec_/child_exec"
     first_runner = await start_runner(
         codex_binary=child_exec,
+        allow_user_namespaces=True,  # The sparse-root experiment creates its own user and mount namespaces.
         harness_env=[
             f"AGENTPLANE_CHILD_ROOT={child_root}",
             f"AGENTPLANE_CHILD_WORKSPACE={spec.cwd}",
@@ -82,6 +71,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
 
     session = await driver.attach("sparse-child-root", spec=child_spec)
     await session.submit_input("input-1", "Reply with exactly: SPARSE_ROOT_TURN_OK")
+    await session.until(events.is_kind("harness_started"))
     request = await model.request()
     await model.reply(request, Text("SPARSE_ROOT_TURN_OK"))
     await session.until(events.turn_completed)
@@ -106,11 +96,11 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     assert tool_done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
     (started,) = events.of_kind(session.seen, "harness_started")
-    os.kill(started.event.harness_started.pid, signal.SIGKILL)
+    os.kill(await first_runner.host_pid(started.event.harness_started.pid), signal.SIGKILL)
     exited = await session.until(events.is_kind("harness_exited"))
     assert exited.cursor > fence.cursor
     assert not exited.event.harness_exited.stopped_by_runner
-    assert first_runner.process.returncode is None, "a native child exit must not terminate the runner"
+    assert first_runner.exit_code is None, "a native child exit must not terminate the runner"
     await session.drain_until_end()
 
     second = await driver.attach("sparse-child-root", spec=child_spec, after_cursor=exited.cursor)

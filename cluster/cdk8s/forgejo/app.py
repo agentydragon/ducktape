@@ -135,7 +135,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             # anti-affinity and the two-worker capacity would otherwise deadlock.
             "rollingUpdate": {"maxUnavailable": 1},
         },
-        # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only) and
+        # Pin to OVH kimsufi nodes: required by the SeaweedFS CSI (OVH-only) and
         # co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
         "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
         "affinity": {
@@ -249,7 +249,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                     "ACCOUNT_LINKING": "login",
                 },
                 # Object storage on SeaweedFS S3: packages (container registry), LFS,
-                # attachments, artifacts. Git repos stay on the seaweedfs-ovh PVC — git
+                # attachments, artifacts. Git repos stay on the seaweedfs-ovh-ssd PVC — git
                 # needs a POSIX filesystem, so there's no S3 backend for repos. Creds are
                 # injected via additionalConfigFromEnvs below.
                 "storage": {
@@ -305,8 +305,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             },
             "requests": {"cpu": "500m", "memory": "512Mi"},
         },
-        # Repos + LFS/packages/attachments/artifacts all live here, on SeaweedFS via the
-        # seaweedfs-ovh CSI (object-backed; git needs a POSIX FS, so no S3 backend).
+        # Git repos use the SeaweedFS CSI PVC for POSIX access; LFS and other objects use S3.
         "persistence": {
             "enabled": True,
             # Mount our pre-provisioned RWX claim (_git_storage) instead of the chart's

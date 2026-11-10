@@ -1,8 +1,8 @@
 # x/bsc
 
 Experimental: pull personal claims / EOBs / reimbursements from **Blue Shield of California**
-via the CMS-mandated Patient Access FHIR API. No code yet — only the registration and
-research notes.
+via the CMS-mandated Patient Access FHIR API. Registration, research, and initial
+Airlock integration are documented here.
 
 ## Goal
 
@@ -113,32 +113,17 @@ Subscription page bug aside, BSC sandbox onboarding is now complete.
 
 ### 2026-05-29 — airlock server-side wired up
 
-SMART on FHIR turns out to be vanilla OAuth2 auth-code + PKCE + a few extras, so
-no new provider type — just extended the existing `GenericOAuth2Provider`:
-
-- `airlock/oauth/provider.py`: added `use_pkce: bool` and `aud: str | None` to
-  `OAuth2ProviderConfig`; added `generate_pkce_pair()` (S256 verifier+challenge);
-  `build_authorize_url(state, code_challenge=...)` emits `code_challenge`,
-  `code_challenge_method=S256`, and `aud` when configured; `exchange_code(code,
-code_verifier=...)` sends the verifier in the token POST.
-- `airlock/oauth/routes.py`: replaced the module-level `_pending_states` global
-  with a per-router `pending_states` dict closed over by `create_oauth_router`,
-  carrying a frozen `_PendingState(provider_name, code_verifier | None)`.
-- `cluster/cdk8s/airlock.py` (`OAUTH_CONFIG`; migrated from
-  `cluster/k8s/agents/airlock/config.yaml`): added `bsc` provider entry —
-  `use_pkce: true`, `aud` = sandbox FHIR base, scopes `interop offline_access`,
-  redirect `https://airlock.allegedly.works/oauth/callback/bsc`. Tokens stored
-  in `airlock` namespace only (no reflector annotations — keep BSC tokens
-  unreflected for now).
-- `cluster/cdk8s/airlock.py` (Deployment): `BSC_CLIENT_ID` /
-  `BSC_CLIENT_SECRET` env vars from `bsc-client-credentials` k8s Secret.
-- Tests in `airlock/oauth/test_provider.py` cover PKCE pair generation, S256
-  challenge correctness, authorize URL with PKCE+aud, exchange with verifier,
-  and the no-PKCE-no-aud default path.
+SMART on FHIR uses the existing `GenericOAuth2Provider` with PKCE and `aud`.
+The current [provider](../../airlock/oauth/provider.py),
+[OAuth routes](../../airlock/oauth/routes.py), and
+[provider tests](../../airlock/oauth/test_provider.py) own authorization-code
+exchange and per-router flow state. The BSC provider and credential wiring live
+in [Airlock's deployment configuration](../../cluster/cdk8s/airlock.py).
+BSC tokens remain in the `airlock` namespace without reflector annotations.
 
 **Remaining steps:**
 
-1. Commit + push + wait for Flux reconcile.
+1. Verify Flux has reconciled the committed configuration.
 2. Hit `https://airlock.allegedly.works/oauth/authorize/bsc` in a browser, log
    in **as a sandbox synthetic member** (NOT a real blueshieldca.com member —
    see "Sandbox member credentials" below), approve consent.

@@ -13,10 +13,11 @@ from pathlib import Path
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, ValidationError
 from pydantic.alias_generators import to_camel
 
 from aiquota.models import (
+    ClaudeResetGrant,
     ExtraSpend,
     FetchError,
     FetchSuccess,
@@ -34,7 +35,8 @@ from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
 logger = logging.getLogger(__name__)
 
-USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+PLAIN_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+USAGE_URL = f"{PLAIN_USAGE_URL}?cedar_ember=1"
 PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 PREPAID_BALANCE_CAPTURE_KEY = "claude_prepaid_balance"
 TOKEN_EXPIRY_SKEW_SECS = 30
@@ -42,6 +44,8 @@ API_TIMEOUT_SECS = 5.0
 SHORT_WINDOW_SECS = 5 * 3600
 LONG_WINDOW_SECS = 7 * 86400
 _OAUTH_HEADERS = {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
+# Anthropic gates reset inventory on both this option and the Claude Code surface.
+_USAGE_HEADERS = {**_OAUTH_HEADERS, "User-Agent": "claude-cli/2.1.292 (external, cli) aiquota/1.0"}
 
 
 class ClaudeSettings(BaseModel):
@@ -114,6 +118,26 @@ class _ClaudePrepaidCreditsResponse(BaseModel):
     model_config = ConfigDict(hide_input_in_errors=True)
 
 
+class _ResetGrant(BaseModel):
+    resets_total: int = Field(ge=0)
+    resets_left: int = Field(ge=0)
+    starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
+    clears: list[str]
+    gives_back_weekly: bool = False
+    paused: bool = False
+    usable_now: bool | None = None
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
+class _ResetInventory(BaseModel):
+    eligible: bool
+    grants: list[_ResetGrant]
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+
+
 def _read_credentials(path: Path) -> tuple[_Credentials, str | None]:
     try:
         raw = path.read_text()
@@ -179,12 +203,10 @@ def _to_window(bucket: UsageBucket | None, window_secs: float) -> QuotaWindow | 
 
 
 def _spend_to_extra_spend(spend: Spend | None) -> ExtraSpend | None:
-    if spend is None or not spend.has_usage_totals:
+    if spend is None or spend.limit is None or spend.used is None:
         return None
-    assert spend.limit is not None
-    assert spend.used is not None
     return ExtraSpend(
-        is_enabled=True,
+        is_enabled=spend.enabled is True,
         monthly_limit_usd=spend.limit.major_units,
         used_usd=spend.used.major_units,
         utilization=spend.utilization_percent,
@@ -197,7 +219,45 @@ def _to_success(usage: UsageResponse, prepaid_balance: PrepaidBalance | None = N
         windows=[window for window in windows if window],
         extra_spend=_spend_to_extra_spend(usage.spend),
         prepaid_balance=prepaid_balance,
+        claude_reset_grants=_reset_grants(usage.cedar_ember),
     )
+
+
+def _reset_grants(raw: object | None) -> list[ClaudeResetGrant] | None:
+    if raw is None:
+        return None
+    try:
+        inventory = _ResetInventory.model_validate(raw)
+    except ValidationError:
+        logger.warning("Claude reset inventory could not be parsed", exc_info=True)
+        return None
+    if not inventory.eligible:
+        return None
+    grants = []
+    for grant in inventory.grants:
+        clears = set(grant.clears)
+        if grant.gives_back_weekly:
+            label = "Fable resets"
+        elif {"five_hour", "seven_day"} <= clears:
+            label = "Full resets"
+        elif clears == {"five_hour"}:
+            label = "5-hour resets"
+        elif clears == {"seven_day"}:
+            label = "Weekly resets"
+        else:
+            label = "Other resets"
+        grants.append(
+            ClaudeResetGrant(
+                label=label,
+                remaining=grant.resets_left,
+                original=grant.resets_total,
+                starts_at=grant.starts_at,
+                expires_at=grant.ends_at,
+                paused=grant.paused,
+                usable_now=grant.usable_now,
+            )
+        )
+    return grants
 
 
 def _prepaid_balance_from_body(body: str) -> PrepaidBalanceAvailable:
@@ -227,9 +287,17 @@ class ClaudeProvider(Provider):
         now = datetime.now(UTC)
         if self.management_client:
             try:
-                body = await self.management_client.fetch_usage(
-                    self.name, USAGE_URL, _OAUTH_HEADERS, capture_key=self.name
-                )
+                try:
+                    body = await self.management_client.fetch_usage(
+                        self.name, USAGE_URL, _USAGE_HEADERS, capture_key=self.name
+                    )
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code not in (400, 404):
+                        raise
+                    logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
+                    body = await self.management_client.fetch_usage(
+                        self.name, PLAIN_USAGE_URL, _OAUTH_HEADERS, capture_key=self.name
+                    )
                 usage = UsageResponse.model_validate_json(body)
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
@@ -244,14 +312,19 @@ class ClaudeProvider(Provider):
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
-            async with self.client_factory(self.name, {USAGE_URL}, API_TIMEOUT_SECS) as client:
+            async with self.client_factory(self.name, {USAGE_URL, PLAIN_USAGE_URL}, API_TIMEOUT_SECS) as client:
                 # An explicitly supplied token belongs to a proxy or another
                 # credential owner; never refresh or write it from this process.
                 if configured_token is None and _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
-                resp = await client.get(USAGE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"})
+                resp = await client.get(USAGE_URL, headers={**_USAGE_HEADERS, "Authorization": f"Bearer {token}"})
+                if resp.status_code in (400, 404):
+                    logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
+                    resp = await client.get(
+                        PLAIN_USAGE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
+                    )
             resp.raise_for_status()
             usage = UsageResponse.model_validate_json(resp.content)
         except Exception as e:

@@ -3,36 +3,36 @@ package sandboxcontroller
 import (
 	"testing"
 
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestQuiesceResultTreatsOnlyQuiescedAsFinal(t *testing.T) {
-	stageResponse := func(stage runnerpb.QuiesceStage) *runnerpb.QuiesceResponse {
-		return &runnerpb.QuiesceResponse{Stage: stage}
+	stageResponse := func(stage sessionpb.QuiesceStage) *sessionpb.QuiesceResponse {
+		return &sessionpb.QuiesceResponse{Stage: stage}
 	}
 
 	tests := []struct {
 		name      string
-		response  *runnerpb.QuiesceResponse
+		response  *sessionpb.QuiesceResponse
 		quiescing bool
 	}{
 		{
 			name:      "draining",
-			response:  stageResponse(runnerpb.QuiesceStage_QUIESCE_STAGE_DRAINING),
+			response:  stageResponse(sessionpb.QuiesceStage_QUIESCE_STAGE_DRAINING),
 			quiescing: true,
 		},
 		{
 			name:      "flushing",
-			response:  stageResponse(runnerpb.QuiesceStage_QUIESCE_STAGE_FLUSHING),
+			response:  stageResponse(sessionpb.QuiesceStage_QUIESCE_STAGE_FLUSHING),
 			quiescing: true,
 		},
 		{
 			name:     "quiesced",
-			response: stageResponse(runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED),
+			response: stageResponse(sessionpb.QuiesceStage_QUIESCE_STAGE_QUIESCED),
 		},
 		{
 			name:      "unknown stage",
-			response:  stageResponse(runnerpb.QuiesceStage(99)),
+			response:  stageResponse(sessionpb.QuiesceStage(99)),
 			quiescing: true,
 		},
 	}

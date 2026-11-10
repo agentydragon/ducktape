@@ -6,6 +6,7 @@ import { HashRouter } from "react-router";
 import App from "../../src/App";
 import type { ComponentType } from "react";
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import "../../src/app.css";
 
@@ -22,10 +23,11 @@ import SnapshotDetailPage from "../../src/pages/SnapshotDetailPage";
 
 import { definitionData } from "./fixtures/definition";
 import { critiqueIssues, fileContent, fps, gradingEdges, tps } from "./fixtures/files";
-import { llmChatRequests, llmRequests } from "./fixtures/llm_requests";
+import { llmAnthropicRequests, llmChatRequests, llmRequests } from "./fixtures/llm_requests";
 import { criticRunDetail, runs } from "./fixtures/runs";
 import { fileTree, snapshotDetail } from "./fixtures/snapshot";
 import { RunModalContext } from "../../src/lib/runModalContext";
+import { createPropsQueryClient } from "../../src/lib/queryClient";
 import {
   coverageCells,
   coverageDefinitions,
@@ -98,6 +100,15 @@ const pages: Record<string, ScenarioPage> = {
     props: {
       requests: llmChatRequests,
       initialExpanded: [4, 5],
+    },
+  },
+
+  // Raw Anthropic Messages request and response JSON, including text and tool content blocks.
+  LLMRequestsAnthropic: {
+    component: LLMRequestViewer,
+    props: {
+      requests: llmAnthropicRequests,
+      initialExpanded: [6],
     },
   },
 
@@ -179,6 +190,7 @@ const pageName = params.get("page");
 const app = document.getElementById("app");
 if (!app) throw new Error("missing #app");
 const root = createRoot(app);
+const queryClient = createPropsQueryClient();
 
 declare global {
   interface Window {
@@ -213,13 +225,15 @@ if (!pageName) {
       </div>
     );
     root.render(
-      <MantineProvider defaultColorScheme="auto">
-        <HashRouter>
-          <RunModalContext.Provider value={{ open: () => undefined }}>
-            {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
-          </RunModalContext.Provider>
-        </HashRouter>
-      </MantineProvider>
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider defaultColorScheme="auto">
+          <HashRouter>
+            <RunModalContext.Provider value={{ open: () => undefined }}>
+              {page.wrapperClassName ? <div className={page.wrapperClassName}>{shot}</div> : shot}
+            </RunModalContext.Provider>
+          </HashRouter>
+        </MantineProvider>
+      </QueryClientProvider>
     );
   }
 }

@@ -1,4 +1,33 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "dcr",
+    testonly = True,
+    srcs = ["dcr.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sdk_dcr_client",
+    testonly = True,
+    srcs = ["sdk_dcr_client.py"],
+    deps = [":dcr"],
+)
+
+py_binary(
+    name = "sdk_dcr_client_bin",
+    testonly = True,
+    main_module = "agentplane.mcp_edge.authserver.sdk_dcr_client",
+    deps = [":sdk_dcr_client"],
+)
 
 go_library(
     name = "authserver",
@@ -15,7 +44,7 @@ go_library(
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",
         "//agentplane/observability",
-        "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_google_uuid//:uuid",
         "@com_github_modelcontextprotocol_go_sdk//auth",
@@ -24,6 +53,36 @@ go_library(
         "@com_github_zitadel_oidc_v3//pkg/oidc",
         "@com_github_zitadel_oidc_v3//pkg/op",
         "@dev_dny_code_ssrf//:ssrf",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
+
+go_test(
+    name = "sdk_dcr_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "sdk_dcr_test.go",
+    ],
+    data = [":sdk_dcr_client_bin"],
+    embed = [":authserver"],
+    tags = ["requires_docker"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver.sdkDCRClientRlocation": "$(rlocationpath :sdk_dcr_client_bin)"},
+    deps = [
+        "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/mcpserver",
+        "//agentplane/mcp_edge/migrations",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/testing/postgres",
+        "//agentplane/workload_auth/auth",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+        "@com_github_lib_pq//:pq",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@com_github_modelcontextprotocol_go_sdk//mcp",
+        "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_google_protobuf//types/known/emptypb",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
@@ -41,13 +100,13 @@ go_test(
     embed = [":authserver"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service/migrations",
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/mcp_edge/connections",
         "//agentplane/mcp_edge/mcpserver",
-        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/mcp_edge/migrations",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/testing/postgres",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
         "@com_github_lib_pq//:pq",

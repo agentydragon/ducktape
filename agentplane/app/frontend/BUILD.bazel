@@ -2,14 +2,17 @@
 # gazelle:exclude test_visual_notifications.py
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
+# gazelle:exclude test_visual_identities.py
+# gazelle:exclude test_visual_history_layout.py
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 # gazelle:exclude test_visual_operation_presentation.py
+# gazelle:exclude test_history_profile.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -39,6 +42,8 @@ filegroup(
         "//agentplane/app/frontend/bindings:typed_lint_srcs",
         "//agentplane/app/frontend/connections:typed_lint_srcs",
         "//agentplane/app/frontend/connections/testing:typed_lint_srcs",
+        "//agentplane/app/frontend/identities:typed_lint_srcs",
+        "//agentplane/app/frontend/policy:typed_lint_srcs",
         "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
         "//agentplane/app/frontend/service_worker:typed_lint_srcs",
         "//agentplane/app/frontend/testing:typed_lint_srcs",
@@ -64,7 +69,6 @@ filegroup(
         "//:node_modules/@opentelemetry/resources",
         "//:node_modules/@opentelemetry/sdk-trace-web",
         "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@tanstack/react-virtual",
         "//:node_modules/@types/node",
         "//:node_modules/date-fns",
         "//:node_modules/happy-dom",
@@ -75,12 +79,17 @@ filegroup(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/action_service:web_push_service_pb",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/policy/api/v1alpha1:policy_types_pb",
+        "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
-        "//agentplane/proto:runner_pb",
-        "//agentplane/proto:sandboxes_pb",
+        "//agentplane/proto:kubernetes_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -113,9 +122,9 @@ ts_config(
 
 # TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
-js_openapi_schema(
+openapi_js_library(
     name = "schema",
-    generator = "//agentplane/app:export_schema_bin",
+    schema = "//agentplane/app:openapi_schema",
 )
 
 ts_library(
@@ -123,10 +132,10 @@ ts_library(
     srcs = ["frontend_config.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":schema",
+        ":app_config_client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
     ],
 )
 
@@ -134,19 +143,17 @@ ts_library(
     name = "trace_search",
     srcs = ["trace_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":schema",
-    ],
+    deps = ["//agentplane/app:app_service_pb"],
 )
 
 agentplane_vitest_test(
     name = "trace_search_test",
     srcs = ["trace_search.test.ts"],
     deps = [
-        ":schema",
         ":trace_search",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
     ],
 )
 
@@ -154,10 +161,7 @@ ts_library(
     name = "langfuse_search",
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":schema",
-    ],
+    deps = ["//agentplane/app:app_service_pb"],
 )
 
 agentplane_vitest_test(
@@ -165,8 +169,8 @@ agentplane_vitest_test(
     srcs = ["langfuse_search.test.ts"],
     deps = [
         ":langfuse_search",
-        ":schema",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/testing:langfuse_search",
     ],
 )
@@ -240,8 +244,39 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
+        ":parsed_json",
         ":schema",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
+    ],
+)
+
+ts_library(
+    name = "app_service_client",
+    srcs = ["app_service_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "app_config_client",
+    srcs = ["app_config_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app_service_client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/proto:session_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "app_config_client_test",
+    srcs = ["app_config_client.test.ts"],
+    deps = [
+        ":app_config_client",
+        "//:node_modules/vitest",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -262,6 +297,13 @@ ts_library(
 )
 
 ts_library(
+    name = "query",
+    srcs = ["query.ts"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/@tanstack/react-query"],
+)
+
+ts_library(
     name = "raw_switch",
     srcs = ["raw_switch.tsx"],
     tsconfig = TSCONFIG,
@@ -269,50 +311,6 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-    ],
-)
-
-js_library(
-    name = "disclosure_css",
-    srcs = ["disclosure.css"],
-)
-
-ts_library(
-    name = "disclosure",
-    srcs = [
-        "disclosure.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":disclosure_css",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-# A height-capped block whose clipped bottom shows the rest, and the shell command and output views
-# built on it that the SSH `exec` Action and the thread's shell tool calls share.
-ts_library(
-    name = "clamped_block",
-    srcs = ["clamped_block.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":disclosure",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "clamped_block_test",
-    srcs = ["clamped_block.test.tsx"],
-    deps = [
-        ":clamped_block",
-        "//:node_modules/@types/react",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -340,10 +338,10 @@ ts_library(
     srcs = ["text_block.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":clamped_block",
         ":operation_section",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:clamped_block",
         "//util/frontend:code_block",
     ],
 )
@@ -360,14 +358,14 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":argv_text",
-        ":clamped_block",
-        ":disclosure",
-        ":json_view",
         ":operation_section",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:clamped_block",
         "//util/frontend:code_block",
+        "//util/frontend:disclosure",
+        "//util/frontend:json_view",
     ],
 )
 
@@ -403,7 +401,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":live_stream",
+        ":stream_reader",
         ":watch_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service:operator_action_service_pb",
@@ -414,10 +412,12 @@ agentplane_vitest_test(
     name = "mcp_linkage_client_test",
     srcs = ["mcp_linkage_client.test.ts"],
     deps = [
-        ":live_stream",
         ":mcp_linkage_client",
+        ":stream_reader",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
+        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend/testing:watch",
     ],
 )
@@ -428,13 +428,17 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":live_stream",
         ":mcp_linkage_client",
+        ":stream_reader",
         ":time_ago",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:presentation",
     ],
 )
 
@@ -443,11 +447,13 @@ agentplane_vitest_test(
     srcs = ["settings/mcp_servers.test.tsx"],
     deps = [
         ":client",
-        ":mcp_linkage_client",
         ":mcp_servers",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
@@ -468,13 +474,29 @@ ts_library(
 )
 
 ts_library(
+    name = "stream_reader",
+    srcs = ["stream_reader.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "stream_reader_test",
+    srcs = ["stream_reader.test.ts"],
+    deps = [
+        ":stream_reader",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
+ts_library(
     name = "live_stream",
     srcs = ["live_stream.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
+        ":stream_reader",
+        "//:node_modules/eventsource-parser",
     ],
 )
 
@@ -483,7 +505,9 @@ agentplane_vitest_test(
     srcs = ["live_stream.test.ts"],
     deps = [
         ":live_stream",
+        ":stream_reader",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 
@@ -492,8 +516,9 @@ ts_library(
     srcs = ["watch_stream.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":live_stream",
+        ":stream_reader",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/zod",
     ],
 )
 
@@ -501,7 +526,7 @@ agentplane_vitest_test(
     name = "watch_stream_test",
     srcs = ["watch_stream.test.ts"],
     deps = [
-        ":live_stream",
+        ":stream_reader",
         ":watch_stream",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:watch",
@@ -514,7 +539,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":format_time",
-        ":live_stream",
+        ":stream_reader",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -525,7 +550,7 @@ agentplane_vitest_test(
     name = "stream_status_test",
     srcs = ["stream_status.test.tsx"],
     deps = [
-        ":live_stream",
+        ":stream_reader",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -540,14 +565,7 @@ ts_library(
     name = "live",
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
-    deps = [
-        ":format_time",
-        ":live_stream",
-        ":schema",
-        ":stream_status",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
+    deps = [":stream_status"],
 )
 
 ts_library(
@@ -559,7 +577,9 @@ ts_library(
         ":format_time",
         ":schema",
         ":status_mark",
+        "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -570,8 +590,11 @@ agentplane_vitest_test(
         ":client",
         ":sandbox_status",
         ":schema",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -625,17 +648,6 @@ ts_library(
 )
 
 ts_library(
-    name = "resize_handle",
-    srcs = ["resize_handle.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/hooks",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
@@ -643,15 +655,15 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":icons",
-        ":resize_handle",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:sidebar",
-        "//agentplane/app/frontend/threads:scroll_debug_tools",
         "//agentplane/app/frontend/threads:thread_list",
+        "//agentplane/app/frontend/threads:thread_view_recorder_tools",
+        "//util/frontend:resize_handle",
     ],
 )
 
@@ -661,10 +673,10 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":live",
-        ":notification_types",
         ":schema",
         ":sidebar",
         ":stream_status",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -673,11 +685,18 @@ agentplane_vitest_test(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
-        "//agentplane/app/frontend/threads:scroll_diagnostics",
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
+        "//agentplane/app/frontend/threads:thread_view_recorder",
+        "//agentplane/app/frontend/threads/testing:state",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -689,13 +708,37 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":schema",
         ":system_css",
+        ":system_status_client",
         ":time_ago",
         ":topbar",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
+    ],
+)
+
+ts_library(
+    name = "system_status_client",
+    srcs = ["system_status_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app_service_client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "system_status_client_test",
+    srcs = ["system_status_client.test.ts"],
+    deps = [
+        ":system_status_client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
     ],
 )
 
@@ -708,22 +751,17 @@ agentplane_vitest_test(
     name = "system_test",
     srcs = ["system.test.tsx"],
     deps = [
-        ":client",
-        ":schema",
         ":system",
+        ":system_status_client",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
     ],
-)
-
-ts_library(
-    name = "notification_types",
-    srcs = ["notification_types.ts"],
-    tsconfig = TSCONFIG,
 )
 
 ts_library(
@@ -732,36 +770,15 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":format_time",
-        ":live_stream",
-        ":notification_types",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "json_view",
-    srcs = ["json_view.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//util/frontend:code_block",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "json_view_test",
-    srcs = ["json_view.test.tsx"],
-    deps = [
-        ":json_view",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/app/frontend/threads:thread_notices",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/notification_service:notifications_pb",
     ],
 )
 
@@ -783,7 +800,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":live_stream",
+        ":stream_reader",
         ":watch_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -818,6 +835,8 @@ ts_library(
         "//agentplane/app/frontend/actions:requests",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/connections:consent",
+        "//agentplane/app/frontend/identities:identity_page",
+        "//agentplane/app/frontend/identities:list",
         "//agentplane/app/frontend/sandboxes:list",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/sandboxes:sandbox_page",
@@ -887,10 +906,10 @@ vitest_config(
     # Specs that need a DOM select a suite-specific environment.
     data = [
         "//:node_modules/happy-dom",
-        "//util/frontend:test_intersection_observer",
+        "//util/frontend:test_setup",
     ],
     environment = "node",
-    setup_files = ["//agentplane/app/frontend/testing:setup.js"],
+    setup_files = ["//util/frontend:test_setup.js"],
 )
 
 # Python visual tests mount the app against canned inventory and runner events.
@@ -915,13 +934,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":app",
-        ":clamped_block",
         ":client",
-        ":disclosure",
         ":harness_network",
         ":live",
-        ":mcp_linkage_client",
-        ":notification_types",
         ":schema",
         ":shell_command_view",
         ":stream_status",
@@ -934,18 +949,40 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
-        "//agentplane/app/frontend/connections:models",
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:decision_fixture",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:runner_status",
+        "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/app/frontend/threads/testing:electric_entity",
+        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/notification_service:notifications_pb",
+        "//agentplane/policy/api/v1alpha1:policy_types_pb",
+        "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/proto:command_pb",
+        "//agentplane/proto:environment_lifecycle_pb",
+        "//agentplane/proto:event_log_pb",
+        "//agentplane/proto:event_pb",
+        "//agentplane/proto:identity_pb",
+        "//agentplane/proto:kubernetes_pb",
+        "//agentplane/proto:session_pb",
+        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
+        "//util/frontend/transcript:history_sizes",
     ],
 )
 
@@ -979,6 +1016,13 @@ filegroup(
 )
 
 agentplane_visual_test(
+    name = "profile_history",
+    src = "test_history_profile.py",
+    tags = ["manual"],
+    title = "Agentplane: history CPU profiles",
+)
+
+agentplane_visual_test(
     name = "visual_scenes",
     src = "test_visual_scenes.py",
     shard_count = 2,
@@ -1000,8 +1044,22 @@ agentplane_visual_test(
 agentplane_visual_test(
     name = "visual_history",
     src = "test_visual_history.py",
-    shard_count = 2,
+    shard_count = 4,
     title = "Agentplane: history",
+)
+
+agentplane_visual_test(
+    name = "visual_history_layout",
+    src = "test_visual_history_layout.py",
+    shard_count = 2,
+    test_deps = ["//agentplane/app/frontend/testing:history_interactions"],
+    title = "Agentplane: history layout",
+)
+
+agentplane_visual_test(
+    name = "visual_identities",
+    src = "test_visual_identities.py",
+    title = "Agentplane: identities",
 )
 
 agentplane_visual_test(
@@ -1055,12 +1113,22 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "harness_behavior",
+    srcs = ["harness_behavior.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":model_catalog",
+        "//agentplane/proto:session_pb",
+    ],
+)
+
+ts_library(
     name = "model_catalog",
     srcs = ["model_catalog.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":schema",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 

@@ -10,6 +10,8 @@ describe("browser tab titles", () => {
     ["/actions/request-1", false, "Actions — Agentplane"],
     ["/sandboxes", false, "Sandboxes — Agentplane"],
     ["/system", false, "System — Agentplane"],
+    ["/identities", false, "Identities — Agentplane"],
+    ["/identities/fake-agent", false, "Identities — Agentplane"],
     ["/sandboxes/work%20space", false, "work space — Agentplane"],
     ["/connection-enrollments/handle", false, "Connect account — Agentplane"],
     ["/actions", true, "Settings — Agentplane"],

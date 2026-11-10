@@ -5,10 +5,10 @@ syntax = "proto3";
 package agentplane.mcp_edge;
 
 import "agentplane/action_service/action_service.proto";
-import "agentplane/proto/sandboxes.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/identity.proto";
 
 // The caller is the integration app acting for an operator, with the operator's OIDC bearer as for
 // `agentplane.action_service.OperatorActionService`. A Connection's active grant lets its OAuth client call the MCP
@@ -158,7 +158,8 @@ message WatchConnectionsResponse {
     ConnectionChunk snapshot = 1;
     google.protobuf.Empty snapshot_complete = 2;
     Connection upsert = 3;
-    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // Planned renewal while the stream is idle: reconnect with fresh authorization. A successful stream ends with it;
+    // bare EOF is a failure. If drain ends an outstanding write, the stream ends without this frame.
     // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
     google.protobuf.Empty reconnect_required = 4;
   }

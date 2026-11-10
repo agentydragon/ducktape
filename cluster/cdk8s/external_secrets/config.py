@@ -99,8 +99,8 @@ def chart(app: App) -> Chart:
     # Before adding a namespace, check what it actually needs. A namespace that only wants
     # the forgejo-images-creds pull secret belongs on the scoped
     # kubernetes-forgejo-images-secret-store instead — that grants one dockerconfigjson,
-    # where an entry here grants every Secret in flux-system. haku-egress-proxy and
-    # osm-mcp were each on this list for exactly that reason and have moved.
+    # where an entry here grants every Secret in flux-system. osm-mcp was on this
+    # list for exactly that reason and has moved.
     _store(
         chart,
         "kubernetes-flux-system-secret-store",
@@ -132,13 +132,12 @@ def chart(app: App) -> Chart:
             "cli-proxy-api",
             "cpap-sync",
             "flux-system",
-            "github-api-proxy",
             "google-mcp",
             "grocy-sf",
             "grocy-vallejo",
             "ha-mcp",
+            "haku-ci",
             "haku-console",
-            "haku-egress-proxy",
             "haku-mailbox",
             "home-assistant",
             "litellm",
@@ -147,9 +146,12 @@ def chart(app: App) -> Chart:
             "monitoring",
             "nix-cache",
             "plaid-mcp",
+            "platform-sessions",  # gaffer-private; ESO lives in that repo's k8s/
             "props",
             "public-coder-agent",
+            "quest-diagnostics",  # gaffer-private; ESO lives in that repo's k8s/
             "sdr",
+            "session-backup",
             "ssh-mcp",
             "study-casino",
             "tana-mcp",

@@ -6,16 +6,17 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 // accountOf is the account a ServiceAccount message names; nil names none.
-func accountOf(account *sandboxes.ServiceAccount) *auth.Account {
+func accountOf(account *identitypb.ServiceAccount) *auth.Account {
 	if account == nil {
 		return nil
 	}
@@ -30,8 +31,8 @@ func wantBound(t *testing.T, what string, c *pb.Connection, want *auth.Account) 
 	}
 }
 
-func message(account auth.Account) *sandboxes.ServiceAccount {
-	return &sandboxes.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
+func message(account auth.Account) *identitypb.ServiceAccount {
+	return &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
 }
 
 func TestConnectionsAreListedOldestFirstWithEveryGrantInRevisionOrder(t *testing.T) {
@@ -156,7 +157,7 @@ func TestARebindRetargetsAnActiveConnectionToALabeledAccount(t *testing.T) {
 	_, err = rebind(c.GetId(), 2, unlabeledAccount)
 	wantCode(t, "a rebind to an unlabeled account", err, codes.FailedPrecondition)
 	_, err = s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
-		ConnectionId: c.GetId(), ExpectedVersion: 2, ServiceAccount: &sandboxes.ServiceAccount{Namespace: "test-agentplane"},
+		ConnectionId: c.GetId(), ExpectedVersion: 2, ServiceAccount: &identitypb.ServiceAccount{Namespace: "test-agentplane"},
 	})
 	wantCode(t, "a rebind to an unnamed account", err, codes.InvalidArgument)
 

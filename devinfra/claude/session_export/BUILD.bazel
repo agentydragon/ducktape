@@ -1,7 +1,9 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "api",
@@ -32,8 +34,6 @@ py_library(
 py_library(
     name = "export_sessions",
     srcs = ["export_sessions.py"],
-    # The page's bundle rides with the CLI that serves it; the OpenAPI exporter the bundle's types come from
-    # imports `:web`, which stays free of it.
     data = ["//devinfra/claude/session_export/frontend:bundle"],
     deps = [
         ":api",
@@ -47,13 +47,13 @@ py_library(
         ":supervisor",
         ":sync",
         ":web",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//httpx",
         "@pypi//uvicorn",
     ],
 )
 
-# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+# Prints the OpenAPI schema for the frontend's declared schema artifact.
 py_binary(
     name = "export_schema_bin",
     main_module = "devinfra.claude.session_export.export_schema",
@@ -61,21 +61,31 @@ py_binary(
     deps = [":export_schema"],
 )
 
-py_binary(
-    name = "export_sessions_bin",
-    main_module = "devinfra.claude.session_export.export_sessions",
-    deps = [":export_sessions"],
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
 )
 
 aspect_py_binary(
-    name = "export_sessions_image_bin",
+    name = "export_sessions_bin",
     main = "export_sessions.py",
     deps = [":export_sessions"],
 )
 
+sh_test(
+    name = "test_cli_launcher",
+    srcs = ["test_cli_launcher.sh"],
+    args = ["$(rlocationpath :export_sessions_bin)"],
+    data = [":export_sessions_bin"],
+    use_bash_launcher = True,
+)
+
 py_image_layer(
     name = "image_layers",
-    binary = ":export_sessions_image_bin",
+    binary = ":export_sessions_bin",
     group = "1000",
     owner = "1000",
 )
@@ -83,8 +93,8 @@ py_image_layer(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("export_sessions_image_bin"),
-    env = py_image_env(binary_name = "export_sessions_image_bin"),
+    entrypoint = py_image_entrypoint("export_sessions_bin"),
+    env = py_image_env(binary_name = "export_sessions_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":image_layers"],
     user = "1000:1000",
@@ -233,6 +243,7 @@ py_test(
     name = "test_store",
     size = "medium",
     srcs = ["test_store.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -251,6 +262,7 @@ py_test(
     name = "test_sync",
     size = "medium",
     srcs = ["test_sync.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":api",
@@ -269,7 +281,7 @@ py_test(
 py_library(
     name = "settings",
     srcs = ["settings.py"],
-    visibility = ["//cluster/cdk8s/claude_session_sync:__pkg__"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -296,6 +308,7 @@ py_test(
     name = "test_supervisor",
     size = "medium",
     srcs = ["test_supervisor.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -320,7 +333,6 @@ py_library(
         ":store",
         ":supervisor",
         "//util:oidc_login",
-        "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -332,9 +344,11 @@ py_test(
     name = "test_web",
     size = "medium",
     srcs = ["test_web.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
+        ":export_sessions",
         ":models",
         ":oauth",
         ":settings",
@@ -355,13 +369,7 @@ py_test(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":settings",
-        ":store",
-        ":supervisor",
-        ":web",
-        "@pypi//httpx",
-    ],
+    deps = [":web"],
 )
 
 py_library(

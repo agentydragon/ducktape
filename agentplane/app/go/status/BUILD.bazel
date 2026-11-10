@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "status",
+    srcs = ["status.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/status",
+    deps = [
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "probes_test.go",
+        "status_test.go",
+    ],
+    embed = [":status"],
+    deps = [
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+    ],
+)

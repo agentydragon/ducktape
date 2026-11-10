@@ -1,0 +1,11 @@
+[Unit]
+Description=Opt-in delayed five-pair systemd cgroup controller stress
+ConditionKernelCommandLine=agentplane.cgroup-stress=1
+
+[Timer]
+OnBootSec=30s
+AccuracySec=1s
+Unit=agentplane-cgroup-stress-probe.service
+
+[Install]
+WantedBy=timers.target

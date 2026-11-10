@@ -1,8 +1,9 @@
 //! Fresh residual claims from current module proposals.
 
+use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    GraphFixture, TreeFixture, assert_module_exports, assert_node_output, debundler_path,
-    run_tree_fixture,
+    TreeFixture, assert_module_exports, assert_node_output, debundler_path, run_tree_graph_fixture,
+    tree_spec_args,
 };
 use serde_json::json;
 use std::fs;
@@ -61,7 +62,7 @@ fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
 
 #[test]
 fn apply_ignores_modules_owned_by_other_chunks() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 ("main", "const a = { value: 4 };\nconsole.log(a.value);\n"),
@@ -83,7 +84,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let source = run.root().join("snapshot");
     let config = run.root().join("spec_config.yaml");
     let proposed = Command::new(debundler_path())
@@ -148,7 +149,7 @@ fn apply_ignores_modules_owned_by_other_chunks() {
 
 #[test]
 fn apply_preserves_case_sensitive_chunk_root() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const a = { value: 4 };\nconsole.log(a.value);\n")],
             module_roots: &[("chunks/Main", "main")],
@@ -158,7 +159,7 @@ fn apply_preserves_case_sensitive_chunk_root() {
     );
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let modules = run.root().join("modules");
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let config = run.root().join("spec_config.yaml");
     let proposed = Command::new(debundler_path())
         .args(["modules", "propose", "--graph"])
@@ -221,14 +222,8 @@ fn apply_preserves_case_sensitive_chunk_root() {
     assert!(!modules.join("chunks/main/services/foo.yaml").exists());
     let out_root = run.root().join("rerun");
     let emitted = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
-        .arg(&config)
-        .arg("--tree-modules")
-        .arg(&modules)
-        .arg("--tree-vendor-marks")
-        .arg(run.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(run.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(run.root()))
         .arg("--out-root")
         .arg(&out_root)
         .output()
@@ -288,6 +283,11 @@ fn applies_fresh_proposal_with_a_structural_selector() {
     let dry_run = fixture.json(&[&args[..], &["--dry-run"]].concat());
     assert_eq!(dry_run["selector_reviews"][0]["kind"], "source_match");
     assert_eq!(dry_run["selector_reviews"][0]["origin"], "synthesized");
+    assert_eq!(
+        dry_run["effect_assessment_unavailable"],
+        "analysis_not_supplied"
+    );
+    assert!(dry_run.get("effect_relocation_assessment").is_none());
     assert_eq!(
         dry_run["selector_reviews"][0]["binding_ids"],
         json!(["provider"])

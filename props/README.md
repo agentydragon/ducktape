@@ -19,6 +19,31 @@ Evaluation system for LLM code critics: critic agents report issues in frozen co
 - `prompts/`: Mako prompt templates
 - `testing/`: shared test fixtures
 
+## Container E2E image reuse
+
+Tests using `e2e_stack` share the image family in
+[`testing/exec_properties.bzl`](testing/exec_properties.bzl). A normal RBE test
+seeds PostgreSQL, registry and Ryuk images; later compatible actions can reuse
+them on the same executor. PostgreSQL, the registry, application servers and test
+databases still follow their normal fixture setup and cleanup. Registry pushes
+still go through the authenticated proxy.
+
+No separate warmup job is required. To exercise preparation and reuse without a
+test-result cache hit, run:
+
+```bash
+bbr test //props/agents/critic:test_e2e --nocache_test_results
+bbr test //props/agents/critic:test_e2e --nocache_test_results
+bbr test //props/agents/grader:test_e2e --nocache_test_results
+```
+
+Check BuildBuddy's execution metadata for actual snapshot reuse; another host or
+VM configuration may still be cold. Infrastructure image repins change the key
+automatically. Bump its recipe version when changing incompatible preparation;
+application image changes use the existing digest checks. Keep
+`remote-snapshot-save-policy` unset and leave remote snapshot eligibility at the
+platform default. Cold execution remains supported by the same fixtures.
+
 ## Setup
 
 ```bash

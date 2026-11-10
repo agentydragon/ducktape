@@ -14,7 +14,7 @@ class SkillSpec:
 
     Attributes:
         archive_rlocation: Runfiles path of the skill's `.skill` zip
-            artifact, e.g. `_main/skills/info_gathering/info_gathering.skill`.
+            artifact, generated from the archive label.
         package_name: Directory the archive prefixes its files with. This
             matches the skill_package name and the inner SKILL.md's parent
             directory.

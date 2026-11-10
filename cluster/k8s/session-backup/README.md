@@ -23,23 +23,39 @@ another workstation's repository. Escrow `restic_password` in the user's passwor
 manager before enabling the client backup timer.
 
 The first workstation timer run captures the Claude and Codex directories,
-including credentials, configuration, caches, transcripts, subagents, original SQLite
-files, and their sidecars. Later runs add incremental snapshots every 15 minutes;
+including credentials, configuration, transcripts, subagents, original SQLite
+files, and their sidecars, except for the exclusions below. Later runs add incremental snapshots every 15 minutes;
 unchanged captures create no new snapshot. The roots respect `CLAUDE_CONFIG_DIR`,
 `CODEX_HOME`, and the Home Manager XDG configuration. Captured history stays in the
 append-only repository even after a harness deletes its local files.
 
-The Claude root's `session-env/` and the Codex root's `worktrees/` are excluded from
-both raw backup and SQLite discovery. The [Claude hook](../../../devinfra/claude/claude_hook/main.rs)
+The Claude root's `session-env/`, `.tmp/`, `cache/`, `.cache/`, `plugins/cache/`,
+`debug/`, and `logs/` and the Codex root's `worktrees/`, `.tmp/`, `tmp/`, `packages/`,
+`cache/`, `.cache/`, `plugins/cache/`, `log/`, and `logs/` are excluded from both raw
+backup and SQLite discovery. The [Claude hook](../../../devinfra/claude/claude_hook/main.rs)
 (`home_session_dir`, `write_session_bazelrc`) writes per-session runtime configuration
-there and directs Bazel's build output into it. Previously staged SQLite images from
-both excluded subtrees are also excluded from new snapshots; existing archived snapshots remain.
+and Bazel output under `session-env/`. Codex's diagnostic `logs_2.sqlite` and its
+sidecars are excluded too, along with its `thread_history_1.sqlite` projection and
+sidecars, the Claude daemon log, and the known Claude and Codex model, statistics,
+authentication-status, and plugin-directory cache files.
+Claude's `paste-cache/` remains included because it can contain user-authored input.
+Previously staged SQLite images from these paths are also
+excluded from new snapshots; existing archived snapshots remain.
 
-The client also scans both trees for SQLite file headers, regardless of filename or
+Codex's [paginated history writer][codex-history-writer] calls SQLite a rebuildable
+view and projects it after flushing the durable rollout JSONL. We retain the journals
+and other databases, including `state_5.sqlite` and `memories_1.sqlite`, rather than
+repeatedly backing up that projection. Codex's paginated reads do not establish a
+complete automatic rebuild procedure; recovering the projection from retained journals
+may require additional work.
+
+[codex-history-writer]: https://github.com/openai/codex/blob/092d3acd6bec3e3a14bdc7e7a2810ab628ab759d/codex-rs/thread-store/src/local/live_writer.rs#L327-L365
+
+The client also scans the included trees for SQLite file headers, regardless of filename or
 subdirectory, and uses SQLite's online backup API to create consistent database images
 under `${XDG_STATE_HOME}/ducktape/ai-session-backup-sqlite`. Each image is a consistent
 copy of one database; the complete directory capture is not an atomic filesystem
-snapshot. Original database files and WALs remain included as raw files and may be
+snapshot. Original files and WALs for included databases are backed up as raw files and may be
 inconsistent when captured during writes. The supplemental images provide the
 consistent database restore path.
 
@@ -53,7 +69,7 @@ consistent database backup.
 
 ### Why Codex session files remain included
 
-Preserve `sessions/**/*.jsonl` alongside SQLite originals and consistent images.
+Preserve `sessions/**/*.jsonl` alongside the other included SQLite originals and consistent images.
 The SQLite history is a projection of the journal, and cannot replace it for complete
 archival. Checked on wyrm2 with Codex CLI 0.162.1 on 2026-10-25 using read-only schema
 inspection and a record-type/field comparison of one completed paginated session.
@@ -114,9 +130,49 @@ before reconciling this component.
 Rest Server's append-only mode prevents workstation clients from pruning snapshots or
 deleting repository data. No automatic repository expiration or pruning is configured;
 the repositories grow until an operator performs planned server-side maintenance.
+The [thread-history rewrite procedure](../../session_backup_maintenance/README.md) stages and verifies
+replacement snapshots before any originals are removed.
 The repository has two storage copies within the cluster and no separate recovery copy.
 
 Before first deployment, complete the replicated-class failover, resync, and expansion
 rehearsal recorded in the [Piraeus production plan](../../docs/plans/piraeus_production.md#replicated-class-and-seaweed-reduction).
 
 TODO: Consider a separate recovery copy of the Restic repository if needed.
+
+## Archive projection and browser
+
+The separate `ai-session-archive` Flux Kustomization imports each host repository into a CNPG
+database in this namespace and serves the owner-authenticated browser at
+`https://ai-session-archive.allegedly.works`. It depends on this session-backup Kustomization,
+CNPG, External Secrets, the Forgejo image credential and image policies, SSO providers, and the
+SeaweedFS operator. The session-backup Kustomization depends only on Piraeus, so an unavailable
+archive dependency does not suspend the Rest Server.
+
+Each workstation has a 15-minute CronJob that scans all retained snapshots. Failed or interrupted
+imports retry on a later run, and newly uploaded snapshots appear without a one-time backfill
+command. Each host has its own `Forbid` concurrency policy. Runs are offset by five minutes to
+spread database and repository load. The database is a rebuildable projection and is not backed up;
+the retained Restic snapshots are the durable backup. Database recovery requires reimporting them.
+
+The importers use the workstation's existing REST credentials and the shared Restic encryption
+password for snapshot inventory, diff, file listing, and extraction against the append-only
+server. Those credentials are not read-only: the server permits appends, but rejects pruning and
+deletion. The archive ArtifactGenerator copies the encrypted `secrets/shared/session-backup.yaml`
+file into its own Kustomize directory. Kustomize's `secretGenerator` packages those encrypted file
+contents under the `session-backup.yaml` Secret key; Flux then decrypts that generated Secret
+value after the Kustomize build and before applying it. Each importer reads only the three keys
+for its machine from the mounted file. Restic receives those values in its child process
+environment; the importer does not log them. The separate `session-backup-rest-server-auth` Secret
+continues to hold only `.htpasswd` for the Rest Server.
+
+The deployment's SSO provider creates and reflects `ai-session-archive-oidc` into this namespace.
+Its Authentik application policy and the API's numeric subject check both restrict access to the
+owner. The CNPG app Secret supplies database credentials. Web and importer pods run the
+versioned migration image as an init container before starting, using a database migration lock
+to serialize concurrent runs. The CNPG database and reflected OIDC Secret must be ready before
+the web process can start.
+
+The import root arguments are `/.claude` and `/.codex`. The source service backs up relative
+`.claude` and `.codex` paths from each workstation home, and these are the roots present in the
+Restic tree. A snapshot's presence alone does not establish that all files were read successfully;
+the importer reports incomplete snapshots or failed files as job failures, and those are retried.

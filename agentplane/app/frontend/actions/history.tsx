@@ -14,20 +14,35 @@ import {
 } from "@mantine/core";
 
 import { Link, useLocation, useSearchParams } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 
-import { Disclosure, DisclosureBody } from "../disclosure";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { durationLabel } from "../format_time";
 import { IconArrowRight } from "../icons";
 import { RawSwitch } from "../raw_switch";
 import { TimeAgo } from "../time_ago";
 import { displayableError } from "../client";
-import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../clamped_block";
+import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
 import { JsonBlock } from "../text_block";
 import { useOptionalStreamStatus } from "../stream_status";
-import type { StreamConnection } from "../live_stream";
+import type { StreamConnection } from "../stream_reader";
 import { ActionCall } from "./call";
 import { CallToolResultView, parseCallToolResult, type CallToolResult } from "./call_tool_result";
-import { actionHistory, followActionRequests, getAction, listActionGroups, type ActionRequestView } from "./client";
+import {
+  ActionState,
+  ExecutorKind,
+  Verdict,
+  type ActionRequest,
+  type Decision,
+} from "../../../action_service/action_service_pb";
+import {
+  actionArguments,
+  actionIdentity,
+  executionError as projectExecutionError,
+  executionResult,
+  timestampText,
+} from "./presentation";
+import { actionHistory, followActionRequests, getAction } from "./client";
 import {
   renderActionCall,
   renderActionOutcome,
@@ -36,8 +51,7 @@ import {
   renderDetailsResult,
   renderNativeDetailsResult,
 } from "./rendering/index";
-import { stateLabel } from "./requests";
-import type { DecisionView } from "./types";
+import { actionGroupsQuery, stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
  * otherwise its stored JSON. */
@@ -80,19 +94,20 @@ function DecisionSummary({
   requestedAt,
   named,
 }: {
-  decision: DecisionView;
+  decision: Decision;
   requestedAt: string;
   named: boolean;
 }): JSX.Element {
   const verb = named
     ? "Decided"
-    : decision.verdict === "deny"
+    : decision.verdict === Verdict.DENY
       ? "Denied"
-      : decision.operator === null
-        ? "Auto-approved"
-        : "Approved";
-  if (decision.operator === null) {
-    const policySet = decision.policy_evidence?.matched.policy_set;
+      : decision.decider.case === "operator"
+        ? "Approved"
+        : "Auto-approved";
+  if (decision.decider.case !== "operator") {
+    const policySet =
+      decision.decider.case === "policy" ? decision.decider.value.evidence?.matched?.policySet : undefined;
     return (
       <>
         {verb}
@@ -105,7 +120,9 @@ function DecisionSummary({
       </>
     );
   }
-  const wait = durationLabel(Math.round((Date.parse(decision.decided_at) - Date.parse(requestedAt)) / 1000));
+  const decidedAt = timestampText(decision.decidedAt);
+  if (decidedAt === undefined) throw new Error("The Action Service omitted Decision.decided_at.");
+  const wait = durationLabel(Math.round((Date.parse(decidedAt) - Date.parse(requestedAt)) / 1000));
   return <>{wait === "" ? verb : `${verb} after ${wait}`}</>;
 }
 
@@ -116,43 +133,48 @@ export function ActionHistoryCard({
   mcp,
   compact = false,
 }: {
-  request: ActionRequestView;
+  request: ActionRequest;
   mcp: boolean;
   compact?: boolean;
 }): JSX.Element {
   const location = useLocation();
   const decision = request.decision;
+  const decisionNote = decision?.decider.case === "operator" ? decision.decider.value.decisionNote : undefined;
+  const action = actionIdentity(request);
+  const args = actionArguments(request);
   const [raw, setRaw] = useState(false);
-  const result = request.execution?.result;
-  const executionError = request.execution?.error;
-  const hasResult = result !== null && result !== undefined;
-  const hasExecutionError = executionError !== null && executionError !== undefined;
-  const decisionState = request.state === "allowed" || request.state === "denied";
+  const result = executionResult(request.execution);
+  const executionError = projectExecutionError(request.execution);
+  const hasResult = result !== undefined && result !== null;
+  const hasExecutionError = executionError !== undefined;
+  const decisionState = request.state === ActionState.ALLOWED || request.state === ActionState.DENIED;
   const call = mcp && hasResult ? parseCallToolResult(result) : null;
   const prettyResult = mcp
     ? call === null
       ? undefined
-      : renderDetailsResult(request.action, call)
+      : renderDetailsResult(action, call)
     : hasResult
-      ? renderNativeDetailsResult(request.action, result)
+      ? renderNativeDetailsResult(action, result)
       : undefined;
-  const combinedCall = renderActionCall(request.action, request.arguments, call ?? undefined);
-  const actionOutcome = call === null ? undefined : renderActionOutcome(request.action, call);
-  const toolError = request.state === "succeeded" && call?.isError === true;
+  const combinedCall = renderActionCall(action, args, call ?? undefined);
+  const actionOutcome = call === null ? undefined : renderActionOutcome(action, call);
+  const toolError = request.state === ActionState.SUCCEEDED && call?.isError === true;
   const decisionLabel =
-    decision === null
+    decision === undefined
       ? undefined
-      : decision.verdict === "allow"
-        ? decision.operator === null
-          ? "Auto-allowed"
-          : "Allowed"
+      : decision.verdict === Verdict.ALLOW
+        ? decision.decider.case === "operator"
+          ? "Allowed"
+          : "Auto-allowed"
         : "Denied";
   const outcomeLabel = toolError
     ? "Tool error"
     : (actionOutcome?.label ??
       (decisionState ? (decisionLabel ?? stateLabel(request.state)) : stateLabel(request.state)));
   const failure =
-    ["failed", "cancelled", "execution_unknown"].includes(request.state) || toolError || actionOutcome?.failed === true;
+    [ActionState.FAILED, ActionState.CANCELLED, ActionState.EXECUTION_UNKNOWN].includes(request.state) ||
+    toolError ||
+    actionOutcome?.failed === true;
   const [receiptOpen, setReceiptOpen] = useState(failure);
   useEffect(() => {
     if (failure) setReceiptOpen(true);
@@ -163,9 +185,9 @@ export function ActionHistoryCard({
   }
   const color = failure
     ? "red"
-    : request.state === "succeeded"
+    : request.state === ActionState.SUCCEEDED
       ? "green"
-      : request.state === "denied"
+      : request.state === ActionState.DENIED
         ? "gray"
         : "blue";
   const status = (
@@ -175,22 +197,26 @@ export function ActionHistoryCard({
   );
   const timestamp = (
     <Text size="xs" c="dimmed">
-      {decision && (
+      {decision !== undefined && (
         <>
-          <DecisionSummary decision={decision} requestedAt={request.created_at} named={decisionState} />
+          <DecisionSummary
+            decision={decision}
+            requestedAt={timestampText(request.createdAt) ?? ""}
+            named={decisionState}
+          />
           {" · "}
         </>
       )}
-      {request.execution?.completed_at ? "Completed " : "Updated "}
-      <TimeAgo value={request.execution?.completed_at ?? request.updated_at} />
+      {request.execution?.completedAt ? "Completed " : "Updated "}
+      <TimeAgo value={timestampText(request.execution?.completedAt ?? request.updatedAt) ?? ""} />
     </Text>
   );
   const pretty =
     call !== null ||
     prettyResult !== undefined ||
-    renderDetailsArguments(request.action, request.arguments) !== undefined ||
+    renderDetailsArguments(action, args) !== undefined ||
     combinedCall !== undefined;
-  const actionLabel = renderActionLabel(request.action, request.arguments);
+  const actionLabel = renderActionLabel(action, args);
   const receipt = (
     <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">
       <ActionCall
@@ -203,13 +229,9 @@ export function ActionHistoryCard({
         combinedCall={combinedCall}
         detailsOnly={compact}
       />
-      {decision?.decision_note && (
-        <ClampedBlock
-          maxHeightRem={TEXT_MAX_HEIGHT_REM}
-          lines={lineCount(decision.decision_note)}
-          label="Decision note"
-        >
-          <Text size="sm">{decision.decision_note}</Text>
+      {decisionNote && (
+        <ClampedBlock maxHeightRem={TEXT_MAX_HEIGHT_REM} lines={lineCount(decisionNote)} label="Decision note">
+          <Text size="sm">{decisionNote}</Text>
         </ClampedBlock>
       )}
       {(hasResult || hasExecutionError || !decisionState) && (
@@ -238,7 +260,7 @@ export function ActionHistoryCard({
               <div>
                 {actionLabel === undefined ? (
                   <Text fw={600}>
-                    {request.action.group} / {request.action.name}
+                    {action.group} / {action.name}
                   </Text>
                 ) : (
                   actionLabel
@@ -277,23 +299,6 @@ export function ActionHistoryCard({
   );
 }
 
-/** Each configured Action group's executor kind, by group key: `null` until the groups arrive, and
- * for good when they cannot be read, which `error` then says. */
-function useExecutorKinds(): {
-  kinds: ReadonlyMap<string, string> | null;
-  error: string | null;
-} {
-  const [kinds, setKinds] = useState<ReadonlyMap<string, string> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void listActionGroups().then(
-      (groups) => setKinds(new Map(groups.map((group) => [group.key, group.executor_kind]))),
-      (failure: unknown) => setError(displayableError(failure))
-    );
-  }, []);
-  return { kinds, error };
-}
-
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
 function ActionHistoryRequests({
   includeAutoAllowed,
@@ -302,20 +307,20 @@ function ActionHistoryRequests({
   includeAutoAllowed: boolean;
   showAll: () => void;
 }): JSX.Element {
-  const [requests, setRequests] = useState<ActionRequestView[]>([]);
+  const [requests, setRequests] = useState<ActionRequest[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
-  const rows = useRef<ActionRequestView[]>([]);
+  const rows = useRef<ActionRequest[]>([]);
   const loadedMore = useRef(false);
   const pageInFlight = useRef(false);
   const active = useRef(true);
   const sentinel = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   useOptionalStreamStatus("Actions", connection);
-  const replaceRows = useCallback((update: (previous: ActionRequestView[]) => ActionRequestView[]): void => {
+  const replaceRows = useCallback((update: (previous: ActionRequest[]) => ActionRequest[]): void => {
     setRequests((previous) => {
       const next = update(previous);
       rows.current = next;
@@ -338,26 +343,28 @@ function ActionHistoryRequests({
         // The first page does not contain every still-running receipt after paging.
         // Refresh those retained rows by identity as well, without rereading all history.
         const page = await actionHistory(undefined, includeAutoAllowed);
-        const pageIds = new Set(page.items.map((row) => row.id));
+        const pageIds = new Set(page.actionRequests.map((row) => row.id));
         const unfinished = rows.current.filter(
-          (row) => !pageIds.has(row.id) && ["allowed", "dispatching", "running"].includes(row.state)
+          (row) =>
+            !pageIds.has(row.id) &&
+            [ActionState.ALLOWED, ActionState.DISPATCHING, ActionState.RUNNING].includes(row.state)
         );
         const updates = await Promise.all(unfinished.map((row) => getAction(row.id)));
         if (!active.current || current !== generation) return;
         replaceRows((previous) => {
-          const fresh = new Map([...updates, ...page.items].map((row) => [row.id, row]));
+          const fresh = new Map([...updates, ...page.actionRequests].map((row) => [row.id, row]));
           // A page response can race with a newer receipt already seen on another request.
           for (const row of previous) {
             const candidate = fresh.get(row.id);
             if (candidate && row.version > candidate.version) fresh.set(row.id, row);
           }
-          const latest = page.items.map((row) => fresh.get(row.id)!);
+          const latest = page.actionRequests.map((row) => fresh.get(row.id)!);
           if (!loadedMore.current) return latest;
-          const firstPageIds = new Set(page.items.map((row) => row.id));
+          const firstPageIds = new Set(page.actionRequests.map((row) => row.id));
           const older = previous.filter((row) => !firstPageIds.has(row.id));
           return [...latest, ...older.map((row) => fresh.get(row.id) ?? row)];
         });
-        if (!loadedMore.current) setCursor(page.next_cursor);
+        if (!loadedMore.current) setCursor(page.nextCursor ?? null);
         setError(null);
       } catch (failure) {
         if (active.current && current === generation) setError(displayableError(failure));
@@ -398,10 +405,10 @@ function ActionHistoryRequests({
       loadedMore.current = true;
       replaceRows((previous) => {
         const ids = new Set(previous.map((row) => row.id));
-        return [...previous, ...page.items.filter((row) => !ids.has(row.id))];
+        return [...previous, ...page.actionRequests.filter((row) => !ids.has(row.id))];
       });
-      if (page.next_cursor === cursor) throw new Error("History returned the same page cursor. Please retry.");
-      setCursor(page.next_cursor);
+      if (page.nextCursor === cursor) throw new Error("History returned the same page cursor. Please retry.");
+      setCursor(page.nextCursor ?? null);
     } catch (failure) {
       if (active.current) setPageError(displayableError(failure));
     } finally {
@@ -421,13 +428,16 @@ function ActionHistoryRequests({
     observer.observe(node);
     return () => observer.disconnect();
   }, [cursor, loading, loadingMore, pageError, loadMore]);
-  const executors = useExecutorKinds();
-  const decided = requests.filter((request) => request.state !== "decision_pending");
+  const groups = useQuery(actionGroupsQuery());
+  const executors = new Map(groups.data?.map((group) => [group.key, group.executorKind]));
+  const decided = requests.filter((request) => request.state !== ActionState.DECISION_PENDING);
 
   return (
     <Stack>
       {error && <Text c="red">{error}</Text>}
-      {executors.error && <Alert color="orange">Action group metadata could not be loaded. {executors.error}</Alert>}
+      {groups.error && (
+        <Alert color="orange">Action group metadata could not be loaded. {displayableError(groups.error)}</Alert>
+      )}
       {loading && <Text role="status">Loading actions…</Text>}
       {!loading && !error && decided.length === 0 && (
         <Stack gap="xs">
@@ -446,7 +456,7 @@ function ActionHistoryRequests({
           key={request.id}
           compact
           request={request}
-          mcp={executors.kinds?.get(request.action.group) === "mcp"}
+          mcp={executors.get(actionIdentity(request).group) === ExecutorKind.MCP}
         />
       ))}
       <div ref={sentinel} data-testid="action-history-sentinel">

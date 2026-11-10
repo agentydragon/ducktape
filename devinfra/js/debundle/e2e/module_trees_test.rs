@@ -2,10 +2,12 @@
 //! and every chunk's selectors resolve as one program.
 
 use debundle_e2e_support::{
-    TreeFixture, TreeRun, assert_module_exports, assert_module_source,
-    read_chunk_selector_outcomes, run_tree_fixture,
+    TreeFixture, TreeRun, assert_module_exports, assert_module_source, debundler_path,
+    read_chunk_selector_outcomes, run_tree_fixture, tree_spec_args,
 };
 use serde_json::{Value, json};
+use std::fs;
+use std::process::Command;
 
 const MAIN: &str = "console.log('main');\n";
 const ROUTING: &str = r#"function pickProvider(name) {
@@ -34,6 +36,59 @@ fn assert_failed(run: &TreeRun) {
         run.result.stdout,
         run.result.stderr,
     );
+}
+
+fn rerun_tree(run: &TreeRun, output_dir: &str) -> std::process::Output {
+    let root = run.root();
+    Command::new(debundler_path())
+        .args(["run"])
+        .args(tree_spec_args(root))
+        .arg("--out-root")
+        .arg(root.join(output_dir))
+        .output()
+        .unwrap()
+}
+
+fn assert_duplicate_config_rejected(run: &TreeRun, yaml: &str, output_dir: &str) {
+    let config = run.root().join("spec_config.yaml");
+    fs::write(&config, yaml).unwrap();
+    let output = rerun_tree(run, output_dir);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "duplicate mapping key was accepted"
+    );
+    assert!(stderr.contains("spec_config.yaml"), "{stderr}");
+    assert!(stderr.contains("duplicate entry"), "{stderr}");
+    assert!(stderr.contains("line"), "{stderr}");
+}
+
+#[test]
+fn duplicate_tree_config_mapping_keys_are_rejected() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[("main", MAIN)],
+            module_roots: &[("main", "main")],
+            modules: &[("main/empty.yaml", "members: []\n")],
+        },
+        &[],
+    );
+    assert_succeeded(&run);
+
+    let config = fs::read_to_string(run.root().join("spec_config.yaml")).unwrap();
+    let duplicate_unassigned_mode = config.replace(
+        "unassigned_mode:\n  main: { kind: inline_in_entry }\n",
+        "unassigned_mode:\n  main: { kind: per_atomic_group }\n  main: { kind: inline_in_entry }\n",
+    );
+    assert_ne!(duplicate_unassigned_mode, config);
+    assert_duplicate_config_rejected(&run, &duplicate_unassigned_mode, "duplicate-unassigned");
+
+    let duplicate_module_root = config.replace(
+        "module_roots:\n  main: main\n",
+        "module_roots:\n  main: main\n  main: main\n",
+    );
+    assert_ne!(duplicate_module_root, config);
+    assert_duplicate_config_rejected(&run, &duplicate_module_root, "duplicate-module-root");
 }
 
 /// Two trees whose roots name the same chunk file, each claiming its own
@@ -90,7 +145,7 @@ fn two_trees_share_one_chunk() {
 
 /// A module in one chunk's tree uses a binding the chunk imports from another
 /// mapped chunk: the import is rebuilt relative to the module's own file and
-/// keeps the legacy local name, while the other chunk's entry exports its
+/// uses the readable local name, while the other chunk's entry exports its
 /// binding under both names. Each mapped chunk writes its `modules.json` report.
 #[test]
 fn tree_module_imports_from_another_mapped_chunk() {
@@ -140,8 +195,8 @@ fn tree_module_imports_from_another_mapped_chunk() {
     assert_module_source(
         &run.out_root,
         "app/cli/runtime/session.js",
-        &["import { printFeature } from \"../../print/entry.js\""],
-        &["PrintFeature"],
+        &["import { PrintFeature } from \"../../print/entry.js\""],
+        &["printFeature"],
     );
     // Loading the module resolves its `../../print/entry.js` import.
     assert_module_exports(

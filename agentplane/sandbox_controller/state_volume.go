@@ -25,8 +25,15 @@ func validateStateVolume(template *sandboxapi.SandboxTemplate) *unready {
 		return layoutMismatch("state volume name is empty")
 	}
 	layout := state.Layout
-	if layout.Type != sandboxapi.DirectoryTree || layout.Filesystem != "" || claimMode(state.Claim) != corev1.PersistentVolumeFilesystem {
-		return layoutMismatch("state volume currently supports DirectoryTree on a Filesystem claim")
+	if claimMode(state.Claim) != corev1.PersistentVolumeFilesystem {
+		return layoutMismatch("state volume requires a Filesystem claim")
+	}
+	if template.Spec.Firecracker != nil {
+		if layout.Type != sandboxapi.RawDiskImage || layout.Filesystem != "ext4" {
+			return layoutMismatch("Firecracker state requires an ext4 RawDiskImage")
+		}
+	} else if layout.Type != sandboxapi.DirectoryTree || layout.Filesystem != "" {
+		return layoutMismatch("Pod and VM state require DirectoryTree")
 	}
 	return nil
 }
@@ -62,7 +69,7 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *sandboxapi.
 		return conflict, nil
 	}
 	if claimMode(pvc.Spec) != corev1.PersistentVolumeFilesystem {
-		return layoutMismatch("the state PVC must remain a DirectoryTree on a Filesystem claim"), nil
+		return layoutMismatch("the state PVC must remain a Filesystem claim"), nil
 	}
 	recordText, hasRecord := pvc.Annotations[StateVolumeRecordAnnotation]
 	if !hasRecord {
@@ -70,8 +77,17 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *sandboxapi.
 	}
 	var recorded stateVolumeRecord
 	if err := json.Unmarshal([]byte(recordText), &recorded); err != nil ||
-		recorded.Layout.Type != sandboxapi.DirectoryTree || recorded.Layout.Filesystem != "" {
+		!((recorded.Layout.Type == sandboxapi.DirectoryTree && recorded.Layout.Filesystem == "") ||
+			(recorded.Layout.Type == sandboxapi.RawDiskImage && recorded.Layout.Filesystem == "ext4")) {
 		return layoutMismatch(fmt.Sprintf("PVC %s has no supported state layout record", pvc.Name)), nil
+	}
+	// Never reinterpret retained contents when a template changes backend.
+	template, blocked, err := r.template(ctx, sandbox)
+	if err != nil || blocked != nil {
+		return blocked, err
+	}
+	if !equality.Semantic.DeepEqual(recorded.Layout, template.Spec.StateVolume.Layout) {
+		return layoutMismatch("state PVC layout differs from the current template"), nil
 	}
 	if pvc.UID == "" {
 		return layoutMismatch("state claim has no UID"), nil

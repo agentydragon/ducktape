@@ -431,6 +431,33 @@ source_matches:
         name: selectedSessions
 ```
 
+### Keep an adjacent declaration as local selector context
+
+A context range can use a distinctive declaration to select a nearby helper
+without claiming that declaration. Here the class supplies structural context;
+only `createCache` is listed in `bindings[]` and becomes an export of this
+module:
+
+```yaml
+source_matches:
+  - match: |
+      class Panel {
+        get kind() { return "settings-panel"; }
+      }
+      function createCache() { return new Map(); }
+    bindings:
+      - local: createCache
+        name: settingsPanelCache
+```
+
+This entry does not claim or move the class; it can remain residual or be
+claimed separately. Context is local to this selector and does not create a
+capture that another module's selector can reference. If another selector needs
+the class as an anchor, keep its source-match owner or use a supported selector
+that identifies it. A chunk rename preserves an emitted name but does not
+recreate a selector entity. After reducing ownership, validate selectors against
+the captured source and run the normal assignment gate.
+
 If the selected binding is one declarator inside a wider comma-list declaration,
 write only the selected declarator in the selector and list that selector-local
 name in `bindings[]`. Debundle can align that single declarator to the matching

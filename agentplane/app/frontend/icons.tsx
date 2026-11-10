@@ -19,6 +19,7 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
 import IconHelpCircle from "@tabler/icons-react/dist/esm/icons/IconHelpCircle.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
+import IconId from "@tabler/icons-react/dist/esm/icons/IconId.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
@@ -31,7 +32,6 @@ import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconTrash from "@tabler/icons-react/dist/esm/icons/IconTrash.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
-import IconZoomCode from "@tabler/icons-react/dist/esm/icons/IconZoomCode.mjs";
 
 export {
   IconAlertTriangle,
@@ -52,6 +52,7 @@ export {
   IconHeartbeat,
   IconHelpCircle,
   IconHistory,
+  IconId,
   IconListCheck,
   IconMenu2,
   IconPlayerPause,
@@ -64,5 +65,4 @@ export {
   IconSettings,
   IconTrash,
   IconX,
-  IconZoomCode,
 };

@@ -71,8 +71,8 @@ py_library(
         ":config",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

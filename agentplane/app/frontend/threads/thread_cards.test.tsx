@@ -1,17 +1,24 @@
 // @vitest-environment happy-dom
+import {
+  ThreadPayloadField,
+  ThreadCommandOutcome,
+  type ThreadItemSchema,
+  type ThreadEntity,
+} from "../../../history_service/history_service_pb";
 
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { Operation } from "../../../proto/command_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
-import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { EntityCard } from "./thread_cards";
 import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, toggle } from "./testing/state";
-import { ThreadSyncContext, type ThreadEntity } from "./thread_sync";
+import { ThreadSyncContext } from "./thread_sync";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -52,13 +59,12 @@ async function renderCard(
 
 type Observation = MessageInitShape<typeof EventSchema>["observation"];
 
-function renderLifecycle(observation: string, event: Observation): Promise<HTMLDivElement> {
-  const state = { observation, event: toJson(EventSchema, create(EventSchema, { observation: event })) };
-  return renderCard(entity("lifecycle", state, {}), {});
+function renderLifecycle(event: Observation): Promise<HTMLDivElement> {
+  return renderCard(entity({ case: "lifecycle", value: { event: create(EventSchema, { observation: event }) } }), {});
 }
 
 async function disclose(container: HTMLElement, summary: string): Promise<void> {
-  const control = [...container.querySelectorAll(".agentplane-disclosure-summary")].find(
+  const control = [...container.querySelectorAll(".ui-disclosure-summary")].find(
     (element) => element.textContent === summary
   );
   if (!control) throw new Error(`no ${summary} disclosure`);
@@ -68,16 +74,16 @@ async function disclose(container: HTMLElement, summary: string): Promise<void> 
 const PROSE = "Run **every** test\n- first";
 
 describe("recovery presentation", () => {
-  it.each<[string | null, string[]]>([
-    [null, ["Interrupted"]],
-    ["text", []],
+  it.each<[MessageInitShape<typeof ThreadItemSchema>["completion"], string[]]>([
+    [{ case: undefined }, ["Interrupted"]],
+    [{ case: "text", value: {} }, []],
   ])("badges retained text that completed as %j with %j", async (completion, badges) => {
     const container = await renderCard(
       testItem(
         1,
         ItemKind.ASSISTANT_TEXT,
         { completion, recovery: RecoveryDisposition.RETAINED },
-        { textRef: reference("test-entity-1", "text") }
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
       ),
       { "test-entity-1:text": "Remember the name in the margin" }
     );
@@ -90,8 +96,8 @@ describe("recovery presentation", () => {
       testItem(
         1,
         ItemKind.ASSISTANT_TEXT,
-        { completion: null, recovery: RecoveryDisposition.ABSENT },
-        { textRef: reference("test-entity-1", "text") }
+        { completion: { case: undefined }, recovery: RecoveryDisposition.ABSENT },
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
       ),
       { "test-entity-1:text": "The seam widened." }
     );
@@ -108,11 +114,11 @@ describe("recovery presentation", () => {
         1,
         ItemKind.ASSISTANT_TEXT,
         {
-          completion: null,
+          completion: { case: undefined },
           recovery: RecoveryDisposition.UNKNOWN,
-          recovery_reason: "The harness history could not be inspected.",
+          recoveryReason: "The harness history could not be inspected.",
         },
-        { textRef: reference("test-entity-1", "text") }
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
       ),
       { "test-entity-1:text": "The bells were ringing." }
     );
@@ -127,17 +133,16 @@ describe("recovery presentation", () => {
         1,
         ItemKind.TOOL_CALL,
         {
-          tool_name: "Bash",
-          completion: null,
-          tool_succeeded: null,
+          toolName: "Bash",
+          completion: { case: undefined },
           recovery: RecoveryDisposition.REVISED,
         },
-        { outputRef: reference("test-entity-1", "output") }
+        { outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT) }
       ),
       { "test-entity-1:output": "aborted" }
     );
     expect(badgeLabels(container).sort()).toEqual(["Interrupted", "Revised for continuation"]);
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(container.textContent).toContain("Recovery content does not establish a tool execution outcome.");
     expect(container.textContent).toContain("Continuation output");
     expect(container.textContent).toContain("aborted");
@@ -150,13 +155,17 @@ describe("recovery presentation", () => {
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "Bash", completion: "tool", tool_succeeded: true, recovery: RecoveryDisposition.REVISED },
-        { outputRef: reference("test-entity-1", "output") }
+        {
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: true } },
+          recovery: RecoveryDisposition.REVISED,
+        },
+        { outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT) }
       ),
       { "test-entity-1:output": "Created report.txt" }
     );
     expect(badgeLabels(container)).toEqual(["Revised for continuation"]);
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(badgeLabels(container)).toEqual(["Revised for continuation"]);
   });
 
@@ -166,12 +175,11 @@ describe("recovery presentation", () => {
         1,
         ItemKind.TOOL_CALL,
         {
-          tool_name: "Bash",
-          completion: "tool",
-          tool_succeeded: true,
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: true } },
           recovery: RecoveryDisposition.ABSENT,
         },
-        { outputRef: reference("test-entity-1", "output") }
+        { outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT) }
       ),
       { "test-entity-1:output": "Created report.txt" }
     );
@@ -187,7 +195,7 @@ describe("recovery presentation", () => {
 describe("an item the recovery left as it was", () => {
   // The containers a card puts status badges in, which take their margin or gap even when empty.
   const blankStatusWrappers = (container: HTMLElement): Element[] =>
-    [...container.querySelectorAll(".mantine-Group-root, .agentplane-step-trailing")].filter(
+    [...container.querySelectorAll(".mantine-Group-root, .transcript-step-trailing")].filter(
       (wrapper) => wrapper.childElementCount === 0
     );
   const bodies = {
@@ -201,7 +209,12 @@ describe("an item the recovery left as it was", () => {
     ["reasoning step", ItemKind.REASONING],
   ])("gives retained, finished %s no badge and no row for one", async (_, kind) => {
     const container = await renderCard(
-      testItem(1, kind, { recovery: RecoveryDisposition.RETAINED }, { textRef: reference("test-entity-1", "text") }),
+      testItem(
+        1,
+        kind,
+        { recovery: RecoveryDisposition.RETAINED },
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
+      ),
       bodies
     );
     expect(container.textContent).toContain("Kept in context");
@@ -214,15 +227,22 @@ describe("an item the recovery left as it was", () => {
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "Bash", completion: "tool", tool_succeeded: true, recovery: RecoveryDisposition.RETAINED },
-        { argumentsRef: reference("test-entity-1", "arguments"), outputRef: reference("test-entity-1", "output") }
+        {
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: true } },
+          recovery: RecoveryDisposition.RETAINED,
+        },
+        {
+          argumentsRef: reference("test-entity-1", ThreadPayloadField.ARGUMENTS),
+          outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT),
+        }
       ),
       bodies
     );
     expect(badgeLabels(container)).toEqual([]);
     expect(blankStatusWrappers(container)).toEqual([]);
 
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(container.textContent).toContain("test-output");
     expect(badgeLabels(container)).toEqual([]);
     expect(blankStatusWrappers(container)).toEqual([]);
@@ -233,29 +253,36 @@ describe("an item the recovery left as it was", () => {
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "Bash", completion: "tool", tool_succeeded: false, recovery: RecoveryDisposition.RETAINED },
-        { argumentsRef: reference("test-entity-1", "arguments"), outputRef: reference("test-entity-1", "output") }
+        {
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: false } },
+          recovery: RecoveryDisposition.RETAINED,
+        },
+        {
+          argumentsRef: reference("test-entity-1", ThreadPayloadField.ARGUMENTS),
+          outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT),
+        }
       ),
       bodies
     );
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(badgeLabels(container)).toEqual(["Failed"]);
   });
 });
 
 function toolEntity(toolName: string): ThreadEntity {
-  return entity(
-    "item",
-    {
+  return entity({
+    case: "item",
+    value: {
       kind: ItemKind.TOOL_CALL,
-      tool_name: toolName,
-      completion: "tool",
-      tool_succeeded: true,
-      recovery: null,
-      recovery_reason: null,
+      toolName: toolName,
+      completion: { case: "tool", value: { succeeded: true } },
+      recovery: undefined,
+      recoveryReason: undefined,
+      argumentsRef: reference("test-tool", ThreadPayloadField.ARGUMENTS),
+      outputRef: reference("test-tool", ThreadPayloadField.OUTPUT),
     },
-    { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
-  );
+  });
 }
 
 /** A completed tool call whose arguments and output are the given values. */
@@ -267,23 +294,22 @@ function renderTool(toolName: string, args: unknown, output = "test-output"): Pr
 }
 
 const lineOf = (container: HTMLElement): string | undefined =>
-  container.querySelector(".agentplane-step-preview")?.textContent ?? undefined;
+  container.querySelector(".transcript-step-preview")?.textContent ?? undefined;
 
 describe("reasoning step marks", () => {
-  const reasoningStep = (state: Partial<Extract<ThreadEntity["state"], { kind: number }>>): ThreadEntity =>
-    entity(
-      "item",
-      {
+  const reasoningStep = (state: MessageInitShape<typeof ThreadItemSchema>): ThreadEntity =>
+    entity({
+      case: "item",
+      value: {
         kind: ItemKind.REASONING,
-        tool_name: "",
-        completion: null,
-        tool_succeeded: null,
-        recovery: null,
-        recovery_reason: null,
+        toolName: "",
+        completion: { case: undefined },
+        recovery: undefined,
+        recoveryReason: undefined,
         ...state,
+        textRef: reference("test-reasoning", ThreadPayloadField.TEXT),
       },
-      { textRef: reference("test-reasoning", "text") }
-    );
+    });
   const bodies = { "test-reasoning:text": "Weighing the next step." };
 
   it.each([
@@ -293,24 +319,24 @@ describe("reasoning step marks", () => {
     "marks an unfinished step (live: %s) by its title, with no badge row above the line",
     async (live, label, breathes) => {
       const container = await renderCard(reasoningStep({}), bodies, live);
-      const title = container.querySelector(".agentplane-step-title")!;
+      const title = container.querySelector(".transcript-step-title")!;
       expect(title.textContent).toBe("Reasoning");
       expect(title.getAttribute("style")).toContain("blue");
       expect(title.getAttribute("title")).toBe(label);
-      expect(title.classList.contains("agentplane-step-title--streaming")).toBe(breathes);
+      expect(title.classList.contains("transcript-step-title--streaming")).toBe(breathes);
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
     }
   );
 
   it("leaves a finished step in the dimmed title", async () => {
-    const container = await renderCard(reasoningStep({ completion: "text" }), bodies);
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("blue");
+    const container = await renderCard(reasoningStep({ completion: { case: "text", value: {} } }), bodies);
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("blue");
   });
 
   it("leaves an interrupted step to its own badges, which the title has no mark for", async () => {
     const container = await renderCard(reasoningStep({ recovery: RecoveryDisposition.RETAINED }), bodies);
     expect(container.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("blue");
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("blue");
   });
 });
 
@@ -319,23 +345,19 @@ describe("tool call rows", () => {
 
   it("folds a Claude Bash call to the line the model wrote for it, and draws nothing else", async () => {
     const container = await renderTool("Bash", { command: COMMAND, description: "List every container" });
-    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Bash");
+    expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Bash");
     expect(lineOf(container)).toBe("List every container");
-    expect(container.querySelector(".agentplane-code-block")).toBeNull();
+    expect(container.querySelector(".ui-code-block")).toBeNull();
+    expect(container.querySelector(".ui-code-inline")).toBeNull();
     expect(container.textContent).not.toContain("test-output");
   });
 
   it("folds a Bash call with no description to its command on one line, as highlighted shell", async () => {
     const container = await renderTool("Bash", { command: `set -e\n${COMMAND}` });
     expect(lineOf(container)).toBe("set -e docker ps --all --format '{{.Names}}'");
-    expect(
-      container.querySelector(".agentplane-step-preview .agentplane-code-inline .agentplane-tok-keyword")?.textContent
-    ).toBe("set");
-  });
-
-  it("does not highlight what the model wrote to say what a command is for", async () => {
-    const container = await renderTool("Bash", { command: COMMAND, description: "List every container" });
-    expect(container.querySelector(".agentplane-code-inline")).toBeNull();
+    expect(container.querySelector(".transcript-step-preview .ui-code-inline .ui-tok-keyword")?.textContent).toBe(
+      "set"
+    );
   });
 
   it("folds Codex's command to the script it ran, without the shell that ran it", async () => {
@@ -343,7 +365,7 @@ describe("tool call rows", () => {
       command: String.raw`/bin/bash -lc "echo \"test-script\""`,
       cwd: "/test-workspace",
     });
-    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Shell");
+    expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Shell");
     expect(lineOf(container)).toBe('echo "test-script"');
   });
 
@@ -352,12 +374,12 @@ describe("tool call rows", () => {
       command: String.raw`/bin/bash -lc "echo test"`,
       cwd: "/test-workspace",
     });
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
 
-    const controls = container.querySelector(".agentplane-step-controls")!;
+    const controls = container.querySelector(".transcript-step-controls")!;
     expect(controls.textContent).toContain("Run with");
     expect(controls.textContent).toContain("cwd");
-    expect([...controls.querySelectorAll(".agentplane-code-inline")].map((code) => code.textContent)).toEqual([
+    expect([...controls.querySelectorAll(".ui-code-inline")].map((code) => code.textContent)).toEqual([
       "/bin/bash -lc",
       "/test-workspace",
     ]);
@@ -370,10 +392,10 @@ describe("tool call rows", () => {
       { command: COMMAND, description: "List every container", timeout: 5000 },
       "test-container\n"
     );
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(container.textContent).toContain("List every container");
     expect(container.textContent).toContain("Timeout 5000 ms");
-    const [command, output] = [...container.querySelectorAll(".agentplane-code-block")].map((block) =>
+    const [command, output] = [...container.querySelectorAll(".ui-code-block")].map((block) =>
       [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n")
     );
     expect(command).toBe(COMMAND);
@@ -389,13 +411,13 @@ describe("tool call rows", () => {
       "test-tool:output": recordedOutput,
     });
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     // In the disclosed content, outside the sticky summary and above the details.
     const raw = container.querySelector<HTMLInputElement>(
-      '.agentplane-step-details .agentplane-step-controls input[aria-label="Show raw arguments and output"]'
+      '.transcript-step-details .transcript-step-controls input[aria-label="Show raw arguments and output"]'
     )!;
     expect(raw.type).toBe("checkbox");
-    const codeBlocks = () => [...container.querySelectorAll(".agentplane-code-block")];
+    const codeBlocks = () => [...container.querySelectorAll(".ui-code-block")];
     const codeText = (block: Element) =>
       [...block.querySelectorAll(".cm-line")].map((line) => line.textContent ?? "").join("\n");
     expect(codeText(codeBlocks()[0]!)).toBe("ls");
@@ -412,42 +434,41 @@ describe("tool call rows", () => {
 
   it("folds any other tool to its arguments' JSON, which is all it can open to", async () => {
     const container = await renderTool("Read", { file_path: "test-file" });
-    expect(container.querySelector(".agentplane-step-title")?.textContent).toBe("Read");
+    expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Read");
     expect(lineOf(container)).toBe('{"file_path":"test-file"}');
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it("draws a Bash call it could not show whole as its JSON, with nothing to switch", async () => {
     const container = await renderTool("Bash", { command: "ls", test_extra: true });
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
-    expect(container.querySelector(".agentplane-code-block")?.textContent).toContain('"test_extra":true');
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
+    expect(container.querySelector(".ui-code-block")?.textContent).toContain('"test_extra":true');
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it("marks a failed call by its title in red while folded, and by a badge once opened", async () => {
     const container = await renderCard(
-      entity(
-        "item",
-        {
+      entity({
+        case: "item",
+        value: {
           kind: ItemKind.TOOL_CALL,
-          tool_name: "Bash",
-          completion: "tool",
-          tool_succeeded: false,
-          recovery: null,
-          recovery_reason: null,
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: false } },
+          recovery: undefined,
+          recoveryReason: undefined,
+          outputRef: reference("test-tool", ThreadPayloadField.OUTPUT),
         },
-        { outputRef: reference("test-tool", "output") }
-      ),
+      }),
       { "test-tool:output": "test-failure" }
     );
-    const title = container.querySelector(".agentplane-step-title")!;
+    const title = container.querySelector(".transcript-step-title")!;
     expect(title.getAttribute("style")).toContain("red");
     expect(title.getAttribute("title")).toBe("Failed");
     expect(container.querySelector('[aria-label="Failed"]')).toBeNull();
 
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("red");
     expect(container.querySelector('[aria-label="Failed"]')).not.toBeNull();
   });
 
@@ -458,39 +479,38 @@ describe("tool call rows", () => {
     "marks a call still unfinished (live: %s) by a blue title while folded, and by a badge once opened",
     async (live, label, breathes) => {
       const container = await renderCard(
-        entity(
-          "item",
-          {
+        entity({
+          case: "item",
+          value: {
             kind: ItemKind.TOOL_CALL,
-            tool_name: "Bash",
-            completion: null,
-            tool_succeeded: null,
-            recovery: null,
-            recovery_reason: null,
+            toolName: "Bash",
+            completion: { case: undefined },
+            recovery: undefined,
+            recoveryReason: undefined,
+            outputRef: reference("test-tool", ThreadPayloadField.OUTPUT),
           },
-          { outputRef: reference("test-tool", "output") }
-        ),
+        }),
         { "test-tool:output": "test-partial" },
         live
       );
-      const title = () => container.querySelector(".agentplane-step-title")!;
+      const title = () => container.querySelector(".transcript-step-title")!;
       expect(title().getAttribute("style")).toContain("blue");
       expect(title().getAttribute("title")).toBe(label);
       // Only a call something is working on breathes.
-      expect(title().classList.contains("agentplane-step-title--streaming")).toBe(breathes);
+      expect(title().classList.contains("transcript-step-title--streaming")).toBe(breathes);
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
 
-      await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+      await toggle(container.querySelector(".ui-disclosure-summary")!);
       expect(title().getAttribute("style")).not.toContain("blue");
-      expect(title().classList.contains("agentplane-step-title--streaming")).toBe(false);
+      expect(title().classList.contains("transcript-step-title--streaming")).toBe(false);
       expect(container.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
     }
   );
 
   it("leaves a call that went well in the dimmed title every line has", async () => {
     const container = await renderTool("Bash", { command: "ls" });
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("style")).not.toContain("red");
-    expect(container.querySelector(".agentplane-step-title")?.getAttribute("title")).toBeNull();
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("red");
+    expect(container.querySelector(".transcript-step-title")?.getAttribute("title")).toBeNull();
   });
 
   it("keeps a call's open state and Raw where the reader left them when its row leaves the DOM", async () => {
@@ -516,30 +536,29 @@ describe("tool call rows", () => {
         )
       );
     await show(true);
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
     await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
 
     await show(false);
-    expect(container.querySelector(".agentplane-disclosure")).toBeNull();
+    expect(container.querySelector(".ui-disclosure")).toBeNull();
     await show(true);
-    expect(container.querySelector(".agentplane-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector(".ui-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
   });
 });
 
 describe("a row whose body stopped loading", () => {
-  const reasoning = entity(
-    "item",
-    {
+  const reasoning = entity({
+    case: "item",
+    value: {
       kind: ItemKind.REASONING,
-      tool_name: "",
-      completion: "text",
-      tool_succeeded: null,
-      recovery: null,
-      recovery_reason: null,
+      toolName: "",
+      completion: { case: "text", value: {} },
+      recovery: undefined,
+      recoveryReason: undefined,
+      textRef: reference("test-reasoning", ThreadPayloadField.TEXT),
     },
-    { textRef: reference("test-reasoning", "text") }
-  );
+  });
 
   it.each([
     ["reasoning step", reasoning, {}, "test-reasoning:text"],
@@ -559,9 +578,9 @@ describe("a row whose body stopped loading", () => {
 describe("EntityCard", () => {
   it("renders a tool call's JSON arguments highlighted and its plain output verbatim, both as code", async () => {
     const container = await renderTool("Read", { file_path: "test-file", limit: 30 }, PROSE);
-    await toggle(container.querySelector(".agentplane-disclosure-summary")!);
+    await toggle(container.querySelector(".ui-disclosure-summary")!);
 
-    const [args, output] = container.querySelectorAll(".agentplane-code-block");
+    const [args, output] = container.querySelectorAll(".ui-code-block");
     expect(args.querySelector(".cm-editor")).not.toBeNull();
     expect(args.textContent).toContain('"file_path":"test-file"');
     expect(args.textContent).toContain('"limit":30');
@@ -571,54 +590,56 @@ describe("EntityCard", () => {
 
   it("renders the assistant's text as Markdown", async () => {
     const container = await renderCard(
-      entity(
-        "item",
-        {
+      entity({
+        case: "item",
+        value: {
           kind: ItemKind.ASSISTANT_TEXT,
-          tool_name: "",
-          completion: PROSE,
-          tool_succeeded: null,
-          recovery: null,
-          recovery_reason: null,
+          toolName: "",
+          completion: { case: "text", value: {} },
+          recovery: undefined,
+          recoveryReason: undefined,
+          textRef: reference("test-reply", ThreadPayloadField.TEXT),
         },
-        { textRef: reference("test-reply", "text") }
-      ),
+      }),
       { "test-reply:text": PROSE }
     );
-    expect(container.querySelector(".agentplane-markdown strong")?.textContent).toBe("every");
-    expect(container.querySelector(".agentplane-markdown li")?.textContent).toBe("first");
+    expect(container.querySelector(".ui-markdown strong")?.textContent).toBe("every");
+    expect(container.querySelector(".ui-markdown li")?.textContent).toBe("first");
   });
 
   it("renders the operator's input as typed, not as Markdown", async () => {
     const container = await renderCard(
-      entity(
-        "confirmed_input",
-        { harness_message_id: "test-message", origin_command_ids: [] },
-        { inputRef: reference("test-message", "confirmed_input") }
-      ),
+      entity({
+        case: "confirmedInput",
+        value: {
+          harnessMessageId: "test-message",
+          originCommandIds: [],
+          inputRef: reference("test-message", ThreadPayloadField.CONFIRMED_INPUT),
+        },
+      }),
       { "test-message:confirmed_input": PROSE }
     );
-    expect(container.querySelector(".agentplane-user-bubble .agentplane-verbatim")?.textContent).toBe(PROSE);
-    expect(container.querySelector(".agentplane-markdown, strong, li")).toBeNull();
+    expect(container.querySelector(".transcript-user-bubble .transcript-verbatim")?.textContent).toBe(PROSE);
+    expect(container.querySelector(".ui-markdown, strong, li")).toBeNull();
   });
 
   it("renders a still-pending sent message as the same bubble, with its status beside it, not inside", async () => {
     const container = await renderCard(
-      entity(
-        "command",
-        {
-          operation: "submit_input",
-          outcome: "pending",
-          outcome_cursor: null,
-          outcome_reason: null,
-          requested_value: null,
+      entity({
+        case: "command",
+        value: {
+          operation: Operation.SUBMIT_INPUT,
+          outcome: ThreadCommandOutcome.PENDING,
+          outcomeCursor: undefined,
+          outcomeReason: undefined,
+          requestedValue: undefined,
+          inputRef: reference("test-message", ThreadPayloadField.COMMAND_INPUT),
         },
-        { inputRef: reference("test-message", "command_input") }
-      ),
+      }),
       { "test-message:command_input": PROSE }
     );
-    const bubble = container.querySelector<HTMLElement>(".agentplane-user-bubble");
-    expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe(PROSE);
+    const bubble = container.querySelector<HTMLElement>(".transcript-user-bubble");
+    expect(bubble?.querySelector(".transcript-verbatim")?.textContent).toBe(PROSE);
     // The bubble holds only the message, so it is the same once the status goes and nothing moves.
     expect(bubble?.textContent).toBe(PROSE);
     expect(bubble?.parentElement?.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
@@ -649,8 +670,8 @@ describe("EntityCard", () => {
       "Reasoning effort changed to high",
     ],
     ["harness_exited", { case: "harnessExited", value: { exitCode: 3 } }, "Harness exited with code 3"],
-  ])("shows an ordinary %s as one line, its raw event behind the row's Evidence", async (observation, event, line) => {
-    const container = await renderLifecycle(observation, event);
+  ])("shows an ordinary %s as one line, its raw event behind the row's Evidence", async (_observation, event, line) => {
+    const container = await renderLifecycle(event);
     const row = container.querySelector('[data-thread-anchor="1"]')!;
     expect(row.querySelector('button[aria-label="Evidence"]')).not.toBeNull();
     expect(row.textContent).toBe(line);
@@ -660,7 +681,7 @@ describe("EntityCard", () => {
   it.each(['Test API failure: HTTP 429\n<img src="x" onerror="throw new Error()">', ""])(
     "shows a failed turn's error as a plain-text alert: %j",
     async (error) => {
-      const container = await renderLifecycle("turn_completed", {
+      const container = await renderLifecycle({
         case: "turnCompleted",
         value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
       });
@@ -671,7 +692,7 @@ describe("EntityCard", () => {
   );
 
   it("shows an interrupted turn's error dimmed beneath its line, not as an alert", async () => {
-    const container = await renderLifecycle("turn_completed", {
+    const container = await renderLifecycle({
       case: "turnCompleted",
       value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED, error: "test interrupt detail" },
     });
@@ -681,10 +702,9 @@ describe("EntityCard", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it.each<[string, string, Observation]>([
+  it.each<[string, Observation]>([
     [
       "Turn lost test harness exited during the turn",
-      "turn_completed",
       {
         case: "turnCompleted",
         value: { turnId: "test-turn", status: TurnStatus.PROCESS_LOST, error: "test harness exited during the turn" },
@@ -692,12 +712,11 @@ describe("EntityCard", () => {
     ],
     [
       "Turn ended without a status",
-      "turn_completed",
       { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.UNSPECIFIED } },
     ],
-    ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
-  ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
-    const container = await renderLifecycle(observation, event);
+    ["Harness lost", { case: "harnessLost", value: {} }],
+  ])("keeps an abnormal ending prominent: %s", async (text, event) => {
+    const container = await renderLifecycle(event);
     expect(container.querySelector('[data-thread-anchor="1"] [role="alert"]')?.textContent).toBe(text);
   });
 });

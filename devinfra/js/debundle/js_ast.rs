@@ -7,12 +7,13 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Id, Ident,
     IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
     Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
+    VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -56,6 +57,26 @@ pub struct ParsedJsModule {
     pub module: Module,
     pub unresolved_mark: Mark,
     pub top_level_mark: Mark,
+}
+
+/// Identifier reference sites that have no lexical binding in one parsed
+/// module. This is an inventory only: an unresolved identifier may name a host
+/// global and still needs a separate host/read proof before it carries value or
+/// effect authority.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ParsedGlobalUses {
+    /// Unresolved binding identity to every reference span in the source AST.
+    pub uses: BTreeMap<Id, Vec<Span>>,
+    /// Whether source contains a construct whose dynamic scope can affect
+    /// identifier resolution (`with` or nontrivial direct `eval`).
+    pub dynamic_scope: bool,
+}
+
+/// Exact `ParsedGlobalUses` sites that a successful vendor strip removed from
+/// the emitted residual of the same chunk.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct GlobalUseElisions {
+    pub uses: BTreeMap<Id, Vec<Span>>,
 }
 
 impl ParsedJsModule {
@@ -411,19 +432,22 @@ fn strip_nth_paren_expr(module: &mut Module, target: usize) {
 /// produces. Mirrors the dependency-graph source-unit view: `var x = ..., y
 /// = ...;` is one body item but two statement ordinals; other
 /// top-level items count as one.
-fn post_split_top_level_count(item: &ModuleItem) -> usize {
-    fn decl_count(decl: &Decl) -> usize {
-        match decl {
-            Decl::Var(var) if var.decls.len() > 1 => var.decls.len(),
-            _ => 1,
-        }
-    }
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => decl_count(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            decl_count(&export_decl.decl)
-        }
-        _ => 1,
+pub fn post_split_top_level_count(item: &ModuleItem) -> usize {
+    split_var_declarators(item).map_or(1, <[VarDeclarator]>::len)
+}
+
+/// The declarators of a top-level variable declaration the source-unit view
+/// splits into one source unit each, in ordinal order; `None` for every
+/// single-unit item.
+pub fn split_var_declarators(item: &ModuleItem) -> Option<&[VarDeclarator]> {
+    let decl = match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
+        _ => return None,
+    };
+    match decl {
+        Decl::Var(var) if var.decls.len() > 1 => Some(var.decls.as_slice()),
+        _ => None,
     }
 }
 
@@ -823,7 +847,211 @@ pub fn named_export_module_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::{DUMMY_SP, Spanned};
+    use binding_targets::{
+        TargetAccessRecorder, member_root_sym, record_assign_target, record_update_target,
+    };
+    use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
+    use swc_ecma_ast::{AssignExpr, AssignTarget, Id, SimpleAssignTarget, UpdateExpr};
+    use swc_ecma_visit::Visit;
+
+    #[derive(Default)]
+    struct TargetRecorder {
+        binding_reads: Vec<String>,
+        binding_writes: Vec<String>,
+        member_writes: Vec<String>,
+    }
+
+    impl TargetAccessRecorder for TargetRecorder {
+        fn record_binding_read(&mut self, id: &Id) {
+            self.binding_reads.push(id.0.to_string());
+        }
+
+        fn record_binding_write(&mut self, id: &Id) {
+            self.binding_writes.push(id.0.to_string());
+        }
+
+        fn record_member_write(&mut self, id: &Id) {
+            self.member_writes.push(id.0.to_string());
+        }
+    }
+
+    #[derive(Default)]
+    struct TargetRecorderVisitor {
+        recorder: TargetRecorder,
+        wrapped_member_roots: Vec<String>,
+    }
+
+    impl Visit for TargetRecorderVisitor {
+        fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+            record_assign_target(&assignment.left, &mut self.recorder);
+            if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left
+                && matches!(member.obj.unwrap_parens(), Expr::TsAs(_))
+                && let Some(root) = member_root_sym(&member.obj)
+            {
+                self.wrapped_member_roots.push(root.to_string());
+            }
+            assignment.visit_children_with(self);
+        }
+
+        fn visit_update_expr(&mut self, update: &UpdateExpr) {
+            record_update_target(&update.arg, &mut self.recorder);
+            update.visit_children_with(self);
+        }
+    }
+
+    #[test]
+    fn canonical_parser_targets_record_type_erased_wrappers() {
+        with_swc_globals(|| {
+            let parsed = parse_js_module(
+                "wrapped-targets.ts",
+                "let count = 0; const record = {}; \
+                 count as any = 'wrapped'; count!++; (count satisfies any)! = 'nested'; \
+                 count<string> = 'instantiated'; \
+                 record.value as any = 1; (record as any).value = 2; record.value!++; \
+                 (record as any).value++; count = 'plain'; record.value = 3; record.value++; \
+                 count + record.value;",
+            )
+            .expect("TypeScript wrapped assignment and update targets parse");
+            let mut visitor = TargetRecorderVisitor::default();
+            parsed.module.visit_with(&mut visitor);
+
+            assert_eq!(
+                visitor.recorder.binding_writes,
+                vec![
+                    "count".to_string(),
+                    "count".to_string(),
+                    "count".to_string(),
+                    "count".to_string(),
+                    "count".to_string()
+                ]
+            );
+            assert_eq!(
+                visitor.recorder.binding_reads,
+                vec![
+                    "count".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string()
+                ]
+            );
+            assert_eq!(
+                visitor.recorder.member_writes,
+                vec![
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string(),
+                    "record".to_string()
+                ]
+            );
+            assert_eq!(visitor.wrapped_member_roots, vec!["record".to_string()]);
+        });
+    }
+
+    #[test]
+    fn canonical_parser_optional_chain_targets_keep_existing_write_recording() {
+        with_swc_globals(|| {
+            // The configured parser accepts this target form. The recorder
+            // must preserve its conservative member-write fact; this supplies
+            // no execution or emitted-syntax acceptance proof.
+            let parsed = parse_js_module("optional-target.ts", "let count = 0; count?.value = 1;")
+                .expect("configured parser accepts optional-chain assignment targets");
+            let mut visitor = TargetRecorderVisitor::default();
+            parsed.module.visit_with(&mut visitor);
+            assert!(visitor.recorder.binding_writes.is_empty());
+            assert_eq!(visitor.recorder.member_writes, vec!["count".to_string()]);
+        });
+    }
+
+    #[test]
+    fn canonical_parser_rejects_literal_assignment_target() {
+        with_swc_globals(|| {
+            assert!(parse_js_module("invalid-target.ts", "1 = 2;").is_err());
+        });
+    }
+
+    fn default_export_ident(parsed: &ParsedJsModule) -> &Ident {
+        parsed
+            .module
+            .body
+            .iter()
+            .find_map(|item| match item {
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
+                    if let Expr::Ident(ident) = &*export.expr {
+                        Some(ident)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .expect("default export expression identifier")
+    }
+
+    #[test]
+    fn default_export_identifier_preserves_value_and_type_resolution() {
+        with_swc_globals(|| {
+            let unresolved = parse_js_module(
+                "unresolved-default.js",
+                "import remote from './dep.js'; export default defaultRead;",
+            )
+            .unwrap();
+            assert_eq!(
+                default_export_ident(&unresolved).ctxt,
+                SyntaxContext::empty().apply_mark(unresolved.unresolved_mark),
+            );
+
+            let bound = parse_js_module(
+                "bound-default.js",
+                "import remote from './dep.js'; const defaultValue = 1; export default defaultValue;",
+            )
+            .unwrap();
+            let binding = bound
+                .module
+                .body
+                .iter()
+                .find_map(|item| match item {
+                    ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) => {
+                        declaration.decls.iter().find_map(|declarator| {
+                            if let swc_ecma_ast::Pat::Ident(binding) = &declarator.name
+                                && binding.id.sym == *"defaultValue"
+                            {
+                                Some(&binding.id)
+                            } else {
+                                None
+                            }
+                        })
+                    }
+                    _ => None,
+                })
+                .expect("default value binding");
+            assert_eq!(default_export_ident(&bound).to_id(), binding.to_id());
+
+            let type_only = parse_js_module(
+                "type-only-default.js",
+                "import remote from './dep.js'; interface TypeOnlyDefault {} export default TypeOnlyDefault;",
+            )
+            .unwrap();
+            let type_binding = type_only
+                .module
+                .body
+                .iter()
+                .find_map(|item| match item {
+                    ModuleItem::Stmt(Stmt::Decl(Decl::TsInterface(interface)))
+                        if interface.id.sym == *"TypeOnlyDefault" =>
+                    {
+                        Some(&interface.id)
+                    }
+                    _ => None,
+                })
+                .expect("type-only binding");
+            assert_eq!(
+                default_export_ident(&type_only).to_id(),
+                type_binding.to_id(),
+            );
+        });
+    }
 
     #[test]
     fn batch_source_unit_ordinals_map_to_raw_body_items() {

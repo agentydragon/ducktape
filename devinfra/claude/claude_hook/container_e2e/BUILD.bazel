@@ -1,7 +1,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Bazelisk + sops baked into /tools/ (on PATH). Neither is in Debian main,
@@ -80,8 +80,8 @@ oci_image(
     ],
 )
 
-oci_layout_rloc(
-    name = "e2e_container",
+oci_layout_py(
+    name = "e2e_container_descriptor",
     testonly = True,
     image = ":e2e_container_image",
     visibility = ["//devinfra/claude:__subpackages__"],
@@ -100,7 +100,6 @@ py_test(
     srcs = ["test_container_e2e.py"],
     data = [
         "test_profile.yaml",
-        ":e2e_container",
         "//devinfra/claude/claude_hook",
         "//devinfra/claude/claude_hook/testdata/e2e_secrets:e2e_secrets_files",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
@@ -118,9 +117,9 @@ py_test(
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_hook:conftest",
         "//devinfra/claude/testing:container_e2e",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

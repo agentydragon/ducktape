@@ -1,23 +1,21 @@
 //! Node-differential sweep over the accepted asymmetric / phantom /
-//! tie-break fixture family: the realizability gate's evaluation
-//! simulator must predict exactly the ECMA-262 Phase-2 evaluation
-//! order Node produces for the emitted tree.
+//! tie-break fixture family: the public emitted-order simulator must
+//! predict exactly the ECMA-262 Phase-2 evaluation order Node produces
+//! for the emitted tree.
 //!
-//! Emitter and simulator both consume `EsmImportOrder` (the shared
-//! single source of truth — see `esm_import_order`), so a divergence
-//! here means the gate's verdict has stopped describing the bundle
-//! the emitter produces: an accepted spec could TDZ under Node, or a
-//! runnable spec could be over-rejected. Each case runs the real
-//! pipeline, instruments the emitted module files with per-module
-//! marker prints (after the debundler runs, so the analyzed graph is
-//! untouched), and compares the observed completion order against
-//! `gate::simulated_evaluation_post_order` on the same dependency graph
-//! and assignment.
+//! Emitter and public simulator both consume the shared
+//! `EsmImportOrder` factory (see `esm_import_order`), so this checks
+//! that the prediction matches the bundle Node evaluates. Each case
+//! runs the real pipeline, instruments the emitted module files with
+//! per-module marker prints (after the debundler runs, so the analyzed
+//! graph is untouched), and compares the observed completion order
+//! against `gate::simulated_evaluation_post_order` on the same
+//! dependency graph and assignment.
 
 use std::collections::BTreeMap;
 
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_dependency_graph_with;
+use analysis::graph::{build_dependency_graph_with, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::{AnalysisInputs, DependencyGraph, ModuleAssignment};
 use debundle_e2e_support::*;
@@ -47,6 +45,23 @@ const SWEEP: &[SweepCase] = &[
         modules: &[
             ("mod_ids", &["ids_val"]),
             ("mod_schemas", &["schemas_target", "lazy_back"]),
+        ],
+    },
+    // Two independent acyclic array chains whose alphabetical output-module
+    // order is the reverse of source order. Entry import fanout must follow
+    // the same source preference as emission, not the base ModuleId tie-break.
+    SweepCase {
+        name: "acyclic_independent_array_chains_prefer_source_order",
+        source: "const first = [1];\n\
+                 const firstRead = first[0];\n\
+                 const second = [2];\n\
+                 const secondRead = second[0];\n\
+                 console.log(firstRead, secondRead);\n",
+        modules: &[
+            ("a_second", &["second"]),
+            ("a_second_read", &["secondRead"]),
+            ("z_first", &["first"]),
+            ("z_first_read", &["firstRead"]),
         ],
     },
     // Lemma 2's rescued asymmetric cycle: residual at-init reads
@@ -118,8 +133,10 @@ const SWEEP: &[SweepCase] = &[
 /// `realizability::tests::parse_and_build`).
 fn parse_and_build(source: &str) -> DependencyGraph {
     let module = raw_js_test_support::parse(source);
-    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
-    build_dependency_graph_with(&facts, Default::default()).unwrap()
+    let facts = analyze_chunk(&module, &AnalysisInputs::default(), None).facts;
+    build_dependency_graph_with(&facts, Default::default(), &[])
+        .unwrap()
+        .0
 }
 
 /// Build the assignment matching the case's spec assignment:
@@ -162,7 +179,9 @@ fn simulator_post_order_matches_node_evaluation_order_across_fixture_family() {
         // graph + assignment the pipeline derives from the spec.
         let dependency_graph = parse_and_build(case.source);
         let assignment = assignment_for(&dependency_graph, case);
-        let post_order = simulated_evaluation_post_order(&dependency_graph, &assignment);
+        let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
+        let post_order =
+            simulated_evaluation_post_order(&canonical, &dependency_graph, &assignment);
         // The simulator's residual node is the ESM DFS root — the
         // emitted entry file (the sweep's residual statements are all
         // anonymous, so no catchall module file materializes).

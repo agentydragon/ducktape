@@ -9,17 +9,32 @@ forwarded to the upstream registry.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
+from sqlalchemy import text
 from starlette.responses import Response
 
-from props.core.agent_types import AgentType
+from props.core.agent_types import AgentType, CriticDevOptimizeTypeConfig, FreeformTypeConfig, TargetMetric
 from props.core.oci_utils import BUILTIN_TAG
+from props.db.async_database import AsyncDatabase
+from props.db.database import Database
+from props.db.models import AgentDefinition
+from props.registry_proxy import routes
+from props.registry_proxy.app import create_app
 from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
+from props.testing.fixtures.credentials import make_agent_credentials
+from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, FAKE_CRITIC_DIGEST
 from util.testing.asgi import serve_app_in_loop
+
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
 
 DOCKER_ACCEPT_TYPES = [
     "application/vnd.docker.distribution.manifest.v2+json",
@@ -110,6 +125,104 @@ async def test_proxy_forwards_streaming_mutation_body(monkeypatch: pytest.Monkey
 
     assert response.status_code == 202
     assert captured_body == b"first-second"
+
+
+async def test_concurrent_pushes_of_same_manifest_keep_first_record(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_fetch_started = asyncio.Event()
+    release_first_fetch = asyncio.Event()
+    fetch_count = 0
+
+    async def extract_metadata(manifest_body: bytes, repository: str) -> routes._ImageMetadata:
+        nonlocal fetch_count
+        fetch_count += 1
+        if fetch_count == 1:
+            first_fetch_started.set()
+            await release_first_fetch.wait()
+            return routes._ImageMetadata(base_digest=None, display_name="first")
+        return routes._ImageMetadata(base_digest=None, display_name="second")
+
+    monkeypatch.setattr(routes, "_extract_image_metadata", extract_metadata)
+    digest = "sha256:" + "a" * 64
+    async with AsyncDatabase(db.config) as async_db:
+        first_push = asyncio.create_task(routes._record_manifest_push("critic", digest, b"{}", None, async_db))
+        await first_fetch_started.wait()
+        try:
+            await routes._record_manifest_push("critic", digest, b"{}", None, async_db)
+        finally:
+            release_first_fetch.set()
+        await first_push
+
+    with db.session() as session:
+        definition = session.get(AgentDefinition, digest)
+        assert definition is not None
+        assert definition.display_name == "second"
+
+
+def _basic_auth(username: str, password: str) -> dict[str, str]:
+    token = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
+
+
+async def test_registry_postgres_auth_and_acl(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The standalone proxy resolves real PostgreSQL roles before applying OCI ACLs."""
+    monkeypatch.setenv("PROPS_AGENT_PASSWORD_SALT", "registry-test-salt")
+    critic_dev = await make_agent_credentials(
+        db,
+        CriticDevOptimizeTypeConfig(target_metric=TargetMetric.WHOLE_REPO, optimizer_model="test", critic_model="test"),
+        FAKE_CRITIC_DEV_OPTIMIZE_DIGEST,
+    )
+    freeform = await make_agent_credentials(db, FreeformTypeConfig(), FAKE_CRITIC_DIGEST)
+
+    # The evaluator role is created by migrations without a password unless the
+    # environment supplies one. Give it a test-only password in this container.
+    with db.session() as session:
+        session.execute(text("ALTER ROLE evaluator PASSWORD 'registry-test-evaluator'"))
+
+    async def fake_upstream(request: Request) -> Response:
+        return Response(status_code=201 if request.method == "PUT" else 200)
+
+    monkeypatch.setattr(routes, "_proxy_to_upstream", fake_upstream)
+
+    async def fake_metadata(body: bytes, repo: str) -> routes._ImageMetadata:
+        return routes._ImageMetadata(base_digest=None, display_name="test")
+
+    monkeypatch.setattr(routes, "_extract_image_metadata", fake_metadata)
+
+    async with AsyncDatabase(db.config) as async_db:
+        with TestClient(create_app(db=async_db)) as client:
+            path = "/v2/critic/blobs/sha256:abc"
+            assert client.get("/v2/").status_code == 401
+            assert client.get(path, headers=_basic_auth(db.config.user, db.config.password)).status_code == 200
+            assert client.get(path, headers=_basic_auth("evaluator", "registry-test-evaluator")).status_code == 200
+            assert client.get(path, headers=_basic_auth(critic_dev.username, critic_dev.password)).status_code == 200
+            assert client.get(path, headers=_basic_auth(freeform.username, freeform.password)).status_code == 403
+            assert client.get(path, headers=_basic_auth(critic_dev.username, "wrong")).status_code == 401
+
+            digest_ref = "sha256:" + "c" * 64
+            manifest_path = f"/v2/critic/manifests/{digest_ref}"
+            assert (
+                client.put(manifest_path, headers=_basic_auth(critic_dev.username, critic_dev.password)).status_code
+                == 201
+            )
+            assert (
+                client.put(
+                    "/v2/critic/manifests/latest", headers=_basic_auth(critic_dev.username, critic_dev.password)
+                ).status_code
+                == 403
+            )
+            assert (
+                client.put(
+                    "/v2/critic/manifests/latest", headers=_basic_auth("evaluator", "registry-test-evaluator")
+                ).status_code
+                == 201
+            )
+
+    with db.session() as session:
+        definition = session.get(AgentDefinition, "sha256:" + hashlib.sha256(b"").hexdigest())
+        assert definition is not None
+        assert definition.created_by_agent_run_id is not None
 
 
 def test_only_grader_builtin_tag_move_notifies_supervisor() -> None:

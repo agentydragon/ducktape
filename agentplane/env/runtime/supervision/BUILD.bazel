@@ -1,0 +1,99 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//agentplane/env/runtime/supervision/testing:defs.bzl", "pid1_go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "supervision",
+    srcs = [
+        "backend.go",
+        "controller.go",
+        "host.go",
+        "managed_process.go",
+        "native_helpers.go",
+        "pid1.go",
+        "process.go",
+        "process_resources.go",
+        "resources.go",
+        "systemd.go",
+        "systemd_launcher.go",
+        "systemd_scope.go",
+        "systemd_unit_reference.go",
+        "systemd_units.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision",
+    deps = [
+        "//agentplane/env/cosi",
+        "@com_github_coreos_go_systemd_v22//dbus",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_godbus_dbus_v5//:dbus",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_siderolabs_gen//optional",
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "supervision_test",
+    srcs = glob(
+        ["*_test.go"],
+        exclude = [
+            "pid1_kernel_test.go",
+            "pid1_process_test.go",
+            "systemd_kernel_test.go",
+        ],
+    ),
+    embed = [":supervision"],
+    exec_properties = {"test.dockerUser": "0:0"},
+    race = "on",
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "runner_pid1_fixture",
+    srcs = ["pid1_kernel_test.go"],
+    embed = [":supervision"],
+    pure = "on",
+    tags = ["manual"],
+    deps = ["@org_golang_x_sys//unix"],
+)
+
+go_test(
+    name = "environment_runtime_systemd_fixture",
+    srcs = ["systemd_kernel_test.go"],
+    embed = [":supervision"],
+    pure = "on",
+    tags = ["manual"],
+    deps = [
+        "@com_github_coreos_go_systemd_v22//dbus",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@com_github_godbus_dbus_v5//:dbus",
+        "@com_github_google_uuid//:uuid",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+pid1_go_test(
+    name = "pid1_process_test",
+    srcs = ["pid1_process_test.go"],
+    embed = [":supervision"],
+    deps = ["@org_golang_x_sys//unix"],
+)

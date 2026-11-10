@@ -47,6 +47,7 @@ from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredentia
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.public_coder.egress import add_gateway_resources
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 # Written by tf/gitops/agent-machine-access/grocy-sf.tf into agents-infra, named after the Authentik
 # service account whose app password it holds.
@@ -65,6 +66,13 @@ HAKU_MAILBOX_POLICY = "haku-mailbox"
 GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
+QUEST_READ_POLICY = "quest-read"
+THRIVE_READ_POLICY = "thrive-read"
+PLATFORM_SESSIONS_API = ServiceRef(
+    name="platform-sessions",
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace="platform-sessions", labels=(("app", "platform-sessions-gateway"),)),
+)
 PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
 # reads (actions_staging_policies.py), so a binding to one set grants both.
@@ -72,7 +80,9 @@ GROCY_SF_READONLY_CREDENTIAL = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_CREDENTIAL = "home-assistant-readonly"
 
 
-def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+def add_staging_egress_credentials(
+    scope: Construct, *, namespace: str, credentials_namespace: str, identity_catalog: bool
+) -> None:
     construct = Construct(scope, "staging-egress-credentials")
     reader = ServiceAccount(
         construct, "reader", metadata=ApiObjectMetadata(name=EXTERNAL_CREDS_READER, namespace=credentials_namespace)
@@ -92,11 +102,19 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _home_assistant_readonly(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _aiquota_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    _quest_read(construct, namespace=namespace)
+    _thrive_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
-    add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    add_gateway_resources(
+        construct,
+        reader=reader,
+        namespace=namespace,
+        credentials_namespace=credentials_namespace,
+        identity_catalog=identity_catalog,
+    )
     # Keep these grants in sync with the egress PolicySets in the named functions below.
     # Local Gateways check the selected backend's identity/target port, even for a public hostname.
     NetworkPolicy(
@@ -108,6 +126,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
             authentik.SERVER.egress(),  # _grocy_sf_readonly: the public route targets Authentik's outpost.
             activitywatch.READ.egress(),  # _activitywatch_read: bearer read sidecar.
             AIQUOTA_SERVICE.egress(),  # _aiquota_read: public Gateway and internal Service routes.
+            PLATFORM_SESSIONS_API.egress(),  # _quest_read: public Gateway's read-only API backend.
             clickhouse.HTTP.egress(),  # _aiquota_read: typed history.
             mailbox.HTTP.egress(),  # _haku_mailbox: application policy excludes management APIs.
             plaid_pgweb.SERVICE.egress(),  # _plaid_pgweb.
@@ -582,6 +601,96 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             _rule(
                 history, clickhouse.HTTP.fqdn, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=["/"]
             ),
+        ],
+    )
+
+
+def _quest_read(scope: Construct, *, namespace: str) -> None:
+    # ESO mints this read-only bearer in platform-sessions; Reflector copies it into the
+    # isolated credentials namespace. No Quest account session reaches the sandbox.
+    _credential(
+        scope,
+        QUEST_READ_POLICY,
+        namespace=namespace,
+        credential=QUEST_READ_POLICY,
+        description=(
+            "Quest scheduling, account, and insurance lookup API. "
+            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest. "
+            "The bearer is substituted only for the listed lookup paths."
+        ),
+        secret="platform-sessions-quest-bearer",
+        key="token",
+        target=_BEARER,
+    )
+    add_egress_policy(
+        scope,
+        "egresspolicy-quest-read",
+        metadata=ApiObjectMetadata(name=QUEST_READ_POLICY, namespace=namespace),
+        rules=[
+            _rule(
+                QUEST_READ_POLICY,
+                "platform-sessions.allegedly.works",
+                method=PolicySetSpecRulesMethods.GET,
+                paths=[
+                    "/proxy/quest/guest/getReasons/*",
+                    "/proxy/quest/guest/getPscDetails/*",
+                    "/proxy/quest/api/getInsuranceProfile",
+                    "/proxy/quest/guest/getTokenBasicInfoAPI/*",
+                    "/proxy/quest/guest/getEncounterInfo/appointment",
+                    "/proxy/quest/guest/getEncounterInfo/demographics",
+                    "/proxy/quest/guest/getEncounterInfo/insurance",
+                    "/proxy/quest/guest/getEncounterInfo/secondaryInsurance",
+                    "/proxy/quest/guest/getPayorList/*",
+                    "/proxy/quest/guest/getAppointment/*",
+                ],
+            ),
+            # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
+            _rule(
+                QUEST_READ_POLICY,
+                "platform-sessions.allegedly.works",
+                method=PolicySetSpecRulesMethods.POST,
+                paths=[
+                    "/proxy/quest/guest/getPscsWithAvailability",
+                    "/proxy/quest/api/getOpenEorders",
+                    "/proxy/quest/api/getUserDemographics",
+                    "/proxy/quest/guest/examoneEligibility",
+                    "/proxy/quest/guest/verifyInsurance/V2",
+                    "/proxy/quest/guest/getPricing",
+                ],
+            ),
+        ],
+    )
+
+
+def _thrive_read(scope: Construct, *, namespace: str) -> None:
+    _credential(
+        scope,
+        THRIVE_READ_POLICY,
+        namespace=namespace,
+        credential=THRIVE_READ_POLICY,
+        description="Read Thrive Market catalog, orders, account, cart, and autoship through Platform Sessions.",
+        secret="platform-sessions-thrive-read-bearer",
+        key="token",
+        target=_BEARER,
+    )
+    add_egress_policy(
+        scope,
+        "egresspolicy-thrive-read",
+        metadata=ApiObjectMetadata(name=THRIVE_READ_POLICY, namespace=namespace),
+        rules=[
+            _rule(
+                THRIVE_READ_POLICY,
+                "platform-sessions.allegedly.works",
+                method=PolicySetSpecRulesMethods.GET,
+                paths=[
+                    "/proxy/thrive/products",
+                    "/proxy/thrive/account/orders",
+                    "/proxy/thrive/account",
+                    "/proxy/thrive/carts",
+                    "/proxy/thrive/autoship/items",
+                    "/proxy/thrive/autoship/schedule/first",
+                ],
+            )
         ],
     )
 

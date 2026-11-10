@@ -1,0 +1,102 @@
+package store
+
+import (
+	"errors"
+	"testing"
+
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+)
+
+func storedStateNames() []string {
+	states := make([]string, len(storedStates))
+	for i, known := range storedStates {
+		states[i] = known.text
+	}
+	return states
+}
+
+func storedReasonCodeNames() []string {
+	codes := make([]string, len(storedReasonCodes))
+	for i, known := range storedReasonCodes {
+		codes[i] = known.text
+	}
+	return codes
+}
+
+func TestAReasonCodeThisReleaseDoesNotNameReadsAsUnknown(t *testing.T) {
+	if got := reasonCodeFromStored("policy_set_auto_approve"); got != action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE {
+		t.Errorf("a named code reads as %v", got)
+	}
+	if got := reasonCodeFromStored("test_future_reason"); got != action_servicepb.PolicyDecision_REASON_CODE_UNKNOWN {
+		t.Errorf("an unnamed code reads as %v", got)
+	}
+	for _, code := range []action_servicepb.PolicyDecision_ReasonCode{
+		action_servicepb.PolicyDecision_REASON_CODE_UNSPECIFIED, action_servicepb.PolicyDecision_REASON_CODE_UNKNOWN,
+	} {
+		if _, ok := reasonCodeStored(code); ok {
+			t.Errorf("%v has a stored form", code)
+		}
+	}
+}
+
+func TestStoredStateNamesRoundTrip(t *testing.T) {
+	pairs := []struct {
+		state action_servicepb.ActionState
+		text  string
+	}{
+		{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, "decision_pending"},
+		{action_servicepb.ActionState_ACTION_STATE_ALLOWED, "allowed"},
+		{action_servicepb.ActionState_ACTION_STATE_DENIED, "denied"},
+		{action_servicepb.ActionState_ACTION_STATE_DISPATCHING, "dispatching"},
+		{action_servicepb.ActionState_ACTION_STATE_RUNNING, "running"},
+		{action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "succeeded"},
+		{action_servicepb.ActionState_ACTION_STATE_FAILED, "failed"},
+		{action_servicepb.ActionState_ACTION_STATE_CANCELLED, "cancelled"},
+		{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
+	}
+	for _, pair := range pairs {
+		state, ok := stateFromStored(pair.text)
+		if !ok || state != pair.state {
+			t.Errorf("stored %q decoded as %v, %v; want %v", pair.text, state, ok, pair.state)
+		}
+		if got, ok := stateStored(pair.state); !ok || got != pair.text {
+			t.Errorf("state %v stored as %q, %v; want %q", pair.state, got, ok, pair.text)
+		}
+	}
+	if len(storedStateNames()) != len(pairs) {
+		t.Errorf("stored vocabulary has %d states, want %d", len(storedStateNames()), len(pairs))
+	}
+	for _, state := range []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, 99} {
+		if _, ok := stateStored(state); ok {
+			t.Errorf("accepted state %v", state)
+		}
+	}
+	if _, ok := stateFromStored("future_state"); ok {
+		t.Error("accepted unknown stored state")
+	}
+}
+
+func TestValidateActor(t *testing.T) {
+	if err := validateActor(nil); err != nil {
+		t.Errorf("an absent actor is invalid: %v", err)
+	}
+	for _, actor := range []*action_servicepb.Principal{
+		{Principal: &action_servicepb.Principal_Caller{Caller: &identitypb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}},
+		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "https://issuer.example", Subject: "subject-123"}}},
+	} {
+		if err := validateActor(actor); err != nil {
+			t.Errorf("validateActor(%v) = %v", actor, err)
+		}
+	}
+	for _, actor := range []*action_servicepb.Principal{
+		{},
+		{Principal: &action_servicepb.Principal_Caller{Caller: &identitypb.ServiceAccount{Name: "test-caller"}}},
+		{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "issuer"}}},
+	} {
+		if err := validateActor(actor); !errors.Is(err, errInvalidActor) {
+			t.Errorf("validateActor(%v) = %v", actor, err)
+		}
+	}
+}

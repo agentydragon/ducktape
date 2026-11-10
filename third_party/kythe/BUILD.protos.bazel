@@ -1,0 +1,55 @@
+"""Kythe message types imported by BuildBuddy's search API."""
+
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "common_proto",
+    srcs = ["kythe/proto/common.proto"],
+    deps = ["@protobuf//:timestamp_proto"],
+)
+
+go_proto_library(
+    name = "common_go_proto",
+    importpath = "kythe.io/kythe/proto/common_go_proto",
+    proto = ":common_proto",
+)
+
+proto_library(
+    name = "filetree_proto",
+    srcs = ["kythe/proto/filetree.proto"],
+)
+
+go_proto_library(
+    name = "filetree_go_proto",
+    importpath = "kythe.io/kythe/proto/filetree_go_proto",
+    proto = ":filetree_proto",
+)
+
+proto_library(
+    name = "graph_proto",
+    srcs = ["kythe/proto/graph.proto"],
+    deps = [":common_proto"],
+)
+
+go_proto_library(
+    name = "graph_go_proto",
+    importpath = "kythe.io/kythe/proto/graph_go_proto",
+    proto = ":graph_proto",
+    deps = [":common_go_proto"],
+)
+
+proto_library(
+    name = "xref_proto",
+    srcs = ["kythe/proto/xref.proto"],
+    deps = [":common_proto"],
+)
+
+go_proto_library(
+    name = "xref_go_proto",
+    importpath = "kythe.io/kythe/proto/xref_go_proto",
+    proto = ":xref_proto",
+    deps = [":common_go_proto"],
+)

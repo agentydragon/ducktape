@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -212,15 +213,6 @@ class PlaidLinkStorage:
             row = (await session.execute(stmt)).scalar_one()
             await session.commit()
         return _stored_link(row)
-
-    async def mark_link_revoked(self, item_id: str) -> None:
-        async with self._session_factory() as session:
-            row = await session.get(LinkRow, item_id)
-            if row is not None and row.status != "revoked":
-                row.status = "revoked"
-                row.updated_at = utcnow()
-                await _notify_spend_changed(session)
-                await session.commit()
 
     async def purge_link_data(self, item_id: str) -> None:
         security_ids = (
@@ -1158,9 +1150,4 @@ def _validated_payload[PayloadT: BaseModel](model_type: type[PayloadT], value: P
 
 
 def _merge_products(*groups: list[str]) -> list[str]:
-    merged: list[str] = []
-    for group in groups:
-        for product in group:
-            if product not in merged:
-                merged.append(product)
-    return merged
+    return list(dict.fromkeys(chain.from_iterable(groups)))

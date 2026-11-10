@@ -39,12 +39,7 @@ async fn main() -> Result<()> {
                 settings.timeouts,
             )?),
         )
-        .with_endpoint_limiters(
-            availability_limiter,
-            cdx_limiter,
-            replay_limiter,
-            settings.queue_wait,
-        )
+        .with_endpoint_limiters(availability_limiter, cdx_limiter, replay_limiter)
         .with_max_body_bytes(settings.max_body_bytes)
         .with_max_metadata_bytes(settings.max_metadata_bytes),
     );

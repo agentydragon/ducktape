@@ -3,6 +3,7 @@ package policy
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -25,7 +27,7 @@ const (
 )
 
 var (
-	caller = policyapi.ServiceAccountRef{Namespace: namespace, Name: "sb"}
+	caller = reader.ServiceAccount{Namespace: namespace, Name: "sb"}
 	bearer = resources.SchemeToken{Header: authorization, Scheme: "Bearer"}
 
 	githubCredential = secretCredential("github-pat", "token", bearer, resources.BasicPassword{Header: authorization})
@@ -63,10 +65,10 @@ func binding(name string, sets ...string) *policyapi.PolicyBinding {
 	return bindingFor(caller, name, sets...)
 }
 
-func bindingFor(subject policyapi.ServiceAccountRef, name string, sets ...string) *policyapi.PolicyBinding {
+func bindingFor(subject reader.ServiceAccount, name string, sets ...string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Generation: 3},
-		Spec:       policyapi.PolicyBindingSpec{Subject: subject, PolicySets: sets},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets},
 	}
 }
 
@@ -74,7 +76,7 @@ func newIndex(
 	sets []*policyapi.PolicySet, bindings []*policyapi.PolicyBinding, credentials []resources.Credential,
 	secrets ...resources.Secret,
 ) *Index {
-	index := NewIndex(0)
+	index := NewIndex()
 	for _, set := range sets {
 		index.Rules.PutPolicySet(set)
 	}
@@ -186,7 +188,7 @@ func TestEvaluate(t *testing.T) {
 		"binding for another sandbox": {
 			standardIndex(
 				[]*policyapi.PolicySet{policySet("github", githubRule)},
-				bindingFor(policyapi.ServiceAccountRef{Namespace: namespace, Name: "other"}, "b", "github"),
+				bindingFor(reader.ServiceAccount{Namespace: namespace, Name: "other"}, "b", "github"),
 			),
 			outbound(),
 			Denied{decision.NoBinding},
@@ -259,7 +261,7 @@ func TestEvaluate(t *testing.T) {
 // namespace, so a binding that matched on the name alone would reach across them.
 func TestTheSameNameInAnotherNamespaceIsADifferentSubject(t *testing.T) {
 	bound := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
-	elsewhere := policyapi.ServiceAccountRef{Namespace: "somewhere-else", Name: caller.Name}
+	elsewhere := reader.ServiceAccount{Namespace: "somewhere-else", Name: caller.Name}
 
 	assertDecision(t, bound.Evaluate(caller, outbound(), nil), Allowed{Binding: "b", Policy: "github"})
 	assertDecision(t, bound.Evaluate(elsewhere, outbound(), nil), Denied{decision.NoBinding})
@@ -273,41 +275,21 @@ func scopedIndex(credential resources.Credential) *Index {
 	)
 }
 
-func TestAuthenticatedWorkloadSourceSubstitutesOnlyTheValidatedContextBearer(t *testing.T) {
-	dynamic := resources.Credential{Name: "agentplane-workload", Source: resources.AuthenticatedWorkloadToken{}, Targets: []resources.Target{bearer}}
-	scoped := scopedIndex(dynamic)
-	token := "pod-a-authenticated-workload-token"
-	request := outbound(header(authorization, "Bearer "+dynamic.Placeholder()))
-
-	got := scoped.Evaluate(caller, request, &WorkloadContext{Bearer: token, Caller: caller, PodUID: "pod-a-uid"})
-
-	assertDecision(t, got, Allowed{Binding: "b", Policy: "scoped", Rewrites: swapped(token)})
-	for _, format := range []string{"%v", "%+v", "%#v"} {
-		if strings.Contains(fmt.Sprintf(format, got), token) {
-			t.Errorf("the decision prints the workload token under %s", format)
-		}
-	}
-
-	assertDecision(t, scoped.Evaluate(caller, request, nil), Denied{decision.CredentialUnavailable})
-	stale := &WorkloadContext{Bearer: "stale-token", Caller: policyapi.ServiceAccountRef{Namespace: namespace, Name: "someone-else"}}
-	assertDecision(t, scoped.Evaluate(caller, request, stale), Denied{decision.CredentialUnavailable})
-}
-
 func TestProjectedWorkloadSource(t *testing.T) {
 	projected := resources.Credential{
 		Name: "kubernetes-workload", Source: resources.ProjectedWorkloadToken{Audience: audience}, Targets: []resources.Target{bearer},
 	}
 	scoped := scopedIndex(projected)
 	request := outbound(header(authorization, "Bearer "+projected.Placeholder()))
-	context := func(subject policyapi.ServiceAccountRef, tokens map[string]string) *WorkloadContext {
-		return &WorkloadContext{Bearer: "pod-a-hop-token", Caller: subject, PodUID: "pod-a-uid", Projected: tokens}
+	context := func(subject reader.ServiceAccount, tokens map[string]string) *WorkloadContext {
+		return &WorkloadContext{Caller: subject, PodUID: "pod-a-uid", Projected: tokens}
 	}
 
 	// The hop bearer is not what a destination validating its own audience will take, so a rule
 	// naming an audience gets the token presented for that audience and no other.
 	got := scoped.Evaluate(caller, request, context(caller, map[string]string{audience: "pod-a-api-server-token", "https://other.test.invalid": "not-this-one"}))
 	assertDecision(t, got, Allowed{Binding: "b", Policy: "scoped", Rewrites: swapped("pod-a-api-server-token")})
-	for _, token := range []string{"pod-a-api-server-token", "pod-a-hop-token"} {
+	for _, token := range []string{"pod-a-api-server-token"} {
 		if strings.Contains(fmt.Sprintf("%+v", got), token) {
 			t.Errorf("the decision prints %s", token)
 		}
@@ -322,7 +304,7 @@ func TestProjectedWorkloadSource(t *testing.T) {
 
 	// Context belongs to the caller it authenticated as: one subject's projected tokens are never
 	// substituted into another's request, however well-formed they are.
-	someoneElse := policyapi.ServiceAccountRef{Namespace: namespace, Name: "someone-else"}
+	someoneElse := reader.ServiceAccount{Namespace: namespace, Name: "someone-else"}
 	assertDecision(t, scoped.Evaluate(caller, request, context(someoneElse, map[string]string{audience: "pod-b-api-server-token"})),
 		Denied{decision.CredentialUnavailable})
 }
@@ -509,7 +491,7 @@ func TestAPolicyBindingWithoutEgressRulesForTheCallerIsNoBinding(t *testing.T) {
 		),
 		"another subject": standardIndex(
 			[]*policyapi.PolicySet{policySet("github", githubRule)},
-			bindingFor(policyapi.ServiceAccountRef{Namespace: namespace, Name: "another"}, "pb", "github"),
+			bindingFor(reader.ServiceAccount{Namespace: namespace, Name: "another"}, "pb", "github"),
 		),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -575,5 +557,125 @@ func TestAllowedCarriesTheDecidingRulesClusterInternal(t *testing.T) {
 			index := standardIndex([]*policyapi.PolicySet{policySet("p", c.rules...)}, binding("b", "p"))
 			assertDecision(t, index.Evaluate(caller, c.request, nil), c.want)
 		})
+	}
+}
+
+const apiServerHost = "kubernetes.test.invalid"
+
+var accountCredential = resources.Credential{
+	Name:    "k8s-account-diagnostics",
+	Source:  resources.KubernetesServiceAccount{Namespace: "accounts", Name: "diagnostics"},
+	Targets: []resources.Target{bearer},
+}
+
+// accountIndex binds the caller to act as the account on the local API server, with token as the
+// proxy's own bearer.
+func accountIndex(token func() (string, error)) *Index {
+	rule := egress([]string{apiServerHost, "elsewhere.test.invalid"}, nil, nil, accountCredential.Name)
+	index := newIndex(
+		[]*policyapi.PolicySet{policySet("account", rule)}, []*policyapi.PolicyBinding{binding("b", "account")},
+		[]resources.Credential{accountCredential},
+	)
+	index.LocalAPIServer = &APIServer{Host: apiServerHost, Port: 443, Token: token}
+	return index
+}
+
+func toAPIServer(options ...func(*Request)) Request {
+	request := Request{
+		Method: "GET", Host: apiServerHost, Port: 443, TLS: true, Path: "/api/v1/namespaces",
+		Headers: http.Header{authorization: {"Bearer " + accountCredential.Placeholder()}},
+	}
+	for _, option := range options {
+		option(&request)
+	}
+	return request
+}
+
+func proxyToken() (string, error) { return "proxy-own-token", nil }
+
+// admit evaluates as the proxy does, with the API server token reader of this admission.
+func admit(index *Index, subject reader.ServiceAccount, request Request) Decision {
+	if index.LocalAPIServer != nil {
+		request.APIServerToken = index.LocalAPIServer.Token
+	}
+	return index.Evaluate(subject, request, nil)
+}
+
+func TestAKubernetesServiceAccountCredentialSendsTheProxysBearerAndNamesTheAccount(t *testing.T) {
+	assertDecision(t, admit(accountIndex(proxyToken), caller, toAPIServer()), Allowed{
+		Binding: "b", Policy: "account",
+		Rewrites: []presentation.HeaderRewrite{
+			{Header: authorization, Values: []string{"Bearer proxy-own-token"}},
+			{Header: ImpersonateUserHeader, Values: []string{"system:serviceaccount:accounts:diagnostics"}},
+		},
+		Impersonated: &policyapi.ServiceAccountRef{Namespace: "accounts", Name: "diagnostics"},
+	})
+}
+
+func TestTheProxysBearerIsReadForEveryRequest(t *testing.T) {
+	token := "first-token"
+	index := accountIndex(func() (string, error) { return token, nil })
+	first := admit(index, caller, toAPIServer()).(Allowed)
+	token = "rotated-token"
+	second := admit(index, caller, toAPIServer()).(Allowed)
+	if first.Rewrites[0].Values[0] != "Bearer first-token" || second.Rewrites[0].Values[0] != "Bearer rotated-token" {
+		t.Errorf("Authorization %q then %q, want each request to read the token file", first.Rewrites[0].Values, second.Rewrites[0].Values)
+	}
+}
+
+func TestACallersOwnImpersonationHeadersRefuseTheRequest(t *testing.T) {
+	for _, supplied := range []string{"Impersonate-User", "impersonate-group", "Impersonate-Uid", "Impersonate-Extra-Scopes"} {
+		t.Run(supplied, func(t *testing.T) {
+			request := toAPIServer(func(r *Request) { r.Headers[supplied] = []string{"system:masters"} })
+			assertDecision(t, admit(accountIndex(proxyToken), caller, request), Denied{decision.ImpersonationForbidden})
+		})
+	}
+	// Another credential is the caller's own business: its impersonation runs on its own rights.
+	projected := resources.Credential{
+		Name: "kubernetes-workload", Source: resources.ProjectedWorkloadToken{Audience: audience}, Targets: []resources.Target{bearer},
+	}
+	request := outbound(header(authorization, "Bearer "+projected.Placeholder()), header("Impersonate-User", "someone"))
+	workload := &WorkloadContext{Caller: caller, Projected: map[string]string{audience: "own-token"}}
+	if _, ok := scopedIndex(projected).Evaluate(caller, request, workload).(Allowed); !ok {
+		t.Error("a projected credential refused a request carrying Impersonate-User")
+	}
+}
+
+func TestTheProxysBearerGoesOnlyToTheLocalAPIServerOverTLS(t *testing.T) {
+	for name, c := range map[string]struct {
+		request Request
+		token   func() (string, error)
+		server  bool
+	}{
+		"plaintext":             {toAPIServer(func(r *Request) { r.TLS = false }), proxyToken, true},
+		"another admitted host": {toAPIServer(host("elsewhere.test.invalid")), proxyToken, true},
+		"another port":          {toAPIServer(func(r *Request) { r.Port = 6443 }), proxyToken, true},
+		"no local API server":   {toAPIServer(), proxyToken, false},
+		"unreadable token":      {toAPIServer(), func() (string, error) { return "", errors.New("test: no token file") }, true},
+		"empty token":           {toAPIServer(), func() (string, error) { return "", nil }, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			index := accountIndex(c.token)
+			if !c.server {
+				index.LocalAPIServer = nil
+			}
+			assertDecision(t, admit(index, caller, c.request), Denied{decision.CredentialUnavailable})
+		})
+	}
+	// Without this admission's token reader there is no bearer to send.
+	assertDecision(t, accountIndex(proxyToken).Evaluate(caller, toAPIServer(), nil), Denied{decision.CredentialUnavailable})
+}
+
+func TestLosingTheUseRuleStopsImpersonationOnTheNextRequest(t *testing.T) {
+	index := accountIndex(proxyToken)
+	other := reader.ServiceAccount{Namespace: namespace, Name: "other-sandbox"}
+	index.Rules.PutBinding(bindingFor(other, "other", "account"))
+	if _, ok := admit(index, caller, toAPIServer()).(Allowed); !ok {
+		t.Fatal("the bound caller was refused")
+	}
+	index.Rules.DeleteBinding("b")
+	assertDecision(t, admit(index, caller, toAPIServer()), Denied{decision.NoBinding})
+	if _, ok := admit(index, other, toAPIServer()).(Allowed); !ok {
+		t.Error("another subject acting as the same account lost it with the first's binding")
 	}
 }

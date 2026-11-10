@@ -26,6 +26,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "types_schema",
+    outs = ["types.schema.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//airlock/frontend:__pkg__"],
+)
+
 py_library(
     name = "config",
     srcs = ["config.py"],

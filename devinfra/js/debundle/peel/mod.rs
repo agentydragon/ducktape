@@ -1,3 +1,4 @@
+pub mod decompose;
 pub mod plan;
 pub mod propose;
 pub mod quotient;

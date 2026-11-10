@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts};
@@ -12,7 +10,6 @@ const DURATION_BUCKETS: [f64; 16] = [
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum AcquisitionFailureReason {
-    SingleFlightQueueTimeout,
     LimiterQueueTimeout,
     UpstreamRetryAfter,
     UpstreamTransientStatus,
@@ -23,7 +20,6 @@ pub(crate) enum AcquisitionFailureReason {
 impl AcquisitionFailureReason {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            AcquisitionFailureReason::SingleFlightQueueTimeout => "single_flight_queue_timeout",
             AcquisitionFailureReason::LimiterQueueTimeout => "limiter_queue_timeout",
             AcquisitionFailureReason::UpstreamRetryAfter => "upstream_retry_after",
             AcquisitionFailureReason::UpstreamTransientStatus => "upstream_transient_status",
@@ -85,8 +81,7 @@ impl UpstreamFetchResult {
                 UpstreamFetchResult::UpstreamFetchTimeout
             }
             AcquisitionFailureReason::UpstreamFetchError => UpstreamFetchResult::UpstreamFetchError,
-            AcquisitionFailureReason::SingleFlightQueueTimeout
-            | AcquisitionFailureReason::LimiterQueueTimeout => unreachable!(
+            AcquisitionFailureReason::LimiterQueueTimeout => unreachable!(
                 "queue failures happen before upstream fetches and have no fetch duration"
             ),
         }
@@ -108,31 +103,12 @@ impl LimiterWaitOutcome {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum SingleFlightWaitOutcome {
-    Owner,
-    FilledByPeer,
-    Timeout,
-}
-
-impl SingleFlightWaitOutcome {
-    fn as_str(self) -> &'static str {
-        match self {
-            SingleFlightWaitOutcome::Owner => "owner",
-            SingleFlightWaitOutcome::FilledByPeer => "filled_by_peer",
-            SingleFlightWaitOutcome::Timeout => "timeout",
-        }
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct ArchiveMetrics {
     pub(crate) acquisition_attempts: IntCounterVec,
     pub(crate) acquisition_failures: IntCounterVec,
     pub(crate) upstream_fetch_duration: HistogramVec,
     pub(crate) limiter_wait_duration: HistogramVec,
-    pub(crate) single_flight_wait_duration: HistogramVec,
-    single_flight_waiters: StdMutex<HashMap<Endpoint, usize>>,
 }
 
 impl Default for ArchiveMetrics {
@@ -172,16 +148,6 @@ impl Default for ArchiveMetrics {
                 &["cache_endpoint", "outcome"],
             )
             .expect("limiter_wait_duration metric definition is valid"),
-            single_flight_wait_duration: HistogramVec::new(
-                HistogramOpts::new(
-                    "wayback_cache_single_flight_wait_duration_seconds",
-                    "Duration spent waiting for an identical cache fill already in flight.",
-                )
-                .buckets(DURATION_BUCKETS.to_vec()),
-                &["cache_endpoint", "outcome"],
-            )
-            .expect("single_flight_wait_duration metric definition is valid"),
-            single_flight_waiters: StdMutex::new(HashMap::new()),
         }
     }
 }
@@ -230,65 +196,6 @@ impl ArchiveMetrics {
         self.limiter_wait_duration
             .with_label_values(&[endpoint.as_str(), outcome.as_str()])
             .observe(duration.as_secs_f64());
-    }
-
-    pub(crate) fn record_single_flight_wait_duration(
-        &self,
-        endpoint: Endpoint,
-        outcome: SingleFlightWaitOutcome,
-        duration: Duration,
-    ) {
-        self.single_flight_wait_duration
-            .with_label_values(&[endpoint.as_str(), outcome.as_str()])
-            .observe(duration.as_secs_f64());
-    }
-
-    pub(crate) fn begin_single_flight_wait(
-        self: &Arc<Self>,
-        endpoint: Endpoint,
-    ) -> SingleFlightWaitGuard {
-        {
-            let mut waiters = self
-                .single_flight_waiters
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            *waiters.entry(endpoint).or_default() += 1;
-        }
-        SingleFlightWaitGuard {
-            metrics: Arc::clone(self),
-            endpoint,
-        }
-    }
-
-    fn finish_single_flight_wait(&self, endpoint: Endpoint) {
-        let mut waiters = self
-            .single_flight_waiters
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(count) = waiters.get_mut(&endpoint) {
-            *count = count.saturating_sub(1);
-        }
-    }
-
-    pub(crate) fn single_flight_waiter_counts(&self) -> Vec<(Endpoint, usize)> {
-        self.single_flight_waiters
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .map(|(endpoint, count)| (*endpoint, *count))
-            .collect()
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct SingleFlightWaitGuard {
-    metrics: Arc<ArchiveMetrics>,
-    endpoint: Endpoint,
-}
-
-impl Drop for SingleFlightWaitGuard {
-    fn drop(&mut self) {
-        self.metrics.finish_single_flight_wait(self.endpoint);
     }
 }
 

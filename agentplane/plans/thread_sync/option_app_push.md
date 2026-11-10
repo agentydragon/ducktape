@@ -1,8 +1,9 @@
 # Option: the app pushes, over SSE or WebSocket
 
 A1's delta, but the server keeps the connection and writes to it rather than answering a re-issued
-poll. The app already does exactly this for the inventory: `/live/sandboxes` is SSE, `LiveIndex`
-holds the state, and `database_updates.py` is the Postgres wake-up behind it.
+poll. Environment inventory now uses the generated EnvironmentService watch; it does not establish
+the mechanism for a Thread push. Any proposed Thread invalidation and replay path must follow
+History's ownership of the fold.
 
 The reader opens one stream and declares its interest — a cursor window and a content selection.
 The app watches the fold and writes the entities and bodies that fall inside it.
@@ -29,9 +30,9 @@ this deployment has few readers and few threads.
 - **P6** is _harder_ than A1, not easier. A resumable stream needs a last-event id and a server able
   to answer "everything after this" — SSE's `Last-Event-ID` gives the protocol half; the app owes
   the replay half. A1's poll carries its position in every request and so has nothing to resume.
-- **O2**: a reader is pinned to the replica holding its stream. The inventory already lives with
-  this; a rolling deploy drops streams and clients reconnect. Whether that is acceptable for a
-  thread is the same question answered for the inventory, and the answer there was yes.
+- **O2**: a reader is pinned to the replica holding its stream. A rolling deploy drops streams and
+  clients reconnect. Review whether reconnect and replay are acceptable for Thread data; an
+  Environment inventory snapshot does not prove the Thread behavior.
 
 ## Prior art worth reading before building this
 

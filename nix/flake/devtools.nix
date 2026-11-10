@@ -76,11 +76,12 @@ let
     pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
     pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
+    pkgs.kubevirt # virtctl for KubeVirt VM consoles and lifecycle operations
     pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
     pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
     pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
   ];
-  # System libraries matching the RBE container image (devinfra/rbe_container_image/Dockerfile).
+  # System libraries matching the RBE container image (devinfra/buildbuddy/images/rbe/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
   # Non-hook developer tools shared by the devShell and Claude profiles.
   # Pre-commit's packages are composed once below; the BuildBuddy runner has its

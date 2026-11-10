@@ -48,16 +48,11 @@ export { aH, bC, dE };
         );
     }
 
-    // Queue must be sorted by ref_count desc with fanout_modules tiebreak.
-    let ref_counts: Vec<u64> = entries
-        .iter()
-        .map(|e| e["ref_count"].as_u64().unwrap())
-        .collect();
-    let mut sorted = ref_counts.clone();
-    sorted.sort_by(|a, b| b.cmp(a));
-    assert_eq!(
-        ref_counts, sorted,
-        "entries must be sorted by ref_count descending"
+    // Reference counts must be nonincreasing.
+    let ref_counts = entries.iter().map(|e| e["ref_count"].as_u64().unwrap());
+    assert!(
+        ref_counts.is_sorted_by(|a, b| a >= b),
+        "entries must be sorted by ref_count descending: {entries:#?}"
     );
 
     // The first entry should be `aH` — it has the highest reference

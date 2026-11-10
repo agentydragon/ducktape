@@ -9,7 +9,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -260,10 +262,11 @@ func subscriptionView(subscription store.Subscription) (*notificationspb.Subscri
 	}
 	return &notificationspb.Subscription{
 		Id: subscription.ID.String(), InboxId: subscription.InboxID.String(), Source: source,
-		IdempotencyKey: subscription.IdempotencyKey, Version: subscription.Version, Cancelled: subscription.Cancelled,
+		IdempotencyKey: proto.String(subscription.IdempotencyKey), Version: proto.Int64(subscription.Version), Cancelled: subscription.Cancelled,
 		ExpiresAt: timestamppb.New(subscription.ExpiresAt), LastSuccessAt: seen.lastSuccessAt,
 		ErrorKind: seen.errorKind, Error: seen.errorMessage, ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
 		RetryAt: timestamp(subscription.RetryAt), Github: github,
+		NextSourceCheckAt: timestamp(subscription.NextSourceCheckAt), Expired: subscription.Expired,
 	}, nil
 }
 
@@ -335,10 +338,14 @@ func eventIdentityView(event model.EventIdentity) (*notificationspb.EventIdentit
 			},
 		}}, nil
 	case model.MessageEvent:
-		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: &notificationspb.MessageEvent{
+		message := &notificationspb.MessageEvent{
 			MessageId: event.MessageID.String(),
-			Sender:    &notificationspb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},
-		}}}, nil
+			Sender:    &identitypb.ServiceAccount{Namespace: event.Sender.Namespace, Name: event.Sender.Name},
+		}
+		if event.SenderIdentity != nil {
+			message.SenderIdentity = &identitypb.Identity{Name: event.SenderIdentity.Name, Uid: event.SenderIdentity.UID}
+		}
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_Message{Message: message}}, nil
 	default:
 		return nil, fmt.Errorf("stored event identity %T is unknown", event)
 	}

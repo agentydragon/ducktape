@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
 from x import ember  # gazelle:ignore x.ember
 from x.ember.system_prompt import load_system_prompt
 
@@ -26,7 +26,7 @@ def _embedded_text(relative: str) -> str:
 
 
 def test_python_session_demo_scripts_are_embedded_and_work(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, runfiles: Runfiles, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     prompt = load_system_prompt()
     demo_relative = "examples/python_session/demo.sh"
@@ -41,7 +41,8 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     env["EMBER_WORKSPACE_DIR"] = str(tmp_path / "workspace")
     env["EMBER_PYTHON_SESSION_DIR"] = str(tmp_path / "session")
     # `demo.sh` calls `ember_python` by name; Bazel builds the launcher under that name.
-    env["PATH"] = f"{get_required_path(os.environ['EMBER_PYTHON']).parent}{os.pathsep}{env['PATH']}"
+    ember_python = Path(str(runfiles.root() / os.environ["EMBER_PYTHON"]))
+    env["PATH"] = f"{ember_python.parent}{os.pathsep}{env['PATH']}"
 
     test_script = resources.files(ember).joinpath(f"resources/{test_relative}")
     subprocess.run(["bash", str(test_script)], check=True, env=env, text=True)

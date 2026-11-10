@@ -202,7 +202,7 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
   const narration = container.querySelector<HTMLElement>('[data-fold-kind="narration"]')!;
   expect(narration.textContent?.trim()).toBe("The format note is clear; I’ll verify its example next.");
-  expect(narration.querySelector(".agentplane-markdown strong")?.textContent).toBe("clear");
+  expect(narration.querySelector(".ui-markdown strong")?.textContent).toBe("clear");
   expect(narration.closest("details, summary, button, article")).toBeNull();
   expect(narration.dataset.historySequences).toBe("801");
 
@@ -214,7 +214,7 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
   expect(thinking.open).toBe(false);
   expect(thinking.querySelector("summary")?.textContent).toBe("Thinking");
   expect(thinking.textContent).toContain("Keep this internal note folded.");
-  expect(thinking.querySelector(".agentplane-markdown strong")?.textContent).toBe("internal note");
+  expect(thinking.querySelector(".ui-markdown strong")?.textContent).toBe("internal note");
 });
 
 it("clamps pointer and keyboard resizing and restores the width after collapsing", async () => {
@@ -347,8 +347,8 @@ it("renders message Markdown and preserves the exact source in the raw event str
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2));
   const userArticle = container.querySelector<HTMLElement>('[data-message-role="user"]')!;
   const assistantArticle = container.querySelector<HTMLElement>('[data-message-role="assistant"]')!;
-  expect(userArticle.querySelector(".agentplane-markdown")).not.toBeNull();
-  expect(assistantArticle.querySelector(".agentplane-markdown")).not.toBeNull();
+  expect(userArticle.querySelector(".ui-markdown")).not.toBeNull();
+  expect(assistantArticle.querySelector(".ui-markdown")).not.toBeNull();
   expect(userArticle.querySelector("strong")?.textContent).toBe("full precision");
   expect(userArticle.querySelector('a[href="https://example.test/precision"]')?.textContent).toBe(
     "Read the synthetic guide"

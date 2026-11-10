@@ -12,26 +12,18 @@ from rich.text import Text
 
 @dataclass(frozen=True)
 class BlockChars:
-    """Configuration for progress bar block characters.
-
-    Represents the characters used to render progress bars with different fill levels:
-    - full: Completely filled block
-    - empty: Empty space
-    - partials: Progressively fuller partial blocks
-    """
+    """Characters for full, empty, and progressively filled portions."""
 
     full: str
     empty: str = " "
     partials: tuple[str, ...] = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")
 
     def __post_init__(self):
-        """Validate block character configuration."""
         if len(self.partials) < 1:
             raise ValueError("partials must have at least 1 element")
 
     @classmethod
     def simple(cls, char: str, empty: str = " ") -> BlockChars:
-        """Create block chars using single character for all fill levels."""
         return cls(full=char, empty=empty, partials=(char,))
 
 
@@ -71,7 +63,6 @@ class ProgressBar:
         self.min_width = min_width
 
     def _render_bar(self, width: int) -> Text:
-        """Render the progress bar at a specific width."""
         ratio = 0 if self.max_value == 0 else min(self.value / self.max_value, 1.0)
         filled_width = ratio * width
         full_blocks = int(filled_width)

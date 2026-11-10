@@ -25,6 +25,7 @@ from cilium_crds.io.cilium import (
 )
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -34,7 +35,6 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
@@ -47,11 +47,10 @@ PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
-# Must exceed the roaming-node count, or an offline laptop's undeletable pod
-# holds the whole unavailable budget and the rollout deadlocks silently.
-# Enforced by //cluster/cdk8s/monitoring:test_roaming_daemonset_capacity (which
-# derives the count from nebula-mesh.json); incident write-up in
-# cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
+# `maxUnavailable` must exceed the roaming-node count: an offline pod can hold the
+# rollout budget indefinitely. `//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity`
+# derives that count from `nebula-mesh.json`; see
+# `cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md`.
 _ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
 
 
@@ -124,6 +123,9 @@ def _loki_values() -> dict[str, object]:
                 # configured".
                 "volume_enabled": True,
             },
+            # The default replay ceiling is 4 GiB, above the writer's cgroup
+            # limit. Bound replay so recovery can flush before it exhausts memory.
+            "ingester": {"wal": {"replay_memory_ceiling": "1GB"}},
             "compactor": {
                 "retention_enabled": True,
                 "retention_delete_delay": "2h",
@@ -137,12 +139,21 @@ def _loki_values() -> dict[str, object]:
         # All pinned to OVH kimsufi zone, where the Piraeus HDD pools are.
         "write": {
             "replicas": 2,
-            "annotations": _GOLDILOCKS_OFF,
+            # Initial-mode VPA normally scales limits with requests. Keep the
+            # cgroup limit aligned with GOMEMLIMIT and WAL replay while VPA sizes
+            # requests for scheduling, including enough memory for recovery.
+            "annotations": {
+                "goldilocks.fairwinds.com/vpa-resource-policy": (
+                    '{"containerPolicies":[{"containerName":"loki","controlledValues":"RequestsOnly",'
+                    '"minAllowed":{"memory":"1Gi"},"maxAllowed":{"memory":"2Gi"}}]}'
+                )
+            },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
-            "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
+            "extraEnv": [{"name": "GOMEMLIMIT", "value": "1536MiB"}],
+            "resources": {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "500m", "memory": "2Gi"}},
         },
         "read": {
             "replicas": 2,
@@ -150,15 +161,11 @@ def _loki_values() -> dict[str, object]:
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
-            # Loki doesn't derive GOMEMLIMIT from its own cgroup limit yet (open
-            # upstream: grafana/loki#23514, grafana/loki#19586), so the Go GC never
-            # gets a chance to work harder before the kernel OOM-kills the process —
-            # it only ever sees the hard wall. Set it explicitly to ~80% of the
-            # limit below so GC pressure ramps up first. `read` runs query-frontend
-            # + querier in one process (-target=read) and is the component that hits
-            # this: a wide/low-selectivity query has to fetch and decompress every
-            # matching chunk before a line filter ever runs, so memory tracks data
-            # scanned, not data returned. See ducktape#4763.
+            # See upstream issues grafana/loki#23514 and #19586: Loki does not derive
+            # `GOMEMLIMIT` from its cgroup limit, so set it to ~80% of the hard
+            # cap. `read` combines query-frontend and querier; broad queries can decompress
+            # matching chunks before filtering, so memory tracks data scanned (#4763; the
+            # query cause in that incident was unconfirmed).
             "extraEnv": [{"name": "GOMEMLIMIT", "value": "3277MiB"}],
             "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "4Gi"}},
         },
@@ -169,15 +176,10 @@ def _loki_values() -> dict[str, object]:
             "affinity": node_scheduling.PREFER_WORKERS,
             "persistence": {"volumeClaimsEnabled": False},
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
-            # backend runs the compactor + index-gateway + ruler. Its memory tracks
-            # the size of the *retained index* (streams ever created x retention),
-            # not the active stream count the ingesters see — which is why it was the
-            # component that died while loki-write survived. At 256Mi it was OOMKilled
-            # 165 times (exit 137), peaking at exactly the limit; that peak is
-            # censored, since working-set cannot be observed above the cap.
-            # Raised alongside the promtail `filename` labeldrop that cuts index
-            # growth at the source; the drop alone does not shrink the already-retained
-            # index, which ages out over the retention period.
+            # Backend memory follows the retained index, not active ingester streams;
+            # its old 256Mi cap caused 165 OOM kills. Dropping Promtail's `filename`
+            # label limits future growth, but the existing index ages out only through
+            # retention (ducktape#4763).
             "resources": {"requests": {"cpu": "50m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "1Gi"}},
         },
         "gateway": {
@@ -189,15 +191,10 @@ def _loki_values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}},
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
-            # nginx's DNS resolver reuses one fixed UDP source port for every
-            # query; Kubernetes' conntrack-based Service NAT then pins that flow
-            # to whichever CoreDNS pod answered first and never re-evaluates it,
-            # so nginx keeps querying a dead pod IP forever once CoreDNS
-            # reschedules — only a gateway restart/reload re-triggers resolution.
-            # See ducktape#4750. dnsmasq opens a fresh UDP flow per query instead,
-            # so it never falls into this trap; it forwards via this pod's own
-            # /etc/resolv.conf (the kube-dns ClusterIP, kubelet-injected), so no
-            # DNS server address is hardcoded here.
+            # nginx's fixed UDP source port can stay conntrack-pinned to a dead
+            # CoreDNS pod after rescheduling. dnsmasq opens fresh flows and forwards
+            # through the kubelet-injected resolver; see
+            # `cluster/docs/lessons_learned/2026_08_26_loki_gateway_nginx_dns_conntrack_pinning.md`.
             "nginxConfig": {"resolver": "127.0.0.1:8053"},
             "extraContainers": [
                 {
@@ -220,9 +217,7 @@ def _loki_values() -> dict[str, object]:
             "rules": {"enabled": False},
             "selfMonitoring": {"enabled": False, "grafanaAgent": {"installOperator": False}},
         },
-        # Disable test pod
         "test": {"enabled": False},
-        # Disable chunk cache (single binary, not needed)
         "chunksCache": {"enabled": False},
         "resultsCache": {"enabled": False},
     }
@@ -233,42 +228,27 @@ def _promtail_values() -> dict[str, object]:
         "updateStrategy": _ROAMING_SAFE_UPDATE_STRATEGY,
         "config": {
             "clients": [
-                # SimpleScalable: push to the write StatefulSet's service.
-                # The single-binary `loki` Service was removed when we switched
-                # off SingleBinary mode.
+                # SimpleScalable writes through loki-write; the old single-binary
+                # `loki` Service no longer exists.
                 {"url": PUSH_URL}
             ],
             "snippets": {
-                # Drop `filename`. It is the chart default and carries the full
-                # /var/log/pods/<ns>_<pod>_<uid>/<container>/0.log path, so the pod UID
-                # changes on every restart, rollout, Job, and CronJob run — 6194
-                # distinct values in 24h, against 59 KB/s of actual ingest. Loki memory
-                # scales with stream cardinality, not volume, and the retained index is
-                # O(streams created x retention): that churn is what OOMKilled
-                # loki-backend 165 times while ingest stayed trivial.
-                #
-                # It is redundant — namespace + pod + container already identify the
-                # source; the UID is the only thing `filename` adds.
-                #
-                # Must be a pipeline stage, not extraRelabelConfigs: promtail attaches
-                # `filename` at file-target discovery, after relabeling, so a
-                # relabel-stage drop does not see it. `cri: {}` is restated because it
-                # is the chart's default pipelineStages value and overriding the key
-                # replaces it wholesale.
+                # Drop the default `filename` label: its per-Pod UID churns streams,
+                # growing the retained index; cardinality, not ingest volume, drives
+                # that cost, while namespace/pod/container already identify the source.
+                # Drop it in a pipeline stage because Promtail
+                # adds it after relabeling. `pipelineStages` replaces chart defaults,
+                # so keep the `cri` stage here too.
                 "pipelineStages": [{"cri": {}}, {"labeldrop": ["filename"]}]
             },
         },
         "resources": {
             "requests": {
                 "cpu": "50m",
-                # Promtail tails container logs; in cgroup v2 the page cache for every
-                # tailed file is charged to this container. A tight memory limit forces
-                # constant eviction + readahead re-reads from disk (observed 2026-06-08:
-                # 128Mi cap -> 23.8 TB physical reads for 66 MB logical, pegging the
-                # node's system disk at 94% util and starving co-located etcd's WAL
-                # fsync -> apiserver<->etcd latency -> NodeReady flaps). Keep the limit
-                # well above the tail working set. See
-                # cluster/debug/2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md.
+                # cgroup v2 charges tailed-file page cache here; a 128Mi cap caused
+                # eviction/re-read thrash that starved etcd. Keep ample headroom above
+                # the tail working set; measurements are in
+                # `cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md`.
                 "memory": "256Mi",
             },
             "limits": {"cpu": "500m", "memory": "1Gi"},
@@ -282,19 +262,16 @@ def _promtail_journal_values() -> dict[str, object]:
         # Restrict to systemd/journald nodes; label set in nix/nixos/hosts/*/default.nix.
         "nodeSelector": {"node-vendor": "nixos"},
         "tolerations": _TOLERATE_NO_SCHEDULE,
-        # Same rollout deadlock as the pod-log promtail, and worse here: the
-        # nodeSelector above is NixOS-only, so two of the three candidate nodes are
-        # the roaming laptops. Exceeding the desired count is intended — Kubernetes
-        # clamps it, and no roaming node should ever gate a journal rollout.
+        # The NixOS-only selector includes offline roaming laptops; the shared
+        # rollout budget must exceed their count so they cannot block an update.
         "updateStrategy": _ROAMING_SAFE_UPDATE_STRATEGY,
         "config": {
             "clients": [{"url": PUSH_URL}],
             "snippets": {
-                # Disable the chart's default Kubernetes pod-log scrape — the main promtail
-                # already collects pod logs on every node; this release must not double-collect.
+                # Main Promtail already collects pod logs on every node; avoid duplicates.
                 "scrapeConfigs": "",
-                "extraScrapeConfigs": get_required_path(
-                    own_repo_rlocation("cluster/cdk8s/monitoring/journal-scrape.yaml")
+                "extraScrapeConfigs": (
+                    Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/journal-scrape.yaml"
                 ).read_text(),
             },
         },
@@ -309,10 +286,7 @@ def _promtail_journal_values() -> dict[str, object]:
         "resources": {
             "requests": {
                 "cpu": "50m",
-                # Keep memory well above the tail working set: with a tight cap, cgroup v2
-                # page-cache eviction thrashes the node disk and can starve co-located etcd
-                # (see the pod-log promtail and
-                # cluster/debug/2026-06-10-etcd-io-contention/).
+                # Same cgroup page-cache/etcd I/O constraint as pod-log Promtail above.
                 "memory": "256Mi",
             },
             "limits": {"cpu": "500m", "memory": "512Mi"},
@@ -344,20 +318,15 @@ def _helm_releases(chart: Chart) -> None:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         upgrade=HelmReleaseSpecUpgrade(
-            # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
-            # Without this, Helm waits for all pods including those stuck Pending/Terminating
-            # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
+            # Helm otherwise waits on Pending/Terminating pods at offline roaming nodes;
+            # this is separate from the DaemonSet rollout budget above.
             disable_wait=True
         ),
         values=_promtail_values(),
     )
-    # Deviation from the stock promtail chart (whose default is pod-log tailing): this
-    # release is journal-only. It scrapes the systemd journal on the NixOS nodes
-    # (wyrm2, rugged, iguana) so kernel messages — notably the RTX 5090
-    # `Xid 79 "GPU has fallen off the bus"` events — reach Loki with cluster
-    # retention instead of dying with the node's ~5-day local journal. Talos nodes
-    # have no journald and are handled separately (cluster/cdk8s/vector_talos_logs.py);
-    # the main pod-log promtail above is untouched and still runs on every node.
+    # Journal-only deviation: keep NixOS kernel events (including GPU Xid 79) in
+    # cluster-retained Loki logs beyond local journal retention. Talos uses
+    # `cluster/cdk8s/vector_talos_logs.py`; pod-log Promtail remains the all-node collector.
     helm_release(
         chart,
         "promtail-journal",
@@ -369,8 +338,7 @@ def _helm_releases(chart: Chart) -> None:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         upgrade=HelmReleaseSpecUpgrade(
-            # Same rationale as the pod-log promtail: roaming nodes (rugged, iguana) may
-            # be offline, so don't block the release on their Pending/Terminating pods.
+            # Same Helm-wait issue as pod-log Promtail above.
             disable_wait=True
         ),
         values=_promtail_journal_values(),
@@ -409,27 +377,8 @@ def _network_policy(chart: Chart) -> None:
     tcp = CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
     udp = CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
     loki_pods = {"app.kubernetes.io/name": NAME, namespace_label: NAME}
-    # Restrict Loki ingress to legitimate sources only.
-    #
-    # Loki has auth_enabled: false — any pod that can reach port 3100 can read,
-    # write, or delete all cluster logs. This policy whitelists the known consumers.
-    #
-    # Allowed ingress to Loki (port 3100):
-    #   - Promtail (loki namespace, log shipping)
-    #   - Vector Talos-log receiver (vector-talos-logs namespace, Talos node logs)
-    #   - Grafana (monitoring namespace, log queries)
-    #   - Alloy (monitoring namespace, OTel log forwarding and the home switch's syslog)
-    #   - Gatus (gatus namespace, health checks)
-    #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
-    #   - Alloy (monitoring namespace, Loki canary metrics)
-    #   - loki-read-proxy (loki-read-proxy namespace, namespace-filtered read-only
-    #     queries for the Haku agent, direct to loki-read — see ducktape#4750)
-    #   - Loki itself (SimpleScalable: read/backend/write/gateway/canary)
-    #
-    # Allowed egress from Loki:
-    #   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
-    #   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
-    #   - Loki itself (intra-cluster gossip, gRPC, HTTP, and gateway)
+    # Loki has auth disabled: any pod reaching port 3100 can read, write, or delete
+    # every cluster log. These per-consumer rules are its network access boundary.
     NetworkPolicy(
         chart,
         "network-policy",
@@ -490,11 +439,8 @@ def _network_policy(chart: Chart) -> None:
             CiliumNetworkPolicySpecIngress(
                 from_endpoints=_from_pods({namespace_label: "authentik"}), to_ports=_ingress_tcp("3100")
             ),
-            # loki-read-proxy → loki-read directly, bypassing the gateway (the proxy
-            # enforces the query validator + allowlist). See ducktape#4750: the
-            # gateway's nginx resolver can get permanently pinned to a dead CoreDNS
-            # pod IP after CoreDNS reschedules, and this proxy only ever queries, so
-            # it never needed the gateway's read/write path routing.
+            # Haku's read-only, namespace-filtered proxy queries `loki-read` directly,
+            # enforcing its validator/allowlist without the gateway resolver path (#4750).
             CiliumNetworkPolicySpecIngress(
                 from_endpoints=_from_pods(
                     {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}

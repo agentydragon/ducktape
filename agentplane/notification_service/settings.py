@@ -4,10 +4,12 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.log_levels import LogLevels
+from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
@@ -16,6 +18,7 @@ PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
 class ActionsSettings(BaseModel):
+    tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     url: HttpEndpointUrl = Field(description="Base URL of the Actions Service's canonical request/event read API.")
     token_file: Path = Field(
@@ -58,6 +61,7 @@ class GitHubSettings(BaseModel):
 
 
 class RunnerGatewaySettings(BaseModel):
+    tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     control_target: str = Field(
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
@@ -71,6 +75,7 @@ class RunnerGatewaySettings(BaseModel):
 
 
 class HistoryServiceSettings(BaseModel):
+    tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(
         description="History Service gRPC host:port; delivery reads the Session's runner entries there."
@@ -82,6 +87,7 @@ class HistoryServiceSettings(BaseModel):
 
 
 class SessionDispatcherSettings(BaseModel):
+    tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Session Dispatcher gRPC host:port for queued runner notices.")
     request_timeout_s: PositiveSeconds = 15
@@ -145,8 +151,7 @@ class Settings(YamlFileSettings):
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
     )
     operator_reader_account: str | None = Field(
-        default=None,
-        description="ServiceAccount name allowed to read UID-pinned operator diagnostics, not inbox payloads.",
+        default=None, description="ServiceAccount name allowed to inspect Session inbox diagnostics and entry payloads."
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
@@ -160,12 +165,25 @@ class Settings(YamlFileSettings):
             "Inbox payloads and current pull request snapshots have separate lifetimes."
         ),
     )
-    stale_inbox_confirmation_s: PositiveSeconds = Field(
-        default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."
+    unavailable_destination_retry_s: PositiveSeconds = Field(
+        default=30, le=3600, description="Seconds between checks of an unavailable UID-pinned Sandbox."
     )
     log_levels: LogLevels
     host: str = "0.0.0.0"
-    port: int = Field(default=8080, ge=1, le=65535)
+    rpc: Listener
+    http_port: int = Field(
+        default=8081, ge=1, le=65535, description="The HTTP listener's port, used only for the signed GitHub webhook."
+    )
+
+    @model_validator(mode="after")
+    def bearer_audience(self) -> Settings:
+        if not any(
+            isinstance(method, KubernetesBearerAuth) and self.token_audience in method.audiences
+            for method in self.rpc.auth
+        ):
+            raise ValueError("rpc.auth must allow the configured token_audience")
+        return self
+
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )

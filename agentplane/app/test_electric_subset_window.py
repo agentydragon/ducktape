@@ -20,12 +20,17 @@ from sqlalchemy import select
 
 from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.fold.models import FOLD_EPOCH, ThreadEntity
 from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
+from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import event_pb2
 
 # gazelle:include_dep @pypi//protobuf
+
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 Row = dict[str, Any]
 _SHAPE = "/v1/shape"
@@ -208,12 +213,13 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
             ),
         )
 
-        def reference(rows: list[ThreadEntity], item: str) -> dict[str, Any]:
-            text_ref = next(row for row in rows if row.entity_id == item).text_ref
-            assert text_ref is not None
-            return text_ref
+        def reference(rows: list[ThreadEntity], item: str) -> history_service_pb2.ThreadPayloadReference:
+            entity = thread_entity_from_record(next(row for row in rows if row.entity_id == item))
+            assert entity.WhichOneof("entity") == "item"
+            assert entity.item.HasField("text_ref")
+            return entity.item.text_ref
 
-        first_generation = reference(await thread.rows(), "replaced")["generation"]
+        first_generation = reference(await thread.rows(), "replaced").generation
         # A completion whose text differs from what streamed replaces the body: a new
         # generation, with the old one's chunks still in the insert-only table.
         await thread.record(
@@ -221,7 +227,7 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
         )
         rows = await thread.rows()
         replaced, kept = reference(rows, "replaced"), reference(rows, "kept")
-        assert replaced["generation"] != first_generation
+        assert replaced.generation != first_generation
 
         chunks = _thread_shape("thread_payload_chunk", thread.id, field="text")
         async with asyncio.timeout(120), httpx.AsyncClient(base_url=thread.electric_url, timeout=35) as client:
@@ -243,16 +249,16 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
                 {
                     "where": "(owner_id = $1 AND generation = $2) OR (owner_id = $3 AND generation = $4)",
                     "params": {
-                        "1": replaced["owner_id"],
-                        "2": str(replaced["generation"]),
-                        "3": kept["owner_id"],
-                        "4": str(kept["generation"]),
+                        "1": replaced.owner_id,
+                        "2": str(replaced.generation),
+                        "3": kept.owner_id,
+                        "4": str(kept.generation),
                     },
                 },
             )
-            assert {row["owner_id"] for row in current} == {replaced["owner_id"], kept["owner_id"]}
-            assert body(current, replaced["owner_id"]) == "Second replaced"
-            assert body(current, kept["owner_id"]) == "First kept"
+            assert {row["owner_id"] for row in current} == {replaced.owner_id, kept.owner_id}
+            assert body(current, replaced.owner_id) == "Second replaced"
+            assert body(current, kept.owner_id) == "First kept"
 
             # An array parameter selects by owner alone — and so brings every generation.
             by_owner, _ = await _subset(
@@ -260,12 +266,12 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
                 chunks,
                 handle,
                 start,
-                {"where": "owner_id = ANY($1)", "params": {"1": f"{{{replaced['owner_id']},{kept['owner_id']}}}"}},
+                {"where": "owner_id = ANY($1)", "params": {"1": f"{{{replaced.owner_id},{kept.owner_id}}}"}},
             )
-            assert {row["owner_id"] for row in by_owner} == {replaced["owner_id"], kept["owner_id"]}
-            assert {int(row["generation"]) for row in by_owner if row["owner_id"] == replaced["owner_id"]} == {
+            assert {row["owner_id"] for row in by_owner} == {replaced.owner_id, kept.owner_id}
+            assert {int(row["generation"]) for row in by_owner if row["owner_id"] == replaced.owner_id} == {
                 int(first_generation),
-                int(replaced["generation"]),
+                replaced.generation,
             }
 
 

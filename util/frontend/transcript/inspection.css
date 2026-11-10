@@ -1,0 +1,39 @@
+:root {
+  --transcript-inspection-overlay-inset: 0.25rem;
+}
+
+.transcript-inspection-owner {
+  position: relative;
+}
+
+.transcript-inspection-toggle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.transcript-inspection-toggle[data-placement="overlay"] {
+  position: absolute;
+  inset-block-start: var(--transcript-inspection-overlay-inset);
+  inset-inline-end: var(--transcript-inspection-overlay-inset);
+}
+
+.transcript-inspection-toggle[data-placement="bubble"] {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 100%;
+}
+
+/* A hidden toggle remains focusable, so Tab and a touch reveal can show it. */
+.transcript-inspection-owner:hover .transcript-inspection-toggle,
+.transcript-inspection-owner:focus-within .transcript-inspection-toggle,
+.transcript-inspection-owner .transcript-inspection-toggle[aria-expanded="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .transcript-inspection-owner[data-inspection-revealed] .transcript-inspection-toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

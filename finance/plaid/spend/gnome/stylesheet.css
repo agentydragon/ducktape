@@ -14,3 +14,6 @@
 .plaid-spend-unknown {
   color: #aeb7c2;
 }
+.plaid-spend-panel {
+  spacing: 5px;
+}

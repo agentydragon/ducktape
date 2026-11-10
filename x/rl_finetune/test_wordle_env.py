@@ -38,26 +38,17 @@ class TestScoreGuess:
         assert result[1] == "Y"  # a in word but wrong position
         assert result[2] == "Y"  # n in word but wrong position
 
-    def test_duplicate_letter_one_green(self):
-        # Secret has one 'e', guess has two 'e's — only the green one should match.
-        result = _score_guess("crane", "eagle")
-        # e at position 0: not in position 0 of secret, but 'e' is at position 4
-        # e at position 4: matches position 4 -> G
-        assert result[4] == "G"
-        # first 'e' should be X since the only 'e' is consumed by the green
-        assert result[0] == "X"
-
-    def test_duplicate_letter_in_secret(self):
-        # Secret "hello" has two l's. Guess "llama" — both l's match (yellow).
-        result = _score_guess("hello", "llama")
-        assert result[0] == "Y"  # l exists but not at position 0
-        assert result[1] == "Y"  # second l also in word (hello has l at pos 2 and 3)
-
-    def test_duplicate_letter_in_guess_single_in_secret(self):
-        # Secret "crane" has one 'a' at position 2. Guess "llama" has 'a' at positions 2 and 4.
-        result = _score_guess("crane", "llama")
-        assert result[2] == "G"  # a at position 2 matches exactly
-        assert result[4] == "X"  # second a: the only 'a' was consumed by the green
+    @pytest.mark.parametrize(
+        ("secret", "guess", "expected"),
+        [
+            pytest.param("crane", "eagle", {4: "G", 0: "X"}, id="green-consumes-duplicate"),
+            pytest.param("hello", "llama", {0: "Y", 1: "Y"}, id="duplicate-in-secret"),
+            pytest.param("crane", "llama", {2: "G", 4: "X"}, id="duplicate-guess-one-secret-letter"),
+        ],
+    )
+    def test_duplicate_letter_scoring(self, secret: str, guess: str, expected: dict[int, str]) -> None:
+        result = _score_guess(secret, guess)
+        assert {position: result[position] for position in expected} == expected
 
 
 class TestCompletionScore:

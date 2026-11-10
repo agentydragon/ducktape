@@ -1,10 +1,7 @@
 # Upstream Ollama (Vulkan) on rugged's Intel Arc 130V/140V iGPU (Lunar Lake).
 #
-# RETIRED (2026-09-17): this file used to also run IPEX-LLM's SYCL-accelerated
-# Ollama fork (`ducktape.localLlm.arc`). Intel archived intel/ipex-llm
-# 2026-01-28 ("known security issues", no more patches); its bundled Ollama
-# was frozen at 0.9.3 forever, too old to ever run Gemma 4. See
-# nix/debug/rugged/hw/llm_arc_gpu.md for detail.
+# Do not restore the retired IPEX-LLM fork: its archived backend stopped at
+# Ollama 0.9.3. Runtime experiments: nix/debug/rugged/hw/gemma4.md.
 {
   config,
   inputs,

@@ -14,11 +14,12 @@
 //! represents the physical entry destination; other keys represent specified
 //! planned outputs.
 
+use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
-    AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind,
+    AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
     DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
     ModuleEntry, ModuleKey, ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport,
     StatementKind,
@@ -123,8 +124,9 @@ pub fn source_unit_report(
         source_location,
         declared_bindings,
         statement_kind: StatementKind::VarDecl,
-        purity: Purity::Pure,
+        purity: Purity::pure(),
         callback_factory_barriers: Vec::new(),
+        heap_native_integrity_uses: Vec::new(),
         synchronous_execution: None,
         destination,
     }
@@ -168,6 +170,9 @@ pub fn dependency_edge(
         statement_ordinal: SourceUnitOrdinal(0),
         constrains_init_order: constrains,
         role: None,
+        sequenced_cause: None,
+        commuting_premise: None,
+        premise_verdict: None,
     }
 }
 
@@ -260,12 +265,13 @@ pub fn graph_of(
 ) -> DependencyGraphReport {
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     DependencyGraphReport {
-        provenance: None,
         chunk_id: "x".to_string(),
+        program_graph: "../program_graph.json.gz".into(),
         nodes,
         purity_causes: Vec::new(),
         imported_callable_summaries: Vec::new(),
         edges,
+        commuting_statements: Vec::new(),
         quotient: ModuleQuotientReport {
             nodes: module_nodes,
             edges: vec![],

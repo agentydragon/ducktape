@@ -34,11 +34,11 @@ py_library(
         "//homeassistant/provisioner/tokens:settings",
         "//util:settings_contract",
         "//util:yaml_file_settings",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -65,10 +65,10 @@ py_library(
     srcs = ["db.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )

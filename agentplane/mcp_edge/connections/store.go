@@ -16,8 +16,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc/codes"

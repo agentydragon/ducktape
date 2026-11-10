@@ -1,7 +1,14 @@
 common --enable_bzlmod
 common --experimental_isolated_extension_usages
+# Mirror pinned Debian package bytes without changing snapshot metadata or checksums.
+common --downloader_config=devinfra/bazel/downloader.cfg
 # Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
 common --repo_env=DO_NOT_TRACK=1
+# rules_python's toolchain repository rule puts the hermetic interpreter's __pycache__ at
+# RULES_PYTHON_PYCACHE_DIR, else under XDG_CACHE_HOME, else under TMP, and records the variable it read as a
+# repository input. Nix devshells give every shell a fresh TMP, so without this pin each shell misses
+# --repo_contents_cache and extracts another copy of the toolchain.
+common --repo_env=RULES_PYTHON_PYCACHE_DIR=/tmp/rules_python_pycache
 
 # Suppress -Wmaybe-uninitialized from protobuf's upb C decoder. Keep this on
 # the one translation unit that emits it, in both target and host builds.
@@ -51,14 +58,12 @@ build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-
 build --nobuild_runfile_links
 build --nolegacy_external_runfiles
 
-# No MODULE.bazel.lock: a ~14 MB file, mostly the rules_distroless `apt` resolution, that every
-# MODULE.bazel change would regenerate, for about 16 s off a cold sweep. Trade-off and when to
-# revisit: devinfra/debug/bazel_module_lockfile.md.
-common --lockfile_mode=off
+# Reuse Bazel's validated module resolutions across CI jobs; see devinfra/debug/bazel_module_lockfile.md.
+common --lockfile_mode=update
 
 # Bazel cancels in-flight Skyframe computations when the heap is under pressure
 # (--skyframe_high_water_mark_*_gc_drops_per_invocation, 10 each by default), and a cancelled
-# module extension restarts from scratch. With the lockfile off, the rules_distroless `apt`
+# module extension restarts from scratch. On a lockfile cache miss, the rules_distroless `apt`
 # extension runs on every cold server: it parses ~350 MB of Debian indexes in 1-1.5 GB of
 # heap, and those allocations themselves trigger the pressure that restarts it, over and over,
 # until a graph-wide sweep runs out of heap (#11120). Never shed state.
@@ -108,8 +113,6 @@ common --@rules_python//python/config_settings:bootstrap_impl=script
 
 # Don't generate empty __init__.py stubs in runfiles. Fixes protobuf namespace
 # packages (google.*) and FreeCAD conda C extension shadowing repo-wide.
-# Must use the native flag, not the Starlark @rules_python//... config setting
-# (which is ignored in Bazel 8 — see devinfra/debug/legacy_create_init_investigation.md).
 common --incompatible_default_to_explicit_init_py
 
 # Quiet output mode — reduces progress spam for non-interactive contexts.
@@ -118,13 +121,35 @@ common --incompatible_default_to_explicit_init_py
 common:quiet --curses=no
 common:quiet --show_progress_rate_limit=30
 
+# rustc emits .rmeta first so dependent crates start before codegen finishes. Measured
+# 2026-10-29 on the debundle chain: cold critical path 610 -> 536 s, elapsed 682 -> 653 s,
+# +14% actions; devinfra/debug/2026_10_29_rust_pipelined_compilation.md.
+build --@rules_rust//rust/settings:pipelined_compilation=True
+
+# Keep the global Go race setting stable across test and build commands so
+# analysis can be reused. Non-pure go_binary roots that publish normal
+# executables explicitly set race = "off"; pure = "on" targets stay no-cgo.
+build --@io_bazel_rules_go//go/config:race
+
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
-common:ci --announce_rc
-# Suppress action retries while outer-runner cancellation propagates. This also
-# disables recovery from transient remote errors; monitor CI infrastructure failures.
-# Evidence: devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md.
-build:ci --remote_retries=0
+# Keep CI output from announcing rc options: the hosted runner's generated rc
+# can contain its authentication header.
+common:ci --noannounce_rc
+# Remote retry policy history. Bazel's default is 5. #12468 set 0 because a
+# retry resubmitted actions after the outer runner was cancelled (a fresh Execute
+# 105 ms after the CANCELLED result; devinfra/buildbuddy/debug/ci_remote_cancellation/
+# rpc_retry_trace.md), so superseded runs kept burning executor time. Zero also
+# disables recovery from transient executor errors: the 2026-10-29 CI report
+# window had 16 of 225 PR and 2 of 66 devel test invocations fail on gRPC
+# Unavailable (Firecracker start timeout / pause refused, one CAS miss), each a red
+# head needing a re-push. One retry recovers those while bounding the
+# post-cancellation resubmission to a single extra attempt.
+# CLEANUP(added 2026-10-29): the resubmission itself is bazelbuild/bazel#30954,
+#   fixed upstream by 29b6ec37 (absent from 9.2.0 and 9.3.1; in 10.0.0-pre
+#   builds). Once .bazelversion pins a release containing it, drop this override
+#   and return to the default retry count.
+build:ci --remote_retries=1
 # Live targets remain part of CI builds so their remote lint/typecheck actions
 # stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual

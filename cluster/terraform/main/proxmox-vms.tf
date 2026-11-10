@@ -25,6 +25,9 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   vm_id       = 110
   bios        = "ovmf"
   machine     = "q35" # Required for PCIe passthrough
+  operating_system {
+    type = "l26"
+  }
 
   # Terraform runs from inside wyrm2. Stage reboot-required VM changes in
   # Proxmox, then activate them with the coordinated Atlas host reboot instead
@@ -114,6 +117,11 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     # rather than placing this USB 2.0 camera behind the full-speed hub.
     usb3 = false
   }
+  # TP-Link UB500 Bluetooth adapter, independent of its physical USB port.
+  usb {
+    host = "2357:0604"
+    usb3 = false
+  }
   hotplug = "network,disk,cpu,usb" # note: memory hotplug requires NUMA
 
   # virtio-gl (VirGL): guest GL runs on atlas's iGPU, so Mutter composites
@@ -125,9 +133,8 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     memory = 256
   }
 
-  # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
-  # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with
-  # 96 GiB pinned for this VM, that starves ZFS ARC and causes system-wide stalls.
+  # Keep cache=never on new/replacement mounts: directory scans previously grew
+  # virtiofsd memory until the host stalled. See docs/atlas_vm_memory.md.
   virtiofs {
     mapping = "tankshare"
     cache   = "never"

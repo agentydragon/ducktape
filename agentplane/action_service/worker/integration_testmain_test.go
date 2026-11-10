@@ -15,10 +15,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
@@ -37,7 +36,7 @@ func TestMain(m *testing.M) {
 const awaitBound = 30 * time.Second
 
 var (
-	caller         = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	caller         = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
 	operator       = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	actionIdentity = store.ActionIdentity{Group: "test-group", Name: "test-action"}
 )
@@ -60,11 +59,7 @@ func newFixture(t *testing.T) fixture {
 
 func open(t *testing.T, url string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, url)
 	return db
 }
 
@@ -367,14 +362,11 @@ func sameJSON(t *testing.T, got, want json.RawMessage) {
 	}
 }
 
-// errorKind is the `kind` of an Execution's error document.
-func errorKind(t *testing.T, request store.ActionRequest) string {
+// errorKind is the kind of an Execution's error.
+func errorKind(t *testing.T, request store.ActionRequest) action_servicepb.ExecutionErrorKind {
 	t.Helper()
-	var document struct {
-		Kind string `json:"kind"`
+	if request.Execution == nil || request.Execution.Error == nil {
+		t.Fatalf("execution %+v has no error", request.Execution)
 	}
-	if err := json.Unmarshal(request.Execution.Error, &document); err != nil {
-		t.Fatalf("execution error %s: %v", request.Execution.Error, err)
-	}
-	return document.Kind
+	return request.Execution.Error.GetKind()
 }

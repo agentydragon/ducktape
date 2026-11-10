@@ -5,17 +5,21 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.sim.results import Finished, Paid
 from finance.augur.x.allocation_glide.compare import execute, situation
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @pytest.fixture(scope="module")
 def output(tmp_path_factory: pytest.TempPathFactory) -> Path:
     output = tmp_path_factory.mktemp("allocation-glide") / "results"
     subprocess.run(
-        [get_required_path(own_repo_rlocation("finance/augur/x/allocation_glide/compare_bin")), "--output-dir", output],
+        [
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/allocation_glide/compare_bin"),
+            "--output-dir",
+            output,
+        ],
         check=True,
     )
     return output

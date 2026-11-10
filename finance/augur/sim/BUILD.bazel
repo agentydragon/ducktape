@@ -27,7 +27,6 @@ py_library(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
@@ -1249,6 +1248,7 @@ py_test(
         "//finance/augur/policy:funding",
         "//finance/augur/sim/testing:rollouts",
         "//finance/augur/sim/testing:session",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -1908,7 +1908,6 @@ py_test(
     name = "transfer_tax_test",
     srcs = ["transfer_tax_test.py"],
     deps = [
-        ":actions",
         ":books",
         ":fixed_point",
         ":ids",
@@ -1926,6 +1925,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/policy:funding",
+        "//finance/augur/sim/testing:session",
         "//finance/augur/sim/testing:situs",
         "@pypi//more_itertools",
         "@pypi//polars",
@@ -1938,7 +1938,6 @@ py_test(
     name = "property_tax_deduction_test",
     srcs = ["property_tax_deduction_test.py"],
     deps = [
-        ":actions",
         ":books",
         ":fixed_point",
         ":ids",
@@ -1960,6 +1959,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/policy:funding",
+        "//finance/augur/sim/testing:session",
         "//finance/augur/sim/testing:situs",
         "@pypi//more_itertools",
         "@pypi//polars",
@@ -1972,7 +1972,6 @@ py_test(
     name = "property_tax_lifecycle_test",
     srcs = ["property_tax_lifecycle_test.py"],
     deps = [
-        ":actions",
         ":books",
         ":fixed_point",
         ":ids",
@@ -1994,6 +1993,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/policy:funding",
+        "//finance/augur/sim/testing:session",
         "@pypi//more_itertools",
         "@pypi//polars",
         "@pypi//pytest",

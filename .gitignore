@@ -6,6 +6,7 @@
 
 # Build system
 /bazel-*
+/MODULE.bazel.lock
 /.docker-certs/
 /bb-out
 **/node_modules/

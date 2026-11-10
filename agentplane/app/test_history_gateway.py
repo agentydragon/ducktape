@@ -1,30 +1,23 @@
 """The app's Runner Gateway and History Service path against authenticated gRPC peers."""
 
-from pathlib import Path
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict, ParseDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.live import LiveIndex
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.runner_gateway import admitted, delivered_opening, discover
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
-from agentplane.app.threads.runner_directory import RunnerDirectory
-from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.testing.history import SessionHistory
+from agentplane.env.e2e.testing import launches
+from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service.testing.go_service import GoHistoryService
-from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, runner_pb2
-from agentplane.runner import runner_service_pb2
-from agentplane.runner.testing import launches
-from agentplane.runner.testing.process import RunningRunner
+from agentplane.history_service import history_service_pb2
+from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
-from agentplane.runner_gateway.testing.runner_peer import runner_peer
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
 
@@ -33,177 +26,176 @@ from agentplane.testing.scripted_model import ScriptedModel, Text
 # gazelle:include_dep @pypi//grpcio
 
 
-@pytest.fixture
-def register_attached_sessions() -> bool:
-    # The runner pushes its history to the History Service ingress; the app only reads it.
-    return True
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 
-@pytest.fixture(autouse=True)
-async def discovered(live_index: LiveIndex, sandbox: SandboxCluster) -> None:
-    await discover(live_index, sandbox.server, namespace=sandbox.namespace, name=sandbox.name)
+def _exact_session_spec(spec: session_pb2.SessionSpec, sandbox: str, sandbox_uid: str) -> session_pb2.SessionSpec:
+    exact = session_pb2.SessionSpec()
+    exact.CopyFrom(spec)
+    if exact.placement.WhichOneof("kind") != "environment_hosted":
+        raise ValueError("History gateway tests require an environment-hosted Session")
+    exact.placement.environment_hosted.environment.name = sandbox
+    exact.placement.environment_hosted.environment.uid = sandbox_uid
+    return exact
 
 
-async def test_production_bridge_archives_native_evidence_across_bounded_service_copies(
-    live_index: LiveIndex,
+async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     session_dispatcher: SessionDispatcherClient,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    database_updates: WakeupListener,
+    event_logs: SessionHistory,
+    http: httpx.AsyncClient,
     runner: RunningRunner,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     model: ScriptedModel,
-    history_service: GoHistoryService,
 ) -> None:
-    async with history_service.ingest(runner, writer=sandbox.owner):
-        directory = RunnerDirectory(live_index, sandbox_control)
-        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
-        opening = await bridge.create_session(SANDBOX, uuid4(), spec)
-        await delivered_opening(session_dispatcher, UUID(opening.session_id))
-        (runner_session,) = await directory.client(SANDBOX).list_sessions()
-        assert runner_session.session_id == opening.session_id
-        assert launches.PLATFORM_INSTRUCTIONS in runner_session.spec.instructions
-        thread = UUID(opening.session_id)
-        runner_client = directory.client(SANDBOX)
-        status = await runner_client.status()
-        assert not status.processes
-        (dormant,) = [row for row in status.sessions if row.session_id == str(thread)]
-        assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
-        first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
-        receipt = await admitted(
-            session_dispatcher,
-            (
-                await session_dispatcher.unary(
-                    session_dispatcher.stub.SubmitInput,
-                    session_dispatcher_pb2.SubmitInputRequest(
-                        command_id=first.command_id,
-                        session_id=str(thread),
-                        sandbox=SANDBOX,
-                        sandbox_uid=sandbox.uid,
-                        text=first.submit_input.text,
-                    ),
-                )
-            ).dispatch,
-        )
-        assert receipt.admission.event.command_admitted.command == first
-        # The runner receipt can arrive before the independent app archive copy.
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                assert receipt.admission in await event_logs.events(thread, limit=1000)
-        await model.reply(await model.request(), Text("FIRST"))
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                first_turn = runner.entries(str(thread))
-                assert any(entry.event.WhichOneof("observation") == "turn_completed" for entry in first_turn)
-        snapshot = await event_logs.feed_state(thread)
-        assert snapshot is not None
-        assert snapshot.end is None
-        active = await runner_client.status()
-        (active_session,) = [row for row in active.sessions if row.session_id == str(thread)]
-        native_session_id = active_session.native_session_id
-        assert native_session_id
-        assert len(active.processes) == 1
-        starts = [entry for entry in first_turn if entry.event.WhichOneof("observation") == "harness_started"]
-        assert starts[-1].event.harness_started.resumed is False
-        await runner.restart()
-        await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
-        stopped = await runner_client.status()
-        assert not stopped.processes
-        (stopped_session,) = [row for row in stopped.sessions if row.session_id == str(thread)]
-        assert stopped_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
-        assert stopped_session.native_session_id == native_session_id
-        second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
-        next_receipt = await admitted(
-            session_dispatcher,
-            (
-                await session_dispatcher.unary(
-                    session_dispatcher.stub.SubmitInput,
-                    session_dispatcher_pb2.SubmitInputRequest(
-                        command_id=second.command_id,
-                        session_id=str(thread),
-                        sandbox=SANDBOX,
-                        sandbox_uid=sandbox.uid,
-                        text=second.submit_input.text,
-                    ),
-                )
-            ).dispatch,
-        )
-        assert next_receipt.admission.cursor > receipt.admission.cursor
-        assert next_receipt.admission.origin.source_id == receipt.admission.origin.source_id
-        await model.reply(await model.request(), Text("SECOND"))
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                native = runner.entries(str(thread))
-                starts = [entry for entry in native if entry.event.WhichOneof("observation") == "harness_started"]
-                assert len(starts) == 2
-                assert starts[0].event.harness_started.resumed is False
-                assert starts[1].event.harness_started.resumed is True
-                second_turn = [
-                    entry
-                    for entry in native
-                    if entry.event.WhichOneof("observation") == "turn_completed"
-                    and entry.cursor > next_receipt.admission.cursor
-                ]
-                assert second_turn
-        resumed = await runner_client.status()
-        (resumed_session,) = [row for row in resumed.sessions if row.session_id == str(thread)]
-        assert resumed_session.native_session_id == native_session_id
-        assert len(resumed.processes) == 1
-        await runner.restart()
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                native = runner.entries(str(thread))
-                archived = await event_logs.events(thread, limit=1000)
-                assert archived == native
-                assert any(entry.event.HasField("harness_exited") for entry in archived)
+    exact_spec = _exact_session_spec(spec, SANDBOX, sandbox.uid)
+    response = await http.post(
+        f"/sandboxes/{SANDBOX}/sessions",
+        json={"session_id": str(uuid4()), "sandbox_uid": sandbox.uid, "spec": MessageToDict(exact_spec)},
+    )
+    assert response.status_code == 201, response.text
+    session = ParseDict(response.json(), session_dispatcher_pb2.Session())
+    await accepted_session(session_dispatcher, UUID(session.session_id))
+    (runner_session,) = await sandbox_control.runner(sandbox.destination).list_sessions()
+    assert runner_session.session_id == session.session_id
+    assert launches.PLATFORM_INSTRUCTIONS in runner_session.spec.instructions
+    thread = UUID(session.session_id)
+    runner_client = sandbox_control.runner(sandbox.destination)
+    status = await runner_client.status()
+    assert not status.processes
+    (dormant,) = [row for row in status.sessions if row.session_id == str(thread)]
+    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+    first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
+    receipt = await admitted(
+        session_dispatcher,
+        (
+            await session_dispatcher.unary(
+                session_dispatcher.stub.SubmitInput,
+                session_dispatcher_pb2.SubmitInputRequest(
+                    command_id=first.command_id,
+                    session_id=str(thread),
+                    expected_sandbox_uid=sandbox.uid,
+                    text=first.submit_input.text,
+                ),
+            )
+        ).dispatch,
+    )
+    assert receipt.admission.event.command_admitted.command == first
+    # The runner receipt can arrive before the independent app archive copy.
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            assert receipt.admission in await event_logs.events(thread, limit=1000)
+    await model.reply(await model.request(), Text("FIRST"))
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            first_turn = await runner.history_entries(str(thread))
+            assert any(entry.event.WhichOneof("observation") == "turn_completed" for entry in first_turn)
+    summary = await event_logs.reader.get_session_summary(str(thread))
+    assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
+    active = await runner_client.status()
+    (active_session,) = [row for row in active.sessions if row.session_id == str(thread)]
+    native_session_id = active_session.native_session_id
+    assert native_session_id
+    assert len(active.processes) == 1
+    starts = [entry for entry in first_turn if entry.event.WhichOneof("observation") == "harness_started"]
+    assert starts[-1].event.harness_started.resumed is False
+    await runner.restart()
+    await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+    stopped = await runner_client.status()
+    assert not stopped.processes
+    (stopped_session,) = [row for row in stopped.sessions if row.session_id == str(thread)]
+    assert stopped_session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+    assert stopped_session.native_session_id == native_session_id
+    second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
+    next_receipt = await admitted(
+        session_dispatcher,
+        (
+            await session_dispatcher.unary(
+                session_dispatcher.stub.SubmitInput,
+                session_dispatcher_pb2.SubmitInputRequest(
+                    command_id=second.command_id,
+                    session_id=str(thread),
+                    expected_sandbox_uid=sandbox.uid,
+                    text=second.submit_input.text,
+                ),
+            )
+        ).dispatch,
+    )
+    assert next_receipt.admission.cursor > receipt.admission.cursor
+    assert next_receipt.admission.origin.source_id == receipt.admission.origin.source_id
+    await model.reply(await model.request(), Text("SECOND"))
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            history_entries = await runner.history_entries(str(thread))
+            starts = [entry for entry in history_entries if entry.event.WhichOneof("observation") == "harness_started"]
+            assert len(starts) == 2
+            assert starts[0].event.harness_started.resumed is False
+            assert starts[1].event.harness_started.resumed is True
+            second_turn = [
+                entry
+                for entry in history_entries
+                if entry.event.WhichOneof("observation") == "turn_completed"
+                and entry.cursor > next_receipt.admission.cursor
+            ]
+            assert second_turn
+    resumed = await runner_client.status()
+    (resumed_session,) = [row for row in resumed.sessions if row.session_id == str(thread)]
+    assert resumed_session.native_session_id == native_session_id
+    assert len(resumed.processes) == 1
+    await runner.restart()
+    await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            history_entries = await runner.history_entries(str(thread))
+            archived = await event_logs.events(thread, limit=1000)
+            assert archived == history_entries
+            assert any(entry.event.HasField("harness_exited") for entry in archived)
 
 
-async def test_runner_client_does_not_fall_back_after_peer_stops(live_index: LiveIndex, tmp_path: Path) -> None:
-    async with runner_peer(tmp_path / "gateway-token") as endpoint:
-        remote = endpoint.client()
-        directory = RunnerDirectory(live_index, remote)
-        assert await directory.client(SANDBOX).list_sessions() == []
-    # Each call through the Sandbox destination dials the peer anew, here after it stopped.
+async def test_runner_client_does_not_fall_back_after_gateway_stops(
+    sandbox: SandboxCluster,
+    sandbox_control: SandboxControlClient,
+    gateway_service: GatewayProcess,
+    runner: RunningRunner,
+) -> None:
+    assert await sandbox_control.runner(sandbox.destination).list_sessions() == []
+    await gateway_service.stop()
     with pytest.raises(ServiceError):
-        await directory.client(SANDBOX).list_sessions()
+        await sandbox_control.runner(sandbox.destination).list_sessions()
 
 
-async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
-    live_index: LiveIndex,
+async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     session_dispatcher: SessionDispatcherClient,
     runner: RunningRunner,
-    spec: runner_pb2.SessionSpec,
+    spec: session_pb2.SessionSpec,
     model: ScriptedModel,
 ) -> None:
     session_id = str(uuid4())
-    await sandbox_control.runner_unary(
-        sandbox.destination,
-        lambda stub: stub.OpenSession,
-        runner_service_pb2.OpenSessionRequest(session_id=session_id, spec=spec),
-        timeout_s=sandbox_control.lifecycle_timeout_s,
+    exact_spec = _exact_session_spec(spec, SANDBOX, sandbox.uid)
+    await session_dispatcher.unary(
+        session_dispatcher.stub.CreateSession,
+        session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=exact_spec),
     )
-    await sandbox_control.runner_unary(
-        sandbox.destination,
-        lambda stub: stub.SubmitInput,
-        runner_service_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi"),
+    await accepted_session(session_dispatcher, UUID(session_id))
+    await admitted(
+        session_dispatcher, await session_dispatcher.submit_input(session_id, "first", SANDBOX, sandbox.uid, "hi")
     )
     await model.reply(await model.request(), Text("hello"))
-    directory = RunnerDirectory(live_index, sandbox_control)
-    client = directory.client(SANDBOX)
+    client = sandbox_control.runner(sandbox.destination)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):
@@ -225,11 +217,11 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     ):
         with attempt:
             (summary,) = await client.list_sessions()
-            assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+            assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
     status = await client.status()
     assert not status.processes
     (dormant,) = [row for row in status.sessions if row.session_id == session_id]
-    assert dormant.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
+    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
     assert dormant.native_session_id == native_session_id
 
     receipt = await admitted(
@@ -238,11 +230,7 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
             await session_dispatcher.unary(
                 session_dispatcher.stub.SubmitInput,
                 session_dispatcher_pb2.SubmitInputRequest(
-                    session_id=session_id,
-                    command_id="wake-on-input",
-                    sandbox=SANDBOX,
-                    sandbox_uid=sandbox.uid,
-                    text="again",
+                    session_id=session_id, command_id="wake-on-input", expected_sandbox_uid=sandbox.uid, text="again"
                 ),
             )
         ).dispatch,
@@ -253,7 +241,7 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
         stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            entries = runner.entries(session_id)
+            entries = await runner.history_entries(session_id)
             starts = [entry for entry in entries if entry.event.WhichOneof("observation") == "harness_started"]
             assert len(starts) == 2
             assert starts[0].event.harness_started.resumed is False

@@ -99,56 +99,25 @@ def _failures(outcome: str) -> float:
     return REGISTRY.get_sample_value("mcp_auth_upstream_refresh_failures_total", {"outcome": outcome}) or 0.0
 
 
-async def test_retryable_refresh_proxy_transient_5xx_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
-    """Authentik down (gateway 503) must NOT surface as invalid_grant."""
-    before = _failures("transient")
+@pytest.mark.parametrize(
+    ("upstream_error", "outcome"),
+    [
+        pytest.param(_invalid_grant_from(_http_error(503)), "transient", id="upstream-503"),
+        pytest.param(
+            _invalid_grant_from(httpx2.ConnectError("[Errno -3] Temporary failure in name resolution")),
+            "transient",
+            id="dns-failure",
+        ),
+        # The upstream token refresh can succeed before persisting its Valkey state times out.
+        pytest.param(GlideTimeoutError("timed out"), "storage", id="valkey-write-timeout"),
+    ],
+)
+async def test_exhausted_refresh_failures_become_retryable_503(
+    proxy: RetryableRefreshOIDCProxy, upstream_error: Exception, outcome: str
+) -> None:
+    before = _failures(outcome)
     with (
-        patch.object(
-            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(_http_error(503)))
-        ) as upstream,
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
-    assert exc_info.value.status_code == 503
-    assert exc_info.value.headers is not None
-    assert "Retry-After" in exc_info.value.headers
-    assert upstream.call_count == 3  # stop_after_attempt(3)
-    assert _failures("transient") == before + 1
-
-
-async def test_retryable_refresh_proxy_dns_failure_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
-    """DNS resolution failure (cluster DNS outage) is transient, not invalid_grant."""
-    dns_error = httpx2.ConnectError("[Errno -3] Temporary failure in name resolution")
-    with (
-        patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(dns_error))),
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
-    assert exc_info.value.status_code == 503
-
-
-async def test_retryable_refresh_proxy_retries_then_succeeds(proxy: RetryableRefreshOIDCProxy) -> None:
-    """A blip on the first attempt is absorbed by the in-process retry."""
-    token = object()
-    with patch.object(
-        OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[_invalid_grant_from(_http_error(503)), token])
-    ) as upstream:
-        assert await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), []) is token
-    assert upstream.call_count == 2
-
-
-async def test_retryable_refresh_proxy_oauth_state_store_timeout_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
-    """A Valkey/glide timeout while persisting rotated OAuth state is transient.
-
-    This is the path seen in grocy-sf logs: Authentik returned 200, then
-    fastmcp timed out writing the refreshed upstream token to Valkey. It should
-    not leak as a raw 500 to claude.ai.
-    """
-    before = _failures("storage")
-    with (
-        patch.object(
-            OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=GlideTimeoutError("timed out"))
-        ) as upstream,
+        patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=upstream_error)) as upstream,
         pytest.raises(HTTPException) as exc_info,
     ):
         await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
@@ -156,16 +125,19 @@ async def test_retryable_refresh_proxy_oauth_state_store_timeout_becomes_503(pro
     assert exc_info.value.headers is not None
     assert "Retry-After" in exc_info.value.headers
     assert upstream.call_count == 3
-    assert _failures("storage") == before + 1
+    assert _failures(outcome) == before + 1
 
 
-async def test_retryable_refresh_proxy_oauth_state_store_timeout_retries_then_succeeds(
-    proxy: RetryableRefreshOIDCProxy,
+@pytest.mark.parametrize(
+    "first_error",
+    [_invalid_grant_from(_http_error(503)), GlideTimeoutError("timed out")],
+    ids=["upstream-503", "state-store-timeout"],
+)
+async def test_retryable_refresh_proxy_retries_then_succeeds(
+    proxy: RetryableRefreshOIDCProxy, first_error: Exception
 ) -> None:
     token = object()
-    with patch.object(
-        OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[GlideTimeoutError("timed out"), token])
-    ) as upstream:
+    with patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=[first_error, token])) as upstream:
         assert await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), []) is token
     assert upstream.call_count == 2
 

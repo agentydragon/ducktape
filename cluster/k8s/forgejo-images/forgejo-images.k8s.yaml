@@ -73,24 +73,14 @@ spec:
       name: agentplane-action-service
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-action-service-migrate'
-      kind: ImageRepository
-      name: agentplane-action-service-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-app'
       kind: ImageRepository
       name: agentplane-app
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-app-migrate'
+      filter: req.package.name == 'agentplane-central-sampler'
       kind: ImageRepository
-      name: agentplane-app-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-egress-history-migrate'
-      kind: ImageRepository
-      name: agentplane-egress-history-migrate
+      name: agentplane-central-sampler
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-egress-proxy'
@@ -103,24 +93,29 @@ spec:
       name: agentplane-egress-sidecar
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-environment-firecracker'
+      kind: ImageRepository
+      name: agentplane-environment-firecracker
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-environment-vm'
+      kind: ImageRepository
+      name: agentplane-environment-vm
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-firecracker-launcher'
+      kind: ImageRepository
+      name: agentplane-firecracker-launcher
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-frontend'
       kind: ImageRepository
       name: agentplane-frontend
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-history-migrate'
-      kind: ImageRepository
-      name: agentplane-history-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-history-service'
       kind: ImageRepository
       name: agentplane-history-service
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-index'
-      kind: ImageRepository
-      name: agentplane-index
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-llm-ingress'
@@ -133,19 +128,9 @@ spec:
       name: agentplane-mcp-edge
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-mcp-edge-migrate'
-      kind: ImageRepository
-      name: agentplane-mcp-edge-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-notification-service'
       kind: ImageRepository
       name: agentplane-notification-service
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-notification-service-migrate'
-      kind: ImageRepository
-      name: agentplane-notification-service-migrate
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-policy-controller'
@@ -163,16 +148,6 @@ spec:
       name: agentplane-runner-gateway
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-runner-gateway-queue-migrate'
-      kind: ImageRepository
-      name: agentplane-runner-gateway-queue-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-runner-vm'
-      kind: ImageRepository
-      name: agentplane-runner-vm
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-sandbox'
       kind: ImageRepository
       name: agentplane-sandbox
@@ -186,6 +161,21 @@ spec:
       filter: req.package.name == 'agentplane-sandbox-controller'
       kind: ImageRepository
       name: agentplane-sandbox-controller
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'ai-session-archive-importer'
+      kind: ImageRepository
+      name: ai-session-archive-importer
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'ai-session-archive-migrator'
+      kind: ImageRepository
+      name: ai-session-archive-migrator
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'ai-session-archive-web'
+      kind: ImageRepository
+      name: ai-session-archive-web
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'aiquota-api'
@@ -238,14 +228,14 @@ spec:
       name: cpap-sync
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'environment-tools'
+      kind: ImageRepository
+      name: environment-tools
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'forgejo-token-rotation'
       kind: ImageRepository
       name: forgejo-token-rotation
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'github-api-proxy'
-      kind: ImageRepository
-      name: github-api-proxy
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'github-graphql-rate-exporter'
@@ -328,6 +318,11 @@ spec:
       name: plaid-spend
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-gateway'
+      kind: ImageRepository
+      name: platform-sessions-gateway
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'props-backend'
       kind: ImageRepository
       name: props-backend
@@ -351,11 +346,6 @@ spec:
       filter: req.package.name == 'rtl-tcp'
       kind: ImageRepository
       name: rtl-tcp
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'runner-ducktape'
-      kind: ImageRepository
-      name: runner-ducktape
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'ssh-mcp'
@@ -396,6 +386,26 @@ spec:
       filter: req.package.name == 'website'
       kind: ImageRepository
       name: website
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-blueshield'
+      kind: ImageRepository
+      name: platform-sessions-blueshield
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-chatgpt'
+      kind: ImageRepository
+      name: platform-sessions-chatgpt
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-providers'
+      kind: ImageRepository
+      name: platform-sessions-providers
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-quest'
+      kind: ImageRepository
+      name: platform-sessions-quest
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageUpdateAutomation

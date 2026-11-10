@@ -84,10 +84,10 @@ py_test(
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:results",
-        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

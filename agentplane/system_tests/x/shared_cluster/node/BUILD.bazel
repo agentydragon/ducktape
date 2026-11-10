@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+package(default_testonly = True)
+
+go_library(
+    name = "node",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/system_tests/x/shared_cluster/node",
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//agentplane/system_tests/x/shared_cluster:__pkg__"],
+    deps = ["@org_golang_x_sys//unix"],
+)
+
+go_binary(
+    name = "entrypoint",
+    embed = [":node"],
+    pure = "on",
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//agentplane/system_tests/x/shared_cluster:__pkg__"],
+)
+
+go_test(
+    name = "node_test",
+    srcs = ["main_test.go"],
+    embed = [":node"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+pkg_tar(
+    name = "entrypoint_layer",
+    srcs = [":entrypoint"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@k3s_test_node_linux_amd64",
+    cmd = [],
+    entrypoint = ["/usr/local/bin/entrypoint"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":entrypoint_layer",
+        "//agentplane/system_tests/x/shared_cluster:infrastructure_layer",
+    ],
+    user = "0:0",
+    visibility = ["//visibility:public"],
+)

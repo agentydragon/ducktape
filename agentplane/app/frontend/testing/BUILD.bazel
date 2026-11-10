@@ -10,9 +10,8 @@ py_library(
     name = "visual_assertions",
     srcs = ["visual_assertions.py"],
     deps = [
-        "//util/testing:page_capture",
-        "//util/testing:undeclared_outputs",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
         "@pypi//playwright",
     ],
 )
@@ -22,8 +21,8 @@ py_library(
     srcs = ["visual_fixtures.py"],
     deps = [
         ":app",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
@@ -36,9 +35,9 @@ ts_library(
     srcs = ["model_catalog.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:model_catalog",
-        "//agentplane/app/frontend:schema",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -47,9 +46,8 @@ ts_library(
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:langfuse_search",
-        "//agentplane/app/frontend:schema",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
     ],
 )
 
@@ -58,6 +56,26 @@ ts_library(
     srcs = ["watch.ts"],
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/vitest"],
+)
+
+ts_library(
+    name = "sandbox",
+    srcs = ["sandbox.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/environments/v1:environment_service_pb",
+    ],
+)
+
+ts_library(
+    name = "runner_status",
+    srcs = ["runner_status.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/proto:session_pb",
+    ],
 )
 
 py_library(
@@ -71,15 +89,18 @@ filegroup(
     srcs = [
         "langfuse_search.ts",
         "model_catalog.ts",
-        "setup.ts",
+        "runner_status.ts",
+        "sandbox.ts",
         "watch.ts",
     ],
     visibility = ["//agentplane/app/frontend:__pkg__"],
 )
 
-ts_library(
-    name = "setup",
-    srcs = ["setup.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//util/frontend:test_intersection_observer"],
+py_library(
+    name = "history_interactions",
+    srcs = ["history_interactions.py"],
+    deps = [
+        "//agentplane/app/testing:thread_view_marks",
+        "@pypi//playwright",
+    ],
 )

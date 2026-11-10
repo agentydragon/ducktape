@@ -1,18 +1,5 @@
 # gazelle:exclude mcp_server
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
-
-py_library(
-    name = "workspace",
-    srcs = ["workspace.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//tana/domain:nodes",
-        "//tana/domain:types",
-        "//tana/graph",
-        "//tana/graph:loader",
-        "//tana/query/search:materializer",
-    ],
-)
+load("//devinfra/python:defs.bzl", "py_test")
 
 py_test(
     name = "test_convert",
@@ -20,7 +7,9 @@ py_test(
     data = glob(["testdata/**/*"]),
     deps = [
         "//:conftest",
+        "//tana/domain:nodes",
         "//tana/export:convert",
+        "//tana/graph",
         "//tana/graph:loader",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

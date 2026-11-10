@@ -1,0 +1,130 @@
+// The `EnvironmentRuntime` service served over its configured control transport; contract in
+// agentplane/env/runtime/docs/control.md. An incompatible change rides a clean cutover: the operator
+// retires every Sandbox on the old protocol.
+syntax = "proto3";
+
+package agentplane.env.runtime.control;
+
+import "agentplane/proto/event_log.proto";
+import "agentplane/proto/session.proto";
+import "agentplane/proto/environment_runtime_state.proto";
+import "agentplane/proto/identity.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Served by Environment Runtime over its configured control transport. Sessions are durable;
+// process startup, native readiness and reconciliation are owned by the environment services.
+service EnvironmentRuntime {
+  // Liveness and state watch. The Gateway supplies the current Sandbox and workload
+  // incarnation and its Lease epoch. The Runner adopts that incarnation before publishing facts.
+  rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
+  rpc ListSessions(agentplane.proto.ListSessionsRequest)
+      returns (agentplane.proto.ListSessionsResponse);
+  // Durably reserve or confirm a Session and immutable creation configuration.
+  // An existing Session with another spec/setup returns ALREADY_EXISTS.
+  // This acknowledgement does not assert native creation or process readiness.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // Informational live snapshot; never starts a process or wakes a Sandbox.
+  rpc GetStatus(agentplane.proto.GetStatusRequest)
+      returns (agentplane.proto.EnvironmentRuntimeStatus);
+  // Sandbox teardown: durably refuse new Sessions and execution, let setup/bootstrap finish, stop harnesses,
+  // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
+  // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
+  rpc Quiesce(agentplane.proto.QuiesceRequest) returns (agentplane.proto.QuiesceResponse);
+  // Atomically close admission only if the Runtime is still in the observed idle period.
+  // This preserves RAM and Sessions for a Firecracker checkpoint; it does not quiesce.
+  rpc PrepareSuspend(PrepareSuspendRequest) returns (google.protobuf.Empty);
+  // Release the admission gate after a completed checkpoint and actual guest resume, or
+  // invalidate an attempt rejected before checkpoint. A newer generation supersedes old RPCs.
+  rpc ResumeAdmission(ResumeAdmissionRequest) returns (google.protobuf.Empty);
+  // One RPC per command: the same `command_id` with the same operation and payload returns the
+  // existing admission, and under another operation or payload it fails with `ALREADY_EXISTS`.
+  // A `command_id` is unique across these operations.
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  // A new interrupt with a non-active turn_id fails FAILED_PRECONDITION before admission.
+  // Already admitted retries return their original admission; never affect a successor turn.
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+}
+
+message WatchStateRequest {
+  string sandbox_uid = 1;
+  string incarnation_uid = 2;  // current Pod or virt-launcher Pod UID
+  uint64 connection_epoch = 3;  // monotonically increasing Gateway Lease epoch
+}
+
+message WatchStateResponse {
+  string sandbox_uid = 1;
+  string incarnation_uid = 2;
+  string environment_runtime_boot_id = 3;
+  uint64 connection_epoch = 4;
+  agentplane.proto.EnvironmentRuntimeFacts facts = 5;
+}
+
+message PrepareSuspendRequest {
+  int64 generation = 1;  // positive, monotonically increasing per Sandbox incarnation
+  google.protobuf.Timestamp if_idle_since = 2;
+}
+
+message ResumeAdmissionRequest {
+  int64 generation = 1;
+}
+
+message CreateSessionRequest {
+  string session_id = 1;
+  agentplane.proto.SessionSpec spec = 2;
+  optional string setup_script = 3;  // selected only at creation
+  // The Dispatcher's verified immutable execution principal. The Host retains it with the Session.
+  agentplane.proto.ServiceAccountIdentity execution_principal = 4;
+  // The Identity the Dispatcher recorded from the Sandbox's `spec.identity` at creation, absent when
+  // it named none. A sibling of execution_principal, which stays set, so a runtime that predates it
+  // keeps the Session's ServiceAccount owner. The Host retains it with the Session.
+  agentplane.proto.Identity execution_identity = 5;
+}
+
+message CreateSessionResponse {
+  agentplane.proto.Attached attached = 1;
+}
+
+// Command responses carry durable CommandAdmitted evidence, before any required startup.
+// Startup and delivery continue after caller disconnect; later failures are journal outcomes.
+message SubmitInputRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string text = 3;
+}
+
+message SubmitInputResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message ChangeModelRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string model = 3;
+}
+
+message ChangeModelResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message ChangeReasoningEffortRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string effort = 3;
+}
+
+message ChangeReasoningEffortResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message InterruptTurnRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string turn_id = 3;
+}
+
+message InterruptTurnResponse {
+  agentplane.proto.EventEntry admission = 1;
+}

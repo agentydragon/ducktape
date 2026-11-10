@@ -11,7 +11,7 @@ import openai
 import pytest
 
 from openai_utils.client_factory import build_client
-from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
+from openai_utils.model import Model, ResponsesModel
 
 
 class ClientMode(enum.Enum):
@@ -36,10 +36,10 @@ def error_transport(code: str, message: str) -> httpx2.MockTransport:
     )
 
 
-def mock_openai_client(transport: httpx2.MockTransport) -> OpenAIModelProto:
-    """Build BoundOpenAIModel backed by a mock transport (no retries)."""
+def mock_openai_client(transport: httpx2.MockTransport) -> Model:
+    """Build ResponsesModel backed by a mock transport (no retries)."""
     inner = openai.AsyncOpenAI(api_key="test-key", http_client=httpx2.AsyncClient(transport=transport))
-    return BoundOpenAIModel(client=inner, model="test")
+    return ResponsesModel(client=inner, model="test")
 
 
 @pytest.fixture

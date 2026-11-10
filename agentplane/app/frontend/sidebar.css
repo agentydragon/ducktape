@@ -110,6 +110,6 @@
 }
 
 /* Keep debugging by the lower-left edge; navigation and connection status stay on the right. */
-.agentplane-sidebar-debug {
+.agentplane-sidebar-recorder {
   margin-right: auto;
 }

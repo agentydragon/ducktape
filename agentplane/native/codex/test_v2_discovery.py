@@ -175,7 +175,11 @@ async def test_v2_child_discovery_and_resume(
             ]
             (spawn,) = spawn_items
             assert spawn["threadId"] == root_id
-            assert spawn["item"] == {
+            spawn_item = spawn["item"].copy()
+            started_at = spawn_item.pop("startedAtMs")
+            completed_at = spawn_item.pop("completedAtMs")
+            assert 0 < started_at <= completed_at
+            assert spawn_item == {
                 "type": "subAgentActivity",
                 "id": "call_v2_spawn",
                 "kind": "started",

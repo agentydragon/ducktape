@@ -7,6 +7,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from laser.lightburn.lbrn2_writer import LightBurnProject, RectShape, TextShape
 from laser.material_test.grid_generator import (
@@ -23,7 +24,6 @@ from laser.material_test.grid_generator import (
     fmt_val,
     generate,
 )
-from util.bazel import runfiles
 
 # ── fmt_val ────────────────────────────────────────────────────────────────────
 
@@ -46,28 +46,18 @@ def _minimal_config(**kwargs) -> GridConfig:
     )
 
 
-def test_grid_config_rejects_same_axes():
-    with pytest.raises(Exception, match="must be different"):
-        GridConfig(
-            x=AxisConfig(param=CutParam.SPEED_MM_S, values=[10, 20]),
-            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-        )
-
-
-def test_grid_config_rejects_power_min_pct_axis():
-    with pytest.raises(Exception, match="use 'power_pct'"):
-        GridConfig(
-            x=AxisConfig(param=CutParam.POWER_MIN_PCT, values=[10, 20]),
-            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-        )
-
-
-def test_grid_config_rejects_power_max_pct_axis():
-    with pytest.raises(Exception, match="use 'power_pct'"):
-        GridConfig(
-            x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20]),
-            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-        )
+@pytest.mark.parametrize(
+    ("x_param", "y_param", "message"),
+    [
+        (CutParam.SPEED_MM_S, CutParam.SPEED_MM_S, "must be different"),
+        (CutParam.POWER_MIN_PCT, CutParam.SPEED_MM_S, "use 'power_pct'"),
+        (CutParam.POWER_MAX_PCT, CutParam.SPEED_MM_S, "use 'power_pct'"),
+    ],
+    ids=["same-axes", "power-min-axis", "power-max-axis"],
+)
+def test_grid_config_rejects_invalid_axes(x_param: CutParam, y_param: CutParam, message: str):
+    with pytest.raises(Exception, match=message):
+        GridConfig(x=AxisConfig(param=x_param, values=[10, 20]), y=AxisConfig(param=y_param, values=[50, 100]))
 
 
 def test_cut_config_power_shorthand():
@@ -220,17 +210,17 @@ def test_generate_auto_subtitle_omits_varied_params():
     assert {CutParam.Z_OFFSET_MM, CutParam.KERF_MM} <= set(constant)
 
 
-def test_example_config_parses():
+def test_example_config_parses(runfiles: Runfiles):
     """example_config.toml must parse without error and produce a valid GridConfig."""
-    path = runfiles.get_required_path("_main/laser/material_test/example_config.toml")
+    path = runfiles.root() / "ducktape/laser/material_test/example_config.toml"
     with path.open("rb") as f:
         data = tomllib.load(f)
     GridConfig.model_validate(data)
 
 
-def test_example_config_3d_parses():
+def test_example_config_3d_parses(runfiles: Runfiles):
     """example_config_3d.toml must parse and remain a three-dimensional example."""
-    path = runfiles.get_required_path("_main/laser/material_test/example_config_3d.toml")
+    path = runfiles.root() / "ducktape/laser/material_test/example_config_3d.toml"
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)

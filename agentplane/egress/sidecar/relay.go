@@ -2,23 +2,23 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
-	"sort"
-	"strconv"
-	"strings"
+	"net/http/httputil"
+	"net/url"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/util/netlistener"
 )
 
 const (
@@ -26,29 +26,37 @@ const (
 	projectedTokenHeader = "X-Agentplane-Workload-Token"
 	readinessPath        = "/readyz"
 	maxHeadBytes         = 64 * 1024
-	pipeChunkBytes       = 64 * 1024
 )
 
 type sidecar struct {
-	config config
-	ready  atomic.Bool
+	workloadContext context.Context
+	workloadRoutes  map[string]*workloadRoute
+	config          config
+	proxyHop        *proxyHop
+	ready           atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
+	proxyServer       *http.Server
 	proxyListener     net.Listener
-	routes            []*platformRoute
+	proxyTransport    *http.Transport
+	routes            *platformRoutes
 
 	activeMu sync.Mutex
 	active   map[net.Conn]struct{}
 }
 
 func (s *sidecar) run(ctx context.Context) error {
+	if err := s.prepareWorkloadRoutes(); err != nil {
+		return err
+	}
+	defer s.closeWorkloadRoutes()
 	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
 	}
 
-	routes, err := bindPlatformRoutes(s.config.PlatformRoutes)
+	routes, err := s.bindPlatformRoutes(*s.config.PlatformRoutes)
 	if err != nil {
 		_ = readinessListener.Close()
 		return err
@@ -57,20 +65,22 @@ func (s *sidecar) run(ctx context.Context) error {
 	proxyListener, err := netlistener.Open(s.config.ListenAddress)
 	if err != nil {
 		_ = readinessListener.Close()
-		stopPlatformRoutes(routes)
+		closePlatformRoutes(routes)
 		return fmt.Errorf("start HTTP proxy listener: %w", err)
 	}
 	return s.serve(ctx, proxyListener, readinessListener, routes)
 }
 
-func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes []*platformRoute) error {
+func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes *platformRoutes) error {
+	s.workloadContext = ctx
 	s.proxyListener = proxyListener
+	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
 	s.routes = routes
 	s.bindReadiness(readinessListener)
 	var serving sync.WaitGroup
 	defer func() {
 		s.stopProxy()
-		stopPlatformRoutes(s.routes)
+		closePlatformRoutes(s.routes)
 		s.stopReadiness()
 		serving.Wait()
 	}()
@@ -78,10 +88,13 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 	if ctx.Err() != nil {
 		return nil
 	}
-	serveErrors := make(chan error, len(routes)+2)
+	serveErrors := make(chan error, 3)
 	serve := func(name string, run func() error) {
 		serving.Go(func() {
 			if err := run(); err != nil {
+				if errors.Is(err, http.ErrServerClosed) {
+					return
+				}
 				serveErrors <- fmt.Errorf("%s stopped: %w", name, err)
 			} else {
 				serveErrors <- fmt.Errorf("%s stopped unexpectedly", name)
@@ -89,13 +102,15 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 		})
 	}
 	serve("readiness listener", func() error { return s.readinessServer.Serve(s.readinessListener) })
-	for _, route := range routes {
-		serve("platform route "+route.name, func() error { return route.server.Serve(route.listen) })
-		slog.Info("platform route listening", "route", route.name, "address", route.listen.Addr(), "upstream", route.config.Upstream)
+	if routes != nil {
+		serve("platform routes", func() error { return routes.server.Serve(routes.listen) })
+		slog.Info("platform routes listening", "address", routes.listen.Addr(), "route_count", len(s.config.PlatformRoutes.Routes))
 	}
-	serve("HTTP proxy listener", s.acceptLoop)
+	serve("HTTP proxy listener", func() error {
+		return s.proxyServer.Serve(&trackingListener{Listener: proxyListener, sidecar: s})
+	})
 	s.ready.Store(true)
-	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+	slog.Info("relaying HTTP proxy traffic", "listen", proxyListener.Addr(), "upstream", s.config.Proxy.Address)
 
 	select {
 	case <-ctx.Done():
@@ -149,60 +164,134 @@ func (s *sidecar) stopReadiness() {
 
 func (s *sidecar) stopProxy() {
 	s.ready.Store(false)
+	if s.proxyServer != nil {
+		_ = s.proxyServer.Close()
+	}
+	if s.proxyTransport != nil {
+		s.proxyTransport.CloseIdleConnections()
+	}
 	if s.proxyListener != nil {
 		_ = s.proxyListener.Close()
 	}
 	s.activeMu.Lock()
+	connections := make([]net.Conn, 0, len(s.active))
 	for conn := range s.active {
-		_ = conn.Close()
+		connections = append(connections, conn)
+		delete(s.active, conn)
 	}
 	s.activeMu.Unlock()
+	for _, conn := range connections {
+		_ = conn.Close()
+	}
 }
 
-func (s *sidecar) acceptLoop() error {
-	for {
-		client, err := s.proxyListener.Accept()
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				return nil
-			}
-			return fmt.Errorf("accept HTTP proxy connection: %w", err)
+type trackingListener struct {
+	net.Listener
+	sidecar *sidecar
+}
+
+func (l *trackingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	tracked := &trackedClientConn{Conn: conn, sidecar: l.sidecar}
+	l.sidecar.track(tracked, true)
+	return tracked, nil
+}
+
+type trackedClientConn struct {
+	net.Conn
+	sidecar *sidecar
+}
+
+func (c *trackedClientConn) Close() error {
+	c.sidecar.track(c, false)
+	return c.Conn.Close()
+}
+
+func (c *trackedClientConn) CloseWrite() error {
+	if closer, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return closer.CloseWrite()
+	}
+	return c.Conn.Close()
+}
+
+func (s *sidecar) proxyHandler() http.Handler {
+	proxyURL := &url.URL{Scheme: "https", Host: s.proxyHop.address}
+	dialHop := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if network != "tcp" || address != s.proxyHop.address {
+			return nil, errors.New("unexpected central proxy destination")
 		}
-		s.track(client, true)
-		go s.handle(client)
+		return s.proxyHop.transport.dial(ctx, address)
 	}
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+		// DialTLSContext returns an already-handshaken connection so the SVID expiry
+		// watcher and the transport use the same authenticated hop as CONNECT routes.
+		DialTLSContext:        dialHop,
+		IdleConnTimeout:       time.Minute,
+		ExpectContinueTimeout: time.Second,
+	}
+	s.proxyTransport = transport
+	proxy := &httputil.ReverseProxy{
+		Transport: transport,
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.Out.RequestURI = ""
+			rewriteRequest(request.Out, s.readProjectedTokens())
+		},
+		ErrorHandler: func(writer http.ResponseWriter, _ *http.Request, err error) {
+			slog.Warn("central proxy request failed", "address", s.config.Proxy.Address, "error", err)
+			refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		},
+	}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodConnect {
+			s.handleConnect(writer, request)
+			return
+		}
+		absolute := request.URL.Scheme == "http" && request.URL.Host != ""
+		if request.URL.Scheme == "" && request.URL.Host == "" && request.Host != "" {
+			// Local clients may send origin-form requests to the proxy listener.
+			// Only absolute-form requests select a privileged workload route.
+			request = request.Clone(request.Context())
+			request.URL.Scheme = "http"
+			request.URL.Host = request.Host
+		} else if request.URL.Scheme != "http" || request.URL.Host == "" {
+			refuse(writer, http.StatusBadRequest, "bad-request")
+			return
+		}
+		authority := request.URL.Host
+		if request.URL.Port() == "" {
+			authority = net.JoinHostPort(request.URL.Hostname(), "80")
+		}
+		if absolute {
+			if route := s.workloadRoutes[authority]; route != nil {
+				s.exchangeWorkloadRoute(writer, request, route)
+				return
+			}
+		}
+		proxy.ServeHTTP(writer, request)
+	})
 }
 
-func (s *sidecar) handle(client net.Conn) {
-	defer func() {
-		s.track(client, false)
-		_ = client.Close()
-	}()
-	reader := bufio.NewReaderSize(client, pipeChunkBytes)
-	head, err := readRequestHead(reader)
-	if err != nil {
-		slog.Warn("refusing malformed request", "error", err)
-		writeRefusal(client, http.StatusBadRequest, "Bad Request", "bad-request")
+func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Request) {
+	authority := request.URL.Host
+	if authority == "" {
+		authority = request.Host
+	}
+	if authority == "" {
+		refuse(writer, http.StatusBadRequest, "bad-request")
 		return
 	}
-	connect, err := isConnectRequest(head)
-	if err != nil {
-		slog.Warn("refusing malformed request", "error", err)
-		writeRefusal(client, http.StatusBadRequest, "Bad Request", "bad-request")
+	if route := s.workloadRoutes[authority]; route != nil {
+		s.exchangeWorkloadConnectRoute(writer, request, route)
 		return
 	}
-	token, err := readToken(s.config.TokenFile)
+	upstream, err := s.proxyHop.transport.dial(request.Context(), s.proxyHop.address)
 	if err != nil {
-		slog.Error("central proxy token unavailable", "path", s.config.TokenFile, "error", err)
-		writeRefusal(client, http.StatusServiceUnavailable, "Service Unavailable", "token-unavailable")
-		return
-	}
-	projected := s.readProjectedTokens()
-	forwarded := rewriteRequestHead(head, token, projected, connect)
-	upstream, err := (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
-	if err != nil {
-		slog.Warn("central proxy unreachable", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
-		writeRefusal(client, http.StatusBadGateway, "Bad Gateway", "proxy-unreachable")
+		slog.Warn("central proxy unreachable", "address", s.proxyHop.address, "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
 		return
 	}
 	s.track(upstream, true)
@@ -210,35 +299,83 @@ func (s *sidecar) handle(client net.Conn) {
 		s.track(upstream, false)
 		_ = upstream.Close()
 	}()
-	if err := writeBytes(upstream, forwarded); err != nil {
-		slog.Warn("writing request to central proxy failed", "error", err)
+
+	upstreamRequest := request.Clone(request.Context())
+	upstreamRequest.RequestURI = ""
+	upstreamRequest.URL = &url.URL{Host: authority}
+	upstreamRequest.Host = authority
+	upstreamRequest.Body = nil
+	rewriteRequest(upstreamRequest, s.readProjectedTokens())
+	if err := upstreamRequest.WriteProxy(upstream); err != nil {
+		slog.Warn("writing CONNECT to central proxy failed", "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
 		return
 	}
-	upstreamReader := bufio.NewReaderSize(upstream, pipeChunkBytes)
-	if connect {
-		responseHead, err := readResponseHead(upstreamReader)
-		if err != nil {
-			slog.Warn("reading CONNECT response from central proxy failed", "error", err)
-			return
-		}
-		if err := writeBytes(client, responseHead); err != nil {
-			return
-		}
-		statusCode, err := responseStatus(responseHead)
-		if err != nil {
-			slog.Warn("invalid CONNECT response from central proxy", "error", err)
-			return
-		}
-		if statusCode < 200 || statusCode >= 300 {
-			if _, err := io.Copy(client, upstreamReader); err != nil {
-				slog.Warn("relaying CONNECT refusal body failed", "error", err)
+	upstreamReader := bufio.NewReader(upstream)
+	response, err := http.ReadResponse(upstreamReader, upstreamRequest)
+	if err != nil {
+		slog.Warn("reading CONNECT response from central proxy failed", "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		return
+	}
+	if response.StatusCode/100 != 2 {
+		defer response.Body.Close()
+		for name, values := range response.Header {
+			for _, value := range values {
+				writer.Header().Add(name, value)
 			}
-			return
 		}
+		writer.Header().Set("Connection", "close")
+		writer.WriteHeader(response.StatusCode)
+		if _, err := io.Copy(writer, response.Body); err != nil {
+			slog.Warn("relaying CONNECT refusal from central proxy failed", "error", err)
+		}
+		return
 	}
-	if err := pipeDuplex(client, reader, upstream, upstreamReader); err != nil {
-		slog.Warn("relay ended with connection error", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
+	_ = response.Body.Close()
+	client, buffered, err := http.NewResponseController(writer).Hijack()
+	if err != nil {
+		slog.Warn("hijacking CONNECT client failed", "error", err)
+		return
 	}
+	defer client.Close()
+	if err := writeResponseHead(client, response); err != nil {
+		return
+	}
+	if err := pipeDuplex(client, buffered.Reader, upstream, upstreamReader); err != nil {
+		slog.Warn("CONNECT relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
+	}
+}
+
+// rewriteRequest replaces caller-supplied proxy credentials with sidecar-owned credentials.
+func rewriteRequest(request *http.Request, projected map[string]string) {
+	request.Header.Del("Proxy-Connection")
+	request.Header.Del(projectedTokenHeader)
+	// The hop authenticates by SVID alone; a caller's Proxy-Authorization never reaches the proxy.
+	request.Header.Del("Proxy-Authorization")
+	for _, audience := range slices.Sorted(maps.Keys(projected)) {
+		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
+	}
+	if _, ok := request.Header["User-Agent"]; !ok {
+		request.Header["User-Agent"] = []string{""}
+	}
+}
+
+func refuse(writer http.ResponseWriter, status int, reason string) {
+	writer.Header().Set(refusedHeader, "reason="+reason)
+	writer.WriteHeader(status)
+}
+
+// writeResponseHead relays the response head before an opaque CONNECT tunnel.
+func writeResponseHead(writer io.Writer, response *http.Response) error {
+	if _, err := fmt.Fprintf(writer, "HTTP/%d.%d %s\r\n", response.ProtoMajor, response.ProtoMinor, response.Status); err != nil {
+		return err
+	}
+	if err := response.Header.Write(writer); err != nil {
+		return err
+	}
+	_, err := io.WriteString(writer, "\r\n")
+	return err
 }
 
 func (s *sidecar) track(conn net.Conn, add bool) {
@@ -266,135 +403,30 @@ func (s *sidecar) readProjectedTokens() map[string]string {
 	return tokens
 }
 
-func readRequestHead(reader *bufio.Reader) ([]byte, error) { return readHead(reader, "request") }
-
-func readResponseHead(reader *bufio.Reader) ([]byte, error) { return readHead(reader, "response") }
-
-func readHead(reader *bufio.Reader, kind string) ([]byte, error) {
-	var head bytes.Buffer
-	for {
-		line, err := reader.ReadSlice('\n')
-		if err != nil {
-			return nil, err
-		}
-		if !bytes.HasSuffix(line, []byte("\r\n")) {
-			return nil, fmt.Errorf("%s head has a non-HTTP line ending", kind)
-		}
-		if _, err := head.Write(line); err != nil {
-			return nil, err
-		}
-		if head.Len() > maxHeadBytes {
-			return nil, fmt.Errorf("%s head exceeds %d bytes", kind, maxHeadBytes)
-		}
-		if bytes.Equal(line, []byte("\r\n")) {
-			return head.Bytes(), nil
-		}
-	}
-}
-
-func isConnectRequest(head []byte) (bool, error) {
-	line, _, found := bytes.Cut(head, []byte("\r\n"))
-	if !found {
-		return false, errors.New("request line is not terminated")
-	}
-	parts := strings.Split(string(line), " ")
-	if len(parts) != 3 || !strings.HasPrefix(parts[2], "HTTP/1.") {
-		return false, fmt.Errorf("not an HTTP/1.x request line: %q", line)
-	}
-	return parts[0] == "CONNECT", nil
-}
-
-func rewriteRequestHead(head []byte, token string, projected map[string]string, connect bool) []byte {
-	lines := bytes.Split(head[:len(head)-4], []byte("\r\n"))
-	rewritten := make([][]byte, 0, len(lines)+len(projected)+3)
-	rewritten = append(rewritten, lines[0])
-	for _, line := range lines[1:] {
-		name, _, _ := bytes.Cut(line, []byte(":"))
-		name = bytes.ToLower(bytes.TrimSpace(name))
-		nameString := string(name)
-		if nameString == "proxy-authorization" || nameString == "proxy-connection" ||
-			nameString == strings.ToLower(projectedTokenHeader) {
-			continue
-		}
-		if !connect && nameString == "connection" {
-			continue
-		}
-		rewritten = append(rewritten, line)
-	}
-	if !connect {
-		rewritten = append(rewritten, []byte("Connection: close"))
-	}
-	rewritten = append(rewritten, []byte("Proxy-Authorization: Bearer "+token))
-	audiences := make([]string, 0, len(projected))
-	for audience := range projected {
-		audiences = append(audiences, audience)
-	}
-	sort.Strings(audiences)
-	for _, audience := range audiences {
-		rewritten = append(rewritten, []byte(projectedTokenHeader+": "+audience+" "+projected[audience]))
-	}
-	return append(bytes.Join(rewritten, []byte("\r\n")), '\r', '\n', '\r', '\n')
-}
-
-func responseStatus(head []byte) (int, error) {
-	line, _, found := bytes.Cut(head, []byte("\r\n"))
-	parts := strings.SplitN(string(line), " ", 3)
-	if !found || len(parts) < 2 || !strings.HasPrefix(parts[0], "HTTP/1.") {
-		return 0, fmt.Errorf("not an HTTP/1.x status line: %q", line)
-	}
-	status, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, fmt.Errorf("invalid HTTP status: %w", err)
-	}
-	return status, nil
-}
-
-func writeRefusal(writer io.Writer, status int, phrase, reason string) {
-	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n%s: reason=%s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-		status, phrase, refusedHeader, reason)
-	_ = writeBytes(writer, []byte(response))
-}
-
-func writeBytes(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		n, err := writer.Write(data)
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return io.ErrShortWrite
-		}
-		data = data[n:]
-	}
-	return nil
-}
-
-type copyResult struct{ err error }
-
 func pipeDuplex(client net.Conn, clientReader *bufio.Reader, upstream net.Conn, upstreamReader *bufio.Reader) error {
-	results := make(chan copyResult, 2)
+	results := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(upstream, clientReader)
-		if tcp, okay := upstream.(*net.TCPConn); okay {
-			_ = tcp.CloseWrite()
+		if closer, okay := upstream.(interface{ CloseWrite() error }); okay {
+			_ = closer.CloseWrite()
 		}
-		results <- copyResult{err: err}
+		results <- err
 	}()
 	go func() {
 		_, err := io.Copy(client, upstreamReader)
-		if tcp, okay := client.(*net.TCPConn); okay {
-			_ = tcp.CloseWrite()
+		if closer, okay := client.(interface{ CloseWrite() error }); okay {
+			_ = closer.CloseWrite()
 		}
-		results <- copyResult{err: err}
+		results <- err
 	}()
 	first := <-results
-	if first.err != nil {
+	if first != nil {
 		_ = client.Close()
 		_ = upstream.Close()
 	}
 	second := <-results
-	if first.err != nil {
-		return first.err
+	if first != nil {
+		return first
 	}
-	return second.err
+	return second
 }

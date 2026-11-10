@@ -9,30 +9,32 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncEngine
+from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.app.testing.history import SeededEventLogStore
+from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.summaries import Summaries
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
+from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import command_pb2, event_pb2
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 
 # gazelle:include_dep @pypi//protobuf
 
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
+
 async def test_materialized_revisions_replicate_with_restricted_role(
-    db_url: str,
-    engine: AsyncEngine,
-    history_on: Callable[[str], AbstractAsyncContextManager[History]],
-    namespace: SandboxNamespace,
+    db_url: str, history_on: Callable[[str], AbstractAsyncContextManager[History]], namespace: SandboxNamespace
 ) -> None:
     async with electric_service() as service, history_on(service.database_url) as history:
         reader = history.service.reader
-        event_logs = SeededEventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(reader))
+        event_logs = SessionHistory(history)
         source = ReplicationSource()
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
@@ -92,10 +94,6 @@ async def test_materialized_revisions_replicate_with_restricted_role(
 Row = dict[str, Any]
 
 
-def _decoded(value: str | dict[str, Any]) -> dict[str, Any]:
-    return json.loads(value) if isinstance(value, str) else value
-
-
 async def _open(client: httpx.AsyncClient, path: str, epoch: str) -> tuple[str, str]:
     """A shape from now: no rows, only where its live log starts. Its window is loaded as subsets."""
     start = await client.get(path, params={"projection_epoch": epoch, "offset": "now"})
@@ -133,26 +131,26 @@ async def _follow(
     return changes, "".join(texts)
 
 
-def _body(chunks: list[Row], reference: dict[str, Any]) -> str:
+def _body(chunks: list[Row], reference: history_service_pb2.ThreadPayloadReference) -> str:
     """The body as far as the reference spans it."""
     texts = {
         int(row["chunk_index"]): json.loads(row["text"])
         for row in chunks
-        if row["owner_id"] == reference["owner_id"] and str(row["generation"]) == str(reference["generation"])
+        if row["owner_id"] == reference.owner_id and int(row["generation"]) == reference.generation
     }
-    return "".join(texts[index] for index in range(int(reference["chunk_count"])))
+    return "".join(texts[index] for index in range(reference.chunk_count))
 
 
-def _extends(chunk: Row, reference: dict[str, Any]) -> bool:
+def _extends(chunk: Row, reference: history_service_pb2.ThreadPayloadReference) -> bool:
     """Whether a chunk is the one after the last a reference spans."""
     return (
-        chunk["owner_id"] == reference["owner_id"]
-        and str(chunk["generation"]) == str(reference["generation"])
-        and int(chunk["chunk_index"]) == int(reference["chunk_count"])
+        chunk["owner_id"] == reference.owner_id
+        and int(chunk["generation"]) == reference.generation
+        and int(chunk["chunk_index"]) == reference.chunk_count
     )
 
 
-def _bodies(*references: dict[str, Any]) -> dict[str, object]:
+def _bodies(*references: history_service_pb2.ThreadPayloadReference) -> dict[str, object]:
     return {
         "where": " OR ".join(
             f"(owner_id = ${2 * n - 1} AND generation = ${2 * n})" for n in range(1, len(references) + 1)
@@ -160,7 +158,7 @@ def _bodies(*references: dict[str, Any]) -> dict[str, object]:
         "params": {
             key: value
             for n, reference in enumerate(references, 1)
-            for key, value in ((str(2 * n - 1), reference["owner_id"]), (str(2 * n), str(reference["generation"])))
+            for key, value in ((str(2 * n - 1), reference.owner_id), (str(2 * n), str(reference.generation)))
         },
     }
 
@@ -179,19 +177,33 @@ async def _cross_replica_sync(
         asyncio.timeout(60),
         app_process(db_url, history=reader, sandboxes=sandboxes, gateway=None, electric_url=service.url) as first,
         app_process(db_url, history=reader, sandboxes=sandboxes, gateway=None, electric_url=service.url) as second,
-        httpx.AsyncClient(base_url=first.url, timeout=35) as client_one,
-        httpx.AsyncClient(base_url=second.url, timeout=35) as client_two,
+        httpx.AsyncClient(
+            base_url=first.url, cookies=first.cookies, headers={"Origin": first.url}, timeout=35
+        ) as client_one,
+        httpx.AsyncClient(
+            base_url=second.url, cookies=second.cookies, headers={"Origin": second.url}, timeout=35
+        ) as client_two,
     ):
         path = f"/threads/{thread}/sync"
-        scope = await client_one.get(f"{path}/scope")
-        scope.raise_for_status()
-        epoch = scope.json()["projection_epoch"]
+        response = await client_one.post(
+            f"/upstream/history/v1/sessions/{thread}/entities",
+            json=MessageToDict(
+                history_service_pb2.ReadThreadEntitiesRequest(range=history_service_pb2.EntityRange(limit=1))
+            ),
+        )
+        response.raise_for_status()
+        scope = ParseDict(response.json(), history_service_pb2.ReadThreadEntitiesResponse())
+        epoch = scope.projection_epoch
+        assert epoch
         entities = await _open(client_one, f"{path}/entities", epoch)
         rows, tail = await _subset(
             client_one, f"{path}/entities", epoch, entities, {"order_by": "entity_index DESC", "limit": 30}
         )
         assert tail.headers["cache-control"] == "private, no-cache"
-        reference = _decoded(next(row for row in rows if row["entity_id"] == "first")["text_ref"])
+        reference_entity = thread_entity_from_record(next(row for row in rows if row["entity_id"] == "first"))
+        assert reference_entity.WhichOneof("entity") == "item"
+        assert reference_entity.item.HasField("text_ref")
+        reference = reference_entity.item.text_ref
         chunks = await _open(client_one, f"{path}/chunks/text", epoch)
         before, _ = await _subset(client_one, f"{path}/chunks/text", epoch, chunks, _bodies(reference))
         assert _body(before, reference) == "Hello world"
@@ -208,7 +220,12 @@ async def _cross_replica_sync(
                 row["entity_id"] == "first" and str(row["revision_cursor"]) == str(entry.cursor) for row in seen
             ),
         )
-        extended = _decoded(next(row for row in reversed(revised) if row["entity_id"] == "first")["text_ref"])
+        extended_entity = thread_entity_from_record(
+            next(row for row in reversed(revised) if row["entity_id"] == "first")
+        )
+        assert extended_entity.WhichOneof("entity") == "item"
+        assert extended_entity.item.HasField("text_ref")
+        extended = extended_entity.item.text_ref
         # A streamed delta costs the reader the delta: one new chunk, and a reference that spans it.
         appended, _ = await _follow(
             client_two, f"{path}/chunks/text", epoch, chunks, lambda seen: any(_extends(row, reference) for row in seen)
@@ -263,12 +280,18 @@ async def _command_outcome(
 
     def failed(rows: list[Row]) -> bool:
         return any(
-            row["entity_id"] == "selected-command" and _decoded(row["state"]).get("outcome") == "failed" for row in rows
+            row["entity_id"] == "selected-command"
+            and thread_entity_from_record(row).WhichOneof("entity") == "command"
+            and thread_entity_from_record(row).command.outcome == history_service_pb2.THREAD_COMMAND_OUTCOME_FAILED
+            for row in rows
         )
 
     changes, texts = await _follow(client_two, f"{path}/entities", epoch, entities, failed)
-    outcome = _decoded(next(row for row in reversed(changes) if row["entity_id"] == "selected-command")["state"])
-    assert outcome["outcome_reason"] == "Harness rejected input"
+    outcome = thread_entity_from_record(
+        next(row for row in reversed(changes) if row["entity_id"] == "selected-command")
+    )
+    assert outcome.WhichOneof("entity") == "command"
+    assert outcome.command.outcome_reason == "Harness rejected input"
     # A command row carries its outcome; what the operator sent stays out of the thread's shape.
     assert "Private command body" not in texts
     # A reader that reloads with the command in flight finds its outcome by id.
@@ -352,7 +375,10 @@ async def _history_window(
     assert "A whole selected tool-sized body" not in texts
     latest = revised(changes, "history-040", hidden.cursor)
     assert latest is not None
-    reference = _decoded(latest["text_ref"])
+    entity = thread_entity_from_record(latest)
+    assert entity.WhichOneof("entity") == "item"
+    assert entity.item.HasField("text_ref")
+    reference = entity.item.text_ref
     chunks = await _open(client_two, f"{path}/chunks/text", epoch)
     body, _ = await _subset(client_two, f"{path}/chunks/text", epoch, chunks, _bodies(reference))
     assert _body(body, reference) == "Body 40" + hidden_text

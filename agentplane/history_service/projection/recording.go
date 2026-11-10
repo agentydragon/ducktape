@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // ErrInconsistentFold means the stored fold rows disagree with each other or with the history, so the
@@ -49,32 +50,31 @@ func lockCheckpoint(ctx context.Context, tx *sql.Tx, threadID uuid.UUID) (*check
 	return &found, err
 }
 
-func insertEntity(ctx context.Context, tx *sql.Tx, row threadfold.EntityRow, index uint64) (uint64, error) {
-	args := []any{
-		row.ThreadID, row.ProjectionEpoch, row.EntityKind, row.EntityID, row.Cursor, row.RevisionCursor,
-		row.Pending, row.TurnID, string(row.State),
+func insertEntity(ctx context.Context, tx *sql.Tx, entity *historypb.ThreadEntity, index uint64) (uint64, error) {
+	kind, err := threadfold.EntityKindOf(entity)
+	if err != nil {
+		return 0, err
 	}
-	for _, reference := range []*threadfold.Reference{row.TextRef, row.ArgumentsRef, row.OutputRef, row.InputRef} {
-		if reference == nil {
-			args = append(args, nil)
-			continue
-		}
-		encoded, err := json.Marshal(reference)
-		if err != nil {
-			return 0, err
-		}
-		args = append(args, string(encoded))
+	pending := entity.GetCommand() != nil && entity.GetCommand().GetOutcome() == historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING
+	if err := threadfold.ValidateEntity(entity, pending); err != nil {
+		return 0, err
 	}
-	// A revision takes the conflict path, which leaves the index it was numbered with.
+	variant, err := threadfold.EntityState(entity)
+	if err != nil {
+		return 0, err
+	}
+	state, err := protojson.Marshal(variant)
+	if err != nil {
+		return 0, err
+	}
 	var stored uint64
-	err := tx.QueryRowContext(ctx, `INSERT INTO thread_entity (thread_id, projection_epoch, entity_kind, entity_id,
-			cursor, revision_cursor, pending, turn_id, state, text_ref, arguments_ref, output_ref, input_ref, entity_index)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14)
-		ON CONFLICT (thread_id, projection_epoch, entity_kind, entity_id) DO UPDATE SET
-			cursor = EXCLUDED.cursor, revision_cursor = EXCLUDED.revision_cursor, pending = EXCLUDED.pending,
-			turn_id = EXCLUDED.turn_id, state = EXCLUDED.state, text_ref = EXCLUDED.text_ref,
-			arguments_ref = EXCLUDED.arguments_ref, output_ref = EXCLUDED.output_ref, input_ref = EXCLUDED.input_ref
-		RETURNING entity_index`, append(args, index)...).Scan(&stored)
+	err = tx.QueryRowContext(ctx, `INSERT INTO thread_entity (thread_id, projection_epoch, entity_kind, entity_id,
+            cursor, revision_cursor, pending, state, entity_index)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+        ON CONFLICT (thread_id, projection_epoch, entity_kind, entity_id) DO UPDATE SET
+            cursor = EXCLUDED.cursor, revision_cursor = EXCLUDED.revision_cursor, pending = EXCLUDED.pending, state = EXCLUDED.state
+        RETURNING entity_index`, entity.SessionId, entity.ProjectionEpoch, kind, entity.EntityId, entity.Cursor,
+		entity.RevisionCursor, pending, string(state), index).Scan(&stored)
 	return stored, err
 }
 
@@ -88,19 +88,16 @@ func RecordEmptyThreadFold(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, 
 	if exists {
 		return false, nil
 	}
-	state, err := json.Marshal(threadfold.StoredViewState{
-		Operational: threadfold.Operational{Status: threadfold.StatusActive},
-	})
-	if err != nil {
+	entity := &historypb.ThreadEntity{
+		SessionId: threadID.String(), ProjectionEpoch: projectionEpoch, EntityId: "current",
+		Entity: &historypb.ThreadEntity_ViewState{ViewState: &historypb.ThreadViewState{
+			Controls: &historypb.ThreadControls{}, Operational: &historypb.ThreadOperational{Status: historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE},
+		}},
+	}
+	if _, err := insertEntity(ctx, tx, entity, 0); err != nil {
 		return false, err
 	}
-	if _, err := insertEntity(ctx, tx, threadfold.EntityRow{
-		ThreadID: threadID, ProjectionEpoch: projectionEpoch, EntityKind: threadfold.KindViewState, EntityID: "current",
-		State: state,
-	}, 0); err != nil {
-		return false, err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO thread_checkpoint (thread_id, source_id, projection_epoch, through_cursor)
+	_, err := tx.ExecContext(ctx, `INSERT INTO thread_checkpoint (thread_id, source_id, projection_epoch, through_cursor)
 		VALUES ($1, NULL, $2, 0)`, threadID, projectionEpoch)
 	return true, err
 }
@@ -120,7 +117,7 @@ func RecordThreadFold(
 		return err
 	}
 	var state threadfold.ViewState
-	var operational *threadfold.Operational
+	var operational *historypb.ThreadOperational
 	if stored == nil {
 		if state, err = threadfold.Initial(sourceID, projectionEpoch); err != nil {
 			return err
@@ -253,7 +250,7 @@ func forgetSettled(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projecti
 }
 
 // foldState reads the fold state the stored checkpoint, whose source is sourceID, and current view row hold.
-func foldState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, sourceID string, stored *checkpoint) (threadfold.ViewState, *threadfold.Operational, error) {
+func foldState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, sourceID string, stored *checkpoint) (threadfold.ViewState, *historypb.ThreadOperational, error) {
 	view, err := readViewState(ctx, tx, threadID, stored.projectionEpoch)
 	if err != nil {
 		return threadfold.ViewState{}, nil, err
@@ -262,21 +259,21 @@ func foldState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, sourceID str
 		Position: threadfold.Position{SourceID: sourceID, ProjectionEpoch: stored.projectionEpoch, ThroughCursor: stored.throughCursor},
 		Controls: threadfold.Controls{
 			AppliedModel: view.Controls.AppliedModel, AppliedReasoningEffort: view.Controls.AppliedReasoningEffort,
-			ActiveTurnID: view.Controls.ActiveTurnID, HarnessState: view.Controls.HarnessState,
+			ActiveTurnID: view.Controls.ActiveTurnId, HarnessState: view.Controls.HarnessState,
 		},
-	}, &view.Operational, nil
+	}, view.Operational, nil
 }
 
-func readViewState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projectionEpoch string) (threadfold.StoredViewState, error) {
+func readViewState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projectionEpoch string) (*historypb.ThreadViewState, error) {
 	var state []byte
 	err := tx.QueryRowContext(ctx, `SELECT state FROM thread_entity
-		WHERE thread_id = $1 AND projection_epoch = $2 AND entity_kind = $3 AND entity_id = 'current'`,
+        WHERE thread_id = $1 AND projection_epoch = $2 AND entity_kind = $3 AND entity_id = 'current'`,
 		threadID, projectionEpoch, threadfold.KindViewState).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) {
-		return threadfold.StoredViewState{}, fmt.Errorf("%w: thread checkpoint has no current controls", ErrInconsistentFold)
+		return nil, fmt.Errorf("%w: thread checkpoint has no current controls", ErrInconsistentFold)
 	}
 	if err != nil {
-		return threadfold.StoredViewState{}, err
+		return nil, err
 	}
 	return threadfold.ReadViewState(state)
 }
@@ -284,7 +281,7 @@ func readViewState(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projecti
 // SetOperational records the feed's operational state at the fold's checkpoint, and reports whether the
 // stored state changed. A Thread without a fold is left alone.
 func SetOperational(
-	ctx context.Context, tx *sql.Tx, threadID uuid.UUID, status threadfold.OperationalStatus, message *string, errorCursor *uint64,
+	ctx context.Context, tx *sql.Tx, threadID uuid.UUID, status historypb.ThreadFeedStatus, message *string, errorCursor *uint64,
 ) (bool, error) {
 	var projectionEpoch string
 	var throughCursor uint64
@@ -300,11 +297,15 @@ func SetOperational(
 	if err != nil {
 		return false, err
 	}
-	view.Operational = threadfold.Operational{Status: status, LastVerifiedCursor: throughCursor}
+	operational := &historypb.ThreadOperational{Status: status, LastVerifiedCursor: throughCursor}
 	if message != nil {
-		view.Operational.FeedError = &threadfold.FeedError{Cursor: errorCursor, Message: *message}
+		operational.FeedError = &historypb.ThreadFeedError{Cursor: errorCursor, Message: *message}
 	}
-	state, err := json.Marshal(view)
+	if err := threadfold.ValidateOperational(operational); err != nil {
+		return false, err
+	}
+	view.Operational = operational
+	state, err := protojson.Marshal(view)
 	if err != nil {
 		return false, err
 	}
@@ -335,8 +336,7 @@ func priorEntities(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, stored *
 	if stored == nil {
 		return prior, nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT entity_kind, entity_id, cursor, revision_cursor, pending, turn_id, state,
-			text_ref, arguments_ref, output_ref, input_ref
+	rows, err := tx.QueryContext(ctx, `SELECT entity_kind, entity_id, cursor, revision_cursor, pending, state
 		FROM thread_entity WHERE thread_id = $1 AND projection_epoch = $2
 			AND ((entity_kind = $3 AND entity_id = ANY($5)) OR (entity_kind = $4 AND entity_id = ANY($6)))`,
 		threadID, stored.projectionEpoch, threadfold.KindItem, threadfold.KindCommand,
@@ -346,30 +346,29 @@ func priorEntities(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, stored *
 	}
 	defer rows.Close()
 	for rows.Next() {
-		row := threadfold.EntityRow{ThreadID: threadID, ProjectionEpoch: stored.projectionEpoch}
+		entity := &historypb.ThreadEntity{SessionId: threadID.String(), ProjectionEpoch: stored.projectionEpoch}
+		var kind threadfold.EntityKind
+		var pending bool
 		var state []byte
-		var references threadfold.ReferenceColumns
-		if err := rows.Scan(&row.EntityKind, &row.EntityID, &row.Cursor, &row.RevisionCursor, &row.Pending, &row.TurnID,
-			&state, &references.Text, &references.Arguments, &references.Output, &references.Input); err != nil {
+		if err := rows.Scan(&kind, &entity.EntityId, &entity.Cursor, &entity.RevisionCursor, &pending, &state); err != nil {
 			return prior, err
 		}
-		row.State = state
-		if err := row.SetReferences(references); err != nil {
+		if err := threadfold.ParseEntity(entity, kind, pending, state); err != nil {
 			return prior, err
 		}
-		switch row.EntityKind {
+		switch kind {
 		case threadfold.KindItem:
-			item, err := row.Item()
+			item, err := threadfold.ItemFromEntity(entity)
 			if err != nil {
 				return prior, err
 			}
-			prior.Items[row.EntityID] = &item
+			prior.Items[entity.EntityId] = &item
 		case threadfold.KindCommand:
-			command, err := row.CommandSummary()
+			command, err := threadfold.CommandFromEntity(entity)
 			if err != nil {
 				return prior, err
 			}
-			prior.Commands[row.EntityID] = &command
+			prior.Commands[entity.EntityId] = &command
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -405,10 +404,14 @@ func payloadBodies(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, referenc
 		if !ok {
 			return nil, fmt.Errorf("%w: payload %s of %s has no manifest", ErrInconsistentFold, reference.Field, reference.OwnerID)
 		}
+		field, err := payloadFieldSQLName(reference.Field)
+		if err != nil {
+			return nil, err
+		}
 		rows, err := tx.QueryContext(ctx, `SELECT text FROM thread_payload_chunk
 			WHERE thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND owner_id = $4 AND field = $5
 				AND generation = $6 AND chunk_index < $7 ORDER BY chunk_index`,
-			threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, reference.Field,
+			threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, field,
 			reference.Generation, extent)
 		if err != nil {
 			return nil, err
@@ -444,10 +447,14 @@ func payloadExtents(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, referen
 	var epochs, owners, fields []string
 	var ownerCursors, revisionCursors, generations []int64
 	for _, reference := range references {
+		field, err := payloadFieldSQLName(reference.Field)
+		if err != nil {
+			return nil, err
+		}
 		epochs = append(epochs, reference.ProjectionEpoch)
 		ownerCursors = append(ownerCursors, int64(reference.OwnerCursor))
 		owners = append(owners, reference.OwnerID)
-		fields = append(fields, string(reference.Field))
+		fields = append(fields, field)
 		revisionCursors = append(revisionCursors, int64(reference.RevisionCursor))
 		generations = append(generations, int64(reference.Generation))
 	}
@@ -467,9 +474,13 @@ func payloadExtents(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, referen
 	defer rows.Close()
 	for rows.Next() {
 		var reference threadfold.PayloadRef
+		var field string
 		var count uint64
-		if err := rows.Scan(&reference.ProjectionEpoch, &reference.OwnerCursor, &reference.OwnerID, &reference.Field,
+		if err := rows.Scan(&reference.ProjectionEpoch, &reference.OwnerCursor, &reference.OwnerID, &field,
 			&reference.RevisionCursor, &reference.Generation, &count); err != nil {
+			return nil, err
+		}
+		if reference.Field, err = payloadFieldFromSQLName(field); err != nil {
 			return nil, err
 		}
 		extents[reference] = count

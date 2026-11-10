@@ -1,8 +1,10 @@
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { SandboxView } from "../api/schema";
-import { api, displayableError } from "../client";
+import { sandboxIdleSuspendAfterSeconds } from "../sandbox_status";
+import { displayableError } from "../client";
+import { setEnvironmentIdleSuspend } from "./client";
 
 const SECONDS_PER_MINUTE = 60;
 
@@ -43,11 +45,11 @@ export function IdleSuspendInput({
   disabled,
   onError,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   disabled: boolean;
   onError: (message: string | null) => void;
 }): JSX.Element {
-  const stored = sandbox.idle_suspend_after_seconds ?? null;
+  const stored = sandboxIdleSuspendAfterSeconds(sandbox);
   const [draft, setDraft] = useState<number | string>(idleMinutes(stored));
   const [saving, setSaving] = useState(false);
   useEffect(() => setDraft(idleMinutes(stored)), [stored]);
@@ -55,10 +57,11 @@ export function IdleSuspendInput({
   async function save(): Promise<void> {
     if (draft === idleMinutes(stored)) return;
     setSaving(true);
-    const { error: failure } = await api.PATCH("/sandboxes/{name}/idle-suspend", {
-      params: { path: { name: sandbox.name } },
-      body: { uid: sandbox.uid, idle_suspend_after_seconds: idleSeconds(draft) },
-    });
+    const idleSuspendAfterSeconds = idleSeconds(draft);
+    const failure = await setEnvironmentIdleSuspend(sandbox.target!, idleSuspendAfterSeconds).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     setSaving(false);
     if (failure) setDraft(idleMinutes(stored));
     onError(failure ? displayableError(failure) : null);
@@ -66,7 +69,7 @@ export function IdleSuspendInput({
 
   return (
     <NumberInput
-      aria-label={"Idle suspend minutes for " + sandbox.name}
+      aria-label={"Idle suspend minutes for " + sandbox.target!.name}
       placeholder="Never"
       min={1}
       allowNegative={false}

@@ -1,6 +1,6 @@
 @README.md
 
-@testing/AGENTS.md
+For changes to Props tests or shared test fixtures anywhere under `props/`, read the [Props testing guidance](testing/AGENTS.md).
 
 Frontend conventions: <frontend/AGENTS.md>. Authoring agent-facing prompt templates (under
 <agents/>): <agents/AGENTS.md>. Do not `@`-transclude the runtime prompt templates

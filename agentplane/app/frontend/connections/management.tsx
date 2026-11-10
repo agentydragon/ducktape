@@ -1,21 +1,14 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./management.css";
-import { type StreamConnection } from "../live_stream";
+import { type StreamConnection } from "../stream_reader";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, HttpError } from "../client";
+import { isEligibleCaller, serviceAccountKey } from "./service_accounts";
 import {
-  isEligibleCaller,
-  serviceAccountKey,
-  type CallerServiceAccount,
-  type CallerGrantReader,
-  type Connection,
-} from "./models";
-import { readCallerGrants } from "./caller_grants_client";
-import {
-  adaptConnectionWatchFrame,
   connectionServiceAccounts,
   listConnections,
+  readConnectionWatchFrame,
   rebindConnection,
   renameConnection,
   unbindConnection,
@@ -25,6 +18,8 @@ import { followWatch } from "../watch_stream";
 
 import { CallerGrants } from "./caller_grants";
 import { InlineName } from "../inline_name";
+import { GrantStatus, type Connection } from "../../../mcp_edge/connection_service_pb";
+import type { ServiceAccount } from "../../../proto/identity_pb";
 
 type Grant = Connection["grants"][number];
 
@@ -36,13 +31,13 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
-export function Connections({ readGrants = readCallerGrants }: { readGrants?: CallerGrantReader }): JSX.Element {
+export function Connections(): JSX.Element {
   const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [snapshot, setRows] = useState<Connection[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   const rows = snapshot ?? [];
   const loaded = snapshot !== null;
-  const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
+  const [accounts, setAccounts] = useState<ServiceAccount[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Connection | null>(null);
@@ -57,29 +52,31 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
         readingSnapshot = true;
       },
       onFrame: (value) => {
-        const frame = adaptConnectionWatchFrame(value);
-        if (frame.kind === "snapshot") {
-          if (!readingSnapshot) throw new Error("ConnectionService sent a snapshot outside its initial replay");
-          snapshot.push(...frame.connections);
-          return;
+        const frame = readConnectionWatchFrame(value);
+        switch (frame.kind) {
+          case "snapshot":
+            if (!readingSnapshot) throw new Error("ConnectionService sent a snapshot outside its initial replay");
+            snapshot.push(...frame.connections);
+            return;
+          case "snapshot_complete":
+            if (!readingSnapshot) throw new Error("ConnectionService completed a snapshot that was not open");
+            readingSnapshot = false;
+            setRows(snapshot);
+            return;
+          case "upsert":
+            if (readingSnapshot) throw new Error("ConnectionService sent an update before completing its snapshot");
+            setRows((current) => {
+              if (current === null) return [frame.connection];
+              const found = current.some((row) => row.id === frame.connection.id);
+              return found
+                ? current.map((row) => (row.id === frame.connection.id ? frame.connection : row))
+                : [...current, frame.connection];
+            });
+            return;
+          case "reconnect_required":
+            // The frame is followed by EOF; followWatch reopens with a fresh snapshot.
+            return;
         }
-        if (frame.kind === "snapshot_complete") {
-          if (!readingSnapshot) throw new Error("ConnectionService completed a snapshot that was not open");
-          readingSnapshot = false;
-          setRows(snapshot);
-          return;
-        }
-        if (frame.kind === "upsert") {
-          if (readingSnapshot) throw new Error("ConnectionService sent an update before completing its snapshot");
-          setRows((current) => {
-            if (current === null) return [frame.connection];
-            const found = current.some((row) => row.id === frame.connection.id);
-            return found
-              ? current.map((row) => (row.id === frame.connection.id ? frame.connection : row))
-              : [...current, frame.connection];
-          });
-        }
-        // `reconnect_required` is followed by EOF; followWatch then reopens with a fresh snapshot.
       },
       onConnection: setConnection,
     });
@@ -216,7 +213,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
           <Table.Tbody>
             {rows.map((row) => {
               const grant = currentGrant(row);
-              const currentKey = row.bound_caller ? serviceAccountKey(row.bound_caller) : null;
+              const currentKey = row.boundCaller ? serviceAccountKey(row.boundCaller) : null;
               const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
               return (
                 <Fragment key={row.id}>
@@ -224,27 +221,27 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                     <Table.Td>
                       <InlineName
                         label="Client name"
-                        name={row.display_name}
+                        name={row.displayName}
                         maxLength={200}
                         disabled={busy}
                         className="agentplane-connection-name"
                         onCommit={(name) => void rename(row, name)}
                       />
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Client ID · {grant?.client_id ?? "—"}
+                        Client ID · {grant?.clientId ?? "—"}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
                         Connection ID · {row.id}
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      {row.bound_caller ? (
+                      {row.boundCaller ? (
                         <Stack gap={2}>
                           <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
                             Service account
                           </Text>
                           <Select
-                            aria-label={`Service account for ${row.display_name}`}
+                            aria-label={`Service account for ${row.displayName}`}
                             value={selected}
                             onChange={(value) => {
                               if (value) setRebinding({ row, target: value, confirm: false });
@@ -254,7 +251,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                                 value: serviceAccountKey(account),
                                 label: serviceAccountKey(account),
                               })),
-                              ...(!isEligibleCaller(row.bound_caller, accounts)
+                              ...(!isEligibleCaller(row.boundCaller, accounts)
                                 ? [{ value: currentKey!, label: currentKey!, disabled: true }]
                                 : []),
                             ]}
@@ -271,7 +268,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                           >
                             {expandedGrants === row.id ? "Hide grants" : "View grants"}
                           </Button>
-                          {!isEligibleCaller(row.bound_caller, accounts) && (
+                          {!isEligibleCaller(row.boundCaller, accounts) && (
                             <Text size="xs" c="orange">
                               ServiceAccount not labeled as an Action caller
                             </Text>
@@ -291,7 +288,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                             </Group>
                           )}
                           {rebinding?.confirm && rebinding.row.id === row.id && (
-                            <Alert color="orange" title={`Change ${row.display_name}'s ServiceAccount?`}>
+                            <Alert color="orange" title={`Change ${row.displayName}'s ServiceAccount?`}>
                               <Text size="sm">
                                 Existing client tokens will act as {rebinding.target} on future requests. Pending
                                 Actions admitted under the previous account will not be silently upgraded; already
@@ -314,7 +311,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                     </Table.Td>
                     <Table.Td>
                       {unlinking?.id === row.id ? (
-                        <Alert color="orange" title={`Unlink ${row.display_name}?`}>
+                        <Alert color="orange" title={`Unlink ${row.displayName}?`}>
                           <Text size="sm">
                             Revoke this Connection’s active and pending grants. Its name, immutable IDs, and grant
                             history remain. Already claimed executions are not stopped. Fresh authorization is required
@@ -335,7 +332,7 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                             color="red"
                             variant="light"
                             size="xs"
-                            disabled={busy || row.grants.every((candidate) => candidate.status === "revoked")}
+                            disabled={busy || row.grants.every((candidate) => candidate.status === GrantStatus.REVOKED)}
                             onClick={() => setUnlinking(row)}
                           >
                             Unlink
@@ -344,11 +341,11 @@ export function Connections({ readGrants = readCallerGrants }: { readGrants?: Ca
                       )}
                     </Table.Td>
                   </Table.Tr>
-                  {expandedGrants === row.id && row.bound_caller && (
+                  {expandedGrants === row.id && row.boundCaller && (
                     <Table.Tr>
                       <Table.Td colSpan={3}>
                         <div id={`caller-grants-${row.id}`}>
-                          <CallerGrants key={currentKey} account={row.bound_caller} read={readGrants} />
+                          <CallerGrants key={currentKey} account={row.boundCaller} />
                         </div>
                       </Table.Td>
                     </Table.Tr>

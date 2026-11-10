@@ -1,0 +1,35 @@
+# Helpers for delegated_cgroup_stress. Keep cgroup.procs inspection in the
+# current shell: a subprocess would appear as an extra member of the cgroup.
+cgroup_has_only_pid() {
+	cgroup_procs_path=$1
+	expected_cgroup_pid=$2
+	cgroup_members=
+	cgroup_member_count=0
+	cgroup_only_expected=yes
+	exec 3<"$cgroup_procs_path" || return 1
+	while IFS= read -r cgroup_pid <&3; do
+		cgroup_member_count=$((cgroup_member_count + 1))
+		# Keep diagnostic output bounded even if the service is unexpectedly busy.
+		if [ "$cgroup_member_count" -gt 32 ]; then
+			cgroup_only_expected=no
+			break
+		fi
+		case $cgroup_pid in '' | *[!0-9]*) cgroup_only_expected=no ;; esac
+		cgroup_members="${cgroup_members}${cgroup_members:+,}$cgroup_pid"
+		[ "$cgroup_pid" = "$expected_cgroup_pid" ] || cgroup_only_expected=no
+	done
+	exec 3<&-
+	[ "$cgroup_member_count" -eq 1 ] && [ "$cgroup_only_expected" = yes ]
+}
+
+filter_is_empty() {
+	filter_file=$1
+	[ -r "$filter_file" ] || return 1
+	filter_bytes=$("$busybox" wc -c <"$filter_file")
+	[ "$filter_bytes" -le 256 ] || return 1
+	filter_value=$("$busybox" cat "$filter_file")
+	case $filter_value in
+		'' | '#### all functions enabled ####' | '#### no functions disabled ####' | 'no pid') return 0 ;;
+	esac
+	return 1
+}

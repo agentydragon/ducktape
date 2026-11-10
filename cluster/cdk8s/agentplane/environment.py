@@ -17,10 +17,14 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.app.settings import AppSettingsConfig
+from agentplane.app.settings import Settings
+from agentplane.central_sampler import settings
+from agentplane.env.config import GuestResources
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
-from agentplane.runner.configuration import GuestResources
+from agentplane.notification_service.settings import NoticeDebounceSettings
+from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from agentplane.subjects import ServiceAccountRef
+from cluster.cdk8s.secret_ref import SecretKey
 from model_catalog.catalog import Route
 
 
@@ -46,6 +50,24 @@ class LlmIngressProps:
 
 
 @dataclass(frozen=True)
+class CentralSamplerProps:
+    """The opt-in central code-mode service's model contracts and runtime limits."""
+
+    models: Mapping[str, settings.ModelConfig]
+    connections: Mapping[str, settings.ConnectionConfig]
+    max_live_sessions: int
+    turn_timeout_seconds: int
+    rpc_timeout_seconds: int
+    lease_seconds: int
+    replicas: ReplicaProfile | None = None
+    # The settings carry each credential file path; this map names only the Secret key
+    # projected there, keyed by connection name.
+    connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
+    executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
+    auto_compact_tokens: int | None = None
+
+
+@dataclass(frozen=True)
 class EgressProps:
     # The interception CA's Secret/Bundle/ConfigMap name; the runner SandboxTemplate
     # mounts the ConfigMap by the same name.
@@ -57,6 +79,12 @@ class EgressProps:
     zones: tuple[str, ...] | None = None
     # Static relay clients outside the runner namespace; admission is not an egress grant.
     external_workload_namespaces: tuple[str, ...] = ()
+    # Those of them holding standing WorkloadCredentials, which the proxy reads to resolve their SVIDs.
+    standing_workload_namespaces: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if outside := set(self.standing_workload_namespaces) - set(self.external_workload_namespaces):
+            raise ValueError(f"standing workload namespaces must be external workload namespaces: {sorted(outside)}")
 
 
 @dataclass(frozen=True)
@@ -114,6 +142,13 @@ class OrchestrationProps:
 
 
 @dataclass(frozen=True)
+class SessionDelegationProps:
+    """The reviewed existing-environment Session Actions exposed as direct MCP tools."""
+
+    direct_tools_by_group: Mapping[Key, frozenset[Key]]
+
+
+@dataclass(frozen=True)
 class ActionsProps:
     """This environment's Actions settings and secret wiring."""
 
@@ -136,18 +171,20 @@ class ActionsProps:
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
     # None offers no orchestration_v1 group.
     orchestration_v1: OrchestrationProps | None = None
+    # None offers no existing-environment Session delegation groups.
+    session_delegation: SessionDelegationProps | None = None
 
 
 @dataclass(frozen=True)
 class McpEdgeProps:
     """The independently staged MCP/Connection authority; no Actions settings imply its scope."""
 
-    replicas: ReplicaProfile
     operator_oidc: OperatorOidcSettings
     caller_service_account_namespaces: frozenset[str]
     mintable_accounts: frozenset[ServiceAccountRef]
     oauth_secret_name: str | None
     hostname: str | None
+    replicas: ReplicaProfile | None = None
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 
@@ -164,7 +201,7 @@ class Environment:
     description: str
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/settings.py's `Settings`.
-    app_config: AppSettingsConfig
+    app_config: Settings
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool
@@ -173,14 +210,27 @@ class Environment:
     app: AppProps
     actions: ActionsProps
     mcp_edge: McpEdgeProps
-    # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
+    notifications_debounce: NoticeDebounceSettings
+    # Whether this environment has VM Sandboxes: the runner VM template (environment_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Deployment-published runtime facts shared with the co-hosted discovery service.
+    runtime_catalog: Catalog | None = None
+    # PolicySets applied by EnvironmentService to every new Sandbox.
+    default_policy_sets: frozenset[str] = frozenset()
+    # Whether the policy catalog renders in the identity shapes: every Flux `PolicyBinding` names an
+    # `Identity`, Kubernetes rules are `KubernetesRoleSet`s, and agents reach the API server only as
+    # accounts (kubernetes_account_ref.py), not as the Sandbox's own ServiceAccount through `basic`.
+    identity_catalog: bool = False
+    # None keeps the central code-mode service, its route, and its cross-service grants absent.
+    central_sampler: CentralSamplerProps | None = None
     # Optional StorageClass for both claims owned by a VM Sandbox. If unset, they use the runner
     # template's state claim class.
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
+    # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
+    firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
     isolated_codex_executor: bool = True
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
@@ -201,6 +251,8 @@ class Environment:
     harness_inherited_env: Sequence[str] = ("TZDIR",)
 
     def __post_init__(self) -> None:
+        if self.firecracker_sandboxes and self.vm_resources is None:
+            raise ValueError("firecracker_sandboxes requires vm_resources")
         if self.vm_storage_class is not None:
             if not self.vm_storage_class:
                 raise ValueError("vm_storage_class cannot be empty")

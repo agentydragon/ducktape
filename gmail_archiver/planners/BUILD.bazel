@@ -74,10 +74,10 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//gmail_api:labels",
+        "//gmail_archiver:fmt",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
-        "//util:fmt",
         "@pypi//pydantic",
     ],
 )

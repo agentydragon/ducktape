@@ -18,7 +18,7 @@ independent implementations**:
 | --------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------- | -------------------------------------------------- |
 | home-manager (`nix/home/modules/buildbuddy.nix`)                | sops-nix `sops.secrets`                                            | sops-nix `sops.templates` (placeholder substitution) | `~/.ssh/id_ed25519` (age via SSH)                  |
 | Rust session start hook (`devinfra/claude/claude_hook/main.rs`) | `web_env.sh` → `_common.sh` → `sops -d` via `SOPS_AGE_KEY` env var | Rust `write_buildbuddy_bazelrc()`                    | `SOPS_AGE_KEY` env var (set in Claude Code web UI) |
-| CI / setup script (`devinfra/setup_buildbuddy.sh`)              | `_common.sh` → `sops -d`                                           | bash heredoc                                         | `SOPS_AGE_KEY` from GHA secret                     |
+| CI / setup script (`devinfra/buildbuddy/setup.sh`)              | `_common.sh` → `sops -d`                                           | bash heredoc                                         | `SOPS_AGE_KEY` from GHA secret                     |
 
 All three produce the same credential-scoped output:
 

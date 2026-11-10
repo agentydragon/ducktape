@@ -5,18 +5,20 @@
  * from the shared scenario YAML, the same files the GNOME extension's renders and the CLI's
  * snapshot use, so the three surfaces are reviewed on identical states.
  *
- * "Now" is the scene's own `fetched_at`, which is what the Python renderers used: ages,
+ * "Now" is the scene's `presentation_at` (or older-payload `fetched_at`), which is what the Python renderers used: ages,
  * countdowns and stale tags then read exactly as they do in the terminal, and the render is
  * the same picture on every run.
  */
 
+import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import type { AllQuotasView } from "../api/schema";
+import type { AllQuotasView } from "../schema";
 import { App } from "../app";
 import { Dashboard } from "../dashboard";
 import scenes from "../fixtures/scenes.json";
 
+import "@mantine/core/styles.css";
 import "../board.css";
 import "../page.css";
 
@@ -60,15 +62,18 @@ if (query.has("live")) {
 }
 
 createRoot(root).render(
-  query.has("live") ? (
-    <App />
-  ) : (
-    <Dashboard
-      quotas={quotas}
-      now={Date.parse(quotas.fetched_at)}
-      error={null}
-      connecting={false}
-      onRefresh={() => undefined}
-    />
-  )
+  <MantineProvider defaultColorScheme="auto">
+    {query.has("live") ? (
+      <App />
+    ) : (
+      <Dashboard
+        quotas={quotas}
+        now={Date.parse(quotas.presentation_at ?? quotas.fetched_at)}
+        error={null}
+        connecting={false}
+        stopped={false}
+        onRefresh={() => undefined}
+      />
+    )}
+  </MantineProvider>
 );

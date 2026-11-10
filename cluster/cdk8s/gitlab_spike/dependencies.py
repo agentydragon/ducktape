@@ -25,7 +25,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.gitlab_spike import app
@@ -53,16 +53,16 @@ def _databases(chart: Chart) -> None:
         port=app.GITLAB_DB.rw.port.number,
         database=app.PRAEFECT_DATABASE,
     )
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "gitlab-cluster",
         ref=app.GITLAB_DB,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="25Gi",
         resize_in_use_volumes=False,
-        instances=3,
+        instances=2,
         image_name="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
-        initdb=cnpg.same_owner_initdb(app.GITLAB_DATABASE),
+        initdb=cluster.same_owner_initdb(app.GITLAB_DATABASE),
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(
@@ -74,7 +74,7 @@ def _databases(chart: Chart) -> None:
         ),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "gitlab-backup", ref=app.GITLAB_DB, retention="30d")
+    backup.CnpgBackup(chart, "gitlab-backup", ref=app.GITLAB_DB, retention="30d")
     Database(
         chart,
         "praefect-database",

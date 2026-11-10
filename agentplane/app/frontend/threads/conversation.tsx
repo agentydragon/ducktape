@@ -1,25 +1,34 @@
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
-import type { LangfuseSearchSettings, ModelOption, SandboxView, ThreadView, TraceSearchSettings } from "../api/schema";
+import type { LangfuseSearchSettings, ModelOption, TraceSearchSettings } from "../../app_service_pb";
+import type { ThreadView } from "./client";
+import { Operation } from "../../../proto/command_pb";
+import { Harness, SetupState } from "../../../proto/session_pb";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { displayableError } from "../client";
-import { harnessLabel, models, modelsForHarness } from "../model_catalog";
-import { langfuseSandboxTraceUrl } from "../langfuse_search";
+import { attachedHarness, harnessBehavior } from "../harness_behavior";
+import { harnessLabel, modelsForHarness } from "../model_catalog";
+import { listModels } from "../app_config_client";
+import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
-import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import { useThreadSync, type ThreadWindow } from "./thread_sync";
+import { ThreadFeedStatus, type ThreadEntity } from "../../../history_service/history_service_pb";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useOptionalStreamStatus } from "../stream_status";
-import { RetainedDisclosureProvider } from "./retained_disclosures";
+import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { installThreadFavicon } from "./thread_favicon";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import { timestampLabel } from "./thread_presentation";
 import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
@@ -114,10 +123,11 @@ function AutosuspendHint({
   if (!hint) return null;
   const title = "Autosuspend waits until all sessions on this Sandbox are idle; new work resets the timer.";
   if (hint.blockers?.length) {
-    const sibling = hint.blockers.find((blocker) => blocker.session_id && blocker.session_id !== threadId);
-    const siblingId = sibling?.session_id;
+    const sibling = hint.blockers.find((blocker) => blocker.sessionId && blocker.sessionId !== threadId);
+    const siblingId = sibling?.sessionId;
     const sessionName = (id: string) =>
-      live.snapshot?.threads.find((thread) => thread.id === id)?.name || `Session ${id.slice(0, 8)}`;
+      live.snapshot?.threads.find((thread) => thread.metadata.threadId === id)?.metadata.name ||
+      `Session ${id.slice(0, 8)}`;
     return (
       <Text component="div" className={className} size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
         {siblingId && (
@@ -141,13 +151,13 @@ function AutosuspendHint({
             <Stack gap="xs">
               <Text size="xs">{title}</Text>
               {hint.blockers.map((blocker) => (
-                <Text key={`${blocker.reason}:${blocker.session_id ?? ""}`} size="xs">
-                  {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason]}
-                  {blocker.session_id && (
+                <Text key={`${blocker.reason}:${blocker.sessionId ?? ""}`} size="xs">
+                  {AUTOSUSPEND_BLOCKER_LABELS[blocker.reason] ?? blocker.reason}
+                  {blocker.sessionId && (
                     <>
                       {" · "}
-                      <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.session_id)}`} size="xs">
-                        {sessionName(blocker.session_id)}
+                      <Anchor component={Link} to={`/threads/${encodeURIComponent(blocker.sessionId)}`} size="xs">
+                        {sessionName(blocker.sessionId)}
                       </Anchor>
                     </>
                   )}
@@ -186,7 +196,7 @@ interface ConversationBodyProps {
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
-  sandbox?: SandboxView;
+  sandbox?: EnvironmentDescriptor;
 }
 
 function ConversationBody({
@@ -209,37 +219,54 @@ function ConversationBody({
     const timer = window.setInterval(() => setClock(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  const activityAge = modelActivityAge(thread.last_model_activity_at, Math.max(clock, Date.now()));
+  const summary = thread.summary;
+  const attachment = summary.attached;
+  const spec = attachment?.spec;
+  const sandboxName = summary.sandbox?.name ?? "";
+  const sandboxUID = summary.sandbox?.uid;
+  const lastModelActivityAt = timestampLabel(summary.lastModelActivityAt);
+  const idleSince = timestampLabel(summary.idleSince);
+  const activityAge = modelActivityAge(lastModelActivityAt, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
-  const commands = useThreadCommands(threadId, entities);
+  const commands = useThreadCommands(thread, entities);
   const onInputEchoLoaded = useCallback(
     (commandId: string) => commands.store.acknowledgeEcho(commandId),
     [commands.store]
   );
   const openDebug = useOpenChronologicalDebug();
-  const view = entities.find((row) => row.entityKind === "view_state");
-  const controls = view && "controls" in view.state ? view.state.controls : null;
-  const operational = view && "controls" in view.state ? view.state.operational : null;
+  const view = entities.find((row) => row.entity.case === "viewState");
+  const controls = view?.entity.case === "viewState" ? view.entity.value.controls : null;
+  const operational = view?.entity.case === "viewState" ? view.entity.value.operational : null;
   const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
   const threadCanAcceptInput =
     syncWritable &&
-    !thread.archived &&
-    !["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
-    operational?.status !== "failed";
+    !thread.metadata.archived &&
+    attachment?.setupState !== SetupState.FAILED &&
+    attachment?.setupState !== SetupState.INTERRUPTED &&
+    operational?.status !== ThreadFeedStatus.FAILED;
   const running =
-    available && threadCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
+    available &&
+    threadCanAcceptInput &&
+    operational?.status === ThreadFeedStatus.ACTIVE &&
+    controls?.harnessState === "running";
   // Dispatcher admission does not require a running native harness.
   const canSend = threadCanAcceptInput && (available || canQueueCommands);
-  const activeTurn = controls?.active_turn_id ?? null;
+  const activeTurn = controls?.activeTurnId ?? null;
   const threadsLive = useRequiredThreadsLive();
-  const status = threadStatusFromSnapshot(
-    threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
-    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
-    snapshotFresh(threadsLive)
+  const sandboxesLive = useRequiredSandboxesLive();
+  const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
+  const currentSandbox = sandboxesLive.snapshot?.find(
+    (candidate) => Boolean(sandboxUID) && candidate.target?.name === sandboxName && candidate.target.uid === sandboxUID
   );
-  const currentSandbox = threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
-  const sandboxAutosuspend = autosuspendHint(currentSandbox, snapshotFresh(threadsLive), Math.max(clock, Date.now()));
+  const status = threadStatusFromSnapshot(
+    threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId),
+    currentSandbox,
+    snapshotFresh(threadsLive) && inventoryFresh
+  );
+  const harness = attachedHarness(attachment);
+  const { llmTraceScope } = harnessBehavior(harness);
+  const sandboxAutosuspend = autosuspendHint(currentSandbox, inventoryFresh, Math.max(clock, Date.now()));
   useEffect(
     () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
     [onStatusChange, status.kind, status.tabLabel]
@@ -247,17 +274,16 @@ function ConversationBody({
   useEffect(() => installThreadFavicon(status.kind), [status.kind]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
-  const selectedModel = controls?.applied_model ?? thread.model;
-  const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoning_efforts ?? [];
+  const selectedModel = controls?.appliedModel ?? spec?.model;
+  const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoningEfforts ?? [];
   useEffect(() => {
-    const harness = thread.harness;
     // Unknown until the Thread's summary folds a runner attachment; no model fits it yet.
-    if (harness === null) {
+    if (harness === undefined || harness === Harness.UNSPECIFIED) {
       setModelOptions([]);
       return;
     }
     let active = true;
-    void models().then(
+    void listModels().then(
       (catalog) => {
         if (active) setModelOptions(modelsForHarness(catalog, harness));
       },
@@ -268,22 +294,18 @@ function ConversationBody({
     return () => {
       active = false;
     };
-  }, [thread.harness]);
+  }, [harness]);
   const rows = historyRows(
     entities
       .filter(
         (row) =>
-          ["item", "confirmed_input", "lifecycle"].includes(row.entityKind) ||
-          (row.entityKind === "command" &&
-            (pendingSentMessage(row) || ("operation" in row.state && row.state.operation !== "submit_input")))
+          row.entity.case === "item" ||
+          row.entity.case === "confirmedInput" ||
+          row.entity.case === "lifecycle" ||
+          (row.entity.case === "command" &&
+            (pendingSentMessage(row) || row.entity.value.operation !== Operation.SUBMIT_INPUT))
       )
-      .sort((left, right) =>
-        decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
-          ? -1
-          : decimalBigInt(left.cursor) > decimalBigInt(right.cursor)
-            ? 1
-            : 0
-      )
+      .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
@@ -313,9 +335,9 @@ function ConversationBody({
         />
       )}
       <ModelActivityHint
-        at={thread.last_model_activity_at}
+        at={lastModelActivityAt}
         age={activityAge}
-        idleSince={activeTurn ? null : thread.idle_since}
+        idleSince={activeTurn ? null : idleSince}
         className="agentplane-thread-tail-model-activity"
       />
     </Stack>
@@ -323,10 +345,7 @@ function ConversationBody({
 
   return (
     <RetainedDisclosureProvider>
-      <Stack
-        style={{ flex: 1, minHeight: 0 }}
-        data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
-      >
+      <Stack style={{ flex: 1, minHeight: 0 }} data-projection-cursor={view?.revisionCursor.toString()}>
         <VirtualizedHistory
           threadId={threadId}
           rows={rows}
@@ -337,11 +356,11 @@ function ConversationBody({
           activeTurn={activeTurn}
           history={history}
         />
-        {operational?.feed_error && (
+        {operational?.feedError && (
           <Text role="alert" c="red">
-            {operational.feed_error.cursor === null
-              ? `Projection failed: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`
-              : `Rejected event ${operational.feed_error.cursor}: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`}
+            {operational.feedError.cursor === undefined
+              ? `Projection failed: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`
+              : `Rejected event ${operational.feedError.cursor}: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`}
           </Text>
         )}
         {modelError && (
@@ -375,10 +394,10 @@ function ConversationBody({
             <Select
               aria-label="Model"
               className="agentplane-composer-model"
-              data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
-              value={controls?.applied_model ?? null}
+              data={modelOptions.map((option) => ({ value: option.model, label: option.displayName }))}
+              value={controls?.appliedModel ?? null}
               placeholder={
-                sync.window?.error || operational?.status === "failed"
+                sync.window?.error || operational?.status === ThreadFeedStatus.FAILED
                   ? "Model unavailable"
                   : !sync.window?.caughtUp
                     ? "Catching up…"
@@ -392,7 +411,7 @@ function ConversationBody({
                 aria-label="Reasoning effort"
                 className="agentplane-composer-effort"
                 data={effortOptions}
-                value={controls?.applied_reasoning_effort ?? thread.reasoning_effort ?? null}
+                value={controls?.appliedReasoningEffort ?? spec?.reasoningEffort ?? null}
                 placeholder="Effort"
                 disabled={!canSend}
                 onChange={(effort) => effort && commands.changeReasoningEffort(effort)}
@@ -404,8 +423,8 @@ function ConversationBody({
               Notifications
             </Button>
             <NotificationStatus
-              sandbox={thread.sandbox}
-              sessionId={thread.id}
+              sandbox={sandboxName}
+              sessionIds={[thread.metadata.threadId]}
               opened={notificationsOpen}
               onClose={() => setNotificationsOpen(false)}
             />
@@ -418,8 +437,8 @@ function ConversationBody({
               <Menu.Dropdown>
                 <Menu.Label style={{ overflowWrap: "anywhere" }}>Thread ID: {threadId}</Menu.Label>
                 {/* Always here: the topbar drops the same label when the thread's name leaves it no room. */}
-                <Menu.Label style={{ overflowWrap: "anywhere" }}>Sandbox: {thread.sandbox}</Menu.Label>
-                <Menu.Label>Harness: {harnessLabel(thread.harness)}</Menu.Label>
+                <Menu.Label style={{ overflowWrap: "anywhere" }}>Sandbox: {sandboxName}</Menu.Label>
+                <Menu.Label>Harness: {harnessLabel(harness)}</Menu.Label>
                 <Menu.Divider />
                 <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
                   Notifications
@@ -430,24 +449,28 @@ function ConversationBody({
                 {traceSearch && (
                   <Menu.Item
                     component="a"
-                    href={traceSearchUrl(traceSearch, { kind: "session", id: thread.id })}
+                    href={traceSearchUrl(traceSearch, { kind: "session", id: thread.metadata.threadId })}
                     target="_blank"
                     rel="noreferrer"
                   >
                     Find Thread traces in Grafana
                   </Menu.Item>
                 )}
-                {langfuseSearch && sandbox && (
+                {langfuseSearch && (sandbox || llmTraceScope === "session") && (
                   <Menu.Item
                     component="a"
-                    href={langfuseSandboxTraceUrl(langfuseSearch, {
-                      namespace: sandbox.service_account.namespace,
-                      serviceAccount: sandbox.service_account.name,
-                    })}
+                    href={
+                      llmTraceScope === "session"
+                        ? langfuseSessionTraceUrl(langfuseSearch, thread.metadata.threadId)
+                        : langfuseSandboxTraceUrl(langfuseSearch, {
+                            namespace: sandbox!.executionAccount?.account?.namespace ?? "",
+                            serviceAccount: sandbox!.executionAccount?.account?.name ?? "",
+                          })
+                    }
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Sandbox LLM traces in Langfuse
+                    {llmTraceScope === "session" ? "Session" : "Sandbox"} LLM traces in Langfuse
                   </Menu.Item>
                 )}
                 <Menu.Divider />
@@ -461,9 +484,9 @@ function ConversationBody({
               className="agentplane-composer-autosuspend"
             />
             <ModelActivityHint
-              at={thread.last_model_activity_at}
+              at={lastModelActivityAt}
               age={activityAge}
-              idleSince={activeTurn ? null : thread.idle_since}
+              idleSince={activeTurn ? null : idleSince}
               className="agentplane-composer-model-activity"
             />
           </Stack>
@@ -484,7 +507,7 @@ export interface ThreadConversationProps {
   onStatusChange: (status: ThreadTabTitleStatus) => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
-  sandbox?: SandboxView;
+  sandbox?: EnvironmentDescriptor;
 }
 
 export function ThreadConversation({

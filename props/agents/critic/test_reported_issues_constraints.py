@@ -21,6 +21,11 @@ from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+
 
 @pytest.fixture
 def test_critic_run(synced_db: Database):
@@ -63,58 +68,29 @@ def test_occurrence_empty_locations_invalid(test_critic_run, db: Database):
         session.rollback()
 
 
-def test_line_range_start_line_zero_invalid(test_critic_run, db: Database):
-    """Invalid: start_line = 0 (must be >= 1)."""
+@pytest.mark.parametrize(
+    ("issue_id", "location_kwargs", "expected_location"),
+    [
+        ("test-issue-6", {"start_line": 0}, ("start_line",)),
+        ("test-issue-7", {"start_line": -5}, ("start_line",)),
+        ("test-issue-8", {"start_line": 1, "end_line": 0}, ("end_line",)),
+    ],
+    ids=["start_line_zero", "start_line_negative", "end_line_zero"],
+)
+def test_line_range_invalid(test_critic_run, db: Database, issue_id, location_kwargs, expected_location):
+    """Invalid line ranges fail Pydantic validation."""
     with db.session() as session:
-        # Create issue
-        issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-6", rationale="Test issue")
+        issue = ReportedIssue(agent_run_id=test_critic_run, issue_id=issue_id, rationale="Test issue")
         session.add(issue)
         session.flush()
 
-        # Invalid: start_line = 0 (Pydantic validation should catch this)
         with pytest.raises(ValidationError) as excinfo:
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
-                reported_issue_id="test-issue-6",
-                locations=[LocationAnchor(file="add.py", start_line=0)],
+                reported_issue_id=issue_id,
+                locations=[LocationAnchor(file="add.py", **location_kwargs)],
             )
-        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", ("start_line",))]
-
-
-def test_line_range_start_line_negative_invalid(test_critic_run, db: Database):
-    """Invalid: start_line < 0."""
-    with db.session() as session:
-        # Create issue
-        issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-7", rationale="Test issue")
-        session.add(issue)
-        session.flush()
-
-        # Invalid: negative start_line (Pydantic validation should catch this)
-        with pytest.raises(ValidationError) as excinfo:
-            ReportedIssueOccurrence(
-                agent_run_id=test_critic_run,
-                reported_issue_id="test-issue-7",
-                locations=[LocationAnchor(file="add.py", start_line=-5)],
-            )
-        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", ("start_line",))]
-
-
-def test_line_range_end_line_zero_invalid(test_critic_run, db: Database):
-    """Invalid: end_line = 0 (must be >= 1)."""
-    with db.session() as session:
-        # Create issue
-        issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-8", rationale="Test issue")
-        session.add(issue)
-        session.flush()
-
-        # Invalid: end_line = 0 (Pydantic validation should catch this)
-        with pytest.raises(ValidationError) as excinfo:
-            ReportedIssueOccurrence(
-                agent_run_id=test_critic_run,
-                reported_issue_id="test-issue-8",
-                locations=[LocationAnchor(file="add.py", start_line=1, end_line=0)],
-            )
-        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", ("end_line",))]
+        assert [(e["type"], e["loc"]) for e in excinfo.value.errors()] == [("greater_than_equal", expected_location)]
 
 
 def test_duplicate_issue_id_not_allowed(test_critic_run, db: Database):

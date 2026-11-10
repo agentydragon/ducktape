@@ -1,8 +1,18 @@
 {
   "images": {
-    "agentplane-index": {
-      "target": "//agentplane/indexing:image",
-      "test": "//agentplane/indexing/...",
+    "ai-session-archive-importer": {
+      "target": "//x/ai_session_archive:ingest_image",
+      "test": "//x/ai_session_archive/...",
+      "registry": "forgejo"
+    },
+    "ai-session-archive-migrator": {
+      "target": "//x/ai_session_archive:migrate_image",
+      "test": "//x/ai_session_archive:test_database_migrate",
+      "registry": "forgejo"
+    },
+    "ai-session-archive-web": {
+      "target": "//x/ai_session_archive:web_image",
+      "test": "//x/ai_session_archive/...",
       "registry": "forgejo"
     },
     "airlock": {
@@ -32,6 +42,11 @@
     },
     "tofu-controller": {
       "target": "@ducktape_tofu_controller//:image"
+    },
+    "platform-sessions-gateway": {
+      "target": "//platform_sessions/management/gateway/cmd:image",
+      "test": "//platform_sessions/management/gateway:gateway_test",
+      "registry": "forgejo"
     },
     "props-backend": {
       "target": "//props/backend:image",
@@ -79,11 +94,6 @@
     "att-gateway-exporter": {
       "target": "//att_gateway:image",
       "test": "//att_gateway/...",
-      "registry": "forgejo"
-    },
-    "github-api-proxy": {
-      "target": "//devinfra/github_proxy/central:image",
-      "test": "//devinfra/github_proxy/central:tests",
       "registry": "forgejo"
     },
     "haku-console": {
@@ -168,10 +178,10 @@
       "registry": "forgejo"
     },
     "firecracker-manager": {
-      "target": "//devinfra/firecracker/manager:image"
+      "target": "//devinfra/x/firecracker/manager:image"
     },
     "fc-vm-pod": {
-      "target": "//devinfra/firecracker/vm_pod:image"
+      "target": "//devinfra/x/firecracker/vm_pod:image"
     },
     "inventree": {
       "target": "//inventree_utils/rai_plugin:image",
@@ -204,23 +214,14 @@
       "test": "//agentplane/app/frontend/serving/...",
       "registry": "forgejo"
     },
-    "agentplane-app-migrate": {
-      "target": "//agentplane/app:migration_image",
-      "test": "//agentplane/app/...",
-      "registry": "forgejo"
-    },
     "agentplane-action-service": {
       "target": "//agentplane/action_service:service_image",
       "test": "//agentplane/action_service/...",
       "registry": "forgejo"
     },
-    "agentplane-action-service-migrate": {
-      "target": "//agentplane/action_service/migrations:image",
-      "test": "//agentplane/action_service/migrations/...",
-      "registry": "forgejo"
-    },
-    "agentplane-mcp-edge-migrate": {
-      "target": "//agentplane/mcp_edge/migrations:image",
+    "agentplane-central-sampler": {
+      "target": "//agentplane/central_sampler/cmd:service_image",
+      "test": "//agentplane/central_sampler/...",
       "registry": "forgejo"
     },
     "agentplane-mcp-edge": {
@@ -243,11 +244,6 @@
       "test": "//agentplane/egress/...",
       "registry": "forgejo"
     },
-    "agentplane-egress-history-migrate": {
-      "target": "//agentplane/egress/history_migrations:image",
-      "test": "//agentplane/egress/...",
-      "registry": "forgejo"
-    },
     "agentplane-egress-sidecar": {
       "target": "//agentplane/egress:sidecar_image",
       "test": "//agentplane/egress/...",
@@ -256,11 +252,6 @@
     "agentplane-llm-ingress": {
       "target": "//agentplane/llm_ingress:image",
       "test": "//agentplane/llm_ingress/...",
-      "registry": "forgejo"
-    },
-    "agentplane-history-migrate": {
-      "target": "//agentplane/history_service/migrations:image",
-      "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
     "agentplane-history-service": {
@@ -283,14 +274,9 @@
       "test": "//agentplane/runner_gateway/...",
       "registry": "forgejo"
     },
-    "agentplane-runner-gateway-queue-migrate": {
-      "target": "//agentplane/runner_gateway/migrations:image",
-      "test": "//agentplane/runner_gateway/migrations/...",
-      "registry": "forgejo"
-    },
     "agentplane-runner-disk": {
-      "target": "//agentplane/runner:disk_image",
-      "test": "//agentplane/runner/...",
+      "target": "//agentplane/env/images:disk_image",
+      "test": "//agentplane/env/e2e/... //agentplane/env/images:test_disk",
       "registry": "forgejo"
     },
     "agentplane-notification-service": {
@@ -298,14 +284,14 @@
       "test": "//agentplane/notification_service/...",
       "registry": "forgejo"
     },
-    "agentplane-notification-service-migrate": {
-      "target": "//agentplane/notification_service/migrations:image",
-      "test": "//agentplane/notification_service/...",
-      "registry": "forgejo"
-    },
     "tf-runner": {
       "target": "//cluster/tf_runner:image",
       "test": "//cluster/tf_runner/..."
+    },
+    "agentplane-firecracker-launcher": {
+      "target": "//agentplane/firecracker:image",
+      "test": "//agentplane/firecracker/...",
+      "registry": "forgejo"
     }
   }
 }

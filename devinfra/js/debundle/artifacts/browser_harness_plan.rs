@@ -1,6 +1,7 @@
 //! Browser loading decisions prepared before final program acceptance.
 
-use std::collections::BTreeSet;
+use source_identity::ChunkId;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
@@ -9,7 +10,11 @@ use anyhow::{Context, Result, bail};
 use artifact::paths::{
     chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
 };
-use artifact::{ChunkBundle, ChunkId, get_chunk_entry_path};
+use artifact::runtime_resources::{
+    RuntimeResourceDestination, RuntimeResourceKind, RuntimeResourceResolution,
+    UnresolvedResourceReason, local_resource_path,
+};
+use artifact::{ChunkBundle, get_chunk_entry_path};
 use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use output_layout::DebundleOutputLayout;
 use serde::Deserialize;
@@ -32,12 +37,14 @@ pub struct BrowserHarnessPlan {
     pub bootstrap: String,
     pub entry_scripts: Vec<String>,
     pub module_preloads: Vec<String>,
+    pub runtime_resources: Vec<RuntimeResourceResolution>,
 }
 
 impl BrowserHarnessPlan {
     pub(super) fn prepare(
         artifact: &ChunkBundle,
         excluded_chunk_ids: &BTreeSet<ChunkId>,
+        replacement_packages: &BTreeMap<ChunkId, String>,
         options: &EmitBrowserHarnessConfig,
     ) -> Result<Self> {
         let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
@@ -58,11 +65,13 @@ impl BrowserHarnessPlan {
         let preload_entries = html_entries
             .module_preloads
             .into_iter()
-            .filter(|entry| entry.path.ends_with(".js"))
+            .filter(|entry| is_external_url(&entry.path) || entry.path.ends_with(".js"))
             .collect::<Vec<_>>();
         let mut entry_scripts = Vec::<String>::new();
         for entry in &script_entries {
-            if entry.path.ends_with(".js") && !entry_scripts.contains(&entry.path) {
+            if (is_external_url(&entry.path) || entry.path.ends_with(".js"))
+                && !entry_scripts.contains(&entry.path)
+            {
                 entry_scripts.push(entry.path.clone());
             }
         }
@@ -76,6 +85,9 @@ impl BrowserHarnessPlan {
             .iter()
             .chain(preload_entries.iter().map(|entry| &entry.path))
         {
+            if is_external_url(path) {
+                continue;
+            }
             let chunk_name = chunk_id_for_js_path(path)?;
             let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
                 format!("Snapshot manifest does not contain chunk {chunk_name}")
@@ -91,7 +103,15 @@ impl BrowserHarnessPlan {
         let mut asset_paths = Vec::new();
         collect_snapshot_assets(&options.snapshot_root, Path::new(""), &mut asset_paths)?;
         asset_paths.sort();
+        let runtime_resources = resolve_runtime_resources(
+            artifact,
+            excluded_chunk_ids,
+            replacement_packages,
+            &asset_paths,
+            &options.snapshot_root,
+        );
         Ok(Self {
+            runtime_resources,
             out_dir: options.out_dir.clone(),
             snapshot_root: options.snapshot_root.clone(),
             asset_paths,
@@ -130,6 +150,9 @@ fn collect_snapshot_assets(root: &Path, relative: &Path, assets: &mut Vec<PathBu
 /// Harness-relative module specifier for a chunk's emitted entry file,
 /// resolved from a snapshot `*.js` script path.
 fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Result<String> {
+    if is_external_url(js_path) {
+        return Ok(js_path.to_string());
+    }
     let chunk_name = js_path
         .strip_suffix(".js")
         .with_context(|| format!("Expected a .js path: {js_path}"))?;
@@ -140,8 +163,8 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
     let entry_file = get_chunk_entry_path(artifact, chunk_id)
         .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
     let entry_path = app_root
-        .join(chunk_name.split('/').collect::<PathBuf>())
-        .join(entry_file.split('/').collect::<PathBuf>());
+        .join(path_from_module_path(chunk_name))
+        .join(path_from_module_path(&entry_file));
     Ok(artifact::paths::relative_module_specifier(
         app_root,
         &entry_path,
@@ -397,8 +420,121 @@ fn normalize_url_path(url: &str) -> Result<String> {
         .join(url)
         .with_context(|| format!("parsing snapshot-relative URL {url:?}"))?;
     if parsed.scheme() != "https" || parsed.host_str() != Some("debundle.invalid") {
-        bail!("Expected a snapshot-relative URL, got {url}");
+        return Ok(url.to_string());
     }
     let stripped = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
     normalize_module_path(stripped)
+}
+
+fn is_external_url(value: &str) -> bool {
+    value.starts_with("//") || Url::parse(value).is_ok()
+}
+
+fn resolve_runtime_resources(
+    artifact: &ChunkBundle,
+    excluded: &BTreeSet<ChunkId>,
+    replacements: &BTreeMap<ChunkId, String>,
+    assets: &[PathBuf],
+    snapshot_root: &Path,
+) -> Vec<RuntimeResourceResolution> {
+    let mut destinations: BTreeMap<String, RuntimeResourceDestination> = assets
+        .iter()
+        .map(|path| {
+            let path = module_path_from_path(path);
+            (path.clone(), RuntimeResourceDestination::Captured { path })
+        })
+        .collect();
+    for chunk in &artifact.chunks {
+        let source = chunk.js.metadata.source_path.clone();
+        let destination = if let Some(package) = replacements.get(&chunk.chunk_id) {
+            RuntimeResourceDestination::Replacement {
+                package: package.clone(),
+            }
+        } else if excluded.contains(&chunk.chunk_id) {
+            RuntimeResourceDestination::Unresolved {
+                reason: UnresolvedResourceReason::MissingEmission {
+                    path: source.clone(),
+                },
+            }
+        } else if let Some(entry) = get_chunk_entry_path(artifact, chunk.chunk_id) {
+            RuntimeResourceDestination::Emitted {
+                path: artifact::paths::join_module_path(&[
+                    artifact.chunk_table.name(chunk.chunk_id),
+                    &entry,
+                ]),
+            }
+        } else {
+            RuntimeResourceDestination::Unresolved {
+                reason: UnresolvedResourceReason::MissingEmission {
+                    path: source.clone(),
+                },
+            }
+        };
+        destinations.insert(source, destination);
+    }
+    artifact
+        .chunks
+        .iter()
+        .filter(|chunk| !excluded.contains(&chunk.chunk_id))
+        .flat_map(|chunk| {
+            chunk
+                .analysis
+                .runtime_facts
+                .resources
+                .iter()
+                .map(|resource| {
+                    let source = &chunk.js.metadata.source_path;
+                    let destination = match &resource.specifier {
+                        None => RuntimeResourceDestination::Unresolved {
+                            reason: UnresolvedResourceReason::NonLiteral,
+                        },
+                        Some(specifier) if is_external_url(specifier) => {
+                            RuntimeResourceDestination::External {
+                                url: specifier.clone(),
+                            }
+                        }
+                        Some(_) if resource.kind == RuntimeResourceKind::Worker => {
+                            RuntimeResourceDestination::Unresolved {
+                                reason: UnresolvedResourceReason::DocumentRelativeWorker,
+                            }
+                        }
+                        Some(specifier) if specifier.contains(['?', '#', '%']) => {
+                            RuntimeResourceDestination::Unresolved {
+                                reason: UnresolvedResourceReason::UnresolvedUrlIdentity,
+                            }
+                        }
+                        Some(specifier) => {
+                            match local_resource_path(source, specifier, resource.kind) {
+                                Some(path) => {
+                                    destinations.get(&path).cloned().unwrap_or_else(|| {
+                                        RuntimeResourceDestination::Unresolved {
+                                            reason: if snapshot_root.join(&path).is_file() {
+                                                UnresolvedResourceReason::MissingEmission { path }
+                                            } else {
+                                                UnresolvedResourceReason::MissingCapture { path }
+                                            },
+                                        }
+                                    })
+                                }
+                                None if specifier.starts_with('.')
+                                    || specifier.starts_with('/') =>
+                                {
+                                    RuntimeResourceDestination::Unresolved {
+                                        reason: UnresolvedResourceReason::InvalidLocalPath,
+                                    }
+                                }
+                                None => RuntimeResourceDestination::External {
+                                    url: specifier.clone(),
+                                },
+                            }
+                        }
+                    };
+                    RuntimeResourceResolution {
+                        source: source.clone(),
+                        resource: resource.clone(),
+                        destination,
+                    }
+                })
+        })
+        .collect()
 }

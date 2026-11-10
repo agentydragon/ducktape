@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -14,12 +15,19 @@ import (
 type config struct {
 	PolicyNamespace        string   `mapstructure:"policy_namespace"`
 	SubjectNamespaces      []string `mapstructure:"subject_namespaces"`
+	AccountsNamespace      string   `mapstructure:"accounts_namespace"`
 	MetricsBindAddress     string   `mapstructure:"metrics_bind_address"`
 	HealthProbeBindAddress string   `mapstructure:"health_probe_bind_address"`
+	GRPCBindAddress        string   `mapstructure:"grpc_bind_address"`
+	GRPCAudience           string   `mapstructure:"grpc_audience"`
+	ReaderAccounts         []string `mapstructure:"reader_accounts"`
+	WriterAccounts         []string `mapstructure:"writer_accounts"`
+	WorkloadIssuer         string   `mapstructure:"workload_issuer"`
+	WorkloadNamespaces     []string `mapstructure:"workload_namespaces"`
 }
 
 func defaultConfig() config {
-	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081"}
+	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081", GRPCBindAddress: ":8082", GRPCAudience: "agentplane-policy"}
 }
 
 func loadConfig() (config, error) {
@@ -41,6 +49,7 @@ func (c config) validate() error {
 	}{
 		{"policy_namespace", []string{c.PolicyNamespace}},
 		{"subject_namespaces", c.SubjectNamespaces},
+		{"accounts_namespace", []string{c.AccountsNamespace}},
 	} {
 		if len(setting.namespaces) == 0 {
 			return fmt.Errorf("%s is required", setting.name)
@@ -49,6 +58,20 @@ func (c config) validate() error {
 			if len(validation.IsDNS1123Label(namespace)) > 0 {
 				return fmt.Errorf("%s holds an invalid namespace name", setting.name)
 			}
+		}
+	}
+	if (c.WorkloadIssuer == "") != (len(c.WorkloadNamespaces) == 0) {
+		return errors.New("workload_issuer and workload_namespaces are set together")
+	}
+	for _, namespace := range c.WorkloadNamespaces {
+		if len(validation.IsDNS1123Label(namespace)) > 0 {
+			return errors.New("workload_namespaces holds an invalid namespace name")
+		}
+	}
+	for _, name := range append(append([]string(nil), c.ReaderAccounts...), c.WriterAccounts...) {
+		var account auth.Account
+		if err := account.UnmarshalText([]byte(name)); err != nil {
+			return fmt.Errorf("invalid PolicyService account allowlist")
 		}
 	}
 	return nil

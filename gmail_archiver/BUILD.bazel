@@ -8,6 +8,7 @@ py_library(
     deps = [
         ":dirs",
         ":event_classifier",
+        ":fmt",
         ":inbox",
         ":models",
         ":plan",
@@ -26,7 +27,6 @@ py_library(
         "//gmail_archiver/planners:spruce",
         "//gmail_archiver/planners:square",
         "//gmail_archiver/planners:usps",
-        "//util:fmt",
         "@pypi//google_api_python_client",
         "@pypi//rich",
         "@pypi//typer",
@@ -47,6 +47,7 @@ py_package(
         "gmail_archiver",
         "gmail_archiver.cli",
         "gmail_archiver.planners",
+        "openai_utils",
     ],
     deps = [":main"],
 )
@@ -57,6 +58,8 @@ py_wheel(
     entry_points = {"console_scripts": ["gmail-archiver = gmail_archiver.main:app"]},
     python_requires = ">=3.14",
     # SYNC: propagatedBuildInputs in nix/packages/default.nix (gmail-archiver).
+    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the Nix
+    # inputs once the pinned Gmail wheel no longer imports util.fmt.
     requires = [
         "beautifulsoup4",
         "ducktape-util",
@@ -97,9 +100,9 @@ py_library(
     deps = [
         ":dirs",
         ":models",
+        "//openai_utils:json_schema",
         "@pypi//openai",
         "@pypi//pydantic",
-        "@pypi//pydantic_core",
     ],
 )
 
@@ -142,7 +145,6 @@ py_library(
         ":models",
         "//gmail_api:labels",
         "//gmail_api:service",
-        "//util:fmt",
         "@pypi//google_api_python_client",
         "@pypi//tenacity",
     ],
@@ -222,4 +224,49 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_test(
+    name = "test_gmail_client",
+    srcs = ["test_gmail_client.py"],
+    deps = [
+        ":gmail_client",
+        ":models",
+        "//:conftest",
+        "@pypi//google_api_python_client",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_inbox",
+    srcs = ["test_gmail_inbox.py"],
+    deps = [
+        ":gmail_api_models",
+        ":gmail_client",
+        ":inbox",
+        ":models",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_event_classifier",
+    srcs = ["test_event_classifier.py"],
+    deps = [
+        ":event_classifier",
+        "//:conftest",
+        "//openai_utils:json_schema",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "fmt",
+    srcs = ["fmt.py"],
+    visibility = ["//gmail_archiver:__subpackages__"],
 )

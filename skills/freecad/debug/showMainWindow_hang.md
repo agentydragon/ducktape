@@ -69,10 +69,21 @@ Alternatively, set `FREECAD_USER_HOME` to a path with `usingCustomDirectories()`
 FREECAD_USER_HOME=/tmp/freecad-home xvfb-run -a freecadcmd script.py
 ```
 
-## Current Solution
+## Current in-repo behavior
 
-We use `xvfb-run -a freecadcmd` (see `conftest.py:freecad_headless`). This sidesteps the
-offscreen hang. The root cause fix above is a fallback if xvfb is unavailable.
+`skills/freecad/conftest.py:freecad_env` sets an isolated `HOME` and
+`FREECAD_USER_HOME`, which prevents the version-migration dialog. Its
+`freecad_run` fixture runs `freecadcmd` offscreen without Xvfb for headless
+geometry work; it does not call `Gui.showMainWindow()`. The `freecad_gui`
+fixture uses Xvfb, and the skill requires Xvfb for TechDraw/3D rendering, where
+offscreen mode cannot provide the needed OpenGL context.
+
+For ad-hoc scripts that call `Gui.showMainWindow()` with a fresh default home,
+the migration dialog can still block an offscreen process. Use a custom
+`FREECAD_USER_HOME` (as the tests do), pre-create the installed version's
+config directory, or run with a usable X11 display. See the current
+[FreeCAD skill](../SKILL.md#what-needs-xvfb-vs-offscreen) for which operations
+need Xvfb.
 
 ## References
 

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Badge, Card, Center, Loader, Table, Text, Title } from "@mantine/core";
 
 import { useNavigate } from "react-router";
-import type { SnapshotsListResponse } from "$lib/api/schema";
+import type { SnapshotsListResponse } from "$lib/schema";
 import { fetchSnapshots } from "$lib/api/client";
 
 interface Props {

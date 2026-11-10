@@ -241,7 +241,7 @@ The lever is the orchestrator/worker token split, not per-token price. `prior_ar
 orchestrator's own file-reading + planning routinely dwarfs the workers' combined output (one
 like-for-like anecdote: ~9M orchestrator tokens vs ~1.2M worker tokens for ~3.5× the worker's code
 output). Moving the read/implement grind to Luna (index ~47 at high effort, ~2¢/task-equivalent —
-`docs/ai_subscription_comparison.md`) while Fable pays only for specs/review/merge is where the
+[the subscription comparison](../../../x/ai_sub_value/subscription_comparison.md)) while Fable pays only for specs/review/merge is where the
 ~$10k splurge compresses. The OpenAI subscription lane is flat-rate and its 5h window rarely binds
 (operator), so marginal worker cost ≈ 0 until the weekly window — making the delegation floor
 (`prior_art.md` §4.4: a worker pays off past ~500k tokens of reading or 3+ warm-cache reuses)

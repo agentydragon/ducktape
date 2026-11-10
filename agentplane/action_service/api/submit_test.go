@@ -10,7 +10,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -22,10 +23,7 @@ import (
 )
 
 const (
-	allowed = action_servicepb.ActionState_ACTION_STATE_ALLOWED
-	// The provider and reason a policy Decision is stored under, as the Python service stores them.
-	policyProvider   = "action_policy_set"
-	autoApproveCode  = "policy_set_auto_approve"
+	allowed          = action_servicepb.ActionState_ACTION_STATE_ALLOWED
 	testPolicyBinder = "test-binding"
 )
 
@@ -64,12 +62,12 @@ func (s *served) bind(t *testing.T, account auth.Account, rules ...policyapi.Rul
 	subject := policyapi.ServiceAccountRef{Namespace: account.Namespace, Name: account.Name}
 	if err := policyObjects.Create(t.Context(), &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: testPolicyBinder},
-		Spec:       policyapi.PolicyBindingSpec{Subject: subject, PolicySets: []string{"test-set"}},
+		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: []string{"test-set"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
-		bindings := s.index.ResolveBindings(subject)
+		bindings := s.index.ResolveBindings(reader.ServiceAccount(subject))
 		return len(bindings) == 1 && len(bindings[0].PolicySets) == 1, nil
 	}); err != nil {
 		t.Fatalf("the policy index never resolved the binding: %v", err)
@@ -120,12 +118,12 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 	}
 	decision := got.GetDecision()
 	if got.GetState() != allowed || decision.GetVerdict() != action_servicepb.Verdict_VERDICT_ALLOW ||
-		decision.GetProvider() != policyProvider || decision.GetReasonCode() != autoApproveCode || decision.GetOperator() != nil ||
+		decision.GetPolicy().GetReasonCode() != action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE ||
 		got.GetExecution().GetState() != action_servicepb.ExecutionState_EXECUTION_STATE_PENDING_DISPATCH {
 		t.Errorf("receipt in %v, decision %v, execution %v; want allowed by the policy, awaiting dispatch",
 			got.GetState(), decision, got.GetExecution())
 	}
-	evidence := decision.GetPolicyEvidence()
+	evidence := decision.GetPolicy().GetEvidence()
 	binding := &policyapi.PolicyBinding{}
 	if err := policyObjects.Get(t.Context(), client.ObjectKey{Namespace: s.policy, Name: testPolicyBinder}, binding); err != nil {
 		t.Fatal(err)
@@ -174,7 +172,7 @@ func TestAPublicRepositoryPolicyAllowsOnlyWhatGitHubConfirmsPublic(t *testing.T)
 
 	public := submit("test-public", publicOwner, publicRepository)
 	want := &action_servicepb.MatchedRepository{Owner: publicOwner, Repository: publicRepository, ConfirmedPublic: true}
-	if matched := public.GetDecision().GetPolicyEvidence().GetMatched(); public.GetState() != allowed ||
+	if matched := public.GetDecision().GetPolicy().GetEvidence().GetMatched(); public.GetState() != allowed ||
 		matched.GetType() != action_servicepb.PolicyKind_POLICY_KIND_GITHUB_PUBLIC_REPOSITORY || !proto.Equal(matched.GetRepository(), want) {
 		t.Errorf("a public repository: %v, matched %v", public.GetState(), matched)
 	}

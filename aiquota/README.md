@@ -25,10 +25,10 @@ Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 ```
 
 `/v1/quotas` returns the shared view model (`aiquota/render/view_model.py`): each
-provider's normalized windows plus the derived policy bits every surface renders —
-`currently_over_plan`, `extra_status`, and the peak-burn schedule. Serving those rather
+provider's selected display snapshot, its provenance and the latest fetch status, plus the derived policy bits every surface renders —
+`currently_over_plan`, `extra_status`, `monthly_extra_spend`, the peak-burn schedule, and per-window presentation (pace, forecast, tint and meter position). Serving those rather
 than letting each client re-derive them is what keeps the CLI, GNOME popup, browser
-dashboard, and Haku Console from drifting (see AGENTS.md). `/raw` returns the response body
+dashboard from drifting (see AGENTS.md). `/raw` returns the response body
 from the provider's usage endpoint, with fetch status and content type. It also
 carries the bounded exact response bytes as base64, their full-body SHA-256 and
 original byte length. The exact-byte field is truncated only when the response
@@ -41,15 +41,16 @@ not replace the normal Claude usage response.
 Server-Sent Events. It first emits `event: view` with the complete `/v1/quotas`
 view JSON, then emits the latest view after each newly published quota snapshot.
 Updates coalesce to the newest snapshot for slow clients; reconnecting starts with
-the current view instead of replaying history. The stream sends a heartbeat comment
-every 10 seconds, disables proxy buffering, and also emits when a time-derived
-peak-burn status changes between provider polls.
+the current view instead of replaying history. While connected, each stream also sends
+a refreshed presentation every second, without polling providers. This keeps pace and
+tint current as time passes. The stream disables proxy buffering and also emits when a
+time-derived peak-burn status changes between provider polls.
 
 ## Browser dashboard and OAuth API
 
 `https://aiquota.allegedly.works/` is a React dashboard rendering the same state as the
-CLI and the GNOME popup: per window a usage bar with a pace tick at the fraction of the
-window already elapsed, the reset countdown, pace deviation and forecast, plus banked
+CLI and the GNOME popup. Browser and GNOME meters pair usage fill with a tick for elapsed
+window time; CLI rows show usage and the same reset countdown and forecast, plus banked
 resets, extra spend, and peak-burn hours. Its wire types are generated from this API's
 OpenAPI schema (`//aiquota/frontend:schema`). aiquota owns an
 Authentik OAuth authorization-code flow: `/auth/login` redirects to the
@@ -97,6 +98,46 @@ all active event streams. When ClickHouse is configured, that same collector als
 persists each snapshot and readiness continues to wait for the first successful
 write.
 
+## Presentation
+
+The CLI, GNOME popup and browser group subscription quotas separately from API balances.
+Provider headings stay short; labelled balance and grant rows preserve each pool's units,
+organization and product restrictions. Grant rows show remaining value and expiry; expanded
+details add the original amount. Banked resets are separate from monetary and paid-credit balances.
+Known zero banked resets remain available in details. The default shows zero only when
+included quota is exhausted and no displayed window awaits updated usage after its reset.
+Positive counts stay visible; an unknown count is never shown as zero. Stale readings retain
+their stale warning.
+
+GNOME places a single ungrouped balance in the provider heading for both prepaid money and
+paid credits. Its popup wraps to a bounded width. Broad API promo scopes are shown in
+details; product or model restrictions remain visible in the default output on all surfaces.
+
+`aiquota --details` expands numeric pace, exact expiry times, all known reset-credit expiries,
+peak schedules and original error messages. The default keeps usage, reset countdowns,
+forecasts and concise error summaries. `--verbose` remains provider-response debugging.
+The tmux segment shows one compact subscription summary per provider and omits API balances.
+GNOME's panel also reserves API balances for its popup.
+
+All surfaces use local 24-hour time with minute precision. Expiries within 14 days include
+the time and timezone; distant expiries show a date, with the year when different. Details
+show the full local timestamp. Forecasts extrapolate average usage since the window started.
+The meter fill shows quota used and its tick shows elapsed window time.
+
+Provider observations become stale after ten minutes (two default collector intervals),
+or immediately when falling back after a provider error. Transport connection state is
+separate from provider freshness. CLI server failures retain the selected cached reading,
+show an offline warning, and refresh countdowns without fetching providers or choosing a
+different snapshot. Stale forecasts are suppressed. Current paid/extra signals, including
+compact `⚡` markers, also stop when the reading is stale or any displayed window is awaiting
+updated usage. Positive reported extra spend this month remains visible from the selected
+snapshot when extra usage is disabled or refresh fails, with the same stale/error indicators
+as that snapshot. It records monthly history rather than current spending activity. A new
+spend-only observation replaces the previous snapshot; omitted quota windows remain unknown
+rather than inheriting an older reading with the new timestamp. After a
+reset deadline passes, usage remains the last reported value and the surface says it is
+awaiting updated usage.
+
 ## Historical collection
 
 The in-cluster Deployment refreshes Claude and Codex every five minutes even
@@ -141,7 +182,7 @@ so a provider reading several endpoints in one cycle keeps every body.
 
 The current Codex usage response also carries
 `rate_limit_reset_credits.available_count`. AIQuota displays this authoritative
-live count as banked resets in the CLI, GNOME popup, and Haku Console; it never
+live count as banked resets in the CLI, GNOME popup and browser; it never
 redeems a credit. When the companion detail endpoint names an expiry for a
 currently available credit, those surfaces display it as a _known_ expiry. The
 historical credit rows above remain available for analytics, but their detail
@@ -154,9 +195,19 @@ false.
 The same usage response can include a separate `credits` balance for paid
 usage beyond the included quota. AIQuota shows that balance in provider credits
 (not dollars) on the browser board, CLI, and GNOME popup. An exhausted Codex
-window with a positive balance is marked as using paid credits; the balance is
+window with a positive balance is marked as having paid credits available; the balance is
 the provider's latest reading, not a per-request charge ledger. Earned resets
 remain separate from this balance.
+
+Claude's usage scrape requests `cedar_ember=1` with the Claude Code OAuth
+user-agent format, which exposes its reset grants in the same captured response.
+The CLI, GNOME popup and browser show their remaining count, scope and expiry;
+Fable resets are distinct from full resets. Paused and scheduled grants stay
+labelled; a held count does not imply every grant is redeemable right now. An
+absent, ineligible or malformed inventory means unknown, not
+zero. If Anthropic rejects the optional query, the scrape retries ordinary usage.
+Raw responses, including the inventory, remain in `/v1/providers/claude/raw`
+and `aiquota.raw_http_observations`. AIQuota never redeems resets.
 
 Claude's OAuth provider also reports a prepaid monetary balance through its
 organization's `/api/oauth/organizations/{uuid}/prepaid/credits` endpoint. AIQuota
@@ -168,6 +219,21 @@ credits. Profile and balance lookups are supplemental: if either fails while the
 usage request succeeds, quota data stays successful and the Claude prepaid row
 shows `unavailable`. The prepaid response is retained under its own raw-capture
 key and is available at `/v1/providers/claude/prepaid-balance/raw`.
+
+OpenAI Platform credit grants are a separate API billing pool from Codex paid
+credits. The CLI, browser board, and GNOME popup show the available API credit
+balance alongside the OpenAI API heading and summarize grants by remaining
+amount and expiry.
+
+Anthropic Platform credits use the private platform-session proxy and the
+separate `/api/organizations` and per-organization
+`/api/organizations/{uuid}/prepaid/credits` endpoints. AIQuota lists only
+organizations with the `api` capability and reports each organization's
+Anthropic API credit balance and active grant tranches separately in the CLI,
+browser board, and GNOME popup. Tranche scope is retained so product- or
+model-restricted promotional credits are not presented as generally available
+funds. This Platform balance is distinct from Claude's OAuth subscription/prepaid
+balance.
 
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with

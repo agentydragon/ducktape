@@ -14,17 +14,20 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -38,7 +41,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -146,16 +149,12 @@ type fixture struct {
 // newFixture starts from a database without the other tests' inboxes: Claim takes whichever inbox is due.
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", database.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, database.URL)
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 	service := &fakeActionService{
-		request: &actionpb.ActionRequest{Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
+		request: &actionpb.ActionRequest{CallerUid: proto.String("test-account-uid"), Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
 	}
 	server := grpc.NewServer()
 	actionpb.RegisterActionServiceServer(server, service)
@@ -179,7 +178,7 @@ func newFixture(t *testing.T) fixture {
 
 func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionServiceClient {
 	t.Helper()
-	connection, err := bearer.Dial(f.listener.Addr().String(), f.tokenFile, time.Duration(timeoutSeconds*float64(time.Second)))
+	connection, err := bearer.Dial(f.listener.Addr().String(), f.tokenFile, time.Duration(timeoutSeconds*float64(time.Second)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +194,7 @@ func (f fixture) subscribe(t *testing.T) store.Subscription {
 		IdempotencyKey: "test-key",
 		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
-	}, nil)
+	}, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +338,7 @@ func TestReconcileReadsALongLogAPageAtATime(t *testing.T) {
 }
 
 func TestReconcileDoesNotFollowARequestOfAnotherAccount(t *testing.T) {
-	for name, caller := range map[string]*sandboxespb.ServiceAccount{
+	for name, caller := range map[string]*identitypb.ServiceAccount{
 		"another account":                    {Namespace: testNamespace, Name: "another-sandbox"},
 		"the same name in another namespace": {Namespace: "another-namespace", Name: testSandbox},
 	} {
@@ -371,7 +370,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	})
 	request := uuid.New()
 
-	events, err := f.source.Events(t.Context(), testOwner, request, 1)
+	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +382,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
+	_, err = f.source.Events(t.Context(), store.AccountOwner{Account: model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
@@ -395,7 +394,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 			{
 				Sequence: 1, State: actionpb.ActionState_ACTION_STATE_ALLOWED,
 				At: timestamppb.New(time.Date(2026, 10, 20, 3, 56, 3, 123456000, time.UTC)),
-				Actor: &actionpb.Principal{Principal: &actionpb.Principal_Caller{Caller: &sandboxespb.ServiceAccount{
+				Actor: &actionpb.Principal{Principal: &actionpb.Principal_Caller{Caller: &identitypb.ServiceAccount{
 					Namespace: testNamespace, Name: testSandbox,
 				}}},
 			},
@@ -409,7 +408,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 		}
 	})
 
-	events, err := f.source.Events(t.Context(), testOwner, uuid.New(), 0)
+	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, uuid.New(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,4 +611,24 @@ func sameJSON(t *testing.T, got, want string) bool {
 		t.Fatalf("%s: %v", want, err)
 	}
 	return reflect.DeepEqual(a, b)
+}
+
+func TestActionsRequireTheExactRecordedCallerUID(t *testing.T) {
+	for _, uid := range []string{"", "recreated-account-uid"} {
+		t.Run(uid, func(t *testing.T) {
+			f := newFixture(t)
+			subscription := f.subscribe(t)
+			f.service.set(func(s *fakeActionService) { s.request.CallerUid = &uid; s.eventCount = 3 })
+			err := f.reconcile(t, f.claim(t))
+			requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
+			for _, call := range f.service.log() {
+				if call.Method == "ListActionRequestEvents" {
+					t.Fatal("read events without a matching caller UID")
+				}
+			}
+			if entries := f.entries(t, subscription.InboxID); len(entries) != 0 {
+				t.Fatalf("entries = %v", entries)
+			}
+		})
+	}
 }

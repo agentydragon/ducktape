@@ -2,11 +2,11 @@
 //! target YAML module and delete the sources. The companion
 //! `debundle modules delete --force` verb removes a non-empty module.
 //!
-//! Both verbs run the unified realizability gate (see
-//! [`crate::edit_gate::gate_post_edit_assignment`]) against the
+//! Both verbs run the unified realizability gate through
+//! [`crate::edit_gate::Gate::check`] against the
 //! **post-edit** assignment before touching the filesystem. The gate
-//! reconstructs the chunk's `DependencyGraph` from `dependency_graph.json`
-//! (via `DependencyGraph::from_report`), builds the post-edit `ModuleAssignment`
+//! borrows the chunk's canonical topology from a `DependencyGraphInput`,
+//! builds the post-edit `ModuleAssignment`
 //! by mapping each surviving spec module's bindings to a fresh
 //! `ModuleId`, and runs BOTH `validate_assignment` (cross-module
 //! cycles) AND atom-split detection (every `AtomicGroup`'s members
@@ -22,20 +22,22 @@
 //! `serde_yaml::Value` tree.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use spec::LogicalModule;
+use spec::{LogicalModule, MemberSelectorSpec};
 use spec_modules::{
     coalesce_source_match_claims, collect_module_files, is_module_yaml, module_path_from_file,
     read_module_file as read_module,
 };
 use yaml_edit::write_yaml_atomic;
 
+use crate::binding::load_module_docs;
+use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
@@ -43,6 +45,11 @@ use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, pri
 pub struct MergeArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+
+    /// Optional full-context report-only effect assessment of the complete
+    /// in-memory merge candidate. Requires `--dry-run` and `--analysis`.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
 
     /// Target module path (relative to --modules) to merge into.
     /// Created if it doesn't exist yet.
@@ -85,6 +92,8 @@ pub struct MergeOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -92,6 +101,8 @@ struct MergeBatchOutcome {
     #[serde(flatten)]
     outcome: MutationOutcome,
     targets: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 /// `modules delete` outcome: just the shared core (deleted paths in
@@ -100,66 +111,41 @@ struct MergeBatchOutcome {
 pub struct DeleteOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 /// Why `modules merge` cannot compose its documents; the merge refuses before writing anything,
-/// in every mode. `target` is the merge target and `source` the source whose claims clash with
-/// the target's or an earlier source's.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// in every mode. `target` is the merge target and `source_path` the source whose claims clash
+/// with the target's or an earlier source's.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MergeConflict {
     /// The source claims a `members[].selector.binding` name that is already claimed.
+    #[error("duplicate member name \"{name}\" in {} and {}", target.display(), source_path.display())]
     DuplicateSourceBinding {
         name: String,
         target: PathBuf,
-        source: PathBuf,
+        source_path: PathBuf,
     },
     /// The source claims a readable member name that is already claimed.
+    #[error("duplicate member name \"{name}\" in {} and {}", target.display(), source_path.display())]
     DuplicateReadableName {
         name: String,
         target: PathBuf,
-        source: PathBuf,
+        source_path: PathBuf,
     },
     /// The source annotates a readable name differently from the target's annotation.
+    #[error(
+        "conflicting annotation for \"{name}\" in {} and {}",
+        target.display(),
+        source_path.display()
+    )]
     ConflictingAnnotation {
         name: String,
         target: PathBuf,
-        source: PathBuf,
+        source_path: PathBuf,
     },
 }
-
-impl fmt::Display for MergeConflict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateSourceBinding {
-                name,
-                target,
-                source,
-            }
-            | Self::DuplicateReadableName {
-                name,
-                target,
-                source,
-            } => write!(
-                f,
-                "duplicate member name \"{name}\" in {} and {}",
-                target.display(),
-                source.display()
-            ),
-            Self::ConflictingAnnotation {
-                name,
-                target,
-                source,
-            } => write!(
-                f,
-                "conflicting annotation for \"{name}\" in {} and {}",
-                target.display(),
-                source.display()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for MergeConflict {}
 
 impl MergeSummary {
     /// Render the one-line stdout summary.
@@ -177,6 +163,11 @@ impl MergeSummary {
 pub struct DeleteArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+
+    /// Optional full-context report-only effect assessment of the complete
+    /// post-delete candidate. Requires `--dry-run` and `--analysis`.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
 
     /// Module paths (relative to --modules) to delete. The `.yaml`
     /// suffix is optional. All paths are validated up front; if any
@@ -223,14 +214,18 @@ impl DeleteSummary {
 ///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
 /// * `--dry-run`: run the gate but do not modify any file.
 /// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
-pub fn run_merge(merge: MergeArgs) -> Result<()> {
+pub fn run_merge(
+    merge: MergeArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     if merge.edit.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the merge YAML splice will \
              not be re-checked for cross-module cycles."
         );
     }
-    let gate = merge.edit.gate()?;
+    let gate = merge.edit.gate(source_context)?;
     let is_batch = merge.batch.is_some();
     let modules_root = if is_batch {
         fs::canonicalize(&merge.edit.modules_root)?
@@ -255,7 +250,33 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
             plan_merge(&modules_root, &request.target, &sources)
         })
         .collect::<Result<Vec<_>>>()?;
-    if let Err(err) = gate.check(&modules_root, || post_merge_spec(&modules_root, &plans)) {
+    let effect_context = merge
+        .effect_assessment
+        .resolve(&merge.edit, source_context)?;
+    let (candidate_docs, effect_relocation_assessment) =
+        if let Some(context) = effect_context.as_ref() {
+            let docs = post_merge_docs(&modules_root, &plans)?;
+            let candidate_modules = docs
+                .iter()
+                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+                .collect();
+            let assessment = context.assess(
+                &merge.edit.modules_root,
+                &candidate_modules,
+                analysis_engine_sha256,
+            )?;
+            (Some(docs), Some(assessment))
+        } else {
+            (None, None)
+        };
+    let validation = if let Some(docs) = candidate_docs.as_ref() {
+        gate.check(&modules_root, || {
+            post_edit_spec_from_docs(docs, &BTreeSet::new())
+        })
+    } else {
+        gate.check(&modules_root, || post_merge_spec(&modules_root, &plans))
+    };
+    if let Err(err) = validation {
         emit_gate_rejection_json("merge", merge.edit.format, &err);
         return Err(err);
     }
@@ -277,20 +298,22 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
     } else {
         "applied"
     };
-    let outcome = MutationOutcome {
-        verb: "merge",
+    let outcome = MutationOutcome::ownership_edit(
+        "merge",
         action,
-        gate: gate.outcome(),
-        files_written: plans
+        gate.outcome(),
+        effect_relocation_assessment.as_ref(),
+        plans
             .iter()
             .map(|p| p.summary.target.display().to_string())
             .collect(),
-        files_deleted: plans
+        plans
             .iter()
             .flat_map(|p| &p.summary.merged_sources)
             .map(|p| p.display().to_string())
             .collect(),
-    };
+    );
+    outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(merge.edit.format) {
         OutputFormat::Text => {
             if is_batch {
@@ -313,12 +336,20 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
                 .iter()
                 .map(|p| p.summary.target.display().to_string())
                 .collect();
-            print_outcome_json(&MergeBatchOutcome { outcome, targets }, format)?;
+            print_outcome_json(
+                &MergeBatchOutcome {
+                    outcome,
+                    targets,
+                    effect_relocation_assessment,
+                },
+                format,
+            )?;
         }
         format => print_outcome_json(
             &MergeOutcome {
                 outcome,
                 target: plans[0].summary.target.display().to_string(),
+                effect_relocation_assessment,
             },
             format,
         )?,
@@ -340,6 +371,46 @@ impl MergePlan {
             .with_context(|| format!("re-encoding merged {}", target.display()))?;
         write_yaml_atomic(target, &doc)
     }
+}
+
+fn post_merge_docs(
+    modules_root: &Path,
+    plans: &[MergePlan],
+) -> Result<BTreeMap<String, (PathBuf, LogicalModule)>> {
+    let replaced: BTreeSet<_> = plans
+        .iter()
+        .flat_map(|plan| {
+            plan.summary
+                .merged_sources
+                .iter()
+                .cloned()
+                .chain(std::iter::once(plan.summary.target.clone()))
+        })
+        .collect();
+    let mut docs = BTreeMap::new();
+    for file in collect_module_files(modules_root)? {
+        if replaced.contains(&file) {
+            continue;
+        }
+        let module_path = module_path_from_file(&file, modules_root);
+        anyhow::ensure!(
+            docs.insert(module_path.clone(), (file.clone(), read_module(&file)?))
+                .is_none(),
+            "duplicate logical module path in modules tree: {module_path}"
+        );
+    }
+    for plan in plans {
+        let module_path = module_path_from_file(&plan.summary.target, modules_root);
+        anyhow::ensure!(
+            docs.insert(
+                module_path.clone(),
+                (plan.summary.target.clone(), plan.document.clone())
+            )
+            .is_none(),
+            "merge target collides with another logical module path: {module_path}"
+        );
+    }
+    Ok(docs)
 }
 
 fn post_merge_spec(modules_root: &Path, plans: &[MergePlan]) -> Result<PostEditSpec> {
@@ -393,7 +464,7 @@ fn merge_path_identity(path: &Path) -> Result<PathBuf> {
 
 fn resolve_merge_batch(root: &Path, requests: Vec<MergeRequest>) -> Result<Vec<MergeRequest>> {
     anyhow::ensure!(!requests.is_empty(), "merge batch is empty");
-    reject_merge_batch_symlinks(root)?;
+    spec_modules::ensure_unaliased_module_tree(root)?;
     let mut targets = BTreeMap::new();
     let mut sources = BTreeMap::new();
     let mut resolved = Vec::new();
@@ -485,24 +556,6 @@ fn resolve_merge_batch(root: &Path, requests: Vec<MergeRequest>) -> Result<Vec<M
     Ok(resolved)
 }
 
-/// Writing through one alias can change an untouched module's claims, and
-/// deleting a source can strand another alias. Keep that boundary explicit.
-fn reject_merge_batch_symlinks(root: &Path) -> Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
-        anyhow::ensure!(
-            !kind.is_symlink(),
-            "merge batch does not support symlink entries: {}",
-            entry.path().display()
-        );
-        if kind.is_dir() {
-            reject_merge_batch_symlinks(&entry.path())?;
-        }
-    }
-    Ok(())
-}
-
 fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergePlan> {
     let target_abs = resolve_module_file(modules_root, target);
     let source_abs: Vec<PathBuf> = sources
@@ -524,7 +577,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
                 return Err(MergeConflict::DuplicateSourceBinding {
                     name,
                     target: target_abs,
-                    source: src.clone(),
+                    source_path: src.clone(),
                 }
                 .into());
             }
@@ -534,7 +587,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
                 return Err(MergeConflict::DuplicateReadableName {
                     name,
                     target: target_abs,
-                    source: src.clone(),
+                    source_path: src.clone(),
                 }
                 .into());
             }
@@ -574,7 +627,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
                 return Err(MergeConflict::ConflictingAnnotation {
                     name,
                     target: target_abs,
-                    source: src.clone(),
+                    source_path: src.clone(),
                 }
                 .into());
             }
@@ -634,7 +687,11 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 /// error before any deletion is attempted; the operation is
 /// best-effort atomic (collect-then-remove) but cannot roll back a
 /// partial removal if the filesystem fails midway.
-pub fn run_delete(args: DeleteArgs) -> Result<()> {
+pub fn run_delete(
+    args: DeleteArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     if args.edit.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the deletion will not be \
@@ -688,6 +745,32 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
         );
     }
 
+    let effect_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    let (candidate_docs, deleted_module_paths, effect_paths_abs, effect_relocation_assessment) =
+        if let Some(context) = effect_context.as_ref() {
+            let docs = load_module_docs(&args.edit.modules_root)?;
+            let delete_plan = resolve_delete_plan(&docs, &paths_abs)?;
+            let candidate_modules = docs
+                .iter()
+                .filter(|(module_path, _)| !delete_plan.module_paths.contains(*module_path))
+                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+                .collect();
+            let assessment = context.assess(
+                &args.edit.modules_root,
+                &candidate_modules,
+                analysis_engine_sha256,
+            )?;
+            (
+                Some(docs),
+                Some(delete_plan.module_paths),
+                Some(delete_plan.entry_paths),
+                Some(assessment),
+            )
+        } else {
+            (None, None, None, None)
+        };
+    let delete_paths = effect_paths_abs.as_deref().unwrap_or(&paths_abs);
+
     // Realizability gate. The all-empty fast path is a structural
     // no-op (an empty module owns no bindings and contributes no
     // anonymous statements, so removing it leaves the assignment
@@ -696,39 +779,131 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let gate_outcome = if non_empty.is_empty() {
         GateOutcome::NotRequired
     } else {
-        let gate = args.edit.gate()?;
-        if let Err(err) = gate.check(&args.edit.modules_root, || {
-            post_delete_spec(&args.edit.modules_root, &paths_abs)
-        }) {
+        let gate = args.edit.gate(source_context)?;
+        let validation = if let (Some(docs), Some(deleted_module_paths)) =
+            (candidate_docs.as_ref(), deleted_module_paths.as_ref())
+        {
+            gate.check(&args.edit.modules_root, || {
+                post_edit_spec_from_docs(docs, deleted_module_paths)
+            })
+        } else {
+            gate.check(&args.edit.modules_root, || {
+                post_delete_spec(&args.edit.modules_root, delete_paths)
+            })
+        };
+        if let Err(err) = validation {
             emit_gate_rejection_json("delete", args.edit.format, &err);
             return Err(err);
         }
         gate.outcome()
     };
 
-    let summary = delete_modules(&paths_abs, args.edit.dry_run)?;
+    let summary = delete_modules(delete_paths, args.edit.dry_run)?;
     let delete_outcome = DeleteOutcome {
-        outcome: MutationOutcome {
-            verb: "delete",
-            action: if summary.dry_run {
+        outcome: MutationOutcome::ownership_edit(
+            "delete",
+            if summary.dry_run {
                 "dry-run"
             } else {
                 "applied"
             },
-            gate: gate_outcome,
-            files_written: Vec::new(),
-            files_deleted: summary
+            gate_outcome,
+            effect_relocation_assessment.as_ref(),
+            Vec::new(),
+            summary
                 .deleted
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect(),
-        },
+        ),
+        effect_relocation_assessment,
     };
+    delete_outcome.outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(args.edit.format) {
         OutputFormat::Text => println!("{}", summary.summary_line()),
         format => print_outcome_json(&delete_outcome, format)?,
     }
     Ok(())
+}
+
+/// A requested assessment resolves each path to one physical directory entry,
+/// then uses that identity for candidate filtering, the legacy gate and the
+/// eventual unlink plan.
+#[derive(Debug)]
+struct ResolvedDeletePlan {
+    entry_paths: Vec<PathBuf>,
+    module_paths: BTreeSet<String>,
+}
+
+/// Resolve the exact file deletion plan into the logical keys used by both the
+/// candidate effect assessment and the in-memory legacy gate. Parent
+/// components are normalized, while the final filename is preserved so a
+/// symlink module entry remains distinct from its target. A requested
+/// assessment must map every file to exactly one logical module in the
+/// complete typed snapshot.
+fn resolve_delete_plan(
+    docs: &BTreeMap<String, (PathBuf, LogicalModule)>,
+    deleted_abs: &[PathBuf],
+) -> Result<ResolvedDeletePlan> {
+    let mut logical_paths_by_entry: BTreeMap<PathBuf, Vec<&str>> = BTreeMap::new();
+    for (module_path, (file, _)) in docs {
+        logical_paths_by_entry
+            .entry(directory_entry_identity(file)?)
+            .or_default()
+            .push(module_path);
+    }
+
+    let mut entry_paths = Vec::with_capacity(deleted_abs.len());
+    let mut requested_entries = BTreeSet::new();
+    let mut module_paths = BTreeSet::new();
+    for deleted_file in deleted_abs {
+        let entry_path = directory_entry_identity(deleted_file)?;
+        let logical_paths = logical_paths_by_entry
+            .get(&entry_path)
+            .with_context(|| {
+                format!(
+                    "requested effect assessment cannot map deleted module file {} to the complete module tree",
+                    entry_path.display()
+                )
+            })?;
+        anyhow::ensure!(
+            logical_paths.len() == 1,
+            "requested effect assessment found an ambiguous module directory entry {} mapped to logical module paths: {}",
+            entry_path.display(),
+            logical_paths.join(", ")
+        );
+        anyhow::ensure!(
+            requested_entries.insert(entry_path.clone()),
+            "requested effect assessment names the same module directory entry more than once: {}",
+            entry_path.display()
+        );
+        entry_paths.push(entry_path);
+        module_paths.insert(logical_paths[0].to_string());
+    }
+    Ok(ResolvedDeletePlan {
+        entry_paths,
+        module_paths,
+    })
+}
+
+/// Return a stable identity for a filesystem directory entry. Canonicalizing
+/// only the parent collapses `.` / `..` and parent-directory aliases without
+/// following a final symlink that `remove_file` is meant to unlink.
+fn directory_entry_identity(path: &Path) -> Result<PathBuf> {
+    let filename = path
+        .file_name()
+        .with_context(|| format!("module path has no final filename: {}", path.display()))?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let parent = fs::canonicalize(parent).with_context(|| {
+        format!(
+            "resolving module directory entry parent {}",
+            parent.display()
+        )
+    })?;
+    Ok(parent.join(filename))
 }
 
 /// Delete the given absolute paths (or, in `dry_run` mode, simply
@@ -804,7 +979,15 @@ fn display_relative(root: &Path, abs: &Path) -> String {
 fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> {
     let mut names = ModuleClaimNames::default();
     for (idx, member) in module.members.iter().enumerate() {
-        if let Some(binding) = member.selector.binding.as_ref()
+        let selector = member
+            .selector
+            .validate()
+            .with_context(|| format!("{} (entry {idx})", path.display()))?;
+        let binding = match &selector {
+            MemberSelectorSpec::Binding(binding) => Some(binding),
+            _ => None,
+        };
+        if let Some(binding) = binding
             && !names.selector_bindings.insert(binding.name.clone())
         {
             return Err(anyhow!(
@@ -814,13 +997,11 @@ fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> 
                 idx
             ));
         }
-        if let Some(readable_name) = member.name.as_deref().or_else(|| {
-            member
-                .selector
-                .binding
-                .as_ref()
-                .map(|binding| binding.name.as_str())
-        }) && !names.readable_names.insert(readable_name.to_string())
+        if let Some(readable_name) = member
+            .name
+            .as_deref()
+            .or_else(|| binding.map(|binding| binding.name.as_str()))
+            && !names.readable_names.insert(readable_name.to_string())
         {
             return Err(anyhow!(
                 "duplicate member name \"{}\" within {} (entry {})",
@@ -897,7 +1078,7 @@ mod tests {
             MergeConflict::DuplicateReadableName {
                 name: "Clash".to_string(),
                 target: root.path().join("target.yaml"),
-                source: root.path().join("second.yaml"),
+                source_path: root.path().join("second.yaml"),
             }
         );
     }
@@ -914,7 +1095,7 @@ mod tests {
             MergeConflict::DuplicateSourceBinding {
                 name: "shared_binding".to_string(),
                 target: root.path().join("target.yaml"),
-                source: root.path().join("first.yaml"),
+                source_path: root.path().join("first.yaml"),
             }
         );
     }
@@ -931,7 +1112,7 @@ mod tests {
             MergeConflict::DuplicateReadableName {
                 name: "Widget".to_string(),
                 target: root.path().join("target.yaml"),
-                source: root.path().join("first.yaml"),
+                source_path: root.path().join("first.yaml"),
             }
         );
     }
@@ -950,10 +1131,76 @@ mod tests {
             MergeConflict::ConflictingAnnotation {
                 name: "annotated".to_string(),
                 target: root.path().join("target.yaml"),
-                source: root.path().join("first.yaml"),
+                source_path: root.path().join("first.yaml"),
             }
         );
         let (_root, plan) = plan(target, &source("first"), "members: []");
         plan.expect("identical annotations merge");
+    }
+
+    #[test]
+    fn delete_plan_normalizes_parent_components_without_following_a_final_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("alternate")).unwrap();
+        let target = root.path().join("target.yaml");
+        let alias = root.path().join("alias.yaml");
+        fs::write(&target, "members: []\n").unwrap();
+        symlink("target.yaml", &alias).unwrap();
+
+        let docs = BTreeMap::from([
+            (
+                "alias".to_string(),
+                (alias.clone(), LogicalModule::default()),
+            ),
+            (
+                "target".to_string(),
+                (target.clone(), LogicalModule::default()),
+            ),
+        ]);
+        let requested = root.path().join("alternate/../alias.yaml");
+        let plan = resolve_delete_plan(&docs, &[requested]).unwrap();
+
+        assert_eq!(
+            plan.entry_paths,
+            vec![directory_entry_identity(&alias).unwrap()]
+        );
+        assert_eq!(plan.module_paths, BTreeSet::from(["alias".to_string()]));
+        assert_ne!(
+            directory_entry_identity(&alias).unwrap(),
+            directory_entry_identity(&target).unwrap(),
+            "the final symlink is its own directory entry and must not map to its target"
+        );
+    }
+
+    #[test]
+    fn delete_plan_rejects_a_directory_entry_with_multiple_logical_module_paths() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let real_dir = root.path().join("real");
+        fs::create_dir(&real_dir).unwrap();
+        let real_file = real_dir.join("module.yaml");
+        fs::write(&real_file, "members: []\n").unwrap();
+        let alias_dir = root.path().join("alias");
+        symlink("real", &alias_dir).unwrap();
+        let alias_file = alias_dir.join("module.yaml");
+        let docs = BTreeMap::from([
+            (
+                "alias/module".to_string(),
+                (alias_file.clone(), LogicalModule::default()),
+            ),
+            (
+                "real/module".to_string(),
+                (real_file, LogicalModule::default()),
+            ),
+        ]);
+
+        let error = resolve_delete_plan(&docs, &[alias_file]).unwrap_err();
+
+        assert!(error.to_string().contains("ambiguous"), "{error:#}");
+        assert!(error.to_string().contains("alias/module"), "{error:#}");
+        assert!(error.to_string().contains("real/module"), "{error:#}");
     }
 }

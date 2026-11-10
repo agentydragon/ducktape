@@ -3,7 +3,8 @@
 //! and referenced Ids. At the naturalization boundary, each reference is
 //! paired with its source binding Id before any import/export planner sees it.
 
-use crate::chunk_ast::{binding_names, top_level_declaration_ids};
+use binding_targets::binding_name_strings;
+use frontend_elaboration::chunk_ast::top_level_declaration_ids;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
@@ -121,13 +122,25 @@ impl Visit for RefCollector {
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        binding_targets::record_assign_target(&node.left, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_head(&mut self, node: &ForHead) {
+        if let ForHead::Pat(pattern) = node {
+            binding_targets::record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
     fn visit_function(&mut self, node: &Function) {
         let shadowed = node
             .params
             .iter()
-            .flat_map(|param| binding_names(&param.pat))
+            .flat_map(|param| binding_name_strings(&param.pat))
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
@@ -136,7 +149,7 @@ impl Visit for RefCollector {
         let shadowed = node
             .params
             .iter()
-            .flat_map(binding_names)
+            .flat_map(binding_name_strings)
             .collect::<BTreeSet<_>>();
         self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
     }
@@ -157,6 +170,14 @@ impl Visit for RefCollector {
     fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
 
     fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
+}
+
+impl binding_targets::TargetAccessRecorder for RefCollector {
+    fn record_binding_write(&mut self, id: &Id) {
+        if !self.is_shadowed(id.0.as_ref()) {
+            self.ids.insert(id.clone());
+        }
+    }
 }
 
 impl RefCollector {

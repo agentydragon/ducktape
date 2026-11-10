@@ -1,0 +1,25 @@
+tcpdump: data link type LINUX_SLL2
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes
+18:26:21.522312 tap0  In  IP 192.0.2.2.42044 > 104.20.23.154.443: Flags [S], seq 1595182776, win 64240, options [mss 1460,sackOK,TS val 1663452531 ecr 0,nop,wscale 5], length 0
+18:26:21.522338 eth0  Out IP 10.244.5.162.42044 > 104.20.23.154.443: Flags [S], seq 1595182776, win 64240, options [mss 1460,sackOK,TS val 1663452531 ecr 0,nop,wscale 5], length 0
+18:26:21.530481 eth0  In  IP 104.20.23.154.443 > 10.244.5.162.42044: Flags [S.], seq 4157943474, ack 1595182777, win 65535, options [mss 1400,sackOK,TS val 531030886 ecr 1663452531,nop,wscale 13], length 0
+18:26:21.530517 tap0  Out IP 104.20.23.154.443 > 192.0.2.2.42044: Flags [S.], seq 4157943474, ack 1595182777, win 65535, options [mss 1400,sackOK,TS val 531030886 ecr 1663452531,nop,wscale 13], length 0
+18:26:21.530879 tap0  In  IP 192.0.2.2.42044 > 104.20.23.154.443: Flags [.], ack 1, win 2008, options [nop,nop,TS val 1663452540 ecr 531030886], length 0
+18:26:21.530890 eth0  Out IP 10.244.5.162.42044 > 104.20.23.154.443: Flags [.], ack 1, win 2008, options [nop,nop,TS val 1663452540 ecr 531030886], length 0
+18:26:21.542427 tap0  In  IP 192.0.2.2.42044 > 104.20.23.154.443: Flags [P.], seq 1:518, ack 1, win 2008, options [nop,nop,TS val 1663452551 ecr 531030886], length 517
+18:26:21.542440 eth0  Out IP 10.244.5.162.42044 > 104.20.23.154.443: Flags [P.], seq 1:518, ack 1, win 2008, options [nop,nop,TS val 1663452551 ecr 531030886], length 517
+18:26:21.552425 eth0  In  IP 104.20.23.154.443 > 10.244.5.162.42044: Flags [.], ack 518, win 16, options [nop,nop,TS val 531030909 ecr 1663452551], length 0
+18:26:21.552433 tap0  Out IP 104.20.23.154.443 > 192.0.2.2.42044: Flags [.], ack 518, win 16, options [nop,nop,TS val 531030909 ecr 1663452551], length 0
+18:26:21.556380 eth0  In  IP 104.20.23.154.443 > 10.244.5.162.42044: Flags [P.], seq 2897:3993, ack 518, win 16, options [nop,nop,TS val 531030912 ecr 1663452551], length 1096
+18:26:21.556391 tap0  Out IP 104.20.23.154.443 > 192.0.2.2.42044: Flags [P.], seq 2897:3993, ack 518, win 16, options [nop,nop,TS val 531030912 ecr 1663452551], length 1096
+18:26:21.556675 tap0  In  IP 192.0.2.2.42044 > 104.20.23.154.443: Flags [.], ack 1, win 2008, options [nop,nop,TS val 1663452565 ecr 531030909,nop,nop,sack 1 {2897:3993}], length 0
+18:26:21.556704 eth0  Out IP 10.244.5.162.42044 > 104.20.23.154.443: Flags [.], ack 1, win 2008, options [nop,nop,TS val 1663452565 ecr 531030909,nop,nop,sack 1 {2897:3993}], length 0
+18:26:24.522757 tap0  In  IP 192.0.2.2.42044 > 104.20.23.154.443: Flags [F.], seq 518, ack 1, win 2008, options [nop,nop,TS val 1663455532 ecr 531030909,nop,nop,sack 1 {2897:3993}], length 0
+18:26:24.522828 eth0  Out IP 10.244.5.162.42044 > 104.20.23.154.443: Flags [F.], seq 518, ack 1, win 2008, options [nop,nop,TS val 1663455532 ecr 531030909,nop,nop,sack 1 {2897:3993}], length 0
+18:26:24.569955 eth0  In  IP 104.20.23.154.443 > 10.244.5.162.42044: Flags [.], ack 519, win 16, options [nop,nop,TS val 531033927 ecr 1663455532], length 0
+18:26:24.569961 tap0  Out IP 104.20.23.154.443 > 192.0.2.2.42044: Flags [.], ack 519, win 16, options [nop,nop,TS val 531033927 ecr 1663455532], length 0
+
+18 packets captured
+18 packets received by filter
+0 packets dropped by kernel

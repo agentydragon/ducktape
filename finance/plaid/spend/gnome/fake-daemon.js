@@ -1,4 +1,4 @@
-import Gio from "gi://Gio";
+import { FakeViewDaemon } from "./gnome-fake-daemon.js";
 import GLib from "gi://GLib";
 const name = "works.allegedly.PlaidSpend";
 const path = "/works/allegedly/PlaidSpend";
@@ -6,6 +6,7 @@ const controlName = "works.allegedly.PlaidSpendFake";
 const controlPath = "/works/allegedly/PlaidSpendFake";
 const mainXml = `<node><interface name="works.allegedly.PlaidSpend1">
   <method name="GetView"><arg name="view" type="s" direction="out"/></method>
+  <method name="GetPaceHistory"><arg name="history" type="s" direction="out"/></method>
   <method name="Login"/>
   <signal name="ViewChanged"><arg name="view" type="s"/></signal>
   <property name="Status" type="s" access="read"/>
@@ -21,6 +22,9 @@ const controlXml = `<node><interface name="works.allegedly.PlaidSpendFake">
     <arg name="next_retry_at" type="d" direction="in"/>
   </method>
   <method name="ReleaseGetView"/>
+  <method name="SetHistory"><arg name="history" type="s" direction="in"/></method>
+  <method name="ReleaseGetHistory"/>
+  <method name="GetHistoryPending"><arg name="pending" type="s" direction="out"/></method>
   <method name="ReleaseName"/>
   <method name="AcquireName"/>
   <method name="GetCounters">
@@ -30,92 +34,42 @@ const controlXml = `<node><interface name="works.allegedly.PlaidSpendFake">
   </method>
   <method name="Stop"/>
 </interface></node>`;
-let currentView = JSON.stringify({
-  generated_at: "2026-10-18T12:00:00Z",
-  cards: [{ spend_minor_units: 1000, currency: "USD" }],
+const daemon = new FakeViewDaemon({
+  name,
+  path,
+  controlName,
+  controlPath,
+  mainXml,
+  controlXml,
+  initialView: JSON.stringify({
+    generated_at: "2026-10-15T12:00:00Z",
+    cards: [{ spend_minor_units: 1000, currency: "USD" }],
+  }),
 });
-let lastAttemptAt = 0;
-let nextRetryAt = 0;
-let getCalls = 0;
-let replies = 0;
-let pendingViews = [];
-let nameOwner = 0;
-let controlOwner = 0;
-const loop = GLib.MainLoop.new(null, false);
-const service = Gio.DBusExportedObject.wrapJSObject(mainXml, {
-  GetViewAsync(_parameters, invocation) {
-    getCalls += 1;
-    pendingViews.push({ invocation, view: currentView });
+let history = "null";
+const pendingHistory = [];
+daemon.run(
+  {
+    Status: "ready",
+    LastError: "",
+    GetPaceHistoryAsync(_parameters, invocation) {
+      pendingHistory.push({ invocation, history });
+    },
   },
-  get Status() {
-    return "ready";
-  },
-  get LastError() {
-    return "";
-  },
-  get LastAttemptAt() {
-    return lastAttemptAt;
-  },
-  get NextRetryAt() {
-    return nextRetryAt;
-  },
-});
-service.export(Gio.DBus.session, path);
-const control = Gio.DBusExportedObject.wrapJSObject(controlXml, {
-  SetView(view) {
-    currentView = view;
-    service.emit_signal("ViewChanged", new GLib.Variant("(s)", [view]));
-  },
-  SetTiming(lastAttemptValue, nextRetryValue) {
-    lastAttemptAt = lastAttemptValue;
-    nextRetryAt = nextRetryValue;
-    Gio.DBus.session.emit_signal(
-      null,
-      path,
-      "org.freedesktop.DBus.Properties",
-      "PropertiesChanged",
-      new GLib.Variant("(sa{sv}as)", [
-        "works.allegedly.PlaidSpend1",
-        {
-          LastAttemptAt: new GLib.Variant("d", lastAttemptAt),
-          NextRetryAt: new GLib.Variant("d", nextRetryAt),
-        },
-        [],
-      ])
-    );
-  },
-  SetViewSilently(view) {
-    currentView = view;
-  },
-  ReleaseGetView() {
-    const pending = pendingViews.shift();
-    if (!pending) throw new Error("no GetView reply is pending");
-    replies += 1;
-    pending.invocation.return_value(new GLib.Variant("(s)", [pending.view]));
-  },
-  ReleaseName() {
-    if (nameOwner) {
-      Gio.bus_unown_name(nameOwner);
-      nameOwner = 0;
-    }
-  },
-  AcquireName() {
-    if (!nameOwner)
-      nameOwner = Gio.bus_own_name(Gio.BusType.SESSION, name, Gio.BusNameOwnerFlags.NONE, null, null, null);
-  },
-  GetCounters() {
-    return [getCalls, replies, pendingViews.length];
-  },
-  Stop() {
-    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      if (nameOwner) Gio.bus_unown_name(nameOwner);
-      if (controlOwner) Gio.bus_unown_name(controlOwner);
-      loop.quit();
-      return GLib.SOURCE_REMOVE;
-    });
-  },
-});
-control.export(Gio.DBus.session, controlPath);
-nameOwner = Gio.bus_own_name(Gio.BusType.SESSION, name, Gio.BusNameOwnerFlags.NONE, null, null, null);
-controlOwner = Gio.bus_own_name(Gio.BusType.SESSION, controlName, Gio.BusNameOwnerFlags.NONE, null, null, null);
-loop.run();
+  {
+    SetHistory(value) {
+      history = value;
+    },
+    GetHistoryPending() {
+      return String(pendingHistory.length);
+    },
+    ReleaseGetHistory() {
+      const pending = pendingHistory.shift();
+      if (!pending) throw new Error("no GetPaceHistory reply is pending");
+      pending.invocation.return_value(new GLib.Variant("(s)", [pending.history]));
+    },
+    SetTiming(lastAttemptAt, nextRetryAt) {
+      daemon.setTiming("works.allegedly.PlaidSpend1", lastAttemptAt, nextRetryAt);
+    },
+  }
+);

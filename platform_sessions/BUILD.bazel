@@ -1,0 +1,230 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "http_types",
+    srcs = ["http_types.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "http_types_test",
+    srcs = ["http_types_test.py"],
+    deps = [
+        ":http_types",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "limits",
+    srcs = ["limits.py"],
+)
+
+py_test(
+    name = "registry_test",
+    srcs = ["registry_test.py"],
+    deps = [
+        ":registry",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "routes",
+    srcs = ["routes.py"],
+    deps = [":registry"],
+)
+
+py_test(
+    name = "routes_test",
+    srcs = ["routes_test.py"],
+    deps = [
+        ":routes",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = [
+        ":routes",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "host",
+    srcs = ["host.py"],
+    deps = [
+        ":probe_types",
+        ":registry",
+    ],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    deps = [":routes"],
+)
+
+py_library(
+    name = "session_store",
+    srcs = ["session_store.py"],
+    deps = [
+        "@pypi//atomicwrites",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "probe_types",
+    srcs = ["probe_types.py"],
+)
+
+py_library(
+    name = "probe",
+    srcs = ["probe.py"],
+    deps = [
+        ":probe_types",
+        "@pypi//httpx2",
+    ],
+)
+
+py_library(
+    name = "probe_metrics",
+    srcs = ["probe_metrics.py"],
+    deps = [
+        ":probe_types",
+        ":registry",
+        "@pypi//prometheus_client",
+    ],
+)
+
+py_library(
+    name = "integration_runtime",
+    srcs = ["integration_runtime.py"],
+    deps = [
+        ":host",
+        ":probe",
+        ":probe_types",
+        ":registry",
+        ":session_store",
+        "@pypi//httpx2",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "proxy_support",
+    srcs = ["proxy_support.py"],
+    deps = [
+        ":proxy",
+        "@pypi//httpx2",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "session_store_test",
+    srcs = ["session_store_test.py"],
+    deps = [
+        ":session_store",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "probe_test",
+    srcs = ["probe_test.py"],
+    deps = [
+        ":probe",
+        ":probe_types",
+        ":session_store",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "probe_metrics_test",
+    srcs = ["probe_metrics_test.py"],
+    deps = [
+        ":probe_metrics",
+        ":registry",
+        "//:conftest",
+        "@pypi//prometheus_client",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "integration_runtime_test",
+    srcs = ["integration_runtime_test.py"],
+    deps = [
+        ":host",
+        ":integration_runtime",
+        ":probe_metrics",
+        ":probe_types",
+        ":registry",
+        ":session_store",
+        "//:conftest",
+        "@pypi//prometheus_client",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "provider_proxy",
+    srcs = ["provider_proxy.py"],
+    deps = [
+        ":auth",
+        ":proxy",
+        ":routes",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "provider_proxy_test",
+    srcs = ["provider_proxy_test.py"],
+    deps = [
+        ":auth",
+        ":provider_proxy",
+        ":proxy",
+        ":proxy_support",
+        ":registry",
+        ":routes",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx2",  # keep: starlette.testclient imports it at runtime
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)

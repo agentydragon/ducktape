@@ -28,9 +28,8 @@ _oci_layout_rloc = rule(
 def oci_layout_rloc(name, image, visibility = None, testonly = False):
     """OCI image .rloc target: a single-line file naming the OCI layout directory.
 
-    Prefer `oci_image_py`, which wraps this in a library carrying both the Python constant
-    and the image itself. Reach for this directly only where the .rloc is consumed by
-    something other than `load_oci_image`.
+    Prefer `oci_layout_py` for Python consumers. Use this for language-neutral
+    handoffs that need a file containing the layout's runfiles path.
     """
     _oci_layout_rloc(
         name = name,
@@ -39,39 +38,35 @@ def oci_layout_rloc(name, image, visibility = None, testonly = False):
         testonly = testonly,
     )
 
-_IMAGE_MODULE = """\"\"\"Auto-generated OciImage for a pre-built container image (do not edit).\"\"\"
+_LAYOUT_MODULE = """\"\"\"Auto-generated OCI layout runfiles path (do not edit).\"\"\"
 
-from util.oci import OciImage
-
-IMAGE = OciImage("{rloc}", "{tag}")
+LAYOUT_RLOCATION = {rloc}
 """
 
-def _oci_image_py_src_impl(ctx):
-    """Write a Python module holding this image's OciImage, runfiles path and all."""
+def _oci_layout_py_src_impl(ctx):
+    """Write a Python module holding this image's runfiles path."""
 
     # Named for the module, not for this target: the file has to land at
     # <package>/<module>.py or the import path it is generated for does not exist.
     out = ctx.actions.declare_file(ctx.attr.module + ".py")
-    ctx.actions.write(out, _IMAGE_MODULE.format(
-        tag = ctx.attr.tag,
+    ctx.actions.write(out, _LAYOUT_MODULE.format(
         # Computed rather than written by hand: a runfiles path starts with a repository
         # name, and this one is `_main/...` inside this repo but `ducktape+/...` from a
         # module that depends on it. A literal would be right in exactly one of the two.
-        rloc = to_rlocation_path(ctx, ctx.file.rloc),
+        rloc = repr(to_rlocation_path(ctx, ctx.file.image)),
     ))
     return [DefaultInfo(files = depset([out]))]
 
-_oci_image_py_src = rule(
-    implementation = _oci_image_py_src_impl,
+_oci_layout_py_src = rule(
+    implementation = _oci_layout_py_src_impl,
     attrs = {
         "module": attr.string(mandatory = True),
-        "rloc": attr.label(mandatory = True, allow_single_file = True),
-        "tag": attr.string(mandatory = True),
+        "image": attr.label(mandatory = True, allow_single_file = True),
     },
 )
 
-def oci_image_py(name, image, tag, visibility = None, testonly = False):
-    """A py_library exporting `IMAGE` for `image`, carrying the image in its own runfiles.
+def oci_layout_py(name, image, visibility = None, testonly = False):
+    """A py_library exporting `LAYOUT_RLOCATION` and carrying `image` in its runfiles.
 
     One dep gives a test both the constant and the bytes it names:
 
@@ -80,36 +75,26 @@ def oci_image_py(name, image, tag, visibility = None, testonly = False):
 
         # the test
         from third_party.containers import postgres_18
-        load_oci_image(postgres_18.IMAGE)
+        load_oci_image(postgres_18.LAYOUT_RLOCATION)
 
-    The hand-written alternative -- one module of constants, plus a separate `data` entry per
-    image at every call site -- lets the two drift: import a constant, forget its data entry,
-    and the test fails at run time on a missing runfile, in a package that never names it.
+    The library's `data` keeps the generated runfiles path paired with the layout.
 
     Args:
-        name: target and module name, e.g. "postgres_18" for `postgres_18.IMAGE`.
+        name: target and module name, e.g. "postgres_18" for `postgres_18.LAYOUT_RLOCATION`.
         image: the OCI image layout target, e.g. "@postgres_18_linux_amd64".
-        tag: what the image is loaded into the Docker daemon as, e.g. "postgres:18".
         visibility: target visibility.
-        testonly: mark the image and the library testonly.
+        testonly: mark the generated module and library testonly.
     """
-    oci_layout_rloc(
-        name = name + "_rloc",
-        image = image,
-        testonly = testonly,
-    )
-    _oci_image_py_src(
+    _oci_layout_py_src(
         name = name + "_src",
         module = name,
-        rloc = ":" + name + "_rloc",
-        tag = tag,
+        image = image,
         testonly = testonly,
     )
     py_library(
         name = name,
         srcs = [":" + name + "_src"],
-        data = [":" + name + "_rloc"],
+        data = [image],
         testonly = testonly,
         visibility = visibility,
-        deps = ["//util:oci"],
     )

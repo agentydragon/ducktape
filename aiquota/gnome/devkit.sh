@@ -15,21 +15,9 @@
 #
 # Optional env:
 #   AI_QUOTA_FIXTURE=/path/to/fixture.json
-#       Skip real auth/HTTP and load the indicator from a fixture JSON
-#       (same hook used by //aiquota/gnome:test_render).
+#       Skip real auth/HTTP and load the indicator from an API-shaped quota
+#       view JSON payload (same hook used by //aiquota/gnome:test_render).
 set -euo pipefail
-
-# --- begin runfiles.bash initialization v3 ---
-f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
-  || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
-  || source "$0.runfiles/$f" 2>/dev/null \
-  || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
-  || {
-    echo >&2 "ERROR: cannot find $f"
-    exit 1
-  }
-# --- end runfiles.bash initialization v3 ---
 
 if ! command -v gnome-shell >/dev/null 2>&1; then
   echo "ERROR: gnome-shell not on PATH. Install it on the host first" >&2
@@ -52,7 +40,7 @@ if [[ -e "$shadow" ]]; then
 fi
 
 # --- locate inputs ---------------------------------------------------------
-zip_path="$(rlocation "_main/aiquota/gnome/aiquota.zip")"
+zip_path="$(rlocation "$1")"
 if [[ ! -f "$zip_path" ]]; then
   echo "ERROR: aiquota.zip not found in runfiles at $zip_path" >&2
   exit 1
@@ -60,7 +48,7 @@ fi
 
 # Resolve the in-repo desktop daemon so the extension and live API client use
 # this checkout while running inside the isolated D-Bus session.
-aiquota_daemon_bin="$(rlocation "_main/aiquota/desktop_bin")"
+aiquota_daemon_bin="$(rlocation "$2")"
 if [[ ! -x "$aiquota_daemon_bin" ]]; then
   echo "ERROR: aiquota desktop daemon not found in runfiles at $aiquota_daemon_bin" >&2
   exit 1

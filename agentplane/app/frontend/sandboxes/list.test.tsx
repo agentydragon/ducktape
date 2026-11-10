@@ -1,23 +1,36 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type { NewSandboxDefaults, SandboxPresetView, SandboxView } from "../api/schema";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api } from "../client";
+import * as sandboxClient from "./client";
+import * as appConfigClient from "../app_config_client";
+import {
+  GetSandboxFormResponseSchema,
+  NewSandboxDefaultsSchema,
+  SandboxPresetSchema,
+  type NewSandboxDefaults,
+} from "../../app_service_pb";
+import { Harness } from "../../../proto/session_pb";
 import { SandboxList } from "./list";
+import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";
+import { clone, create, toJson } from "@bufbuild/protobuf";
+import { DurationSchema } from "@bufbuild/protobuf/wkt";
+import { testSandbox } from "../testing/sandbox";
+import {
+  SandboxPhase,
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  type EnvironmentDescriptor,
+} from "../../../environments/v1/environment_service_pb";
 
-const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
+import { serveEventStreams } from "../testing/watch";
 
-vi.mock("../live", () => ({
-  liveSandboxesUrl: () => "/live/sandboxes",
-  useLive: () => liveSandboxData,
-}));
+const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { environments: EnvironmentDescriptor[] } | null }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -28,53 +41,53 @@ afterEach(async () => {
   }
   liveSandboxData.snapshot = null;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
-const CREATED: SandboxView = {
+const CREATED = {
+  namespace: "agentplane-test",
   name: "test-created-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
-  namespace: "agentplane-test",
-  created_at: "2026-01-01T00:00:00Z",
-  operating_mode: "Running",
-  service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
-  status: null,
-  phase: "Creating",
-  pod: null,
-  wake_on_send: false,
 };
+const CREATED_INVENTORY = testSandbox(CREATED.name, CREATED.uid);
+CREATED_INVENTORY.observedState!.operatingMode = OperatingMode.RUNNING;
+CREATED_INVENTORY.observedState!.phase = SandboxPhase.CREATING;
 
 // What the app serves when its configuration leaves the new-Sandbox defaults unset.
-const UNSET_DEFAULTS: NewSandboxDefaults = { wake_on_send: false, idle_suspend_after_seconds: null };
+const UNSET_DEFAULTS: NewSandboxDefaults = create(NewSandboxDefaultsSchema);
 
 async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
+  serveEventStreams(
+    (stream) => {
+      if (liveSandboxData.snapshot !== null) {
+        stream.send({
+          snapshot: {
+            environments: liveSandboxData.snapshot.environments.map((sandbox) =>
+              toJson(EnvironmentDescriptorSchema, sandbox)
+            ),
+          },
+        });
+        stream.send({ snapshotComplete: {} });
+      }
+    },
+    undefined,
+    new Set(["/upstream/environments/v1/environments:watch"])
+  );
   const onOpen = vi.fn();
-  const preset: SandboxPresetView = {
+  const preset = create(SandboxPresetSchema, {
     name: "test-preset",
     title: "Test preset",
     template: "test-template",
-    policy_sets: ["test-basic"],
-    inbox_tags: ["test-group"],
-    session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
+    policySets: ["test-basic"],
+    inboxTags: ["test-group"],
+    sessionDefaults: { harness: Harness.CODEX, model: "test-codex-b", cwd: "/state/workspaces/test" },
     bootstrap: "mkdir -p /state/workspaces",
-  };
-  vi.spyOn(api, "GET").mockImplementation(async (path) => {
-    const data =
-      path === "/models"
-        ? testModelCatalog(
-            [{ model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS }],
-            [
-              { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
-              { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
-            ]
-          )
-        : path === "/presets"
-          ? [preset]
-          : path === "/sandboxes/form"
-            ? { policy_sets: ["test-basic", "test-packages"], new_sandbox_defaults: newSandboxDefaults }
-            : path === "/sandboxes/templates"
-              ? ["test-template", "other-template"]
-              : [];
-    return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
+  });
+  vi.spyOn(appConfigClient, "listSandboxPresets").mockResolvedValue([preset]);
+  vi.spyOn(sandboxClient, "listEnvironmentTemplates").mockResolvedValue(["test-template", "other-template"]);
+  vi.spyOn(appConfigClient, "getSandboxForm").mockResolvedValue({
+    ...create(GetSandboxFormResponseSchema, { policySets: ["test-basic", "test-packages"] }),
+    newSandboxDefaults,
   });
   const container = document.createElement("div");
   document.body.append(container);
@@ -84,7 +97,9 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     root.render(
       <MantineProvider env="test">
         <MemoryRouter>
-          <SandboxList onOpen={onOpen} />
+          <SandboxesLiveProvider>
+            <SandboxList onOpen={onOpen} />
+          </SandboxesLiveProvider>
         </MemoryRouter>
       </MantineProvider>
     )
@@ -139,23 +154,22 @@ it("pre-fills the preset's policy sets and inbox tags, hides picked sets, and se
   expect(options(container, "Policy sets").map((node) => node.textContent)).toEqual(["test-packages"]);
   await act(async () => input(container, "Policy sets").click());
   await choose(container, "Policy sets", "test-packages");
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
-  expect(post).toHaveBeenCalledWith("/sandboxes", {
-    body: {
+  expect(post).toHaveBeenCalledWith(
+    expect.objectContaining({
       name: "picked",
       template: "test-template",
       preset: "test-preset",
-      policy_sets: ["test-basic", "test-packages"],
-      inbox_tags: ["test-group"],
+      policySets: ["test-basic", "test-packages"],
+      inboxTags: ["test-group"],
       bootstrap: "mkdir -p /state/workspaces",
-      wake_on_send: false,
-      idle_suspend_after_seconds: null,
-    },
-  });
+      wakeOnSend: false,
+    })
+  );
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
 });
 
@@ -169,38 +183,29 @@ it("allows an operator to remove the preset's policy set and sends an explicit e
     if (!remove) throw new Error("Missing selected test-basic policy set control");
     remove.click();
   });
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "without-sets");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({ body: expect.objectContaining({ policy_sets: [] }) })
-  );
+  expect(post).toHaveBeenCalledWith(expect.objectContaining({ policySets: [] }));
 });
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
   const { container } = await render();
   await choose(container, "Sandbox template", "other-template");
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
 
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({ body: expect.objectContaining({ template: "other-template" }) })
-  );
+  expect(post).toHaveBeenCalledWith(expect.objectContaining({ template: "other-template" }));
 });
 
 it("keeps the creation form and reports rejection without navigating", async () => {
   const { container, onOpen } = await render();
-  vi.spyOn(api, "POST").mockResolvedValue({
-    error: { detail: "Test creation refused" },
-    response: new Response(null, { status: 409 }),
-  } as never);
+  vi.spyOn(sandboxClient, "createEnvironment").mockRejectedValue(new Error("Test creation refused"));
   await type(input(container, "Name"), "test-not-created");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
@@ -211,13 +216,17 @@ it("keeps the creation form and reports rejection without navigating", async () 
 });
 
 it("lets a suspended sandbox be deleted", () => {
-  const suspended: SandboxView = { ...CREATED, operating_mode: "Suspended", phase: "Suspended" };
+  const suspended = Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
+    observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
+  });
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
 });
 
 it("keeps lifecycle actions unavailable until the controller reports a mode", async () => {
-  const unknown: SandboxView = { ...CREATED, operating_mode: null, phase: "Unspecified" };
+  const unknown = Object.assign(clone(EnvironmentDescriptorSchema, CREATED_INVENTORY), {
+    observedState: { operatingMode: OperatingMode.UNSPECIFIED, phase: SandboxPhase.UNSPECIFIED },
+  });
   const onAct = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
@@ -238,14 +247,11 @@ it("keeps lifecycle actions unavailable until the controller reports a mode", as
 it("creates under the preset-derived placeholder when the name is left empty", async () => {
   const { container } = await render();
   expect(input(container, "Name").placeholder).toBe("test-preset-1");
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({ body: expect.objectContaining({ name: "test-preset-1" }) })
-  );
+  expect(post).toHaveBeenCalledWith(expect.objectContaining({ name: "test-preset-1" }));
 });
 
 it("lets an operator opt a new Sandbox into wake on message", async () => {
@@ -256,41 +262,39 @@ it("lets an operator opt a new Sandbox into wake on message", async () => {
   await act(async () => wakeCheckbox.click());
   expect(wakeCheckbox.checked).toBe(true);
 
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "wake-enabled");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
 
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({ body: expect.objectContaining({ wake_on_send: true }) })
-  );
+  expect(post).toHaveBeenCalledWith(expect.objectContaining({ wakeOnSend: true }));
 });
 
 it("starts a new Sandbox with the app's wake and idle suspension defaults whatever the preset", async () => {
-  const { container } = await render({ wake_on_send: true, idle_suspend_after_seconds: 900 });
+  const { container } = await render(
+    create(NewSandboxDefaultsSchema, { wakeOnSend: true, idleSuspendAfterSeconds: 900n })
+  );
   const wakeCheckbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
   if (!wakeCheckbox) throw new Error("Missing Wake on message checkbox");
   expect(wakeCheckbox.checked).toBe(true);
   expect(input(container, "Suspend when idle (min)").value).toBe("15");
 
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "defaulted");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
 
   expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({
-      body: expect.objectContaining({ wake_on_send: true, idle_suspend_after_seconds: 900 }),
-    })
+    expect.objectContaining({ wakeOnSend: true, idleSuspendAfter: expect.objectContaining({ seconds: 900n }) })
   );
 });
 
 it("shows existing wake policy and updates the displayed Sandbox incarnation", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, wake_on_send: true }] };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.wakeOnSend = true;
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[aria-label="Wake on message for test-created-sandbox"]'
@@ -298,27 +302,23 @@ it("shows existing wake policy and updates the displayed Sandbox incarnation", a
   if (!checkbox) throw new Error("Missing existing Sandbox Wake on message checkbox");
   expect(checkbox.checked).toBe(true);
 
-  const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
-    data: undefined,
-    response: new Response(null, { status: 204 }),
-  } as never);
+  const patch = vi.spyOn(sandboxClient, "setEnvironmentWakeOnSend").mockResolvedValue(undefined);
   await act(async () => checkbox.click());
 
-  expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/wake-policy", {
-    params: { path: { name: CREATED.name } },
-    body: { uid: CREATED.uid, wake_on_send: false },
-  });
+  expect(patch).toHaveBeenCalledWith(CREATED_INVENTORY.target, false);
   expect(checkbox.checked).toBe(false);
 });
 
 it("clears the pending wake policy when the request fails at the transport", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, wake_on_send: false }] };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.wakeOnSend = false;
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[aria-label="Wake on message for test-created-sandbox"]'
   );
   if (!checkbox) throw new Error("Missing existing Sandbox Wake on message checkbox");
-  vi.spyOn(api, "PATCH").mockRejectedValue(new Error("Network disconnected"));
+  vi.spyOn(sandboxClient, "setEnvironmentWakeOnSend").mockRejectedValue(new Error("Network disconnected"));
 
   await act(async () => checkbox.click());
 
@@ -338,15 +338,14 @@ it("flags an invalid typed name and refuses to create", async () => {
 it("sends the idle suspension time typed in minutes as seconds", async () => {
   const { container } = await render();
   await type(input(container, "Suspend when idle (min)"), "90");
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const post = vi.spyOn(sandboxClient, "createEnvironment").mockResolvedValue(CREATED as never);
   await type(input(container, "Name"), "napper");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
 
   expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({ body: expect.objectContaining({ idle_suspend_after_seconds: 5400 }) })
+    expect.objectContaining({ idleSuspendAfter: expect.objectContaining({ seconds: 5400n }) })
   );
 });
 
@@ -365,47 +364,38 @@ async function press(element: HTMLElement, key: string): Promise<void> {
 }
 
 it("shows a Sandbox's idle suspension time and saves an edit to the incarnation shown", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
   expect(idleInput(container).value).toBe("30");
 
-  const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
-    data: undefined,
-    response: new Response(null, { status: 204 }),
-  } as never);
+  const patch = vi.spyOn(sandboxClient, "setEnvironmentIdleSuspend").mockResolvedValue(undefined);
   await type(idleInput(container), "45");
   await press(idleInput(container), "Enter");
 
-  expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/idle-suspend", {
-    params: { path: { name: CREATED.name } },
-    body: { uid: CREATED.uid, idle_suspend_after_seconds: 2700 },
-  });
+  expect(patch).toHaveBeenCalledWith(CREATED_INVENTORY.target, 2700);
 });
 
 it("turns idle suspension off when the time is cleared", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
-  const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
-    data: undefined,
-    response: new Response(null, { status: 204 }),
-  } as never);
+  const patch = vi.spyOn(sandboxClient, "setEnvironmentIdleSuspend").mockResolvedValue(undefined);
 
   await type(idleInput(container), "");
   await press(idleInput(container), "Enter");
 
-  expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/idle-suspend", {
-    params: { path: { name: CREATED.name } },
-    body: { uid: CREATED.uid, idle_suspend_after_seconds: null },
-  });
+  expect(patch).toHaveBeenCalledWith(CREATED_INVENTORY.target, null);
 });
 
 it("puts back the stored idle suspension time and reports a refused edit", async () => {
-  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, idle_suspend_after_seconds: 1800 }] };
+  const sandbox = clone(EnvironmentDescriptorSchema, CREATED_INVENTORY);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 1800n });
+  liveSandboxData.snapshot = { environments: [sandbox] };
   const { container } = await render();
-  vi.spyOn(api, "PATCH").mockResolvedValue({
-    error: { detail: "Test edit refused" },
-    response: new Response(null, { status: 404 }),
-  } as never);
+  vi.spyOn(sandboxClient, "setEnvironmentIdleSuspend").mockRejectedValue(new Error("Test edit refused"));
 
   await type(idleInput(container), "45");
   await press(idleInput(container), "Enter");

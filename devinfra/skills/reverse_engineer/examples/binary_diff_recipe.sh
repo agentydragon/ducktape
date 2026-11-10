@@ -6,13 +6,13 @@
 # built with a fixed garble seed so all intermediate values are deterministic).
 #
 # Technique for the garbled binary:
-#   string → file offset → .rodata VMA → instruction referencing that VMA
+#   string → file offset → load-segment VMA → instruction referencing that VMA
 #   → instruction PC → pclntool maps PC to garbled function name
 #
-# Golden values (seed=ZHVja3RhcGU=, i.e. base64("ducktape")):
-#   connectToServer  string VMA 0x51a851  PC 0x4dff2d  → main.h8n9KNzKUCmw
-#   loadConfig       string VMA 0x5162ef  PC 0x4e0022  → main.bhY2uMqP4
-#   validateConfig   string VMA 0x518f8a  PC 0x4dfdfc  → main.epq7tEoS
+# The linker may move strings and functions between Go releases, so this
+# follows each string's actual address and reference in the fixture binaries.
+# It also maps the plain-binary references back to their named source functions
+# before checking that garbling produces three distinct names.
 #
 # Prerequisites:
 #   - 'v1_plain'   in cwd — Go binary built without garble (has pclntab + symbols)
@@ -36,54 +36,60 @@ assert_eq() {
   echo "  ASSERT OK: $label = '$got'"
 }
 
-# string_vma BINARY STRING EXPECTED_VMA
-#   stdout: hex VMA; stderr: step trace; asserts VMA matches expected
+assert_neq() {
+  local label="$1" got="$2" unexpected="$3"
+  if [ "$got" = "$unexpected" ]; then
+    fail "$label: unexpectedly got '$unexpected'"
+  fi
+  echo "  ASSERT OK: $label differs from '$unexpected'"
+}
+
+# string_vma BINARY STRING
+#   stdout: hex VMA; stderr: step trace
 string_vma() {
-  local binary="$1" search="$2" expected_vma="$3"
-  local file_off sec_vma sec_file vma
+  local binary="$1" search="$2"
+  local file_off load_file load_vma load_size vma
   file_off=$(grep -obaF "$search" "$binary" | head -1 | cut -d: -f1 || true)
   [ -n "$file_off" ] || fail "'$search' not found in $binary"
-  read -r sec_vma sec_file < <(
-    readelf -S "$binary" | awk '{
-      for (i = 1; i <= NF; i++) {
-        if ($i == ".rodata") { print "0x" $(i+2), "0x" $(i+3); exit }
-      }
-    }'
-  )
-  [ -n "${sec_vma:-}" ] && [ -n "${sec_file:-}" ] || fail "failed to locate .rodata in $binary"
-  vma=$(printf "0x%x" $((sec_vma + file_off - sec_file)))
+  vma=""
+  while read -r load_file load_vma load_size; do
+    if ((file_off >= load_file && file_off < load_file + load_size)); then
+      vma=$(printf "0x%x" $((load_vma + file_off - load_file)))
+      break
+    fi
+  done < <(readelf -lW "$binary" | awk '$1 == "LOAD" { print $2, $3, $5 }')
+  [ -n "$vma" ] || fail "'$search' is outside file-backed PT_LOAD segments in $binary"
   echo "  string file offset: $file_off" >&2
-  echo "  .rodata VMA:        $sec_vma  file offset: $sec_file" >&2
+  echo "  PT_LOAD VMA:        $load_vma  file offset: $load_file" >&2
   echo "  string VMA:         $vma" >&2
-  assert_eq "string VMA for '$search'" "$vma" "$expected_vma" >&2
   echo "$vma"
 }
 
-# fn_at_vma BINARY VMA EXPECTED_PC EXPECTED_BYTES EXPECTED_FN
-#   stdout: garbled fn name; stderr: step trace; asserts PC, bytes, fn match expected
+# fn_at_vma BINARY VMA
+#   stdout: function name; stderr: step trace
 fn_at_vma() {
-  local binary="$1" vma="$2" expected_pc="$3" expected_bytes="$4" expected_fn="$5"
+  local binary="$1" vma="$2"
   local insn_line insn_addr insn_bytes fn
-  insn_line=$(objdump -d "$binary" 2>/dev/null | grep -E "# ${vma}( <|$)" | head -1 || true)
+  insn_line=$(objdump -d "$binary" 2>/dev/null \
+    | grep -E "# (0x)?${vma#0x}([[:space:]]|$)" | head -1 || true)
   [ -n "$insn_line" ] || fail "no instruction in $binary references VMA $vma"
   echo "  objdump:            $insn_line" >&2
   insn_addr=0x$(echo "$insn_line" | awk '{print $1}' | tr -d ':')
   echo "  instruction PC:     $insn_addr" >&2
-  assert_eq "instruction PC for VMA $vma" "$insn_addr" "$expected_pc" >&2
   insn_bytes=$(echo "$insn_line" | awk '{
     s = ""; for (i=2; i<=8; i++) { if ($i ~ /^[0-9a-f][0-9a-f]$/) s = s (s ? " " : "") $i }; print s}')
+  [ -n "$insn_bytes" ] || fail "could not parse instruction bytes for VMA $vma"
   echo "  instruction bytes:  $insn_bytes" >&2
-  assert_eq "instruction bytes for VMA $vma" "$insn_bytes" "$expected_bytes" >&2
   fn=$(pclntool pc "$binary" "$insn_addr")
-  echo "  garbled name:       $fn" >&2
-  assert_eq "garbled name for VMA $vma" "$fn" "$expected_fn" >&2
+  echo "  function name:      $fn" >&2
   echo "$fn"
 }
 
-fn_for_string_v2() {
+fn_for_string() {
+  local binary="$1" search="$2"
   local vma
-  vma=$(string_vma v2_garbled "$1" "$2")
-  fn_at_vma v2_garbled "$vma" "$3" "$4" "$5"
+  vma=$(string_vma "$binary" "$search")
+  fn_at_vma "$binary" "$vma"
 }
 
 echo "=== verify ==="
@@ -113,13 +119,17 @@ echo "  main.validateConfig absent from v1 (new in v2)"
 echo "=== string→fn mapping ==="
 S1="connection refused: server not accepting connections"
 echo "Locating '$S1':"
-# Expected: string VMA 0x51a851, lea at PC 0x4dff2d, bytes 48 8d 05 1d a9 03 00
-fn1_v2=$(fn_for_string_v2 "$S1" "0x51a851" "0x4dff2d" "48 8d 05 1d a9 03 00" "main.h8n9KNzKUCmw")
+fn1_v1=$(fn_for_string v1_plain "$S1")
+assert_eq "plain function for '$S1'" "$fn1_v1" "main.connectToServer"
+fn1_v2=$(fn_for_string v2_garbled "$S1")
+assert_neq "garbled function for '$S1'" "$fn1_v2" "main.connectToServer"
 echo "  → $fn1_v2"
 S2="failed to read config file"
 echo "Locating '$S2':"
-# Expected: string VMA 0x5162ef, lea at PC 0x4e0022, bytes 48 8d 05 c6 62 03 00
-fn2_v2=$(fn_for_string_v2 "$S2" "0x5162ef" "0x4e0022" "48 8d 05 c6 62 03 00" "main.bhY2uMqP4")
+fn2_v1=$(fn_for_string v1_plain "$S2")
+assert_eq "plain function for '$S2'" "$fn2_v1" "main.loadConfig"
+fn2_v2=$(fn_for_string v2_garbled "$S2")
+assert_neq "garbled function for '$S2'" "$fn2_v2" "main.loadConfig"
 echo "  → $fn2_v2"
 [ "$fn1_v2" != "$fn2_v2" ] \
   || fail "connectToServer and loadConfig garbled to same name ($fn1_v2)"
@@ -130,8 +140,8 @@ S_NEW="invalid port: must be between 1 and 65535"
   || fail "'$S_NEW' found in v1_plain — expected only in v2"
 echo "'$S_NEW': absent from v1 (validateConfig only exists in v2)"
 echo "Locating '$S_NEW' in v2_garbled:"
-# Expected: string VMA 0x518f8a, lea at PC 0x4dfdfc, bytes 48 8d 05 87 91 03 00
-fn_new=$(fn_for_string_v2 "$S_NEW" "0x518f8a" "0x4dfdfc" "48 8d 05 87 91 03 00" "main.epq7tEoS")
+fn_new=$(fn_for_string v2_garbled "$S_NEW")
+assert_neq "garbled function for '$S_NEW'" "$fn_new" "main.validateConfig"
 echo "  → $fn_new"
 [ "$fn_new" != "$fn1_v2" ] \
   || fail "validateConfig collides with connectToServer garbled name"
@@ -139,7 +149,7 @@ echo "  → $fn_new"
   || fail "validateConfig collides with loadConfig garbled name"
 echo "PASS: three distinct garbled names for three distinct source functions"
 echo "=== summary ==="
-echo "  connectToServer  string VMA 0x51a851  PC 0x4dff2d  →  $fn1_v2"
-echo "  loadConfig       string VMA 0x5162ef  PC 0x4e0022  →  $fn2_v2"
-echo "  validateConfig   string VMA 0x518f8a  PC 0x4dfdfc  →  $fn_new  (v2-only)"
+echo "  connectToServer  →  $fn1_v2"
+echo "  loadConfig       →  $fn2_v2"
+echo "  validateConfig   →  $fn_new  (v2-only)"
 echo "All assertions passed."

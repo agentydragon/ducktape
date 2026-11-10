@@ -134,6 +134,9 @@ let
         # Codex-owned cache that is writable from the sandbox.
         NPM_CONFIG_CACHE = codexNpmCache;
         BAZELISK_HOME = codexBazeliskCache;
+      }
+      // lib.optionalAttrs (cfg.temporaryDirectory != null) {
+        TMPDIR = cfg.temporaryDirectory;
       };
     };
     sandbox_mode = cfg.sandboxMode;
@@ -304,6 +307,11 @@ in
         Codex `sandbox_mode` (e.g. "workspace-write", "danger-full-access").
         Only "workspace-write" emits the writable-roots block.
       '';
+    };
+    temporaryDirectory = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional TMPDIR for commands started by Codex.";
     };
     localModels.enable = lib.mkEnableOption "the local (gpt-oss) Codex model profiles";
     chatgptPackage = lib.mkOption {

@@ -39,7 +39,6 @@ from finance.augur.model.series import (
     SecurityKey,
     parse_level_series_key,
 )
-from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.fixed_point import round_ppb, sampled_array_to_per_unit_rate, sampled_array_to_quanta
 from finance.augur.sim.holdings import asset_key
 from finance.augur.sim.ids import AssetId
@@ -90,14 +89,6 @@ class ExternalSeriesContext:
             levels=assemble_level_frames(blocks, rollout_count=rollout_count, horizon_months=horizon_months),
             private_equity=private_equity if private_equity is not None else PrivateEquityBundle.empty(),
         )
-
-
-def materialize_external_series(
-    bundle: SeriesModelBundle, *, rollout_seeds: tuple[int, ...], horizon_months: int
-) -> ExternalSeriesContext:
-    """Sample a scenario's own series-model bundle into the simulator's series context."""
-
-    return materialize_sampled_exogenous(bundle.sample(rollout_seeds=rollout_seeds, horizon_months=horizon_months))
 
 
 def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSeriesContext:

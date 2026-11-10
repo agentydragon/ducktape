@@ -11,7 +11,10 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
+from grafana_grafanadashboard_crds.org.integreatly.grafana import (
+    GrafanaDashboardSpecDatasources,
+    GrafanaDashboardSpecInstanceSelector,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
@@ -27,7 +30,7 @@ from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.monitoring import alloy
+from cluster.cdk8s.monitoring import alloy, grafana_instance
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
@@ -202,8 +205,9 @@ def chart(app: App) -> Chart:
         chart,
         "dashboard",
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
         folder="Network",
+        datasources=[GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name="Loki")],
         config_map_ref=DASHBOARD.config_map_ref(),
     )
     return chart

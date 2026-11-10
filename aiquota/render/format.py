@@ -1,7 +1,7 @@
 """Shared format helpers for human and tmux renderers."""
 
-from datetime import datetime, tzinfo
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta, tzinfo
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from aiquota.models import PaceResult, PrepaidBalanceAvailable, QuotaWindow
 from aiquota.pace import is_exhausted
@@ -14,9 +14,9 @@ def format_duration(seconds: float) -> str:
     h, rem = divmod(rem, 3600)
     m = rem // 60
     if d > 0:
-        return f"{d}d{h}h"
+        return f"{d}d" + (f" {h}h" if h else "")
     if h > 0:
-        return f"{h}h{m:02d}m"
+        return f"{h}h" + (f" {m}m" if m else "")
     return f"{m}m"
 
 
@@ -55,30 +55,76 @@ def format_age(seconds: float) -> str:
 
 def format_prepaid_balance(balance: PrepaidBalanceAvailable) -> str:
     """Format minor units without converting the provider balance to float."""
-    sign = "-" if balance.amount_minor < 0 else ""
-    amount = Decimal(abs(balance.amount_minor)).scaleb(-balance.exponent)
-    value = f"{amount:,.{balance.exponent}f}"
-    return f"{sign}${value}" if balance.currency == "USD" else f"{sign}{value} {balance.currency}"
+    return format_minor_currency(balance.amount_minor, balance.exponent, balance.currency)
 
 
-def format_known_reset_credit_expiries(expiries: list[datetime], tz: tzinfo | None = None) -> str | None:
-    """Render the detail endpoint's known expiries in the viewer's local time.
+def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> str:
+    """Format provider-reported minor units without converting to float."""
+    sign = "-" if amount_minor < 0 else ""
+    amount = Decimal(abs(amount_minor)).scaleb(-exponent)
+    value = f"{amount:,.{exponent}f}"
+    return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
 
-    The endpoint can return fewer credit rows than the authoritative count, so
-    callers must retain the "known" qualifier rather than imply this is a
-    complete list.
-    """
 
-    if not expiries:
-        return None
-    return ", ".join(expiry.astimezone(tz).strftime("%b %-d %H:%M") for expiry in expiries)
+_DEADLINE_DATE_ONLY_AFTER = timedelta(days=14)
+
+
+def format_deadline(when: datetime, now: datetime, tz: tzinfo | None = None, *, details: bool = False) -> str:
+    local = when.astimezone(tz)
+    if details:
+        return local.strftime("%Y-%m-%d %H:%M %Z")
+    label = local.strftime("%b %-d")
+    if local.year != now.astimezone(tz).year:
+        label += local.strftime(", %Y")
+    if when.astimezone(UTC) - now.astimezone(UTC) <= _DEADLINE_DATE_ONLY_AFTER:
+        label += local.strftime(", %H:%M %Z")
+    return label
+
+
+def format_reset_credit_summary(
+    count: int,
+    expiries: list[datetime],
+    expiry_lookup_failed: bool,
+    now: datetime,
+    tz: tzinfo | None = None,
+    *,
+    details: bool = False,
+) -> str:
+    # The detail endpoint may be capped or lag the authoritative count.
+    if count == 0:
+        return "0"
+    parts = [str(count)]
+    known = sorted(expiries)
+    if known:
+        shown = known if details else known[:1]
+        label = "known expiries" if details else "next known expiry"
+        parts.append(f"{label} {', '.join(format_deadline(expiry, now, tz, details=details) for expiry in shown)}")
+    if expiry_lookup_failed:
+        parts.append("expiry lookup failed")
+    elif count > len(known):
+        missing = count - len(known)
+        parts.append(f"{missing} expiry unknown" if missing == 1 else f"{missing} expiries unknown")
+    return " · ".join(parts)
+
+
+def format_paid_credit_balance(raw: str | None, unlimited: bool = False) -> str:
+    if unlimited:
+        return "unlimited credits"
+    if raw is not None:
+        try:
+            amount = Decimal(raw)
+            if amount.is_finite():
+                return f"{amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,} credits"
+        except InvalidOperation:
+            pass
+    return "available"
 
 
 def format_pace(pace: PaceResult | None) -> str | None:
     if pace is None or not pace.stable:
         return None
     sign = "+" if pace.deviation >= 0 else "-"
-    return f"{sign}{abs(round(pace.deviation))}%"
+    return f"{sign}{abs(round(pace.deviation))} pp"
 
 
 def format_pace_forecast(pace: PaceResult | None, reset_seconds: float) -> str | None:

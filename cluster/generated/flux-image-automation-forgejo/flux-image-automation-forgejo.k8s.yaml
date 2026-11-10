@@ -26,31 +26,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: agentplane-action-service-migrate
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-action-service-migrate
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-action-service-migrate
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: agentplane-app
   namespace: flux-system
 spec:
@@ -76,10 +51,10 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: agentplane-app-migrate
+  name: agentplane-central-sampler
   namespace: flux-system
 spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-app-migrate
+  image: git.allegedly.works/ducktape-ci/agentplane-central-sampler
   interval: 5m
   secretRef:
     name: forgejo-images-creds
@@ -87,38 +62,13 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
-  name: agentplane-app-migrate
+  name: agentplane-central-sampler
   namespace: flux-system
 spec:
   filterTags:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
-    name: agentplane-app-migrate
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: agentplane-egress-history-migrate
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-egress-history-migrate
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-egress-history-migrate
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-egress-history-migrate
+    name: agentplane-central-sampler
   policy:
     alphabetical:
       order: asc
@@ -176,6 +126,81 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: agentplane-environment-firecracker
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-environment-firecracker
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-environment-firecracker
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: agentplane-environment-vm
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-environment-vm
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-environment-vm
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-environment-vm
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: agentplane-firecracker-launcher
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-firecracker-launcher
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-firecracker-launcher
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: agentplane-frontend
   namespace: flux-system
 spec:
@@ -201,31 +226,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: agentplane-history-migrate
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-history-migrate
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-history-migrate
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-history-migrate
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: agentplane-history-service
   namespace: flux-system
 spec:
@@ -244,31 +244,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-history-service
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: agentplane-index
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-index
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-index
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-index
   policy:
     alphabetical:
       order: asc
@@ -326,31 +301,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: agentplane-mcp-edge-migrate
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-mcp-edge-migrate
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-mcp-edge-migrate
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-mcp-edge-migrate
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: agentplane-notification-service
   namespace: flux-system
 spec:
@@ -369,31 +319,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-notification-service
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: agentplane-notification-service-migrate
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-notification-service-migrate
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-notification-service-migrate
   policy:
     alphabetical:
       order: asc
@@ -476,56 +401,6 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: agentplane-runner-gateway-queue-migrate
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-runner-gateway-queue-migrate
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-runner-gateway-queue-migrate
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: agentplane-runner-vm
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: agentplane-runner-vm
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: agentplane-runner-vm
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
   name: agentplane-sandbox
   namespace: flux-system
 spec:
@@ -594,6 +469,81 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: agentplane-sandbox-controller
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: ai-session-archive-importer
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/ai-session-archive-importer
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: ai-session-archive-importer
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: ai-session-archive-importer
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: ai-session-archive-migrator
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: ai-session-archive-migrator
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: ai-session-archive-migrator
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: ai-session-archive-web
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/ai-session-archive-web
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: ai-session-archive-web
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: ai-session-archive-web
   policy:
     alphabetical:
       order: asc
@@ -851,6 +801,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: environment-tools
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/environment-tools
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: environment-tools
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: environment-tools
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: forgejo-token-rotation
   namespace: flux-system
 spec:
@@ -869,31 +844,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: forgejo-token-rotation
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: github-api-proxy
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/github-api-proxy
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: github-api-proxy
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: github-api-proxy
   policy:
     alphabetical:
       order: asc
@@ -1301,6 +1251,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: platform-sessions-gateway
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions-gateway
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions-gateway
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions-gateway
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: props-backend
   namespace: flux-system
 spec:
@@ -1419,31 +1394,6 @@ spec:
     pattern: ^devel-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
     name: rtl-tcp
-  policy:
-    alphabetical:
-      order: asc
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageRepository
-metadata:
-  name: runner-ducktape
-  namespace: flux-system
-spec:
-  image: git.allegedly.works/ducktape-ci/runner-ducktape
-  interval: 5m
-  secretRef:
-    name: forgejo-images-creds
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImagePolicy
-metadata:
-  name: runner-ducktape
-  namespace: flux-system
-spec:
-  filterTags:
-    pattern: ^devel-\d{14}-[0-9a-f]{7}$
-  imageRepositoryRef:
-    name: runner-ducktape
   policy:
     alphabetical:
       order: asc

@@ -1,0 +1,165 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "bes",
+    srcs = ["bes.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//devinfra/buildbuddy:cli"],
+)
+
+py_library(
+    name = "runner_probe",
+    srcs = ["runner_probe.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "collect_profiles",
+    srcs = ["collect_profiles.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":invocation_ids"],
+)
+
+py_library(
+    name = "invocation_ids",
+    srcs = ["invocation_ids.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "invocation_census",
+    srcs = ["invocation_census.py"],
+    deps = [
+        ":invocation_ids",
+        "//devinfra/buildbuddy:cli",
+    ],
+)
+
+py_binary(
+    name = "invocation_census_bin",
+    main_module = "devinfra.buildbuddy.ci.invocation_census",
+    deps = [":invocation_census"],
+)
+
+py_test(
+    name = "test_invocation_census",
+    srcs = ["test_invocation_census.py"],
+    deps = [
+        ":invocation_census",
+        ":invocation_ids",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "live_test_status",
+    srcs = ["live_test_status.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//devinfra/buildbuddy:cli"],
+)
+
+py_test(
+    name = "test_live_test_status",
+    srcs = ["test_live_test_status.py"],
+    deps = [
+        ":live_test_status",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "emit_remote_linkage",
+    srcs = ["emit_remote_linkage.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "runner_probe_bin",
+    main_module = "devinfra.buildbuddy.ci.runner_probe",
+    deps = [":runner_probe"],
+)
+
+py_binary(
+    name = "collect_profiles_bin",
+    main_module = "devinfra.buildbuddy.ci.collect_profiles",
+    deps = [":collect_profiles"],
+)
+
+py_binary(
+    name = "emit_remote_linkage_bin",
+    main_module = "devinfra.buildbuddy.ci.emit_remote_linkage",
+    deps = [":emit_remote_linkage"],
+)
+
+py_binary(
+    name = "live_test_status_bin",
+    main_module = "devinfra.buildbuddy.ci.live_test_status",
+    deps = [":live_test_status"],
+)
+
+py_test(
+    name = "test_bes",
+    srcs = ["test_bes.py"],
+    deps = [
+        ":bes",
+        "//devinfra/buildbuddy:cli",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runner_probe",
+    srcs = ["test_runner_probe.py"],
+    deps = [
+        ":runner_probe",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_collect_profiles",
+    srcs = ["test_collect_profiles.py"],
+    deps = [
+        ":collect_profiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_invocation_ids",
+    srcs = ["test_invocation_ids.py"],
+    deps = [
+        ":invocation_ids",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_emit_remote_linkage",
+    srcs = ["test_emit_remote_linkage.py"],
+    deps = [
+        ":emit_remote_linkage",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_remote_log",
+    srcs = ["test_remote_log.py"],
+    data = [
+        "cancel_invocations.py",
+        "remote_log.sh",
+    ],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cancel_invocations",
+    srcs = ["cancel_invocations.py"],
+)

@@ -24,10 +24,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":session_paths",
-        "@pypi//pytest",
-    ],
+    deps = ["@pypi//pytest"],
 )
 
 py_test(
@@ -38,6 +35,7 @@ py_test(
         "//:conftest",
         "//devinfra/claude/claude_api/hooks:common",
         "//devinfra/claude/claude_api/hooks:session_start",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -47,14 +45,12 @@ py_test(
 py_library(
     name = "readonly_commands",
     srcs = ["readonly_commands.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "scan_transcript_permissions",
     srcs = ["scan_transcript_permissions.py"],
-    imports = ["../.."],
     deps = [
         ":readonly_commands",
     ],

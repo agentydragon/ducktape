@@ -30,5 +30,11 @@ go_binary(
         "//skills/info_gathering/evals/twenty_questions:sim.txt",
     ],
     embed = [":genkit_lib"],
+    race = "off",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "github.com/agentydragon/ducktape/skills/info_gathering/evals/twenty_questions/x/genkit.firstUserMessageRlocation": "$(rlocationpath //skills/info_gathering/evals/twenty_questions:first_user_message.txt)",
+        "github.com/agentydragon/ducktape/skills/info_gathering/evals/twenty_questions/x/genkit.scratchSystemNoteRlocation": "$(rlocationpath //skills/info_gathering/evals/twenty_questions:scratch_system_note.txt)",
+        "github.com/agentydragon/ducktape/skills/info_gathering/evals/twenty_questions/x/genkit.simRlocation": "$(rlocationpath //skills/info_gathering/evals/twenty_questions:sim.txt)",
+    },
 )

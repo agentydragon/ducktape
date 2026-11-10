@@ -19,8 +19,10 @@ py_library(
     srcs = ["rotate.py"],
     deps = [
         ":config",
+        "//cluster/rotators:sops_stamps",
         "//devinfra:prettier_cli",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//typer",
@@ -34,8 +36,10 @@ py_test(
         ":config",
         ":rotate",
         "//:conftest",
+        "//cluster/rotators:sops_stamps",
         "@pypi//certifi",
         "@pypi//httpx",
+        "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -86,7 +90,7 @@ pkg_tar(
 
 # kubectl binary layer — placed at /usr/local/bin/kubectl.
 # The rotator exec's the running attic pod to mint JWTs:
-# `kubectl exec deploy/attic -- atticadm make-token …` (so atticadm runs in its
+# `kubectl exec deploy/attic-next -- atticadm make-token …` (so atticadm runs in its
 # native nix environment and the HS256 signing secret never leaves the attic pod).
 pkg_tar(
     name = "kubectl_layer",

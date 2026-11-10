@@ -14,27 +14,27 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
-DATABASE = cnpg.PostgresRef.generated(name="litellm-db", namespace="litellm")
+DATABASE = cluster.PostgresRef.generated(name="litellm-db", namespace="litellm")
 
 
 def _chart(app: App) -> Chart:
     chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="5Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb("litellm"),
+        initdb=cluster.same_owner_initdb("litellm"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
     return chart
 
 

@@ -37,7 +37,7 @@ summarisation request must then be recognised and answered by the script.
 
 - Frames appear: `docs/hooks.md:36-37`, `native/claude/scenarios.py:162-163` (the `hooks` launch
   "has the harness report each firing as `hook_started`/`hook_response`"), and
-  `runner/SPEC.md:210-211` ("Hook events need `--include-hook-events`"); all 2.1.252.
+  `env/runtime/docs/session_protocol.md` ("Hook events need `--include-hook-events`"); all 2.1.252.
 - None appear: `docs/hooks.md:45-47` (live capture, 2.1.252) and
   `haku/cli_protocol/protocol.md:267-271` (2.1.233, the compaction run passed the flag), for hooks
   registered at `initialize`.
@@ -62,7 +62,7 @@ uuid-less prompt as negative control.
 `native/claude/wire.py:234` describes `UserFrame` as "the replay echo of an input, and tool
 results" (2.1.252). On 2.1.233 compaction also emits a non-replay text `user` frame marked
 `isSynthetic: true` (`haku/cli_protocol/protocol.md:383-388`), a field `UserFrame` does not model.
-By reading, `runner/claude/adapter.go` derives nothing from a text-only non-replay frame, so the
+By reading, `env/runtime/claude/adapter.go` derives nothing from a text-only non-replay frame, so the
 summary would reach only the `Native` log. Settle with the scripted compaction test above.
 
 ## Notification ack id for driver-hosted MCP

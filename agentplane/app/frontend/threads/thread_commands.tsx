@@ -5,39 +5,55 @@ import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { type CommandIssue } from "./command_delivery";
-import type { LocalCommands, LocalCommand } from "./local_commands";
-import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
+import type { LocalCommands, LocalCommand, PendingCommand } from "./local_commands";
+import { useThreadSync } from "./thread_sync";
+import {
+  ThreadCommandOutcome,
+  type ThreadCommand,
+  type ThreadEntity,
+} from "../../../history_service/history_service_pb";
+import { Operation } from "../../../proto/command_pb";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
-function subject(operation: string): CommandSubject {
-  if (operation === "submit_input" || operation === "submitInput") return "input";
-  if (operation === "change_model" || operation === "changeModel") return "model";
-  if (operation === "change_reasoning_effort" || operation === "changeReasoningEffort") return "effort";
+type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCommand } };
+
+function isCommandEntity(entity: ThreadEntity): entity is CommandEntity {
+  return entity.entity.case === "command";
+}
+
+/** A projected command's `Operation`, or a local command's operation case. */
+function subject(operation: Operation | PendingCommand["operation"]["case"]): CommandSubject {
+  if (operation === Operation.SUBMIT_INPUT || operation === "submitInput") return "input";
+  if (operation === Operation.CHANGE_MODEL || operation === "changeModel") return "model";
+  if (operation === Operation.CHANGE_REASONING_EFFORT || operation === "changeReasoningEffort") return "effort";
   return "other";
 }
 
 function progressStage(
-  outcome: string | null,
+  outcome: ThreadCommandOutcome | null,
   admitted: boolean,
   receipt?: LocalCommand["dispatch"] | LocalCommand["interruptResult"],
   issue?: CommandIssue
 ): CommandStage {
-  if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
+  if (outcome === ThreadCommandOutcome.EFFECTED) return "effected";
+  if (outcome === ThreadCommandOutcome.FAILED) return "failed";
+  if (outcome === ThreadCommandOutcome.NOOP) return "noop";
   if (admitted) return "admitted";
   switch (receipt?.state) {
-    case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
+    case DeliveryState.QUEUED_IN_DISPATCHER:
       return "queued";
-    case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
+    case DeliveryState.DELIVERING_TO_RUNNER:
       return "delivering";
-    case "DELIVERY_STATE_RUNNER_ADMITTED":
-    case "DELIVERY_STATE_HARNESS_CONFIRMED":
+    case DeliveryState.RUNNER_ADMITTED:
+    case DeliveryState.HARNESS_CONFIRMED:
       return "admitted";
-    case "DELIVERY_STATE_NO_OP":
+    case DeliveryState.NO_OP:
       return "noop";
-    case "DELIVERY_STATE_FAILED":
+    case DeliveryState.FAILED:
       return "dispatch_failed";
-    case "DELIVERY_STATE_CANCELLED_IN_DISPATCHER":
+    case DeliveryState.CANCELLED_IN_DISPATCHER:
       return "cancelled";
-    case "DELIVERY_STATE_UNKNOWN":
+    case DeliveryState.UNKNOWN:
       return "unknown";
   }
   return issue?.kind ?? "local";
@@ -122,23 +138,23 @@ export function PendingInputMessages({
   const localCommandIds = new Set(inputCommands.map((value) => value.command.commandId));
   const confirmedCommandIds = new Set(
     entities
-      .filter((row) => row.entityKind === "confirmed_input")
-      .flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))
+      .filter((row) => row.entity.case === "confirmedInput")
+      .flatMap((row) => (row.entity.case === "confirmedInput" ? row.entity.value.originCommandIds : []))
   );
   const historyMessageIds = new Set(entities.filter(pendingSentMessage).map((row) => row.entityId));
   const projectedOutcomes = entities
     .filter(
-      (row): row is ThreadEntity & { state: Extract<ThreadEntity["state"], { outcome: string }> } =>
-        row.entityKind === "command" &&
-        "outcome" in row.state &&
-        row.state.operation === "submit_input" &&
-        row.state.outcome !== "pending" &&
+      (row): row is CommandEntity =>
+        isCommandEntity(row) &&
+        row.entity.value.operation === Operation.SUBMIT_INPUT &&
+        row.entity.value.outcome !== ThreadCommandOutcome.PENDING &&
+        row.entity.value.outcome !== ThreadCommandOutcome.UNSPECIFIED &&
         !localCommandIds.has(row.entityId) &&
         !confirmedCommandIds.has(row.entityId)
     )
     .sort((left, right) => {
-      const leftCursor = decimalBigInt(left.cursor);
-      const rightCursor = decimalBigInt(right.cursor);
+      const leftCursor = left.cursor;
+      const rightCursor = right.cursor;
       return leftCursor < rightCursor ? -1 : leftCursor > rightCursor ? 1 : 0;
     });
   const pending = inputCommands.filter(
@@ -151,25 +167,29 @@ export function PendingInputMessages({
         if (value.command.operation.case !== "submitInput") return null;
         const id = value.command.commandId;
         const row = byId.get(id);
-        const outcome = row && "outcome" in row.state ? row.state.outcome : null;
+        const commandRow = row && isCommandEntity(row) ? row : null;
+        const outcome = commandRow?.entity.value.outcome ?? null;
         const issue = row ? undefined : errors.get(id);
         const dispatchState = value.dispatch?.state;
         const dispatchAdmitted =
-          dispatchState === "DELIVERY_STATE_RUNNER_ADMITTED" || dispatchState === "DELIVERY_STATE_HARNESS_CONFIRMED";
+          dispatchState === DeliveryState.RUNNER_ADMITTED || dispatchState === DeliveryState.HARNESS_CONFIRMED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
-          outcome === "failed" || stage === "dispatch_failed" || stage === "cancelled" || stage === "unknown";
-        const noop = outcome === "noop" || stage === "noop";
-        const effected = outcome === "effected";
-        const outcomeReason = row && "outcome" in row.state ? row.state.outcome_reason : null;
+          outcome === ThreadCommandOutcome.FAILED ||
+          stage === "dispatch_failed" ||
+          stage === "cancelled" ||
+          stage === "unknown";
+        const noop = outcome === ThreadCommandOutcome.NOOP || stage === "noop";
+        const effected = outcome === ThreadCommandOutcome.EFFECTED;
+        const outcomeReason = commandRow?.entity.value.outcomeReason ?? null;
         return (
           <UserInputBubble
             key={id}
             commandId={id}
             text={value.command.operation.value.text}
             phase={failed ? "failed" : noop ? "noop" : effected ? "confirmed" : admitted ? "pending" : "local"}
-            pending={outcome === null && !failed && !noop}
+            pending={(outcome === null || outcome === ThreadCommandOutcome.PENDING) && !failed && !noop}
             progress={
               effected ? undefined : (
                 <CommandOutcome
@@ -184,7 +204,7 @@ export function PendingInputMessages({
             action={
               !admitted && !value.attempted && value.dispatch === null
                 ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
-                : !admitted && value.dispatch === null
+                : !admitted && value.dispatch === null && (value.sessionAddressed || value.target !== null)
                   ? { label: "Retry", onClick: () => void deliver(value) }
                   : undefined
             }
@@ -192,12 +212,13 @@ export function PendingInputMessages({
         );
       })}
       {projectedOutcomes.map((row) => {
-        const failed = row.state.outcome === "failed";
-        const noop = row.state.outcome === "noop";
+        const command = row.entity.value;
+        const failed = command.outcome === ThreadCommandOutcome.FAILED;
+        const noop = command.outcome === ThreadCommandOutcome.NOOP;
         return (
           <UserInputBubble
             key={row.entityId}
-            threadId={row.threadId}
+            threadId={row.sessionId}
             entity={row}
             fallbackText={inputEchoes?.get(row.entityId)}
             onFallbackLoaded={onInputEchoLoaded ? () => onInputEchoLoaded(row.entityId) : undefined}
@@ -206,7 +227,7 @@ export function PendingInputMessages({
               <CommandOutcome
                 stage={failed ? "failed" : noop ? "noop" : "effected"}
                 subject="input"
-                reason={row.state.outcome_reason}
+                reason={command.outcomeReason}
               />
             }
           />
@@ -236,9 +257,7 @@ function LocalControlRows({
   useEffect(() => {
     store.observeCommandIds(new Set(rows.map((row) => row.entityId)));
   }, [rows, store]);
-  const projectedIds = new Set(
-    [...rows, ...entities.filter((row) => row.entityKind === "command")].map((row) => row.entityId)
-  );
+  const projectedIds = new Set([...rows, ...entities.filter(isCommandEntity)].map((row) => row.entityId));
   return (
     <Stack gap="xs">
       {commands
@@ -249,9 +268,7 @@ function LocalControlRows({
           const settled =
             Boolean(value.interruptResult) ||
             (value.dispatch !== null &&
-              !["DELIVERY_STATE_QUEUED_IN_DISPATCHER", "DELIVERY_STATE_DELIVERING_TO_RUNNER"].includes(
-                value.dispatch.state
-              ));
+              ![DeliveryState.QUEUED_IN_DISPATCHER, DeliveryState.DELIVERING_TO_RUNNER].includes(value.dispatch.state));
           const issue = errors.get(value.command.commandId);
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
@@ -267,24 +284,28 @@ function LocalControlRows({
                 </Text>
                 <CommandOutcome
                   stage={progressStage(null, admitted, value.dispatch ?? value.interruptResult, issue)}
-                  subject={subject(operation.case ?? "")}
+                  subject={subject(operation.case)}
                   reason={
                     admitted ? undefined : (value.dispatch?.reason ?? value.interruptResult?.reason ?? issue?.message)
                   }
                   local
                   unsent={!value.attempted}
                 />
-                {!admitted && !settled && value.dispatch === null && !value.interruptResult && (
-                  <Button
-                    size="xs"
-                    variant="subtle"
-                    onClick={() =>
-                      value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
-                    }
-                  >
-                    {value.attempted ? "Retry" : "Cancel"}
-                  </Button>
-                )}
+                {!admitted &&
+                  !settled &&
+                  value.dispatch === null &&
+                  !value.interruptResult &&
+                  (!value.attempted || value.sessionAddressed || value.target !== null) && (
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      onClick={() =>
+                        value.attempted ? void deliver(value) : store.cancelUnsent(value.command.commandId)
+                      }
+                    >
+                      {value.attempted ? "Retry" : "Cancel"}
+                    </Button>
+                  )}
               </Group>
             </ControlCommandFrame>
           );
@@ -311,32 +332,33 @@ export function ProjectedControlCommand({
   threadId: string;
   row: ThreadEntity;
 }): JSX.Element | null {
-  if (row.entityKind !== "command" || !("outcome" in row.state) || row.state.operation === "submit_input") return null;
+  if (!isCommandEntity(row) || row.entity.value.operation === Operation.SUBMIT_INPUT) return null;
+  const command = row.entity.value;
   return (
     <ControlCommandFrame id={row.entityId}>
-      <Box className="agentplane-evidence-owner" onClick={revealEvidenceOnTap}>
+      <Box className="transcript-inspection-owner" onClick={revealEvidenceOnTap}>
         <EvidenceToggle entity={row} />
         <Group className="agentplane-command-card-line" gap="xs" wrap="nowrap" pr="xl">
           <Text size="sm" className="agentplane-command-card-description">
-            {row.state.operation === "change_model"
-              ? row.state.requested_value
-                ? `Change model to ${row.state.requested_value}`
+            {command.operation === Operation.CHANGE_MODEL
+              ? command.requestedValue
+                ? `Change model to ${command.requestedValue}`
                 : "Model change"
-              : row.state.operation === "change_reasoning_effort"
-                ? row.state.requested_value
-                  ? `Set reasoning effort to ${row.state.requested_value}`
+              : command.operation === Operation.CHANGE_REASONING_EFFORT
+                ? command.requestedValue
+                  ? `Set reasoning effort to ${command.requestedValue}`
                   : "Reasoning effort change"
-                : row.state.operation === "interrupt_turn"
+                : command.operation === Operation.INTERRUPT_TURN
                   ? "Interrupt turn"
                   : "Thread action"}
           </Text>
           <CommandOutcome
-            stage={progressStage(row.state.outcome, true)}
-            subject={subject(row.state.operation)}
-            reason={row.state.outcome_reason}
+            stage={progressStage(command.outcome, true)}
+            subject={subject(command.operation)}
+            reason={command.outcomeReason}
           />
         </Group>
-        {row.inputRef && <Body reference={row.inputRef} format="text" />}
+        {command.inputRef && <Body reference={command.inputRef} format="text" />}
         <EvidencePanel threadId={threadId} entity={row} />
       </Box>
     </ControlCommandFrame>

@@ -1,8 +1,3 @@
-equity_fit:
-  first_month: "1926-07-01"
-  last_month: "2026-06-01"
-  sample_months: 1200
-  source: french:F-F_Research_Data_Factors
 equity_monthly_log_return_mu: 0.00822
 equity_monthly_log_return_sigma: 0.0529
 macro_state:
@@ -34,15 +29,5 @@ macro_state:
     - - -0.003116
       - -0.038973
       - 0.980979
-macro_state_fit:
-  first_month: "1955-08-01"
-  last_month: "2026-06-01"
-  sample_months: 850
-  source: fred:FEDFUNDS,fred:GS10,fred:CPIAUCSL
-rate_beta_fit:
-  first_month: "1980-01-01"
-  last_month: "2026-07-01"
-  sample_months: 558
-  source: yahoo:VFINX,fred:FEDFUNDS
 rate_beta_fitted_value: -0.62
 rate_beta_r_squared: 0.0051

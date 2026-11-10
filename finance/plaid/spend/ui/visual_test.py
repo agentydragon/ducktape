@@ -9,119 +9,72 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
 
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import Locator, Page, Playwright, Route, expect
+from playwright.async_api import Locator, Page, Playwright, Route, ViewportSize, expect
+from python.runfiles import Runfiles
 
-from finance.plaid.spend.allowance import (
-    AllOf,
-    AllowanceSpendPeriod,
-    AllowanceView,
-    AmountExact,
-    AmountSign,
-    AnalysisCategory,
-    AnyOf,
-    DateRange,
-    Disposition,
-    EstimatePeriodId,
-    FieldExact,
-    ForecastView,
-    Kind,
-    NameContains,
-    NamePrefix,
-    PaceAlert,
-    Period,
-    PeriodId,
-    PlaidCounterparty,
-    RecordedPacePeriod,
-    ReversalPair,
-    Rule,
-    RuleScope,
-    Status,
-    TransactionPeriodId,
-    UnmatchedCharges,
-)
-from finance.plaid.spend.models import (
-    AlertState,
-    AllowanceConfigurationView,
-    AnalysisCategoryView,
-    CardConfigurationView,
-    CardView,
-    ExcludedFlowSummary,
-    PaceEffect,
-    PlaidPaymentMeta,
-    PlaidPersonalFinanceCategory,
-    PlaidTransactionDetails,
-    PlaidTransactionLocation,
-    ProvisionalCardPeriod,
-    SpendConfigurationView,
-    SpendTransactionRow,
-    SpendTransactionsView,
-    SpendView,
-    StatementCycle,
-    StatementReason,
-    TransactionPeriodSummary,
-)
-from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
+from devinfra.testing.output_writer import BoundTestOutputs
+from finance.plaid.spend.allowance import EstimatePeriodId
+from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
 from finance.plaid.spend.reconciliation import ReportStatus
-from finance.plaid.spend.sustainability import (
-    AccountOpening,
-    DocumentedHistory,
-    SpendingAccountCoverage,
-    SustainabilityDashboard,
-    SustainabilityHistoryPoint,
-    SustainabilityView,
-)
-from util.bazel.runfiles import get_required_path
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
+from finance.plaid.spend.testing import dashboard
+from finance.plaid.spend.ui.testing import sustainability, transactions
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage, playwright_trace
+from util.testing.frontend_visual.capture import VisualPage, open_visual_page
+from util.testing.frontend_visual.context import deterministic_browser_context
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
-
-_UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
 _FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
 _TRANSACTION_VIEWPORTS = [(1280, 960), (390, 844), (320, 720)]
 
 
-@pytest.fixture
-async def page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
-    capture_name = request.node.name.removeprefix("test_")
+@asynccontextmanager
+async def _spend_view(
+    playwright: Playwright, test_outputs: BoundTestOutputs, viewport: ViewportSize, *, has_touch: bool = False
+) -> AsyncIterator[VisualPage]:
     async with (
         deterministic_browser_context(
-            playwright, viewport={"width": 1280, "height": 960}, frozen_now_ms=_FROZEN_NOW_MS
+            playwright, viewport=viewport, frozen_now_ms=_FROZEN_NOW_MS, has_touch=has_touch
         ) as context,
-        playwright_trace(context, undeclared_outputs_dir(), capture_name),
+        open_visual_page(context, test_outputs, title="Spend", trace=True) as view,
     ):
-        yield await context.new_page()
+        yield view
 
 
 @pytest.fixture
-async def touch_page(playwright: Playwright, request: pytest.FixtureRequest) -> AsyncIterator[Page]:
-    capture_name = request.node.name.removeprefix("test_")
-    async with (
-        deterministic_browser_context(
-            playwright, viewport={"width": 390, "height": 844}, frozen_now_ms=_FROZEN_NOW_MS, has_touch=True
-        ) as context,
-        playwright_trace(context, undeclared_outputs_dir(), capture_name),
-    ):
-        yield await context.new_page()
+async def view(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    async with _spend_view(playwright, test_outputs, {"width": 1280, "height": 960}) as view:
+        yield view
 
 
 @pytest.fixture
-def view(page: Page) -> VisualPage:
-    return VisualPage(page, output_dir=undeclared_outputs_dir(), title="Spend")
+async def touch_view(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    async with _spend_view(playwright, test_outputs, {"width": 390, "height": 844}, has_touch=True) as view:
+        yield view
+
+
+@pytest.fixture
+def page(view: VisualPage) -> Page:
+    return view.page
+
+
+@pytest.fixture
+def touch_page(touch_view: VisualPage) -> Page:
+    return touch_view.page
 
 
 async def _expand_accordion(control: Locator) -> None:
@@ -140,390 +93,6 @@ async def _expand_accordion(control: Locator) -> None:
             return !expanding && panel.scrollHeight <= panel.clientHeight + 1;
         }""",
         arg=panel_id,
-    )
-
-
-def _example_sustainability(variant: str = "ready", *, window_days: int = 90) -> SustainabilityView:
-    stale = variant == "stale"
-    unavailable = variant == "unavailable"
-    is_provisional = variant == "provisional"
-    tax_unmodeled = variant == "tax_unmodeled"
-    low_draw = variant == "low_draw"
-    portfolio_unavailable = stale or unavailable
-    portfolio_net = None if portfolio_unavailable else 125_000_000
-    annualized_spending = 600_621 if low_draw else 4_951_065
-    effective_tax_rate = None if tax_unmodeled else Decimal("0.12")
-
-    def rates_for(annualized: int) -> tuple[Decimal | None, Decimal | None]:
-        if portfolio_net is None:
-            return None, None
-        if effective_tax_rate is None:
-            return Decimal(annualized) / Decimal(portfolio_net), None
-        tax_adjusted = int((Decimal(annualized) / (Decimal(1) - effective_tax_rate)).quantize(Decimal(1)))
-        return Decimal(annualized) / Decimal(portfolio_net), Decimal(tax_adjusted) / Decimal(portfolio_net)
-
-    history: list[SustainabilityHistoryPoint] = []
-    history_values = (
-        (570_000, 585_000, annualized_spending) if low_draw else (4_700_000, 4_850_000, annualized_spending)
-    )
-    for day, annualized in zip(("2026-10-12", "2026-10-13", "2026-10-14"), history_values, strict=True):
-        spending_rate, tax_adjusted_rate = rates_for(annualized)
-        if is_provisional and day == "2026-10-14":
-            point_status = ReportStatus.PROVISIONAL
-        elif portfolio_unavailable:
-            point_status = ReportStatus.UNAVAILABLE
-        else:
-            point_status = ReportStatus.READY
-        history.append(
-            SustainabilityHistoryPoint(
-                date=date.fromisoformat(day),
-                status=point_status,
-                covered_days=90,
-                annualized_spending_minor_units=annualized,
-                spending_draw_rate=spending_rate,
-                tax_adjusted_draw_rate=tax_adjusted_rate,
-            )
-        )
-
-    spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
-    estimated_annual_draw = (
-        None
-        if portfolio_unavailable or effective_tax_rate is None
-        else int((Decimal(annualized_spending) / (Decimal(1) - effective_tax_rate)).quantize(Decimal(1)))
-    )
-    mandatory, flexible, provisional, total = (
-        (92_000, 50_000, 6_000, 148_000) if low_draw else (760_000, 410_000, 50_000, 1_220_000)
-    )
-    if is_provisional:
-        view_status = ReportStatus.PROVISIONAL
-    elif portfolio_unavailable:
-        view_status = ReportStatus.UNAVAILABLE
-    else:
-        view_status = ReportStatus.READY
-    if is_provisional:
-        issues = ["Review the unverified reversal and confirm its classification before relying on this estimate."]
-    elif stale or unavailable:
-        issues = ["Synthetic source has delayed updates."]
-    else:
-        issues = []
-    portfolio = PortfolioView(
-        status="unavailable" if portfolio_unavailable else "ready",
-        net_minor_units=portfolio_net,
-        assets_minor_units=None if portfolio_unavailable else 145_000_000,
-        liabilities_minor_units=None if portfolio_unavailable else 15_000_000,
-        excluded_minor_units=None if portfolio_unavailable else 5_000_000,
-        sources=[
-            SourceValuation(
-                name="Synthetic investment source",
-                status="unavailable" if portfolio_unavailable else "ready",
-                amount_minor_units=None if portfolio_unavailable else 125_000_000,
-                as_of=datetime(2026, 8, 30, 12, tzinfo=UTC) if stale else datetime(2026, 10, 14, 12, tzinfo=UTC),
-                issues=["Synthetic valuation has not refreshed recently."] if stale else [],
-            ),
-            SourceValuation(
-                name="Synthetic cash source",
-                status="unavailable" if unavailable else "ready",
-                amount_minor_units=None if unavailable else 20_000_000,
-                as_of=datetime(2026, 10, 14, 12, tzinfo=UTC),
-                issues=[],
-            ),
-        ],
-    )
-    tax_assumption_note = (
-        None
-        if tax_unmodeled
-        else "Synthetic fixture tax assumption; actual tax treatment depends on account and income details."
-    )
-    return SustainabilityView(
-        generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
-        status=view_status,
-        currency="USD",
-        time_zone="UTC",
-        window_days=window_days,
-        available_windows_days=sorted({30, 90, window_days}),
-        period_start=date(2026, 7, 17),
-        period_end=date(2026, 10, 14),
-        covered_days=90,
-        mandatory_minor_units=mandatory,
-        flexible_minor_units=flexible,
-        provisional_minor_units=provisional,
-        spending_minor_units=total,
-        annualized_spending_minor_units=annualized_spending,
-        estimated_annual_draw_minor_units=estimated_annual_draw,
-        spending_draw_rate=spending_draw_rate,
-        tax_adjusted_draw_rate=tax_adjusted_draw_rate,
-        effective_tax_rate=effective_tax_rate,
-        tax_assumption_note=tax_assumption_note,
-        tax_assumption_as_of=None if tax_unmodeled else date(2026, 1, 1),
-        reference_draw_rates=[Decimal("0.03"), Decimal("0.035"), Decimal("0.04"), Decimal("0.045")],
-        portfolio=portfolio,
-        history=history,
-        account_coverage=[],
-        issues=issues,
-        known_issues=[
-            "Synthetic fixture: investment values are illustrative and can lag market changes.",
-            "No income outside observed spending and portfolio sources is represented.",
-        ],
-    )
-
-
-def _with_sustainability_history(
-    view: SustainabilityView, history: list[SustainabilityHistoryPoint], *, issues: list[str] | None = None
-) -> SustainabilityView:
-    return SustainabilityView(
-        generated_at=view.generated_at,
-        status=view.status,
-        currency=view.currency,
-        time_zone=view.time_zone,
-        window_days=view.window_days,
-        available_windows_days=view.available_windows_days,
-        period_start=view.period_start,
-        period_end=view.period_end,
-        covered_days=view.covered_days,
-        mandatory_minor_units=view.mandatory_minor_units,
-        flexible_minor_units=view.flexible_minor_units,
-        provisional_minor_units=view.provisional_minor_units,
-        spending_minor_units=view.spending_minor_units,
-        annualized_spending_minor_units=view.annualized_spending_minor_units,
-        estimated_annual_draw_minor_units=view.estimated_annual_draw_minor_units,
-        spending_draw_rate=view.spending_draw_rate,
-        tax_adjusted_draw_rate=view.tax_adjusted_draw_rate,
-        effective_tax_rate=view.effective_tax_rate,
-        tax_assumption_note=view.tax_assumption_note,
-        tax_assumption_as_of=view.tax_assumption_as_of,
-        reference_draw_rates=view.reference_draw_rates,
-        portfolio=view.portfolio,
-        history=history,
-        issues=view.issues if issues is None else issues,
-        known_issues=view.known_issues,
-        account_coverage=view.account_coverage,
-    )
-
-
-def _sustainability_dashboard(*windows: SustainabilityView) -> SustainabilityDashboard:
-    return SustainabilityDashboard(default_window_days=90, windows=list(windows))
-
-
-def _example_sustainability_window(
-    days: int, *, history: list[SustainabilityHistoryPoint] | None = None
-) -> SustainabilityView:
-    result = _example_sustainability()
-    if days == 90:
-        return result if history is None else _with_sustainability_history(result, history)
-    mandatory, flexible, provisional = (200_000, 100_000, 10_000) if days == 30 else (3_000_000, 2_000_000, 300_000)
-    total = mandatory + flexible + provisional
-    annual = int((Decimal(total) * Decimal("365.2425") / days).quantize(Decimal(1)))
-    funding = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
-    dates = (
-        ("2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14")
-        if days == 30
-        else ("2026-10-13", "2026-10-14")
-    )
-    history_points = (
-        history
-        if history is not None
-        else [
-            SustainabilityHistoryPoint(
-                date=date.fromisoformat(day),
-                status=ReportStatus.READY,
-                covered_days=days,
-                annualized_spending_minor_units=annual,
-                spending_draw_rate=Decimal(annual) / Decimal(125_000_000),
-                tax_adjusted_draw_rate=Decimal(funding) / Decimal(125_000_000),
-            )
-            for day in dates
-        ]
-    )
-    return SustainabilityView(
-        generated_at=result.generated_at,
-        status=result.status,
-        currency=result.currency,
-        time_zone=result.time_zone,
-        window_days=days,
-        available_windows_days=[30, 90, 365],
-        period_start=date(2026, 10, 15) - timedelta(days=days),
-        period_end=result.period_end,
-        covered_days=days,
-        mandatory_minor_units=mandatory,
-        flexible_minor_units=flexible,
-        provisional_minor_units=provisional,
-        spending_minor_units=total,
-        annualized_spending_minor_units=annual,
-        estimated_annual_draw_minor_units=funding,
-        spending_draw_rate=Decimal(annual) / Decimal(125_000_000),
-        tax_adjusted_draw_rate=Decimal(funding) / Decimal(125_000_000),
-        effective_tax_rate=result.effective_tax_rate,
-        tax_assumption_note=result.tax_assumption_note,
-        tax_assumption_as_of=result.tax_assumption_as_of,
-        reference_draw_rates=result.reference_draw_rates,
-        portfolio=result.portfolio,
-        history=history_points,
-        issues=result.issues,
-        known_issues=result.known_issues,
-        account_coverage=result.account_coverage,
-    )
-
-
-def _example_sustainability_partial_window() -> SustainabilityView:
-    result = _example_sustainability()
-    return SustainabilityView(
-        generated_at=result.generated_at,
-        status=result.status,
-        currency=result.currency,
-        time_zone=result.time_zone,
-        window_days=result.window_days,
-        available_windows_days=result.available_windows_days,
-        period_start=date(2026, 8, 31),
-        period_end=result.period_end,
-        covered_days=45,
-        mandatory_minor_units=380_000,
-        flexible_minor_units=205_000,
-        provisional_minor_units=25_000,
-        spending_minor_units=610_000,
-        annualized_spending_minor_units=result.annualized_spending_minor_units,
-        estimated_annual_draw_minor_units=result.estimated_annual_draw_minor_units,
-        spending_draw_rate=result.spending_draw_rate,
-        tax_adjusted_draw_rate=result.tax_adjusted_draw_rate,
-        effective_tax_rate=result.effective_tax_rate,
-        tax_assumption_note=result.tax_assumption_note,
-        tax_assumption_as_of=result.tax_assumption_as_of,
-        reference_draw_rates=result.reference_draw_rates,
-        portfolio=result.portfolio,
-        history=[],
-        issues=result.issues,
-        known_issues=result.known_issues,
-        account_coverage=result.account_coverage,
-    )
-
-
-def _example_sustainability_with_partial_account_history() -> SustainabilityView:
-    result = _example_sustainability()
-    annual = int((Decimal(610_000) * Decimal("365.2425") / 44).quantize(Decimal(1)))
-    draw = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
-    account_coverage = [
-        SpendingAccountCoverage(
-            account_label="Example checking",
-            first_recorded_on=date(2026, 9, 1),
-            opening=AccountOpening(
-                earliest=date(2026, 7, 20),
-                latest=date(2026, 7, 27),
-                source="Synthetic account archive",
-                as_of=date(2026, 10, 14),
-            ),
-            coverage=None,
-            unknown_days_in_window=43,
-        ),
-        SpendingAccountCoverage(
-            account_label="Example card",
-            first_recorded_on=date(2026, 8, 15),
-            opening=None,
-            coverage=DocumentedHistory(
-                complete_from=date(2026, 8, 15), source="Synthetic statement archive", as_of=date(2026, 10, 14)
-            ),
-            unknown_days_in_window=29,
-        ),
-    ]
-    return SustainabilityView(
-        generated_at=result.generated_at,
-        status=result.status,
-        currency=result.currency,
-        time_zone=result.time_zone,
-        window_days=result.window_days,
-        available_windows_days=result.available_windows_days,
-        period_start=date(2026, 9, 1),
-        period_end=result.period_end,
-        covered_days=44,
-        mandatory_minor_units=380_000,
-        flexible_minor_units=205_000,
-        provisional_minor_units=25_000,
-        spending_minor_units=610_000,
-        annualized_spending_minor_units=annual,
-        estimated_annual_draw_minor_units=draw,
-        spending_draw_rate=Decimal(annual) / Decimal(125_000_000),
-        tax_adjusted_draw_rate=Decimal(draw) / Decimal(125_000_000),
-        effective_tax_rate=result.effective_tax_rate,
-        tax_assumption_note=result.tax_assumption_note,
-        tax_assumption_as_of=result.tax_assumption_as_of,
-        reference_draw_rates=result.reference_draw_rates,
-        portfolio=result.portfolio,
-        history=[],
-        issues=result.issues,
-        known_issues=result.known_issues,
-        account_coverage=account_coverage,
-    )
-
-
-def _example_sustainability_with_historical_coverage_gap() -> SustainabilityView:
-    result = _example_sustainability()
-    history = [
-        SustainabilityHistoryPoint(
-            date=date(2026, 10, 8),
-            status=ReportStatus.READY,
-            covered_days=90,
-            annualized_spending_minor_units=4_700_000,
-            spending_draw_rate=Decimal("0.0376"),
-            tax_adjusted_draw_rate=Decimal("0.0427272727"),
-        ),
-        SustainabilityHistoryPoint(
-            date=date(2026, 10, 9),
-            status=ReportStatus.READY,
-            covered_days=90,
-            annualized_spending_minor_units=4_850_000,
-            spending_draw_rate=Decimal("0.0388"),
-            tax_adjusted_draw_rate=Decimal("0.0440909091"),
-        ),
-        *[
-            SustainabilityHistoryPoint(
-                date=date(2026, 10, day),
-                status=ReportStatus.UNAVAILABLE,
-                covered_days=89 - (day - 10),
-                annualized_spending_minor_units=None,
-                spending_draw_rate=None,
-                tax_adjusted_draw_rate=None,
-            )
-            for day in range(10, 15)
-        ],
-    ]
-    return SustainabilityView(
-        generated_at=result.generated_at,
-        status=ReportStatus.UNAVAILABLE,
-        currency=result.currency,
-        time_zone=result.time_zone,
-        window_days=result.window_days,
-        available_windows_days=result.available_windows_days,
-        period_start=date(2026, 7, 17),
-        period_end=result.period_end,
-        covered_days=0,
-        mandatory_minor_units=0,
-        flexible_minor_units=0,
-        provisional_minor_units=0,
-        spending_minor_units=0,
-        annualized_spending_minor_units=None,
-        estimated_annual_draw_minor_units=None,
-        spending_draw_rate=None,
-        tax_adjusted_draw_rate=None,
-        effective_tax_rate=result.effective_tax_rate,
-        tax_assumption_note=result.tax_assumption_note,
-        tax_assumption_as_of=result.tax_assumption_as_of,
-        reference_draw_rates=result.reference_draw_rates,
-        portfolio=result.portfolio,
-        history=history,
-        issues=result.issues,
-        known_issues=result.known_issues,
-        account_coverage=[
-            SpendingAccountCoverage(
-                account_label="Example new account",
-                first_recorded_on=None,
-                opening=AccountOpening(
-                    earliest=date(2026, 10, 10),
-                    latest=date(2026, 10, 14),
-                    source="Synthetic opening archive",
-                    as_of=date(2026, 10, 14),
-                ),
-                coverage=None,
-                unknown_days_in_window=5,
-            )
-        ],
     )
 
 
@@ -554,164 +123,26 @@ async def _expect_tooltip_hidden(tooltip: Locator) -> None:
 
 
 @pytest.fixture(scope="module")
-def dashboard_url() -> Iterator[str]:
+def dashboard_url(runfiles: Runfiles) -> Iterator[str]:
+    ui_dir = Path(str(runfiles.root() / "ducktape/finance/plaid/spend/ui/dist/index.html")).parent
     app = FastAPI()
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(_UI_DIR / "index.html")
+        return FileResponse(ui_dir / "index.html")
 
-    def example_full_reversal_pair() -> ReversalPair:
-        return ReversalPair(
-            id="example-full-reversal",
-            description="Synthetic example of a fully reversed purchase.",
-            original=AllOf(
-                conditions=[
-                    NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
-                    AmountExact(value="120.00"),
-                    DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
-                ]
-            ),
-            reversal=AllOf(
-                conditions=[
-                    NameContains(field="name", substring="EXAMPLE OWN ACCOUNT REVERSAL"),
-                    AmountExact(value="-120.00"),
-                    DateRange(start=date(2026, 10, 12), end=date(2026, 10, 12)),
-                ]
-            ),
-        )
-
-    def example_unresolved_reversal_pair() -> ReversalPair:
-        return ReversalPair(
-            id="example-reversal-needs-review",
-            description="Synthetic selector with no matching original transaction.",
-            original=AllOf(
-                conditions=[
-                    NameContains(field="name", substring="EXAMPLE MISSING ORIGINAL"),
-                    AmountExact(value="15.50"),
-                    DateRange(start=date(2026, 10, 7), end=date(2026, 10, 7)),
-                ]
-            ),
-            reversal=AllOf(
-                conditions=[
-                    NameContains(field="name", substring="EXAMPLE MISSING REVERSAL"),
-                    AmountExact(value="-15.50"),
-                    DateRange(start=date(2026, 10, 8), end=date(2026, 10, 8)),
-                ]
-            ),
-        )
-
-    def example_allowance(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> AllowanceView:
-        today = date(2026, 10, 15)
-        estimate_period_id = estimate_period_id or PeriodId.ROLLING_7D
-        activation = today if warmup else date(2026, 10, 1)
-        spend_amounts = {
-            PeriodId.CREDIT_CYCLE: 55000,
-            PeriodId.CALENDAR_MONTH: 55000,
-            PeriodId.YEAR_TO_DATE: 55000,
-            PeriodId.ROLLING_7D: 8750,
-            PeriodId.ROLLING_30D: 50000,
-        }
-        spend_periods = []
-        for period_id, amount in spend_amounts.items():
-            period = Period.for_id(period_id, today, activation)
-            spend_periods.append(
-                AllowanceSpendPeriod(
-                    period=period, counted_from=max(period.start, activation), spend_minor_units=0 if warmup else amount
-                )
-            )
-        return AllowanceView(
-            status=Status.ACTIVE,
-            time_zone="UTC",
-            currency="USD",
-            monthly_minor_units=70000,
-            activation_at=activation,
-            available_minor_units=70000 if warmup else 20000,
-            next_credit_at=datetime(2026, 10, 25, tzinfo=UTC),
-            posted_minor_units=0 if warmup else 52500,
-            pending_minor_units=0 if warmup else 2500,
-            review_minor_units=0 if warmup else 1500,
-            review_transaction_count=0 if warmup else 2,
-            unmatched_refunds_minor_units=0,
-            spend_periods=spend_periods,
-            recorded_pace_periods=[
-                RecordedPacePeriod(
-                    period=Period.for_id(period_id, today),
-                    observed_daily_minor_units=None if warmup else observed,
-                    unmatched_charges=UnmatchedCharges(
-                        count=0 if warmup else 2, amount_minor_units=0 if warmup else 300
-                    ),
-                )
-                for period_id, observed in ((PeriodId.ROLLING_7D, 1250), (PeriodId.ROLLING_30D, 1000))
-            ],
-            forecast=ForecastView(
-                basis_period=Period.for_id(estimate_period_id, today),
-                daily_pace_minor_units=None
-                if warmup
-                else (1250 if estimate_period_id == PeriodId.ROLLING_7D else 1000),
-                projected_cycle_end_minor_units=None
-                if warmup
-                else (7500 if estimate_period_id == PeriodId.ROLLING_7D else 10000),
-                estimated_exhaustion_at=None if warmup else datetime(2026, 10, 31, tzinfo=UTC),
-                alert_state=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
-            ),
-            spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
-            last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
-            prior_carry_minor_units=0 if warmup else 5000,
-            note="Provisional: Reversal pair example-reversal-needs-review: "
-            "Original selector matched 0 retained transactions; exactly one is required.",
-        )
-
-    @app.get("/api/v1/view", response_model=SpendView)
-    def view(warmup: bool = False, estimate_period_id: EstimatePeriodId | None = None) -> SpendView:
-        synced = datetime(2026, 10, 15, 11, tzinfo=UTC)
-        return SpendView(
-            generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
-            allowance=example_allowance(warmup, estimate_period_id),
-            cards=[
-                CardView(
-                    account_id="synthetic-card",
-                    label="Example card",
-                    account_name="Example card",
-                    mask="0000",
-                    institution_name="Sample Bank",
-                    currency="USD",
-                    statement_period=StatementCycle(start=date(2026, 10, 1), through=date(2026, 10, 15)),
-                    alert_state=AlertState.NORMAL,
-                    alert_threshold_percent=None,
-                    spend_minor_units=22000,
-                    limit_minor_units=100000,
-                    spend_percent=Decimal(22),
-                    pending_minor_units=1000,
-                    posted_minor_units=21000,
-                    last_synced_at=synced,
-                ),
-                CardView(
-                    account_id="synthetic-new-card",
-                    label="New example card",
-                    account_name="New example card",
-                    mask="1111",
-                    institution_name="Sample Credit Union",
-                    currency="USD",
-                    statement_period=ProvisionalCardPeriod(start=date(2026, 10, 10), through=date(2026, 10, 15)),
-                    alert_state=AlertState.UNAVAILABLE,
-                    alert_threshold_percent=None,
-                    spend_minor_units=3900,
-                    limit_minor_units=100000,
-                    spend_percent=None,
-                    pending_minor_units=0,
-                    posted_minor_units=3900,
-                    last_synced_at=synced,
-                ),
-            ],
-        )
+    app.add_api_route("/api/v1/view", dashboard.spend_view, methods=["GET"], response_model=SpendView)
+    app.add_api_route(
+        "/api/v1/configuration", dashboard.configuration, methods=["GET"], response_model=SpendConfigurationView
+    )
+    app.add_api_route("/api/v1/transactions", transactions.view, methods=["GET"], response_model=SpendTransactionsView)
 
     @app.get("/api/v1/events")
     async def events(estimate_period_id: EstimatePeriodId | None = None, warmup: bool = False) -> StreamingResponse:
         async def updates() -> AsyncIterator[str]:
             yield (
                 f"event: view\ndata: "
-                f"{json.dumps(view(warmup=warmup, estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
+                f"{json.dumps(dashboard.spend_view(warmup=warmup, estimate_period_id=estimate_period_id).model_dump(mode='json'))}\n\n"
             )
             while True:
                 await asyncio.sleep(60)
@@ -719,437 +150,11 @@ def dashboard_url() -> Iterator[str]:
 
         return StreamingResponse(updates(), media_type="text/event-stream")
 
-    @app.get("/api/v1/configuration", response_model=SpendConfigurationView)
-    def configuration() -> SpendConfigurationView:
-        return SpendConfigurationView(
-            time_zone="UTC",
-            cards=[
-                CardConfigurationView(
-                    label="Example card", enabled=True, limit_minor_units=None, alert_threshold_percent=None
-                )
-            ],
-            allowance=AllowanceConfigurationView(
-                monthly_minor_units=70000,
-                activation_at=date(2026, 10, 1),
-                currency="USD",
-                spending_account_count=1,
-                max_sync_age_hours=72,
-                forecast_basis_period_id=PeriodId.ROLLING_7D,
-                rules=[
-                    Rule(
-                        condition=AllOf(
-                            conditions=[
-                                NameContains(field="name", substring="EXAMPLE FUNDING"),
-                                DateRange(start=date(2026, 10, 3), end=date(2026, 10, 3)),
-                            ]
-                        ),
-                        kind=Kind.EXCLUDED,
-                        scope=RuleScope.ONE_OFF,
-                        id="example-funding-transfer",
-                        description="Own-account funding leg, confirmed by the owner 2026-10-04.",
-                    ),
-                    Rule(
-                        condition=AllOf(
-                            conditions=[
-                                AmountSign(sign="negative"),
-                                AnyOf(
-                                    conditions=[
-                                        NamePrefix(field="name", prefix="EXAMPLE"),
-                                        FieldExact(field="merchant_category_code", value="5812"),
-                                    ]
-                                ),
-                            ]
-                        ),
-                        kind=Kind.REVIEW,
-                        analysis_category="refund_review",
-                        description="Unverified credit; inspect the earlier purchase before netting it.",
-                    ),
-                ],
-                analysis_categories={
-                    "unclassified": AnalysisCategory(label="Unclassified", color="#D97706"),
-                    "refund_review": AnalysisCategory(label="Refund review", color="#B45309"),
-                    "shipping": AnalysisCategory(label="Document shipping", color="#0F766E"),
-                    "travel": AnalysisCategory(label="Holiday travel", color="#7C3AED"),
-                },
-                reversal_pairs=[example_full_reversal_pair(), example_unresolved_reversal_pair()],
-            ),
-        )
-
-    @app.get("/api/v1/transactions", response_model=SpendTransactionsView)
-    def transactions(period: TransactionPeriodId = PeriodId.ROLLING_30D) -> SpendTransactionsView:
-        today = date(2026, 10, 15)
-        rows = [
-            SpendTransactionRow(
-                date=date(2026, 10, 15),
-                account_label="Example card",
-                name="EXAMPLE CAFE PURCHASE",
-                merchant_name="Example Cafe",
-                amount_minor_units=1500,
-                currency="USD",
-                pending=True,
-                allowance_in_scope=True,
-                disposition=Disposition.COUNTED,
-                rule_number=None,
-                rule=None,
-                allowance_minor_units=1500,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=1500)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=1500,
-                statement_reason=StatementReason.COUNTED,
-                pfc_primary="FOOD_AND_DRINK",
-                pfc_detailed="FOOD_AND_DRINK_COFFEE",
-                merchant_category_code="5812",
-                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 14),
-                account_label="Example card",
-                name="UPS SHIPPING",
-                merchant_name="UPS",
-                amount_minor_units=1850,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.FIXED,
-                rule_number=2,
-                effective_kind=Kind.FIXED,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="UPS"),
-                    kind=Kind.FIXED,
-                    analysis_category="shipping",
-                    description="Required document shipping for a synthetic example.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=1850,
-                statement_reason=StatementReason.COUNTED,
-                pfc_primary="TRANSPORTATION",
-                pfc_detailed="TRANSPORTATION_SHIPPING",
-                merchant_category_code="4215",
-                category=AnalysisCategoryView(id="shipping", label="Document shipping", color="#0F766E"),
-                counterparties=[
-                    PlaidCounterparty(
-                        name="Example Shipping",
-                        type="merchant",
-                        confidence_level="HIGH",
-                        entity_id="synthetic-merchant",
-                        website="https://example.invalid/shipping",
-                    ),
-                    PlaidCounterparty(name="Example Marketplace", type="marketplace"),
-                ],
-                details=PlaidTransactionDetails(
-                    account_id="synthetic-account",
-                    transaction_id="synthetic-transaction",
-                    amount=Decimal("18.50"),
-                    iso_currency_code="USD",
-                    original_description="EXAMPLE SHIPPING PAYMENT",
-                    authorized_date=date(2026, 10, 13),
-                    payment_channel="in store",
-                    location=PlaidTransactionLocation(city="Example City", region="CA", country="US"),
-                    payment_meta=PlaidPaymentMeta(reference_number="synthetic-reference"),
-                    personal_finance_category=PlaidPersonalFinanceCategory(
-                        primary="TRANSPORTATION", detailed="TRANSPORTATION_SHIPPING", confidence_level="HIGH"
-                    ),
-                ),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 13),
-                account_label="Example card",
-                name="EXAMPLE REFUND",
-                merchant_name=None,
-                amount_minor_units=-4200,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.HELD_REFUND,
-                rule_number=1,
-                effective_kind=Kind.REVIEW,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE"),
-                    kind=Kind.REVIEW,
-                    description="Confirm the purchase before netting this refund.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=-4200,
-                statement_reason=StatementReason.COUNTED,
-                pfc_primary="GENERAL_MERCHANDISE",
-                pfc_detailed="GENERAL_MERCHANDISE_OTHER",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 11),
-                account_label="Example checking",
-                name="EXAMPLE OWN ACCOUNT TRANSFER",
-                merchant_name=None,
-                amount_minor_units=12_000,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.REVERSED,
-                rule_number=3,
-                effective_kind=Kind.EXCLUDED,
-                reversal_pair=example_full_reversal_pair(),
-                rule=Rule(
-                    condition=AllOf(
-                        conditions=[
-                            NameContains(field="name", substring="EXAMPLE OWN ACCOUNT TRANSFER"),
-                            DateRange(start=date(2026, 10, 11), end=date(2026, 10, 11)),
-                        ]
-                    ),
-                    kind=Kind.EXCLUDED,
-                    scope=RuleScope.ONE_OFF,
-                    id="example-own-account-leg",
-                    description="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TRANSFER_OUT",
-                pfc_detailed="TRANSFER_OUT_OTHER",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 12),
-                account_label="Example checking",
-                name="EXAMPLE OWN ACCOUNT REVERSAL",
-                merchant_name=None,
-                amount_minor_units=-12_000,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.REVERSED,
-                rule_number=2,
-                effective_kind=Kind.EXCLUDED,
-                reversal_pair=example_full_reversal_pair(),
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE OWN ACCOUNT"),
-                    kind=Kind.REVIEW,
-                    description="Synthetic rule classification retained as context for the reversal.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TRANSFER_IN",
-                pfc_detailed="TRANSFER_IN_OTHER",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 2),
-                account_label="Example checking",
-                name="EXAMPLE TRAVEL PURCHASE",
-                merchant_name="Example Travel",
-                amount_minor_units=53500,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.COUNTED,
-                rule_number=3,
-                effective_kind=Kind.FLEXIBLE,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE TRAVEL"),
-                    kind=Kind.FLEXIBLE,
-                    analysis_category="travel",
-                    description="Synthetic discretionary trip purchase.",
-                ),
-                allowance_minor_units=53500,
-                pace_effects=[
-                    PaceEffect(
-                        period_id=period_id, amount_minor_units=53500 if period_id == PeriodId.ROLLING_30D else 0
-                    )
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TRAVEL",
-                pfc_detailed="TRAVEL_OTHER",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="travel", label="Holiday travel", color="#7C3AED"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 10),
-                account_label="Example checking",
-                name="EXAMPLE OWN TRANSFER DEBIT",
-                merchant_name=None,
-                amount_minor_units=12_500,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.EXCLUDED,
-                effective_kind=Kind.EXCLUDED,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
-                    kind=Kind.EXCLUDED,
-                    analysis_category="own_transfers",
-                    description="Synthetic own-account transfer excluded from the allowance.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TRANSFER_OUT",
-                pfc_detailed="TRANSFER_OUT_OTHER",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 11),
-                account_label="Example checking",
-                name="EXAMPLE OWN TRANSFER CREDIT",
-                merchant_name=None,
-                amount_minor_units=-12_500,
-                currency="USD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.EXCLUDED,
-                effective_kind=Kind.EXCLUDED,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
-                    kind=Kind.EXCLUDED,
-                    analysis_category="own_transfers",
-                    description="Synthetic own-account transfer excluded from the allowance.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TRANSFER_IN",
-                pfc_detailed="TRANSFER_IN_OTHER",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 12),
-                account_label="Example checking",
-                name="EXAMPLE TAX PAYMENT",
-                merchant_name=None,
-                amount_minor_units=41_500,
-                currency="USD",
-                pending=True,
-                allowance_in_scope=True,
-                disposition=Disposition.EXCLUDED,
-                effective_kind=Kind.EXCLUDED,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
-                    kind=Kind.EXCLUDED,
-                    analysis_category="taxes",
-                    description="Synthetic tax payment accounted for separately.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TAXES",
-                pfc_detailed="TAXES_OTHER_TAXES",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
-            ),
-            SpendTransactionRow(
-                date=date(2026, 10, 13),
-                account_label="Example checking",
-                name="EXAMPLE TAX PAYMENT CAD",
-                merchant_name=None,
-                amount_minor_units=7_200,
-                currency="CAD",
-                pending=False,
-                allowance_in_scope=True,
-                disposition=Disposition.EXCLUDED,
-                effective_kind=Kind.EXCLUDED,
-                rule=Rule(
-                    condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
-                    kind=Kind.EXCLUDED,
-                    analysis_category="taxes",
-                    description="Synthetic foreign-currency tax payment accounted for separately.",
-                ),
-                allowance_minor_units=0,
-                pace_effects=[
-                    PaceEffect(period_id=period_id, amount_minor_units=0)
-                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
-                ],
-                statement_minor_units=None,
-                statement_reason=None,
-                pfc_primary="TAXES",
-                pfc_detailed="TAXES_OTHER_TAXES",
-                merchant_category_code=None,
-                category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
-            ),
-        ]
-        shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 10, 1))]
-        return SpendTransactionsView(
-            generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
-            requested_period_id=period,
-            period=Period.for_id(PeriodId(period), today, date(2026, 10, 1)),
-            summary=TransactionPeriodSummary(
-                transaction_count=len(shown),
-                net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in shown),
-                unmatched_charge_count=1,
-                unmatched_charge_minor_units=1500,
-                excluded_flows=[
-                    ExcludedFlowSummary(
-                        category=AnalysisCategoryView(
-                            id="own_transfers", label="Own-account transfers", color="#64748B"
-                        ),
-                        currency="USD",
-                        debit_minor_units=12_500,
-                        credit_minor_units=12_500,
-                        transaction_count=2,
-                        pending_count=0,
-                    ),
-                    ExcludedFlowSummary(
-                        category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
-                        currency="USD",
-                        debit_minor_units=41_500,
-                        credit_minor_units=0,
-                        transaction_count=1,
-                        pending_count=1,
-                    ),
-                    ExcludedFlowSummary(
-                        category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
-                        currency="CAD",
-                        debit_minor_units=7_200,
-                        credit_minor_units=0,
-                        transaction_count=1,
-                        pending_count=0,
-                    ),
-                ],
-            ),
-            allowance=example_allowance(),
-            rows=shown,
-        )
-
     @app.get("/api/v1/sustainability/windows")
-    def sustainability() -> SustainabilityDashboard:
-        return _sustainability_dashboard(*(_example_sustainability_window(days) for days in (30, 90, 365)))
+    def sustainability_windows() -> SustainabilityDashboard:
+        return sustainability.dashboard(*(sustainability.window(days) for days in (30, 90, 365)))
 
-    app.mount("/static", StaticFiles(directory=_UI_DIR))
+    app.mount("/static", StaticFiles(directory=ui_dir))
     with serve_app_sync(app) as url:
         yield url
 
@@ -1181,17 +186,6 @@ async def test_spending_decision_render(
 ) -> None:
     await page.set_viewport_size({"width": width, "height": height})
 
-    async def serve_pre_activation_history(route: Route) -> None:
-        response = await route.fetch()
-        transactions = await response.json()
-        if transactions["requested_period_id"] == "rolling_30d":
-            historical = next(row for row in transactions["rows"] if row["name"] == "EXAMPLE TRAVEL PURCHASE")
-            historical["date"] = "2026-09-30"
-            historical["disposition"] = "pace_only"
-            historical["allowance_minor_units"] = 0
-        await route.fulfill(response=response, json=transactions)
-
-    await page.route("**/api/v1/transactions*", serve_pre_activation_history)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
@@ -1210,7 +204,7 @@ async def test_spending_decision_render(
             );
         }"""
     )
-    await expect(page.get_by_role("alert").get_by_text("2 charges ($15) need review")).to_have_count(1)
+    await expect(page.get_by_role("alert").get_by_text("1 charge ($15) need review")).to_have_count(1)
     await expect(page.get_by_role("heading", name="Can I afford this?")).to_have_count(1)
     pair_review = page.get_by_role("alert").filter(has_text="Allowance needs review")
     await expect(pair_review.get_by_text("example-reversal-needs-review", exact=False)).to_be_visible()
@@ -1222,8 +216,9 @@ async def test_spending_decision_render(
     await expect(page.locator('span[title="$200.00"]').first).to_be_attached()
     await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Provisional leash ~$23 / day.", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Unmatched in selected window: 2 ($3)", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("Unmatched in selected window: 1 ($15)", exact=False)).to_have_count(1)
     await expect(page.get_by_text("$75", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional card total since", exact=False)).to_have_count(1)
     await expect(page.get_by_text("Includes purchases outside the allowance", exact=False)).to_have_count(1)
@@ -1246,7 +241,7 @@ async def test_spending_decision_render(
     )
     await page.get_by_text("7 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$15 flexible spending over 7 days; average $2 per day; leash reference $23 per day."
+        "$88 flexible spending over 7 days; average $13 per day; leash reference $23 per day."
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
@@ -1364,14 +359,19 @@ async def test_review_rule_configuration_render(
     await expect(rule_notes.locator("summary")).to_be_visible()
     await rule_notes.locator("summary").click()
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
-    await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
-    await expect(page.get_by_text("One-off", exact=True)).to_have_count(1)
-    await page.get_by_text("example-funding-transfer", exact=True).wait_for()
+    await expect(page.get_by_text("Review", exact=True)).to_have_count(2)
+    await expect(page.get_by_text('amount < 0 && (starts_with(name, "EXAMPLE") ||', exact=False)).to_have_count(1)
+    await expect(page.get_by_text("One-off", exact=True)).to_have_count(2)
+    one_off_id = page.get_by_text("example-funding-transfer", exact=True)
+    await one_off_id.wait_for()
+    # Long selectors need a readable column even when the badges wrap on mobile.
+    one_off_box = await one_off_id.bounding_box()
+    assert one_off_box is not None
+    assert one_off_box["width"] >= 160
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
     ).to_have_count(1)
-    await expect(page.get_by_text("Date is 2026-10-03", exact=False)).to_have_count(1)
+    await expect(page.get_by_text('date == "2026-10-03"', exact=False)).to_have_count(1)
     await page.get_by_text("Full reversal pairs", exact=True).wait_for()
     await page.get_by_text("example-full-reversal", exact=True).wait_for()
     await page.get_by_text("example-reversal-needs-review", exact=True).wait_for()
@@ -1388,22 +388,28 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Credit cycle", exact=True).click()
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
-        await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(11)
+        original = rows.locator("tbody.transaction-rows").filter(
+            has_text="UPS · Example Shipping · Example Marketplace"
+        )
+        await original.locator("tr[data-transaction-row]").click()
+        await expect(rows.locator("tbody tr")).to_have_count(14)
     else:
-        await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
-    await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
-    await expect(rows.get_by_text("UPS · Example Shipping · Example Marketplace", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Counterparties:", exact=False)).to_have_count(0)
-    await expect(rows.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
-    await expect(rows.get_by_text("Card statement: Counted in card cycle", exact=False).first).to_be_attached()
-    await _expand_accordion(rows.get_by_role("button", name="Plaid source fields"))
-    await rows.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
-    await expect(rows.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("City: Example City", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
+        original = rows.locator(".mantine-Accordion-item").filter(
+            has_text="UPS · Example Shipping · Example Marketplace"
+        )
+        await _expand_accordion(original.get_by_role("button", name="UPS", exact=False))
+    await original.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    await expect(original.get_by_text("UPS · Example Shipping · Example Marketplace", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Counterparties:", exact=False)).to_have_count(0)
+    await expect(original.get_by_text("Example Shipping · merchant", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Mandatory · outside allowance", exact=False)).to_have_count(1)
+    await expect(original.get_by_text("Card statement: Counted in card cycle", exact=False)).to_be_attached()
+    await _expand_accordion(original.get_by_role("button", name="Plaid source fields"))
+    await original.get_by_text("Plaid amount (major units): 18.50", exact=True).wait_for()
+    await expect(original.get_by_text("Original description: EXAMPLE SHIPPING PAYMENT", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("City: Example City", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Reference number: synthetic-reference", exact=True)).to_have_count(1)
+    await expect(original.get_by_text("Personal detail: TRANSPORTATION_SHIPPING", exact=True)).to_have_count(1)
 
 
 @pytest.mark.asyncio
@@ -1418,7 +424,7 @@ async def test_transaction_explanations_render(
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
     await expect(page.get_by_role("heading", name="Transactions", level=1)).to_have_count(1)
     await expect(rows.get_by_text("Refund held", exact=True)).to_have_count(1)
-    await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(2)
     await expect(rows.get_by_text("Holiday travel", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Full reversal", exact=True)).to_have_count(2)
     await expect(rows.locator('[data-category-id="travel"]')).to_have_count(1)
@@ -1430,11 +436,11 @@ async def test_transaction_explanations_render(
     await expect(tax_flow.get_by_text("$415.00", exact=True)).to_have_count(1)
     await expect(tax_flow.get_by_text("$0.00", exact=True)).to_have_count(1)
     await expect(tax_flow.get_by_text("1 pending", exact=True)).to_have_count(1)
-    cad_tax_flow = page.get_by_role("button", name="Filter transactions to Taxes, CAD")
-    await expect(cad_tax_flow).to_contain_text("72.00")
+    await expect(rows.get_by_text("Other currency", exact=True)).to_have_count(1)
     await expect(page.get_by_text("can still be real cash flows", exact=False)).to_be_visible()
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(10)
+        await expect(rows.locator("tbody tr")).to_have_count(14)
+    await page.get_by_text("Showing 14 of 14", exact=True).wait_for()
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
@@ -1447,10 +453,12 @@ async def test_transaction_explanations_render(
         expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
     )
     await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 13", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
-    await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
+    await expect(
+        rows.get_by_text("Unverified credit; inspect the earlier purchase before netting it.")
+    ).not_to_be_visible()
     view.errors.assert_none(context="Spend")
     review = f"transactions-review-{width}.png"
     await view.capture(
@@ -1459,7 +467,7 @@ async def test_transaction_explanations_render(
 
     await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
     await transfer_flow.click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 13", exact=True).wait_for()
     await expect(rows.get_by_text("EXAMPLE OWN TRANSFER DEBIT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("EXAMPLE OWN TRANSFER CREDIT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
@@ -1476,26 +484,26 @@ async def test_transaction_explanations_render(
     )
 
     await page.get_by_label("Transaction filter").get_by_text("Allowance effect", exact=True).click()
-    await page.get_by_text("Showing 0 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 0 of 13", exact=True).wait_for()
     await page.get_by_text("Clear exclusion filter", exact=True).click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 3 of 13", exact=True).wait_for()
     await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
 
     await tax_flow.click()
-    await page.get_by_text("Showing 1 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 1 of 13", exact=True).wait_for()
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT CAD", exact=True)).to_have_count(0)
     await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 0 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 0 of 13", exact=True).wait_for()
     await page.get_by_text("Clear exclusion filter", exact=True).click()
-    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 13", exact=True).wait_for()
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(0)
 
     await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
     await page.get_by_role("button", name="Filter transactions to Taxes, USD").click()
     await page.get_by_text("Clear exclusion filter", exact=True).wait_for()
     await page.get_by_text("7 days", exact=True).click()
-    await page.get_by_text("Showing 9 of 9", exact=True).wait_for()
+    await page.get_by_text("Showing 12 of 12", exact=True).wait_for()
     await expect(page.get_by_text("Clear exclusion filter", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(1)
     view.errors.assert_none(context="Spend")
@@ -1585,8 +593,9 @@ async def test_transaction_explanations_dark_theme(page: Page, view: VisualPage,
     await _select_spend_page(page, "Transactions")
     rows = page.locator(".mantine-Accordion-root")
     await rows.get_by_text("Example Cafe", exact=True).wait_for()
-    await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
-    await page.get_by_text("Required document shipping for a synthetic example.").wait_for()
+    original = rows.locator(".mantine-Accordion-item").filter(has_text="UPS · Example Shipping · Example Marketplace")
+    await _expand_accordion(original.get_by_role("button", name="UPS", exact=False))
+    await original.get_by_text("Required document shipping for a synthetic example.").wait_for()
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = "transactions-dark-390.png"
@@ -1754,11 +763,11 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
     async def serve_windows(route: Route) -> None:
-        yearly = _with_sustainability_history(_example_sustainability(window_days=365), [])
+        yearly = sustainability.with_history(sustainability.view(window_days=365), [])
         await route.fulfill(
-            json=_sustainability_dashboard(
-                _example_sustainability_window(30), _example_sustainability(), yearly
-            ).model_dump(mode="json")
+            json=sustainability.dashboard(sustainability.window(30), sustainability.view(), yearly).model_dump(
+                mode="json"
+            )
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_windows)
@@ -1783,10 +792,10 @@ async def test_sustainability_shared_history_tooltip_dates(
 ) -> None:
     async def serve_single_endpoint(route: Route) -> None:
         windows = [
-            _with_sustainability_history(window, window.history[-1:])
-            for window in (_example_sustainability_window(days) for days in (30, 90, 365))
+            sustainability.with_history(window, window.history[-1:])
+            for window in (sustainability.window(days) for days in (30, 90, 365))
         ]
-        await route.fulfill(json=_sustainability_dashboard(*windows).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(*windows).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
     await page.set_viewport_size({"width": width, "height": 960})
@@ -1895,9 +904,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_partial(route: Route) -> None:
-        await route.fulfill(
-            json=_sustainability_dashboard(_example_sustainability_partial_window()).model_dump(mode="json")
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.partial_window()).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_partial)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1923,9 +930,7 @@ async def test_sustainability_account_history_coverage_render(
 ) -> None:
     async def serve_partial_coverage(route: Route) -> None:
         await route.fulfill(
-            json=_sustainability_dashboard(_example_sustainability_with_partial_account_history()).model_dump(
-                mode="json"
-            )
+            json=sustainability.dashboard(sustainability.with_partial_account_history()).model_dump(mode="json")
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_partial_coverage)
@@ -1980,9 +985,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
 ) -> None:
     async def serve_historical_gap(route: Route) -> None:
         await route.fulfill(
-            json=_sustainability_dashboard(_example_sustainability_with_historical_coverage_gap()).model_dump(
-                mode="json"
-            )
+            json=sustainability.dashboard(sustainability.with_historical_coverage_gap()).model_dump(mode="json")
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_historical_gap)
@@ -2009,9 +1012,11 @@ async def test_sustainability_history_survives_current_coverage_gap(
     )
 
 
-async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
+async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualPage, dashboard_url: str) -> None:
+    touch_page = touch_view.page
+
     async def serve_ready(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability()).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(sustainability.view()).model_dump(mode="json"))
 
     await touch_page.route("**/api/v1/sustainability/windows", serve_ready)
     await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -2024,7 +1029,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
     await expect(tooltip).to_contain_text("Scenario 1: 3% draw rate")
     await expect(tooltip).to_contain_text("Supported monthly spending (USD/month):")
     await expect(tooltip).to_contain_text("After 12% modeled withdrawal tax.")
-    await VisualPage(touch_page, output_dir=undeclared_outputs_dir(), title="Spend").capture(
+    await touch_view.capture(
         "sustainability-scenario-touch-tooltip",
         label="Scenario details opened by tapping the 3% marker",
         full_page=True,
@@ -2044,7 +1049,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
 
 async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
     async def serve_low_draw(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability("low_draw")).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(sustainability.view("low_draw")).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_low_draw)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -2065,9 +1070,7 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     page: Page, view: VisualPage, dashboard_url: str
 ) -> None:
     async def serve_tax_unmodeled(route: Route) -> None:
-        await route.fulfill(
-            json=_sustainability_dashboard(_example_sustainability("tax_unmodeled")).model_dump(mode="json")
-        )
+        await route.fulfill(json=sustainability.dashboard(sustainability.view("tax_unmodeled")).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_tax_unmodeled)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -2084,8 +1087,8 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     await expect(tooltip).to_contain_text("Spending comparison unavailable; withdrawal taxes are not modeled.")
     await page.mouse.move(0, 0)
     history = page.get_by_role("region", name="Spending and funding history")
-    await expect(history.get_by_role("img")).to_have_count(0)
-    await history.get_by_label("Include withdrawal taxes in dollar amounts").uncheck()
+    await expect(history.get_by_label("Include withdrawal taxes in dollar amounts")).to_be_disabled()
+    await expect(history.get_by_label("Include withdrawal taxes in dollar amounts")).not_to_be_checked()
     await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
     await expect(history.get_by_text("Reference withdrawal scenarios", exact=True)).to_have_count(0)
     await view.capture(
@@ -2102,9 +1105,9 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_provisional(route: Route) -> None:
-        provisional = _example_sustainability("provisional")
-        provisional = _with_sustainability_history(provisional, provisional.history[-1:])
-        await route.fulfill(json=_sustainability_dashboard(provisional).model_dump(mode="json"))
+        provisional = sustainability.view("provisional")
+        provisional = sustainability.with_history(provisional, provisional.history[-1:])
+        await route.fulfill(json=sustainability.dashboard(provisional).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_provisional)
     await page.set_viewport_size({"width": width, "height": height})
@@ -2144,7 +1147,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
     )
 
     async def serve_historical_provisional(route: Route) -> None:
-        historical = _example_sustainability()
+        historical = sustainability.view()
         latest = historical.history[-1]
         provisional_point = SustainabilityHistoryPoint(
             date=latest.date,
@@ -2154,7 +1157,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
             spending_draw_rate=latest.spending_draw_rate,
             tax_adjusted_draw_rate=latest.tax_adjusted_draw_rate,
         )
-        historical = _with_sustainability_history(
+        historical = sustainability.with_history(
             historical,
             [provisional_point],
             issues=[
@@ -2162,7 +1165,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
                 "before relying on this point."
             ],
         )
-        await route.fulfill(json=_sustainability_dashboard(historical).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(historical).model_dump(mode="json"))
 
     await page.unroute("**/api/v1/sustainability/windows", serve_provisional)
     await page.route("**/api/v1/sustainability/windows", serve_historical_provisional)
@@ -2186,21 +1189,38 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
 @pytest.mark.parametrize("variant", ["stale", "unavailable"])
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_sustainability_stale_and_unavailable_render(
-    page: Page, view: VisualPage, dashboard_url: str, variant: str, width: int, height: int
+    page: Page, view: VisualPage, dashboard_url: str, variant: Literal["stale", "unavailable"], width: int, height: int
 ) -> None:
     async def serve_variant(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability(variant)).model_dump(mode="json"))
+        await route.fulfill(json=sustainability.dashboard(sustainability.view(variant)).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_variant)
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
-    await page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False).wait_for()
+    await page.get_by_role("alert").get_by_text("Withdrawal rate unavailable", exact=False).wait_for()
     await expect(page.get_by_text("Portfolio used in the estimate", exact=True)).to_be_visible()
     await expect(page.get_by_text("Valuation unavailable", exact=True)).to_be_visible()
     await expect(page.get_by_text("ANNUALIZED SPENDING", exact=True)).to_be_visible()
     await expect(page.get_by_text("$49,511", exact=True)).to_be_visible()
     await expect(page.locator('[role="img"][aria-label*="gauge"]')).to_have_count(0)
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
+    await expect(history.get_by_text("Portfolio value is unavailable or non-positive", exact=False)).to_be_visible()
+    await expect(history.get_by_text("Reference withdrawal scenarios", exact=True)).to_have_count(0)
+    await history.get_by_label("Include withdrawal taxes in dollar amounts").uncheck()
+    await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
+    await history.get_by_label("Include withdrawal taxes in dollar amounts").check()
+    if width == 1280:
+        canvas = history.get_by_role("img", name="Annual funding including taxes by day")
+        bounds = await canvas.bounding_box()
+        assert bounds is not None
+        await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+        tooltip = page.get_by_role("tooltip", name="History ending October 13, 2026")
+        await expect(tooltip).to_contain_text("Annual spending excluding taxes: $48,500")
+        await expect(tooltip).to_contain_text("Annual funding including taxes: $55,114")
+        await expect(tooltip).to_contain_text("Required withdrawal rate including taxes: unavailable")
+        await page.mouse.move(0, 0)
     if variant == "stale":
         await page.get_by_text("Synthetic valuation has not refreshed recently.", exact=True).wait_for()
         await expect(page.get_by_text("46 days old", exact=False)).to_be_visible()
@@ -2256,9 +1276,9 @@ async def test_contextual_help_touch(touch_page: Page, dashboard_url: str) -> No
     await _expect_tooltip_hidden(tooltip)
 
 
-async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
+async def test_accordion_readiness_ignores_unrelated_animations(page: Page, runfiles: Runfiles) -> None:
     await page.set_content(
-        get_required_path("_main/finance/plaid/spend/ui/accordion-readiness-fixture.html").read_text()
+        (runfiles.root() / "ducktape/finance/plaid/spend/ui/accordion-readiness-fixture.html").read_text()
     )
     await _expand_accordion(page.get_by_role("button", name="Expand"))
     await expect(page.locator("#panel")).to_have_css("height", "120px")

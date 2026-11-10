@@ -2,7 +2,7 @@
 //! assumptions of docs/design.md §"Conditions on the input chunk"
 //! (A1 `eval`, A3 internal dynamic `import()`, A5 cheap
 //! `import.meta` reflection shapes). Runs during chunk analysis
-//! ([`crate::compute_chunk_analysis`]) right next to the A2
+//! ([`crate::compute_chunk_facts`]) right next to the A2
 //! top-level-await bail, before any quotient or lowering work.
 //!
 //! The scan is deliberately partial — it enforces the cheap,
@@ -80,13 +80,13 @@ struct AdmissionViolation {
 /// spec does not override. Overridden violations print one notice line
 /// per check and description, naming every statement it suppressed;
 /// configured overrides that suppress nothing print a redundant-override
-/// warning (mirroring the redundant-purity-hint diagnostics).
+/// warning and are returned, for `spec lint`.
 pub(super) fn enforce_chunk_admission(
     chunk_id: &str,
     module: &Module,
     overrides: AdmissionOverrides,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<()> {
+) -> Result<Vec<AdmissionCheck>> {
     let violations = scan_admission_violations(module, resolve_dynamic_import);
     let (suppressed, fatal): (Vec<_>, Vec<_>) = violations
         .into_iter()
@@ -121,14 +121,16 @@ pub(super) fn enforce_chunk_admission(
              {statements}: {description}",
         );
     }
-    for check in overrides.iter() {
-        if !suppressed.iter().any(|violation| violation.check == check) {
-            eprintln!(
-                "warning: chunk {chunk_id}: admission override `{check}` is redundant — \
+    let redundant = overrides
+        .iter()
+        .filter(|check| !suppressed.iter().any(|violation| violation.check == *check))
+        .collect::<Vec<_>>();
+    for check in &redundant {
+        eprintln!(
+            "warning: chunk {chunk_id}: admission override `{check}` is redundant — \
                  the chunk has no {check} violation and the override is a no-op. \
                  Remove it from chunk_analysis_options.{chunk_id}.admission_overrides.",
-            );
-        }
+        );
     }
     if !fatal.is_empty() {
         let rendered = fatal
@@ -152,7 +154,7 @@ pub(super) fn enforce_chunk_admission(
             first = fatal[0].check,
         );
     }
-    Ok(())
+    Ok(redundant)
 }
 
 fn scan_admission_violations(
@@ -229,7 +231,7 @@ impl AdmissionScan<'_> {
             if arg.spread.is_some() {
                 return None;
             }
-            match &*arg.expr {
+            match arg.expr.unwrap_parens() {
                 Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().to_string()),
                 _ => None,
             }
@@ -491,10 +493,15 @@ mod tests {
             "./route.js" => DynamicImportTarget::OtherChunk,
             _ => DynamicImportTarget::External,
         };
-        assert_eq!(
-            scan_with_resolver("const f = () => import(\"./self.js\");\n", &resolver),
-            vec![(AdmissionCheck::A3DynamicImport, 0)]
-        );
+        for source in [
+            "const f = () => import(\"./self.js\");\n",
+            "const f = () => import((\"./self.js\"));\n",
+        ] {
+            assert_eq!(
+                scan_with_resolver(source, &resolver),
+                vec![(AdmissionCheck::A3DynamicImport, 0)]
+            );
+        }
         assert_eq!(
             scan_with_resolver(
                 "import(\"./route.js\");\nimport(\"https://cdn/x.js\");\n",

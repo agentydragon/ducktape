@@ -20,7 +20,7 @@ describe("Pod exec result presentation", () => {
       )
     );
     expect(view.querySelector(".agentplane-output-label")?.textContent).toContain("Output · 2 lines");
-    expect([...view.querySelectorAll(".agentplane-code-block .cm-line")].map((line) => line.textContent)).toEqual([
+    expect([...view.querySelectorAll(".ui-code-block .cm-line")].map((line) => line.textContent)).toEqual([
       "row one",
       "row two",
       "",

@@ -483,7 +483,11 @@ spec:
         name: grafana
         namespace: flux-system
       version: 1.x
+  install:
+    disableWait: true
   interval: 30m
+  upgrade:
+    disableWait: true
   values:
     alloy:
       configMap:
@@ -507,20 +511,19 @@ spec:
           memory: 256Mi
       storagePath: /var/lib/alloy-node
     controller:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/region
-                    operator: NotIn
-                    values:
-                      - roaming
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/roaming
+          operator: Equal
+          value: "true"
       type: daemonset
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 3
+        type: RollingUpdate
       volumes:
         extra:
           - hostPath:

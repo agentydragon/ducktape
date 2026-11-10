@@ -159,7 +159,7 @@ func TestDrainingRenewsAWatch(t *testing.T) {
 	if chunks := snapshot(t, stream); len(chunks) != 0 {
 		t.Errorf("snapshot of no Connections: %v", chunks)
 	}
-	close(s.gate.draining)
+	s.gate.drain()
 	if frame := recvFrame(t, stream); frame.GetReconnectRequired() == nil {
 		t.Errorf("frame %v, want reconnect_required", frame)
 	}

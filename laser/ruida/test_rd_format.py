@@ -1,0 +1,130 @@
+import pytest
+import pytest_bazel
+
+from laser.ruida.rd_format import (
+    RdJob,
+    RdLayer,
+    RdRect,
+    encode_hex,
+    encode_number,
+    encode_percent,
+    scramble_byte,
+    unscramble_byte,
+    unscramble_bytes,
+)
+
+
+def test_scramble_roundtrip():
+    """Every byte value survives a scramble -> unscramble round-trip."""
+    for b in range(256):
+        assert unscramble_byte(scramble_byte(b)) == b
+
+
+def test_scramble_known_values():
+    """Spot-check against values verified with jnweiger/ruida-laser."""
+    # 0x00 -> swap bits -> 0x00 -> XOR 0x88 -> 0x88 -> +1 -> 0x89
+    assert scramble_byte(0x00) == 0x89
+    # 0xFF -> swap bits -> 0xFF -> XOR 0x88 -> 0x77 -> +1 -> 0x78
+    assert scramble_byte(0xFF) == 0x78
+    assert unscramble_bytes(bytes([0x89, 0x78])) == bytes([0x00, 0xFF])
+
+
+def test_encode_number_100mm():
+    """100 mm encodes to 100000 µm as 5 bytes of 7-bit big-endian."""
+    # 100000 = 6 * 128**2 + 13 * 128 + 32, zero-padded to 5 bytes
+    assert encode_number(100.0) == bytes([0, 0, 6, 13, 32])
+
+
+def test_encode_number_zero():
+    assert encode_number(0.0) == bytes([0, 0, 0, 0, 0])
+
+
+@pytest.mark.parametrize(
+    ("percentage", "expected"),
+    [(100.0, bytes([0x7F, 0x7F])), (0.0, bytes([0, 0])), (50.0, bytes([0x3F, 0x7F]))],
+    ids=["100-percent", "0-percent", "50-percent"],
+)
+def test_encode_percent(percentage: float, expected: bytes) -> None:
+    # The 14-bit wire value truncates 8191.5 to 8191 at 50%, then splits into 7-bit halves.
+    assert encode_percent(percentage) == expected
+
+
+def test_encode_hex():
+    assert encode_hex("e7 03") == bytes([0xE7, 0x03])
+    assert encode_hex("d7  # EOF marker") == bytes([0xD7])
+
+
+def test_unscrambled_structure():
+    """Verify the unscrambled .rd file starts with known header and ends with D7."""
+    job = RdJob(
+        layers=[RdLayer(index=0, min_power_pct=50, max_power_pct=80, speed_mm_s=30)],
+        rects=[RdRect(layer_index=0, x_mm=5, y_mm=5, width_mm=20, height_mm=20)],
+    )
+    # Inspect the actual serialized file through the byte-level decoder.
+    raw = unscramble_bytes(job.to_bytes())
+
+    # Should start with D8 12 (red light on)
+    assert raw[0:2] == bytes([0xD8, 0x12])
+    # Should end with D7 (EOF)
+    assert raw[-1] == 0xD7
+
+    # Should contain the move opcode 0x88 and cut opcode 0xA8
+    assert 0x88 in raw
+    assert 0xA8 in raw
+
+
+def test_60_layers():
+    """Verify that 60+ layers work without error (beyond LightBurn's 30 limit)."""
+    layers = [RdLayer(index=i, min_power_pct=20, max_power_pct=80, speed_mm_s=100) for i in range(60)]
+    rects = [RdRect(layer_index=i, x_mm=i * 12.0, y_mm=0, width_mm=10, height_mm=10) for i in range(60)]
+    job = RdJob(layers=layers, rects=rects)
+    data = job.to_bytes()
+    assert len(data) > 0
+
+    # Verify raw structure has all 60 layers referenced
+    raw = unscramble_bytes(job.to_bytes())
+    # Layer 59 (0x3B) should appear in the header as a layer byte
+    assert bytes([59]) in raw
+
+
+def test_multi_rect_per_layer():
+    """Multiple rects on the same layer should all appear in the body."""
+    job = RdJob(
+        layers=[RdLayer(index=0, min_power_pct=50, max_power_pct=50, speed_mm_s=100)],
+        rects=[
+            RdRect(layer_index=0, x_mm=0, y_mm=0, width_mm=10, height_mm=10),
+            RdRect(layer_index=0, x_mm=20, y_mm=0, width_mm=10, height_mm=10),
+        ],
+    )
+    raw = unscramble_bytes(job.to_bytes())
+
+    # Count move commands (0x88) — should be 2 (one per rect)
+    move_count = sum(1 for i in range(len(raw)) if raw[i] == 0x88)
+    assert move_count == 2
+
+    # Count cut commands (0xA8) — should be 8 (4 sides x 2 rects)
+    cut_count = sum(1 for i in range(len(raw)) if raw[i] == 0xA8)
+    assert cut_count == 8
+
+
+def test_global_bbox_spans_all_rects():
+    """Global bounding box should encompass all rects across layers."""
+    job = RdJob(
+        layers=[
+            RdLayer(index=0, min_power_pct=50, max_power_pct=50, speed_mm_s=100),
+            RdLayer(index=1, min_power_pct=50, max_power_pct=50, speed_mm_s=100),
+        ],
+        rects=[
+            RdRect(layer_index=0, x_mm=10, y_mm=20, width_mm=5, height_mm=5),
+            RdRect(layer_index=1, x_mm=50, y_mm=60, width_mm=10, height_mm=10),
+        ],
+    )
+    xmin, ymin, xmax, ymax = job._global_bbox()
+    assert xmin == 10.0
+    assert ymin == 20.0
+    assert xmax == 60.0
+    assert ymax == 70.0
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

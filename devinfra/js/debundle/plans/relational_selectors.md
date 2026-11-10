@@ -30,10 +30,18 @@ its whole eager-use cone" is inexpressible.
 **R4 — Shape and relation in one member.** A template can name a pinned entity
 (<../docs/selectors.md> § Naming other entities) and claim an entity through a
 statement that uses it (§ Pinning by use site), so "has this shape and
-references `@Anchor`" is expressible. `MemberSelector` is still a one-of between
-a template and a relational kind (`cross_ref`, `reads_member`, …): "emits this
-literal **and** is imported by `@settingsModule`" needs conjunction across the
-two.
+references `@Anchor`" is expressible. The validated `MemberSelectorSpec` is
+still a one-of between a template and a relational kind (`cross_ref`,
+`reads_member`, …): "emits this literal **and** is imported by
+`@settingsModule`" needs conjunction across the two. Authored YAML remains
+permissive as `RawMemberSelector` so invalid combinations stay available to
+repair commands; frontends validate it into that existing semantic union.
+
+**R5 — Nested targets.** Selector entities resolve to whole source units, not
+properties inside a declaration. A getter inside an object returned by one
+binding therefore cannot be selected independently; representing that target
+requires a finer-grained entity model. See <../docs/selectors.md> for the
+current source-unit boundary.
 
 **Template-language gaps.**
 

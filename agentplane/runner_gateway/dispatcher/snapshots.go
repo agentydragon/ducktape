@@ -3,7 +3,11 @@ package dispatcher
 import (
 	"fmt"
 
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -30,14 +34,16 @@ func dispatchState(state string) (dispatcherpb.DeliveryState, error) {
 	}
 }
 
-func dispatchOperation(operation string) (dispatcherpb.Operation, error) {
+func dispatchOperation(operation string) (commandpb.Operation, error) {
 	switch operation {
 	case "submit_input":
-		return dispatcherpb.Operation_OPERATION_SUBMIT_INPUT, nil
+		return commandpb.Operation_OPERATION_SUBMIT_INPUT, nil
 	case "change_model":
-		return dispatcherpb.Operation_OPERATION_CHANGE_MODEL, nil
+		return commandpb.Operation_OPERATION_CHANGE_MODEL, nil
 	case "change_reasoning_effort":
-		return dispatcherpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
+		return commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
+	case "interrupt_turn":
+		return commandpb.Operation_OPERATION_INTERRUPT_TURN, nil
 	default:
 		return 0, fmt.Errorf("unknown dispatch operation %q", operation)
 	}
@@ -58,6 +64,7 @@ func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
 		CommandId: row.CommandID, SessionId: row.SessionID, Sandbox: row.SandboxName,
 		SandboxUid: row.SandboxUID, Operation: operation, State: state,
 		Admission: row.Admission, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
+		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}
 	if row.Reason != "" {
 		result.Reason = &row.Reason
@@ -65,17 +72,44 @@ func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
 	return result, nil
 }
 
-func DescribeOpening(row *Opening) (*dispatcherpb.SessionOpening, error) {
-	state, err := dispatchState(row.State)
-	if err != nil {
-		return nil, err
+func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
+	var materialization dispatcherpb.SessionStatus_Materialization
+	switch row.State {
+	case SessionWaitingState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING
+	case SessionInProgressState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_IN_PROGRESS
+	case SessionAcceptedState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED
+	case SessionFailedState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED
+	case SessionUnknownState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNKNOWN
+	default:
+		return nil, fmt.Errorf("unknown Session materialization %q", row.State)
 	}
-	result := &dispatcherpb.SessionOpening{
-		SessionId: row.SessionID, Sandbox: row.SandboxName, SandboxUid: row.SandboxUID,
-		State: state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
+	result := &dispatcherpb.Session{
+		SessionId: row.SessionID,
+		Status:    &dispatcherpb.SessionStatus{Materialization: materialization, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
+		CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 	}
+	// A name without an incarnation UID is not evidence of Session ownership.
+	if row.ExecutionPrincipal != nil && row.ExecutionPrincipal.GetAccount().GetNamespace() != "" && row.ExecutionPrincipal.GetAccount().GetName() != "" && row.ExecutionPrincipal.GetUid() != "" {
+		result.ExecutionIdentity = proto.Clone(row.ExecutionPrincipal).(*ServiceAccountIdentity)
+	}
+	if row.ExecutionIdentity != nil {
+		result.Identity = proto.Clone(row.ExecutionIdentity).(*identitypb.Identity)
+	}
+	result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_AVAILABLE
+	if row.EnvironmentDeletedAt != nil {
+		result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED
+	}
+	if !row.Placement.matchesSpec(row.Spec) {
+		return nil, fmt.Errorf("stored Session placement disagrees with its spec")
+	}
+	result.Placement = proto.Clone(row.Spec.GetPlacement()).(*sessionpb.SessionPlacement)
 	if row.Reason != "" {
-		result.Reason = &row.Reason
+		result.Status.Reason = &row.Reason
 	}
 	return result, nil
 }

@@ -32,7 +32,8 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -61,7 +62,8 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -75,7 +77,8 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -88,18 +91,20 @@ ts_library(
         ":idle_suspend",
         ":lifecycle",
         ":wake_on_send",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/environments/v1:environment_service_pb",
         "//util/frontend:help_tooltip",
+        "//util/frontend:json_view",
     ],
 )
 
@@ -114,14 +119,15 @@ ts_library(
         ":live",
         ":sandbox_name",
         ":wake_on_send",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:schema",
@@ -129,6 +135,7 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -137,9 +144,8 @@ ts_library(
     srcs = ["decision_groups.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/egress:egress_admin_pb",
     ],
 )
 
@@ -147,11 +153,21 @@ agentplane_vitest_test(
     name = "decision_groups_test",
     srcs = ["decision_groups.test.ts"],
     deps = [
-        ":client",
+        ":decision_fixture",
         ":decision_groups",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/egress:egress_admin_pb",
+    ],
+)
+
+ts_library(
+    name = "decision_fixture",
+    testonly = True,
+    srcs = ["decision_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/egress:egress_admin_pb",
     ],
 )
 
@@ -160,19 +176,18 @@ ts_library(
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
         ":decision_groups",
-        ":live",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -185,9 +200,13 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/bindings:table",
+        "//agentplane/app/frontend/policy:watch",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/policy/v1:policy_service_pb",
+        "//agentplane/proto:identity_pb",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -202,6 +221,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:live_stream",
+        "//agentplane/environments/v1:environment_service_pb",
     ],
 )
 
@@ -232,6 +252,7 @@ ts_library(
         ":policy_bindings",
         ":sandbox_console",
         ":sandbox_status_view",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -250,11 +271,15 @@ ts_library(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend:tracing",
         "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/policy:watch",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:new_thread_form",
         "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -265,6 +290,7 @@ agentplane_vitest_test(
         ":client",
         ":live",
         ":sandbox_page",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -272,6 +298,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:app",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
@@ -280,7 +307,14 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/testing:langfuse_search",
         "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:runner_status",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads/testing:state",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -290,6 +324,8 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":list",
+        ":live",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -297,10 +333,15 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/app/frontend/testing:watch",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -309,10 +350,17 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:identity_pb",
     ],
 )
 
@@ -322,9 +370,61 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
-        "//agentplane/proto:runner_pb",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "client_test",
+    srcs = ["client.test.ts"],
+    deps = [
+        ":client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:session_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "live_test",
+    srcs = ["live.test.tsx"],
+    deps = [
+        ":live",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/app/frontend/testing:watch",
+        "//agentplane/environments/v1:environment_service_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "egress_test",
+    srcs = ["egress.test.tsx"],
+    deps = [
+        ":egress",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+        "//agentplane/proto:identity_pb",
     ],
 )
 

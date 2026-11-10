@@ -9,7 +9,7 @@ Personal infrastructure monorepo: configuration for **agentydragon** (ThinkPad),
 - **Python:** deps in `pyproject.toml`, used as `@pypi//pkg`; lockfile `requirements_bazel.txt` is generated (<devinfra/docs/lockfiles.md>). ruff + mypy run as Bazel aspects; `--config=nolint` skips them (<devinfra/docs/linting.md>).
 - **Rust:** deps in root `Cargo.toml`, used as `@crates//name`; regenerate `Cargo.Bazel.lock` per <devinfra/docs/lockfiles.md>.
 - **Gazelle** owns Python BUILD files; CI fails on drift. After adding/moving `.py` files or changing imports run `gazelle` (devshell; or `bb run //devinfra:gazelle`), check with `gazelle -mode=diff`. One `py_library` per `.py` file, referenced as `//pkg:module`; `__init__.py` stubs are generated via `imports = [".."]`. Conventions: [STYLE.md § Gazelle](STYLE.md#gazelle); mechanism: <devinfra/docs/gazelle.md>.
-- **BuildBuddy** provides remote cache and RBE. `bbr` (wraps `bb remote`) runs the whole invocation on a remote runner; `bb run` keeps Bazel local and dispatches only actions (<AGENTS.md> § Bazel Commands). Two images: `ghcr.io/agentydragon/rbe-container-image` (<devinfra/rbe_container_image/Dockerfile>) is the action environment — its digest is in every action cache key, so it holds only what Bazel can't supply; `ghcr.io/agentydragon/buildbuddy-remote-runner` (<devinfra/buildbuddy_remote_runner/image.nix>, pinned in <devinfra/bbr.json>) adds Nix devtools for the outer invocation. Setup: <devinfra/setup_buildbuddy.sh>.
+- **BuildBuddy** provides remote cache and RBE. `bbr` (wraps `bb remote`) runs the whole invocation on a remote runner; `bb run` keeps Bazel local and dispatches only actions. Two images: `ghcr.io/agentydragon/rbe-container-image` (<devinfra/buildbuddy/images/rbe/Dockerfile>) is the action environment; `ghcr.io/agentydragon/buildbuddy-remote-runner` (<devinfra/buildbuddy/images/runner/image.nix>, pinned in <.bbrc>) adds Nix devtools for the outer invocation. Setup: <devinfra/buildbuddy/setup.sh>.
 
 ## Dotfiles
 
@@ -29,7 +29,7 @@ bb run //devinfra/lint:buildifier
 
 ## CI
 
-GitHub Actions running `bazel {build,test}` (including lint) on a BuildBuddy remote runner — bazel-diff affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See `.github/workflows/`.
+GitHub Actions run `bazel {build,test}` (including lint) via `bbr` on a BuildBuddy remote runner — bazel-diff selects affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See `.github/workflows/`.
 
 ## Conventions
 

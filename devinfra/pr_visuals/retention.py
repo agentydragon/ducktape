@@ -18,10 +18,12 @@ import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 
+from devinfra.pr_visuals.metadata import BaselinePointer, ReviewBundleMetadata, ReviewTest
+
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 ASSET_KEY = re.compile(r"^assets/([0-9a-f]{64})\.png$")
-BUNDLE_KEY = re.compile(r"^(commits|reviews)/([0-9a-f]{40})/(.+)$")
-POINTER_KEY = re.compile(r"^baselines/(?:reviews/)?([^/]+)\.json$")
+BUNDLE_KEY = re.compile(r"^(reviews-test-outputs)/([0-9a-f]{40})/(.+)$")
+POINTER_KEY = re.compile(r"^baselines/reviews-test-outputs/([^/]+)\.json$")
 CLOSED_PR_GRACE = timedelta(hours=8)
 DEFAULT_RETENTION = timedelta(days=3)
 ACTIVE_RUN_STATUSES = ("queued", "in_progress", "requested", "waiting", "pending")
@@ -68,57 +70,21 @@ def _validate_sha(value: Any, context: str) -> str:
     return value
 
 
-def _object(value: Any, context: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{context} must be a JSON object")
-    return value
-
-
-def _metadata_document(body: bytes, key: str) -> dict[str, Any]:
-    try:
-        value = json.loads(body)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"malformed retained metadata at {key}: {error}") from error
-    return _object(value, key)
-
-
-def _metadata_refs(value: dict[str, Any], context: str) -> tuple[set[str], set[str]]:
-    """Return dependency SHAs and referenced image digests."""
+def _metadata_refs(tests: Iterable[ReviewTest], context: str) -> tuple[set[str], set[str]]:
+    """Return dependency SHAs and referenced image digests from validated metadata."""
     dependencies: set[str] = set()
     digests: set[str] = set()
-
-    def read_test(test_value: Any, test_context: str) -> None:
-        test = _object(test_value, test_context)
-        slug = test.get("slug")
-        if not isinstance(slug, str) or not slug:
-            raise ValueError(f"{test_context}.slug is missing or invalid")
-        for field in ("base_sha", "merge_base_sha"):
-            sha = test.get(field)
+    for test in tests:
+        for sha in (test.base_sha, test.merge_base_sha):
             if sha is not None:
-                dependencies.add(_validate_sha(sha, f"{test_context}.{field}"))
-        assets = test.get("assets")
-        if not isinstance(assets, list):
-            raise ValueError(f"{test_context}.assets must be a list")
-        for index, asset_value in enumerate(assets):
-            asset = _object(asset_value, f"{test_context}.assets[{index}]")
-            for field in ("candidate_sha256", "baseline_sha256", "diff_sha256"):
-                digest = asset.get(field)
-                if digest is not None:
-                    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-                        raise ValueError(f"{test_context}.assets[{index}].{field} is invalid")
-                    digests.add(digest)
-
-    if "tests" in value:
-        commit_sha = value.get("commit_sha")
-        if commit_sha is not None:
-            _validate_sha(commit_sha, f"{context}.commit_sha")
-        tests = value["tests"]
-        if not isinstance(tests, list):
-            raise ValueError(f"{context}.tests must be a list")
-        for index, test in enumerate(tests):
-            read_test(test, f"{context}.tests[{index}]")
-    else:
-        read_test(value, context)
+                dependencies.add(_validate_sha(sha, context))
+        for asset in test.assets:
+            digests.update(
+                digest
+                for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256)
+                if digest is not None
+            )
+            digests.update(variant.sha256 for variant in asset.variants)
     return dependencies, digests
 
 
@@ -212,7 +178,7 @@ def build_retention_report(
                 target_dirs_by_prefix[prefix].add(target_dir_match.group(1))
             if re.fullmatch(r"tests/[^/]+/metadata\.json", match.group(3)):
                 target_metadata_by_prefix[prefix].append(stored.key)
-        elif stored.key.startswith(("commits/", "reviews/")):
+        elif stored.key.startswith(("commits/", "reviews/", "reviews-test-outputs/")):
             unknown_keys.append(stored.key)
             blockers.append(f"unrecognized bundle key: {stored.key}")
         elif stored.key.startswith("assets/"):
@@ -241,8 +207,8 @@ def build_retention_report(
             body = fetch_object(pointer.key)
             if body is None:
                 raise ValueError(f"listed pointer disappeared: {pointer.key}")
-            value = _metadata_document(body, pointer.key)
-            sha = _validate_sha(value.get("commit_sha"), f"{pointer.key}.commit_sha")
+            value = BaselinePointer.model_validate_json(body)
+            sha = _validate_sha(value.commit_sha, f"{pointer.key}.commit_sha")
             pointer_match = POINTER_KEY.fullmatch(pointer.key)
             assert pointer_match is not None
             slug = pointer_match.group(1)
@@ -250,7 +216,7 @@ def build_retention_report(
             pointer_targets[sha].add(slug)
             pointer_values.append({"key": pointer.key, "commit_sha": sha})
         except ValueError as error:
-            blockers.append(str(error))
+            blockers.append(f"{pointer.key}: {error}")
 
     for sha, sha_reasons in github_roots.items():
         _validate_sha(sha, "GitHub protected root")
@@ -286,7 +252,7 @@ def build_retention_report(
                 LOGGER.info("Reading metadata for retained bundle %d", len(parsed_prefixes))
             aggregate_key = f"{bundle.prefix}metadata.json"
             test_keys = sorted(target_metadata_by_prefix.get(bundle.prefix, []))
-            metadata_records: list[tuple[dict[str, Any], str]] = []
+            metadata_records: list[tuple[Iterable[ReviewTest], str]] = []
             actual_target_slugs: set[str] = set()
             metadata_keys = ([aggregate_key] if aggregate_key in by_key else []) + test_keys
             # The production callback uses a thread-safe boto3 client; callbacks
@@ -299,13 +265,12 @@ def build_retention_report(
                     blockers.append(f"listed retained metadata disappeared: {aggregate_key}")
                     break
                 try:
-                    metadata = _metadata_document(body, aggregate_key)
-                    metadata_sha = metadata.get("commit_sha")
-                    if metadata_sha is not None and _validate_sha(metadata_sha, f"{aggregate_key}.commit_sha") != sha:
+                    bundle_metadata = ReviewBundleMetadata.model_validate_json(body)
+                    if _validate_sha(bundle_metadata.commit_sha, f"{aggregate_key}.commit_sha") != sha:
                         raise ValueError(f"{aggregate_key}.commit_sha does not match bundle SHA {sha}")
-                    metadata_records.append((metadata, aggregate_key))
+                    metadata_records.append((bundle_metadata.tests, aggregate_key))
                 except ValueError as error:
-                    blockers.append(str(error))
+                    blockers.append(f"{aggregate_key}: {error}")
                     break
             elif not test_keys:
                 blockers.append(f"retained bundle has no metadata: {bundle.prefix}")
@@ -326,20 +291,20 @@ def build_retention_report(
                     blockers.append(f"listed retained metadata disappeared: {key}")
                     break
                 try:
-                    metadata = _metadata_document(body, key)
+                    test_metadata = ReviewTest.model_validate_json(body)
                     target_slug = key.removeprefix(f"{bundle.prefix}tests/").removesuffix("/metadata.json")
-                    if metadata.get("slug") != target_slug:
+                    if test_metadata.slug != target_slug:
                         raise ValueError(f"{key}.slug does not match its key path")
-                    metadata_records.append((metadata, key))
+                    metadata_records.append(([test_metadata], key))
                     actual_target_slugs.add(target_slug)
                 except ValueError as error:
-                    blockers.append(str(error))
+                    blockers.append(f"{key}: {error}")
                     break
             if blockers:
                 break
-            for metadata, key in metadata_records:
+            for tests, key in metadata_records:
                 try:
-                    dependencies, digests = _metadata_refs(metadata, key)
+                    dependencies, digests = _metadata_refs(tests, key)
                 except ValueError as error:
                     blockers.append(str(error))
                     break

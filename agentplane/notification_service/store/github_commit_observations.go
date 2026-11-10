@@ -10,7 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
 )
 
@@ -23,9 +26,11 @@ type GitHubCommitRefreshKey struct {
 	Event          model.EventName
 }
 
-func (k GitHubCommitRefreshKey) row() (string, string, []any) {
-	return "github_commit_refresh", "app_id = $1 AND installation_id = $2 AND repository_id = $3 AND subject_kind = 'pull_request' AND subject_key = $4 AND event = $5",
-		[]any{k.AppID, k.InstallationID, k.Subject.RepositoryID, k.Subject.Key, string(k.Event)}
+var commitRefresh = refreshTable("github_commit_refresh",
+	"app_id", "installation_id", "repository_id", "subject_kind", "subject_key", "event")
+
+func (k GitHubCommitRefreshKey) refresh() (lease.Table, []any) {
+	return commitRefresh, []any{k.AppID, k.InstallationID, k.Subject.RepositoryID, "pull_request", k.Subject.Key, string(k.Event)}
 }
 
 func (k GitHubCommitRefreshKey) validate() error {
@@ -350,14 +355,17 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 	if recording.Subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
-	var creation []byte
+	var creationProto sql.Null[[]byte]
+	var sourceProvider sql.NullString
+	var idempotencyKey string
 	var after int64
-	if err := tx.QueryRowContext(ctx, `SELECT creation, github_commit_after_sequence FROM subscription WHERE id = $1`,
-		recording.SubscriptionID).Scan(&creation, &after); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key, github_commit_after_sequence
+		FROM subscription WHERE id = $1`, recording.SubscriptionID).
+		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
 		return 0, false, err
 	}
-	var body model.Subscribe
-	if err := decode(creation, &body); err != nil {
+	body, err := storagecodec.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
+	if err != nil {
 		return 0, false, err
 	}
 	source, ok := body.Source.(model.GitHubSource)
@@ -445,9 +453,10 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 			AND e.sequence > ` + sequence + `
 			AND NOT EXISTS (SELECT 1 FROM subscription_match m JOIN entry existing
 				ON existing.inbox_id = ` + args.add(inboxID) + ` AND existing.cursor = m.cursor
-				WHERE m.subscription_id = ` + args.add(recording.SubscriptionID) + ` AND existing.event = jsonb_build_object(
-					'provider', 'github_observation', 'app_id', e.app_id, 'repository_id', e.repository_id,
-					'event', e.event, 'sequence', e.sequence))
+				WHERE m.subscription_id = ` + args.add(recording.SubscriptionID) + `
+					AND existing.identity_provider = 'github_observation'
+					AND existing.github_app_id = e.app_id AND existing.github_repository_id = e.repository_id
+					AND existing.github_event = e.event AND existing.github_observation_sequence = e.sequence)
 		ORDER BY e.sequence LIMIT ` + limit
 	rows, err = tx.QueryContext(ctx, query, args...)
 	if err != nil {

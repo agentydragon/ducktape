@@ -11,6 +11,7 @@ from agentplane.app.frontend.testing.app import BOUND_CONNECTION, IDLE_THREAD, A
 from agentplane.app.frontend.testing.visual_assertions import (
     _focus,
     _in_viewport,
+    _mount_code_blocks,
     _open_phone_navigation,
     _open_raw_switches,
     _open_select,
@@ -18,11 +19,11 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _select_reconnect,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import DESKTOP, MOBILE, Viewport
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.page_capture import wait_for_stable
+from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 # Actions whose closed compact card already shows every argument of the calls below, so it has no expanded version.
@@ -489,13 +490,7 @@ async def test_sandbox_action_results(
     ],
 )
 async def test_compact_action_summaries(
-    view: VisualPage,
-    app: AgentplaneFixture,
-    capture_name: str,
-    group: str,
-    name: str,
-    arguments: dict[str, object],
-    visible: str,
+    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
     await app.show_action_preview(group, name, arguments)
     await app.mount_thread(IDLE_THREAD)
@@ -513,11 +508,11 @@ async def test_compact_action_summaries(
         await expect(
             collapsed_summary.get_by_text("Replying to thread existing-thread-123", exact=True)
         ).to_be_visible()
-        await view.capture(f"{capture_name}-collapsed", target=section)
+        await view.capture("collapsed", target=section)
     if group == "github" and name == "create_pull_request":
         for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
             await expect(collapsed_summary.get_by_text(chip, exact=True)).to_be_visible()
-        await view.capture(f"{capture_name}-collapsed", target=section)
+        await view.capture("collapsed", target=section)
     if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
         await expect(disclosure).to_have_count(0)
     else:
@@ -600,7 +595,6 @@ async def test_compact_action_summaries(
 async def test_compact_exec_long_command(
     view: VisualPage,
     app: AgentplaneFixture,
-    capture_name: str,
     group: str,
     name: str,
     arguments: dict[str, object],
@@ -616,10 +610,10 @@ async def test_compact_exec_long_command(
     if expanded:
         await section.get_by_role("button", name=f"Expand {title}").click()
         await expect(section.locator(".agentplane-actions-sidebar-preview")).to_be_visible()
-        await expect(section.locator(".agentplane-code-block-placeholder")).to_have_count(0)
+        await expect(section.locator(".ui-code-block-placeholder")).to_have_count(0)
     else:
         summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
-        await expect(summary.locator(f".agentplane-tok-{token}").first).to_be_visible()
+        await expect(summary.locator(f".ui-tok-{token}").first).to_be_visible()
         # However narrow the card, a command takes three lines and the rest is cut off. A chip makes
         # its own line a little taller, so a whole fourth line is what this must not reach.
         measured = await summary.evaluate(
@@ -661,9 +655,7 @@ async def test_action_argument_fallbacks_use_json_view(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pr_with_description_offers_card_decisions(
-    view: VisualPage, app: AgentplaneFixture, capture_name: str
-) -> None:
+async def test_compact_pr_with_description_offers_card_decisions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_action_preview(
         "github",
         "create_pull_request",
@@ -687,7 +679,7 @@ async def test_compact_pr_with_description_offers_card_decisions(
     ).to_be_visible()
     await expect(section.get_by_role("button", name="Approve review create pull request")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review create pull request")).to_be_visible()
-    await view.capture(f"{capture_name}-collapsed", target=section)
+    await view.capture("collapsed", target=section)
     await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(
         section.get_by_text("Important PR description visible on the compact card.", exact=False)
@@ -699,9 +691,7 @@ async def test_compact_pr_with_description_offers_card_decisions(
 
 
 @DESKTOP_AND_MOBILE
-async def test_compact_pull_request_search_offers_card_decisions(
-    view: VisualPage, app: AgentplaneFixture, capture_name: str
-) -> None:
+async def test_compact_pull_request_search_offers_card_decisions(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_action_preview(
         "github",
         "search_pull_requests",
@@ -731,7 +721,7 @@ async def test_compact_pull_request_search_offers_card_decisions(
     await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)
-    await view.capture(f"{capture_name}-collapsed", target=section)
+    await view.capture("collapsed", target=section)
 
 
 @DESKTOP_AND_MOBILE
@@ -818,12 +808,27 @@ async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) ->
 
 
 @DESKTOP_AND_MOBILE
+async def test_sandbox_egress_watch(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.mount_app("/sandboxes/ready-sandbox?tab=egress_log")
+    page = view.page
+    await expect(page.get_by_text("ServiceAccount agentplane-visual/ready-sandbox", exact=False)).to_be_visible()
+    if viewport == MOBILE:
+        await expect(
+            page.get_by_text("Egress decisions for ready-sandbox are unavailable", exact=False)
+        ).to_be_visible()
+    else:
+        await expect(page.get_by_text("example.invalid", exact=False)).to_be_visible()
+    await view.check(context="Egress watch has answered")
+    await view.capture(target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
 async def test_sandbox_status_raw_switches(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     await view.check(context="fixture ready")
     page = view.page
     await _open_raw_switches(page)
-    await expect(page.locator(".agentplane-code-block").first).to_be_visible()
+    await expect(page.locator(".ui-code-block").first).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -836,7 +841,6 @@ async def test_external_caller_grants(view: VisualPage, app: AgentplaneFixture) 
     grants = page.get_by_role("region", name="Grants for agentplane-test/personal")
     await expect(grants.get_by_role("heading", name="Bindings", exact=True)).to_be_visible()
     await expect(grants.get_by_role("heading", name="Auto-approve if", exact=True)).to_be_visible()
-    await expect(grants.get_by_role("button", name="Refresh grants")).to_be_visible()
     await expect(grants.get_by_role("button", name="Revoke", exact=True)).to_have_count(0)
     await expect(grants.get_by_role("button", name="Rules", exact=True).first).to_be_visible()
     await grants.get_by_role("button", name="Rules", exact=True).first.click()
@@ -956,6 +960,8 @@ async def _open_history_receipts(page: Page) -> None:
     for control in await page.get_by_role("button", name="Receipt details", exact=True).all():
         if await control.get_attribute("aria-expanded") == "false":
             await control.click()
+    # Later scrolling moves content under the clicked spot; whether it then shows hover is timing.
+    await page.mouse.move(0, 0)
 
 
 @DESKTOP_AND_MOBILE
@@ -978,9 +984,10 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await _open_history_receipts(view.page)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
+    await _mount_code_blocks(view.page)
     page = view.page
     receipt = page.get_by_text("list the test backup archive", exact=True)
     await _focus(page, receipt)
@@ -1002,7 +1009,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(view: Visua
     )
     await _in_viewport(card)
     await view.check(context="Gmail draft compact history card")
-    await view.capture("gmail_draft_history_compact", target=card)
+    await view.capture("compact", target=card)
 
     await _open_history_receipts(page)
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
@@ -1019,9 +1026,10 @@ async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) 
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await _open_history_receipts(view.page)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
     await view.check(context="fixture ready")
+    await _mount_code_blocks(view.page)
     page = view.page
     image = page.locator('img[src^="data:image/"]').first
     await _focus(page, image)
@@ -1056,8 +1064,8 @@ async def test_action_history_automatic_paging(view: VisualPage, app: Agentplane
     await expect(result_sections).to_have_count(1)
     result_section = result_sections.first
     await result_section.scroll_into_view_if_needed()
-    await expect(result_section.locator(".agentplane-code-block-placeholder")).to_have_count(0)
-    await expect(result_section.locator(".agentplane-code-block-container .cm-editor")).to_be_visible()
+    await expect(result_section.locator(".ui-code-block-placeholder")).to_have_count(0)
+    await expect(result_section.locator(".ui-code-block-container .cm-editor")).to_be_visible()
     await wait_for_stable(page)
     await _focus(page, page.get_by_text("End of action history.", exact=True))
     await view.capture(target=page.locator("#app"))
@@ -1172,6 +1180,8 @@ async def test_sandbox_form_test_coder_preset_layout(view: VisualPage, app: Agen
 @DESKTOP_AND_MOBILE
 async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy&rules=ready-sandbox-github-public")
+    await expect(view.page.get_by_text(re.compile("GitHub API access"))).to_be_visible()
+    await view.capture("credential", target=view.page.locator("#app"))
     await view.check(context="fixture ready")
     page = view.page
     await page.get_by_role("button", name="Grant policy sets", exact=True).click()
@@ -1187,7 +1197,7 @@ async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: 
 
 
 @DESKTOP_AND_MOBILE
-async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, capture_name: str) -> None:
+async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     page = view.page
@@ -1203,14 +1213,14 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture, c
     await expect(all_actions).to_be_checked()
     await expect(auto_allowed).to_be_visible()
     await _focus(page, page.get_by_text("All actions", exact=True))
-    await view.capture(f"{capture_name}-all-actions")
+    await view.capture("all-actions")
     await page.get_by_text("Not auto-allowed", exact=True).click()
     await expect(auto_allowed).to_have_count(0)
 
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("kind", ["text", "json", "email", "manifest"])
-async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, capture_name: str, kind: str) -> None:
+async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, kind: str) -> None:
     text = "\n".join(f"Long action content line {index + 1}" for index in range(48))
     group, name = "example_docs", "long_text"
     arguments: dict[str, object] = {"lines": text.splitlines()}
@@ -1239,15 +1249,15 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
         await expect(page.get_by_text("Apply ConfigMap", exact=True)).to_be_visible()
 
     if kind in {"text", "json"}:
-        block = page.get_by_test_id("action-execution-outcome").locator(".agentplane-clamped-block")
+        block = page.get_by_test_id("action-execution-outcome").locator(".ui-clamped-block")
         expand_label: str | re.Pattern[str] = "Show more"
         collapse_label: str | re.Pattern[str] = "Payload"
     elif kind == "email":
-        block = page.locator(".agentplane-clamped-block:has([data-operation-heading])").filter(has_text="Message body")
+        block = page.locator(".ui-clamped-block:has([data-operation-heading])").filter(has_text="Message body")
         expand_label = "Show more"
         collapse_label = "Message body"
     else:
-        block = page.locator(".agentplane-clamped-block:has([data-operation-heading])").filter(has_text="Manifest")
+        block = page.locator(".ui-clamped-block:has([data-operation-heading])").filter(has_text="Manifest")
         expand_label = re.compile(r"Show all \d+ lines")
         collapse_label = re.compile(r"^Manifest(?:$| ·)")
     await expect(block).to_have_count(1)
@@ -1258,14 +1268,14 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, captur
     await block.get_by_role("button", name=expand_label, exact=isinstance(expand_label, str)).click()
     await expect(block).to_have_attribute("data-expanded", "true")
     await expect(block.locator('[data-clamped="true"]')).to_have_count(0)
-    await view.capture(f"{capture_name}-expanded")
+    await view.capture("expanded")
     await block.get_by_role("button", name=collapse_label, exact=isinstance(collapse_label, str)).click()
     await expect(block).to_have_attribute("data-expanded", "false")
     if kind == "email":
         await _open_raw_switches(page)
         await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
         await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
-        await view.capture(f"{capture_name}-raw")
+        await view.capture("raw")
 
 
 @DESKTOP_AND_MOBILE

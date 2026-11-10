@@ -21,7 +21,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from util.bazel import runfiles
+from python.runfiles import Runfiles
 
 
 def _parse_args() -> argparse.Namespace:
@@ -91,9 +91,9 @@ def main() -> int:
             start_new_session=True,
         )
     try:
-        bootstrap_script = runfiles.get_required_path(
-            runfiles.own_repo_rlocation("x/local_llm/eval/offline_bootstrap.py")
-        ).resolve(strict=True)
+        bootstrap_script = (Runfiles.CreateOrRaise().root() / "ducktape/x/local_llm/eval/offline_bootstrap.py").resolve(
+            strict=True
+        )
         if host_relay is not None:
             for _ in range(50):
                 if bridge_socket.exists():

@@ -61,6 +61,22 @@ spec:
                   once, before its first Session.
                 maxLength: 65536
                 type: string
+              identity:
+                description: 'Identity is who the Sandbox''s workloads act as. It
+                  may be set, changed or cleared only while
+
+                  nothing runs, so an incarnation never changes identity; the next
+                  start acts as the new one.
+
+                  "Nothing runs" is the controller''s last status report: never reconciled,
+                  or stopStage Stopped.'
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               idleSuspendAfter:
                 description: 'IdleSuspendAfter is how long the Sandbox''s runner must
                   stay idle before the controller suspends the
@@ -91,6 +107,27 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              resumePolicy:
+                description: 'ResumePolicy controls whether the Sandbox''s own principal,
+                  its exact live execution
+
+                  ServiceAccount or the Identity it acts as, may request resume. Omitted
+                  policy and fields
+
+                  default to deny.'
+                properties:
+                  allowOwnServiceAccount:
+                    default: false
+                    description: 'AllowOwnServiceAccount permits the Sandbox''s exact
+                      live execution ServiceAccount to request
+
+                      resume while the Sandbox is idle-suspended, and queued work
+                      of the Identity the Sandbox acts
+
+                      as to wake it then. It does not authorize overriding a requested
+                      stop.'
+                    type: boolean
+                type: object
               running:
                 default: false
                 type: boolean
@@ -110,10 +147,14 @@ spec:
                 type: integer
               wakeOnSend:
                 default: false
-                description: 'WakeOnSend allows authenticated user and notification
-                  sends to resume a stopped Sandbox.
+                description: 'WakeOnSend allows queued delivery to request an automatic
+                  resume when it needs a suspended
 
-                  Omitted is false so older Sandbox manifests keep wake-on-send disabled.'
+                  Sandbox. Caller lifecycle authority is checked separately, and a
+                  requested stop stays sticky.
+
+                  Omitted is false so older Sandbox manifests keep automatic wake
+                  disabled.'
                 type: boolean
             required:
             - template
@@ -192,6 +233,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              firecrackerSuspension:
+                description: 'FirecrackerSuspension retains the admission barrier
+                  across controller retries,
+
+                  checkpoint and thaw. Released keeps the generation for the next
+                  attempt.'
+                properties:
+                  generation:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  idleSince:
+                    format: date-time
+                    type: string
+                  phase:
+                    enum:
+                    - Preparing
+                    - Checkpointing
+                    - Resuming
+                    - Released
+                    type: string
+                required:
+                - generation
+                - idleSince
+                - phase
+                type: object
               idleSuspendAt:
                 description: IdleSuspendAt is the controller's next attempt to suspend
                   an idle Sandbox, when one is scheduled.
@@ -214,6 +281,7 @@ spec:
                       - Activation
                       - Bootstrap
                       - Admission
+                      - ExecutorRelay
                       type: string
                     sessionId:
                       type: string
@@ -262,6 +330,43 @@ spec:
                 description: The UID of the last incarnation whose runner sealed every
                   Session, kept after it stops.
                 type: string
+              runnerCredential:
+                description: 'RunnerCredential is the incarnation the controller accepted.
+                  It lives under status so writers of
+
+                  the Sandbox''s spec and metadata cannot rebind it.'
+                properties:
+                  kind:
+                    description: RunnerCredentialKind is the workload kind a runner
+                      credential generation was issued for.
+                    enum:
+                    - Pod
+                    - VM
+                    type: string
+                  lastVmiUid:
+                    description: LastVMIUID is the last VMI accepted for the Sandbox's
+                      VM.
+                    type: string
+                  podUid:
+                    description: 'PodUID is the Pod the controller started and accepted;
+                      a Pod of the Sandbox''s name with another
+
+                      UID is a stale replacement.'
+                    type: string
+                required:
+                - kind
+                type: object
+              stopStage:
+                description: 'StopStage is how far the controller has taken stopping
+                  the Sandbox''s workload; absent while
+
+                  the workload runs or starts. Readers dispatch on it; condition reasons
+                  are display only.'
+                enum:
+                - Quiescing
+                - Deleting
+                - Stopped
+                type: string
               suspendedAtWakeGeneration:
                 format: int64
                 minimum: 0
@@ -300,8 +405,8 @@ spec:
                         - type
                         type: object
                         x-kubernetes-validations:
-                        - message: state volume requires DirectoryTree without a filesystem
-                          rule: self.type == 'DirectoryTree' && !has(self.filesystem)
+                        - message: state volume requires DirectoryTree or RawDiskImage
+                          rule: self.type == 'DirectoryTree' || self.type == 'RawDiskImage'
                         - message: DirectoryTree omits filesystem; disk layouts require
                             it
                           rule: 'self.type == ''DirectoryTree'' ? !has(self.filesystem)
@@ -367,6 +472,11 @@ spec:
         x-kubernetes-validations:
         - message: a Sandbox name is at most 63 characters
           rule: size(self.metadata.name) <= 63
+        - message: spec.identity changes only while nothing runs
+          rule: (has(self.spec.identity) == has(oldSelf.spec.identity) && (!has(self.spec.identity)
+            || self.spec.identity == oldSelf.spec.identity)) || !has(oldSelf.status)
+            || !has(oldSelf.status.operatingMode) || (has(oldSelf.status.stopStage)
+            && oldSelf.status.stopStage == 'Stopped')
     served: true
     storage: true
     subresources:

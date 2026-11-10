@@ -1,0 +1,59 @@
+{
+  "disks": {
+    "root": {
+      "device": "/dev/vda",
+      "mount": "/",
+      "filesystem": "ext4",
+      "read_only": false
+    },
+    "runtime": {
+      "device": "/dev/vdb",
+      "mount": "/run/agentplane/environment",
+      "filesystem": "erofs",
+      "read_only": true
+    },
+    "state": {
+      "device": "/dev/vdc",
+      "mount": "/state",
+      "filesystem": "ext4",
+      "read_only": false
+    },
+    "workspace": {
+      "device": "/dev/vdd",
+      "mount": "/state/workspaces",
+      "filesystem": "ext4",
+      "read_only": false
+    },
+    "config": {
+      "device": "/dev/vde",
+      "mount": "/run/agentplane/config",
+      "filesystem": "iso9660",
+      "read_only": true
+    },
+    "launch": {
+      "device": "/dev/vdf",
+      "mount": "/run/agentplane/sandbox",
+      "filesystem": "iso9660",
+      "read_only": true
+    },
+    "egress_trust": {
+      "device": "/dev/vdg",
+      "mount": "/run/agentplane/trust",
+      "filesystem": "iso9660",
+      "read_only": true
+    }
+  },
+  "files": {
+    "runtime_config": "environment-runtime.json",
+    "runtime_environment": "environment-runtime.env",
+    "launch": "launch.json"
+  },
+  "environment_runtime_tls": {
+    "private_mount": "/run/agentplane/environment-runtime-private/environment-runtime-tls",
+    "runtime_path": "/run/agentplane/environment-runtime-tls"
+  },
+  "environment_runtime_trust": {
+    "mount": "/run/agentplane/environment-runtime-trust",
+    "key": "ca-certificates.crt"
+  }
+}

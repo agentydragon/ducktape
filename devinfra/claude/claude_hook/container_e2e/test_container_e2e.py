@@ -14,17 +14,17 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from devinfra.claude.testing import container_e2e
-from util.bazel.runfiles import get_required_path
 
-# Runfiles paths — full rlocation (passed directly to get_required_path).
-_TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
-_TEST_PROFILE = "_main/devinfra/claude/claude_hook/container_e2e/test_profile.yaml"
-_SECRETS_DIR_MARKER = "_main/devinfra/claude/claude_hook/testdata/e2e_secrets/test_age.key"
+# Runfiles paths for the files staged into the container.
+_TEST_WORKSPACE_MODULE = "ducktape/devinfra/claude/testdata/test_workspace/MODULE.bazel"
+_TEST_PROFILE = "ducktape/devinfra/claude/claude_hook/container_e2e/test_profile.yaml"
+_SECRETS_DIR_MARKER = "ducktape/devinfra/claude/claude_hook/testdata/e2e_secrets/test_age.key"
 
 # Repo-relative paths for files staged into the test project tree.
-# get_required_path() receives "_main/" + path; dest is project / path.
+# Paths are relative to this repository; dest is project / path.
 _STAGED_FILES = ["devinfra/secrets/web_env.sh", "devinfra/secrets/_common.sh", "devinfra/k8s/kubeconfig.py"]
 
 # Fixture filename -> repo-relative destination. The test exercises the real
@@ -69,11 +69,12 @@ def _exec_under_env(
 
 
 @pytest.fixture
-def staged_project(tmp_path: Path) -> Path:
+def staged_project(runfiles: Runfiles, tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
 
-    test_workspace = get_required_path(_TEST_WORKSPACE_MODULE).parent
+    runfiles_root = runfiles.root()
+    test_workspace = Path(str(runfiles_root / _TEST_WORKSPACE_MODULE)).parent
     for src in test_workspace.iterdir():
         if src.name == "profile.yaml":
             continue
@@ -83,10 +84,10 @@ def staged_project(tmp_path: Path) -> Path:
     for rel in _STAGED_FILES:
         dest = project / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(get_required_path(f"_main/{rel}"), dest)
+        shutil.copy2(runfiles_root / f"ducktape/{rel}", dest)
 
-    shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
-    secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent
+    shutil.copy2(runfiles_root / _TEST_PROFILE, project / "profile.yaml")
+    secrets_fixtures = Path(str(runfiles_root / _SECRETS_DIR_MARKER)).parent
     for fixture_name, rel_dest in _TEST_SECRET_FILES.items():
         target = project / rel_dest
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -97,8 +98,8 @@ def staged_project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def test_age_key() -> str:
-    raw = get_required_path(_SECRETS_DIR_MARKER).read_text()
+def test_age_key(runfiles: Runfiles) -> str:
+    raw = (runfiles.root() / _SECRETS_DIR_MARKER).read_text()
     return next(line.strip() for line in raw.splitlines() if line.startswith("AGE-SECRET-KEY-"))
 
 

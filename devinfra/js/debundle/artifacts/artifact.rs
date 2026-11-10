@@ -2,14 +2,14 @@
 //! reconstruction pipeline. Filesystem path rules, report models, metrics,
 //! and final script writing live in their dedicated sibling modules.
 
+use source_identity::{ChunkId, ChunkTable};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use swc_common::BytePos;
+use swc_common::{BytePos, SourceFile, sync::Lrc};
 
-pub use analysis::{ChunkId, ChunkTable};
 use js_ast::{ParsedJsModule, emit_js_module_with_comments};
 use paths::{
     chunk_id_for_js_path, join_module_path, module_path_dirname, normalize_module_path,
@@ -18,14 +18,17 @@ use paths::{
 use reports::{ChunkAnalysisReport, ImportRecord, ImportSpecifierKind};
 
 mod emission_files;
+pub mod export_policies;
 mod indexed_files;
 pub mod metrics;
 pub mod paths;
 pub mod reports;
-pub mod script_output;
+pub mod runtime_resources;
 mod source_program;
 pub use emission_files::EmissionFiles;
-pub use source_program::SourceProgram;
+pub use source_program::{
+    SourceProgram, chunk_runtime_entry, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
@@ -34,17 +37,20 @@ pub struct LoadedJsChunks {
     pub chunk_table: ChunkTable,
 }
 
+#[derive(Clone)]
 pub struct ChunkBundle {
     pub chunks: Vec<ChunkArtifact>,
     pub chunk_table: ChunkTable,
 }
 
+#[derive(Clone)]
 pub struct ChunkArtifact {
     pub chunk_id: ChunkId,
     pub js: JsChunk,
     pub analysis: ChunkAnalysisReport,
 }
 
+#[derive(Clone)]
 pub struct JsChunk {
     pub entry_file: String,
     pub files: Vec<JsFile>,
@@ -74,6 +80,7 @@ impl JsChunk {
     }
 }
 
+#[derive(Clone)]
 pub struct JsFile {
     pub path: String,
     pub body: JsFileBody,
@@ -101,15 +108,28 @@ pub struct JsFileAstParts {
     pub metadata: FileMetadata,
 }
 
+#[derive(Clone)]
 pub enum JsFileBody {
     Source(String),
+    /// Original source representation with its read-only preparation AST.
+    /// Mutable access promotes this to `Ast` before the body can change.
+    SourceWithAst(SourceWithAst),
     Ast(ParsedJsModule),
+}
+
+/// Original bytes paired with a preparation AST. Fields stay private so
+/// callers obtain mutable syntax only through `JsFile`'s invalidating methods.
+#[derive(Clone)]
+pub struct SourceWithAst {
+    parsed: ParsedJsModule,
+    source: Lrc<SourceFile>,
 }
 
 impl JsFile {
     pub fn source(&self) -> Option<&str> {
         match &self.body {
             JsFileBody::Source(source) => Some(source),
+            JsFileBody::SourceWithAst(SourceWithAst { source, .. }) => Some(source.src.as_ref()),
             JsFileBody::Ast(_) => None,
         }
     }
@@ -117,6 +137,7 @@ impl JsFile {
     pub fn into_source(self) -> Option<String> {
         match self.body {
             JsFileBody::Source(source) => Some(source),
+            JsFileBody::SourceWithAst(SourceWithAst { source, .. }) => Some(source.src.to_string()),
             JsFileBody::Ast(_) => None,
         }
     }
@@ -124,29 +145,45 @@ impl JsFile {
     pub fn ast(&self) -> Option<&ParsedJsModule> {
         match &self.body {
             JsFileBody::Source(_) => None,
-            JsFileBody::Ast(ast) => Some(ast),
+            JsFileBody::Ast(ast) | JsFileBody::SourceWithAst(SourceWithAst { parsed: ast, .. }) => {
+                Some(ast)
+            }
         }
     }
 
     pub fn ast_mut(&mut self) -> Option<&mut ParsedJsModule> {
+        // Original source is authoritative only while the retained AST is
+        // read-only. Invalidate that representation before handing out a mut.
+        if matches!(self.body, JsFileBody::SourceWithAst(_)) {
+            let JsFileBody::SourceWithAst(SourceWithAst { parsed, .. }) =
+                std::mem::replace(&mut self.body, JsFileBody::Source(String::new()))
+            else {
+                unreachable!("source AST variant was checked")
+            };
+            self.body = JsFileBody::Ast(parsed);
+        }
         match &mut self.body {
             JsFileBody::Source(_) => None,
-            JsFileBody::Ast(ast) => Some(ast),
+            JsFileBody::Ast(ast) | JsFileBody::SourceWithAst(SourceWithAst { parsed: ast, .. }) => {
+                Some(ast)
+            }
         }
     }
 
     pub fn into_ast_parts(self) -> Option<(JsFileAstParts, ParsedJsModule)> {
         match self.body {
-            JsFileBody::Ast(ast) => Some((
-                JsFileAstParts {
-                    path: self.path,
-                    header_lines: self.header_lines,
-                    binding_comments: self.binding_comments,
-                    leading_item_comments: self.leading_item_comments,
-                    metadata: self.metadata,
-                },
-                ast,
-            )),
+            JsFileBody::Ast(ast) | JsFileBody::SourceWithAst(SourceWithAst { parsed: ast, .. }) => {
+                Some((
+                    JsFileAstParts {
+                        path: self.path,
+                        header_lines: self.header_lines,
+                        binding_comments: self.binding_comments,
+                        leading_item_comments: self.leading_item_comments,
+                        metadata: self.metadata,
+                    },
+                    ast,
+                ))
+            }
             JsFileBody::Source(_) => None,
         }
     }
@@ -162,11 +199,35 @@ impl JsFile {
         }
     }
 
+    /// Preserve the original source representation while retaining a freshly
+    /// prepared AST for read-only analysis. Call only before AST mutation.
+    pub fn into_source_with_ast(self) -> Option<Self> {
+        let JsFileBody::Ast(parsed) = self.body else {
+            return None;
+        };
+        let source = parsed.cm.files()[0].clone();
+        Some(Self {
+            body: JsFileBody::SourceWithAst(SourceWithAst { parsed, source }),
+            ..self
+        })
+    }
+
+    /// End read-only source analysis without enrolling pass-through files in
+    /// emission rewrites that operate on ordinary retained ASTs.
+    pub(crate) fn release_analysis_ast(&mut self) {
+        if let JsFileBody::SourceWithAst(SourceWithAst { source, .. }) = &self.body {
+            self.body = JsFileBody::Source(source.src.to_string());
+        }
+    }
+
     /// Consume self, replacing an AST body with its rendered source text.
     /// Returns None if the body was already source text.
     pub fn into_rendered_source(self) -> Option<Self> {
-        let JsFileBody::Ast(parsed) = self.body else {
-            return None;
+        let parsed = match self.body {
+            JsFileBody::Ast(parsed) | JsFileBody::SourceWithAst(SourceWithAst { parsed, .. }) => {
+                parsed
+            }
+            JsFileBody::Source(_) => return None,
         };
         Some(Self {
             body: JsFileBody::Source(parsed.source_text()),
@@ -182,6 +243,7 @@ impl JsFile {
     pub fn render_source(&self) -> Result<String> {
         match &self.body {
             JsFileBody::Source(source) => Ok(source.clone()),
+            JsFileBody::SourceWithAst(SourceWithAst { source, .. }) => Ok(source.src.to_string()),
             JsFileBody::Ast(ast) => emit_js_module_with_comments(
                 ast,
                 &self.header_lines,

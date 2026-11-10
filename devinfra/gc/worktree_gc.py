@@ -22,15 +22,18 @@ from __future__ import annotations
 import enum
 import logging
 import os
-from collections.abc import Iterable, Mapping
+import subprocess
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pygit2
 
-from devinfra.gc.git_repo import Worktree, content_in_main, git, patches_landed_in_main
+from devinfra.gc.git_repo import INSPECTION_ERRORS, Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.verdict import Prunable, Retained, Review
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +54,13 @@ class RetainedWorktreeReason(enum.StrEnum):
 
 
 class ReviewWorktreeReason(enum.StrEnum):
+    INSPECTION_FAILED = enum.auto()
     DETACHED_HEAD = enum.auto()
     UNMERGED = enum.auto()
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableWorktree:
+class PrunableWorktree(Prunable):
     worktree: Worktree
     reason: PrunableWorktreeReason
     last_activity: datetime | None
@@ -65,7 +69,7 @@ class PrunableWorktree:
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedWorktree:
+class RetainedWorktree(Retained):
     worktree: Worktree
     reason: RetainedWorktreeReason
     last_activity: datetime | None
@@ -74,11 +78,12 @@ class RetainedWorktree:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewWorktree:
+class ReviewWorktree(Review):
     worktree: Worktree
     reason: ReviewWorktreeReason
     last_activity: datetime | None
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
+    detail: str | None = None
 
 
 type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
@@ -86,6 +91,8 @@ type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
 
 def describe_reason(item: Classification) -> str:
     match item:
+        case ReviewWorktree(reason=ReviewWorktreeReason.INSPECTION_FAILED, detail=str() as detail):
+            return f"cannot inspect: {detail}"
         case PrunableWorktree(reason=PrunableWorktreeReason.DIRECTORY_MISSING):
             return "worktree directory is missing"
         case PrunableWorktree(reason=PrunableWorktreeReason.PR_LANDED, pr=PrInfo() as pr):
@@ -112,32 +119,38 @@ def describe_reason(item: Classification) -> str:
             raise ValueError(f"{item=} lacks the data its reason cites")
 
 
-def _dirty(status: Mapping[str, int]) -> bool:
+def _dirty(status: Sequence[str]) -> bool:
     # status() reports tracked changes and untracked files (ignored excluded by default);
     # any entry means the tree is not clean.
     return bool(status)
 
 
-def _status(pg: pygit2.Repository) -> dict[str, int]:
-    """Git status, cheaply when the tree is already provably dirty.
+def _status(path: Path) -> list[str]:
+    """Paths `git status` reports (tracked changes, then untracked files; ignored excluded).
+
+    Shells out because libgit2's status holds the GIL, which serializes the scan's worker
+    threads; `git` runs in its own process. `--no-optional-locks` keeps concurrent runs from
+    contending on the index lock.
 
     Untracked-file detection has no early-exit: proving "nothing untracked exists" means
     walking every directory the tree doesn't already fully ignore, a cost set by repo size
-    rather than by how much actually changed. A tracked-only check (staged-vs-HEAD,
-    workdir-vs-index) has no such walk — pygit2 can trust the index's cached (mtime, size)
-    per file — and on a worktree with real tracked changes or deletions, that alone already
-    proves the tree isn't clean, so the untracked walk is skipped entirely. Only a worktree
-    that's clean on tracked files pays for the full scan, to also catch untracked work.
+    rather than by how much actually changed. A tracked-only check has no such walk, and on a
+    worktree with real tracked changes or deletions it already proves the tree isn't clean, so
+    the untracked walk is skipped. Only a worktree that's clean on tracked files pays for it.
 
-    The caller's `_last_activity` sees only the tracked-only dict when that already proved
-    dirty, so an untracked file's mtime can't push the reported last-activity time later in
-    that case — acceptable since the classification itself (kept, uncommitted changes)
-    doesn't depend on that timestamp.
+    The caller's `_last_activity` sees only the tracked paths when that already proved dirty,
+    so an untracked file's mtime can't push the reported last-activity time later in that case
+    — acceptable since the classification itself (kept, uncommitted changes) doesn't depend
+    on that timestamp.
     """
-    tracked = pg.status(untracked_files="no")
-    if tracked:
-        return tracked
-    return pg.status()
+    for untracked in ("no", "normal"):
+        outcome = git(path, "--no-optional-locks", "status", "--porcelain=v1", "-z", f"--untracked-files={untracked}")
+        # `-z` entries are `XY <path>` joined by NUL; renames are not detected in porcelain v1
+        # without `-M`, so each entry carries exactly one path.
+        paths = [entry[3:] for entry in outcome.stdout.split("\0") if entry]
+        if paths:
+            return paths
+    return []
 
 
 def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> datetime | None:
@@ -191,16 +204,34 @@ def classify_worktree(
     active_path: Path | None,
     live_pids: list[int],
 ) -> Classification:
+    """Classify one worktree; unreadable state requires review and cannot justify pruning."""
+    try:
+        return _classify_worktree(
+            worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
+        )
+    except INSPECTION_ERRORS as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.warning("Cannot inspect worktree %s: %s", worktree.path, detail)
+        return ReviewWorktree(worktree, ReviewWorktreeReason.INSPECTION_FAILED, None, main, detail=detail)
+
+
+def _classify_worktree(
+    worktree: Worktree,
+    *,
+    main: str,
+    pr_states: dict[str, PrInfo],
+    main_path: Path,
+    active_path: Path | None,
+    live_pids: list[int],
+) -> Classification:
     path = worktree.path
     try:
-        pg = pygit2.Repository(os.fspath(path))
-    except pygit2.GitError:
-        # `git worktree list` still reports an entry whose directory was deleted out from
-        # under it (or whose gitdir link rotted) — nothing to check, and `git worktree
-        # remove` cleans up the administrative files fine even though the directory is gone.
+        path.lstat()
+    except FileNotFoundError:
         return PrunableWorktree(worktree, PrunableWorktreeReason.DIRECTORY_MISSING, None, main)
+    pg = pygit2.Repository(os.fspath(path))
     logger.info("Scanning worktree %s: reading Git status", path)
-    status = _status(pg)
+    status = _status(path)
     logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
     activity = _last_activity(pg, path, status)
 
@@ -242,34 +273,42 @@ def classify_worktree(
     return review(ReviewWorktreeReason.UNMERGED)
 
 
-@dataclass(frozen=True, slots=True)
-class RemovedWorktree:
-    path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedWorktree:
-    path: Path
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedWorktree:
-    path: Path
-    error: str
-
-
-type RemovalResult = RemovedWorktree | SkippedWorktree | FailedWorktree
-
-
-def remove_worktree(repo: Path, path: Path) -> RemovalResult:
+def remove_worktree(repo: Path, path: Path) -> RemovalResult[Path]:
     """Remove one worktree with `git worktree remove` (never `--force`).
 
-    git refuses a dirty tree, so a tree that turned dirty since the scan fails rather than
-    losing work. The branch is left intact — its work stays reachable through it (branch GC
-    is a separate step). The caller re-scans and only passes still-prunable paths here.
+    git refuses a tree with tracked changes or untracked files, so a tree that turned dirty
+    since the scan fails rather than losing work. It does not refuse ignored files: those are
+    deleted with the tree. The branch is left intact — its work stays reachable through it
+    (branch GC is a separate step). Use `remove_if_still_prunable` unless the caller has just
+    classified `path` itself.
     """
-    outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
+    try:
+        outcome = git(repo, "worktree", "remove", os.fspath(path), check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return Failed(path, str(error))
     if outcome.returncode == 0:
-        return RemovedWorktree(path)
-    return FailedWorktree(path, outcome.stderr.strip() or "git worktree remove failed")
+        return Removed(path)
+    return Failed(path, outcome.stderr.strip() or "git worktree remove failed")
+
+
+def remove_if_still_prunable(
+    repo: Path,
+    worktree: Worktree,
+    *,
+    main: str,
+    pr_states: dict[str, PrInfo],
+    main_path: Path,
+    active_path: Path | None,
+    live_pids: list[int],
+) -> RemovalResult[Path]:
+    """Re-classify `worktree` now and remove it only if it is still prunable.
+
+    The scan that found it may be seconds old: a process may have entered the tree, or a
+    commit landed on a detached HEAD, which `git worktree remove` alone would not catch.
+    """
+    fresh = classify_worktree(
+        worktree, main=main, pr_states=pr_states, main_path=main_path, active_path=active_path, live_pids=live_pids
+    )
+    if not isinstance(fresh, PrunableWorktree):
+        return Skipped(worktree.path, describe_reason(fresh))
+    return remove_worktree(repo, worktree.path)

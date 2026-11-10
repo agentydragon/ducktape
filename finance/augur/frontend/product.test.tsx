@@ -2,8 +2,10 @@
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { deferred } from "../../../util/frontend/testing/deferred";
 import { productInputDefaults, scenarioSetToSearch } from "./input_helpers";
 import { ProductProjectionWorkspace } from "./product";
 import type { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
@@ -86,39 +88,29 @@ vi.mock("./fan_chart", () => ({
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 function projection(request: Parameters<typeof fetchProductProjectionSummary>[0]) {
-  const seed = Number(request.scenario.monthlySpend) / 100;
+  const seed = Number(request.scenario.monthly_spend) / 100;
   const common = {
-    currencyCode: "USD",
-    currencyQuantum: "0.01",
+    currency_code: "USD",
+    currency_quantum: "0.01",
     metric: request.metric,
-    failedCount: 0,
-    completedCount: 2,
-    observationCount: 2,
+    failed_count: 0,
+    completed_count: 2,
+    observation_count: 2,
     basis: "completed_horizon" as const,
     diagnostics: [],
-    terminalMetricPercentiles: {
+    terminal_metric_percentiles: {
       percentile: [0, 50, 100],
-      valueQuanta: ["100000", "150000", "200000"] as Array<string | null>,
+      value_quanta: ["100000", "150000", "200000"] as Array<string | null>,
     },
   };
   return {
-    metricFan: { ...common, monthlyMetricFan: { monthIndex: [0], percentile: [50], valueQuanta: ["150000"] } },
-    terminalDistribution: {
+    metric_fan: { ...common, monthly_metric_fan: { month_index: [0], percentile: [50], value_quanta: ["150000"] } },
+    terminal_distribution: {
       ...common,
-      terminalMetricSamples: {
+      terminal_metric_samples: {
         seed: [seed, seed + 1],
-        valueQuanta: ["100000", "200000"] as Array<string | null>,
+        value_quanta: ["100000", "200000"] as Array<string | null>,
         failed: [false, false],
       },
     },
@@ -127,27 +119,27 @@ function projection(request: Parameters<typeof fetchProductProjectionSummary>[0]
 
 function detail(seed: number, value: string): Awaited<ReturnType<typeof fetchProductRollout>> {
   return {
-    currencyCode: "USD",
-    currencyQuantum: "0.01",
+    currency_code: "USD",
+    currency_quantum: "0.01",
     diagnostics: [],
     rollout: {
       seed,
       failed: false,
-      endingMetrics: {
-        snapshotIndex: 0,
-        failedMonthIndex: null,
-        cashQuanta: "0",
-        holdingValueQuanta: "0",
-        privateEquityValueQuanta: "0",
-        propertyValueQuanta: "0",
-        mortgageBalanceQuanta: "0",
-        homeEquityQuanta: "0",
-        liquidNetWorthQuanta: value,
-        netWorthQuanta: value,
-        shortfallQuanta: "0",
-        bondValueQuanta: "0",
+      ending_metrics: {
+        snapshot_index: 0,
+        failed_month_index: null,
+        cash_quanta: "0",
+        holding_value_quanta: "0",
+        private_equity_value_quanta: "0",
+        property_value_quanta: "0",
+        mortgage_balance_quanta: "0",
+        home_equity_quanta: "0",
+        liquid_net_worth_quanta: value,
+        net_worth_quanta: value,
+        shortfall_quanta: "0",
+        bond_value_quanta: "0",
       },
-      monthlyMetrics: { monthIndex: [0], netWorthQuanta: [value] },
+      monthly_metrics: { month_index: [0], net_worth_quanta: [value] },
       events: [],
     },
   };
@@ -156,14 +148,15 @@ function detail(seed: number, value: string): Awaited<ReturnType<typeof fetchPro
 const requests: Array<ReturnType<typeof deferred<ReturnType<typeof detail>>> & { seed: number; signal: AbortSignal }> =
   [];
 const roots: Array<ReturnType<typeof createRoot>> = [];
+const queryClients: QueryClient[] = [];
 const bootstrap = {
   locations: [],
   properties: [],
   models: ["example-model"],
-  defaultModelId: "example-model",
-  productInputDefaults: {},
-  maxRolloutSamples: 100,
-  maxHorizonMonths: 120,
+  default_model_id: "example-model",
+  product_input_defaults: {},
+  max_rollout_samples: 100,
+  max_horizon_months: 120,
 };
 
 async function mount() {
@@ -176,30 +169,44 @@ async function mount() {
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
+  const queryClient = new QueryClient();
+  queryClients.push(queryClient);
   await act(async () => {
     root.render(
-      <ProductProjectionWorkspace
-        bootstrap={bootstrap}
-        deployment={null}
-        tab="product"
-        onSelectTab={vi.fn()}
-        rolloutCount={2}
-        onChangeRolloutCount={vi.fn()}
-        firstSeed={1}
-        model="example-model"
-        onChangeModel={vi.fn()}
-        horizonMonths={24}
-        onChangeHorizonMonths={vi.fn()}
-        metricScale="linear"
-        onChangeMetricScale={vi.fn()}
-        currencyDisplay="compact"
-        onChangeCurrencyDisplay={vi.fn()}
-        settingsOpen={false}
-        onChangeSettingsOpen={vi.fn()}
-      />
+      <QueryClientProvider client={queryClient}>
+        <ProductProjectionWorkspace
+          bootstrap={bootstrap}
+          deployment={null}
+          tab="product"
+          onSelectTab={vi.fn()}
+          rolloutCount={2}
+          onChangeRolloutCount={vi.fn()}
+          firstSeed={1}
+          model="example-model"
+          onChangeModel={vi.fn()}
+          horizonMonths={24}
+          onChangeHorizonMonths={vi.fn()}
+          metricScale="linear"
+          onChangeMetricScale={vi.fn()}
+          currencyDisplay="compact"
+          onChangeCurrencyDisplay={vi.fn()}
+          settingsOpen={false}
+          onChangeSettingsOpen={vi.fn()}
+        />
+      </QueryClientProvider>
     );
   });
+  await act(async () => {
+    const portfolioRequest = client.portfolio.mock.results[0]?.value;
+    if (!portfolioRequest) throw new Error("Expected the portfolio query to start during mount");
+    await portfolioRequest;
+  });
   await act(async () => vi.advanceTimersByTimeAsync(120));
+  await flushQueryUpdates();
+}
+
+async function flushQueryUpdates() {
+  await act(async () => vi.advanceTimersByTimeAsync(1));
 }
 
 async function click(label: string) {
@@ -213,6 +220,7 @@ async function resolveDetail(index: number, value: string) {
     requests[index].resolve(detail(requests[index].seed, value));
     await requests[index].promise;
   });
+  await flushQueryUpdates();
 }
 
 function displayedDetail() {
@@ -222,14 +230,14 @@ function displayedDetail() {
 it("inspects a stopped seed when no horizon-terminal wealth exists", async () => {
   client.projection.mockImplementation((request) => {
     const response = projection(request);
-    for (const result of [response.metricFan, response.terminalDistribution]) {
-      result.failedCount = 2;
-      result.completedCount = 0;
-      result.observationCount = 0;
-      result.terminalMetricPercentiles.valueQuanta = [null, null, null];
+    for (const result of [response.metric_fan, response.terminal_distribution]) {
+      result.failed_count = 2;
+      result.completed_count = 0;
+      result.observation_count = 0;
+      result.terminal_metric_percentiles.value_quanta = [null, null, null];
     }
-    response.terminalDistribution.terminalMetricSamples.valueQuanta = [null, null];
-    response.terminalDistribution.terminalMetricSamples.failed = [true, true];
+    response.terminal_distribution.terminal_metric_samples.value_quanta = [null, null];
+    response.terminal_distribution.terminal_metric_samples.failed = [true, true];
     return Promise.resolve(response);
   });
   await mount();
@@ -243,13 +251,14 @@ it("inspects a stopped seed when no horizon-terminal wealth exists", async () =>
   expect(requests[0].seed).toBe(10);
   const stopped = detail(10, "120000");
   stopped.rollout.failed = true;
-  stopped.rollout.endingMetrics.snapshotIndex = 1;
-  stopped.rollout.endingMetrics.failedMonthIndex = 0;
-  stopped.rollout.monthlyMetrics = { monthIndex: [0, 1], netWorthQuanta: ["150000", "120000"] };
+  stopped.rollout.ending_metrics.snapshot_index = 1;
+  stopped.rollout.ending_metrics.failed_month_index = 0;
+  stopped.rollout.monthly_metrics = { month_index: [0, 1], net_worth_quanta: ["150000", "120000"] };
   await act(async () => {
     requests[0].resolve(stopped);
     await requests[0].promise;
   });
+  await flushQueryUpdates();
   expect(displayedDetail()).toBe("150000,120000");
   expect(document.querySelector('[data-testid="detail-years"]')?.textContent).toBe("0,0");
   expect(document.querySelector("[data-product-stop-book]")?.textContent).toContain(
@@ -263,16 +272,16 @@ beforeEach(() => {
   vi.resetAllMocks();
   requests.length = 0;
   client.portfolio.mockResolvedValue({
-    asOfDate: "2026-10-27",
-    currencyCode: "USD",
-    currencyQuantum: "0.01",
-    cashQuanta: "0",
+    as_of_date: "2026-10-27",
+    currency_code: "USD",
+    currency_quantum: "0.01",
+    cash_quanta: "0",
     holdings: [],
-    tlhPortfolios: [],
+    tlh_portfolios: [],
     bonds: [],
-    totalHoldingsValueQuanta: "0",
-    totalHoldingsCostBasisQuanta: "0",
-    totalBondFaceValueQuanta: "0",
+    total_holdings_value_quanta: "0",
+    total_holdings_cost_basis_quanta: "0",
+    total_bond_face_value_quanta: "0",
   });
   client.projection.mockImplementation((request) => Promise.resolve(projection(request)));
   client.rollout.mockImplementation((request, options) => {
@@ -286,6 +295,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount());
+  for (const queryClient of queryClients.splice(0)) queryClient.clear();
   document.body.replaceChildren();
   vi.useRealTimers();
 });
@@ -327,6 +337,7 @@ it("ignores late success and failure responses after switching scenario or clear
     requests[2].reject(new Error("obsolete detail failed"));
     await requests[2].promise.catch(() => undefined);
   });
+  await flushQueryUpdates();
   expect(displayedDetail()).toBe("");
   expect(client.toast).not.toHaveBeenCalled();
   await click("Variant high");
@@ -343,10 +354,40 @@ it("waits for a changed scenario's current percentile-to-seed mapping while reta
   expect(requests).toHaveLength(1);
   expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
   await act(async () => vi.advanceTimersByTimeAsync(120));
+  await flushQueryUpdates();
   expect(requests.map((request) => request.seed)).toEqual([10, 20]);
-  expect(client.rollout.mock.calls[1][0].scenario.monthlySpend).toBe("2000");
+  expect(client.rollout.mock.calls[1][0].scenario.monthly_spend).toBe("2000");
   await resolveDetail(1, "222");
   expect(displayedDetail()).toBe("222");
+});
+
+it("keeps the previous fan after a failed refresh and blocks its old terminal samples", async () => {
+  await mount();
+  const fans = document.querySelector('[data-testid="fans"]')?.textContent;
+  const refreshedProjection = deferred<ReturnType<typeof projection>>();
+  client.projection.mockImplementation((request) =>
+    request.scenario.monthly_spend === "2000" ? refreshedProjection.promise : Promise.resolve(projection(request))
+  );
+
+  await click("Edit base");
+  await click("Base low");
+  expect(client.rollout).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
+
+  await act(async () => vi.advanceTimersByTimeAsync(120));
+  await flushQueryUpdates();
+  expect(client.projection.mock.calls.some(([request]) => request.scenario.monthly_spend === "2000")).toBe(true);
+  expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
+
+  await act(async () => {
+    refreshedProjection.reject(new Error("refreshed projection failed"));
+    await refreshedProjection.promise.catch(() => undefined);
+  });
+  await flushQueryUpdates();
+  expect(document.body.textContent).toContain("refreshed projection failed");
+  expect(document.querySelector('[data-testid="fans"]')?.textContent).toBe(fans);
+  expect(client.rollout).not.toHaveBeenCalled();
+  expect(client.toast).toHaveBeenCalledTimes(1);
 });
 
 it("scopes an error to the selected detail and clears it when selecting another seed", async () => {
@@ -356,6 +397,7 @@ it("scopes an error to the selected detail and clears it when selecting another 
     requests[0].reject(new Error("current detail failed"));
     await requests[0].promise.catch(() => undefined);
   });
+  await flushQueryUpdates();
   expect(document.body.textContent).toContain("current detail failed");
   expect(client.toast).toHaveBeenCalledTimes(1);
   await click("Base high");

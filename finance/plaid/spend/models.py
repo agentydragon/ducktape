@@ -23,6 +23,10 @@ from finance.plaid.spend.allowance import (
 )
 
 
+class _SpendResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class AlertState(StrEnum):
     NORMAL = "normal"
     WARNING = "warning"
@@ -39,10 +43,8 @@ class StatementReason(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
-class CardConfigurationView(BaseModel):
+class CardConfigurationView(_SpendResponseModel):
     """Safe web projection of a configured card, without its Plaid account ID."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     label: str
     enabled: bool
@@ -50,10 +52,8 @@ class CardConfigurationView(BaseModel):
     alert_threshold_percent: int | None
 
 
-class AllowanceConfigurationView(BaseModel):
+class AllowanceConfigurationView(_SpendResponseModel):
     """Safe web projection of the flexible allowance policy."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     monthly_minor_units: int
     activation_at: date_type
@@ -66,44 +66,34 @@ class AllowanceConfigurationView(BaseModel):
     analysis_categories: dict[str, AnalysisCategory]
 
 
-class SpendConfigurationView(BaseModel):
+class SpendConfigurationView(_SpendResponseModel):
     """Configuration currently loaded by the service, omitting all account IDs."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     time_zone: str
     cards: list[CardConfigurationView]
     allowance: AllowanceConfigurationView | None
 
 
-class StatementCycle(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class StatementCycle(_SpendResponseModel):
     kind: Literal["statement"] = "statement"
     start: date_type
     through: date_type
 
 
-class ProvisionalCardPeriod(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class ProvisionalCardPeriod(_SpendResponseModel):
     kind: Literal["provisional"] = "provisional"
     start: date_type
     through: date_type
 
 
-class UnavailableCardPeriod(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class UnavailableCardPeriod(_SpendResponseModel):
     kind: Literal["unavailable"] = "unavailable"
 
 
 type CardPeriod = StatementCycle | ProvisionalCardPeriod | UnavailableCardPeriod
 
 
-class CardView(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class CardView(_SpendResponseModel):
     account_id: str
     label: str
     account_name: str
@@ -121,9 +111,7 @@ class CardView(BaseModel):
     last_synced_at: datetime_type | None
 
 
-class SpendView(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class SpendView(_SpendResponseModel):
     generated_at: datetime_type
     cards: list[CardView]
     allowance: AllowanceView | None = None
@@ -221,27 +209,21 @@ class PlaidTransactionDetails(BaseModel):
     client_customization: PlaidClientCustomization | None = None
 
 
-class PaceEffect(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class PaceEffect(_SpendResponseModel):
     period_id: PeriodId
     amount_minor_units: int
 
 
-class AnalysisCategoryView(BaseModel):
+class AnalysisCategoryView(_SpendResponseModel):
     """Resolved category metadata for a transaction, including its stable key."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     label: str
     color: str
 
 
-class SpendTransactionRow(BaseModel):
-    """A read-only explanation plus named, typed Plaid source fields."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class SpendTransaction(_SpendResponseModel):
+    """Named Plaid source and normalized fields for one transaction."""
 
     date: date_type = Field(description="Purchase day selected in the policy time zone.")
     plaid_date: date_type | None = Field(
@@ -253,7 +235,17 @@ class SpendTransactionRow(BaseModel):
     amount_minor_units: int
     currency: str
     pending: bool
-    allowance_in_scope: bool
+    pfc_primary: str | None
+    pfc_detailed: str | None
+    merchant_category_code: str | None
+    counterparties: list[PlaidCounterparty] = Field(default_factory=list)
+    details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
+
+
+class AllowanceTransactionEffect(_SpendResponseModel):
+    """The allowance accounting decision associated with a transaction."""
+
+    in_scope: bool
     disposition: Disposition | None
     rule_number: int | None = Field(
         default=None, description="1-based position in the ordered rule list; the first match governs."
@@ -264,22 +256,28 @@ class SpendTransactionRow(BaseModel):
         default=None,
         description="Resolved accounting kind: excluded for a confirmed reversal, else the rule's kind or null.",
     )
-    allowance_minor_units: int
+    amount_minor_units: int
     pace_effects: list[PaceEffect]
-    statement_minor_units: int | None
-    statement_reason: StatementReason | None
-    pfc_primary: str | None
-    pfc_detailed: str | None
-    merchant_category_code: str | None
     category: AnalysisCategoryView | None = None
-    counterparties: list[PlaidCounterparty] = Field(default_factory=list)
-    details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
 
 
-class ExcludedFlowSummary(BaseModel):
+class CardStatementEffect(_SpendResponseModel):
+    """The card statement accounting effect associated with a transaction."""
+
+    amount_minor_units: int | None
+    reason: StatementReason | None
+
+
+class SpendTransactionRow(_SpendResponseModel):
+    """A transaction and its separate allowance and card statement effects."""
+
+    transaction: SpendTransaction
+    allowance: AllowanceTransactionEffect
+    statement: CardStatementEffect
+
+
+class ExcludedFlowSummary(_SpendResponseModel):
     """Policy-excluded ledger flows, gross in each direction and never netted."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     category: AnalysisCategoryView
     currency: str
@@ -289,9 +287,7 @@ class ExcludedFlowSummary(BaseModel):
     pending_count: int = Field(ge=0)
 
 
-class TransactionPeriodSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class TransactionPeriodSummary(_SpendResponseModel):
     transaction_count: int
     net_allowance_spend_minor_units: int
     unmatched_charge_count: int
@@ -299,9 +295,7 @@ class TransactionPeriodSummary(BaseModel):
     excluded_flows: list[ExcludedFlowSummary] = Field(default_factory=list)
 
 
-class SpendTransactionsView(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class SpendTransactionsView(_SpendResponseModel):
     generated_at: datetime_type
     requested_period_id: TransactionPeriodId
     period: Period

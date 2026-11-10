@@ -1,0 +1,55 @@
+load("//devinfra/js/debundle:debundle_product.bzl", "debundle_product", "debundle_spec")
+
+# Fixtures for `debundle_product`; tests live in the parent package so its
+# genquery can enumerate this package's targets exactly.
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/js/debundle/pipeline_rule_test:__pkg__"],
+)
+
+filegroup(
+    name = "source",
+    srcs = [
+        "js-files.txt",
+        "source/main.js",
+    ],
+)
+
+# Conventional layout; the residual baseline is nested under `spec/`, so the
+# outer spec's default inputs must exclude it.
+debundle_product(
+    name = "product",
+    analysis_threads = 2,
+    cli_chunk_graphs = {"lazy": "main"},
+    cli_chunks = [
+        "worker",
+        "lazy",
+    ],
+    cli_main_chunk = "main",
+    cli_source_root = "devinfra/js/debundle/pipeline_rule_test/product/source",
+    ownership_subset = "ownership_subset.json",
+    readable = True,
+    residual_baseline = "spec/residual_baseline",
+    source = ":source",
+    spec = "spec",
+    tags = ["manual"],
+)
+
+debundle_product(
+    name = "product_shared_baseline",
+    residual_baseline = "spec/residual_baseline",
+    residual_baseline_reuses_analysis = True,
+    source = ":source",
+    spec = debundle_spec(
+        "spec",
+        vendor_marks = "vendor_marks.yaml",
+    ),
+    tags = ["manual"],
+)
+
+debundle_product(
+    name = "product_minimal",
+    source = ":source",
+    spec = "spec",
+    tags = ["manual"],
+)

@@ -1,0 +1,6 @@
+[Unit]
+Description=Opt-in isolated cgroup controller pilot slice
+ConditionKernelCommandLine=agentplane.cgroup-pilot=1
+
+[Slice]
+IOAccounting=no

@@ -1,12 +1,10 @@
 # Native session discovery: characterization gaps and deferred design
 
-Status: **child Session discovery/projection deferred.** On 2026-10-16 the operator selected native
-delegation without child Session discovery or controls; it is merged
-([#10782](https://github.com/agentydragon/ducktape/pull/10782)): raw child frames remain recorded,
-normalized output and turn/input bookkeeping remain root-only. The characterization in
-[#10776](https://github.com/agentydragon/ducktape/pull/10776) is merged; remaining configurations
-and independent-control experiments below are not gates for native delegation.
-Discovery, if selected later, builds on the
+Status: **child Session discovery/projection deferred.** Native delegation ships without child
+Session discovery or controls ([#10782](https://github.com/agentydragon/ducktape/pull/10782)); the
+landed characterization and its product boundary are [child Session evidence](../native/docs/child_sessions.md).
+The remaining configurations and independent-control experiments below are not gates for native
+delegation. Discovery, if selected later, builds on the
 [event ingress](../docs/runner_control.md#event-ingress): the runner pushes every Session it
 declares, roots and discovered children alike, and the History Service's index is the record of
 which exist. This holds the remaining characterization, proposed design and hardening candidates for
@@ -16,64 +14,29 @@ The [hardening candidates](#deferred-hardening-candidates) are not a dispatch qu
 
 ## Characterization gaps
 
-The latest [child Session evidence](../native/docs/child_sessions.md) records streaming, concurrent
-siblings, nested ancestry, failure and restart assertions for the pinned harnesses. Keep the
-remaining matrix configuration-specific; a read-only snapshot is not a live subscription, and
-process restart is not transport reconnect.
-
-The currently tested child scenarios live beside their assertions: [Claude](../native/claude/test_tools.py),
+Tested child scenarios live beside their assertions: [Claude](../native/claude/test_tools.py),
 [Codex `multi_agent_v1`](../native/codex/test_tools.py), [Codex `multi_agent_v2`](../native/codex/test_v2_discovery.py),
 and the [experimental Claude 2.1.292 comparison](../native/claude/x/remote_io/README.md#acceptance).
-A child must be created by the real harness, not synthesized by an adapter or inferred from parent
-prose. The test index distinguishes these cases from capabilities that remain unmeasured.
-
-### Test method and evidence
-
-Use the existing [scripted harness suite](../native/README.md): real pinned binaries, loopback
-model endpoints, synthetic tool calls, and native input/output traces. This removes model delegation
-choice from the test. It also avoids live credentials and recorded production conversations.
-
-For each case:
-
-1. Assert that delegation is offered in the model-facing tool roster. Explicitly script the native
-   delegation call and prove it caused a child model request. A parent saying it delegated is not proof.
-2. Gate progress on requests/events, not sleeps. For concurrent children, route exchanges by native
-   identity or distinct synthetic task markers; do not assume sibling request ordering. Bound every
-   scenario and settle all exchanges so teardown catches leaked background work.
-3. Assert the native relationship and lifecycle evidence, separately from the model API transcript.
-   Model request IDs help the test drive the harness; they are not necessarily available to the runner.
-4. Retain `stdin.jsonl`, `stdout.jsonl`, and `stderr.jsonl` through the existing `native_logs` fixture
-   in Bazel undeclared outputs. Record the commit (which fixes the binary pins), launch/initialize
-   options, test target, and CI invocation when reporting a finding. Sanitize any published excerpts.
-5. Distinguish **tested**, **unmeasured**, and **unsupported with evidence**. A missing event in a
-   bounded observation is not proof that the harness can never provide it through another interface.
-   Once a limitation is established, assert that behavior rather than skipping the case.
-
-Tests inherit the `MODULE.bazel` pins; observations of another version are not evidence for the
-pin. Codex `multi_agent_v1` and `multi_agent_v2` are separate configurations, not aliases. A first
-failure is diagnostic evidence to inspect, not a reason to weaken an assertion into accepting either
-behavior. Fix the script if it did not reach the intended stimulus; update a behavioral expectation
-only against the actual native trace.
+New cases follow the [characterization method](../native/docs/child_sessions.md#characterization-method);
+a child must be created by the real harness, not synthesized by an adapter or inferred from parent prose.
 
 ### Matrix
 
-Each cell names what is still unmeasured. Scenarios already covered for both harnesses (spawn with
-native identity and parent linkage, child completion and parent continuation) are not listed.
+Each cell names what is still unmeasured. Scenarios covered for both harnesses (spawn with native
+identity and parent linkage, child completion and parent continuation, child shell results,
+child prose forwarding, child tool failure) are recorded in [child Session evidence](../native/docs/child_sessions.md).
 
-| ID  | Scenario and controlled stimulus                                        | Claude Code                                               | Codex app-server                                                         | Evidence needed before normalization                                                            |
-| --- | ----------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| S2  | Child runs a shell tool and returns a unique result                     | Covered                                                   | Covered: v1/v2 automatic initial child attachment                        | Inputs, outputs and attribution asserted while the child is still active                        |
-| S4  | Observe child prose with forwarding defaults and explicit opt-in        | Covered: default and opt-in; tested CLI opt-outs rejected | Covered: initial parent stream vs explicit loaded-child resume           | Claude forwards completed blocks, not child deltas; Codex streams deltas                        |
-| S5  | Two children active together; finish in reverse spawn order             | Covered                                                   | Covered, v1 and v2                                                       | Arbitrary alternating sibling deltas remain outside the reverse-completion script               |
-| S6  | Child tool fails, then child handles it successfully                    | Covered                                                   | Covered, v1 and v2                                                       | Exit 23 remains a tool failure; the child subsequently completes successfully                   |
-| S7  | Child model request fails terminally; parent continues                  | Covered                                                   | Partial: v1/v2 failed leaf while ancestors remain active                 | Codex tests do not complete the held ancestor model exchanges after the failure                 |
-| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists     | Planned: exercise native child control                                   | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior          |
-| S9  | Parent completes, is interrupted, or exits while child is active        | Partial: parent completion and active-child crash         | Partial: active descendants across process crash                         | Parent interruption and alternative foreground/background configurations remain unmeasured      |
-| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport              | Covered: v1/v2 WebSocket reconnect, gap history and child attachment     | Root resume alone does not subscribe to an existing child's live items                          |
-| S11 | Restart harness and resume parent with completed and active children    | Covered for persisted completed history and active crash  | Covered: v1/v2 completed, failed and interrupted child reads             | Immediate-result crash durability and independent execution recovery are not established        |
-| S12 | Child delegates to a grandchild within configured depth limits          | Covered: immediate-parent tool-call ancestry              | Partial: v1 depth 2; tested v2 fresh child omits collaboration tools     | Other v2 role/context configurations and explicit beyond-limit calls remain unmeasured          |
-| S13 | Send child another input after it completes; attempt independent resume | Partial: independent resume                               | Planned                                                                  | Same session vs successor identity, supported addressing, and capability boundaries             |
-| S14 | Repeat core scenarios with alternate subagent configuration             | Partial: forwarding flag; native background children      | Partial: v1/v2, concurrent children and explicit loaded-child attachment | Context forks, alternate roles, foreground mode and child input remain outside these assertions |
+| ID  | Scenario and controlled stimulus                                        | Claude Code                                              | Codex app-server                                                         | Evidence needed before normalization                                                            |
+| --- | ----------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| S5  | Two children active together; finish in reverse spawn order             | Covered                                                  | Covered, v1 and v2                                                       | Arbitrary alternating sibling deltas remain outside the reverse-completion script               |
+| S7  | Child model request fails terminally; parent continues                  | Covered                                                  | Partial: v1/v2 failed leaf while ancestors remain active                 | Codex tests do not complete the held ancestor model exchanges after the failure                 |
+| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists    | Planned: exercise native child control                                   | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior          |
+| S9  | Parent completes, is interrupted, or exits while child is active        | Partial: parent completion and active-child crash        | Partial: active descendants across process crash                         | Parent interruption and alternative foreground/background configurations remain unmeasured      |
+| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport             | Covered: v1/v2 WebSocket reconnect, gap history and child attachment     | Root resume alone does not subscribe to an existing child's live items                          |
+| S11 | Restart harness and resume parent with completed and active children    | Covered for persisted completed history and active crash | Covered: v1/v2 completed, failed and interrupted child reads             | Immediate-result crash durability and independent execution recovery are not established        |
+| S12 | Child delegates to a grandchild within configured depth limits          | Covered: immediate-parent tool-call ancestry             | Partial: v1 depth 2; tested v2 fresh child omits collaboration tools     | Other v2 role/context configurations and explicit beyond-limit calls remain unmeasured          |
+| S13 | Send child another input after it completes; attempt independent resume | Partial: independent resume                              | Planned                                                                  | Same session vs successor identity, supported addressing, and capability boundaries             |
+| S14 | Repeat core scenarios with alternate subagent configuration             | Partial: forwarding flag; native background children     | Partial: v1/v2, concurrent children and explicit loaded-child attachment | Context forks, alternate roles, foreground mode and child input remain outside these assertions |
 
 #### Claude communication surfaces
 
@@ -139,338 +102,68 @@ The following ownership, identity, storage and API contracts are proposals, not 
 implemented behavior. Native controls and normalization remain gated by the characterization above.
 Deterministic adapter/replay tests must supplement, not replace, real-binary characterization.
 
-### Direction
+### Direction and scope
 
-Let a harness create native children. Its runner adapter interprets the native protocol evidence
-and declares those children as logical sessions. The runner durably owns their identities,
-relationships, observations, and availability, and pushes each declared Session to its ingress like
-any other; the History Service indexes and serves them, and the app presents them as related
-Threads. The Runner Gateway takes no part in discovery: it routes commands and lifecycle requests,
-and a read-only child receives neither.
+The proposal is a read-only projection of native harness evidence into logical Sessions. The
+runner adapter interprets existing Codex and Claude messages; this does not add a
+harness-specific declaration API. The runner owns the durable identity, ancestry, observations,
+and availability; History indexes the announced Sessions, and the app may present related
+Threads. Runner Gateway still routes authorized commands and lifecycle requests; it does not
+discover children.
 
-Scope is every native session the runner observes in its container, not only children of Sessions
-opened through Agentplane (operator, 2026-10-10 PDT): the container is Agentplane's, and whatever
-runs in it got there through Agentplane transitively. A native root not opened through
-Agentplane is declared like a child, as an unparented Session with no spec, and nothing
-filters it out as foreign.
+Scope includes every native Session the Agentplane-managed runner durably observes, including
+an unparented root not opened through Agentplane (operator direction, 2026-10-10 PDT). This is
+the runner's known inventory, not an exhaustive snapshot of every child hidden in a harness.
+A child declaration starts no process, setup, or Sandbox and copies no parent command queue;
+logical Sessions share the execution owner. Recognition starts read-only. A child name, parent
+link, shared process, or Thread view grants neither independent control nor authorization.
 
-This does not require adding an Agentplane-specific declaration API to Claude Code or Codex. Their
-existing messages are the declaration inputs. The adapter is responsible for translating those
-messages into a small shared vocabulary without manufacturing capabilities the harness lacks.
+### Identity and root-creation boundary
 
-A child declaration must not spawn another harness process, run setup, allocate a sandbox, or
-copy the parent's command queue. Several logical sessions can share one harness process and its
-native state. Recognition is initially read-only; independently controlling a child is a later,
-evidence-gated capability.
+Keep the creation-request ID, native harness ID, and public Agentplane Session reference
+distinct. Qualify native handles by execution owner, storage lineage, harness, handle kind,
+and native scope. Resolve aliases and ancestry only from native evidence; conflicts or missing
+continuity remain unresolved rather than merging or reparenting Sessions. A pending delegation
+or pre-creation error is not a child; late evidence may declare one without inventing an earlier
+running interval. These identity and record details are specified in the concrete contract below.
 
-### Vocabulary and ownership
+Root creation remains a separate unresolved design boundary. Today's Dispatcher
+`CreateSession.session_id` and the harness's native ID are distinct facts; a service UUID does
+not prove native conversation creation. Codex obtains its native ID from `thread/start`; Claude's
+initial supported path retains the selected `--session-id`, while a no-input harness-minted ID
+boundary still needs a pinned test. The first child-read slice need not change root allocation.
+Do not add a synthetic prompt, silently bundle first input into today's API, or treat a request
+ID as proof of exactly-once native creation. After an ambiguous launch failure, retry only when
+positive native evidence establishes continuity; otherwise preserve an unknown outcome.
 
-Use **logical session** as the runner's tracked conversational entity, with an explicit kind
-(`root_conversation`, `native_thread`, or `agent_task`). A Claude child may remain an agent task,
-not an independently addressable conversation. The common name grants no control capability. Keep these concepts separate:
+A future creation API may accept first input before native declaration when the harness needs it
+to reveal its ID. Durably reserve the execution owner, native state, logical reference and attempt
+journal, recording the creation intent and input command ID before dispatch. Pending means only an
+attempt exists. Dispatch under the saved command ID without resubmitting after reply loss; bind
+confirmed native identity without changing journal origins or losing earlier evidence, and preserve
+an ambiguous outcome across the native creation crash window. Reusing an attempt key with changed specs is rejected. Keep creation,
+observation/attachment and explicit resume separate; a new native conversation gets a new
+declaration. Making native IDs public is an alternative requiring owner/harness scope, not a bare ID.
+None of this selects a change to today's API; the later root section retains that decision gate.
 
-- **Execution owner:** the durable runner resource that launches and supervises the harness and
-  retains its native state. Today this is coupled to a root session; with harness-minted root IDs it
-  must be reservable before that root is declared. It is not the semantic parent of every descendant.
-- **Logical session:** a root conversation or a discovered native child. It owns attributed
-  conversation history, not necessarily a process, workspace, or independently usable control API.
-- **Parent relationship:** the native delegation ancestry, supported by evidence. Preserve the
-  spawning call as provenance; a later message from a sibling does not reparent the recipient.
-- **Activity:** one observed period of work within a session. Finishing it does not delete or
-  permanently close the session. Use native turn IDs where available; otherwise retain the native
-  activity evidence without claiming an exact model-turn boundary.
-- **Native background task:** a harness-specific category, not automatically a logical session.
-  A shell job, file transfer, or remote task must not become a conversation merely because it emits
-  a `task_started`-shaped event. V1 recognizes only evidenced agent/conversation types.
-- **Thread:** the app's conversation view and operator annotations. It is not the session registry
-  or another execution authority. Follow the existing [layering contract](../docs/thread_layering.md).
+### Read-only projection and gates
 
-The runner's inventory means **all sessions it has durably learned about**, not necessarily all
-children hidden inside the harness. Report the distinction. Current native enumeration coverage
-is insufficient to advertise an exhaustive live-native snapshot.
+The concrete contract below is the detailed proposal for descriptors, harness-specific
+observation and recovery, durable journaling/projection, ingress publication, and History/app
+exposure. It is not a shipped protobuf or current runner capability. Keep raw native evidence,
+configuration/version, and execution-owner incarnation with derived facts. Route child content
+to child history and delegation/result evidence to parent history; unresolved frames stay
+unattributed. Report coverage as identity-only, lifecycle/result-only, or partial transcript
+only when the evidence supports it. Separate last known work outcome from current availability;
+owner loss does not prove child completion, cancellation, or stopped execution.
 
-### Identity and declaration
-
-Use the same declaration model for roots and children. A root's Session ID is the UUID its client
-chooses for the current `OpenSession` request (formerly supplied through the Gateway's
-`CreateSession` wrapper); the runner mints a UUID for each child it discovers. Either way the ID is
-the Session's public identity on the ingress, and the History Service's index learns it from the
-announcement. The proposed harness-minted-root flow below separates requesting creation from
-observing a native conversation. Persist an opaque Agentplane logical ID and its native binding before publication.
-Use the canonical logical identity direction in the layering plan; do not require existing root
-storage paths to be rekeyed here.
-
-A session descriptor should carry:
-
-- Logical session ID, execution-owner ID, and parent ID when established.
-- Origin kind: explicitly opened root, discovered root, or harness-discovered child.
-- Native harness kind and qualified native handle, including its identity scope.
-- Discovery evidence and the spawning call's native identity when available.
-- Observed activity/availability, transcript coverage, and supported access modes.
-- Optional display metadata supplied by the harness, treated as untrusted content.
-
-Native handle lookup needs a persisted namespace, not a bare `task_id` or `threadId`. Qualify it by
-execution owner, harness kind, native handle kind, and native identity scope. Native storage lineage and process incarnation are separate: a PID or process restart does not
-by itself establish or break identity continuity. A new storage lineage starts a new namespace;
-retained state plus positive native resume evidence can preserve the existing one. Runner replay on retained storage
-reuses its saved mapping; matching a newly launched harness to old children requires positive
-continuity evidence. Neither PID reuse nor equal descriptions proves continuity.
-
-Within that scope, repeated discovery upserts the same child. Alternative references such as
-Claude's `task_id`, `agentId`, and delegation `tool_use_id` become evidence-backed aliases, not new
-sessions. A continuation call can add an alias without changing ancestry. Conflicting mappings
-must retain the native evidence and surface a reconciliation problem, not silently merge children.
-
-Declare only when there is native evidence of an actual child identity. A tool-call start with no
-returned child ID is a pending delegation in the parent's history, not yet a child session. An
-error before creation must not leave a phantom child. If an ID is first observed at completion,
-allow late discovery without inventing a previously observed running interval.
-
-### The single-agent case: harness-minted root IDs
-
-A single-agent run is the smallest declaration case: one execution owner, one root declaration,
-no parent relationship. The harness is authoritative about the native conversation's identity and
-existence; the caller requests creation rather than declaring that a conversation already exists.
-
-Keep three identifiers distinct:
-
-- **Creation request ID:** caller-chosen correlation/idempotency key. Retrying it retrieves the same
-  creation attempt; it is not a native or logical session ID.
-- **Native session ID:** minted by the harness and learned from native protocol evidence.
-- **Agentplane session reference:** a stable public logical identity bound to the qualified native
-  ID: the client-minted UUID for a created root, a runner-minted UUID for a discovered Session, so
-  native scope/format changes do not rekey public history. Making the native ID itself public is a
-  possible alternative, but it still needs harness/owner scope; a bare native ID is not a globally
-  unique Agentplane reference.
-
-The proposed flow is:
-
-1. The client requests a new root with a spec and creation request ID, optionally including the
-   first input with its own command ID. It does not need to supply a future session ID.
-2. The runner durably reserves the execution owner, native state location, and creation intent.
-   It may reserve the eventual logical ID and journal here, but reports **pending creation**, not
-   an observed native session. Setup and launch failures belong to this attempt.
-3. The adapter starts the harness and requests a new native conversation. Native evidence supplies
-   its ID; the runner commits the binding and a root `SessionDeclared` observation with no parent.
-4. The client receives the declared session reference and can list, attach, and use the proven root
-   controls. Identity binding must not change the journal's origin or discard pre-declaration evidence.
-5. Later turns and explicit native resume reuse that binding when continuity is established.
-   Creating another native conversation is another declaration, not a relabeling of this session.
-
-The two harnesses have different declaration timing:
-
-- **Codex:** the existing adapter already obtains a harness-minted `thread.id` from `thread/start`.
-  That reply can declare the root before the first `turn/start`. Today it is stored underneath a
-  separately client-chosen runner session ID; the new creation flow removes that client-ID prerequisite.
-- **Claude:** the existing runner currently generates a UUID and passes `--session-id` on fresh
-  launch; the adapter's `handshake()` returns that preselected ID after `initialize`, not an ID minted
-  by the handshake response. To exercise harness-minted identity, omit the fresh-launch override
-  and bind the ID from an observed native
-  session-bearing frame. Do not assume `initialize` announces it: the exact earliest reliable
-  declaration boundary needs a pinned test, including the no-input case.
-
-If the ID is not revealed until input starts, the API must not deadlock by requiring an attached
-session before accepting the first input. Persist that input in the creation attempt's existing
-journal, dispatch it using that command ID when the native transport is ready, then bind the resulting
-session declaration without resubmitting the input.
-The pending creation reference can serve launch progress and declaration evidence until attachment
-is possible. A UI may show a pending conversation, but it must not report a native session as already
-created. Do not insert a synthetic user prompt merely to force the harness to allocate an ID.
-
-Creation idempotency is not native exactly-once execution. If the runner crashes after requesting a
-native conversation but before durably recording its ID, a retry of the same creation request must
-not blindly start another one. Recover through positively identified native state/protocol evidence
-where supported; otherwise report an ambiguous creation outcome. A JSON-RPC request ID or a saved
-creation intent alone does not prove the native operation is safe to repeat. Test that crash window
-before promising automatic recovery. Changed specs under the same creation key are rejected.
-
-This proposes separating **create**, **observe/attach**, and **explicit resume** in the runner/service
-contract rather than overloading `Open(unknown_id, spec)` with a guessed future ID. Use the existing
-command/journal machinery for the attempt and first input, not another execution queue. Retain the
-existing root mappings and history; implementation should make an atomic contract cutover rather
-than add a tolerant second interpretation of `Open`. The first child-discovery slice may keep today's
-root creation path, but that is an explicit scope boundary, not the final identity model.
-
-Root and child discovery then converge: both commit the same descriptor and declaration observation;
-only their cause, parent linkage, and capabilities differ. A child declaration has native delegation
-provenance rather than a client creation request, and does not allocate a new execution owner.
-
-#### End-to-end: provision a sandbox and start its first session
-
-One common client flow can work for either harness. The operation names below are illustrative,
-not claims about the current API. The caller can be a UI backend, CLI, or another agent.
-
-1. **App → Kubernetes: create a Sandbox.** The app acts as the requesting operator and submits the
-   selected template, preset label and authorized workload configuration. The Sandbox Controller
-   reconciles it; allocated is not yet ready, so wait for controller status to report a reachable
-   runner and required initialization to succeed.
-2. **Client → Runner Gateway: `StartSession`.** Supply that sandbox reference, a session-creation
-   request ID, the harness/model/workspace/instructions spec, and optionally the initial input with
-   its own command ID. The service authorizes access, resolves the runner, and forwards the request;
-   it does not operate the harness itself.
-3. **Runner: durable acceptance.** Reserve the execution owner, native state directory, logical
-   session reference `S`, and journal the creation intent and any initial input before dispatch.
-   Return `S` in a starting/pending state and expose startup progress. Retrying the creation request
-   finds this attempt, not another launch. `S` is usable to track the attempt before it proves that
-   a native conversation exists.
-4. **Adapter ↔ harness: native creation.** Codex runs `initialize`, then `thread/start`, binds the
-   returned `thread.id`, and submits the saved input through `turn/start`. Claude can initialize in
-   stream-json mode, submit the saved input, and bind the ID from a session-bearing native frame.
-   Alternatively its adapter can preselect the ID through `--session-id` and wait for native
-   confirmation. These choices do not change the caller's flow or justify resending the input.
-5. **Runner → ingress → client: declaration and events.** Commit the qualified native-ID
-   binding and declare root `S` with no parent and the creation request as provenance; its
-   announcement and journal go to the ingress. The client reads `S` from the History Service (or is
-   the ingress itself) and sends proven root commands through the Runner Gateway; it need not address a
-   Codex thread ID or Claude conversation ID. Startup acceptance, native existence, input
-   confirmation, and work completion remain distinct facts.
-6. **If the harness delegates later:** native evidence declares child `S2`, with parent `S` and the
-   same execution owner. The runner opens a `Push` call for `S2` like any Session, so the child
-   enters the History Service's index with its proven coverage/capabilities; Agentplane does not
-   provision another sandbox or launch another process to recognize it.
-
-Creation failure remains inspectable through the pending attempt. The ambiguous native-creation
-crash window described above still applies; request deduplication does not make native creation or
-first-input delivery exactly once. No app database record is required for runner-side declaration.
-
-### Proposed observation flow
-
-Names here are illustrative; implement them in the existing runner Event language, not a parallel
-command/event API:
-
-1. **Session declared:** upsert the descriptor from native creation or later discovery evidence.
-2. **Activity observed:** report running, idle with a last-work outcome, or unknown. Carry the
-   native turn/activity key when available and preserve the exact evidence for the inference.
-3. **Session capabilities observed:** update transcript coverage and any proven access modes.
-4. **Session availability changed:** record native loss, confirmed disposal, or verified recovery
-   separately from a completed activity. Historical identity and history remain retained.
-
-For Claude, a plausible sequence is:
-
-```yaml
-- observation: session_declared
-  session_id: child-session
-  execution_owner_id: root-session
-  parent_session_id: root-session
-  native_handle:
-    kind: claude_agent
-    id: native-agent-id
-    scope: native-incarnation-scope
-  provenance:
-    spawning_tool_use_id: native-spawn-call
-- observation: activity_observed
-  session_id: child-session
-  state: idle
-  last_work_outcome: completed
-- observation: activity_observed
-  session_id: child-session
-  state: running
-  evidence_kind: native_continuation_activity
-```
-
-These are semantic examples, not claims that each transition has a dedicated native frame. In
-particular, successful `SendMessage` alone cannot justify running or message-consumed state. The
-adapter must use the relevant native activity/content evidence. Keep unknown state when that
-boundary is not observable.
-
-Route native frames before applying conversation logic. Otherwise a child's forwarded assistant
-frame can mutate the parent's item state, active turn, or command receipts. Parent history keeps
-the delegation tool and its result; child history gets child-attributed content. Do not replace
-child history with the parent's summary or render a forwarded child answer as parent-authored prose.
-
-Claude routing initially joins `parent_tool_use_id` to the discovered child mapping. Codex uses
-native thread identities where those are actually supplied on the client-visible stream. A frame
-may provide both parent-tool and child-state observations; derive both with separate attribution.
-Unresolved frames remain raw evidence until attribution is known. Never guess the root as the
-recipient of otherwise ambiguous child traffic. Bound any in-memory correlation buffer and retain
-an explicit unresolved state when it cannot be resolved.
-
-### Runner protocol and storage seams
-
-Today [`proto/runner.proto`](../proto/runner.proto), [`Session`](../runner/session.go), and
-[`SessionRecord`](../runner/store.go) couple a session to a launch spec, native persistence, process,
-and active turn, and `Attached`, the ingress announcement, carries that spec. The first
-implementation must separate the logical-session descriptor from execution ownership.
-
-Proposed public behavior:
-
-- Extend `Attached` with the descriptor: kind, origin, execution owner, parent, availability and
-  coverage. A discovered child's announcement carries no `SessionSpec`; it must not acquire a fake
-  copy of the parent's, since its actual prompt/model/settings may differ or be unknown.
-- Every declared Session gets its own journal and its own `Push` call, opened when it is declared
-  and after any lost call, as the ingress contract already does for roots. Discovery therefore
-  needs no inventory snapshot and no list/follow handoff: a declaration racing a restart is pushed
-  when the runner resumes after the last acknowledgement. A stopped owner does not erase its
-  historical children.
-- The ingress accepts a parent only if it is bound to the same writer, so a Sandbox cannot attach
-  children to another Sandbox's Session. An idle child stays open on its call; finishing its most
-  recent task does not seal it. Describe owner-process health separately from child activity.
-- Reject launch/setup/spec mutations and unsupported commands on discovered children before
-  admission, on the control stream. Do not route a child command to the parent's stdin just
-  because they share a process. Existing root command idempotency remains unchanged.
-
-Prefer retaining one logical Event stream per child so the current one-Session/one-Thread view model
-remains meaningful. This needs an explicit evidence and storage design before protocol rollout:
-
-- Preserve a raw native frame once at its execution owner. Child-derived Events must cite the
-  owner's qualified `EventOrigin`; today's `Event.source_sequences` only addresses the emitting
-  source and cannot express this cross-session reference. Extend the evidence language atomically
-  and update readers/importers rather than treating the parent's sequence as a child-local sequence.
-- Each session retains its own replay cursor; cursors from parent and child are not comparable.
-  Sibling arrival order at the runner is not a universal native causal order.
-- Persist the identity mapping and relevant event routing before publication. Crashes between
-  declaration, child creation, and content append must replay to one child and one derived fact.
-  Today journals are per-session SQLite databases: an in-memory dispatch into two journals is not
-  an atomic commit. Choose a shared transactional boundary or a replayable, idempotent projection
-  from the owner's durable evidence before implementing fan-out. Do not add a second command queue.
-- If using replayable projection, record a durable applied prefix and deduplicate each derived
-  observation by its source evidence and target. Keep already-published origins stable on replay;
-  reinterpreting history after an adapter upgrade needs an explicit policy, not silent regeneration.
-- The owner's journal reaches the same ingress under the same writer, so the History Service holds
-  the referenced owner evidence and Raw stays resolvable after Sandbox deletion; a reader resolves a
-  cross-log reference only between Sessions of one writer.
-
-These are required design gates, not a claim that the existing journal already supplies multi-session
-transactions. The read-only first slice should settle them without refactoring command scheduling
-or adding independently executable child sessions at the same time.
-
-### Discovery, capability, and recovery boundaries
-
-Treat coverage as at least identity-only, lifecycle/result-only, or partial attributed transcript.
-Only advertise a complete transcript when the harness boundary actually supports that claim. Codex
-starts with its proven collaboration evidence; separately subscribing to a native child, if required,
-is still an open test. A runner must not synthesize missing child text from a parent wait result.
-
-Describe native message/control routes separately from exposed runner commands. Claude's proven
-parent-tool `SendMessage` route does not establish a direct driver-input API for children. Likewise,
-`TaskOutput` retrieving a result does not prove general history enumeration. A capability becoming
-visible does not bypass the History Service's read authorization or the Runner Gateway's command
-authorization, or grant child callers another ServiceAccount's authority. Shared-process children are not isolation boundaries.
-
-On owner transport/process loss, mark previously active children unknown/lost as observations of
-availability; preserve their last known outcomes. Do not convert loss into successful completion or
-claim remote/native execution stopped unless the harness proves it. On runner restart, reload the
-retained inventory without launching anything; on explicit native resume, reconcile only what the
-native protocol can establish. Absence from a partial snapshot is not proof of deletion.
-
-The [resume/fate characterization](#resume-and-child-fate)
-must distinguish live reattachment, runner replay, clean native resume, and crash recovery. For each
-child, retain the last observed work outcome separately from current availability and the evidence
-that supports reconciliation. Report whether fate can be recovered automatically, only after input,
-or via an explicit query; a remembered parent summary is not a new child lifecycle observation.
-Deduplicate replayed terminal notifications without hiding a genuinely new work episode. A missing
-notification, an empty partial inventory, or a not-found response does not establish successful
-completion or cancellation. Preserve unknown fate when the native protocol cannot resolve it.
-
-Do not automatically rerun unresolved work or use a child-message operation as a status probe:
-reactivation may execute work again. Characterize native resume's own automatic restart behavior
-and side-effect replay before offering it as recovery. Read-only acceptance must cover retained
-outcomes with unknown current availability; stronger fate reconciliation remains test-gated.
-
-Independent child input, interruption, nested ancestry, complete enumeration, and broader identity
-scope reconciliation remain gated by the matrix. The measured Codex v2 relation/history reads and
-Claude 2.1.292 stopped-task recovery are admissible only for their characterized configurations. Do not enable parent-injected tool calls as a hidden
-implementation of a supposedly independent child command.
+The first slice remains read-only: do not resume, rerun, or use messaging as a status probe.
+Independent child input/interruption, nested ancestry, complete enumeration, live child
+subscriptions, broader identity reconciliation, and root crash recovery require their own
+characterization and acceptance. Codex v2 and Claude 2.1.292 observations apply only to the
+measured configurations; they do not authorize a general control surface or transport cutover.
+The existing [matrix](#matrix), later implementation slices, and deferred hardening section
+retain the specific test cases and unresolved gates.
 
 ### Concrete shared contract for both harnesses
 
@@ -518,22 +211,23 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-The Session Dispatcher owns openings and invokes Runner `OpenSession` through the Gateway proxy
+The Session Dispatcher owns logical Session records and invokes the placement owner's `CreateSession`
+through the Gateway proxy
 after the Sandbox is ready. The Runner owns retained execution state, while History records a
 Session after its ingress accepts Events. See the [Runner Gateway](../runner_gateway/README.md) and
-[Session Dispatcher opening contract](../runner_gateway/dispatcher/README.md).
+[Session Dispatcher Session contract](../runner_gateway/dispatcher/README.md).
 
 The native-root design does not yet choose how the Session Dispatcher and Runner should reserve a
 root ID or bind it to confirmed native creation. The example sequence below predates the current
-Dispatcher `OpenSession` path and is a proposal, not a current app path. Review the opening contract
+Dispatcher `CreateSession` path and is a proposal, not a current app path. Review the Session contract
 and identity before implementing it; a harness-minted root ID would need to bind to the public
-Session ID without treating a preselected `OpenSession.session_id` as proof of native creation.
+Session ID without treating a preselected `CreateSession.session_id` as proof of native creation.
 
 The concrete root sequences are:
 
 1. The app submits an authorized Sandbox request through Kubernetes and follows controller readiness.
-2. The client calls Session Dispatcher `OpenSession` with a fresh UUID and complete harness spec;
-   the Dispatcher passes the request to Runner `OpenSession` through the proxy. A future native-root
+2. The client calls Session Dispatcher `CreateSession` with a fresh UUID and its Session spec;
+   the Dispatcher passes creation to the placement owner through the proxy. A future native-root
    contract must decide how that ID and launch intent reserve a logical root and execution owner.
    A retry carries the same UUID; whether the runner started it is read from retained runner state
    and confirmed by history as available. An announcement is not launch success.
@@ -551,7 +245,7 @@ Omitting Claude's ID override is a later optional mode, gated by the no-input de
 experiment described above. Clients need not choose native IDs, but a uniform client API does
 not require both harnesses to mint them. Do not block the first read-only child slice on changing
 root allocation. If first input is bundled with creation in a future API, journal it once as described
-above; do not silently add such a field or a synthetic prompt to today's `OpenSession`.
+above; do not silently add such a field or a synthetic prompt to today's `CreateSession`.
 
 #### Codex v2: spawn, observation, and recovery
 
@@ -741,5 +435,5 @@ excluded.
    history, epochs and cursors across reconnect/restart. Missing/unloaded tasks are not completed tasks;
    read-only recovery must not secretly reactivate them.
 
-Follow the [evidence rules](#test-method-and-evidence) and record results in the
-[matrix](#matrix) rather than a second one.
+Follow the [characterization method](../native/docs/child_sessions.md#characterization-method) and
+record results in the [matrix](#matrix) rather than a second one.

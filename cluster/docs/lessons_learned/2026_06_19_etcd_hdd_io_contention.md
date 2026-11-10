@@ -165,6 +165,34 @@ The danger is not only current placement but that flux controllers and tofu runn
 land on **any** untainted node — so a big terraform apply or an image-automation cycle
 can drop onto the leader (.13) at any time and spike its fsync queue.
 
+### Additional workload I/O incidents (2026-06-08 to 2026-06-10)
+
+Two later investigations confirmed distinct ways log and Git workloads can amplify etcd
+latency on the same system disk:
+
+- **Promtail page-cache thrash (2026-06-08).** A 128Mi memory limit left too little
+  cgroup-v2 cache headroom while Promtail tailed every container log. On the busiest
+  node, 66 MB of logical reads caused 23.8 TB of physical reads; the system disk reached
+  94% utilization and its I/O starved etcd WAL fsync. The fix is to keep the memory limit
+  above the tail working set; the current Promtail values request 256Mi and limit memory
+  to 1Gi in `cluster/cdk8s/monitoring/loki.py`. See the
+  [initial NotReady capture](../../debug/2026-05-31-kimsufi-worker-1-notready/).
+- **Image-automation clone bursts (2026-06-10).** The then-running v1.0.4 controller
+  cloned the roughly 540 MB repository every five minutes, producing bursts near 9 MB/s
+  on the host disk. The incident was closed after PR #1991 upgraded Flux to v2.8.8,
+  including image-automation-controller v1.1.4; current source pins v2.9.5 / v1.2.5.
+  The repository has no post-upgrade write-rate sample, so remeasure clone and disk
+  activity if the symptom recurs instead of assuming a version change proves the old
+  behavior is gone. Keep Flux controllers softly preferred off control-plane nodes as
+  defense in depth, and inspect individual image tags during upgrades because the bundle
+  header does not prove every component tag.
+
+The current source retains the worker preference in
+`cluster/k8s/flux/flux-system/kustomization.yaml`. The detailed June 10 investigation also
+recorded a separate VPA admission-webhook no-endpoint observation; its present runtime
+availability is not established by this source history and remains a live verification
+question in the [VPA webhook follow-up](../../debug/2026-06-10-vpa-webhook-availability.md).
+
 ## Remediation
 
 ### Done (2026-06-19)
@@ -177,7 +205,7 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
 2. **Flux controllers pinned off the control-plane nodes** — soft (preferred)
    nodeAffinity `node-role.kubernetes.io/control-plane DoesNotExist`, applied to all
    six controller Deployments via a patch in
-   <../../k8s/flux-system/kustomization.yaml>. The controllers use `emptyDir` for
+   <../../k8s/flux/flux-system/kustomization.yaml>. The controllers use `emptyDir` for
    `/data` and `/tmp`, so their git-clone / artifact / image-automation writes land on
    the host disk; this keeps that I/O off the etcd spindles and onto the NVMe workers in
    normal operation. Soft (not required) because the controllers are
@@ -188,11 +216,10 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    unhealthy dependency followers wake every 5s and re-run the full reconcile path
    (artifact fetch + untar + build + per-object server-side dry-run) for hundreds of
    Kustomizations after each source revision. Set `--concurrent=8` /
-   `--requeue-dependency=30s` (`cluster/k8s/flux-system/gotk-components.yaml`) and
+   `--requeue-dependency=30s` (`cluster/k8s/flux/flux-system/gotk-components.yaml`) and
    narrowed the `flux-system` GitRepository sparse checkout to `cluster/k8s/` +
    `tf/gitops/` (was all of `cluster/` + `tf/`, dragging `debug/`/`docs/` into every
-   artifact). Per-culprit retry-storm RCAs live under
-   <../../debug/2026-06-10-etcd-io-contention/>.
+   artifact).
 
 ### Pending
 

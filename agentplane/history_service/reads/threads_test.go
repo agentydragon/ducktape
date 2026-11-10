@@ -1,7 +1,6 @@
 package reads
 
 import (
-	"encoding/json"
 	"errors"
 	"math"
 	"slices"
@@ -46,17 +45,23 @@ func readEntities(t *testing.T, f fixture, request *historypb.ReadThreadEntities
 	return response
 }
 
-func views(t *testing.T, response *historypb.ReadThreadEntitiesResponse) []map[string]any {
+func entityKind(t *testing.T, entity *historypb.ThreadEntity) historypb.ThreadEntityKind {
 	t.Helper()
-	var decoded []map[string]any
-	for _, entity := range response.Entities {
-		var view map[string]any
-		if err := json.Unmarshal([]byte(entity.ViewJson), &view); err != nil {
-			t.Fatal(err)
-		}
-		decoded = append(decoded, view)
+	switch entity.Entity.(type) {
+	case *historypb.ThreadEntity_ViewState:
+		return historypb.ThreadEntityKind_THREAD_ENTITY_KIND_VIEW_STATE
+	case *historypb.ThreadEntity_Item:
+		return historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM
+	case *historypb.ThreadEntity_ConfirmedInput:
+		return historypb.ThreadEntityKind_THREAD_ENTITY_KIND_CONFIRMED_INPUT
+	case *historypb.ThreadEntity_Lifecycle:
+		return historypb.ThreadEntityKind_THREAD_ENTITY_KIND_LIFECYCLE
+	case *historypb.ThreadEntity_Command:
+		return historypb.ThreadEntityKind_THREAD_ENTITY_KIND_COMMAND
+	default:
+		t.Fatalf("unknown entity variant %T", entity.Entity)
+		return historypb.ThreadEntityKind_THREAD_ENTITY_KIND_UNSPECIFIED
 	}
-	return decoded
 }
 
 func TestARangeWindowReadsBackTheFoldedStream(t *testing.T) {
@@ -75,32 +80,18 @@ func TestARangeWindowReadsBackTheFoldedStream(t *testing.T) {
 			t.Fatalf("entity %d has index %d, want a dense numbering from 0", position, entity.EntityIndex)
 		}
 	}
-	// The row browsers sync: every field of the view, present even when null.
-	contract := []string{
-		"arguments_ref", "cursor", "entity_id", "entity_kind", "input_ref", "output_ref", "pending",
-		"projection_epoch", "revision_cursor", "state", "text_ref", "thread_id", "turn_id",
-	}
-	var reply map[string]any
-	for _, view := range views(t, window) {
-		keys := make([]string, 0, len(view))
-		for key := range view {
-			keys = append(keys, key)
-		}
-		slices.Sort(keys)
-		if !slices.Equal(keys, contract) {
-			t.Fatalf("view fields = %v, want %v", keys, contract)
-		}
-		if view["entity_id"] == "test-reply" {
-			reply = view
+	var reply *historypb.ThreadEntity
+	for _, entity := range window.Entities {
+		if entity.EntityId == "test-reply" {
+			reply = entity
 		}
 	}
-	if reply == nil || reply["entity_kind"] != "item" || reply["thread_id"] != sessionID.String() || reply["projection_epoch"] != testEpoch {
+	if reply == nil || reply.GetItem() == nil || reply.SessionId != sessionID.String() || reply.ProjectionEpoch != testEpoch {
 		t.Fatalf("reply view = %v", reply)
 	}
 	// The reply started at cursor 2 and has been revised since.
-	text, _ := reply["text_ref"].(map[string]any)
-	if reply["cursor"] != float64(2) || reply["revision_cursor"].(float64) <= 2 || text["owner_id"] != "test-reply" {
-		t.Fatalf("reply cursor %v revision %v text %v", reply["cursor"], reply["revision_cursor"], reply["text_ref"])
+	if reply.Cursor != 2 || reply.RevisionCursor <= 2 || reply.GetItem().GetTextRef().GetOwnerId() != "test-reply" {
+		t.Fatalf("reply cursor %v revision %v text %v", reply.Cursor, reply.RevisionCursor, reply.GetItem().GetTextRef())
 	}
 }
 
@@ -130,12 +121,12 @@ func TestKeysReturnTheRowsThatExist(t *testing.T) {
 	window := readEntities(t, f, &historypb.ReadThreadEntitiesRequest{
 		SessionId: sessionID.String(),
 		Window: entityKeys(
-			&historypb.EntityKey{EntityKind: "item", EntityId: "test-reply"},
-			&historypb.EntityKey{EntityKind: "command", EntityId: "test-never-sent"},
+			&historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-reply"},
+			&historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_COMMAND, EntityId: "test-never-sent"},
 		),
 	})
 
-	if found := views(t, window); len(found) != 1 || found[0]["entity_id"] != "test-reply" {
+	if found := window.Entities; len(found) != 1 || found[0].EntityId != "test-reply" {
 		t.Fatalf("views = %v, want only the reply", found)
 	}
 }
@@ -143,18 +134,18 @@ func TestKeysReturnTheRowsThatExist(t *testing.T) {
 func TestAKeyMatchesAnEntityByItsKindAndItsIdTogether(t *testing.T) {
 	f := newFixture(t)
 	sessionID := foldedReply(t, f)
-	all := views(t, readEntities(t, f, &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: entityRange(0, 200)}))
+	all := readEntities(t, f, &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: entityRange(0, 200)}).Entities
 	first := all[0]
-	second := all[slices.IndexFunc(all, func(view map[string]any) bool {
-		return view["entity_kind"] != first["entity_kind"] && view["entity_id"] != first["entity_id"]
+	second := all[slices.IndexFunc(all, func(entity *historypb.ThreadEntity) bool {
+		return entityKind(t, entity) != entityKind(t, first) && entity.EntityId != first.EntityId
 	})]
 
 	// Each key pairs one entity's kind with the other's id, so no entity has either.
 	window := readEntities(t, f, &historypb.ReadThreadEntitiesRequest{
 		SessionId: sessionID.String(),
 		Window: entityKeys(
-			&historypb.EntityKey{EntityKind: first["entity_kind"].(string), EntityId: second["entity_id"].(string)},
-			&historypb.EntityKey{EntityKind: second["entity_kind"].(string), EntityId: first["entity_id"].(string)},
+			&historypb.EntityKey{EntityKind: entityKind(t, first), EntityId: second.EntityId},
+			&historypb.EntityKey{EntityKind: entityKind(t, second), EntityId: first.EntityId},
 		),
 	})
 
@@ -203,7 +194,7 @@ func TestOnlyAWellFormedWindowIsRead(t *testing.T) {
 	sessionID := foldedReply(t, f)
 	tooMany := make([]*historypb.EntityKey, 201)
 	for index := range tooMany {
-		tooMany[index] = &historypb.EntityKey{EntityKind: "item", EntityId: strconv.Itoa(index)}
+		tooMany[index] = &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: strconv.Itoa(index)}
 	}
 	for name, window := range map[string]func(*historypb.ReadThreadEntitiesRequest){
 		"no window":         func(*historypb.ReadThreadEntitiesRequest) {},
@@ -211,7 +202,13 @@ func TestOnlyAWellFormedWindowIsRead(t *testing.T) {
 		"oversized range":   func(r *historypb.ReadThreadEntitiesRequest) { r.Window = entityRange(0, 201) },
 		"range off the end": func(r *historypb.ReadThreadEntitiesRequest) { r.Window = entityRange(math.MaxInt64-5, 10) },
 		"no keys":           func(r *historypb.ReadThreadEntitiesRequest) { r.Window = entityKeys() },
-		"too many keys":     func(r *historypb.ReadThreadEntitiesRequest) { r.Window = entityKeys(tooMany...) },
+		"unspecified key kind": func(r *historypb.ReadThreadEntitiesRequest) {
+			r.Window = entityKeys(&historypb.EntityKey{EntityId: "item"})
+		},
+		"unknown key kind": func(r *historypb.ReadThreadEntitiesRequest) {
+			r.Window = entityKeys(&historypb.EntityKey{EntityKind: historypb.ThreadEntityKind(12345), EntityId: "item"})
+		},
+		"too many keys": func(r *historypb.ReadThreadEntitiesRequest) { r.Window = entityKeys(tooMany...) },
 	} {
 		request := &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String()}
 		window(request)
@@ -230,7 +227,7 @@ func TestAStoredEntityOutsideTheViewContractIsRefused(t *testing.T) {
 	}
 
 	_, err := f.reader.ReadThreadEntities(t.Context(), &historypb.ReadThreadEntitiesRequest{
-		SessionId: sessionID.String(), Window: entityKeys(&historypb.EntityKey{EntityKind: "item", EntityId: "test-reply"}),
+		SessionId: sessionID.String(), Window: entityKeys(&historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-reply"}),
 	})
 
 	if !errors.Is(err, ErrInvalidStoredEntity) {

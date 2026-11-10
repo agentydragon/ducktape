@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Any
 
 import httpx2
 import pytest
@@ -151,33 +152,19 @@ async def test_accepts_configured_issuer_variants_audience_lists_and_jwks_kids(
     assert access_token.scopes == scopes
 
 
-async def test_rejects_wrong_issuer(jwt_contract_harness: _JWTContractHarness) -> None:
-    access_token = await jwt_contract_harness.auth.verify_token(
-        jwt_contract_harness.create_token(issuer="https://attacker.example.test/application/o/machine-a/")
-    )
-
-    assert access_token is None
-
-
-async def test_rejects_cross_audience_token(jwt_contract_harness: _JWTContractHarness) -> None:
-    access_token = await jwt_contract_harness.auth.verify_token(
-        jwt_contract_harness.create_token(issuer=MACHINE_A_ISSUER, audience="machine-b")
-    )
-
-    assert access_token is None
-
-
-async def test_rejects_missing_required_scope(jwt_contract_harness: _JWTContractHarness) -> None:
-    access_token = await jwt_contract_harness.auth.verify_token(jwt_contract_harness.create_token(scopes=["openid"]))
-
-    assert access_token is None
-
-
-async def test_rejects_token_whose_kid_selects_the_wrong_key(jwt_contract_harness: _JWTContractHarness) -> None:
-    access_token = await jwt_contract_harness.auth.verify_token(
-        jwt_contract_harness.create_token(signing_kid="primary", header_kid="rotated")
-    )
-
+@pytest.mark.parametrize(
+    "token_kwargs",
+    [
+        pytest.param({"issuer": "https://attacker.example.test/application/o/machine-a/"}, id="wrong-issuer"),
+        pytest.param({"issuer": MACHINE_A_ISSUER, "audience": "machine-b"}, id="cross-audience"),
+        pytest.param({"scopes": ["openid"]}, id="missing-required-scope"),
+        pytest.param({"signing_kid": "primary", "header_kid": "rotated"}, id="kid-selects-wrong-key"),
+    ],
+)
+async def test_rejects_untrusted_direct_tokens(
+    jwt_contract_harness: _JWTContractHarness, token_kwargs: dict[str, Any]
+) -> None:
+    access_token = await jwt_contract_harness.auth.verify_token(jwt_contract_harness.create_token(**token_kwargs))
     assert access_token is None
 
 

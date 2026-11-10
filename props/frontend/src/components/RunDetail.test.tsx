@@ -1,13 +1,16 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { AgentRunDetail, LlmRequestInfo, SnapshotDetailResponse } from "../lib/api/schema";
+import { deferred } from "../../../../util/frontend/testing/deferred";
+import type { AgentRunDetail, FileContentResponse, LlmRequestInfo, SnapshotDetailResponse } from "../lib/schema";
 import { fetchLLMRequests, fetchRun, fetchRunLogs, fetchSnapshotDetail, fetchSnapshotFiles } from "../lib/api/client";
 import { toast } from "../lib/toast";
+import { createPropsQueryClient } from "../lib/queryClient";
 import RunDetail from "./RunDetail";
 
 vi.mock("../lib/api/client", () => ({
@@ -28,23 +31,7 @@ type RunResponse = Awaited<ReturnType<typeof fetchRun>>;
 type SnapshotResponse = Awaited<ReturnType<typeof fetchSnapshotDetail>>;
 type LLMResponse = Awaited<ReturnType<typeof fetchLLMRequests>>;
 
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-function run(runId: string, snapshotSlug?: string): AgentRunDetail {
+function run(runId: string, snapshotSlug?: string, filesHash?: string): AgentRunDetail {
   const critic = snapshotSlug !== undefined;
   return {
     agent_run_id: runId,
@@ -59,7 +46,13 @@ function run(runId: string, snapshotSlug?: string): AgentRunDetail {
     parent_agent_run_id: null,
     llm_costs: null,
     type_config: critic
-      ? { agent_type: "critic", example: { kind: "whole_snapshot", snapshot_slug: snapshotSlug } }
+      ? {
+          agent_type: "critic",
+          example:
+            filesHash === undefined
+              ? { kind: "whole_snapshot", snapshot_slug: snapshotSlug }
+              : { kind: "file_set", snapshot_slug: snapshotSlug, files_hash: filesHash },
+        }
       : { agent_type: "freeform" },
     details: critic
       ? {
@@ -103,9 +96,9 @@ function llmResponse(model: string): LLMResponse {
   return { requests: [llmRequest(model)] };
 }
 
-function snapshotResponse(): SnapshotResponse {
+function snapshotResponse(slug = "test/snapshot"): SnapshotResponse {
   return {
-    slug: "test/snapshot",
+    slug,
     split: "valid",
     created_at: "2026-01-01T00:00:00Z",
     true_positives: [],
@@ -114,19 +107,32 @@ function snapshotResponse(): SnapshotResponse {
 }
 
 let root: Root | null = null;
+let queryClient: ReturnType<typeof createPropsQueryClient> | null = null;
 let container: HTMLDivElement;
 
-async function mount(runId: string): Promise<void> {
+async function mount(
+  runId: string,
+  seed: {
+    initialRun?: AgentRunDetail;
+    initialSnapshotDetail?: SnapshotResponse;
+    initialFileContents?: Map<string, FileContentResponse>;
+    initialLLMRequests?: LlmRequestInfo[];
+  } = {}
+): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  const client = createPropsQueryClient();
+  queryClient = client;
   await act(async () => {
     root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <RunDetail runId={runId} />
-        </MemoryRouter>
-      </MantineProvider>
+      <QueryClientProvider client={client}>
+        <MantineProvider env="test">
+          <MemoryRouter>
+            <RunDetail runId={runId} {...seed} />
+          </MemoryRouter>
+        </MantineProvider>
+      </QueryClientProvider>
     );
   });
 }
@@ -134,11 +140,13 @@ async function mount(runId: string): Promise<void> {
 async function switchRun(runId: string): Promise<void> {
   await act(async () => {
     root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <RunDetail runId={runId} />
-        </MemoryRouter>
-      </MantineProvider>
+      <QueryClientProvider client={queryClient!}>
+        <MantineProvider env="test">
+          <MemoryRouter>
+            <RunDetail runId={runId} />
+          </MemoryRouter>
+        </MantineProvider>
+      </QueryClientProvider>
     );
   });
 }
@@ -146,6 +154,8 @@ async function switchRun(runId: string): Promise<void> {
 async function unmount(): Promise<void> {
   await act(async () => root?.unmount());
   root = null;
+  queryClient?.clear();
+  queryClient = null;
 }
 
 async function clickLogs(): Promise<void> {
@@ -154,6 +164,10 @@ async function clickLogs(): Promise<void> {
   );
   if (!button) throw new Error("Logs tab was not rendered");
   await act(async () => button.click());
+}
+
+async function flushQueryNotifications(): Promise<void> {
+  await act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 }
 
 beforeEach(() => {
@@ -179,6 +193,7 @@ it("keeps run metadata and LLM requests scoped to the selected run after older r
 
   const oldSignal = vi.mocked(fetchLLMRequests).mock.calls[0]?.[1];
   await switchRun("run-B");
+  await flushQueryNotifications();
   expect(oldSignal?.aborted).toBe(true);
   expect(fetchRun).toHaveBeenCalledWith("run-B", expect.any(AbortSignal));
   expect(fetchLLMRequests).toHaveBeenCalledWith("run-B", expect.any(AbortSignal));
@@ -212,7 +227,7 @@ it("hydrates the new snapshot and logs while old snapshot and log requests are s
   );
 
   await mount("run-A");
-  await act(async () => Promise.resolve());
+  await flushQueryNotifications();
   expect(fetchSnapshotDetail).toHaveBeenCalledWith(
     "snapshot-run-A",
     "whole_snapshot",
@@ -220,10 +235,11 @@ it("hydrates the new snapshot and logs while old snapshot and log requests are s
     expect.any(AbortSignal)
   );
   await clickLogs();
-  await act(async () => Promise.resolve());
+  await flushQueryNotifications();
   const oldLogSignal = vi.mocked(fetchRunLogs).mock.calls[0]?.[1];
 
   await switchRun("run-B");
+  await flushQueryNotifications();
   expect(oldLogSignal?.aborted).toBe(true);
   expect(fetchSnapshotDetail).toHaveBeenCalledWith(
     "snapshot-run-B",
@@ -236,17 +252,19 @@ it("hydrates the new snapshot and logs while old snapshot and log requests are s
     newSnapshot.resolve(snapshotResponse());
     await Promise.resolve();
   });
+  await flushQueryNotifications();
   expect(fetchSnapshotFiles).toHaveBeenCalledWith("snapshot-run-B", ["run-B-source.ts"], expect.any(AbortSignal));
 
   await act(async () => {
     oldSnapshot.resolve(snapshotResponse());
     await Promise.resolve();
   });
+  await flushQueryNotifications();
   expect(fetchSnapshotFiles).toHaveBeenCalledTimes(1);
   expect(vi.mocked(fetchSnapshotFiles).mock.calls[0]?.[0]).toBe("snapshot-run-B");
 
   await clickLogs();
-  await act(async () => Promise.resolve());
+  await flushQueryNotifications();
   expect(fetchRunLogs).toHaveBeenCalledWith("run-B", expect.any(AbortSignal));
   expect(container.textContent).toContain("logs-for-run-B");
 
@@ -266,8 +284,9 @@ it("ignores a lazy request failure after the component unmounts", async () => {
   vi.mocked(fetchRunLogs).mockReturnValue(pendingLogs.promise);
 
   await mount("run-C");
+  await flushQueryNotifications();
   await clickLogs();
-  await act(async () => Promise.resolve());
+  await flushQueryNotifications();
   const signal = vi.mocked(fetchRunLogs).mock.calls[0]?.[1];
 
   await unmount();
@@ -279,11 +298,69 @@ it("ignores a lazy request failure after the component unmounts", async () => {
   expect(toast.error).not.toHaveBeenCalled();
 });
 
+it("does not fetch missing resources for a seeded critic run", async () => {
+  await mount("seeded-run", { initialRun: run("seeded-run", "seeded/snapshot") });
+  await flushQueryNotifications();
+
+  expect(fetchRun).not.toHaveBeenCalled();
+  expect(fetchLLMRequests).not.toHaveBeenCalled();
+  expect(fetchSnapshotDetail).not.toHaveBeenCalled();
+  expect(fetchSnapshotFiles).not.toHaveBeenCalled();
+});
+
+it("fetches logs lazily and refreshes run and tab data when revisited", async () => {
+  vi.mocked(fetchRun).mockImplementation(async (runId) => run(runId));
+  vi.mocked(fetchLLMRequests).mockResolvedValue({ requests: [] });
+  vi.mocked(fetchRunLogs).mockImplementation(async (runId) => ({ run_id: runId, logs: `logs-for-${runId}` }));
+
+  await mount("run-cache-A");
+  await flushQueryNotifications();
+  expect(fetchRunLogs).not.toHaveBeenCalled();
+  await clickLogs();
+  await flushQueryNotifications();
+  expect(container.textContent).toContain("logs-for-run-cache-A");
+  expect(fetchRunLogs).toHaveBeenCalledTimes(1);
+
+  await switchRun("run-cache-B");
+  await flushQueryNotifications();
+  await switchRun("run-cache-A");
+  await flushQueryNotifications();
+  expect(fetchRun).toHaveBeenCalledTimes(3);
+  expect(fetchRunLogs).toHaveBeenCalledTimes(1);
+
+  await clickLogs();
+  await flushQueryNotifications();
+  expect(fetchRunLogs).toHaveBeenCalledTimes(2);
+  await clickLogs();
+  await flushQueryNotifications();
+  expect(fetchRunLogs).toHaveBeenCalledTimes(3);
+  expect(container.textContent).toContain("logs-for-run-cache-A");
+});
+
+it("keeps recall snapshot cache entries separate by example kind and files hash", async () => {
+  vi.mocked(fetchRun).mockImplementation(async (runId) =>
+    run(runId, "shared/snapshot", runId === "run-scope-A" ? "files-A" : "files-B")
+  );
+  vi.mocked(fetchLLMRequests).mockResolvedValue({ requests: [] });
+  vi.mocked(fetchSnapshotDetail).mockResolvedValue(snapshotResponse("shared/snapshot"));
+  vi.mocked(fetchSnapshotFiles).mockResolvedValue({ files: [], missing: [] });
+
+  await mount("run-scope-A");
+  await flushQueryNotifications();
+  expect(fetchSnapshotDetail).toHaveBeenCalledWith("shared/snapshot", "file_set", "files-A", expect.any(AbortSignal));
+
+  await switchRun("run-scope-B");
+  await flushQueryNotifications();
+  expect(fetchSnapshotDetail).toHaveBeenCalledWith("shared/snapshot", "file_set", "files-B", expect.any(AbortSignal));
+  expect(fetchSnapshotDetail).toHaveBeenCalledTimes(2);
+});
+
 it("shows the selected run's load failure and reports it", async () => {
   vi.mocked(fetchRun).mockRejectedValue(new Error("run is unavailable"));
   vi.mocked(fetchLLMRequests).mockResolvedValue({ requests: [] });
 
   await mount("run-D");
+  await flushQueryNotifications();
 
   expect(container.textContent).toContain("run is unavailable");
   expect(toast.error).toHaveBeenCalledWith("run is unavailable");

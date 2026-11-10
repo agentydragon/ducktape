@@ -24,7 +24,7 @@ def main():
     )
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--attribution", type=Path)
-    parser.add_argument("--out", required=True, type=Path, help="Root of the ci-reports worktree")
+    parser.add_argument("--out", required=True, type=Path, help="Root of the gh-pages worktree")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{40}", args.source):
         parser.error("source must be a full SHA")

@@ -2,22 +2,36 @@
 
 from __future__ import annotations
 
-from collections.abc import Set
 from pathlib import Path
 
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
+from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import AppSettingsConfig, FrontendConfig
-from agentplane.runner.harness import Harness
+from agentplane.app.settings import FrontendConfig, Settings
+from agentplane.env.runtime.harness import Harness
+from agentplane.sandboxes.runtimeconfig.model_catalog import (
+    WORKSPACE_ROOT,
+    Catalog,
+    ModelCatalog,
+    ModelOption,
+    Provenance,
+    TemplateRuntimeConfig,
+)
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
 # policy answering to it, so a preset names a policy without repeating the string. The Pod execution
 # environment a preset launches on is the caller's: `settings()` takes its name.
-from cluster.cdk8s.agentplane import egress
+from cluster.cdk8s.agentplane import (
+    egress,
+    history_service,
+    notifications,
+    policy_controller,
+    runner_gateway,
+    session_dispatcher,
+)
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -27,7 +41,7 @@ from cluster.cdk8s.agentplane.egress import (
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
-from cluster.cdk8s.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from model_catalog.catalog import Provider, Route
 from util.urls import HttpEndpointUrl
 
@@ -73,7 +87,7 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
     return list(efforts)
 
 
-def model_catalog(models: HarnessRoutes) -> ModelCatalog:
+def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = False) -> ModelCatalog:
     return ModelCatalog(
         models=[
             ModelOption(
@@ -86,6 +100,33 @@ def model_catalog(models: HarnessRoutes) -> ModelCatalog:
         harnesses={
             Harness.CLAUDE: [route.id for route in models.claude],
             Harness.CODEX: [route.id for route in models.codex],
+            **(
+                {Harness.CENTRAL_SAMPLER: [route.id for route in models.central_sampler]}
+                if central_sampler_enabled
+                else {}
+            ),
+        },
+    )
+
+
+def runtime_catalog(
+    models: HarnessRoutes,
+    *,
+    templates: tuple[str, ...],
+    workspace_root_enforced_templates: tuple[str, ...] = (),
+    central_sampler_enabled: bool = False,
+) -> Catalog:
+    """Publish runtime choices and workspace guidance only for rendered templates."""
+    return Catalog(
+        models=model_catalog(models, central_sampler_enabled=central_sampler_enabled),
+        templates={
+            template: TemplateRuntimeConfig(
+                workspace_root=WORKSPACE_ROOT,
+                workspace_provenance=Provenance.DEPLOYMENT_CONFIG,
+                workspace_root_enforced=template in workspace_root_enforced_templates,
+                creates_missing_cwd=True,
+            )
+            for template in templates
         },
     )
 
@@ -95,19 +136,23 @@ def settings(
     namespace: str,
     sandbox_template: str,
     models: HarnessRoutes,
+    runtime_catalog: Catalog | None = None,
     thread_preset_codex_model: Route,
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
-    default_policy_sets: Set[str],
+    app_origin: str,
+    oidc_issuer: str,
+    electric_url: HttpEndpointUrl | None = None,
     frontend_config: FrontendConfig | None = None,
-) -> AppSettingsConfig:
-    optional_configuration: dict[str, object] = {}
-    if frontend_config is not None:
-        optional_configuration["frontend_config"] = frontend_config
-    return AppSettingsConfig(
-        models=model_catalog(models),
-        default_policy_sets=default_policy_sets,
+    central_sampler_enabled: bool = False,
+) -> Settings:
+    configured = Settings(
+        models=(
+            runtime_catalog.models
+            if runtime_catalog is not None
+            else model_catalog(models, central_sampler_enabled=central_sampler_enabled)
+        ),
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
@@ -117,7 +162,7 @@ def settings(
                 title="Public coder / Codex",
                 harness=Harness.CODEX,
                 model=thread_preset_codex_model.id,
-                cwd="/state/workspaces/{session_id}",
+                cwd=f"{WORKSPACE_ROOT}/{{session_id}}",
                 reasoning_effort="medium",
                 instructions=_PUBLIC_CODER_INSTRUCTIONS,
             )
@@ -149,5 +194,24 @@ def settings(
         # Asked for each sandbox's recent decisions; the page shows the rules alone when it does not answer.
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
-        **optional_configuration,
+        sandbox_namespace=namespace,
+        runner_gateway_target=runner_gateway.target(namespace),
+        session_dispatcher_target=(
+            f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+        ),
+        policy_service_target=(
+            f"{policy_controller.service(namespace).fqdn}:{policy_controller.service(namespace).port.number}"
+        ),
+        runner_gateway_control_target=runner_gateway.control_target(namespace),
+        history_service_target=(
+            f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
+        ),
+        notifications_url=AnyHttpUrl(notifications.service(namespace).url),
+        listen_address="0.0.0.0:8080",
+        electric_url=electric_url,
+        token_subjects=frozenset({f"system:serviceaccount:{namespace}:agentplane-agent"}),
+        oidc=OIDCSettings(issuer=oidc_issuer, public_base_url=app_origin),
     )
+    if frontend_config is not None:
+        configured.frontend_config = frontend_config
+    return configured

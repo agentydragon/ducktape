@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
-from util.crane import Crane
+from devinfra.oci.crane import Crane
 
 
 def pinned_tag(now: datetime.datetime, commit: str) -> str:

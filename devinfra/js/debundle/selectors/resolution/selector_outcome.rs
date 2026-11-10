@@ -16,6 +16,7 @@ use std::fmt::Write;
 
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
+use spec::MemberSelectorSpec;
 
 /// A selector the shape matcher places at more than this many places is
 /// [`Outcome::TooBroad`], rejected without a solve: a selector that loose names
@@ -307,7 +308,10 @@ pub enum ResolvedBy {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// The `kind` tag [`Outcome`] serializes with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum OutcomeKind {
     Resolved,
     NoMatch,
@@ -328,29 +332,6 @@ pub enum Severity {
     Warning,
     /// Did not resolve; the run fails.
     Error,
-}
-
-impl OutcomeKind {
-    /// The `kind` tag [`Outcome`] serializes with.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Resolved => "resolved",
-            Self::NoMatch => "no_match",
-            Self::Unsatisfiable => "unsatisfiable",
-            Self::Ambiguous => "ambiguous",
-            Self::Conflict => "conflict",
-            Self::TooBroad => "too_broad",
-            Self::DuplicateClaim => "duplicate_claim",
-            Self::Invalid => "invalid",
-            Self::Undecided => "undecided",
-        }
-    }
-}
-
-impl Serialize for OutcomeKind {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
 }
 
 impl Outcome {
@@ -580,9 +561,24 @@ fn render_refs(refs: &[EntityRef]) -> String {
         .join(", ")
 }
 
+/// The one place an authored `members[].selector` is mapped to its kind.
+impl From<&MemberSelectorSpec> for SelectorKind {
+    fn from(selector: &MemberSelectorSpec) -> Self {
+        match selector {
+            MemberSelectorSpec::Binding(_) => Self::Binding,
+            MemberSelectorSpec::CrossRef(_) => Self::CrossRef,
+            MemberSelectorSpec::ReadsMember(_) => Self::ReadsMember,
+            MemberSelectorSpec::MemberOfModule(_) => Self::MemberOfModule,
+            MemberSelectorSpec::PassedToCall(_) => Self::PassedToCall,
+            MemberSelectorSpec::MakesDecorateCall(_) => Self::MakesDecorateCall,
+            MemberSelectorSpec::IntrinsicAlias(_) => Self::IntrinsicAlias,
+        }
+    }
+}
+
 impl SelectorKind {
     /// The spec field the selector is authored in.
-    fn origin(self, target_binding: Option<&str>) -> String {
+    pub fn origin(self, target_binding: Option<&str>) -> String {
         match (self, target_binding) {
             (Self::SourceMatches, Some(target)) => format!("source_matches[].bindings[`{target}`]"),
             (Self::SourceMatches, None) => "source_matches[]".to_string(),
@@ -611,7 +607,7 @@ impl SelectorOutcome {
             Severity::Warning => "warning: ",
             Severity::Ok | Severity::Error => "",
         };
-        let kind = self.outcome.kind().as_str();
+        let kind = self.outcome.kind();
         let mut line = format!("[{label}{kind}] {}", self.chunk);
         let mut statements = false;
         match &self.placement {
@@ -761,6 +757,10 @@ pub struct SelectorOutcomeReport {
 pub struct SelectorValidationCounts {
     pub checked: usize,
     pub matched: usize,
+    /// Author premises (`commuting_statements` entries) the graph build
+    /// rejected; any fails `success`. Not reported: `spec validate` lists
+    /// the typed diagnostics themselves beside the selector outcomes.
+    pub rejected_premises: usize,
 }
 
 impl SelectorValidationCounts {
@@ -772,6 +772,7 @@ impl SelectorValidationCounts {
     pub fn extend(&mut self, other: Self) {
         self.checked += other.checked;
         self.matched += other.matched;
+        self.rejected_premises += other.rejected_premises;
     }
 }
 
@@ -795,6 +796,7 @@ impl SelectorOutcomeReport {
         let validation = self.validation?;
         Some(SelectorValidationSummary {
             success: validation.checked == validation.matched
+                && validation.rejected_premises == 0
                 && self
                     .outcomes
                     .iter()
@@ -860,7 +862,7 @@ impl SelectorOutcomeReport {
         let counts = self
             .counts()
             .into_iter()
-            .map(|(kind, count)| format!("{}={count}", kind.as_str()))
+            .map(|(kind, count)| format!("{kind}={count}"))
             .collect::<Vec<_>>()
             .join(", ");
         let _ = writeln!(out, "{} selector outcome(s): {counts}", self.outcomes.len());

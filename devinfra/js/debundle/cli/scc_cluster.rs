@@ -1,7 +1,8 @@
 //! `debundle scc` / `debundle cluster`: module-quotient SCC listing
 //! and per-binding neighbor queries over a generated dependency graph.
 
-use analysis::DepKind;
+use analysis::DependencyGraphInput;
+use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use peel::plan::{LimitReport, apply_limit_with_metadata};
@@ -147,13 +148,14 @@ fn resolve_one_binding_source_unit<'a>(
 }
 
 pub fn run_scc(args: SccArgs) -> Result<()> {
-    let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    let graph = input.report();
     // If a binding was supplied, find its source unit -> destination module
     // first; we restrict SCCs to ones containing that destination.
     // Uses the shared `resolve_binding_source_units` helper so minified and
     // readable name forms both resolve.
     let restrict_to_module: Option<analysis::ModuleKey> = if let Some(sym) = &args.binding {
-        let source_unit = resolve_one_binding_source_unit(&graph, sym)?;
+        let source_unit = resolve_one_binding_source_unit(graph, sym)?;
         Some(source_unit.destination.clone())
     } else {
         None
@@ -233,11 +235,12 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
         args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
     };
     let sym = args.resolve_sym()?;
-    let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    let graph = input.report();
     // Use the shared `resolve_binding_source_units` helper (same code path
     // `describe` / `inspect-source --id` / `scc --binding` use), so minified
     // and readable names both work.
-    let source_unit = resolve_one_binding_source_unit(&graph, sym)?;
+    let source_unit = resolve_one_binding_source_unit(graph, sym)?;
     let home_key = &source_unit.destination;
     // Dedup + sort by interned id; carry the path label alongside.
     let mut incoming: std::collections::BTreeMap<String, ModuleRef> =
@@ -257,14 +260,14 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
             && &edge.target == home_key
             && &edge.source != home_key
         {
-            let module_ref = resolve_module_ref(&graph, &edge.source);
+            let module_ref = resolve_module_ref(graph, &edge.source);
             incoming.insert(module_ref.id.clone(), module_ref);
         }
         if args.direction != ExplainDirection::Incoming
             && &edge.source == home_key
             && &edge.target != home_key
         {
-            let module_ref = resolve_module_ref(&graph, &edge.target);
+            let module_ref = resolve_module_ref(graph, &edge.target);
             outgoing.insert(module_ref.id.clone(), module_ref);
         }
     }
@@ -285,7 +288,7 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     );
     let report = ClusterReport {
         binding: sym.to_string(),
-        home_module: resolve_module_ref(&graph, home_key),
+        home_module: resolve_module_ref(graph, home_key),
         incoming_modules,
         outgoing_modules,
         limits: LimitReport { limit, sections },

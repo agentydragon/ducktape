@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "sandboxes",
+    srcs = [
+        "console.go",
+        "environments.go",
+        "errors.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go/sandboxes",
+    deps = [
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "@io_k8s_client_go//rest",
+        "@io_kubevirt_client_go//kubecli",
+        "@io_kubevirt_client_go//kubevirt/typed/core/v1:core",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = [
+        "console_test.go",
+        "environments_test.go",
+    ],
+    embed = [":sandboxes"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "@io_kubevirt_client_go//kubevirt/typed/core/v1:core",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

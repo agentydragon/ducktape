@@ -1,0 +1,194 @@
+load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# CNPG's hand-maintained BUILD is not indexed by Gazelle.
+# gazelle:resolve py cluster.cdk8s.cnpg.cluster //cluster/cdk8s/cnpg:cluster
+# gazelle:resolve py cluster.cdk8s.cnpg.backup //cluster/cdk8s/cnpg:backup
+
+package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
+
+copy_file(
+    name = "github_webhook_vrl",
+    src = "@cdviz_transformers//:github_events/to_v0_5.vrl",
+    out = "github_webhook.vrl",
+)
+
+copy_file(
+    name = "github_workflow_runs_vrl",
+    src = "@cdviz_transformers//:github_rest_api/workflow_runs_to_v0_5.vrl",
+    out = "github_workflow_runs.vrl",
+)
+
+copy_file(
+    name = "license",
+    src = "@cdviz_transformers//:LICENSE",
+    out = "LICENSE",
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/cnpg:cluster",
+    ],
+)
+
+py_library(
+    name = "github_webhook",
+    srcs = ["github_webhook.py"],
+    data = ["//tf/gitops/cdviz-github-webhook:inline_source"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:opentofu",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "@pypi//cdk8s",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "collector",
+    srcs = ["collector.py"],
+    data = [
+        "001_ci_feedback.sql",
+        "002_ci_feedback_optimization.sql",
+        "collector.toml",
+        "github_policy.vrl",
+        "grants.sql",
+        ":github_webhook_vrl",
+        ":github_workflow_runs_vrl",
+    ],
+    deps = [
+        ":config",
+        ":timescale",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "dashboards",
+    srcs = ["dashboards.py"],
+    data = [
+        "dashboard.json",
+        "feedback-dashboard.json",
+        ":license",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:grafana_dashboards",
+        "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/monitoring:grafana_instance",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "database",
+    srcs = ["database.py"],
+    deps = [
+        ":config",
+        ":timescale",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_database",
+        "//cluster/cdk8s/providers/cnpg:database",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "timescale",
+    srcs = ["timescale.py"],
+    deps = ["//cluster/cdk8s/providers/cnpg:cluster"],
+)
+
+py_test(
+    name = "test_ingestion_visual",
+    size = "medium",
+    srcs = ["test_ingestion_visual.py"],
+    data = [
+        "001_ci_feedback.sql",
+        "002_ci_feedback_optimization.sql",
+        "collector.toml",
+        "dashboard.json",
+        "feedback-dashboard.json",
+        "github_api_server.py",
+        "github_policy.vrl",
+        "grants.sql",
+        ":github_webhook_vrl",
+        ":github_workflow_runs_vrl",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    requires_docker = True,
+    tags = ["visual"],
+    deps = [
+        ":feedback_fixture",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:output_writer",
+        "//devinfra/testing:undeclared_outputs",
+        "//grafana/visual_tests:visual_browser",
+        "//grafana/visual_tests:visual_harness",
+        "//third_party/containers:cdviz_collector",
+        "//third_party/containers:cdviz_db_migration",
+        "//third_party/containers:python_3_14_slim",
+        "//third_party/containers:ryuk",
+        "//third_party/containers:timescaledb_pg18",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:context",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//playwright",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "github_api_server",
+    testonly = True,
+    srcs = ["github_api_server.py"],
+)
+
+py_library(
+    name = "feedback_fixture",
+    testonly = True,
+    srcs = ["feedback_fixture.py"],
+    deps = ["@pypi//psycopg"],
+)

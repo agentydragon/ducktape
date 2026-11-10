@@ -183,15 +183,6 @@ pub fn archive_config_from_env() -> Result<ArchiveConfig> {
     Ok(ArchiveConfig::default())
 }
 
-pub fn archive_settings_from_env() -> Result<ArchiveSettings> {
-    Ok(archive_config_from_env()?.settings())
-}
-
-pub async fn archive_store_from_env() -> Result<Arc<dyn ArchiveStore>> {
-    let config = archive_config_from_env()?;
-    archive_store_from_config(&config).await
-}
-
 pub async fn archive_store_from_config(config: &ArchiveConfig) -> Result<Arc<dyn ArchiveStore>> {
     let Some(database_url) = optional_env(config.store.database_url_env.as_deref()) else {
         info!("using in-memory archive store");

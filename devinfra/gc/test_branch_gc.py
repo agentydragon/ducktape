@@ -9,6 +9,7 @@ from devinfra.gc import branch_gc as bg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.removal import Failed, Removed, Skipped
 from devinfra.gc.worktree_gc import RetainedWorktree, RetainedWorktreeReason
 
 
@@ -25,11 +26,26 @@ def test_ancestor_branch_is_prunable(repo: GitRepo) -> None:
     result = _classify(repo, "feature")
     assert isinstance(result, bg.PrunableBranch)
     assert (result.reason, result.main) == (bg.PrunableBranchReason.CONTENT_IN_MAIN, "main")
+    assert result.tip == repo.rev("feature")
 
 
 def test_empty_branch_is_prunable(repo: GitRepo) -> None:
     repo.branch("feature")
     assert _classify(repo, "feature").reason is bg.PrunableBranchReason.CONTENT_IN_MAIN
+
+
+def test_missing_branch_object_is_review(repo: GitRepo) -> None:
+    repo.branch("broken")
+    missing_oid = "794f4d3258eb250245ed15b44928838ab852e157"
+    (repo.path / ".git" / "refs" / "heads" / "broken").write_text(f"{missing_oid}\n")
+
+    result = _classify(repo, "broken")
+
+    assert isinstance(result, bg.ReviewBranch)
+    assert result.reason is bg.ReviewBranchReason.INSPECTION_FAILED
+    assert "refs/heads/broken" in bg.describe_reason(result)
+    assert repo.has_branch("broken")
+    assert (repo.path / ".git" / "refs" / "heads" / "broken").read_text().strip() == missing_oid
 
 
 def test_squash_merged_branch_is_prunable(repo: GitRepo) -> None:
@@ -141,13 +157,24 @@ def test_branch_in_retained_worktree_is_kept(repo: GitRepo) -> None:
 
 def test_delete_branch_removes_it(repo: GitRepo) -> None:
     repo.branch("feature")
-    assert bg.delete_branch(repo.path, "feature") == bg.RemovedBranch("feature")
+    assert bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")) == Removed("feature")
     assert not repo.has_branch("feature")
+
+
+def test_delete_branch_skips_a_branch_that_moved_since_it_was_classified(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    classified_tip = repo.rev("feature")
+    wt.commit("f", "new work\n", "commit after the scan")
+
+    result = bg.delete_branch(repo.path, "feature", expected_tip=classified_tip)
+
+    assert isinstance(result, Skipped)
+    assert repo.has_branch("feature")
 
 
 def test_delete_branch_fails_when_checked_out(repo: GitRepo) -> None:
     repo.worktree("wt", "feature")
-    assert isinstance(bg.delete_branch(repo.path, "feature"), bg.FailedBranch)
+    assert isinstance(bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")), Failed)
 
 
 def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRepo) -> None:
@@ -188,11 +215,11 @@ def _populated(reason: StrEnum) -> bg.BranchClassification:
     branch = bg.Branch("feature")
     match reason:
         case bg.PrunableBranchReason():
-            return bg.PrunableBranch(branch, reason, Path("/wt"), _MAIN, _PR)
+            return bg.PrunableBranch(branch, reason, Path("/wt"), _MAIN, "0" * 40, _PR)
         case bg.RetainedBranchReason():
             return bg.RetainedBranch(branch, reason, Path("/wt"), _PR)
         case bg.ReviewBranchReason():
-            return bg.ReviewBranch(branch, reason, _MAIN, _PR)
+            return bg.ReviewBranch(branch, reason, _MAIN, _PR, detail="test error")
     raise TypeError(reason)
 
 

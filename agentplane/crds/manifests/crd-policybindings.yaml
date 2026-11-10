@@ -74,21 +74,32 @@ spec:
                 minItems: 1
                 type: array
               subject:
-                description: 'The ServiceAccount this binding grants to. Native bindings
-                  also carry its UID so that
+                description: 'The subject this binding grants to. Native bindings
+                  also carry a ServiceAccount subject''s UID so
 
-                  recreating a same-named account replaces the grant.'
+                  that recreating a same-named account replaces the grant.'
                 properties:
+                  identity:
+                    description: IdentityRef names an Identity in the binding's namespace.
+                    properties:
+                      name:
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
                   name:
                     minLength: 1
                     type: string
                   namespace:
                     minLength: 1
                     type: string
-                required:
-                - name
-                - namespace
                 type: object
+                x-kubernetes-validations:
+                - message: Name either a ServiceAccount (namespace and name) or an
+                    identity.
+                  rule: 'has(self.identity) ? !has(self.namespace) && !has(self.name)
+                    : has(self.namespace) && has(self.name)'
             required:
             - policySets
             - subject
@@ -169,6 +180,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              missingRoles:
+                description: 'The roles this binding''s Kubernetes rules name that
+                  do not exist. The Policy Controller writes
+
+                  it with KubernetesReady and binds each role once it appears.'
+                items:
+                  description: MissingRole is a role a Kubernetes rule names that
+                    does not exist.
+                  properties:
+                    kind:
+                      enum:
+                      - Role
+                      - ClusterRole
+                      type: string
+                    name:
+                      minLength: 1
+                      type: string
+                    namespace:
+                      description: The Role's namespace; empty for a ClusterRole.
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         required:
         - spec

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/google/uuid"
 )
@@ -26,7 +27,38 @@ type payloadPlan struct {
 type payloadOwnerField struct {
 	ownerCursor uint64
 	ownerID     string
-	field       threadfold.PayloadField
+	field       historypb.ThreadPayloadField
+}
+
+var payloadFieldSQLNames = [...]struct {
+	field historypb.ThreadPayloadField
+	name  string
+}{
+	{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, "text"},
+	{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, "arguments"},
+	{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT, "output"},
+	{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_CONFIRMED_INPUT, "confirmed_input"},
+	{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, "command_input"},
+}
+
+// payloadFieldSQLName translates the canonical protobuf value at the physical schema boundary. The
+// payload tables retain their existing text field names.
+func payloadFieldSQLName(field historypb.ThreadPayloadField) (string, error) {
+	for _, entry := range payloadFieldSQLNames {
+		if entry.field == field {
+			return entry.name, nil
+		}
+	}
+	return "", fmt.Errorf("unknown payload field %d", field)
+}
+
+func payloadFieldFromSQLName(name string) (historypb.ThreadPayloadField, error) {
+	for _, entry := range payloadFieldSQLNames {
+		if entry.name == name {
+			return entry.field, nil
+		}
+	}
+	return 0, fmt.Errorf("unknown SQL payload field %q", name)
 }
 
 // writePayloads stores a batch's payload bodies insert-only: a manifest row per revision and a chunk row per
@@ -80,10 +112,14 @@ func writePayloads(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, writes [
 }
 
 func manifestExtent(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, reference threadfold.PayloadRef) (chunks, bytes uint64, err error) {
+	field, err := payloadFieldSQLName(reference.Field)
+	if err != nil {
+		return 0, 0, err
+	}
 	err = tx.QueryRowContext(ctx, `SELECT chunk_count, content_bytes FROM thread_payload_manifest
 		WHERE thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND owner_id = $4 AND field = $5
 		AND generation = $6 AND revision_cursor = $7`,
-		threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, reference.Field,
+		threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, field,
 		reference.Generation, reference.RevisionCursor).Scan(&chunks, &bytes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, 0, fmt.Errorf("%w: append references a missing payload manifest", ErrInconsistentFold)
@@ -102,10 +138,14 @@ func storePayload(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, plan *pay
 		contentBytes = uint64(len(text))
 	}
 	reference := plan.reference
+	field, err := payloadFieldSQLName(reference.Field)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_payload_manifest
 		(thread_id, projection_epoch, owner_cursor, owner_id, field, generation, revision_cursor, chunk_count, content_bytes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, reference.Field,
+		threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, field,
 		reference.Generation, reference.RevisionCursor, chunkCount, contentBytes); err != nil {
 		return err
 	}
@@ -119,7 +159,7 @@ func storePayload(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, plan *pay
 	_, err = tx.ExecContext(ctx, `INSERT INTO thread_payload_chunk
 		(thread_id, projection_epoch, owner_cursor, owner_id, field, generation, chunk_index, text)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::json)`,
-		threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, reference.Field,
+		threadID, reference.ProjectionEpoch, reference.OwnerCursor, reference.OwnerID, field,
 		reference.Generation, plan.prefixChunks, encoded)
 	return err
 }

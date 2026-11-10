@@ -1,547 +1,122 @@
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_IMAGES")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# The runner Pod's tools image. It keeps Debian's shell utilities for bootstrap and process-lifecycle
-# fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands; the Nix-built
-# production image supplies the full toolset. As in production, the runner is not in it: the Pod runs
-# it from the volume of the production runner disk image.
-oci_image(
-    name = "runner_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    tars = [
-        "//third_party/debian_slim:cacerts",
-        "@trixie_e2e//:flat",
-        ":runner_cli_link",
-    ],
-    user = "1000:1000",
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
+
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "image_manifest")
+
+package(default_testonly = True)
+
+image_manifest(
+    name = "test_image_manifest_data",
+    fixture = {
+        "testdata/manifest_layout_a.txt": "example/fixture-a:1",
+        "testdata/manifest_layout_b.txt": "example/fixture-b:1",
+    },
+    pki = {"testdata/manifest_layout_a.txt": "example/fixture-a:1"},
 )
-
-# **Deviation:** production appends the runner disk's bin to PATH (agentplane/runner/image.nix). Here
-# `agentplane` is linked into /usr/bin instead, because Codex runs commands in a login shell and
-# Debian's /etc/profile resets PATH.
-pkg_tar(
-    name = "runner_cli_link",
-    package_dir = "/usr/bin",
-    symlinks = {"agentplane": "/run/agentplane/runner/bin/agentplane"},
-)
-
-pkg_tar(
-    name = "runner_claude_harness",
-    srcs = ["@claude_code_cli_linux_x64//:claude"],
-    mode = "0755",
-    package_dir = "/opt/harnesses",
-    strip_prefix = ".",
-    visibility = ["//agentplane/system_tests/k3s/guest:__pkg__"],
-)
-
-# The base image's /bin is a symlink to usr/bin.
-pkg_tar(
-    name = "runner_claude_link",
-    package_dir = "/usr/bin",
-    symlinks = {"claude": "/opt/harnesses/external/+http_archive+claude_code_cli_linux_x64/claude"},
-)
-
-oci_image(
-    name = "runner_claude_image",
-    base = ":runner_image",
-    tars = [
-        ":runner_claude_harness",
-        ":runner_claude_link",
-    ],
-)
-
-pkg_tar(
-    name = "runner_codex_harness",
-    srcs = ["@agentplane_codex_cli_linux_x64//:files"],
-    mode = "0755",
-    package_dir = "/opt/harnesses",
-    strip_prefix = ".",
-    visibility = ["//agentplane/system_tests/k3s/guest:__pkg__"],
-)
-
-pkg_tar(
-    name = "runner_codex_link",
-    package_dir = "/usr/bin",
-    symlinks = {"codex": "/opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex"},
-)
-
-# Both harnesses, for scenarios that run a turn.
-oci_image(
-    name = "runner_harnesses_image",
-    base = ":runner_claude_image",
-    tars = [
-        ":runner_codex_harness",
-        ":runner_codex_link",
-    ],
-)
-
-# Each test carries exactly one runner layout with the same basename/tag.
-[
-    oci_layout_rloc(
-        name = variant + "/runner_layout",
-        testonly = True,
-        image = image,
-        visibility = ["//agentplane/system_tests:__pkg__"],
-    )
-    for variant, image in {
-        "model_free": ":runner_image",
-        "harnesses": ":runner_harnesses_image",
-    }.items()
-]
-
-# Bazel-built service images, loaded into k3s's containerd.
-_IMAGES = {
-    "action_service": "//agentplane/action_service:service_image",
-    "action_service_migrate": "//agentplane/action_service/migrations:image",
-    "app": "//agentplane/app:image",
-    "app_migrate": "//agentplane/app:migration_image",
-    "egress_proxy": "//agentplane/egress/cmd:image",
-    "egress_history_migrate": "//agentplane/egress/history_migrations:image",
-    "egress_sidecar": "//agentplane/egress:sidecar_image",
-    "history_migrate": "//agentplane/history_service/migrations:image",
-    "history_service": "//agentplane/history_service:service_image",
-    "llm_ingress": "//agentplane/llm_ingress:image",
-    "mcp_edge": "//agentplane/mcp_edge:service_image",
-    "mcp_edge_migrate": "//agentplane/mcp_edge/migrations:image",
-    "notification_service": "//agentplane/notification_service:service_image",
-    "notification_service_migrate": "//agentplane/notification_service/migrations:image",
-    "policy_controller": "//agentplane/policy_controller:image",
-    "postgres": "@postgres_18_minimal_linux_amd64",
-    "runner_disk": "//agentplane/runner:disk_image",
-    "runner_gateway": "//agentplane/runner_gateway:image",
-    "runner_gateway_queue_migrate": "//agentplane/runner_gateway/migrations:image",
-    "sandbox_controller": "//agentplane/sandbox_controller:image",
-}
-
-[
-    oci_layout_rloc(
-        name = name + "_layout",
-        testonly = True,
-        image = image,
-    )
-    for name, image in _IMAGES.items()
-]
-
-# Dex and the MCP servers `test_mcp` calls, imported only by targets that run them
-# (`system_test(mcp_fixtures = True)`): a subdirectory, so `stack.py`'s glob skips them.
-[
-    oci_layout_rloc(
-        name = "mcp_fixtures/" + name + "_layout",
-        testonly = True,
-        image = image,
-        visibility = ["//agentplane/system_tests:__pkg__"],
-    )
-    for name, image in {
-        "dex": "@dex_linux_amd64",
-        "mcp_everything": "@mcp_everything_linux_amd64",
-        "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
-    }.items()
-]
-
-# KubeVirt's and Kyverno's images, imported by targets that run VM Sandboxes
-# (`system_test(vm_sandboxes = ...)`): a subdirectory, so `stack.py`'s glob skips them.
-[
-    oci_layout_rloc(
-        name = "vm_sandboxes/" + name + "_layout",
-        testonly = True,
-        image = image,
-        visibility = ["//agentplane/system_tests:__pkg__"],
-    )
-    for name, image in K3S_VM_IMAGES.items()
-]
 
 py_test(
-    name = "test_render",
-    # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
-    size = "medium",
-    srcs = ["test_render.py"],
-    data = [
-        ":rendered/local-model-mcp-fixtures.json",
-        ":rendered/local-model-vm.json",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
-        "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-vm.json)",
-    },
+    name = "test_image_manifest",
+    srcs = ["test_image_manifest.py"],
+    data = [":test_image_manifest_data"],
+    env = {"IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_image_manifest_data)"},
     deps = [
-        ":block_storage",
-        ":fixture_chart",
-        ":fixture_database",
-        ":namespaces",
-        ":rendered_fixture",
         "//:conftest",
-        "//agentplane/app:settings",
-        "//agentplane/mcp_edge:oauth_settings",
-        "//agentplane/mcp_edge:settings",
-        "//agentplane/runner_gateway:settings",
         "//agentplane/system_tests:conftest",
-        "//util:settings_contract",
-        "//util/bazel:runfiles",
-        "@pypi//bcrypt",
-        "@pypi//pydantic",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
-py_library(
-    name = "system_test_target",
-    testonly = True,
-    srcs = ["system_test_target.py"],
-    visibility = ["//agentplane/system_tests:__pkg__"],
+py_test(
+    name = "test_executor_persistence",
+    srcs = ["test_executor_persistence.py"],
     deps = [
-        ":rendered_fixture",
-        ":stack",
+        ":baseline",
+        "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:operator_login",
-        "//util:net",
-        "//util/bazel:runfiles",
+        "//agentplane/system_tests/deployment:stack",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "block_storage",
-    testonly = True,
-    srcs = ["block_storage.py"],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-py_library(
-    name = "stack",
-    testonly = True,
-    srcs = ["stack.py"],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-    ] + [":" + name + "_layout" for name in _IMAGES],
-    deps = [
-        ":block_storage",
-        ":bootstrap",
-        ":guest_logs",
-        ":iptables_rule",
-        ":rendered_fixture",
-        ":vm_sandboxes",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/testing:tls",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pyyaml",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "fixture_chart",
-    testonly = True,
-    srcs = ["fixture_chart.py"],
-    deps = [
-        ":block_storage",
-        ":dex",
-        ":fixture_database",
-        ":namespaces",
-        ":rendered_fixture",
-        "//agentplane:subjects",
-        "//agentplane/action_service:catalog",
-        "//agentplane/action_service/sandbox:binding",
-        "//agentplane/app:settings",
-        "//agentplane/crds:egresscredential",
-        "//agentplane/crds:policyset",
-        "//agentplane/runner:configuration",
-        "//agentplane/system_tests:launch_preset",
-        "//agentplane/system_tests:probe_credential",
-        "//agentplane/system_tests:runtime_grant",
-        "//agentplane/system_tests:send_grant",
-        "//cluster/cdk8s:agent_access_profiles",
-        "//cluster/cdk8s:model_selections",
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/agentplane:actions",
-        "//cluster/cdk8s/agentplane:app",
-        "//cluster/cdk8s/agentplane:app_settings",
-        "//cluster/cdk8s/agentplane:chart",
-        "//cluster/cdk8s/agentplane:command_sandbox",
-        "//cluster/cdk8s/agentplane:egress",
-        "//cluster/cdk8s/agentplane:egress_credentials",
-        "//cluster/cdk8s/agentplane:environment",
-        "//cluster/cdk8s/agentplane:history_service",
-        "//cluster/cdk8s/agentplane:llm_ingress",
-        "//cluster/cdk8s/agentplane:mcp_edge",
-        "//cluster/cdk8s/agentplane:notifications",
-        "//cluster/cdk8s/agentplane:policy_controller",
-        "//cluster/cdk8s/agentplane:policy_controller_rbac",
-        "//cluster/cdk8s/agentplane:runner_gateway",
-        "//cluster/cdk8s/agentplane:runner_gateway_workload",
-        "//cluster/cdk8s/agentplane:runner_sandbox",
-        "//cluster/cdk8s/agentplane:runner_vm",
-        "//cluster/cdk8s/agentplane:sandbox_controller",
-        "//cluster/cdk8s/agentplane:sandbox_pod",
-        "//cluster/cdk8s/agentplane:session_dispatcher",
-        "//cluster/cdk8s/providers/agentplane:egress_credential",
-        "//cluster/cdk8s/providers/agentplane:policy_set",
-        "//model_catalog:catalog",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "mcp_fixture_chart",
-    testonly = True,
-    srcs = ["mcp_fixture_chart.py"],
-    deps = [
-        ":dex",
-        ":fixture_chart",
-        ":mcp_fixture_servers",
-        ":namespaces",
-        ":rendered_fixture",
-        "//agentplane:subjects",
-        "//agentplane/action_service/policies:resources",
-        "//agentplane/mcp_edge:oauth_settings",
-        "//agentplane/system_tests:mcp_servers",
-        "//cluster/cdk8s/agentplane:actions",
-        "@pypi//bcrypt",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_library(
-    name = "rendered_fixture",
-    srcs = ["rendered_fixture.py"],
-    deps = [
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "render_fixture",
-    testonly = True,
-    srcs = ["render_fixture.py"],
-    deps = [
-        ":fixture_chart",
-        ":namespaces",
-        ":rendered_fixture",
-    ],
-)
-
-py_binary(
-    name = "render_fixture_bin",
-    testonly = True,
-    imports = ["../../.."],
-    main_module = "agentplane.system_tests.k3s.render_fixture",
-    deps = [":render_fixture"],
-)
-
-py_library(
-    name = "render_mcp_fixture",
-    testonly = True,
-    srcs = ["render_mcp_fixture.py"],
-    deps = [
-        ":dex",
-        ":fixture_chart",
-        ":mcp_fixture_chart",
-        ":namespaces",
-        ":render_fixture",
-        ":rendered_fixture",
-    ],
-)
-
-py_binary(
-    name = "render_mcp_fixture_bin",
-    testonly = True,
-    imports = ["../../.."],
-    main_module = "agentplane.system_tests.k3s.render_mcp_fixture",
-    deps = [":render_mcp_fixture"],
-)
-
-# Each output has a separate action. Ordinary and VM renderers use the common chart; only the MCP
-# output depends on its fixture servers and Dex additions. Runtime values stay placeholders.
-genrule(
-    name = "render_local_model",
-    testonly = True,
-    outs = ["rendered/local-model.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
-    tools = [
-        ":render_fixture_bin",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-genrule(
-    name = "render_local_model_vm",
-    testonly = True,
-    outs = ["rendered/local-model-vm.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-vm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
-    tools = [
-        ":render_fixture_bin",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-genrule(
-    name = "render_public_litellm",
-    testonly = True,
-    outs = ["rendered/public-litellm.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=public-litellm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
-    tools = [
-        ":render_fixture_bin",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-genrule(
-    name = "render_local_model_mcp_fixtures",
-    testonly = True,
-    outs = ["rendered/local-model-mcp-fixtures.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_mcp_fixture_bin)",
-    tools = [
-        ":render_mcp_fixture_bin",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    visibility = ["//agentplane/system_tests:__pkg__"],
-)
-
-py_library(
-    name = "fixture_database",
-    srcs = ["fixture_database.py"],
-    data = [
-        "bootstrap.sql",
-        "postgres_entrypoint.sh",
-    ],
-    deps = [
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s/agentplane:environment",
-        "//util/bazel:runfiles",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
+        "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
-    name = "test_render_determinism",
-    size = "medium",
-    srcs = ["test_render_determinism.py"],
+    name = "test_pinned_images",
+    size = "enormous",
+    srcs = ["test_pinned_images.py"],
     data = [
-        ":render_fixture_variants_for_test_bin",
-        "@nodejs_linux_amd64//:bin/node",
+        "//agentplane/egress:sidecar_image",
+        K3S_BINARY,
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
-        "K3S_RENDERER_RLOCATION": "$(rlocationpath :render_fixture_variants_for_test_bin)",
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_TEST_IMAGE_RLOCATION": "$(rlocationpath //agentplane/egress:sidecar_image)",
     },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": "k3s-pinned-image-probe-v1",
+    },
+    tags = K3S_TAGS + ["manual"],
     deps = [
+        ":baseline",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_release_manifests",
+    srcs = ["test_release_manifests.py"],
+    data = [
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "@cert_manager_v1_21_2_release//file",
+        "@kubevirt_operator_bundle//file",
+        "@kyverno_install//file",
+    ],
+    env = {
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
+        "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+    },
+    deps = [
+        ":release_manifests",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "release_manifests",
+    srcs = ["release_manifests.py"],
+    visibility = ["//agentplane/system_tests/vm:__pkg__"],
+    deps = [
+        "//agentplane/system_tests/driver:tracing",
+        "@pypi//pyyaml",
     ],
 )
 
 py_library(
     name = "bootstrap",
     srcs = ["bootstrap.py"],
-)
-
-py_library(
-    name = "vm_sandboxes",
-    srcs = ["vm_sandboxes.py"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "render_fixture_variants_driver",
-    testonly = True,
-    srcs = ["render_fixture_variants_driver.py"],
-    deps = [
-        ":render_fixture",
-        ":render_mcp_fixture",
-    ],
-)
-
-py_binary(
-    name = "render_fixture_variants_for_test_bin",
-    testonly = True,
-    imports = ["../../.."],
-    main_module = "agentplane.system_tests.k3s.render_fixture_variants_driver",
-    deps = [":render_fixture_variants_driver"],
-)
-
-py_library(
-    name = "dex",
-    srcs = ["dex.py"],
-    deps = [
-        ":namespaces",
-        "//agentplane/action_service:operator_oidc_settings",
-        "//agentplane/app:action_federation_settings",
-        "//cluster/cdk8s:config_format",
-        "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s:probes",
-        "//cluster/cdk8s:secret_ref",
-        "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/agentplane:actions",
-        "//cluster/cdk8s/agentplane:app",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "mcp_fixture_servers",
-    srcs = ["mcp_fixture_servers.py"],
-    deps = [
-        ":namespaces",
-        "//agentplane/action_service:catalog",
-        "//agentplane/action_service:mcp_settings",
-        "//cluster/cdk8s:pod_policy",
-        "//cluster/cdk8s/agentplane:actions",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
-    ],
+    deps = ["//agentplane/system_tests/driver:tracing"],
 )
 
 py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
-)
-
-py_library(
-    name = "guest_logs",
-    srcs = ["guest_logs.py"],
-)
-
-py_test(
-    name = "test_guest_logs",
-    srcs = ["test_guest_logs.py"],
-    deps = [
-        ":guest_logs",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/scenarios:__pkg__",
     ],
 )
 
@@ -556,9 +131,9 @@ py_test(
         ":iptables_rule",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
@@ -566,4 +141,61 @@ py_library(
     name = "iptables_rule",
     testonly = True,
     srcs = ["iptables_rule.py"],
+)
+
+py_library(
+    name = "baseline",
+    srcs = ["baseline.py"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/firecracker:__pkg__",
+        "//agentplane/system_tests/vm:__pkg__",
+    ],
+    deps = [
+        ":bootstrap",
+        ":iptables_rule",
+        ":pki_infrastructure",
+        ":release_manifests",
+        "//agentplane/egress:kubernetes_audience",
+        "//agentplane/system_tests/driver:tracing",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_baseline",
+    srcs = ["test_baseline.py"],
+    deps = [
+        ":baseline",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "pki_infrastructure",
+    srcs = ["pki_infrastructure.py"],
+    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
+    deps = [
+        ":release_manifests",
+        "//agentplane/system_tests/driver:tracing",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_pki_infrastructure",
+    srcs = ["test_pki_infrastructure.py"],
+    deps = [
+        ":pki_infrastructure",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

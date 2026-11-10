@@ -224,11 +224,9 @@ identity on paths or results.
    `x/models/` into core using SR 11-7's list: intended use, limitations,
    holdout and rolling-origin scores (`fit/metrics.py`), stressed conditions,
    and sensitivity of household outcomes to the major assumptions.
-5. **Consistent fit provenance.** `vecm` and `state_space` put digests of their
-   evidence and fit into `provenance`; `structural_macro` records only a note.
-   Every fitted provider should record which evidence and fit artifact it
-   sampled from, kept descriptive per the `SampledExogenousBundle.provenance`
-   contract.
+5. **Fit input notes.** The operator who runs a fit can save input notes beside
+   the run record. Fitted artifacts keep model identity and runtime inputs
+   needed for sampling, while training-source notes remain with the operator.
 
 ## Considered and Rejected
 

@@ -1,6 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -115,8 +115,8 @@ oci_load(
     repo_tags = ["wayback-proxy:latest"],
 )
 
-oci_layout_rloc(
-    name = "image_info",
+oci_layout_py(
+    name = "wayback_proxy_image",
     testonly = True,
     image = ":image",
     visibility = ["//loom/gym:__pkg__"],
@@ -133,17 +133,17 @@ py_test(
     srcs = ["test_compose_e2e.py"],
     data = [
         ":compose",
-        ":image_info",
     ],
     requires_docker = True,
     deps = [
         ":fake_ia",
         "//:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
+        "//loom/wayback/proxy:wayback_proxy_image",
         "//third_party/containers:python_3_14_slim",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

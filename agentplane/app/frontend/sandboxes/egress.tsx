@@ -1,13 +1,15 @@
 import { Badge, Button, SegmentedControl, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useSearchParams } from "react-router";
 
-import type { Decision, DecisionsSnapshot } from "../api/schema";
+import { WatchDecisionsResponseSchema, type Decision } from "../../../egress/egress_admin_pb";
 import { TimeAgo } from "../time_ago";
-import { type DecisionGroup, groupDecisions } from "./decision_groups";
-import { liveEgressDecisionsUrl } from "./live";
-import { followStream, type StreamConnection } from "../live_stream";
+import { decisionAt, decisionOutcome, decisionReason, type DecisionGroup, groupDecisions } from "./decision_groups";
+import { followWatch } from "../watch_stream";
+import { type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
+import type { ServiceAccount } from "../../../proto/identity_pb";
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
 const GROUPS_PARAM = "decision_groups";
@@ -17,9 +19,9 @@ const EVERY_REQUEST_PARAM = "every_request";
 const MEMBERS_SHOWN = 50;
 
 function reasonOf(decision: Decision): string {
-  return decision.outcome === "allow"
+  return decisionOutcome(decision) === "allow"
     ? [decision.policy, decision.substituted ? "credential substituted" : null].filter((part) => part).join(" · ")
-    : (decision.reason ?? "");
+    : (decisionReason(decision) ?? "");
 }
 
 function destination(decision: { host: string; port: number }): string {
@@ -32,7 +34,7 @@ function DecisionRow({ decision, nested }: { decision: Decision; nested: boolean
     <Table.Tr>
       <Table.Td pl={nested ? "xl" : undefined}>
         <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-          <TimeAgo value={decision.at} />
+          <TimeAgo value={decisionAt(decision)} />
         </Text>
       </Table.Td>
       <Table.Td>
@@ -52,7 +54,13 @@ function DecisionRow({ decision, nested }: { decision: Decision; nested: boolean
         </Text>
       </Table.Td>
       <Table.Td>
-        <Badge color={decision.outcome === "allow" ? "green" : "red"}>{decision.outcome}</Badge>
+        <Badge
+          color={
+            decisionOutcome(decision) === "allow" ? "green" : decisionOutcome(decision) === "deny" ? "red" : "gray"
+          }
+        >
+          {decisionOutcome(decision)}
+        </Badge>
       </Table.Td>
       <Table.Td visibleFrom="sm">
         <Text size="sm">{reason || "—"}</Text>
@@ -106,7 +114,17 @@ function DecisionGroupRows({
           </Text>
         </Table.Td>
         <Table.Td>
-          <Badge color={group.outcome === "allow" ? "green" : "red"}>{group.outcome}</Badge>
+          <Badge
+            color={
+              decisionOutcome(group.members[0]) === "allow"
+                ? "green"
+                : decisionOutcome(group.members[0]) === "deny"
+                  ? "red"
+                  : "gray"
+            }
+          >
+            {decisionOutcome(group.members[0])}
+          </Badge>
         </Table.Td>
         <Table.Td visibleFrom="sm">
           <Text size="sm">{reason || "—"}</Text>
@@ -195,44 +213,91 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
   );
 }
 
-/** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null } {
-  const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+/** Complete recent windows for the observed execution account. */
+function useEgressDecisions(account: ServiceAccount): { decisions: Decision[] | null; connection: StreamConnection } {
+  const { namespace, name } = account;
+  const [decisions, setDecisions] = useState<Decision[] | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
-    setSnapshot(null);
-    return followStream(liveEgressDecisionsUrl(name), {
-      events: {
-        snapshot: (message) => setSnapshot(JSON.parse(message.data) as DecisionsSnapshot),
-        health: (message) =>
-          setSnapshot((current) => current && { ...current, ...(JSON.parse(message.data) as { watching: boolean }) }),
+    let active = true;
+    let receivedSnapshot = false;
+    let current = new Map<string, Decision>();
+    const publish = (): void => {
+      setDecisions(
+        [...current.values()].sort((a, b) => {
+          const as = a.at?.seconds ?? 0n;
+          const bs = b.at?.seconds ?? 0n;
+          if (as !== bs) return as < bs ? -1 : 1;
+          const nanos = (a.at?.nanos ?? 0) - (b.at?.nanos ?? 0);
+          return nanos || a.eventId.localeCompare(b.eventId);
+        })
+      );
+    };
+    const query = new URLSearchParams({ "filter.subject.namespace": namespace, "filter.subject.name": name });
+    const stop = followWatch(`/upstream/egress/v1/decisions:watch?${query}`, {
+      initialFrameTimeoutMs: 5000,
+      idleTimeoutMs: 45_000,
+      onOpen: () => {
+        receivedSnapshot = false;
+        current = new Map();
+        setDecisions(null);
       },
-      onConnection: setConnection,
+      onFrame: (value) => {
+        if (!active) return;
+        const frame = fromJson(WatchDecisionsResponseSchema, value as JsonValue).frame;
+        if (frame.case === "snapshot") {
+          if (receivedSnapshot) throw new Error("Egress repeated its initial snapshot");
+          for (const decision of frame.value.decisions) {
+            if (!decision.eventId || current.has(decision.eventId))
+              throw new Error("Egress returned an invalid decision identity");
+            current.set(decision.eventId, decision);
+          }
+          receivedSnapshot = true;
+          publish();
+        } else if (frame.case === "delta" && receivedSnapshot) {
+          for (const id of frame.value.removedEventIds) {
+            if (!current.delete(id)) throw new Error("Egress removed an unknown decision");
+          }
+          for (const decision of frame.value.added) {
+            if (!decision.eventId || current.has(decision.eventId))
+              throw new Error("Egress returned an invalid decision identity");
+            current.set(decision.eventId, decision);
+          }
+          publish();
+        } else if (frame.case !== "heartbeat" || !receivedSnapshot) {
+          throw new Error("Egress returned an invalid decision watch frame");
+        }
+      },
+      onConnection: (next) => {
+        if (!active) return;
+        if (next.phase !== "live") setDecisions(null);
+        setConnection(next);
+      },
     });
-  }, [name]);
-  useStreamStatus(`Egress decisions of ${name}`, connection);
-  return { snapshot };
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [namespace, name]);
+  useStreamStatus(`Egress decisions of ${namespace}/${name}`, connection);
+  return { decisions, connection };
 }
 
-/** What recently left the sandbox, or was refused, as the egress proxy reports it. */
-export function EgressLog({ name }: { name: string }): JSX.Element {
-  const decisions = useEgressDecisions(name);
+/** The current execution account's recent Egress decisions. */
+export function EgressLog({ account, sandbox }: { account: ServiceAccount; sandbox: string }): JSX.Element {
+  const { decisions, connection } = useEgressDecisions(account);
   return (
     <Stack gap="xs">
       <Title order={5}>Recent decisions</Title>
-      {decisions.snapshot !== null && !decisions.snapshot.watching && (
+      <Text size="xs" c="dimmed">
+        ServiceAccount {account.namespace}/{account.name}; may include earlier Sandbox incarnations.
+      </Text>
+      {connection.phase === "reconnecting" && (
         <Text size="sm" c="dimmed">
-          Not hearing from the egress proxy about new decisions; this log may be behind.
+          Egress decisions for {sandbox} are unavailable. Reconnecting…
         </Text>
       )}
-      {decisions.snapshot !== null &&
-        (Array.isArray(decisions.snapshot.decisions) ? (
-          <DecisionsTable decisions={decisions.snapshot.decisions} />
-        ) : (
-          <Text size="sm" c="dimmed">
-            The egress proxy could not be asked; the bindings still apply. ({decisions.snapshot.decisions.detail})
-          </Text>
-        ))}
+      {decisions !== null && <DecisionsTable decisions={decisions} />}
     </Stack>
   );
 }

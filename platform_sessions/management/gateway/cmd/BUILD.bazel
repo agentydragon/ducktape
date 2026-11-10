@@ -1,0 +1,69 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "platform_sessions_gateway",
+    srcs = ["main.go"],
+    data = ["//platform_sessions/frontend:bundle"],
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/management/gateway/cmd",
+    pure = "on",
+    deps = [
+        "//platform_sessions/frontend",
+        "//platform_sessions/management/gateway",
+        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+    ],
+)
+
+pkg_tar(
+    name = "gateway_binary_layer",
+    srcs = [":platform_sessions_gateway"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+)
+
+pkg_tar(
+    name = "management_openapi_layer",
+    srcs = ["//platform_sessions/management/v1:management_openapi"],
+    package_dir = "/usr/local/share/platform-sessions",
+)
+
+copy_to_directory(
+    name = "frontend_files",
+    srcs = ["//platform_sessions/frontend:bundle"],
+    out = "platform-sessions-frontend",
+    root_paths = ["platform_sessions/frontend/dist"],
+)
+
+pkg_tar(
+    name = "frontend_layer",
+    srcs = [":frontend_files"],
+    package_dir = "/usr/local/share/platform-sessions",
+)
+
+oci_image(
+    name = "image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/platform_sessions_gateway"],
+    env = {
+        "PLATFORM_SESSIONS_MANAGEMENT_OPENAPI": "/usr/local/share/platform-sessions/management_openapi.swagger.json",
+        "PLATFORM_SESSIONS_FRONTEND_DIR": "/usr/local/share/platform-sessions/platform-sessions-frontend",
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    },
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":gateway_binary_layer",
+        ":frontend_layer",
+        ":management_openapi_layer",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
+)

@@ -4,7 +4,7 @@
 # call `reconcile_bbr_remote <repo_dir>`.
 #
 # Fixes two problems that break `bbr`/`bb remote` in sandboxed sessions (see
-# devinfra/docs/bb_remote_internals.md "Gotchas" for the full explanation):
+# devinfra/buildbuddy/docs/remote.md "Gotchas" for the full explanation):
 #
 # 1. Sandboxed sessions rewrite `origin` to a local git-mirroring proxy
 #    (http://127.0.0.1:<port>/git/...) so the cloud runner can't fetch from
@@ -23,7 +23,7 @@
 # a real remote ref: `bb remote` falls back to `<default-branch>@{upstream}` as
 # its diff base when the current branch isn't tracked on the BuildBuddy remote,
 # and a stale local tracking ref there produces a huge or unappliable patchset.
-# `devinfra/bbr.py`'s `check_base_branch_freshness` warns about this on every
+# `devinfra/buildbuddy/bbr.py`'s `check_base_branch_freshness` warns about this on every
 # `bbr` call without ever fetching (surprise network calls on every command
 # would be worse); this setup-time step is the one place that *does* fetch,
 # since session setup already does other one-time network installs.

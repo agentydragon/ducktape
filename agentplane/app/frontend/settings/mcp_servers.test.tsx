@@ -1,21 +1,47 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { expect, it, vi } from "vitest";
+import { create } from "@bufbuild/protobuf";
 
 import { answerApi, mount, send, sendUpserts } from "../actions/testing/harness";
-import type { ActionGroupView } from "../actions/client";
-import type { McpLinkageView } from "../mcp_linkage_client";
+import {
+  ActionGroupSchema,
+  ExecutorKind,
+  McpLifecycle,
+  McpUnavailableReason,
+  type ActionGroup,
+} from "../../../action_service/action_service_pb";
+import {
+  McpLinkageStatus,
+  McpRefreshAction,
+  McpServerLinkageSchema,
+  type McpServerLinkage,
+} from "../../../action_service/operator_action_service_pb";
 import { McpServers } from "./mcp_servers";
 
 const LINKAGES = "/upstream/actions/v1/operator/mcp-servers:watch";
 const HEALTH = "/upstream/actions/v1/action-groups:watch";
 
 /** Mounts the page, then pushes `linkages` and `groups` down its two streams. */
-async function render(linkages: McpLinkageView[] = [], groups: ActionGroupView[] = []): Promise<HTMLDivElement> {
+async function render(linkages: McpServerLinkage[] = [], groups: ActionGroup[] = []): Promise<HTMLDivElement> {
   const container = await mount(<McpServers />);
   await send(linkages, LINKAGES);
   await send(groups, HEALTH);
   return container;
+}
+
+function linkage(
+  serverId: string,
+  status: McpLinkageStatus = McpLinkageStatus.LINKED,
+  refreshFailure?: { action: McpRefreshAction; error: string; attempts: number }
+): McpServerLinkage {
+  return create(McpServerLinkageSchema, {
+    serverId,
+    serverUrl: "https://mcp.example.test",
+    status,
+    scopes: [],
+    refreshFailure,
+  });
 }
 
 // Each button's label, and the request it sends.
@@ -23,13 +49,7 @@ it.each([
   ["Reconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/start", {}],
   ["Disconnect", "/upstream/actions/v1/operator/mcp-servers/github/linkage/disconnect", undefined],
 ] as const)("spins only the clicked %s button until the operation fails", async (label, path, body) => {
-  const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
-    server_id,
-    server_url: "https://mcp.example.test",
-    status: "linked",
-    scopes: [],
-    refresh_failure: null,
-  }));
+  const rows = [linkage("github"), linkage("second-server")];
   let fail!: () => void;
   const failed = new Promise<Response>((answer) => {
     fail = () => answer(Response.json({ detail: "Operation failed" }, { status: 502 }));
@@ -56,39 +76,22 @@ it("renders independent linkage and health snapshots, then updates either withou
   const container = await mount(<McpServers />);
   expect(container.textContent).toContain("Loading MCP servers");
   expect(container.textContent).not.toContain("No MCP servers are configured");
-  await send(
-    [
-      {
-        server_id: "example",
-        server_url: "https://mcp.example.test",
-        status: "linked",
-        scopes: [],
-        refresh_failure: null,
-      },
-    ],
-    LINKAGES
-  );
+  await send([linkage("example")], LINKAGES);
   expect(container.textContent).toContain("Loading MCP servers");
   await send(
     [
-      {
+      create(ActionGroupSchema, {
         key: "example",
         title: "Example",
         description: "",
-        executor_kind: "mcp",
-        executor_description: "Example",
+        executorKind: ExecutorKind.MCP,
+        executorDescription: "Example",
         available: true,
         health: {
-          state: "available",
-          reason: null,
-          detail: null,
+          state: McpLifecycle.AVAILABLE,
           failures: 0,
-          retry_at: null,
-          last_discovery_at: null,
         },
-        actions: [],
-        direct_tools: [],
-      },
+      }),
     ],
     HEALTH
   );
@@ -96,24 +99,20 @@ it("renders independent linkage and health snapshots, then updates either withou
   expect(container.textContent).toContain("Connectionavailable");
   await sendUpserts(
     [
-      {
+      create(ActionGroupSchema, {
         key: "example",
         title: "Example",
         description: "",
-        executor_kind: "mcp",
-        executor_description: "Example",
+        executorKind: ExecutorKind.MCP,
+        executorDescription: "Example",
         available: false,
         health: {
-          state: "disconnected",
-          reason: "connect_failed",
+          state: McpLifecycle.DISCONNECTED,
+          reason: McpUnavailableReason.CONNECT_FAILED,
           detail: "Connection refused",
           failures: 1,
-          retry_at: null,
-          last_discovery_at: null,
         },
-        actions: [],
-        direct_tools: [],
-      },
+      }),
     ],
     HEALTH
   );
@@ -127,24 +126,18 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
   const container = await render(
     [],
     [
-      {
+      create(ActionGroupSchema, {
         key: "tana",
         title: "Tana",
         description: "Tana MCP tools",
-        executor_kind: "mcp",
-        executor_description: "Tana MCP tools",
+        executorKind: ExecutorKind.MCP,
+        executorDescription: "Tana MCP tools",
         available: true,
         health: {
-          state: "available",
-          reason: null,
-          detail: null,
-          last_discovery_at: null,
-          retry_at: null,
+          state: McpLifecycle.AVAILABLE,
           failures: 0,
         },
-        actions: [],
-        direct_tools: [],
-      },
+      }),
     ]
   );
   expect(container.textContent).toContain("tana");
@@ -156,34 +149,22 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
 
 it("labels a linked-but-disconnected server's two states and says why it cannot connect", async () => {
   const container = await render(
+    [linkage("github")],
     [
-      {
-        server_id: "github",
-        server_url: "https://mcp.example.test",
-        status: "linked",
-        scopes: [],
-        refresh_failure: null,
-      },
-    ],
-    [
-      {
+      create(ActionGroupSchema, {
         key: "github",
         title: "GitHub",
         description: "Read access to public GitHub repositories.",
-        executor_kind: "mcp",
-        executor_description: "Connected as Rai's GitHub account.",
+        executorKind: ExecutorKind.MCP,
+        executorDescription: "Connected as Rai's GitHub account.",
         available: true,
         health: {
-          state: "disconnected",
-          reason: "connect_failed",
+          state: McpLifecycle.DISCONNECTED,
+          reason: McpUnavailableReason.CONNECT_FAILED,
           detail: "RuntimeError: Client failed to connect: All connection attempts failed",
-          last_discovery_at: null,
-          retry_at: null,
           failures: 3,
         },
-        actions: [],
-        direct_tools: [],
-      },
+      }),
     ]
   );
   expect(container.textContent).toContain("OAuth linklinked");
@@ -192,15 +173,7 @@ it("labels a linked-but-disconnected server's two states and says why it cannot 
 });
 
 it("renders an oauth linkage with no matching health row exactly as before", async () => {
-  const container = await render([
-    {
-      server_id: "kubernetes",
-      server_url: "https://mcp.example.test",
-      status: "unlinked",
-      scopes: [],
-      refresh_failure: null,
-    },
-  ]);
+  const container = await render([linkage("kubernetes", McpLinkageStatus.UNLINKED)]);
   expect(container.textContent).toContain("kubernetes");
   expect(container.textContent).toContain("unlinked");
   const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
@@ -211,17 +184,14 @@ it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
   const container = await render(
     [],
     [
-      {
+      create(ActionGroupSchema, {
         key: "sandbox",
         title: "Sandbox",
         description: "Runs in-process, not over MCP.",
-        executor_kind: "pod",
-        executor_description: "Stamped and exec'd by this service.",
+        executorKind: ExecutorKind.POD,
+        executorDescription: "Stamped and exec'd by this service.",
         available: true,
-        health: null,
-        actions: [],
-        direct_tools: [],
-      },
+      }),
     ]
   );
   expect(container.textContent).not.toContain("sandbox");
@@ -230,18 +200,11 @@ it("excludes a non-mcp (e.g. sandbox-kind) group from the list", async () => {
 
 it("shows a refused token refresh with the provider's error and what to do next", async () => {
   const container = await render([
-    {
-      server_id: "github",
-      server_url: "https://mcp.example.test",
-      status: "degraded",
-      scopes: [],
-      refresh_failure: {
-        action: "reconnect",
-        error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
-        attempts: 1,
-        retry_at: null,
-      },
-    },
+    linkage("github", McpLinkageStatus.DEGRADED, {
+      action: McpRefreshAction.RECONNECT,
+      error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
+      attempts: 1,
+    }),
   ]);
   expect(container.textContent).toContain(
     "Token refresh failed once, link the account again:the OAuth provider refused the token request: invalid_grant: Token is not active"
@@ -251,33 +214,27 @@ it("shows a refused token refresh with the provider's error and what to do next"
 it("does not repeat a linkage wait under a refresh failure that already explains it", async () => {
   const container = await render(
     [
-      {
-        server_id: "github",
-        server_url: "https://mcp.example.test",
-        status: "degraded",
-        scopes: [],
-        refresh_failure: { action: "reconnect", error: "test-only refusal", attempts: 1, retry_at: null },
-      },
+      linkage("github", McpLinkageStatus.DEGRADED, {
+        action: McpRefreshAction.RECONNECT,
+        error: "test-only refusal",
+        attempts: 1,
+      }),
     ],
     [
-      {
+      create(ActionGroupSchema, {
         key: "github",
         title: "GitHub",
         description: "Test MCP backend.",
-        executor_kind: "mcp",
-        executor_description: "Linked operator account.",
+        executorKind: ExecutorKind.MCP,
+        executorDescription: "Linked operator account.",
         available: false,
         health: {
-          state: "disconnected",
-          reason: "linkage_unavailable",
+          state: McpLifecycle.DISCONNECTED,
+          reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
           detail: "test-only linkage wait",
-          last_discovery_at: null,
-          retry_at: null,
           failures: 1,
         },
-        actions: [],
-        direct_tools: [],
-      },
+      }),
     ]
   );
   expect(container.textContent).toContain("test-only refusal");

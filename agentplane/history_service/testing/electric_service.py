@@ -6,19 +6,20 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from time import monotonic, sleep
 
 import httpx
 from sqlalchemy import create_engine, text
+from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg
 from agentplane.history_service.testing.go_service import migrate_history_database, migrated_history_template
 from agentplane.testing.electric_role import ensure_electric_role
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.db_url import render_postgresql_url
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.postgres import PostgresDatabaseTemplate
 
@@ -42,22 +43,23 @@ class BrowserPostgres:
     def _drop_replication_slots(self, database: str) -> None:
         engine = create_engine(self.admin_url, isolation_level="AUTOCOMMIT")
         try:
-            deadline = monotonic() + 30
             with engine.connect() as connection:
-                while True:
-                    slots = connection.execute(
-                        text("SELECT slot_name, active FROM pg_replication_slots WHERE database = :database"),
-                        {"database": database},
-                    ).all()
-                    if not any(active for _, active in slots):
-                        for slot_name, _ in slots:
-                            connection.execute(
-                                text("SELECT pg_drop_replication_slot(:slot_name)"), {"slot_name": slot_name}
-                            )
-                        return
-                    if monotonic() >= deadline:
-                        raise TimeoutError(f"Electric replication slots stayed active for {database!r}: {slots!r}")
-                    sleep(0.1)
+                for attempt in Retrying(
+                    stop=stop_after_delay(30),
+                    wait=wait_fixed(0.1),
+                    retry=retry_if_exception_type(AssertionError),
+                    reraise=True,
+                ):
+                    with attempt:
+                        slots = connection.execute(
+                            text("SELECT slot_name, active FROM pg_replication_slots WHERE database = :database"),
+                            {"database": database},
+                        ).all()
+                        assert not any(active for _, active in slots), (
+                            f"Electric replication slots stayed active for {database!r}: {slots!r}"
+                        )
+                for slot_name, _ in slots:
+                    connection.execute(text("SELECT pg_drop_replication_slot(:slot_name)"), {"slot_name": slot_name})
         finally:
             engine.dispose()
 
@@ -65,9 +67,9 @@ class BrowserPostgres:
 @contextmanager
 def browser_postgres_server() -> Iterator[BrowserPostgres]:
     """Start one logical-WAL PostgreSQL server and migrate its clone template once per shard."""
-    _load_postgres_images()
+    postgres_image = _load_postgres_images()
     with Network() as network:
-        postgres = _logical_postgres_container(network, test_name="history-postgres")
+        postgres = _logical_postgres_container(network, postgres_image=postgres_image, test_name="history-postgres")
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
@@ -143,15 +145,16 @@ class ElectricService:
 
 
 async def _ready(url: str, *, timeout_s: float = 60) -> None:
-    async with asyncio.timeout(timeout_s), httpx.AsyncClient(base_url=url, timeout=2) as client:
-        while True:
-            try:
+    async with httpx.AsyncClient(base_url=url, timeout=2) as client:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(timeout_s),
+            wait=wait_fixed(0.1),
+            retry=retry_if_exception_type((httpx.TransportError, AssertionError)),
+            reraise=True,
+        ):
+            with attempt:
                 response = await client.get("/v1/health")
-                if response.status_code == 200:
-                    return
-            except httpx.TransportError:
-                pass
-            await asyncio.sleep(0.1)
+                assert response.status_code == 200, f"Electric is not healthy yet: {response.status_code=}"
 
 
 @asynccontextmanager
@@ -163,9 +166,9 @@ async def _electric_process(
     test_name: str,
     electric_storage_dir: Path | None = None,
 ) -> AsyncIterator[ElectricService]:
-    await asyncio.to_thread(load_oci_image, electric_1_8_1.IMAGE)
+    electric_image = await asyncio.to_thread(load_oci_image, electric_1_8_1.LAYOUT_RLOCATION)
     electric = (
-        LoggedContainer(electric_1_8_1.IMAGE.tag, test_name=test_name)
+        LoggedContainer(electric_image, test_name=test_name)
         .with_network(network)
         .with_exposed_ports(3000)
         .with_env("DATABASE_URL", electric_database_url)
@@ -188,13 +191,13 @@ async def _electric_process(
         yield service
 
 
-def _load_postgres_images() -> None:
-    for image in (ryuk.IMAGE, postgres_18.IMAGE):
-        load_oci_image(image)
+def _load_postgres_images() -> str:
+    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    return load_oci_image(postgres_18.LAYOUT_RLOCATION)
 
 
 def _logical_postgres_container(
-    network: Network, *, test_name: str, postgres_settings: tuple[str, ...] = ()
+    network: Network, *, postgres_image: str, test_name: str, postgres_settings: tuple[str, ...] = ()
 ) -> LoggedContainer:
     command = " ".join(
         (
@@ -206,7 +209,7 @@ def _logical_postgres_container(
         )
     )
     return (
-        LoggedContainer(postgres_18.IMAGE.tag, test_name=test_name)
+        LoggedContainer(postgres_image, test_name=test_name)
         .with_network(network)
         .with_network_aliases("postgres")
         .with_exposed_ports(5432)
@@ -220,10 +223,10 @@ def _logical_postgres_container(
 async def electric_service(
     *, postgres_settings: tuple[str, ...] = (), electric_storage_dir: Path | None = None
 ) -> AsyncIterator[ElectricService]:
-    await asyncio.to_thread(_load_postgres_images)
+    postgres_image = await asyncio.to_thread(_load_postgres_images)
     with Network() as network:
         postgres = _logical_postgres_container(
-            network, test_name="history-postgres", postgres_settings=postgres_settings
+            network, postgres_image=postgres_image, test_name="history-postgres", postgres_settings=postgres_settings
         )
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"

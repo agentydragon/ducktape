@@ -770,291 +770,136 @@ Source-code observations (`iio-sensor-proxy 3.8`):
 
 #### Speculations / hypotheses (not established)
 
-S1. The kernel HID-sensor data-ready trigger silently stops firing
-after some s2idle resume. Plausible because the underlying ISH
-polled path stays alive and the IIO sysfs view of the trigger
-still looks normal. No direct evidence yet.
+These are the hypotheses recorded before the later live investigation below;
+they are not evidence of the originating kernel/firmware defect.
 
-S2. The sensor of failure is per-sensor-type, not global: both `als`
-and `accel_3d` are wedged together, but the kernel paths involved
-are mostly shared (hid-sensor-trigger, hid-sensor-iio-common,
-intel-ish-hid). A wedge in shared code would naturally take both
-out simultaneously.
-
-S3. The wedge requires a client to hold a claim across the suspend.
-Every observed wedge correlates with `gsd-power` keeping the light
-sensor claim active around the clock. Untested.
-
-S4. There may be a race between iio-sensor-proxy's existing claim and
-a parallel runtime-PM transition on the HID sensor at resume time
-(e.g., post-resume `_hid_sensor_power_state(false)` then later
-`(true)` with the IIO buffer already enabled, leaving an
-inconsistent state).
-
-S5. The 2026-05-05 boot saw buffered discover succeed; later the same
-daemon process was wedged on the buffered driver. So the buffer
-worked at least once on this kernel. The wedge is not a permanent
-"this hardware never supports buffered mode" condition.
-
-S6. Polled mode is not strictly worse than buffered mode for this
-workload — both run on a 700 ms timer; sample rate is the same.
-So forcing the daemon to polled would be a pragmatic sidestep
-of (S1) without functional regression. Untested whether
-`gsd-power` light readings are equivalent in polled mode for
-`als` (the `als` polled driver path was not examined).
+- **S1:** a data-ready trigger stops after s2idle while polled ISH reads and
+  trigger sysfs still look normal; no direct trigger evidence.
+- **S2:** simultaneous ALS/accel failure could involve their shared trigger,
+  common-sensor or ISH code; the per-sensor/global scope was unproved.
+- **S3:** a claim held across suspend may be required; continuous gsd-power ALS
+  claims correlated with the observed wedges but were not a controlled test.
+- **S4:** claim/resume may race runtime PM: power false → true with an already
+  enabled IIO buffer could leave inconsistent state.
+- **S5:** buffered discovery worked at the 2026-05-05 boot before the same daemon
+  wedged; this is not hardware that never supports buffered mode.
+- **S6:** both drivers use a 700ms timer, so forced polling might sidestep S1
+  without a rate regression. ALS/gsd-power equivalence remained untested.
 
 #### Open questions
 
-Q1. Did `accel_3d` ever wedge before `als`, or vice versa, or only
-together? Check by separately monitoring buffer state of each
-device across suspend cycles.
-
-Q2. Does toggling only `buffer/enable=0/1` (without
-`enable_sensors`/`enable_trigger`) un-wedge the kernel state? If
-yes, the wedge is in the buffer-arm path; if no, it is deeper
-(in the trigger or HID-sensor PM ops).
-
-Q3. Does the wedge require a client to hold a claim across suspend?
-Test by killing all SensorProxy clients before suspend, resuming,
-and probing.
-
-Q4. Is `gyro_3d`, `magn_3d`, `dev_rotation`, `incli_3d`, or
-`relative_orientation` ever in the wedged state too? They are
-served by the same hid-sensor-trigger code path. The daemon
-does not claim them, so we would not notice.
-
-Q5. Which suspend cycle introduced the wedge, and what was different
-about that cycle vs. the preceding ones that did not wedge?
-
-Q6. Does the wedge survive a `rmmod hid_sensor_*; modprobe …` cycle?
-That would tell us whether the bad state is in the kernel module
-or in the ISH firmware.
-
-Q7. Does `/sys/bus/iio/devices/iio:device4/buffer/data_available`
-(bytes currently in the kernel buffer) read 0 in the wedged
-state? That would confirm "the buffer is empty", as opposed to
-"data is in the buffer but the daemon's read does not see it".
-
-Q8. Is there visible activity on the ISH IPC channel during the
-wedge? Counter / ring-buffer in `intel-ish-hid` / `mei` debugfs
-might show whether messages are arriving from the firmware.
+- **Q1:** separately monitor ALS/accel buffers across suspend: which fails first,
+  or do both fail together?
+- **Q2:** toggle only buffer enable, without sensor/trigger setup; recovery would
+  implicate buffer arming, failure leaves trigger/HID PM deeper in scope.
+- **Q3:** remove all SensorProxy client claims before suspend, resume and probe;
+  test whether holding a claim is required.
+- **Q4:** check unclaimed gyro, magnetometer, device rotation, inclination and
+  relative-orientation sensors sharing the trigger code for hidden wedges.
+- **Q5:** identify the originating suspend cycle and compare it with working ones.
+- **Q6:** reload HID sensor modules to narrow module versus persistent firmware
+  state; preserve the reload outcome and residual IIO-core uncertainty.
+- **Q7:** inspect `iio:device4/buffer/data_available` for empty queue versus queued
+  data invisible to daemon reads.
+- **Q8:** inspect ISH IPC/MEI counters or rings for firmware messages during a wedge.
 
 #### Components / paths potentially involved
 
-Userspace:
+The source map below belongs to the May 2026 incident, including
+`iio-sensor-proxy 3.8`; current kernel/firmware attribution remains unproved.
 
-- `iio-sensor-proxy 3.8`
-  - `iio-sensor-proxy.c::handle_generic_method_call`,
-    `client_release`, `client_vanished_cb`,
-    `maybe_notify_sensor_startup_finished`, `accel_changed_func`,
-    `light_changed_func`
-  - `drv-iio-buffer-accel.c::iio_buffer_accel_discover`,
-    `_open`, `_set_polling`, `read_orientation`, `prepare_output`
-  - `drv-iio-buffer-light.c` (analogous)
-  - `drv-iio-poll-accel.c::iio_poll_accel_set_polling`,
-    `poll_orientation`
-  - `iio-buffer-utils.c::buffer_drv_data_new`, `buffer_drv_data_free`,
-    `enable_sensors`, `enable_trigger`, `disable_trigger`,
-    `enable_ring_buffer`, `disable_ring_buffer`,
-    `is_buffer_usable`
-- D-Bus broker (`dbus-daemon` system bus)
-- Clients: `gnome-shell` (Mutter), `gsd-power`, `monitor-sensor`
-
-Kernel — IIO core:
-
-- `drivers/iio/buffer/industrialio-buffer-cb.c`,
-  `industrialio-triggered-buffer.c`, `kfifo_buf.c`
-- `drivers/iio/industrialio-trigger.c`
-- `drivers/iio/industrialio-buffer.c`
-- `drivers/iio/inkern.c`
-- `drivers/iio/industrialio-core.c` (chrdev `read`, sysfs)
-
-Kernel — HID sensor:
-
-- `drivers/iio/common/hid-sensors/hid-sensor-trigger.c`
-  - `hid_sensor_data_rdy_trigger_set_state`
-  - `hid_sensor_setup_trigger`
-  - `_hid_sensor_power_state`
-  - `hid_sensor_runtime_resume`, `hid_sensor_runtime_suspend`
-  - The `pm_ops` table on the IIO device
-- `drivers/iio/common/hid-sensors/hid-sensor-attributes.c`
-- `drivers/iio/common/hid-sensors/hid-sensor-iio-common.c`
-- `drivers/iio/accel/hid-sensor-accel-3d.c`
-  - `accel_3d_proc_event`, `accel_3d_capture_sample`
-- `drivers/iio/light/hid-sensor-als.c` (analogous)
-
-Kernel — HID transport:
-
-- `drivers/hid/hid-sensor-hub.c`
-  - `sensor_hub_get_feature`, `sensor_hub_set_feature`
-  - `sensor_hub_input_get_attribute_info`, `_event`,
-    `_raw_event`
-- `drivers/hid/intel-ish-hid/`
-  - `ipc/`, `ishtp/`, `ishtp-fw-loader.c`
-  - `ishtp-hid-client.c`, `ishtp-hid.c`
-
-Kernel — PM:
-
-- `kernel/power/suspend.c` (s2idle path)
-- `drivers/base/power/runtime.c`
-- platform / chipset s2idle hooks for Intel Lunar Lake
-
-Firmware:
-
-- Intel ISH firmware itself (proprietary; no source). Loaded via
-  `intel/ish/ish_lnl_b0.bin` or similar. Possibly relevant: ISH
-  firmware version, ISH reset state across s2idle.
+- Userspace: `iio-sensor-proxy.c` claim/release/client-vanish/startup callbacks
+  (`handle_generic_method_call`, `client_release`, `client_vanished_cb`,
+  `maybe_notify_sensor_startup_finished`, `accel_changed_func`, `light_changed_func`);
+  buffered `drv-iio-buffer-{accel,light}.c` paths (`iio_buffer_accel_discover`,
+  `_open`, `_set_polling`, `read_orientation`, `prepare_output`);
+  `drv-iio-poll-accel.c::{iio_poll_accel_set_polling,poll_orientation}`;
+  `iio-buffer-utils.c::{buffer_drv_data_new,buffer_drv_data_free,enable_sensors,
+enable_trigger,disable_trigger,enable_ring_buffer,disable_ring_buffer,
+is_buffer_usable}`. Clients are Mutter, gsd-power and monitor-sensor on the
+  system D-Bus broker.
+- IIO core: `drivers/iio/{buffer/industrialio-buffer-cb.c,buffer/industrialio-triggered-buffer.c,
+buffer/kfifo_buf.c,industrialio-trigger.c,industrialio-buffer.c,inkern.c,
+industrialio-core.c}` for callbacks, buffers, chrdev reads and sysfs.
+- HID sensors under `drivers/iio/common/hid-sensors/`: `hid-sensor-trigger.c`
+  (`hid_sensor_setup_trigger`, `hid_sensor_data_rdy_trigger_set_state`,
+  `_hid_sensor_power_state`, `hid_sensor_runtime_resume`, `hid_sensor_runtime_suspend`),
+  its IIO `pm_ops`, `hid-sensor-attributes.c` and `hid-sensor-iio-common.c`.
+  Sensor drivers are `drivers/iio/accel/hid-sensor-accel-3d.c`
+  (`accel_3d_proc_event`, `accel_3d_capture_sample`) and
+  `drivers/iio/light/hid-sensor-als.c` (analogous).
+- Transport/PM: `drivers/hid/hid-sensor-hub.c` (`sensor_hub_get_feature`,
+  `sensor_hub_set_feature`, `sensor_hub_input_get_attribute_info`, `_event`,
+  `_raw_event`); `drivers/hid/intel-ish-hid/{ipc,ishtp,ishtp-fw-loader.c,
+ishtp-hid-client.c,ishtp-hid.c}`; `kernel/power/suspend.c`,
+  `drivers/base/power/runtime.c` and Lunar Lake s2idle hooks. Firmware is proprietary
+  `intel/ish/ish_lnl_b0.bin` or similar; retain version/reset state when comparing.
 
 #### Instrumentation menu
 
-What we can capture at increasing levels of invasiveness. Items
-labeled "no rebuild" can be enabled at runtime; "module reload"
-needs `rmmod`/`modprobe`; "kernel rebuild" needs custom kernel.
+The implemented baseline is [iio-debug.nix](../../nixos/hosts/rugged/iio-debug.nix):
+verbose daemon logging, boot/module dynamic debug, system-sleep snapshots and a
+60-second journal-based watchdog, with wedge dumps. It does not auto-recover or
+perform the proposed Claim/Release watchdog below. The host currently disables
+this high-volume mode after journal flooding caused desktop stalls
+([host config](../../nixos/hosts/rugged/default.nix), [stalls report](stalls/report.md)).
+These are capture options for an active investigation, not instructions to enable
+all instrumentation permanently.
 
-Userspace, no rebuild:
+Runtime capture without rebuilding:
 
-- `journalctl --user -u org.gnome.Shell` and `gnome-session.target`
-  on every resume. We have this already.
-- Run `iio-sensor-proxy` with `G_MESSAGES_DEBUG=all` (override the
-  systemd unit's `Environment=`). This unlocks every `g_debug` line
-  in the daemon — including `Accel read from IIO`, `No new data
-available on '...'`, `Already enabled sensor`, claim-handler
-  traces, etc. Cheap and high-signal.
-- `busctl monitor --system net.hadess.SensorProxy` continuously
-  during a test cycle, to see the exact `Claim` / `Release` traffic
-  and replies from the daemon.
-- `strace -fp <iio-sensor-proxy-pid>` long-running into a file.
-  High overhead but complete.
-- `gdb -p <iio-sensor-proxy-pid>` with breakpoints on
-  `read_orientation`, `prepare_output`, `accel_changed_func`,
-  `maybe_notify_sensor_startup_finished`. Inspect
-  `data->sensor_startup_dbus_invocations_delayed[i]->len`,
-  `data->clients[i]` size, and `drv_data->buffer_data->scan_size`.
-- Periodic watchdog probe: do a brief
-  `Claim → wait 1 s → Release` cycle every 60 s. Record
-  timestamp, latency, whether the property changed. First failed
-  probe pinpoints the wedging cycle to within 60 s.
-
-Kernel, no rebuild — dynamic debug:
-
-- `echo 'module hid_sensor_trigger +pmf' >
-/sys/kernel/debug/dynamic_debug/control` (and similarly for
-  `hid_sensor_iio_common`, `hid_sensor_hub`, `hid_sensor_accel_3d`,
-  `hid_sensor_als`, `industrialio`, `intel_ish_ipc`,
-  `intel_ishtp_hid`).
-  - Every `pr_debug` in those modules will then go to dmesg.
-  - Particularly useful inside `_hid_sensor_power_state` and
-    `hid_sensor_data_rdy_trigger_set_state`, which are the
-    PM-related state transitions on the trigger.
-- Set this from a NixOS module so it persists across reboots
-  (kernel cmdline `dyndbg=...` or systemd-tmpfiles writing the
-  control file at boot).
-
-Kernel, no rebuild — ftrace:
-
-- `trace-cmd record -e power:* -e iio:* -e hid:* sleep N` across a
-  suspend cycle. Captures suspend/resume sequencing alongside any
-  HID / IIO tracepoints (limited set; mostly `power`).
-- Function tracer on a focused list:
-  `hid_sensor_data_rdy_trigger_set_state`, `_hid_sensor_power_state`,
-  `hid_sensor_runtime_resume`, `hid_sensor_runtime_suspend`,
+- GNOME user journal (`org.gnome.Shell`, `gnome-session.target`) on resume; daemon
+  `G_MESSAGES_DEBUG=all` for successful reads, EAGAIN, already-enabled sensors and
+  claim-handler messages; continuous `busctl monitor --system net.hadess.SensorProxy`
+  for exact Claim/Release calls and replies. The baseline already covers journals.
+- `strace -fp <daemon-pid>` records complete syscalls at high overhead. With GDB,
+  break on `read_orientation`, `prepare_output`, `accel_changed_func` and
+  `maybe_notify_sensor_startup_finished`; inspect delayed-startup invocation length,
+  `data->sensor_startup_dbus_invocations_delayed[i]->len`, `data->clients[i]`
+  and `drv_data->buffer_data->scan_size`.
+- An optional active watchdog can Claim → wait 1s → Release every 60s, recording
+  timestamp, latency and property change; it bounds the first bad cycle to a minute.
+  Keep it distinct from the implemented journal-only watchdog.
+- Dynamic debug uses `+pmf` for `hid_sensor_trigger`, `hid_sensor_iio_common`,
+  `hid_sensor_hub`, `hid_sensor_accel_3d`, `hid_sensor_als`, `industrialio`,
+  `intel_ish_ipc` and `intel_ishtp_hid`; persist via module/cmdline or boot debugfs
+  configuration only for the capture. Focus on `_hid_sensor_power_state` and
+  `hid_sensor_data_rdy_trigger_set_state` PM transitions.
+- ftrace/trace-cmd: correlate `power:*`, available `iio:*`/`hid:*` events across
+  suspend (tracepoints are limited, mostly power). Function tracing can target
+  `hid_sensor_*`, `iio_push_to_buffers*`, runtime resume/suspend,
   `hid_sensor_get_report`, `hid_sensor_capture_sample`,
-  `iio_push_to_buffers`, `iio_push_to_buffers_with_timestamp`,
-  `iio_buffer_chrdev_read`, `iio_trigger_notify_done`.
-  ```bash
-  echo function > /sys/kernel/tracing/current_tracer
-  echo 'hid_sensor_*' > /sys/kernel/tracing/set_ftrace_filter
-  echo 'iio_push_to_buffers*' >> /sys/kernel/tracing/set_ftrace_filter
-  echo 1 > /sys/kernel/tracing/tracing_on
-  ```
-- `function_graph` for the same list — much heavier but shows the
-  full call chain.
+  `iio_buffer_chrdev_read` and `iio_trigger_notify_done`; function_graph is heavier.
+- BPF/kprobes can count `iio_push_to_buffers_with_timestamp` calls by comm, printed
+  every 5s, and inspect trigger set-state enter/exit, its requested state (`arg1`),
+  return status and caller stack. Also trace `_hid_sensor_power_state` and
+  `sensor_hub_set_feature` to correlate expected report-enable writes.
+- Poll buffer `data_available` to help distinguish a firing trigger without a consumer
+  from no producer. Inspect optional `/sys/kernel/debug/iio`,
+  `/sys/kernel/debug/intel_ishtp/*` and `/sys/class/mei/mei0/*` state/counters.
+- Sleep brackets compare buffer/trigger/scan state, queued bytes, dmesg cursor,
+  cached orientation and claim holders before/after suspend. The implemented
+  `/var/log/iio-bracket/` snapshots include state and log tails, but do not record
+  claim-owner lists or a dmesg cursor. Compare the first stale orientation plus
+  zero queued bytes with a working cycle, retaining those capture gaps.
+- Reproduction: `rtcwake -s 60 -m mem` with the buffered daemon, interleaved sensor
+  probes; separately vary a claim held across suspend (Q3). This enables A/B
+  kernels, modules, firmware and patches if the failure becomes reproducible.
 
-Kernel, no rebuild — bpftrace / kprobes:
-
-- Count callbacks in `iio_push_to_buffers_with_timestamp` per second
-  (silver-bullet — if it stops, the trigger has stopped).
-  ```
-  bpftrace -e 'kprobe:iio_push_to_buffers_with_timestamp { @[comm] = count(); } interval:s:5 { print(@); clear(@); }'
-  ```
-- Trace enter/exit of `hid_sensor_data_rdy_trigger_set_state` to see
-  who is toggling the trigger and whether it succeeds:
-  ```
-  bpftrace -e 'kprobe:hid_sensor_data_rdy_trigger_set_state { printf("%llu set_state arg=%d caller=%s\n", nsecs, arg1, kstack); }'
-  ```
-- Similar on `_hid_sensor_power_state` and the HID-sensor hub's
-  `sensor_hub_set_feature` to see whether report-enable writes go
-  out at the expected times.
-
-Kernel sysfs / debugfs polling:
-
-- Repeatedly read
-  `/sys/bus/iio/devices/iio:device4/buffer/data_available` while
-  wedged — that tells us how many bytes are queued in the kernel
-  buffer right now, distinguishing "trigger fires but no consumer"
-  from "trigger never fires".
-- `/sys/kernel/debug/iio` (if present) may expose internal state.
-- `/sys/kernel/debug/intel_ishtp/*` or `/sys/class/mei/mei0/*` for
-  ISH IPC state and counters.
-
-Suspend bracketing:
-
-- `/usr/lib/systemd/system-sleep/` (under NixOS:
-  `system.systemSleep.preSleep`, `postResume`) hook scripts that on
-  every suspend/resume snapshot:
-  - Buffer/trigger/scan_elements state of `iio:device3` and
-    `iio:device4`.
-  - `data_available` counter.
-  - dmesg cursor.
-  - `busctl get-property AccelerometerOrientation` (cached value).
-  - List of holders of `net.hadess.SensorProxy` claims.
-- Output to `/var/log/iio-bracket/<timestamp>.log`. The first `post`
-  log to record `data_available=0` _and_ a stale orientation
-  identifies the wedging cycle. Compare its dmesg-since-pre against
-  a working cycle's.
-
-Reproducer harness:
-
-- `rtcwake -s 60 -m mem` in a loop with the buffered daemon active,
-  alternating with monitor-sensor probes. If we can repro on demand,
-  we can A/B kernels, modules, ISH firmware versions, and patches.
-- A second variant where we toggle whether a client holds a claim
-  across the suspend (Q3).
-
-Module reload (mid-invasive):
-
-- Reload `hid_sensor_accel_3d`, `hid_sensor_als`,
-  `hid_sensor_trigger`, `hid_sensor_iio_common`, `hid_sensor_hub`,
-  `intel_ishtp_hid`, `intel_ishtp` in the right order while wedged,
-  then re-probe. If the wedge survives, the bad state is in the ISH
-  firmware (or persistent in `industrialio` core); if it clears,
-  the bad state was inside the reloaded modules.
-
-Kernel rebuild:
-
-- Add WARN_ON / printk inside `hid_sensor_data_rdy_trigger_set_state`
-  and `iio_push_to_buffers_with_timestamp` if dynamic debug isn't
-  rich enough.
-- Apply `CONFIG_DEBUG_OBJECTS_TIMERS`, `CONFIG_DEBUG_OBJECTS_WORK`
-  for unrelated coverage in case ISH workqueue items are corrupted.
-- Build a kernel with explicit instrumentation in the HID-sensor PM
-  resume path. Last resort.
+More invasive options: reload accel/ALS, trigger/common/hub and ISHTP modules in
+dependency order, then re-probe. Recovery localizes state to reloaded components;
+failure still leaves firmware or persistent IIO-core state possible. A custom
+kernel can instrument trigger set-state and buffer push with WARN_ON/printk,
+enable `CONFIG_DEBUG_OBJECTS_TIMERS`/`CONFIG_DEBUG_OBJECTS_WORK` for possible
+workqueue corruption, or instrument HID-sensor PM resume as a last resort.
 
 #### Suggested first cut
 
-1. Persist dynamic debug for `hid_sensor_*`, `industrialio`,
-   `intel_ishtp_hid` from boot.
-2. Add the system-sleep bracket hook.
-3. Add the every-60s watchdog probe (claim → release).
-4. Force `G_MESSAGES_DEBUG=all` on the daemon so the next wedge has
-   verbose userspace traces too.
-5. Do **not** auto-restart the daemon on resume yet. We want the
-   wedge to be observable.
-
-Wait for the next wedge. The bracket log + dmesg + watchdog log
-together should be sufficient to either nail a kernel-side root
-cause or rule one out, after which we can pivot to either an upstream
-fix or a deliberate "force polled mode" host-config workaround.
+The historical first capture combined dynamic debug, sleep brackets, a watchdog
+and verbose daemon logs, without automatic resume recovery. Preserve the wedge
+while correlating bracket/dmesg/watchdog evidence; only then select an upstream
+fix or deliberate polled-mode workaround. The later investigation below records
+what actually ran and what remains unresolved.
 
 ## Status 2026-05-19
 

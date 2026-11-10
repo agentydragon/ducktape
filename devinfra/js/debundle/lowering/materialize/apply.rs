@@ -1,18 +1,19 @@
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::{Result, bail};
 use artifact::reports::{
     ChunkAnalysisReport, ChunkDecompositionOutput, ChunkFileRecord, ChunkLogicalModulesSummary,
 };
-use artifact::{ChunkArtifact, ChunkBundle, ChunkId, ChunkMetadata, JsChunk};
+use artifact::{ChunkArtifact, ChunkBundle, ChunkMetadata, JsChunk};
 
 use super::MaterializedLogicalChunk;
 #[cfg(test)]
 use crate::{ChunkModulesCounts, ChunkModulesReport};
 #[cfg(test)]
-use artifact::ChunkTable;
-#[cfg(test)]
 use artifact::reports::ChunkValidationSummary;
+#[cfg(test)]
+use source_identity::ChunkTable;
 
 /// Files finalized by lowering, together with decomposition metadata for
 /// lowered chunks. Pass-through chunks retain their original position.
@@ -83,11 +84,13 @@ pub(super) fn materialized_chunk_artifact(
         directory_dependency_facts,
         validation,
         report,
-        // `unmatched_spec_claims` and `vendor_reference_rewrites` are
-        // rolled up by `materialize_logical_modules` before this point;
-        // downstream artifact construction doesn't carry them.
+        // `unmatched_spec_claims`, `vendor_reference_rewrites` and
+        // `gate_rejection` are rolled up by `materialize_logical_modules`
+        // before this point; downstream artifact construction doesn't carry
+        // them.
         unmatched_spec_claims: _,
         vendor_reference_rewrites: _,
+        gate_rejection: _,
     } = chunk;
     let manifest_files = file_records
         .iter()
@@ -176,17 +179,20 @@ mod tests {
             },
             report: ChunkModulesReport {
                 chunk_id: "first".to_string(),
+                ownership_subset: None,
                 counts: ChunkModulesCounts {
                     applied: 0,
                     selected_bindings: 0,
                 },
                 final_module_contents: Vec::new(),
+                atomic_group_owner_completions: Vec::new(),
                 requested_logical_modules: Vec::new(),
                 imported_callables: BTreeMap::new(),
                 redundant_purity_hints: Vec::new(),
             },
             vendor_reference_rewrites: BTreeMap::new(),
             unmatched_spec_claims: Vec::new(),
+            gate_rejection: None,
         }
     }
 

@@ -5,11 +5,11 @@ import pytest_bazel
 from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Flag
-from agentplane.app.frontend.testing.visual_assertions import _open_settings
+from agentplane.app.frontend.testing.visual_assertions import _expect_notice_badges, _open_settings
 from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
 
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -51,7 +51,7 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     await expect(page.get_by_text("Inbox diagnostics")).to_be_visible()
     await expect(page.get_by_text("Cursors: latest", exact=False)).to_be_hidden()
     await expect(page.get_by_text("runner admitted; awaiting confirmation", exact=False)).to_be_visible()
-    await expect(page.get_by_text("Session s-2")).to_have_count(0)
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000000")).to_have_count(0)
     await view.capture()
     await page.get_by_text("Inbox diagnostics").click()
     await expect(page.get_by_text("Cursors: latest", exact=False)).to_be_visible()
@@ -89,7 +89,7 @@ async def test_notification_drawer_updates_without_reopening(view: VisualPage, a
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
-    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, "/notifications/stream")
+    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, ":watch")
     await expect(page.get_by_text("Entries after acknowledgement · 6 not acknowledged")).to_be_visible()
     await expect(page.get_by_text("GitHub workflow_run · completed")).to_be_visible()
 
@@ -98,8 +98,8 @@ async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
-    await expect(page.get_by_text("Session s-2")).to_be_visible()
-    await expect(page.get_by_text("Session s-3")).to_be_visible()
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000000")).to_be_visible()
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000002")).to_be_visible()
     await expect(page.get_by_text("GitHub pull_request · synchronize", exact=False)).to_be_visible()
     await expect(page.get_by_text("Notice covered through #1 · 2 awaiting notice below")).to_be_visible()
     await expect(page.get_by_text("runner unavailable", exact=False)).to_be_visible()
@@ -111,7 +111,7 @@ async def test_empty_notifications(view: VisualPage, app: AgentplaneFixture) -> 
     await app.mount_app("/sandboxes/suspended-sandbox")
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
-    await expect(page.get_by_text("No inbox for this Sandbox incarnation.")).to_be_visible()
+    await expect(page.get_by_text("No inbox for Session", exact=False)).to_be_visible()
     await view.capture()
 
 
@@ -126,7 +126,16 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await page.keyboard.press("Escape")
     await expect(page.get_by_text("Loading notification status…")).to_have_count(0)
     await page.get_by_role("button", name="Notifications", exact=True).click()
-    await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
+    # The drawer's three watches open afresh, and any of them can land before the others.
+    await expect(page.get_by_text("Notice covered through #7 · 2 awaiting notice below")).to_be_visible()
+    await expect(
+        page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
+    ).to_be_visible()
+    await expect(page.get_by_text("Disconnected; showing last snapshot")).to_have_count(0)
+    # The sidebar's and topbar's inbox watches were left retrying through the outage. Each comes back
+    # once its unanswered request times out and its jittered backoff runs, so wait for every badge.
+    await _expect_notice_badges(page, stale=False)
+    await expect(page.locator(".agentplane-thread-list-row-notices")).to_have_count(7)
     await view.capture(name="notification_status_reconnected")
 
 
@@ -153,7 +162,7 @@ async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: Agentpla
     await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
     await view.capture(name="sandbox_notifications_mobile_menu")
     await page.get_by_role("menuitem", name="Notifications").click()
-    await expect(page.get_by_text("Session s-2")).to_be_visible()
+    await expect(page.get_by_text("Session 5f1c4a2e-0000-4000-8000-000000000000")).to_be_visible()
 
     await _hover_notification_drawer(page)
     await view.capture(name="sandbox_notifications_mobile_drawer")

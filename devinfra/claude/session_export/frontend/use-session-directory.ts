@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
-import type { SessionSummary } from "./api/schema";
+import type { SessionSummary } from "./schema";
 import { ApiError, getSession, listSessions, watchSessions } from "./api";
 import { errorMessage, retryTransient } from "./session-fetch";
 import { mergeSessionPage, sessionMatchesFilter, sortSessions, type StatusFilter } from "./session-info";

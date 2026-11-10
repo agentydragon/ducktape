@@ -1,6 +1,6 @@
 //! Query the artifacts emitted from real JS/spec inputs, through the CLI.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs;
@@ -21,6 +21,214 @@ fn inspect_source_graph_id_selects_only_its_statement_on_one_line() {
     assert_eq!(statement["index"], 1);
     assert_eq!(statement["source_unit_ids"], json!(["unit:1"]));
     assert_eq!(statement["source"], "const b = 2;");
+}
+
+#[test]
+fn inspect_source_selects_a_short_declarator_without_returning_its_large_sibling() {
+    let source = format!("const huge = \"{}\", alias = 7;", "x".repeat(64 * 1024));
+    let fixture = GraphFixture::new(&source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let selected = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "alias",
+        "--view",
+        "raw",
+    ]);
+    let statement = &selected["files"][0]["statements"][0];
+    let start = source.find("alias = 7").unwrap();
+    assert_eq!(statement["index"], 0);
+    assert_eq!(statement["declarator_index"], 1);
+    assert_eq!(statement["byte_start"], start);
+    assert_eq!(statement["byte_end"], start + "alias = 7".len());
+    assert_eq!(statement["bindings"], json!(["alias"]));
+    assert_eq!(statement["source"], "alias = 7");
+    assert_eq!(statement["omitted_source_bytes"], 0);
+
+    let whole = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--statements",
+        "0",
+        "--view",
+        "raw",
+        "--max-line-bytes",
+        "0",
+        "--max-output-bytes",
+        "0",
+    ]);
+    let whole_statement = &whole["files"][0]["statements"][0];
+    assert_eq!(whole_statement["source"], source);
+    assert!(whole_statement.get("declarator_index").is_none());
+}
+
+#[test]
+fn inspect_source_declarator_coordinates_and_exported_destructuring_are_exact() {
+    let source = "export const before = \"λ\", { left, right: selected } = build();";
+    let fixture = GraphFixture::new(source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let raw = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "selected",
+        "--view",
+        "raw",
+    ]);
+    let statement = &raw["files"][0]["statements"][0];
+    let expected = "{ left, right: selected } = build()";
+    let start = source.find(expected).unwrap();
+    assert_eq!(statement["index"], 0);
+    assert_eq!(statement["declarator_index"], 1);
+    assert_eq!(statement["byte_start"], start);
+    assert_eq!(statement["byte_end"], start + expected.len());
+    assert_eq!(statement["start_line"], 1);
+    assert_eq!(statement["start_column"], start + 1);
+    assert_eq!(statement["bindings"], json!(["left", "selected"]));
+    assert_eq!(statement["source"], expected);
+
+    let pretty = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "selected",
+    ]);
+    let source = pretty["files"][0]["statements"][0]["source"]
+        .as_str()
+        .unwrap();
+    assert!(source.contains("export const { left, right: selected } = build();"));
+    assert!(!source.contains("before"));
+}
+
+#[test]
+fn inspect_source_declarator_selection_bounds_output_and_rejects_ambiguous_names() {
+    let source = format!(
+        "const huge = \"{}\", selected = \"{}\";",
+        "x".repeat(8192),
+        "y".repeat(8192)
+    );
+    let fixture = GraphFixture::new(&source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let out = fixture.command(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "selected",
+        "--view",
+        "raw",
+        "--max-line-bytes",
+        "16",
+        "--max-output-bytes",
+        "1200",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.len() <= 1200, "{} bytes", out.stdout.len());
+    let bounded: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let statement = &bounded["files"][0]["statements"][0];
+    assert!(statement["source"].as_str().unwrap().len() <= 16);
+    assert!(statement["omitted_source_bytes"].as_u64().unwrap() > 8000);
+    assert!(statement["byte_end"].as_u64().unwrap() > 16000);
+
+    let duplicate = GraphFixture::new("var selected = 1; var selected = 2;", &[]);
+    let out = duplicate.command(&[
+        "inspect-source",
+        "--source-file",
+        duplicate.source_path().to_str().unwrap(),
+        "--declarator-binding",
+        "selected",
+        "--format",
+        "json",
+    ]);
+    assert!(!out.status.success());
+
+    let non_variable = GraphFixture::new("function selected() {}", &[]);
+    let out = non_variable.command(&[
+        "inspect-source",
+        "--source-file",
+        non_variable.source_path().to_str().unwrap(),
+        "--declarator-binding",
+        "selected",
+        "--format",
+        "json",
+    ]);
+    assert!(!out.status.success());
+}
+
+#[test]
+fn inspect_source_declarator_selection_excludes_other_query_modes() {
+    let fixture = GraphFixture::new("const selected = 1;", &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let cases: [(&[&str], bool); 4] = [
+        (&["--id", "unit:0"], false),
+        (&["--statements", "0"], true),
+        (&["--around-binding", "selected"], true),
+        (&["--context-statements", "0"], true),
+    ];
+    for (selector, needs_source_file) in cases {
+        let mut args = vec!["inspect-source"];
+        if needs_source_file {
+            args.extend(["--source-file", path]);
+        }
+        args.extend_from_slice(selector);
+        args.extend(["--declarator-binding", "selected"]);
+        let out = fixture.command(&args);
+        assert_eq!(out.status.code(), Some(2), "{selector:?}");
+    }
+}
+
+#[test]
+fn inspect_source_unit_id_does_not_read_the_current_module_tree() {
+    let fixture = GraphFixture::new("const answer = 42;\n", &[]);
+    let spec_root = fixture.root().to_str().unwrap();
+    let graph = fixture.graph.to_str().unwrap();
+    let missing_modules = fixture.root().join("missing-modules");
+    let missing_modules = missing_modules.to_str().unwrap();
+    let source_root = fixture.root().join("snapshot");
+    let source_root = source_root.to_str().unwrap();
+
+    let out = fixture.command(&[
+        "--spec-root",
+        spec_root,
+        "inspect-source",
+        "--id",
+        "unit:0",
+        "--graph",
+        graph,
+        "--modules",
+        missing_modules,
+        "--source-root",
+        source_root,
+        "--view",
+        "raw",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        report["files"][0]["statements"][0]["source"],
+        "const answer = 42;"
+    );
 }
 
 #[test]
@@ -370,24 +578,17 @@ fn describe_text_includes_binding_home_module_paths() {
     assert_eq!(report["binding_homes"][0]["path"], "runtime/plugins");
 }
 
-const PATCHED_SOURCE: &str =
-    "const ZZ = class PaymentError {};\nconst aa = ZZ;\nconst bb = 2;\nconst cc = ZZ;\n";
+const QUERY_SOURCE: &str = "const primary = class Primary {};\nconst firstAlias = primary;\nconst middle = 2;\nconst secondAlias = primary;\n";
 
-/// `ZZ` carries a binding patch and is read at init by `aa` and `cc`; `bb` is
-/// claimed (and renamed) by a module. The residual owners are `ZZ`, `aa`, `cc`.
-fn patched_fixture() -> GraphFixture {
+/// `primary` is read at init by both aliases; `middle` is claimed by a module.
+/// The residual owners are `primary`, `firstAlias`, and `secondAlias`.
+fn module_home_fixture() -> GraphFixture {
     GraphFixture::new(
-        PATCHED_SOURCE,
-        &[
-            (
-                "../binding_patches.yaml",
-                "members:\n  - name: PaymentError\n    selector:\n      binding:\n        name: ZZ\n",
-            ),
-            (
-                "home/bb.yaml",
-                "members: [{name: Beta, selector: {binding: {name: bb}}}]\n",
-            ),
-        ],
+        QUERY_SOURCE,
+        &[(
+            "home/middle.yaml",
+            "members: [{name: Middle, selector: {binding: {name: middle}}}]\n",
+        )],
     )
 }
 
@@ -413,11 +614,14 @@ fn atomic_group_bindings(report: &Value) -> Vec<&str> {
 
 #[test]
 fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destination() {
-    let fixture = patched_fixture();
+    let fixture = module_home_fixture();
     let cases: [(&[&str], &[&str]); 4] = [
-        (&[], &["ZZ", "aa", "bb", "cc"]),
-        (&["--residual-only"], &["ZZ", "aa", "cc"]),
-        (&["--readable-only"], &["bb"]),
+        (&[], &["primary", "firstAlias", "middle", "secondAlias"]),
+        (
+            &["--residual-only"],
+            &["primary", "firstAlias", "secondAlias"],
+        ),
+        (&["--readable-only"], &["middle"]),
         (&["--residual-only", "--readable-only"], &[]),
     ];
     for (flags, expected) in cases {
@@ -440,7 +644,7 @@ fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destinati
         })
         .collect();
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups["home/bb"], &json!(["atomic:2"]));
+    assert_eq!(groups["home/middle"], &json!(["atomic:2"]));
     assert!(
         groups
             .values()
@@ -450,8 +654,8 @@ fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destinati
 }
 
 #[test]
-fn coverage_matches_proposals_to_patch_sets_only_on_request() {
-    let fixture = patched_fixture();
+fn coverage_matches_proposals_to_module_claims_only_on_request() {
+    let fixture = module_home_fixture();
     let row = |report: &Value, path: &str| {
         report["rows"]
             .as_array()
@@ -463,26 +667,24 @@ fn coverage_matches_proposals_to_patch_sets_only_on_request() {
     };
 
     let plain = fixture.json(&["coverage"]);
-    let patch_row = row(&plain, "binding_patches");
-    assert_eq!(patch_row["status"], "complete_atomic_groups");
-    assert_eq!(patch_row["complete_atomic_group_ids"], json!(["atomic:0"]));
-    assert!(patch_row.get("matching_proposal_ids").is_none());
+    assert_eq!(field_of_each(&plain, "rows", "path"), ["home/middle"]);
+    assert!(
+        row(&plain, "home/middle")
+            .get("matching_proposal_ids")
+            .is_none()
+    );
 
     let proposed = fixture.json(&["coverage", "--include-proposals"]);
     assert_eq!(
-        row(&proposed, "binding_patches")["matching_proposal_ids"],
-        json!(["auto_partition_0000"])
-    );
-    assert_eq!(
-        row(&proposed, "home/bb")["matching_proposal_ids"],
+        row(&proposed, "home/middle")["matching_proposal_ids"],
         json!([])
     );
 }
 
 #[test]
 fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request() {
-    let fixture = patched_fixture();
-    let report = fixture.json(&["describe", "ZZ"]);
+    let fixture = module_home_fixture();
+    let report = fixture.json(&["describe", "primary"]);
     assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
     assert_eq!(
         field_of_each(&report, "incoming_edges", "source"),
@@ -492,12 +694,12 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
         field_of_each(&report, "neighbor_source_units", "id"),
         ["unit:1", "unit:3"]
     );
-    assert_eq!(report["binding_homes"][0]["source_kind"], "binding_patch");
+    assert_eq!(report["binding_homes"], json!([]));
     assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
     assert!(report.get("module_proposals").is_none());
     assert!(report.get("module_proposal_diagnostics").is_none());
 
-    let report = fixture.json(&["describe", "ZZ", "--include-proposals"]);
+    let report = fixture.json(&["describe", "primary", "--include-proposals"]);
     assert_eq!(
         report["module_proposals"][0]["proposed_module_id"],
         "auto_partition_0000"
@@ -507,7 +709,7 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
 
 #[test]
 fn describe_limit_truncates_each_section_and_reports_its_total() {
-    let report = patched_fixture().json(&["describe", "ZZ", "--limit", "1"]);
+    let report = module_home_fixture().json(&["describe", "primary", "--limit", "1"]);
     assert_eq!(report["limits"]["limit"], 1);
     let sections = &report["limits"]["sections"];
     for section in ["incoming_edges", "neighbor_source_units"] {
@@ -670,6 +872,78 @@ fn describe_filters_direction_and_typed_reasons_before_limit_counts() {
 }
 
 #[test]
+fn describe_census_normalizes_roles_and_counts_filtered_edges_before_the_limit() {
+    let fixture = GraphFixture::new(
+        "const selected = 0;\n\
+         const directReader = selected;\n\
+         function calledAtInit() { return selected; }\n\
+         calledAtInit();\n\
+         function later() { return selected; }\n\
+         const anotherDirectReader = selected;\n",
+        &[],
+    );
+
+    let report = fixture.json(&["describe", "selected"]);
+    let incoming = report["edge_census"]["incoming"].as_array().unwrap();
+    let census_count = |kind: &str, role: &str| {
+        incoming
+            .iter()
+            .find(|row| row["edge_kind"] == kind && row["role"] == role)
+            .unwrap_or_else(|| panic!("missing {kind}/{role} in {incoming:?}"))["count"]
+            .as_u64()
+            .unwrap()
+    };
+    assert_eq!(census_count("eager_use", "direct"), 2);
+    assert_eq!(census_count("eager_use", "promoted_at_init"), 1);
+    assert_eq!(census_count("lazy_use", "direct"), 2);
+
+    let raw_direct_eager_count = report["incoming_edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|edge| edge["edge_kind"] == "eager_use" && edge.get("role").is_none())
+        .count();
+    assert_eq!(
+        raw_direct_eager_count as u64,
+        census_count("eager_use", "direct")
+    );
+    assert!(
+        report["incoming_edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|edge| {
+                edge["edge_kind"] == "eager_use" && edge["role"]["kind"] == "promoted_at_init"
+            })
+    );
+
+    let limited = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "incoming",
+        "--reason",
+        "eager_use",
+        "--limit",
+        "1",
+    ]);
+    assert_eq!(limited["incoming_edges"].as_array().unwrap().len(), 1);
+    assert_eq!(limited["limits"]["sections"]["incoming_edges"]["total"], 3);
+    assert_eq!(
+        limited["edge_census"]["incoming"],
+        json!([
+            {"edge_kind": "eager_use", "role": "direct", "count": 2},
+            {"edge_kind": "eager_use", "role": "promoted_at_init", "count": 1}
+        ])
+    );
+    assert_eq!(limited["edge_census"]["outgoing"], json!([]));
+
+    let text = fixture.command(&["describe", "selected", "--format", "text"]);
+    assert!(text.status.success());
+    assert!(String::from_utf8_lossy(&text.stdout).contains("eager_use/promoted_at_init=1"));
+}
+
+#[test]
 fn describe_requires_all_instead_of_a_zero_limit_and_rejects_limit_with_all() {
     let fixture = fixture();
     let zero = fixture.command(&["describe", "ZZ", "--limit", "0"]);
@@ -686,11 +960,11 @@ fn describe_requires_all_instead_of_a_zero_limit_and_rejects_limit_with_all() {
 
 #[test]
 fn inspect_source_context_is_clamped_to_the_source_file() {
-    let fixture = patched_fixture();
+    let fixture = module_home_fixture();
     for (id, context, indices) in [
-        ("aa", "0", vec![1]),
-        ("aa", "1", vec![0, 1, 2]),
-        ("ZZ", "5", vec![0, 1, 2, 3]),
+        ("firstAlias", "0", vec![1]),
+        ("firstAlias", "1", vec![0, 1, 2]),
+        ("primary", "5", vec![0, 1, 2, 3]),
     ] {
         let report = fixture.json(&[
             "inspect-source",
@@ -711,7 +985,7 @@ fn inspect_source_context_is_clamped_to_the_source_file() {
 
 #[test]
 fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
-    let fixture = patched_fixture();
+    let fixture = module_home_fixture();
     // A one-line cap keeps the three residual owners in separate proposals.
     let args = ["modules", "propose", "--size-cap-lines", "1"];
     let all = fixture.json(&args);

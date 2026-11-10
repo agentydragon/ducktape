@@ -1,4 +1,4 @@
-"""Only the staging GitHub webhook is public; workload APIs stay behind egress auth."""
+"""The service HTTP listener is webhook-only; workload APIs use its gRPC listener."""
 
 from typing import Any
 
@@ -6,6 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.environment_runtime_transport.config import ACTIONS_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     actions as action_service,
@@ -13,7 +14,32 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     session_dispatcher,
     staging,
+    workload_tls,
 )
+
+
+def test_notifications_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
+    notifications_deployment = one(
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
+    )
+    pod = notifications_deployment["spec"]["template"]["spec"]
+    server = one(item for item in pod["containers"] if item["name"] == "notifications")
+    assert notifications_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+    assert not pod.get("initContainers")
+    startup = server["startupProbe"]["exec"]["command"]
+    readiness = server["readinessProbe"]["exec"]["command"]
+    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
+    assert "127.0.0.1:8080" in startup
+    assert NOTIFICATIONS_URI in startup
+    assert "--service" in startup
+    assert "livez" in startup
+
+    history_deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "history-service"
+    )
+    assert history_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
 
 
 def test_public_notification_routes_are_webhook_only(staging_manifests: list[dict[str, Any]]) -> None:
@@ -30,7 +56,7 @@ def test_public_notification_routes_are_webhook_only(staging_manifests: list[dic
 
 
 def test_only_staging_notifications_admit_gateway(staging_manifests: list[dict[str, Any]]) -> None:
-    endpoint = notifications.service(staging.ENV.namespace)
+    endpoint = notifications.webhook_service(staging.ENV.namespace)
     ingress = [
         rule
         for doc in staging_manifests
@@ -58,8 +84,6 @@ def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[
         if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
     )["spec"]["template"]["spec"]
     prefix = "AGENTPLANE_NOTIFICATIONS_GITHUB__"
-    for container in pod["initContainers"]:
-        assert not any(item["name"].startswith(prefix) for item in container["env"])
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
     variables = {item["name"].removeprefix(prefix): item for item in server["env"] if item["name"].startswith(prefix)}
     assert set(github) == {"app_id"}
@@ -83,14 +107,15 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
-    assert settings["actions"] == {
-        "url": f"http://{actions.fqdn}:{actions.port.number}/",
-        "token_file": "/var/run/secrets/notifications/actions",
-    }
+    assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
+    assert settings["actions"]["token_file"] == "/var/run/secrets/notifications/actions"
     dispatcher = session_dispatcher.service(staging.ENV.namespace)
-    assert settings["session_dispatcher"] == {
-        "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
-        "token_file": "/var/run/secrets/notifications/dispatcher",
+    assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
+    assert settings["session_dispatcher"]["token_file"] == "/var/run/secrets/notifications/dispatcher"
+    assert settings["actions"]["tls"] == {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": ACTIONS_URI}
+    assert settings["session_dispatcher"]["tls"] == {
+        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "server_uri": SESSION_DISPATCHER_URI,
     }
 
     deployment = one(
@@ -119,6 +144,27 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
         for endpoint in rule.get("toEndpoints", [])
     }
     assert runner_gateway.NAME in egress_services
+    proxy_ingress = one(
+        rule
+        for rule in policy["ingress"]
+        if any(
+            endpoint["matchLabels"].get("app.kubernetes.io/name") == "egress"
+            for endpoint in rule.get("fromEndpoints", [])
+        )
+    )
+    assert proxy_ingress == {
+        "fromEndpoints": [
+            {
+                "matchLabels": {
+                    "k8s:io.kubernetes.pod.namespace": staging.ENV.namespace,
+                    "app.kubernetes.io/name": "egress",
+                }
+            }
+        ],
+        "toPorts": [
+            {"ports": [{"port": str(notifications.service(staging.ENV.namespace).pod_port), "protocol": "TCP"}]}
+        ],
+    }
 
 
 if __name__ == "__main__":

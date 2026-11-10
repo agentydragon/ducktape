@@ -138,7 +138,7 @@ py_test(
         "//:conftest",
         "//finance/augur/calibration:catalog",
         "//finance/evidence:markets",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

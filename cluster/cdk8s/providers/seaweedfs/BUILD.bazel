@@ -91,6 +91,7 @@ py_test(
     deps = [
         ":seaweedfs_bucket",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",

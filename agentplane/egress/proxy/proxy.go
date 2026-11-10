@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,13 +38,14 @@ import (
 
 // Options is everything the proxy needs to run; none of it has a default.
 type Options struct {
+	TLSPassthroughTargets []string
 	// CA signs the leaf certificates the sandboxes' clients are shown inside a tunnel.
 	CA tls.Certificate
 	// UpstreamRoots verifies the destinations, independently of CA.
-	UpstreamRoots *x509.CertPool
-	Identity      *identity.Verifier
-	Policy        *policy.Index
-	Upstream      *upstream.Resolver
+	UpstreamRoots  *x509.CertPool
+	Authentication *identity.Authenticator
+	Policy         *policy.Index
+	Upstream       *upstream.Resolver
 	// Record receives every decision. It must not block.
 	Record func(decision.Record)
 }
@@ -55,20 +57,28 @@ type Proxy struct {
 	producer uuid.UUID
 	flights  *flights
 	tunnels  tunnels
-	server   *http.Server
+	// upstreams pools upstream connections by the pin they were dialed for.
+	upstreams *upstreams
+	server    *http.Server
 }
 
 // New returns a Proxy. The interception CA must be able to sign.
 func New(options Options) (*Proxy, error) {
 	if len(options.CA.Certificate) == 0 || options.CA.PrivateKey == nil || options.UpstreamRoots == nil ||
-		options.Identity == nil || options.Policy == nil || options.Upstream == nil || options.Record == nil {
+		options.Authentication == nil || options.Policy == nil || options.Upstream == nil || options.Record == nil {
 		return nil, errors.New("interception CA, upstream roots, identity, policy, upstream resolver and record are required")
+	}
+	if err := validatePassthroughTargets(options.TLSPassthroughTargets); err != nil {
+		return nil, err
 	}
 	leaves, err := newLeafIssuer(options.CA)
 	if err != nil {
 		return nil, err
 	}
-	p := &Proxy{options: options, leaves: leaves, producer: uuid.New(), flights: newFlights()}
+	p := &Proxy{
+		options: options, leaves: leaves, producer: uuid.New(), flights: newFlights(),
+		upstreams: newUpstreams(options.UpstreamRoots),
+	}
 	p.server = &http.Server{
 		Handler: observability.HTTPHandler(http.HandlerFunc(p.serve)), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
 		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
@@ -85,11 +95,12 @@ func (p *Proxy) Serve(listener net.Listener) error { return p.server.Serve(liste
 // responses reach the client. It returns once they have, or ctx ends, and either way closes every
 // tunnel before it returns: a tunnel with nothing in flight does not delay it.
 func (p *Proxy) Drain(ctx context.Context) error {
-	p.options.Policy.Freshness.MarkDraining()
+	p.options.Policy.Health.MarkDraining()
 	// Shutdown closes the listeners first; requests inside tunnels are invisible to it, so they are
 	// waited for separately, and then each tunnel is shut down to let what they answered be written.
 	err := errors.Join(p.server.Shutdown(ctx), p.flights.wait(ctx), p.tunnels.shutdown(ctx))
 	p.tunnels.closeAll()
+	p.upstreams.closeIdle()
 	return errors.Join(err, p.server.Close())
 }
 
@@ -99,7 +110,8 @@ type connectionIDKey struct{}
 // connection is the authenticated state of one client connection, which a tunnel's requests share:
 // their headers are behind the tunnel's TLS, so what the CONNECT presented is what applies.
 type connection struct {
-	id string
+	id        string
+	peerState *tls.ConnectionState
 
 	mu   sync.Mutex
 	auth *authenticated
@@ -108,7 +120,12 @@ type connection struct {
 // newConnection starts the state of a request that arrived on the accepted connection, whose
 // identifier the decisions it leads to share.
 func newConnection(r *http.Request) *connection {
-	return &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+	client := &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+	if r.TLS != nil {
+		state := *r.TLS
+		client.peerState = &state
+	}
+	return client
 }
 
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +149,10 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := newConnection(r)
+	if slices.Contains(p.options.TLSPassthroughTargets, r.Host) {
+		p.connectPassthrough(w, r, client, host, int(portNumber))
+		return
+	}
 	verdict, _ := p.gate(r, client, nil, host, int(portNumber))
 	if denied, ok := verdict.(policy.Denied); ok {
 		deny(w, denied.Reason)
@@ -280,26 +301,14 @@ func (p *Proxy) relay(w http.ResponseWriter, req *http.Request, admitted policy.
 		req.ContentLength = int64(len(admitted.BodyRewrite.Content))
 		req.TransferEncoding = nil
 	}
-	dialed := net.JoinHostPort(pin.Address.Unmap().String(), strconv.Itoa(pin.Port))
-	transport := &http.Transport{
-		Proxy: nil, DisableKeepAlives: true, DisableCompression: true,
-		ForceAttemptHTTP2: req.Header.Get("Upgrade") == "",
-		TLSClientConfig:   &tls.Config{RootCAs: p.options.UpstreamRoots, MinVersion: tls.VersionTLS12},
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			// The transport lowercases the host it dials; the target was admitted as written.
-			if !strings.EqualFold(address, target) {
-				return nil, errors.New("unadmitted dial target")
-			}
-			var dialer net.Dialer
-			return dialer.DialContext(ctx, network, dialed)
-		},
-	}
-	// A normal http.Transport speaks HTTP/1 to plaintext upstreams. h2c needs prior-knowledge HTTP/2
-	// selected explicitly, with HTTP/1 off.
-	if req.URL.Scheme == "http" && req.ProtoMajor == 2 {
-		transport.Protocols = new(http.Protocols)
-		transport.Protocols.SetUnencryptedHTTP2(true)
-	}
+	transport := p.upstreams.transport(upstreamKey{
+		target: strings.ToLower(target),
+		dialed: net.JoinHostPort(pin.Address.Unmap().String(), strconv.Itoa(pin.Port)),
+		scheme: req.URL.Scheme,
+		h2c:    req.URL.Scheme == "http" && req.ProtoMajor == 2,
+		// An upgrade (WebSocket) is HTTP/1.1 only.
+		attemptHTTP2: req.Header.Get("Upgrade") == "",
+	})
 	authority := req.URL.Host
 	(&httputil.ReverseProxy{
 		Rewrite: func(out *httputil.ProxyRequest) { out.Out.Host = "" },

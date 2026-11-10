@@ -7,61 +7,26 @@ metadata:
   name: oci-cache
 spec: {}
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Bucket
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
   annotations:
-    description: "Zot's OCI pull-through cache: manifests and blobs."
-  name: registry-cache
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: zot-cache
   namespace: oci-cache
 spec:
-  access:
-    - actions:
-        - Read
-        - Write
-        - List
-        - Tagging
-      user: registry-cache
-  adoptExisting: true
-  clusterRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  name: registry-cache
-  reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  annotations:
-    description: "Zot's OCI pull-through cache: manifests and blobs."
-  name: registry-cache
-  namespace: oci-cache
-spec:
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  name: registry-cache
-  namespace: oci-cache
-spec:
-  identityRef:
-    name: registry-cache
-  reclaimPolicy: Retain
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
-  secretRef:
-    name: registry-cache-s3-credentials
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: piraeus-hdd-2
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io, registry.k8s.io and gcr.io addressed by path prefix (/docker-hub, /ghcr, /quay, /k8s, /gcr). Durable content in the SeaweedFS registry-cache bucket (S3); dedupe index in the oci-cache-valkey RedisReplication. No PVC — the only local state is ephemeral upload staging on emptyDir, so the pod reschedules freely. The in-cluster Service is intentionally unauthenticated for Docker registry-mirror compatibility; the public endpoint is authenticated by the nginx sidecar.
+    description: Zot OCI pull-through cache. On-demand mirror for docker.io, ghcr.io, quay.io, registry.k8s.io and gcr.io addressed by path prefix (/docker-hub, /ghcr, /quay, /k8s, /gcr). Content and local BoltDB indexes share a replicated Piraeus filesystem. The in-cluster Service is intentionally unauthenticated for Docker registry-mirror compatibility; the public endpoint is authenticated by the nginx sidecar.
   labels:
     app.kubernetes.io/name: zot
   name: zot
@@ -83,17 +48,6 @@ spec:
         - args:
             - serve
             - /etc/zot/config.json
-          env:
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  key: accessKey
-                  name: registry-cache-s3-credentials
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: secretKey
-                  name: registry-cache-s3-credentials
           image: ghcr.io/project-zot/zot-linux-amd64:v2.1.21
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -170,6 +124,8 @@ spec:
             - mountPath: /etc/nginx/auth
               name: public-auth
               readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         fsGroup: 65532
         seccompProfile:
@@ -187,9 +143,9 @@ spec:
               - key: htpasswd
                 path: htpasswd
             secretName: puller-credential
-        - emptyDir:
-            sizeLimit: 5Gi
-          name: cache
+        - name: cache
+          persistentVolumeClaim:
+            claimName: zot-cache
 ---
 apiVersion: v1
 kind: Service
@@ -244,55 +200,3 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: zot
----
-apiVersion: redis.redis.opstreelabs.in/v1beta2
-kind: RedisReplication
-metadata:
-  annotations:
-    description: Shared dedupe/metadata cache for the Zot OCI pull-through cache. Zot's cacheDriver points here (remoteCache); the durable content lives in S3, so this holds only rebuildable metadata/dedupe state. Losing it is acceptable but may cause brief cache misses or require a Zot restart/Valkey flush for stale metadb entries. Uses OVH HDD node-local storage so the operator can rebuild a fresh Valkey replica without depending on the SeaweedFS CSI path.
-  name: oci-cache-valkey
-  namespace: oci-cache
-spec:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - preference:
-            matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-          weight: 100
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: topology.kubernetes.io/zone
-                operator: In
-                values:
-                  - hil-ovh
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app: oci-cache-valkey
-          topologyKey: kubernetes.io/hostname
-  clusterSize: 2
-  kubernetesConfig:
-    image: valkey/valkey:9-alpine
-    imagePullPolicy: IfNotPresent
-    resources:
-      limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
-        cpu: 50m
-        memory: 64Mi
-  redisConfig:
-    maxMemoryPercentOfLimit: 80
-  storage:
-    volumeClaimTemplate:
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 2Gi
-        storageClassName: piraeus-hdd-local

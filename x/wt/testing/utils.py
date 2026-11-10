@@ -15,7 +15,7 @@ def _get_wt_cli_path() -> str:
     """Get path to wt_cli binary via Bazel runfiles."""
     if _RUNFILES is None:
         raise RuntimeError("Runfiles not available - must run under Bazel")
-    path = _RUNFILES.Rlocation("_main/x/wt/wt_cli")
+    path = _RUNFILES.Rlocation("ducktape/x/wt/wt_cli")
     if path is None:
         raise RuntimeError("wt_cli binary not found in runfiles")
     return path

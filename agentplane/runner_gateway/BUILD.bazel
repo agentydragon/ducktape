@@ -1,12 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
+load(
+    "//agentplane/env/e2e/testing:exec_properties.bzl",
+    "NATIVE_RUNNER_DOCKER_ENV",
+    "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
+)
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -21,7 +21,10 @@ oci_image(
     base = "@distroless_static_debian13_linux_amd64",
     entrypoint = ["/usr/local/bin/runner-gateway"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":binary_layer"],
+    tars = [
+        ":binary_layer",
+        "//agentplane/grpc/healthprobe:binary_layer",
+    ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
     workdir = "/",
@@ -41,11 +44,10 @@ py_library(
     srcs = ["client.py"],
     deps = [
         ":api",
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/grpc:calls",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner:runner_service_pb2",
-        "//agentplane/runner:runner_service_pb2_grpc",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -56,21 +58,43 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//agentplane/runner/testing:failure_journal",
-        "//agentplane/runner/testing:fixtures",
+        ":client",
+        "//agentplane/app/testing:runner_gateway",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )
 
 py_test(
     name = "test_client",
+    size = "medium",
     srcs = ["test_client.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: runner config selects the pinned native harness
+        "@claude_code_cli_linux_x64//:claude",  # keep: runner config selects the pinned native harness
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     deps = [
+        ":client",
         ":conftest",
         "//:conftest",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner_gateway/testing:runner_peer",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -83,7 +107,9 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
         "@claude_code_cli_linux_x64//:claude",  # keep: both pinned native harnesses
     ],
-    exec_properties = NATIVE_RUNNER_EXEC_PROPERTIES,
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
     target_compatible_with = [
         # keep: pinned native harness platforms
         "@platforms//cpu:x86_64",
@@ -93,17 +119,22 @@ py_test(
         ":client",
         ":conftest",
         "//:conftest",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:events",
+        "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:process",
+        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/grpc:calls",
+        "//agentplane/history_service/testing:go_service",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/runner:runner_service_pb2",
-        "//agentplane/runner/testing:config",
-        "//agentplane/runner/testing:events",
-        "//agentplane/runner/testing:launches",
-        "//agentplane/runner/testing:process",
-        "//agentplane/runner_gateway/testing:runner_peer",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",
         "@pypi//grpcio",
         "@pypi//more_itertools",
@@ -123,30 +154,49 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway",
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
-        "//agentplane/grpc/facade",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/grpc/graceful",
+        "//agentplane/kubeclient",
+        "//agentplane/net/listener",
         "//agentplane/observability",
-        "//agentplane/postgres/go:postgres",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/postgres",
+        "//agentplane/postgres/migrate",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/environments",
+        "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/gateway",
+        "//agentplane/runner_gateway/migrations",
         "//agentplane/sandboxes/api",
-        "//agentplane/workload_auth/go/auth",
-        "//util/netlistener",
+        "//agentplane/sandboxes/runtimeconfig",
+        "//agentplane/watchhealth",
+        "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/listener",
+        "//agentplane/workload_identity/resolver",
         "@com_github_go_logr_logr//:logr",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
-        "@io_k8s_client_go//tools/clientcmd",
+        "@io_k8s_client_go//tools/cache",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/log",
+        "@io_kubevirt_api//core/v1:core",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//keepalive",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -161,10 +211,27 @@ go_test(
     name = "config_test",
     srcs = [
         "config_test.go",
-        "listener_test.go",
     ],
     embed = [":main_lib"],
-    deps = ["//agentplane/workload_auth/go/auth"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/environments",
+        "//agentplane/runner_gateway/environments/lifecycle",
+        "//agentplane/sandboxes/api",
+        "//agentplane/testing/configtest",
+        "//agentplane/testing/grpcmethods",
+        "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/listener",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+    ],
 )
 
 py_library(
@@ -175,43 +242,24 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "//agentplane/workload_auth:listener",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
 )
 
-proto_library(
-    name = "runner_control_proto",
-    srcs = ["runner_control.proto"],
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
     deps = [
-        "//agentplane/proto:grpc_tunnel_proto",
-        "//agentplane/proto:sandboxes_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "runner_control_pb2",
-    deps = [":runner_control_proto"],
-)
-
-py_grpc_service_library(
-    name = "runner_control_pb2_grpc",
-    proto = ":runner_control_proto",
-    py_proto = ":runner_control_pb2",
-)
-
-go_proto_library(
-    name = "runner_control_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb",
-    proto = ":runner_control_proto",
-    deps = [
-        "//agentplane/proto:grpc_tunnel_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

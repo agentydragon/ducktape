@@ -57,11 +57,6 @@ def project_events(completed: tuple[WorldResult, ...]) -> EventLog:
     return EventLog.concat(logs)
 
 
-def simulate_events(worlds: Iterable[World], primary_agent_id: AgentId) -> EventLog:
-    """Dense canonical frames without the forensic journal."""
-    return project_events(execute(worlds, "dense", primary_agent_id))
-
-
 def simulate_product_metrics(
     worlds: Iterable[World], *, horizon_months: int, currency: Currency, primary_agent_id: AgentId
 ) -> ProductMetricArrays:

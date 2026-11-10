@@ -3,8 +3,8 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_module_source, assert_node_output, read_json, run_debundler,
-    write_text_file, write_yaml_file,
+    CommandResult, assert_module_source, assert_node_output, assert_source_file, read_json,
+    run_debundler, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
@@ -53,18 +53,10 @@ const lib = { ping() { return "pong"; } };
 fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
     assert_success(&fixture.result);
 
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(
-        wrapper_source.contains("ping"),
-        "wrapper should retain the upstream local that becomes `default`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export default"),
-        "wrapper should expose a `export default ...`:\n{wrapper_source}",
-    );
-    assert!(
-        !wrapper_source.contains("as default"),
-        "wrapper should not re-emit the original upstream `export {{ ... as default }}` once the wrapper has its own default export:\n{wrapper_source}",
+    assert_source_file(
+        &fixture.wrapper_path,
+        &["ping", "export default"],
+        &["as default"],
     );
 
     // Cross-check the resolution manifest: `generated_wrapper_path` is recorded
@@ -435,26 +427,15 @@ fn partial_swap_basic_rewrites_to_namespace_member() {
 
     assert_success(&fixture.result);
 
-    let caller_emitted = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller_emitted.contains("import * as z from \"zod\""),
-        "caller should namespace-import the package:\n{caller_emitted}",
-    );
-    assert!(
-        caller_emitted.contains("z.boolean()"),
-        "caller should call z.boolean() instead of zodBoolean():\n{caller_emitted}",
-    );
-    assert!(
-        !caller_emitted.contains("zodBoolean"),
-        "caller should not retain the original local-alias identifier:\n{caller_emitted}",
-    );
-    assert!(
-        caller_emitted.contains("keepMe as kept"),
-        "caller should retain non-swapped imports unchanged:\n{caller_emitted}",
-    );
-    assert!(
-        caller_emitted.contains("kept()"),
-        "caller should still reference the kept import by its local name:\n{caller_emitted}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import * as z from \"zod\"",
+            "z.boolean()",
+            "keepMe as kept",
+            "kept()",
+        ],
+        &["zodBoolean"],
     );
 }
 
@@ -480,14 +461,10 @@ fn partial_swap_strips_swapped_names_from_export_block() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains("e6Impl as e6"),
-        "stripped name `e6` should be gone from the export block:\n{emitted}",
-    );
-    assert!(
-        emitted.contains("keepMeImpl as keepMe"),
-        "non-swapped name `keepMe` should still be exported:\n{emitted}",
+    assert_source_file(
+        &fixture.megachunk_emitted_path,
+        &["keepMeImpl as keepMe"],
+        &["e6Impl as e6"],
     );
 }
 
@@ -505,15 +482,7 @@ fn partial_swap_strips_implementation_when_unreferenced() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains(" e6 "),
-        "swapped binding `e6` should be DCE'd:\n{emitted}",
-    );
-    assert!(
-        emitted.contains("keepMe"),
-        "non-swapped binding `keepMe` should remain:\n{emitted}",
-    );
+    assert_source_file(&fixture.megachunk_emitted_path, &["keepMe"], &[" e6 "]);
 }
 
 #[test]
@@ -738,15 +707,7 @@ fn partial_swap_keeps_side_effect_init() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        emitted.contains("console.log"),
-        "side-effect statement should be retained:\n{emitted}",
-    );
-    assert!(
-        !emitted.contains(" e6 "),
-        "swapped `e6` definition should still be DCE'd:\n{emitted}",
-    );
+    assert_source_file(&fixture.megachunk_emitted_path, &["console.log"], &[" e6 "]);
 }
 
 #[test]
@@ -809,6 +770,232 @@ fn partial_swap_rejects_observable_side_effect_reading_swapped_binding() {
     );
 }
 
+/// React DOM's event-registry setup (`p3("onMouseEnter", ["mouseout",
+/// "mouseover"])`): an island function fills island state from an argument.
+fn island_registration(argument: &str, residual_reader: &str) -> String {
+    format!(
+        "const registry = {{}};\n\
+         const all = new Set();\n\
+         function register(name, deps) {{ registry[name] = deps; for (let i = 0; i < deps.length; i++) all.add(deps[i]); }}\n\
+         register(\"onMouseEnter\", {argument});\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => {residual_reader};\n"
+    )
+}
+
+fn run_island_registration_fixture(chunk_source: &str) -> PartialSwapFixture {
+    run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source,
+        caller_source: "import { e6, keepMe } from '../megachunk/entry.js';\n\
+             console.log(e6(), keepMe());\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    })
+}
+
+#[test]
+fn partial_swap_drops_island_registration_of_an_array_born_in_the_island() {
+    let fixture =
+        run_island_registration_fixture(&island_registration("[\"mouseout\", \"mouseover\"]", "7"));
+    assert_success(&fixture.result);
+    assert_source_file(&fixture.megachunk_emitted_path, &[], &["register("]);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 7\n", "");
+}
+
+/// Dropping the island call would empty the registry residual code prints
+/// (`true onMouseEnter` would become `true `), so the strip must refuse,
+/// whether the call hands over a scalar or a fresh array.
+#[test]
+fn partial_swap_rejects_island_registration_that_a_residual_reader_observes() {
+    for argument in ["\"mouseout\"", "[\"mouseout\", \"mouseover\"]"] {
+        let fixture = run_island_registration_fixture(&island_registration(
+            argument,
+            "Object.keys(registry).join(\",\")",
+        ));
+        assert!(
+            !fixture.result.status.success(),
+            "{argument}: the registration a residual reader observes must not be dropped\nstderr:\n{}",
+            fixture.result.stderr,
+        );
+        assert!(
+            fixture.result.stderr.contains("`registry`"),
+            "{argument}: expected the retained registry named in stderr:\n{}",
+            fixture.result.stderr,
+        );
+    }
+}
+
+/// MobX's `var ObservableMap = (function () { … })()` shape: an island IIFE
+/// whose methods read retained state but never run at init.
+#[test]
+fn partial_swap_drops_island_iife_whose_uncalled_methods_read_retained_state() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = (function () { function Island() {} Island.prototype.peek = function () { return registry; }; return new Set([\"mouseout\"]); })();\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}
+
+/// The island fills the registry through an alias it declares; the alias is
+/// dropped with the island, the registry it points at is not.
+#[test]
+fn partial_swap_rejects_island_registration_through_an_alias() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const view = registry;\n\
+         const all = new Set();\n\
+         function register(name) { view[name] = true; all.add(name); }\n\
+         register(\"onMouseEnter\");\n\
+         export const e6 = () => all.has(\"onMouseEnter\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "a registration through an alias must not be dropped\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("`registry`"),
+        "expected the retained registry named in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+/// React DOM's DevTools injection: island internals handed to a host global.
+/// Host code calling back into them is outside the analysed program, so the
+/// method that would fill the retained registry is not assumed to run.
+#[test]
+fn partial_swap_drops_island_internals_handed_to_a_host_hook() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = new Set([\"mouseout\"]);\n\
+         const internals = { all, fill(name) { registry[name] = true; } };\n\
+         if (typeof globalThis.__HOOK__ !== \"undefined\") { var hook = globalThis.__HOOK__; hook.inject(internals); }\n\
+         export const e6 = () => internals.all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}
+
+/// Anchor: the same internals handed to a chunk function, whose call is
+/// unresolved, may run `fill`, so the strip refuses.
+#[test]
+fn partial_swap_rejects_island_internals_handed_to_chunk_code() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = new Set([\"mouseout\"]);\n\
+         const internals = { all, fill(name) { registry[name] = true; } };\n\
+         const local = { inject(target) { target.fill(\"onMouseEnter\"); } };\n\
+         local.inject(internals);\n\
+         export const e6 = () => internals.all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "internals handed to chunk code may fill the registry\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+/// An island call that only compares retained state by identity (the
+/// `t instanceof mh` / `x === K` shape) cannot mutate it.
+#[test]
+fn partial_swap_drops_island_call_comparing_retained_state_by_identity() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = new Set();\n\
+         function isRegistry(value) { return value === registry || typeof registry === value; }\n\
+         function register(name) { if (!isRegistry(name)) all.add(name); }\n\
+         register(\"mouseout\");\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).length;\n",
+    );
+    assert_success(&fixture.result);
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => true;\n",
+    );
+    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+}
+
+/// One run reports every refused side effect, not only the first.
+#[test]
+fn partial_swap_reports_every_refused_registration() {
+    let fixture = run_island_registration_fixture(
+        "const first = {};\n\
+         const second = {};\n\
+         const all = new Set();\n\
+         function register(target, name) { target[name] = true; all.add(name); }\n\
+         register(first, \"a\");\n\
+         register(second, \"b\");\n\
+         export const e6 = () => all.has(\"a\");\n\
+         export const keepMe = () => Object.keys(first).concat(Object.keys(second)).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "both registrations a residual reader observes must be refused\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    for retained in ["`first`", "`second`"] {
+        assert!(
+            fixture.result.stderr.contains(retained),
+            "expected {retained} named in stderr:\n{}",
+            fixture.result.stderr,
+        );
+    }
+}
+
+/// The same IIFE calling a function it declares, which fills the registry a
+/// residual reader prints: that body runs at init, so the strip must refuse.
+#[test]
+fn partial_swap_rejects_island_iife_calling_its_own_registration() {
+    let fixture = run_island_registration_fixture(
+        "const registry = {};\n\
+         const all = (function () { function fill(name) { registry[name] = true; } fill(\"onMouseEnter\"); return new Set([\"mouseout\"]); })();\n\
+         export const e6 = () => all.has(\"mouseout\");\n\
+         export const keepMe = () => Object.keys(registry).join(\",\");\n",
+    );
+    assert!(
+        !fixture.result.status.success(),
+        "the registration a residual reader observes must not be dropped\nstderr:\n{}",
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.result.stderr.contains("`registry`"),
+        "expected the retained registry named in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
 #[test]
 fn partial_swap_drops_original_package_island_with_local_mutations() {
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
@@ -820,14 +1007,10 @@ fn partial_swap_drops_original_package_island_with_local_mutations() {
     });
 
     assert_success(&fixture.result);
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        !emitted.contains("ZodBoolean"),
-        "old package class should be removed from the residual chunk:\n{emitted}",
-    );
-    assert!(
-        !emitted.contains("displayName"),
-        "local metadata write should be removed with the old package class:\n{emitted}",
+    assert_source_file(
+        &fixture.megachunk_emitted_path,
+        &[],
+        &["ZodBoolean", "displayName"],
     );
 }
 
@@ -1018,14 +1201,10 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
     assert_success(&result);
 
     let entry_path = ws.out_root.join("app/static/app/entry.js");
-    let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
-    assert!(
-        entry.contains("pkg/util.js"),
-        "entry must keep importing its own materialized module:\n{entry}",
-    );
-    assert!(
-        !entry.contains(&format!("from \"{PACKAGE_NAME}\"")),
-        "entry's materialized-module import must not be misrouted to the vendor package:\n{entry}",
+    assert_source_file(
+        &entry_path,
+        &["pkg/util.js"],
+        &[&format!("from \"{PACKAGE_NAME}\"")],
     );
 
     let probe_path = ws.out_root.join("__run_materialized_collision.mjs");
@@ -1038,14 +1217,9 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
 
 #[test]
 fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_consumers() {
-    // `references_rewritten` parity pin: the manifest must count *emitted* consumer
-    // references identically whether a reference lives in a pass-through
-    // file (the caller chunk's residual entry, rewritten by the
-    // post-materialize wave) or in a materialized module body (whose
-    // vendor-targeted runtime re-import is planned during lowering's
-    // import construction). One swapped member-kind symbol consumed once
-    // from each file class pins the total at 2 — the same count the
-    // all-wave path produced before the file-class split.
+    // `references_rewritten` must count one shorthand value read in each
+    // consumer file, while preserving the source-local property key. The
+    // shadowed shorthand remains a local read and does not add to the count.
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "zod";
@@ -1060,8 +1234,9 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     ws.write_chunk(
         APP_PATH,
         "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
-         export const movedFlag = zodBoolean() && kept() === 7;\n\
-         export function stay() { return zodBoolean(); }\n",
+         export const movedFlag = ({ zodBoolean }).zodBoolean() && kept() === 7;\n\
+         export function stay() { return ({ zodBoolean }).zodBoolean(); }\n\
+         export function shadow(zodBoolean) { return ({ zodBoolean }).zodBoolean(); }\n",
     );
     ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{APP_PATH}\n"));
     let package_root = ws.write_upstream_package(
@@ -1120,24 +1295,24 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     assert_success(&result);
 
     let module_path = ws.out_root.join("app/static/app/modules/flags.js");
-    let module = fs::read_to_string(&module_path).expect("materialized module emitted");
-    assert!(
-        module.contains("import * as z from \"zod\"") && module.contains("z.boolean()"),
-        "materialized module should consume the package, not the chunk:\n{module}",
-    );
-    assert!(
-        !module.contains("zodBoolean"),
-        "materialized module should not retain the swapped import alias:\n{module}",
-    );
-    assert!(
-        module.contains("keepMe as kept"),
-        "materialized module keeps the non-swapped chunk re-import:\n{module}",
+    assert_source_file(
+        &module_path,
+        &[
+            "import * as z from \"zod\"",
+            "zodBoolean: z.boolean",
+            "keepMe as kept",
+        ],
+        &[],
     );
     let entry_path = ws.out_root.join("app/static/app/entry.js");
-    let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
-    assert!(
-        entry.contains("import * as z from \"zod\"") && entry.contains("z.boolean()"),
-        "pass-through entry should consume the package, not the chunk:\n{entry}",
+    assert_source_file(
+        &entry_path,
+        &[
+            "import * as z from \"zod\"",
+            "zodBoolean: z.boolean",
+            "function shadow(zodBoolean)",
+        ],
+        &[],
     );
 
     let manifest: Value =
@@ -1165,10 +1340,55 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     let probe_path = ws.out_root.join("__run_count_parity.mjs");
     write_text_file(
         &probe_path,
-        "const { stay, movedFlag } = await import(\"./app/static/app/entry.js\");\n\
-         console.log(`${stay()}:${movedFlag}`);\n",
+        "const { stay, movedFlag, shadow } = await import(\"./app/static/app/entry.js\");\n\
+         console.log(`${stay()}:${movedFlag}:${shadow(() => \"LOCAL\")}`);\n",
     );
-    assert_node_output(&probe_path, "true:true\n", "");
+    assert_node_output(&probe_path, "true:true:LOCAL\n", "");
+}
+
+#[test]
+fn partial_swap_proto_shorthand_preserves_data_property_and_shadowing() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => \"VENDOR\";\n",
+        caller_source: "import { e6 as __proto__ } from \"../megachunk/entry.js\";\n\
+                        const value = { __proto__ };\n\
+                        const originalPrototype = Object.getPrototypeOf(value);\n\
+                        function shadow(__proto__) { return { __proto__ }; }\n\
+                        const shadowed = shadow(() => \"LOCAL\");\n\
+                        export function inspect() { return [\n\
+                          Object.prototype.hasOwnProperty.call(value, \"__proto__\"),\n\
+                          originalPrototype === Object.prototype,\n\
+                          Object.getPrototypeOf(value) === originalPrototype,\n\
+                          value.__proto__(),\n\
+                          Object.prototype.hasOwnProperty.call(shadowed, \"__proto__\"),\n\
+                          Object.getPrototypeOf(shadowed) === Object.prototype,\n\
+                          shadowed.__proto__(),\n\
+                        ].join(\"|\"); }\n",
+        upstream_source: "export const boolean = () => \"UPSTREAM\";\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert_success(&fixture.result);
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["[\"__proto__\"]: z.boolean", "function shadow(__proto__)"],
+        &[],
+    );
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "zod",
+        "3.23.8",
+        "export const boolean = () => \"UPSTREAM\";\n",
+    );
+    let probe_path = app_root.join("__run_proto_shorthand.mjs");
+    write_text_file(
+        &probe_path,
+        "const { inspect } = await import(\"./static/app/entry.js\");\nconsole.log(inspect());\n",
+    );
+    assert_node_output(&probe_path, "true|true|true|UPSTREAM|true|true|LOCAL\n", "");
 }
 
 #[test]
@@ -1191,18 +1411,14 @@ fn partial_swap_namespace_kind_replaces_whole_import() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import * as React from \"react\""),
-        "caller should emit a namespace import for the package:\n{caller}",
-    );
-    assert!(
-        caller.contains("React.useState()"),
-        "caller's member-access references must stay intact:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe as kept"),
-        "non-swapped specifiers stay in the residual import:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import * as React from \"react\"",
+            "React.useState()",
+            "keepMe as kept",
+        ],
+        &[],
     );
 }
 
@@ -1226,18 +1442,14 @@ fn partial_swap_default_kind_replaces_whole_import() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import z from \"clsx\""),
-        "caller should emit a default import for the package:\n{caller}",
-    );
-    assert!(
-        caller.contains("z(\"a\", \"b\")"),
-        "caller's call-site references must stay intact:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe as kept"),
-        "non-swapped specifiers stay in the residual import:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import z from \"clsx\"",
+            "z(\"a\", \"b\")",
+            "keepMe as kept",
+        ],
+        &[],
     );
 }
 
@@ -1247,39 +1459,142 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
     // where the chunk export `o` is a single named export of the package
     // (e.g. `mobx-react-lite#observer`). The local alias `mobxObserver`
     // is whatever the chunker emitted — the partial-swap rewrites both
-    // the import (no alias) AND every reference in the file to use the
-    // upstream export name. So `mobxObserver(...)` becomes
-    // `observer(...)`.
+    // the import (no alias) AND every value reference in the file to use the
+    // upstream export name. Shorthand keeps its source-local key, and the
+    // same spelling in a nested parameter remains a local binding.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
         kind: PartialSwapKind::Named,
         package_name: "mobx-react-lite",
         package_version: "4.0.7",
         subpath: "dist/index.js",
         chunk_source: "export const o = (Component) => Component;\nexport const keepMe = () => 7;\n",
-        caller_source: "import { o as mobxObserver, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return mobxObserver(\"X\") + kept(); }\n",
+        caller_source: "import { o as mobxObserver, keepMe as kept } from \"../megachunk/entry.js\";\n\
+                         const shadowed = ((mobxObserver) => ({ mobxObserver }).mobxObserver(\"local\"))(value => `shadow:${value}`);\n\
+                         export function go() { return `${({ mobxObserver }).mobxObserver(\"X\")}|${shadowed}|${kept()}`; }\n",
         upstream_source: "export const observer = (Component) => Component;\n",
         chunk_export: "o",
         upstream_export: Some("observer"),
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import { observer } from \"mobx-react-lite\""),
-        "caller should emit a bare named import using the upstream export:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import { observer } from \"mobx-react-lite\"",
+            "mobxObserver: observer",
+            ".mobxObserver(\"X\")",
+            ".mobxObserver(\"local\")",
+            "keepMe as kept",
+        ],
+        &[],
     );
-    assert!(
-        caller.contains("observer(\"X\")"),
-        "caller's call-site references should be renamed to the upstream export:\n{caller}",
+
+    let app_root = emitted_app_root(&fixture);
+    install_node_module(
+        &app_root,
+        "mobx-react-lite",
+        "4.0.7",
+        "export const observer = value => value;\n",
     );
-    assert!(
-        !caller.contains("mobxObserver"),
-        "caller should not retain the original local alias:\n{caller}",
+    let probe_path = app_root.join("__run_named_shorthand.mjs");
+    write_text_file(
+        &probe_path,
+        "const { go } = await import(\"./static/app/entry.js\");\nconsole.log(go());\n",
     );
-    assert!(
-        caller.contains("keepMe as kept"),
-        "non-swapped specifiers stay in the residual import:\n{caller}",
+    assert_node_output(&probe_path, "X|shadow:local|7\n", "");
+}
+
+#[test]
+fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
+    // A local export specifier names its binding outside any expression.
+    // Member reads re-export the package's named export; a named-kind rename
+    // exports the renamed import under the source's public name. Unrewritten,
+    // the module exports an unbound name and fails to link. (`parse`, not a
+    // reserved word like `boolean`, so the named kind does rename the local.)
+    for (kind, emitted) in [
+        (
+            PartialSwapKind::Member,
+            [
+                "export { parse as zodBoolean } from \"zod\"",
+                "export { parse as aliased } from \"zod\"",
+            ],
+        ),
+        (
+            PartialSwapKind::Named,
+            [
+                "import { parse } from \"zod\"",
+                "export { parse as zodBoolean, parse as aliased }",
+            ],
+        ),
+    ] {
+        let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+            kind,
+            package_name: "zod",
+            package_version: "3.23.8",
+            subpath: "lib/index.mjs",
+            chunk_source: "export const e6 = () => \"VENDOR\";\nexport const keepMe = () => 7;\n",
+            caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
+                             export { zodBoolean, zodBoolean as aliased };\n\
+                             export function go() { return `${zodBoolean()}|${kept()}`; }\n",
+            upstream_source: "export const parse = () => \"UPSTREAM\";\n",
+            chunk_export: "e6",
+            upstream_export: Some("parse"),
+        });
+
+        assert_success(&fixture.result);
+        assert_source_file(&fixture.caller_emitted_path, &emitted, &[]);
+
+        let app_root = emitted_app_root(&fixture);
+        install_node_module(
+            &app_root,
+            "zod",
+            "3.23.8",
+            "export const parse = () => \"UPSTREAM\";\n",
+        );
+        let probe_path = app_root.join("__run_local_export.mjs");
+        write_text_file(
+            &probe_path,
+            "const { go, zodBoolean, aliased } = await import(\"./static/app/entry.js\");\n\
+             console.log(`${go()}|${zodBoolean()}|${aliased === zodBoolean}`);\n",
+        );
+        assert_node_output(&probe_path, "UPSTREAM|7|UPSTREAM|true\n", "");
+    }
+}
+
+#[test]
+fn partial_swap_rejects_local_export_of_a_dotted_member_read() {
+    // `z.nested.boolean` is a property read with no live export form; left
+    // in place, `export { zodBoolean }` would name an unbound local.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-dotted-local-export-",
+        "export const e6 = () => true;\n",
+        "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport { zodBoolean };\n",
+        "zod",
+        "3.23.8",
+        "lib/index.mjs",
+        "export const nested = { boolean: () => true };\n",
     );
+    let vendor = partial_swap_vendor(
+        "dotted member local export fixture",
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("nested.boolean"), None),
+        )],
+    );
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
+    assert!(
+        !fixture.result.status.success(),
+        "{}",
+        fixture.result.stdout
+    );
+    for diagnostic in ["static/app/entry.js", "zodBoolean", "e6"] {
+        assert!(
+            fixture.result.stderr.contains(diagnostic),
+            "{}",
+            fixture.result.stderr
+        );
+    }
 }
 
 #[test]
@@ -1300,14 +1615,13 @@ fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
     });
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("import { observer } from \"mobx-react-lite\""),
-        "no `as` alias when local matches upstream export:\n{caller}",
-    );
-    assert!(
-        caller.contains("observer(\"X\")"),
-        "call sites unchanged:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "import { observer } from \"mobx-react-lite\"",
+            "observer(\"X\")",
+        ],
+        &[],
     );
 }
 
@@ -1383,15 +1697,13 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     assert_success(&result);
 
     let caller_path = ws.out_root.join("app/static/app").join("entry.js");
-    let caller = fs::read_to_string(&caller_path).expect("caller emitted");
-    assert!(
-        !caller.contains("from \"react\"") && !caller.contains("from \"react/jsx-runtime\""),
-        "bundled partial swap must not leave browser-facing raw CJS package imports:\n{caller}",
-    );
-    assert!(
-        caller.contains("vendors/generated/static/megachunk/react.js")
-            && caller.contains("vendors/generated/static/megachunk/react_jsx-runtime.js"),
-        "caller should import generated ESM facades:\n{caller}",
+    assert_source_file(
+        &caller_path,
+        &[
+            "vendors/generated/static/megachunk/react.js",
+            "vendors/generated/static/megachunk/react_jsx-runtime.js",
+        ],
+        &["from \"react\"", "from \"react/jsx-runtime\""],
     );
 
     let probe_path = ws.out_root.join("__run_entry.mjs");
@@ -1575,14 +1887,10 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     let materialized_path = ws
         .out_root
         .join("app/static/app/modules/helpers/observer.js");
-    let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
-    assert!(
-        !materialized.contains("vendor/entry.js"),
-        "materialized module must not keep importing the residual vendor chunk:\n{materialized}",
-    );
-    assert!(
-        materialized.contains("vendors/generated/static/vendor/observer-kit_observer.js"),
-        "materialized module should import the generated bundled facade:\n{materialized}",
+    assert_source_file(
+        &materialized_path,
+        &["vendors/generated/static/vendor/observer-kit_observer.js"],
+        &["vendor/entry.js"],
     );
 
     let probe_path = ws.out_root.join("__run_materialized.mjs");
@@ -1684,22 +1992,15 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
     let materialized_path = ws
         .out_root
         .join("app/static/app/modules/helpers/toolkit.js");
-    let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
-    assert!(
-        materialized.contains("vendors/generated/static/vendor/toolkit-core.js"),
-        "materialized module should import the generated bundled facade:\n{materialized}",
-    );
-    assert!(
-        materialized.contains("Toolkit.map(") && materialized.contains("Toolkit.make("),
-        "materialized module should rewrite imported aliases to package-facade members:\n{materialized}",
-    );
-    assert!(
-        !materialized.contains("toolkitMap(\"top\")") && !materialized.contains("toolkitMake"),
-        "materialized module should not retain top-level generated import aliases:\n{materialized}",
-    );
-    assert!(
-        materialized.contains("toolkitMap(\"shadow\")"),
-        "shadowed local parameter should not be rewritten by the package-facade alias pass:\n{materialized}",
+    assert_source_file(
+        &materialized_path,
+        &[
+            "vendors/generated/static/vendor/toolkit-core.js",
+            "Toolkit.map(",
+            "Toolkit.make(",
+            "toolkitMap(\"shadow\")",
+        ],
+        &["toolkitMap(\"top\")", "toolkitMake"],
     );
 
     let probe_path = ws.out_root.join("__run_materialized_named.mjs");
@@ -1732,8 +2033,10 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
             (
                 VENDOR_PATH,
                 "function nY(Ctor) { return `vendor:${Ctor.name}`; }\n\
-                 const schema = nY(URL);\n\
-                 export { schema as keep };\n",
+                 const shorthand = { nY };\n\
+                 const schema = shorthand.nY(URL);\n\
+                 const shadowed = ((nY) => ({ nY }).nY(URL))(Ctor => `shadow:${Ctor.name}`);\n\
+                 export const keep = `${schema}|${shadowed}`;\n",
             ),
             (
                 APP_PATH,
@@ -1761,15 +2064,10 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
-        .expect("vendor chunk emitted");
-    assert!(
-        !vendor.contains("function nY"),
-        "original local helper should be removed from residual vendor chunk:\n{vendor}",
-    );
-    assert!(
-        vendor.contains(".instanceof(URL)"),
-        "residual schema should call the bundled facade:\n{vendor}",
+    assert_source_file(
+        &ws.out_root.join("app/static/vendor/entry.js"),
+        &["nY:", ".instanceof"],
+        &["function nY"],
     );
 
     let probe_path = ws.out_root.join("__run_local_helper.mjs");
@@ -1777,7 +2075,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
         &probe_path,
         "await import(\"./app/static/app/entry.js\");\n",
     );
-    assert_node_output(&probe_path, "package:URL\n", "");
+    assert_node_output(&probe_path, "package:URL|shadow:URL\n", "");
 }
 
 #[test]
@@ -1805,17 +2103,13 @@ fn partial_swap_does_not_rewrite_shadowing_inner_binding() {
 
     assert_success(&fixture.result);
 
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     // The top-level import-local use is rewritten to the facade member.
-    assert!(
-        caller.contains("z.boolean()"),
-        "top-level import-local use should be rewritten to the facade member:\n{caller}",
-    );
     // The shadowing parameter and its read must survive verbatim — the
     // inner `zodFlag()` is a call on the parameter, not the import local.
-    assert!(
-        caller.contains("function pick(zodFlag)") && caller.contains("return zodFlag()"),
-        "shadowing parameter binding must not be rewritten to the facade member:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["z.boolean()", "function pick(zodFlag)", "return zodFlag()"],
+        &[],
     );
 
     // Runtime proof: `fromParam` must reflect the argument passed to
@@ -1885,6 +2179,71 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     );
 
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
+}
+
+// ─── analysis of swapped implementations ────────────────────────────────
+//
+// A swap promises the replacement behaves like the bundled implementation
+// (SPEC.md § Vendor swap equivalence), so facts derived from the bundled
+// body justify splits around calls that run the replacement.
+
+#[test]
+fn partial_swap_split_uses_summary_of_swapped_export_body() {
+    // The bundled `object` only allocates, so `wrapped` retains its callback
+    // without running it and `later` may move to a module of its own.
+    const PROVIDER: &str =
+        "export function object(shape) { const kind = \"object\"; return { kind, shape }; }\n";
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-equivalent-export-",
+        &format!("{PROVIDER}export const keep = () => 7;\n"),
+        "import { object } from \"./megachunk.js\";\n\
+         const wrapped = object({ read: () => later });\n\
+         const later = 42;\n\
+         console.log(wrapped.shape.read());\n",
+        "fac",
+        "1.0.0",
+        "lib/index.mjs",
+        PROVIDER,
+    );
+    let report_root = ws.out_root.join("reports").join("tree");
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({"static/megachunk.js": partial_swap_vendor(
+            "equivalent export fixture",
+            &[("fac", partial_package("1.0.0", "lib/index.mjs", Some("fac")))],
+            &[("object", swap_symbol("fac", PartialSwapKind::Member, Some("object"), None))],
+        )}),
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "callbacks/wrapped": {
+                        "members": [{ "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } }],
+                    },
+                    "values/later": {
+                        "members": [{ "name": "later", "selector": { "binding": { "name": "later" } } }],
+                    },
+                },
+            },
+            "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": &report_root,
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    assert_success(&result);
+    let modules: Value = read_json(&report_root.join("static/app/modules.json"));
+    assert_eq!(
+        modules["imported_callables"]["object"]["foreign_call"]["replacement_package"],
+        "fac"
+    );
+    let app_root = ws.out_root.join("app");
+    install_node_module(&app_root, "fac", "1.0.0", PROVIDER);
+    assert_node_output(&app_root.join("static/app/entry.js"), "42\n", "");
 }
 
 // ─── partial-swap consumer soundness ────────────────────────────────────
@@ -2005,18 +2364,14 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("export { boolean as zodBoolean } from \"zod\""),
-        "re-export of swapped name should target the upstream package:\n{caller}",
-    );
-    assert!(
-        caller.contains("keepMe") && caller.contains("../megachunk/entry.js"),
-        "non-swapped re-export stays on the residual chunk:\n{caller}",
-    );
-    assert!(
-        !caller.contains("e6"),
-        "no re-export of the stripped chunk name may survive:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &[
+            "export { boolean as zodBoolean } from \"zod\"",
+            "keepMe",
+            "../megachunk/entry.js",
+        ],
+        &["e6"],
     );
 
     let app_root = emitted_app_root(&fixture);
@@ -2057,10 +2412,10 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("clsx", &package_root)]);
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("export { default as z } from \"clsx\""),
-        "re-export of a kind=default symbol should forward the package default:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["export { default as z } from \"clsx\""],
+        &[],
     );
 
     let app_root = emitted_app_root(&fixture);
@@ -2101,10 +2456,10 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("react", &package_root)]);
 
     assert_success(&fixture.result);
-    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
-    assert!(
-        caller.contains("export * as React from \"react\""),
-        "re-export of a kind=namespace symbol should forward the package namespace:\n{caller}",
+    assert_source_file(
+        &fixture.caller_emitted_path,
+        &["export * as React from \"react\""],
+        &[],
     );
 
     let app_root = emitted_app_root(&fixture);
@@ -2204,11 +2559,10 @@ fn boundary_rename_rewrites_caller_imports_end_to_end() {
     let result = run_debundler(&spec_path, &[]);
     assert_success(&result);
 
-    let caller =
-        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
-    assert!(
-        caller.contains("import { alpha as a }"),
-        "caller import should be rewritten to the vendor's public export name:\n{caller}",
+    assert_source_file(
+        &ws.out_root.join("app/static/app/entry.js"),
+        &["import { alpha as a }"],
+        &[],
     );
     let probe_path = ws.out_root.join("__run_boundary_rename.mjs");
     write_text_file(
@@ -2343,17 +2697,15 @@ fn suppress_vendor_chunk_passes_through_unchanged() {
     let result = run_debundler(&spec_path, &[]);
     assert_success(&result);
 
-    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
-        .expect("vendor chunk emitted");
-    assert!(
-        vendor.contains("export { a as alpha }"),
-        "suppressed vendor chunk's export surface must be unchanged:\n{vendor}",
+    assert_source_file(
+        &ws.out_root.join("app/static/vendor/entry.js"),
+        &["export { a as alpha }"],
+        &[],
     );
-    let caller =
-        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
-    assert!(
-        caller.contains("import { alpha } from \"../vendor/entry.js\""),
-        "caller import of a suppressed chunk must be unchanged:\n{caller}",
+    assert_source_file(
+        &ws.out_root.join("app/static/app/entry.js"),
+        &["import { alpha } from \"../vendor/entry.js\""],
+        &[],
     );
     let probe_path = ws.out_root.join("__run_suppress.mjs");
     write_text_file(
@@ -2394,15 +2746,10 @@ fn suppress_vendor_chunk_skips_specifier_canonicalization() {
     let result = run_debundler(&spec_path, &[]);
     assert_success(&result);
 
-    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
-        .expect("vendor chunk emitted");
-    assert!(
-        vendor.contains("\"./helper-X.js\""),
-        "suppress chunk directives must keep their original spelling:\n{vendor}",
-    );
-    assert!(
-        !vendor.contains("../helper-X/entry.js"),
-        "suppress chunk directives must not be canonicalized:\n{vendor}",
+    assert_source_file(
+        &ws.out_root.join("app/static/vendor/entry.js"),
+        &["\"./helper-X.js\""],
+        &["../helper-X/entry.js"],
     );
 }
 
@@ -2449,12 +2796,11 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
         !ws.out_root.join("app/static/lib-X").exists(),
         "fully-swapped chunk must be removed from the emitted tree",
     );
-    let caller =
-        fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
-    assert!(
-        caller.contains("../lib-X/entry.js"),
-        "caller's import of the removed chunk is intentionally left dangling \
-         (resolved by the host import map):\n{caller}",
+    // The caller import is intentionally dangling and resolved by the host import map.
+    assert_source_file(
+        &ws.out_root.join("app/static/app/entry.js"),
+        &["../lib-X/entry.js"],
+        &[],
     );
 }
 
@@ -3067,27 +3413,16 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
     run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)])
 }
 
-/// A fully swapped chunk's body is replaced by the upstream package at serve
-/// time, so the cross-module purity oracle must not derive verdicts from its
-/// bundle copy: with `adapter` kept the interleaved calls are pure and the
-/// split is accepted; with it swapped `callWrap` stays an opaque call and the
-/// split is rejected on an S-cycle.
+/// A full swap promises the package behaves like the bundled chunk, so the
+/// cross-module purity oracle derives verdicts from the bundled body: the
+/// interleaved calls through `adapter` are pure whether or not it is swapped.
 #[test]
-fn full_swapped_chunk_stays_opaque_to_cross_module_purity() {
+fn full_swapped_chunk_keeps_cross_module_purity() {
     assert_success(&run_interleaved_calls_through_adapter(false));
-
-    let swapped = run_interleaved_calls_through_adapter(true);
-    assert!(!swapped.status.success(), "stdout:\n{}", swapped.stdout);
-    for expected in ["cycle", "mod_a", "mod_b", "side-effect"] {
-        assert!(
-            swapped.stderr.to_lowercase().contains(expected),
-            "stderr missing {expected:?}:\n{}",
-            swapped.stderr,
-        );
-    }
+    assert_success(&run_interleaved_calls_through_adapter(true));
 }
 
-fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> VendorSwapFixture {
+fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorSwapFixture {
     const PACKAGE: &str = "factory-kit";
     let (ws, bundle_path) = setup_bundled_partial_swap(
         "browser-vendor-reentry-",
@@ -3100,7 +3435,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> Vendor
             ),
             (
                 "static/app.js",
-                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Error());\nconst value = factory();\nexport function read() { return value; }\n",
+                "import { factory, keep } from './vendor.js';\nconst prefix = (keep(), new globalThis.Date());\nconst value = factory();\nexport function read() { return value; }\n",
             ),
         ],
     );
@@ -3121,7 +3456,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> Vendor
             &[("factory", swap_symbol(PACKAGE, PartialSwapKind::Default, None, None))],
         )}),
         Some(json!({
-            "execution_runtime": runtime,
+            "host_behavior": {"synchronous_module_loader": loader},
             "logical_modules": {"static/app": {
                 "startup": {"members": [member("prefix")]},
                 "values": {"members": [member("value"), member("read")]},
@@ -3148,10 +3483,8 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, runtime: &str) -> Vendor
 
 #[test]
 fn closed_bundled_replacement_preserves_browser_export_proof() {
-    let fixture = browser_bundled_reentry_fixture(
-        "export const factory = () => 'ready';\n",
-        "native_browser_esm",
-    );
+    let fixture =
+        browser_bundled_reentry_fixture("export const factory = () => 'ready';\n", "none");
     let report: Value = read_json(
         &fixture
             ._root
@@ -3169,19 +3502,18 @@ fn closed_bundled_replacement_preserves_browser_export_proof() {
 }
 
 #[test]
-fn bundled_reentry_proof_requires_runtime_and_closed_synchronous_bundle() {
-    for (bundle, runtime) in [
-        ("export const factory = () => 'ready';\n", "generic"),
+fn bundled_reentry_proof_requires_closed_bundle() {
+    for (bundle, loader) in [
         (
             "import './app.js'; export const factory = () => 'ready';\n",
-            "native_browser_esm",
+            "none",
         ),
         (
             "await Promise.resolve(); export const factory = () => 'ready';\n",
-            "native_browser_esm",
+            "none",
         ),
     ] {
-        let fixture = browser_bundled_reentry_fixture(bundle, runtime);
+        let fixture = browser_bundled_reentry_fixture(bundle, loader);
         assert!(!fixture.result.status.success());
         assert!(
             fixture.result.stderr.contains("atomic-group conflict"),
@@ -3189,4 +3521,68 @@ fn bundled_reentry_proof_requires_runtime_and_closed_synchronous_bundle() {
             fixture.result.stderr
         );
     }
+}
+
+#[test]
+fn named_swap_capturing_a_source_global_is_reported_changed_while_the_run_still_accepts() {
+    // The caller reads a host global spelled like the upstream export. The
+    // named-kind swap renames the import local to `observer`, which captures
+    // that read: Node output diverges, and `global_resolution.json` reports
+    // the capture. The report is not acceptance authority yet, so the run
+    // still succeeds.
+    const PACKAGE_NAME: &str = "mobx-react-lite";
+    const VERSION: &str = "4.0.7";
+    const SUBPATH: &str = "dist/index.js";
+    const UPSTREAM: &str = "export const observer = (value) => value;\n";
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-global-capture-",
+        "export const o = (value) => value;\n",
+        "import { o as wrap } from \"./megachunk.js\";\n\
+         console.log(typeof observer + \":\" + wrap(\"X\"));\n",
+        PACKAGE_NAME,
+        VERSION,
+        SUBPATH,
+        UPSTREAM,
+    );
+    write_text_file(
+        &ws.snapshot_root.join("package.json"),
+        "{\"type\":\"module\"}\n",
+    );
+    assert_node_output(&ws.snapshot_root.join("static/app.js"), "undefined:X\n", "");
+
+    let vendor = partial_swap_vendor(
+        "megachunk named swap capturing a global",
+        &[(PACKAGE_NAME, partial_package(VERSION, SUBPATH, None))],
+        &[(
+            "o",
+            swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("observer"), None),
+        )],
+    );
+    let report_root = ws.out_root.join("reports/tree");
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let mut spec = ws.transform_spec(json!({ "static/megachunk.js": vendor }));
+    spec["materialize_logical_modules"] = json!({ "report_out_dir": report_root });
+    write_yaml_file(&spec_path, &spec);
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert_success(&result);
+
+    let caller = ws.out_root.join("app/static/app/entry.js");
+    assert_source_file(
+        &caller,
+        &["import { observer } from \"mobx-react-lite\""],
+        &[],
+    );
+    install_node_module(&ws.out_root.join("app"), PACKAGE_NAME, VERSION, UPSTREAM);
+    assert_node_output(&caller, "function:X\n", "");
+
+    let report: Value = read_json(&report_root.join("global_resolution.json"));
+    assert_eq!(report["status"], "changed", "{report:#}");
+    let app = &report["chunks"]["static/app"];
+    assert_eq!(app["status"], "changed", "{report:#}");
+    assert!(
+        app["findings"].as_array().unwrap().iter().any(|finding| {
+            finding["reason"] == "captured_by_binding" && finding["symbol"] == "observer"
+        }),
+        "{report:#}"
+    );
 }

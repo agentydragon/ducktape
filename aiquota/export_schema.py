@@ -1,7 +1,7 @@
 """Print the aiquota API's OpenAPI schema to stdout (for frontend type-gen).
 
-Driven by ``//aiquota/frontend:schema`` (``js_openapi_schema``) so the dashboard's
-wire types are the API's Pydantic models rather than a hand-kept copy of them.
+Captured as ``//aiquota:openapi_schema`` so the dashboard's wire types are the API's
+Pydantic models rather than a hand-kept copy of them.
 ``app.openapi()`` reads route signatures only: nothing here fetches a provider, and the
 placeholder fetcher exists solely because ``create_app`` requires one.
 """

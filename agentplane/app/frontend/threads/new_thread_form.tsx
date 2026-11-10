@@ -1,21 +1,24 @@
 import { Button, Group, Paper, Select, Stack, Textarea, TextInput, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 
-import type { Harness, ModelCatalog, SessionDefaults } from "../api/schema";
-import { api, displayableError } from "../client";
+import { listModels, listSandboxPresets } from "../app_config_client";
+import type { ListModelsResponse, SessionDefaults } from "../../app_service_pb";
 import { harnessOptions, modelsForHarness } from "../model_catalog";
-import { Disclosure, DisclosureBody } from "../disclosure";
-import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
+import { displayableError } from "../client";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
+import { Harness, SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
-type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
+type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaults> | null };
 
 /**
  * What a new Thread is created with. It starts from the Sandbox's preset and the operator edits it
  * for this one Thread, so its state outlives the panel it is shown in being closed.
  */
 export function NewThreadForm({
+  target,
   presetName,
   unavailableReason,
   creating,
@@ -23,6 +26,7 @@ export function NewThreadForm({
   onClose,
   onError,
 }: {
+  target: EnvironmentTarget | null;
   presetName: string | null;
   unavailableReason: string | null;
   creating: boolean;
@@ -37,20 +41,19 @@ export function NewThreadForm({
   const [inheritsDefaults, setInheritsDefaults] = useState(false);
   const [presetDefaults, setPresetDefaults] = useState<LoadedPresetDefaults | null>(null);
   // Create-form offerings; existing threads retain their harness and model.
-  const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
-  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
+  const [harness, setHarness] = useState<Harness>(Harness.CLAUDE);
+  const [modelCatalog, setModelCatalog] = useState<ListModelsResponse | null>(null);
   const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);
   const [model, setModel] = useState<string | null>(null);
   const reportError = useEffectEvent(onError);
 
   useEffect(() => {
     void (async () => {
-      const { data, error: failure } = await api.GET("/models");
-      if (failure) {
+      try {
+        setModelCatalog(await listModels());
+      } catch (failure) {
         reportError(displayableError(failure));
-        return;
       }
-      if (data) setModelCatalog(data);
     })();
   }, []);
 
@@ -64,19 +67,19 @@ export function NewThreadForm({
     }
     setPresetDefaults(null);
     void (async () => {
-      const { data, error: failure } = await api.GET("/presets");
-      if (cancelled) return;
-      if (failure) {
-        reportError(displayableError(failure));
-        return;
+      try {
+        const data = await listSandboxPresets();
+        if (cancelled) return;
+        const preset = data.find((candidate) => candidate.name === presetName);
+        if (!preset) {
+          reportError(`Sandbox preset ${presetName} is missing from the app configuration.`);
+          setPresetDefaults({ preset: presetName, defaults: null });
+          return;
+        }
+        setPresetDefaults({ preset: presetName, defaults: preset.sessionDefaults ?? null });
+      } catch (failure) {
+        if (!cancelled) reportError(displayableError(failure));
       }
-      const preset = data?.find((candidate) => candidate.name === presetName);
-      if (!preset) {
-        reportError(`Sandbox preset ${presetName} is missing from the app configuration.`);
-        setPresetDefaults({ preset: presetName, defaults: null });
-        return;
-      }
-      setPresetDefaults({ preset: presetName, defaults: preset.session_defaults });
     })();
     return () => {
       cancelled = true;
@@ -85,8 +88,8 @@ export function NewThreadForm({
 
   useEffect(() => {
     const offered = harnessOptions(modelCatalog).filter((option) => !option.disabled);
-    if (offered.length && !offered.some((option) => option.value === harness)) {
-      setHarness(offered[0].value);
+    if (offered.length && !offered.some((option) => option.value === String(harness))) {
+      setHarness(Number(offered[0].value) as Harness);
     }
     if (modelCatalog) {
       setModel((current) =>
@@ -99,23 +102,24 @@ export function NewThreadForm({
     const option = models.find((entry) => entry.model === model);
     // A Sandbox binding can arrive before the model catalog; do not erase its default
     // while the selected model is not yet known to this catalog.
-    if (option && !option.reasoning_efforts.includes(effort)) setEffort(option.reasoning_efforts[0] ?? "");
+    const reasoningEfforts = option?.reasoningEfforts ?? [];
+    if (option && !reasoningEfforts.includes(effort)) setEffort(reasoningEfforts[0] ?? "");
   }, [effort, model, models]);
 
   const applyPresetDefaults = useEffectEvent(() => {
     if (!presetDefaults || presetDefaults.preset !== presetName || presetDefaults.defaults === null) return;
     const defaults = presetDefaults.defaults;
     setInheritsDefaults(presetName !== null);
-    setHarness(defaults.harness ?? "HARNESS_CLAUDE");
+    setHarness(defaults.harness ?? Harness.CLAUDE);
     setModel(defaults.model ?? null);
-    setEffort(defaults.reasoning_effort ?? "low");
+    setEffort(defaults.reasoningEffort ?? "low");
     setInstructions(defaults.instructions ?? "");
     setCwdTemplate(defaults.cwd ?? "/state/workspaces/{session_id}");
-    setSetupScript(defaults.setup_script ?? "");
+    setSetupScript(defaults.setupScript ?? "");
   });
   useEffect(() => applyPresetDefaults(), [presetName, presetDefaults]);
 
-  const efforts = models.find((option) => option.model === model)?.reasoning_efforts ?? [];
+  const efforts = models.find((option) => option.model === model)?.reasoningEfforts ?? [];
   const disabledReason = creating
     ? "A thread is being created. Wait for this attempt to finish."
     : (unavailableReason ??
@@ -134,12 +138,12 @@ export function NewThreadForm({
           <Select
             label="Harness"
             data={harnessOptions(modelCatalog)}
-            value={harness}
-            onChange={(value) => value && setHarness(value as Harness)}
+            value={String(harness)}
+            onChange={(value) => value && setHarness(Number(value) as Harness)}
           />
           <Select
             label="Model"
-            data={models.map((option) => ({ value: option.model, label: option.display_name }))}
+            data={models.map((option) => ({ value: option.model, label: option.displayName }))}
             value={model}
             onChange={setModel}
           />
@@ -200,14 +204,26 @@ export function NewThreadForm({
                 disabled={disabledReason !== null}
                 onClick={() =>
                   model &&
+                  target &&
                   onCreate(
-                    fromJson(SessionSpecSchema, {
-                      harness,
-                      cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
+                    create(SessionSpecSchema, {
+                      placement: {
+                        kind:
+                          harness === Harness.CENTRAL_SAMPLER
+                            ? {
+                                case: "centralSamplerV1",
+                                value: { executorEnvironment: { name: target.name, uid: target.uid } },
+                              }
+                            : {
+                                case: "environmentHosted",
+                                value: { environment: { name: target.name, uid: target.uid }, harness },
+                              },
+                      },
+                      cwd: cwdTemplate, // The app resolves {session_id} before it creates the Session.
                       model,
                       reasoningEffort: effort,
                       instructions,
-                    } as JsonValue),
+                    }),
                     setupScript
                   )
                 }

@@ -1,7 +1,7 @@
 # Purity classification — soundness notes
 
-Admission rules and long-form rationales for the whitelist tables and
-`ChunkBinding::PlainData` in `devinfra/js/debundle/purity/`. The code holds
+Admission rules and long-form rationales for the builtin summary rows purity
+reads and `ChunkBinding::PlainData` in `devinfra/js/debundle/purity/`. The code holds
 3–5 line summaries; the exhaustive prose lives here so future audits don't
 have to scroll past 80 lines of `///` to read the next function. Read
 <design.md> § "Soundness over completeness" first — it is the contract
@@ -19,48 +19,67 @@ Remove hints individually and validate the resulting spec: individual redundancy
 does not establish that a set of hints can be removed together. A missing entry
 means redundancy was not proved.
 
-Member hints are reported redundant against the builtin whitelist only for
+Member hints are reported redundant against the builtin rows only for
 unshadowed global receivers. An import or local binding named `Array` does not
 inherit the global `Array.isArray` rule.
 
-## Admission rule: `PURE_STATIC_CALLS`
+## Admission rule: builtin summary rows
 
-`PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`, and `PURE_GLOBAL_CALLS` in
-<../purity/whitelists.rs> directly drive S-edge construction. An
-over-approximating entry — a built-in flagged Pure that can in fact fire
-user code on some argument — drops S edges the realizability theorem needs,
-and can let a cyclic spec slip past the validator and emit a bundle whose
-runtime ordering breaks.
+Purity classifies an intrinsic call or read through the builtin summary table,
+<../facts/abstract_domain/builtins.rs> (`ROWS` for calls, constructions and
+tags; `DATA_PROPERTIES` for static reads), projected by
+<../purity/native_rows.rs>. A row that admits more than the operation does —
+a missed coercion, iteration, trap, accessor read, mutation or throw — drops S
+edges the realizability theorem needs, and can let a cyclic spec slip past the
+validator and emit a bundle whose runtime ordering breaks.
 
-A new entry is admissible only when:
+To add a row:
 
-- The operation fires **no user-defined code on any argument type**: no
-  `ToNumber` / `ToString` / `ToPrimitive` / `ToPropertyKey` coercion of the
-  args (these fire `valueOf` / `toString` / `[Symbol.toPrimitive]`); no
-  iterator protocol (`[Symbol.iterator]`); no proxy traps; no own-property
-  `[[Get]]` / `[[Set]]` (these fire user accessors); no mutation of any
-  reachable object; no `toJSON` callback path.
-- It cites the ECMA-262 clause that establishes this. "Common in production
-  bundles" is not a soundness argument, and neither is "often called with a
-  fresh-literal target or primitive args in practice" — the validator does
-  not infer types and cannot rely on argument shape unless it is enforced
-  syntactically at the call site.
+- Cite the ECMA-262 clause (or the host specification's algorithm) in `cite`.
+  "Common in production bundles" is not a soundness argument.
+- List in `coerces` every step that can run user code or throw on some
+  operand: `ToString` / `ToNumber` (these fire `valueOf` / `toString` /
+  `[Symbol.toPrimitive]`), `ToObject`, iteration, own-property
+  `[[OwnPropertyKeys]]` / `[[GetOwnProperty]]` / `[[Get]]`, and descriptor
+  writes. A row with no `coerces` asserts that the operation fires no
+  user-defined code on **any** operand.
+- List callbacks in `invokes`, heap writes in `mutates`, and type or value
+  checks that throw in `throws`. Purity admits no row that invokes, writes a
+  non-fresh operand other than a plain-data one it freezes, or throws on
+  values (`Throws::OnValue`, `UnlessCallable`).
+- Set `arity` to the argument counts the summary covers; a spread argument is
+  admitted only by a row that inspects no operand and takes any count.
+- Set `assumed_intact` only when purity may take the callee's identity from
+  A11 and an unshadowed spelling. Operations whose identity the analysis must
+  prove (`Symbol.for`, `Math.*`, own-property inspection) leave it false and
+  reach purity only through a certificate over `requires`.
 
-If the whitelist proves too restrictive in practice, that is the expected
-failure mode. Loosen it only by adding universally-pure operations, or by
-introducing stronger argument analysis (e.g. a statically-primitive
-classification) that admits a wider set _under syntactic gates on the
-arguments_. Never add an entry because the common case is fine. The
-analysis engine carries an inline TODO listing patterns that become
-admissible once a primitive-arg gate exists — that is the queue for safe
-growth.
+Purity then admits a call only when the callee's global is unshadowed, the
+row certifies the call shape, and each operand meets the row's steps
+syntactically: no step (any value), `ToString` (a result-primitive
+expression), `ToNumber` (a non-BigInt primitive literal), internal methods or
+freezing (a fresh plain-data literal, an admitted `PlainData` binding, or the
+namespace facade's fresh result), an object check (a fresh object literal), or
+iteration (a fresh array literal, element by element). An operand that fails
+a conversion keeps a `coercing_operator` reason; any other mismatch leaves the
+call `unknown_call` / `unknown_new`. Every row needs a positive and a negative
+case in `purity/classifier_tests.rs`. The synchronous interpreter reads the
+same rows with its census premise (`requires`); a row outside the census
+(empty `requires`) is purity-only.
+
+If the table proves too restrictive in practice, that is the expected failure
+mode. Loosen it only by adding operations whose steps are silent, or by
+introducing stronger operand analysis that resolves a listed step for a wider
+set of operands. Never add a row because the common case is fine.
 
 Every admission argument here additionally assumes **intrinsic integrity**
 (<design.md> A11): the chunk runs with unmodified built-in prototypes.
 Prototype pollution — replacing `Set.prototype.add` or
 `Array.prototype[Symbol.iterator]` — defeats every entry whose ECMA-262
 citation describes the standard built-in, and the analyzer cannot detect it
-because the pollution may live outside the analyzed chunk.
+when the pollution lives outside the analyzed chunk. Individual proofs may
+also reject visible in-chunk mutations through the shared intrinsic-write
+census; see the collection-construction rules below.
 
 ## Empty intrinsic collection construction
 
@@ -68,59 +87,553 @@ Synchronous callback analysis excludes an exact `new Map()`, `new Set()`,
 `new WeakMap()` or `new WeakSet()` when the callee is the undeclared,
 unshadowed global identifier and there are no arguments. Under A11 intrinsic
 integrity, each constructor allocates its empty internal collection and
-returns before looking up an adder or invoking iterator/user code. See the
-[Map](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable),
-[Set](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-set-iterable),
-[WeakMap](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-iterable)
-and [WeakSet](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakset-iterable)
-constructor algorithms.
+returns before looking up an adder or invoking iterator/user code; the
+constructors' rows in `facts/abstract_domain/builtins.rs` cite the algorithms.
+The shared intrinsic-write census disables this
+shortcut after a visible write to the corresponding global constructor or
+global-object property, including writes through aliases and unknown computed
+global properties. Program analysis shares its resolved census across all
+analyzed chunks; isolated per-chunk analysis uses its local census. Dynamic
+scopes disable it too.
 
 This does not certify subsequent collection operations. A shadowed or dynamic
 callee, subclass construction, arguments and spreads keep ordinary callback
 analysis. In particular, a nonempty iterable argument may invoke its iterator
 or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
-all four empty constructors and real callback reentry through a shadowed
-constructor and a supplied iterator.
+all four empty constructors, global constructor replacement, and callback
+reentry through a shadowed constructor, a replaced Set adder, and a replaced
+Array iterator.
+
+## Property-key domains in native writes
+
+The canonical execution index retains a separate key domain for native-write
+facts: a finite set of strings, strings with a constant prefix and suffix,
+definitely Symbol, or unknown. This refines
+which own data properties of the global object and of each census constructor
+or namespace a write can replace (SPEC.md § Native integrity inputs). A write
+on `Map`, `Object`, or another intrinsic, under any key, still invalidates that
+family's prototype slots. Key evaluation, callbacks, effects, throws and
+returned values retain their ordinary analysis.
+
+A stable alias of an unshadowed `Symbol.for` call with one argument has a
+Symbol domain only while `%Symbol%` and `%Symbol.for%` remain intact.
+A lexical two-identifier `[key, value]` loop over unshadowed `Object.entries`
+of an immediate object containing only noncomputed own data properties has
+that object's finite string-key set. Its premises include the Object family
+and Array iteration for both the outer entries array and each destructured
+pair. Computed properties, accessors, spreads, default patterns, unknown keys,
+shadowed operations and any binding reassignment retain the unknown domain.
+
+A11 supplies the initial native identities. The whole-program census retains
+all writes, including deferred bodies, and establishes a closed-write
+invariant: each refined write preserves named native global bindings provided
+its operation dependencies remain intact. Start with unconditional native
+writes and unknown global writes, then propagate dependency invalidation to a
+fixed point. A recognized visible mutation of a slot a key was derived through
+(`Symbol.for`, `Object.entries`, Array iteration) in any analyzed chunk
+invalidates dependent key evidence; an unknown-key write through an unknown
+receiver invalidates every native premise. A collection provider and its consumers use the same resolved
+source-derived integrity input, separate from author assumptions. Code outside
+the analyzed source remains covered by A11. No whole-program purity or
+nonreentry conclusion follows from this census.
+
+A value read from a computed or unrelated static global slot can hold an
+intrinsic; its unresolved native identity survives aliases and descendant
+property accesses. Mutation through that value reaches its key on every
+intrinsic, and every prototype slot.
+The census does not prove the absence of every hidden native-alias path:
+A11's author obligation still covers native integrity outside the recognized
+source facts.
+
+## Source callback arguments and unreachable native writes
+
+The immutable returned-callback-wrapper inference can additionally certify
+ordinary object arguments and the wrapper's direct callback uses. This stronger
+capability is source-derived before resolving native integrity. A timing-only
+author assertion supplies no argument or entry evidence.
+
+The initial supported wrapper has two identifier parameters, privately retains
+the callback in its returned zero-argument function, assigns its cache once to
+an ordinary literal with one own data field holding an empty ordinary literal,
+and passes that same field and cache to its sole callback invocation. It returns
+only that cache field. The existing wrapper checks exclude foreign calls,
+member writes and nested functions; the stronger check also excludes explicit
+callback return, storage, unknown arguments and throw/publication paths. The
+field name is arbitrary. Callback-supplied values can still escape through the
+cache field, whose later access may invoke an accessor. No native operation is
+admitted by this structural proof.
+
+For a single anonymous inline callback supplied to that source-certified bare
+import, absence of a self binding or arguments reflection completes entry
+coverage: the callback cannot obtain and publish its own identity. The canonical
+index may then prove a conditional-expression region unreachable. Predicates
+cover `typeof` of an unrebound certified parameter,
+string-literal equality or `<`, and conjunction. Only immediate anonymous
+IIFEs can carry these stable captures into another callable. Named callbacks,
+unknown imports, parameter rebinds, dynamic scope, arguments reflection and
+async descendants retain fallback. A nested deferred function keeps its own
+writes; lexical containment in a branch does not certify its activations.
+
+The census retains discharged member-write witnesses with `unreachable_branch`
+evidence and empty `affected_roots`. Evidence identifies the source wrapper and
+its ordinary argument positions plus the consumer guard location. Graph input
+provenance hashes the defining and consuming source bytes. Unconditional
+binding writes and unsupported operations remain conservative. This changes
+only the native write premise: ordinary effects, exceptions, loader return
+reads, accessor hazards and callback execution retain their existing analysis.
+
+## Ordinary own-property inspection and descriptor application
+
+The canonical index recognizes exact ordinary object-literal shapes with
+statically known string or number keys (including literal-computed data keys),
+without spreads, decorators or `__proto__`; computed method and accessor keys
+are not indexed. At capture time, the executor also
+requires an exact object identity, no prior taint, and equality between the
+literal's own-key set and the current identity-store key set. This admits a
+local binding or alias to that object; a known added key, an unknown key or an
+escaped/mutated source falls back. Tracked writes that only replace values keep
+their value-set overapproximation. The Object binding and native integrity
+must remain intact. Applying a captured descriptor map still requires the
+separate ordinary Object prototype guard on its `Object.defineProperties`
+target.
+
+`Object.getOwnPropertyNames` shares this exact-origin, static-shape and current
+prefix-state proof. It emits a dense array of exact string values in
+ECMAScript own-key order: canonical array indices in numeric order, followed
+by other strings in literal creation order. It does not read property values
+or invoke getters. Callee and argument evaluation still happen eagerly, and
+possible throws remain represented. This return/timing projection does not
+admit the call as pure or exception-free. Each call derives its prefix fact in
+a fresh short-lived context, so later mutations cannot reuse an earlier
+projection.
+
+`Object.getOwnPropertyDescriptors` captures the current data-value identities
+and getter/setter callbacks without invoking accessors. Its carrier has no
+general readable descriptor-map shape. The sole composition modeled is a
+direct, unmodified `Object.defineProperties` call with that live carrier and an
+untainted, currently empty fresh ordinary target. It writes captured data
+values and distinct accessor callback metadata into the target's existing
+identity, so aliases observe the same result. A callsite whose repeated
+execution sees a conflicting source identity or descriptor values is
+invalidated rather than joined. Map member access or mutation, return, escape,
+or opaque consumption invalidates application while retaining its callback
+graph. Copied accessor reads promote their getter; opaque target use retains
+getter, setter and method callbacks. Data-valued object identities remain
+connected to later mutations. Under exact native identity and intact Object
+prototype guards, a result expression may retain argument 0's target identity
+even when application eligibility is not proved, and it also retains a
+possible throw. This return-shape fact does not authorize descriptor
+application or suppress opaque timing/effect fallback. The proof does not
+cover returned/readable maps,
+arbitrary descriptor edits, `Object.assign`, imported wrapper bodies, general
+purity or exception freedom.
+
+## Source-composed returned records
+
+An immediate top-level object pattern can read selected own data fields from
+a fresh literal, or from a direct call to a source-proven local factory, without
+running user getters or Proxy traps. The shared value-flow collector supplies
+the exact callable origin and records the structural return shape separately
+from its over-approximating return-value set. The factory has a straight-line
+prefix of variable declarations or expression statements and a terminal
+object-literal return; it is neither async nor a generator. This shape proof
+does not erase prefix effects, arguments, calls, throws, eager binding reads or
+later callback behavior. A whole-chunk dynamic-scope check and a rebind scan
+protect callable identity, including deferred writes. The selected keys must
+all be statically present as distinct own data properties. Missing keys,
+accessors, spreads, computed keys, `__proto__`, alternate returns, defaults,
+nested patterns and rest retain the ordinary conservative pattern reason.
+
+This local purity fact is independent of the imported returned-record timing
+summary below. That summary can contain getters and asserts no member-read
+purity.
+
+A stable directly exported hoisted function declaration can supply a separate
+successful-return timing summary for a zero-argument function with exactly two statements: allocation of a fresh
+empty `Map` in one identifier binding, then return of an object containing only
+noncomputed ordinary methods and getters. Eager data properties, spreads,
+duplicate keys, `__proto__`, decorators and other outer execution are excluded.
+The proof uses the canonical execution index and the same undeclared,
+unshadowed empty-collection constructor guard as direct construction. Every
+analyzed module must retain Map/global integrity in that index. A11 remains the
+premise for code outside the analyzed source. An exact export/entry projection
+and one stable function identity are required. Function initializers and
+reexports are outside this first proof.
+
+`CallableSummary.returned_record` retains the defining module, export, local,
+source locations and deferred member capture provenance. Construction does
+not activate those bodies. Its returned value is an opaque foreign capability,
+not plain data or a noncallable value. A later member read, invocation, or
+opaque consumption activates every importer top-level binding read and the
+ordinary escaped/exported callback pool. This deliberately preserves direct
+live ESM-cell captures as well as callback-mediated reentry without transplanting
+provider-local SWC IDs. Publication retains the token in the existing callback
+value graph; callbacks installed by later writes remain ordinary escape roots.
+No member precision, purity or exception-free execution is asserted.
 
 ## Guarded native call summaries
 
-The synchronous interpreter uses one model lookup for both returned values and
-callback timing. Models describe the operation after callee and argument
-evaluation, preserving those evaluations' effects and throws. All require an
-undeclared, unshadowed intrinsic, no spread, no dynamic scope, and no visible
-mutation of the intrinsic/global family through direct, aliased, or reflective
-writes. They do not change purity classification or ordinary source ordering.
+The synchronous interpreter uses one builtin summary table,
+`facts/abstract_domain/builtins.rs`, for both returned values and callback
+timing. Each row names one intrinsic operation and its ECMA-262 section
+(`cite`), the argument counts it admits, the coercion and internal-method steps
+it performs on each operand (`coerces`), the operands it invokes, the fresh
+allocation it creates, the writes it performs (`mutates`) and its successful
+completion value (`returns`). A row describes the operation after callee and
+argument evaluation, preserving those evaluations' effects and throws; it does
+not classify the call as pure, certify exception freedom, or change ordinary
+source ordering. The summarized operations are the table's rows; this document
+does not repeat them.
 
-Under A11 intrinsic integrity, the unary numeric methods `Math.round`, `floor`,
-`ceil`, `trunc`, `abs`, and `sign` perform `ToNumber` followed by numeric work;
-see [Math](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math-object).
-One primitive-valued argument cannot invoke a conversion hook. Successful
-results are primitive too, so subsequent conversions can use the same fact.
-Object and unknown arguments retain opaque-call analysis. Argument evaluation
+A row applies only after the native call identity judgment (<inference.md>):
+an undeclared, unshadowed intrinsic or its direct static `globalThis.…` path,
+no spread, no dynamic scope, and no visible mutation of the row's intrinsic
+family or the global object through direct, aliased or reflective writes. The
+interpreter then proves every `mutates` entry on the call's operands and every
+`coerces` step silent:
+
+- A coercion of a primitive operand runs no user code. `ToString` of a Symbol
+  or pattern compilation may still throw; the throw stays represented.
+- `Integrity` (`Object.freeze`) is proved only on the fresh plain-data object
+  literal itself; `SetIntegrityLevel` never invokes the stored data values.
+- `DefineProperties` needs an untainted, currently empty fresh ordinary target,
+  the live descriptor carrier from `Object.getOwnPropertyDescriptors`, and the
+  ordinary `Object.prototype` guard (§ Ordinary own-property inspection and
+  descriptor application).
+- The fresh-allocation writes of `Object.getOwnPropertyNames` and
+  `Object.getOwnPropertyDescriptors` need that section's own-property
+  projection proof.
+- `FreshRetains` (`FinalizationRegistry`) needs exactly one known ordinary
+  function origin or closure. The constructor checks callability and stores the
+  callback through `HostMakeJobCallback` without invoking it; the default host
+  operation and the
+  [HTML host operation](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
+  both only record it. The result is opaque and retains the callback graph for
+  the ordinary retained-value analysis.
+
+Any other operand shape falls back to opaque-call analysis. Argument evaluation
 may still reenter, including a sequence whose final value is primitive.
 
-Direct `RegExp` calls and construction allow zero to two primitive arguments.
-[RegExp construction](https://tc39.es/ecma262/multipage/text-processing.html#sec-regexp-pattern-flags)
-cannot take its object-pattern/property-inspection branch for a primitive input;
-conversion and compilation need no user code under A11. The result remains
-opaque, and syntax/type errors remain observable. The existing fresh-record
-`Object.freeze` proof below uses this same model projection, returning argument
-zero without losing its object identity or callbacks.
-
-`native_call_summary_test` covers all six numeric methods followed by another
-conversion, both RegExp call forms, object coercion, global-constructor
-replacement, and syntax errors. `math_round_timing_test` retains effectful
-argument, shadowing, aliased method mutation, and getter controls;
+`native_call_summary_test` covers the unary `Math` rows followed by another
+conversion, both `RegExp` invocation forms, object coercion, global-constructor
+replacement, `Symbol` calls/coercion, `FinalizationRegistry` retention,
+qualified native callees, and syntax errors. `math_round_timing_test` retains
+effectful argument, shadowing, aliased method mutation, and getter controls;
 `fresh_freeze_callback_timing_test` retains its identity/publication controls.
+
+### Source-selected native-call identity inputs
+
+`chunk_analysis_options.<chunk>.native_call_identity_inputs` is a separate
+exact-site author premise for a direct call in a selected top-level function
+declaration. The initial typed callee is `object_freeze`; the function's sole
+statement must directly return one ordinary, uncomputed `Object.freeze(arg)`
+call. The parser-input digest and canonical selector pin the function, while
+the existing structural call index pins its call span. The assertion covers
+the original global `Object` data binding and original own data `freeze` member
+at every synchronous at-init execution of that site across permitted emitted
+schedules and reentry. Source-known writes to either exact slot in any analyzed
+chunk reject the entire input, even if later restored. Opaque receiver/key
+writes remain witnesses under the explicit premise; sibling writes are not
+assumed inert because an inherited setter or Proxy trap could indirectly change
+the required slots.
+
+This input only resolves native callee identity. The existing `FreshDataRecord`
+guard must separately establish an ordinary fresh plain-data argument before
+the native `Object.freeze` return and no-reentry model can be used. It does not
+assert call purity, suppress argument effects or throws, or establish
+whole-family native integrity. For the selected call with a fresh plain-data
+object literal argument, the native freeze body cannot observe an earlier
+array or Set, so its synthetic opaque heap-content barrier is omitted. The
+collector still visits callee and argument children, including nested calls.
+The returned result has no precise ordinary-object value-flow origin from this
+proof, so later escapes and mutations through it retain conservative heap
+barriers. Accessor, Proxy, and other unproved arguments keep their ordinary
+heap barrier. Unselected calls use the ordinary guards.
+
+### Source-selected native-operation inputs
+
+`chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
+author premise for one exact direct native initializer. The schema admits
+`operation: text_encoder_empty`, `operation: map_empty`, `operation: weak_map_empty`,
+`operation: set_empty`,
+`operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
+`operation: set_from_primitive_array`,
+`operation: set_from_set_spread`, `operation: object_own_data_function_read`,
+`operation: symbol_well_known_class_keys`, `operation: symbol_primitive_class_keys`,
+and `operation: array_spread_from_primitive_arrays`.
+For `symbol` and `symbol_for`, the canonical selector engine identifies one
+direct top-level simple binding initialized by an ordinary, nonoptional,
+uncomputed `Symbol(...)` or `Symbol.for(...)` call respectively, with zero or one syntactically primitive
+argument and no spread; the parser-input SHA-256 binds that selection to the
+audited bytes. The execution index validates the selected binding and call
+span before the synchronous interpreter can consume it.
+
+The author asserts that, from provider evaluation start through the selected
+call in every synchronous initialization schedule allowed by emission, the
+ordinary global environment resolves `Symbol` to the original native function
+through its ordinary data binding. For `symbol_for`, the author additionally
+asserts that its direct `for` data property is the original native method.
+The author must audit the host entry state: there is no hostile preseeded
+`Symbol` or `Symbol.for` alias or accessor, and no foreign
+reentry before the selected call. This is not a snapshot of the binding at the
+call's original point: a later or deferred known replacement could move before
+the call in an emitted schedule. Therefore any positively identified in-source
+write to the global `Symbol` binding or global-object `Symbol` slot anywhere in
+the analyzed initialization region contradicts either input. A known write to
+the `Symbol` constructor's `for` slot also contradicts `symbol_for`, including
+a replacement later restored. Opaque receiver mutations are the uncertainty
+this premise may cover; they remain visible as their original census witnesses.
+The shared native write census retains receiver path and property key alongside
+its conservative native-family effects. The validators reject only source-known
+writes to those exact slots; unknown receivers or keys remain visible and are
+covered by the explicit premise. Alias and reflective writes with a
+source-known target still contradict it.
+
+This input sets only its asserted slots' integrity flags, and only at the
+selected call span; the existing exact native model consumes them there, and
+the report records the author provenance at that site. A `promise_resolve`
+input is effective only together with the matching independent
+`host_behavior.reentry_free_operations` entry; the pair satisfies the exact Promise timing check
+without changing other native guards or Promise call sites. Other calls still
+require the ordinary shared integrity proof. For `symbol` and `symbol_for`,
+primitive argument evaluation and conversion may throw; a Symbol-valued or
+object-valued argument is not admitted. Argument and callee evaluation, their
+effects and throws, and surrounding writes, callback invocation, publication,
+CommonJS behavior and ordering remain on the normal conservative paths. The
+premise grants no whole-lifetime purity, general receiver guarantee or native
+integrity outside analyzed code; the external A11 identity obligation still
+applies.
+
+For `map_empty`, `weak_map_empty`, and `set_empty`, the exact direct bare
+zero-argument initializer must read the original standard constructor through
+its ordinary global data binding in every admitted initialization schedule.
+The [Map](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable),
+[WeakMap](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-iterable),
+and [Set](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-set-iterable)
+constructor algorithms return before an adder lookup or iteration when the
+iterable is absent. Direct construction keeps the original `NewTarget` and its
+fixed own prototype data property. The existing empty-construction rows supply
+the operation semantics; the exact-site premise discharges only the selected
+global binding's identity and data read. Known writes to that slot anywhere in
+the program reject the assertion. Later property reads, methods, iteration and
+publication require their own ordinary proofs. Arguments, spreads, aliases,
+qualified callees, shadowing and wrapper expressions are not admitted.
+
+`map_empty` may select a nonempty object initializer whose fields are all
+noncomputed ordinary data properties directly initialized by bare zero-argument
+`new Map()`. The premise applies separately to each exact constructor site,
+including in saved-analysis restoration. Spreads, methods, accessors,
+`__proto__`, nesting and wrapped expressions are rejected by original syntax.
+The existing constructor transfer remains authoritative at each site; object
+result inference and heap checks are unchanged. This does not grant whole-object
+purity, a Map identity to the selected binding, or heap locality.
+
+For `text_encoder_empty`, the checked initializer is exactly a direct bare
+zero-argument `new TextEncoder()` through the unshadowed global identifier.
+The author asserts that this callee read resolves the original standard
+constructor through a data binding across every admitted initialization schedule.
+The [Encoding constructor steps](https://encoding.spec.whatwg.org/#dom-textencoder)
+do nothing. The [Web IDL interface object algorithm](https://webidl.spec.whatwg.org/#es-interface-call)
+creates the platform object; the original constructor's own `prototype` is
+nonwritable, nonconfigurable data. Direct construction therefore uses the
+original `NewTarget` without a user-defined prototype lookup or argument
+conversion. Only the global constructor slot is required. Known writes to that
+slot, including aliased and sibling-chunk writes, reject the input; opaque
+writes remain census witnesses and an author obligation. No TextEncoder method,
+prototype method identity, ordinary-object shape, or callback retention premise
+follows. The shared row returns `Unknown`, so later accesses remain conservative.
+`TextEncoder` is a census family, outside the family-wide author-premise enum;
+existing `families: all` assertions acquire no new meaning. Its migrated row
+sets `assumed_intact: false`: the selected initializer's purity, heap-content
+barrier and legacy at-init fallback consume the validated exact-site fact.
+Purity records the input dependency. Without an assertion the shared census may
+prove construction timing, while syntactic purity stays conservative.
+
+The engine also infers this narrow constructor family without authored inputs.
+Preparation uses the completed conservative all-source native-write census and
+the existing A11 / validated `intrinsics_never_written` contract, independently
+of the later refined census. It proves every required protocol slot before the
+single structural flow solve. Open/default integrity, an opaque write without
+an applicable premise, or source identity alone cannot supply this proof. An
+inferred protected spread requires unique unreassigned simple bindings in one
+original declaration; every declarator from the earlier fresh primitive-array
+Set through the consumer must itself be a proved primitive Set construction.
+The original parent span, exact source binding, and interval become canonical
+graph co-location constraints used by emission and graph-backed edits. Authored
+input validation remains independent, including its existing exact-site guards.
+
+Purity, heap-contents classification and staged analysis consume the same
+span-keyed static proof, including when synchronous execution is omitted for
+vendor pruning. They still classify evaluated operands and retain contents
+reads; they do not infer completion from a source certificate. Ordered execution
+uses a shared native iterable operation for both Array spread and Set's Iterate
+coercion. It admits exact settled dense array slots or finite primitive-only
+yields with unknown cardinality/order. The latter has no exact slots or length
+and cannot authorize ordinary own-property projection. A Set operand additionally
+requires its exact protected source origin and full Set iterator/next protocol
+proof; Set kind alone proves none of these facts. Prefix mutation, escape,
+accessor, reentry and taint guards remain required.
+
+For checked top-level Set initializer operations, `SetIterableProof` also
+publishes one typed source-operand projection keyed by the exact constructor
+span. It names the immediate array-literal allocation site and its source-unit
+occurrence; protocol dependencies remain on the canonical constructor proof.
+This source projection is consumed by native-row purity, heap-content
+classification (including vendor pruning), and the execution adapter. It does
+not contain evaluated values, array length, Set size, iteration order,
+multiplicity after Set deduplication, or a reusable prefix snapshot. The
+`IterateNative` transfer still matches the runtime source allocation against
+the projected origin and derives exact slots only from the current settled
+prefix; otherwise it may retain only primitive-only knowledge. Borrowed array
+aliases with no immediate literal source remain on the separate checked
+alias-purity path.
+
+After successful admission, the exact native Fresh Set row can retain a Set
+allocation kind/origin on its normal branch. This does not model Set contents,
+deduplication, size, own properties or allocation multiplicity. The common
+operation returns an `EffectCoverageFragment` for its modeled body; the existing
+Outcome channels preserve operand order, effects and abrupt completion, and only
+the owner executor can seal terminal initialization coverage. No certificate
+or receipt clears taint or substitutes for that terminal proof.
+
+The shared receipt retains its internal ArrayContents/SetContents reads and Set
+allocation. Its external heap projection distinguishes a borrowed/aliased operand
+from the exact canonical immediate argument-array literal. After validating the
+actual source origin and full protocol, only that immediate private array's read
+is internal to this construction: it cannot observe an earlier caller heap.
+Borrowed reads, spread-source Set reads and all Set allocations remain external.
+This is an operation-local input projection, not a claim that a pooled source
+origin is unique or that a constructor ran only once.
+
+Set spread retains its real SetContents read in both static and runtime heap
+summaries. The existing one-shot eager-allocation producer also accepts a direct
+simple declaration's whole `new Set` initializer when its exact proved native
+root, constructor premise and collected SetContents allocation agree. The
+existing frontier logic can then distinguish an earlier opaque heap from this
+later source occurrence. Duplicate and deferred sites remain excluded by the
+same consumer; callables, loops and indirect factory results gain no such fact.
+
+For `set_from_primitive_array`, the selected initializer is one direct
+unshadowed `new Set([...])` with a dense, nonspread array of primitive literals
+or earlier stable primitive binding reads. Each admitted identifier resolves
+to a unique direct top-level simple declaration with a primitive-literal
+initializer and no recorded rebind, update or dynamic-scope contamination.
+This source proof establishes primitive type, not an exact value; the ordinary
+eager read and initialization order remain in the graph.
+The premise covers the original global Set constructor, Set adder, Array
+iterator and Array iterator `next` identities needed to construct that Set.
+The source-only typed slot census rejects known writes to the required slots
+across the analyzed program, including aliases, reflection and restoration;
+opaque witness paths remain visible and are the author's audit obligation.
+Only this exact site seeds a fresh native Set origin in the shared value-flow
+solve. The shared heap graph records its Set-content allocation and tracks
+reachable content effects. The existing constructor-purity rule may use the
+author-backed native protocol dependency for the selected fresh primitive
+array. Later Set method identity, own iterator shape and
+Set-spread protocol are separate obligations, so this input does not remove
+their barriers.
+
+For `set_from_set_spread`, the direct Set argument is a dense array literal
+whose first element is one spread of an identifier and whose remaining
+elements are primitive literals. The author independently asserts original
+Set construction and Set iterator/next identities at this exact call. The
+source-only certificate additionally requires the source identifier to name
+an earlier selected fresh primitive Set in one original top-level declaration;
+every intervening split-view source unit must itself be an independently
+selected primitive Set constructor. All bindings in that interval must have
+the same explicit destination, so lowering's source-order declarator split
+preserves the interval in one emitted module. This certificate is established
+before and without seeded value-flow facts; it contributes the spread's fresh
+Set identity to the single shared flow solve. Purity, synchronous callback
+analysis, and the Set-content graph consume the same exact-site dependencies.
+Unknown receiver/key native-write witnesses remain visible, and source-known
+writes to required slots in any analyzed chunk reject the input. An own
+iterator override, alias mutation, callback, separate output, or other
+unproved source unit in the interval rejects the source certificate. Later
+Set methods and escaped observations remain on their ordinary conservative
+paths.
+The own-data read operation selects a single direct `Object.<name>` initializer
+whose name is in the shared native own-data function-reference table. An
+unshadowed `Object` binding is checked by the canonical source index; the
+native-write census supplies known-write exclusions. A known write to the global
+`Object` slot or the exact `Object.<name>` slot in any analyzed chunk rejects
+the assertion. Other property names, prototype mutations, and opaque receiver
+effects are not misreported as known exact-slot contradictions; the author
+must audit the latter. Without author input, intact Object/global-object
+integrity derives the same exact-read certificate. Purity, timing, and heap
+ordering consume that certificate. It certifies only a getter-free read:
+invoking the resulting function remains an ordinary call with its usual
+effects, arguments, and return uncertainty.
+For `array_spread_from_primitive_arrays`, the selector names the receiving
+binding of a top-level multi-declarator `const` whose preceding declarators
+are dense primitive-literal arrays and whose initializer holds only primitive
+literals and direct spreads of those bindings; no intervening declarator may
+run user code or expose a producer. The author asserts the original Array
+iterator and iterator `next` identities across every admitted initialization
+schedule. Positively identified Array-family or iterator `next` writes
+contradict the input; opaque writes are the author's audit obligation. Without
+the input, the same certificate needs completed `Array` native integrity. The
+source shape proves fresh dense elements and a closed interval, and the graph
+co-locates producer and consumer statements so the emitted module keeps it.
+No family-wide `Array` integrity follows; the external A11 obligation still
+applies.
+
+`chunk_analysis_options.<consumer>.imported_primitive_array_spread_inputs` is
+a distinct exact-site premise for a top-level simple array initializer whose
+elements are direct imported identifier spreads. Each provider operand is
+source-selected as a dense array of primitive literals, and both parser-input
+digests plus the canonical import/export endpoints bind those facts to the
+consumer and configured provider chunk alias. The provider's ordinary static
+initialization closure must be complete, acyclic and initialized before the
+consumer.
+
+The author separately asserts that, through the selected spread, each producer
+keeps its identity, dense own-data primitive contents, ordinary Array
+prototype chain and binding, and has no own iterator or accessors. The shared
+whole-program iterator and `%ArrayIteratorPrototype%.next` census remains
+required. Known provider rebinds/indexed writes reject as unsupported because
+the existing provider write facts do not establish their ordering through the
+selected consumer spread. A direct eager consumer rebind before the selected
+spread and protocol writes contradict the input. Lazy consumer rebinds and
+indexed/member writes reject as unsupported when their execution ordering
+through the spread is not established; a cyclic provider is unsupported. The
+analysis does not trace mutations through independent aliases imported by
+other chunks, so the author must include those paths in the lifetime audit;
+opaque mutation routes, including routes through an exposed export, are also
+covered only by this exact lifetime promise. The transfer copies the finite primitive
+slot kinds into a fresh consumer allocation and carries no provider heap
+identity. It leaves provider evaluation and ownership, import dependencies,
+normal callback effects, other heap/global/host effects and later array uses
+under their existing analyses. The saved and rendered evidence keeps the
+author's lifetime fields separate from source-derived selectors, endpoints
+and primitive slot kinds.
+
+An exact validated `symbol` site with zero arguments or one direct string
+literal has a separate pure-initializer consequence: the original native
+`Symbol` creates a fresh symbol without coercion callbacks or a throw. An exact
+validated `symbol_for` site still requires exactly one direct string literal.
+The original native `Symbol.for` converts that string without user code or a
+throw, then looks up or inserts a symbol in the agent-local registry. ECMAScript
+exposes no registry enumeration or removal:
+[`Symbol.keyFor`](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.keyfor)
+queries an already held symbol, and repeat `Symbol.for` calls
+for a key return that key's unique symbol. Registry insertion can therefore
+move with this initializer without changing observable JS behavior. The pure
+verdict records the exact native-operation input reference; the array-content
+collector consumes the same checked site instead of adding an opaque frontier.
+This conclusion does not extend to a merely primitive-valued expression:
+evaluating it or converting its result may throw. It also assumes the ordinary
+ECMAScript intrinsic behavior under the author premise, not host access to
+the internal registry.
 
 ## Native `Proxy` construction
 
 `new Proxy(target, handler)` is admitted only when the global `Proxy` name is
 unshadowed, there are exactly two arguments, neither is spread, both
 arguments are syntactically fresh object literals, and normal expression
-classification proves evaluating both literals pure. This uses the
-`PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS` table and the derived
-`SHADOW_TRACKED_GLOBALS` census. It does not admit arbitrary object-valued
+classification proves evaluating both literals pure. This is the `Proxy` row
+(`Throws::UnlessObjects` on both operands) and the shadowing of
+`builtins::GLOBALS`. It does not admit arbitrary object-valued
 bindings, arrays, missing arguments, or extra arguments.
 
 ECMA-262 §28.2.1.1 delegates construction to `ProxyCreate`.
@@ -148,47 +661,70 @@ and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-
 ## Imported primitive coercion timing
 
 The synchronous-effect interpreter can omit callback promotion for implicit
-coercion of an exact direct imported binding when the provider proves that all
-its possible values are primitive. The canonical shallow analysis recognizes
-string, numeric, boolean, null, and BigInt literals in top-level `const` or
-single-declaration `var` bindings, direct named export aliases, and literal or
-binding default exports. A `var` cell can also contain its hoisted `undefined`;
-that value cannot execute a conversion callback either.
+coercion of an exact named/default imported binding when the provider proves
+that every value read from the export is primitive; the importer receives the
+export's primitive types. The canonical shallow analysis recognizes primitive
+literals, untagged templates, unary/update and non-logical binary expressions
+that return a primitive when they complete, and the final value of a sequence.
+Conditional and logical expressions qualify only when every possible returned
+value is primitive. A `var` cell can also contain its hoisted `undefined`.
 
-The provider must be ESM without CommonJS interop, direct eval, or `with` anywhere
-in its body, including deferred functions. A whole-module hygienic declaration
-and write census rejects duplicate declarations, assignment/update/loop writes,
-and writes in closures. `let`, opaque initializers, local value-copy aliases,
-reexports, imported initializers, namespace properties, and vendor-affected
-providers remain opaque. The cross-module resolver projects only direct named
-or default imports; a shadowing local binding does not inherit the fact.
+Stable top-level `const` or `var` bindings can copy primitive values through
+local aliases, named/default imports, and named/default re-exports. Local
+binding dependencies use the hygienic declaration/write census; cross-module
+dependencies use the artifact import resolver and a seedless fixedpoint. Every
+dependency must resolve to a proven primitive export, so an unsupported alias
+cycle remains unknown. The provider must be ESM without an own CommonJS export
+surface, direct `eval`, or `with` anywhere in its body, including deferred
+functions. The separate full CommonJS-interop fact still includes request-only
+host loaders and continues to guard generic importer-reentry analysis; those
+requests do not invalidate the primitive type of an explicit ESM binding.
+Primitive facts only project through artifact imports and re-exports that
+resolve to the target chunk's entry file. Duplicate declarations,
+assignment/update/loop writes, writes in closures, `let`, opaque initializers,
+and namespace properties remain conservative; a vendor-swapped provider's
+bundled body counts (SPEC.md § Vendor swap equivalence). A shadowing local
+binding does not inherit an import's fact.
 
-This is an inferred callback-timing fact, separate from purity and author
-assertions. It does not remove eager binding reads, relax live-binding or TDZ
-constraints, classify the operator as pure, fold source expressions, or suppress
-runtime exceptions such as mixed BigInt/Number arithmetic. Other protocols and
-ordinary opaque calls retain their existing behavior. `imported_primitive_test`
-pins split acceptance and Node output, unchanged imported reads and impure
-classification, conservative provider-write/dynamic-scope controls, and runtime
-throws.
+These types are a purity fact under kind-precise operands. A coercion of
+primitives runs no user code, so the only remaining effect is a throw, and the
+types gate exactly those: `ToNumber` and `ToString` of a Symbol (numeric
+operators, templates, string concatenation), a BigInt combined arithmetically
+with another numeric kind, unary `+` and `>>>` on a BigInt, and every BigInt
+operation whose operand values the types do not bound: `/` and `%` by `0n` and
+`**` with a negative exponent throw a RangeError, and an operation that can
+grow a BigInt (`+`, `-`, `*`, `**`, shifts, unary `-` and `~`) can exceed the
+engine's size limit. Only comparisons, equality, bitwise `&`/`|`/`^` and
+string concatenation resolve on BigInt operands. The
+statement's purity resolves a coercion only when every operand's possible
+types make that operation non-throwing (`primitive::binary_throws` for binary
+operators); an operand known only to be primitive does not resolve. Evaluating
+the operator's own sub-expressions keeps its effects. The binding read stays a
+read: eager binding reads, live-binding and TDZ constraints are unchanged, so a
+read before the provider's initializer is still ordered as a throwing read.
+Nothing is folded. `imported_primitive_test` pins split acceptance, Node
+output, purity, the throwing BigInt/Symbol controls, and conservative
+provider-write/dynamic-scope controls.
 
 ## Immutable Symbol computed keys
 
-Chunk-top `const` values made by unshadowed `Symbol()` with at most one
-primitive literal argument, and immutable aliases of those values, are safe
-computed property keys. `ToPropertyKey` returns a Symbol unchanged. The
-declaration's evaluation effects remain classified separately. Recognized
-direct writes to `Symbol` and static property/descriptor writes named
-`Symbol` disable this value proof; other mutation of built-in intrinsics
-remains under A11's author-audited integrity assumption.
-These bindings stay outside the result-primitive set used by string
-interpolation and numeric/string coercion: `ToString(Symbol)` throws.
-`let`/`var`, shadowed `Symbol`, spread or uncertain arguments, and locally
-shadowed key bindings keep the conservative classification.
+Chunk-top `const` bindings whose primitive type is Symbol are safe computed
+property keys: `ToPropertyKey` returns a Symbol unchanged. The type comes from
+the `%Symbol%` row of `facts/abstract_domain/builtins.rs` for an unshadowed
+callee with at most one spread-free argument proven primitive, or from an
+immutable alias of such a binding. The declaration's evaluation effects remain
+classified separately. Recognized direct writes to `Symbol` and static
+property/descriptor writes named `Symbol` disable the row; other mutation of built-in intrinsics remains under
+A11's author-audited integrity assumption. These bindings stay outside the
+result-primitive set used by string interpolation and numeric/string
+coercion: `ToString(Symbol)` throws. `let`/`var`, shadowed `Symbol`, spread or
+uncertain arguments, and locally shadowed key bindings keep the conservative
+classification.
 
 ## `String.raw` tagged templates
 
-`String.raw` tagged templates are admitted only when the tag is exactly the
+`String.raw` tagged templates (the `String.raw` row, `Invocation::Tag`) are
+admitted only when the tag is exactly the
 non-shadowed global `String.raw` (not computed access) and every substitution
 is both pure and statically primitive-valued. With no substitutions the
 condition is vacuous. ECMA-262 §22.1.2.4 (`String.raw`) applies `ToString` to
@@ -198,7 +734,7 @@ coercing binary operators. ECMA-262 §13.2.8.4 (`GetTemplateObject`) creates
 and caches the template object from the literal's cooked/raw strings; under
 the design's A11 intrinsic-integrity assumption, this built-in machinery
 introduces no user-observable effect. The global-binding shadowing checks
-match other whitelist entries.
+match other rows.
 
 Both directions are pinned in
 `string_raw_tagged_templates_require_global_tag_and_primitive_substitutions`:
@@ -224,7 +760,12 @@ item. The standard Array iterator reads the indexed own data properties of the
 fresh literal, and `Set.prototype.add` stores the values using SameValueZero
 without coercing them or invoking callbacks. The reference rules ensure the
 array cannot have been mutated, published, or given an own iterator override
-before construction. See [Set construction and `Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set-constructor),
+before construction. The proof also requires the shared intrinsic-write
+census to find no visible in-chunk mutation of the global `Set` family,
+`Array` family, global object, or dynamic scope. This keeps a replaced
+`Set.prototype.add` and `Array.prototype[Symbol.iterator]` observable even
+when the iterable itself is fresh and primitive-valued. Pollution outside the
+analyzed chunk remains covered by A11. See [Set construction and `Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set-constructor),
 [`Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set.prototype.add),
 and the [Array iterator](https://tc39.es/ecma262/2024/multipage/indexed-collections.html#sec-array.prototype-@@iterator).
 
@@ -246,21 +787,53 @@ mutated or escaped tables remain conservative.
 
 ## Retained dense-array iteration effects
 
-The synchronous-effects executor models direct static `forEach`, `filter`, and
-`map` calls with one callback and no spread or `thisArg`. This is an effect
-model, not a purity admission: each known synchronous callback executes in the
-existing bounded abstract invocation engine with the retained element value,
-a primitive index, and the source array. Its ordinary reads, writes, calls,
-coercions, and publication effects remain observable. Empty arrays do not
-invoke the callback. `filter` conservatively retains every element; its
-subsequent indexes remain unknown primitives.
+Direct `binding.push(...)` can suppress synchronous callback promotion when
+the current binding is one untainted dense ordinary array and every non-spread
+argument is a retained primitive. It reuses the same Array/Object/global
+native-integrity guard as iteration. Under that guard, the
+[push algorithm](https://tc39.es/ecma262/2025/multipage/indexed-collections.html#sec-array.prototype.push)
+reads the array's own length and appends through ordinary data writes without
+intercepting accessors or calling stored functions. A11 still applies to hidden
+native-alias paths. This supplies no purity, throw-freedom or return-value
+claim. The existing heap-ordering analysis remains in force.
+
+The push invalidates precise array state and advances the invocation-cache
+revision while preserving the existing containment graph. Later operations
+must take conservative effects, including promoting retained callbacks through
+opaque consumers; they cannot reuse a pre-push iteration result. Tests cover
+visible intrinsic changes, own-method mutation, argument getters, escapes,
+retained callbacks and reads after mutation.
+
+The synchronous-effects executor models direct static calls of the
+`ITERATION_ROWS` methods in `facts/abstract_domain/builtins.rs` (`forEach`,
+`map`, `filter`, `flatMap`, `some`, `every`, `find`, `findIndex`, `reduce`)
+with one callback, no spread and no `thisArg`; `reduce` may add an initial
+value. This is an effect model, not a purity admission: each known synchronous
+callback executes in the existing bounded abstract invocation engine with the
+retained element value, a primitive index, and the source array, after the
+accumulator for `reduce`. Its ordinary reads, writes, calls, coercions, and
+publication effects remain observable. Empty arrays do not invoke the callback.
+`filter` conservatively retains every element; its subsequent indexes remain
+unknown primitives. Methods that may stop early still invoke the callback for
+every element; the executor's state only joins, so the extra invocations
+over-approximate. `flatMap` spreads a callback result only when it is one
+untainted dense array; otherwise the result keeps the values as unordered
+contents and is tainted. Each callback result a fresh array retains must be a
+primitive, a tracked function, or an untainted retained ordinary or dense array
+object. `map` also retains an instance capability as unknown contents after a
+completed callback, revoking exact slots and primitive-array receipts before
+another callback runs. Other unrepresentable results use conservative effects.
 
 The source must resolve at the current prefix to one untainted dense ordinary
-array. Elements must be primitives, retained ordinary data objects, or tracked
-function values. Every iteration recertifies the source and element identities;
-mutation, unsupported member access, implicit `arguments`, unsupported callback
-parameters, or budget exhaustion uses conservative whole effects. Array
-identity, element containment, publication, and property writes use the same
+array. Elements must be primitives, retained ordinary data objects, tracked
+function values, or checked local base-class constructions. The last category
+proves a class kind, not allocation identity: arbitrary member projections
+retain possible callbacks but are not certified receivers. Class, receiver,
+array protocol and known member-read effects must remain valid. Every iteration
+recertifies the source and element values; mutation, unsupported member access,
+implicit `arguments`, unsupported callback parameters, or budget exhaustion
+uses conservative whole effects. Array identity, element containment,
+publication, and property writes use the same
 object-origin and taint lanes as other values. Results from repeated evaluations
 of one call site join monotonically, including missing slots. Complete call
 spans distinguish nested calls with the same start position.
@@ -271,9 +844,11 @@ functions. Visible Array/Object/global intrinsic mutation, constructor capabilit
 mutation/publication, custom iterators, species, methods, getters, holes, proxies,
 and ambiguous sources prevent this proof. Callback effects can themselves
 invalidate it. This follows the standard algorithms for
-[forEach](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.foreach),
-[filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter),
-and [map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map).
+[forEach](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.foreach)
+and each row's cited section. They read `length` once, then visit indices in
+order through `HasProperty` and `Get`, which on an own dense data element run
+no user code; `flatMap` also applies `IsArray`, `length` and index reads to an
+array callback result.
 
 Within a certified iteration callback, a complete set of simple member
 assignments can preserve a separate fresh ordinary data receiver. Every key and
@@ -311,11 +886,120 @@ monotonically invalidates that copy site. Unsupported object spreads preserve
 possible getter effects during the callback invocation, even when no result is
 consumed. General object spread and accessor execution stay conservative.
 
+## Settled heap taint
+
+The synchronous interpreter records observed escape to unknown code in
+`tainted_objects`. Before statement _n_, an object written through an
+unproven receiver, passed to unknown code, returned to it, or reached by
+`Object.defineProperty`, `Object.setPrototypeOf`, `Reflect` or a `Proxy` is
+tainted at `Prefix(n)`. Taint follows stored references: a tainted container
+taints what it holds. A proven Map construction taints its entries because
+the abstract Map does not retain their identities. A callback the interpreter
+runs on behalf of unknown code taints what it passes onward and returns.
+
+Code the interpreter does not run, the rest of an incomplete statement or a
+body a bounded fallback summarizes, may mutate anything the statement or that
+body reaches. Those objects, and what they and the bodies they hold reach,
+join `unsettled_objects`. This records possible mutation or escape in skipped
+code without claiming an observed escape. For ordinary-object allocations,
+including dense arrays, both sets invalidate prefix property values, ordinary
+descriptor and prototype proofs, and dense-array admission.
+Adding unsettled objects advances the prefix revision so invocation memos cannot
+reuse an earlier property proof.
+
+Invalidation also occurs inside one source statement or callable body: a
+transfer that skips effects invalidates its reached values before the next
+flattened operation. Earlier incompleteness stays in the cumulative outcome,
+but does not make a later modeled transfer invalidate its inputs. The canonical
+index retains explicit opaque-operation events for tagged invocation, update,
+`with` scope entry and unsupported callee forms. These events invalidate the
+operand, environment and owner-read roots at the skipped operation. Optional
+calls and spread calls/constructions retain their existing typed transfers;
+their owner opacity flags alone do not prove an earlier skipped mutation.
+
+A later read from an unsettled or tainted object, or an unknown receiver,
+returns Top and records a global `member_read` precision loss. It also promotes
+possible getter effects from available source owners and
+retained callbacks at that read, including a method's callee lookup. Promoted
+rebinds and reached objects invalidate state before the next operation. Merely
+returning Top would miss a getter's synchronous effects: skipped code can call
+`Object.defineProperty` on the object or change its prototype while preserving
+every intrinsic identity. Neither A11 nor `intrinsics_never_written` forbids
+those ordinary-object mutations. `no_accessor_install_callables` covers selected
+computed calls only, so it supplies no general exemption here.
+
+For a still-settled receiver with a known but unsupported member, its retained
+member and applied getter capabilities supply the effects before the receiver
+is tainted. Losing precision on that read does not by itself prove an arbitrary
+getter was installed beforehand. Exact member values are unavailable after
+taint; this effect capture does not exempt them from the settlement check.
+
+Local initializers are currently pre-evaluated to retain capabilities. At a
+skipped operation, their aliases retain those capabilities and gain Top; an old
+primitive value cannot certify a later read after skipped code replaced it with
+a getter-bearing object. Cumulative outcome completeness preserves earlier
+losses while each operation's own completeness controls this invalidation.
+
+A proven silent primitive array `push` has a narrower successor: contents become
+unknown, while its accessor and prototype behavior remains settled. Exact index,
+length, enumeration and descriptor snapshots and dense iteration are refused;
+later primitive pushes can still use their separate callback-silence proof.
+This state is monotone and advances the prefix revision only when first added,
+so repeated abstract evaluation cannot append fictitious exact slots.
+
+The implicit receiver of a known local method need not be tainted when its
+canonical callable has no calls, opacity, generator behavior or `arguments`
+access, and no callable in its source owner captures `this` or a meta property.
+This narrow proof concerns only that unused input capability. Ordinary explicit
+binding effects still execute; any implicit capture retains receiver taint.
+
+A direct unshadowed, undeclared and unreassigned global root can reenter through
+the tracked exported/escaped callback pool without acquiring arbitrary private
+getter owners. This narrower reach applies only before uncertain execution,
+without dynamic scope or a concrete ordinary-object receiver. Any actual
+incomplete transfer widens the execution state and disables the exemption.
+Local and derived Top values retain the broad fallback: skipped code can have
+created a private getter-bearing graph whose identity was lost.
+
+This settlement model covers the interpreter's `Alloc(Object)` values. Native
+Sets, classes and instances retain their separate taint and exposure models;
+`unsettled_objects` supplies no settlement proof for those value carriers.
+
+The existing closed-enum read certificate has a stronger lifetime guarantee:
+`ChunkHeap::plain_data_bindings` requires every denoted allocation to remain
+private and clean with no binding rebind. Combined with the checked
+parameter-mutation initializer, it certifies the enum's own primitive fields
+even when initializer execution conservatively tainted the allocation. A later
+member write or publication, including a spread-call argument, removes that
+`PlainData` certificate. This is distinct from initial `plain_data_objects`
+syntax, which alone never exempts an unsettled object.
+
+The incomplete statement's global reach preserves its own ordering constraints;
+it does not prove a later property's value or descriptor. The synthetic CLI
+controls in `e2e/synchronous_precision_report_test.rs` cover reads after skipped
+mutations and an unrelated object that remains settled.
+`facts/at_init_fallback_tests.rs` pins the skipped-code routes against plain-array
+element settlement.
+
+## Plain-array at-init fallback
+
+An incomplete statement's at-init fallback skips a plain-array binding it
+iterates only through `forEach`/`map`/`filter` with call-free callbacks that
+run no user code on the elements (`facts/at_init_fallback.rs`). Primitive
+elements are silent under A11. Object elements are admitted when, at the
+statement's program point, every element is an untainted plain-data object
+literal with static keys, the chain is the statement's only mention of the
+binding, and no other binding the statement reads reaches an element: then a
+static read of a key every element holds a primitive under as an own property
+runs no accessor and yields a primitive, which any use converts silently. A
+key some element lacks would fall through to `%Object.prototype%`; such reads
+are not admitted.
+
 ## Callback storage through mapped `Object.fromEntries`
 
 Synchronous callback analysis has a separate, narrow storage proof for
 `Object.fromEntries(entries.map(entry => [entry.key, entry]))`. It is not a
-purity-whitelist entry. The call is skipped as a callback effect only when the
+purity row. The call is skipped as a callback effect only when the
 source is a chunk-top `const` binding admitted by the existing plain-array
 proof and, at the current prefix, resolves to one fresh dense array of fresh
 ordinary data objects. Each selected key must be exactly one own static data
@@ -369,35 +1053,100 @@ object, or an uncertain argument. `fresh_freeze_callback_timing_test` checks a
 split accepted after the proof, retained callback invocation, and early reads
 through both an effectful argument and a Proxy trap.
 
-## `PURE_STATIC_PROPS` — disposal symbols
+## Intrinsic data properties — disposal symbols
 
 `Symbol.dispose` and `Symbol.asyncDispose` are well-known Symbol values, just
 like `Symbol.iterator`. ECMA-262 §20.4.2.1 and §20.4.2.3 specify each as a
 non-writable, non-configurable own data property of the intrinsic `Symbol`
 constructor. Under A11, reading either property executes no user code and
 returns a primitive Symbol suitable for a computed class method key. A
-shadowed `Symbol` receiver still fails the whitelist check. See the
+shadowed `Symbol` receiver still fails the table check. See the
 [Symbol constructor specification](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-properties-of-the-symbol-constructor).
 
-## `PURE_STATIC_FUNCTION_REFS` — reads vs calls
+The canonical execution index supplies eager member-read candidates, including
+computed class keys, to the shared native own-data proof. The proof requires
+both the global binding and its exact static slot to be intact or asserted at
+that site. Heap collection consumes only that lookup certificate and still
+visits its operands; static initializers keep their own effects. The executor
+uses the same slot obligations, and purity records a failed lookup obligation
+when the slots are unproved. No purity verdict for a whole class discharges a
+heap frontier.
 
-This table whitelists static-property _reads_ of function-valued built-ins
+When the native census cannot establish those slots, an audited
+`symbol_well_known_class_keys` input may select one direct top-level simple
+class-variable initializer. It certifies only eager ordinary computed method
+keys that are exactly `Symbol.asyncIterator`, `Symbol.asyncDispose` or
+`Symbol.dispose`. The original global Symbol data binding and selected own
+data property must hold at every such read in every emitted initialization
+schedule. The canonical declaration shape excludes inheritance, decorators,
+static blocks, computed fields/accessors, aliases and wrapped keys. Other
+computed keys reject the input. Known writes to required slots in any analyzed
+chunk reject it, and the audited parser-input digest remains compulsory.
+Fresh and restored validation install separate exact-read axioms and records;
+purity, callback timing and heap collection consume the same own-data proof.
+Static field initializers and deferred instance code retain their normal
+effects. No class shape, whole-class purity or heap-locality premise is added.
+
+`symbol_primitive_class_keys` is a separate final-read premise for the same
+three names and direct class shape. It promises a data binding for the global
+Symbol read, an ordinary non-Proxy receiver, and a primitive-valued own data
+property at every selected site in
+every admitted schedule. It permits polyfilled Symbol values, and the abstract
+result is an unknown primitive rather than a known original Symbol value.
+The capability never enters native slot integrity or authorizes other reads
+or calls. Original-identity inputs retain their stricter known-write policy.
+
+The only eligible known selected-slot write is an exact top-level
+`if (typeof Symbol.key !=/!== "symbol") try { Symbol.key = Symbol.for("Symbol.key"); } catch {}`
+shape, with matching bare unshadowed receiver/key/string and no additional
+guarded work, alternate, catch binding, nonempty catch or finally. Canonical
+source AST facts supply eligibility, and every analyzed chunk applies the same
+check. All other known selected-slot writes and global Symbol replacements
+reject the premise. The raw write census, guard, Symbol.for call,
+assignment/setter and catch remain ordinary; no Symbol.for identity or
+successful-installation proof is inferred. The author must still justify
+primitive own-data reads in every admitted schedule.
+
+Excluding getter and key-coercion callbacks does not make a mutable read
+constant. Each selected read retains an opaque external-heap observation.
+Its required saved `observes_external_heap` fact propagates with heap effects,
+and the graph scans the whole chunk before emitting order so preceding opaque
+writers are retained even without tracked source allocations. Deferred
+observations conservatively seed the same early liveness. Initializer
+completion cannot discard this obligation: external storage has no unique
+eager allocation birth. Heap order, static initializer effects, deferred code
+and all whole-owner obligations remain independent of the callback refinement.
+
+## Function-valued data properties — reads vs calls
+
+`DATA_PROPERTIES` lists static-property _reads_ of function-valued built-ins
 (`const define = Object.defineProperty;`). Reading such a property fires no
-getter per ECMA-262, so the read itself is pure. The **call** of the
-resolved value remains subject to the `PURE_STATIC_CALLS` contract above:
-call shapes that mutate, fire iterators, fire user getters, or invoke proxy
-traps must not be added to `PURE_STATIC_CALLS` regardless of whether the
-read appears here.
+getter per ECMA-262, so the read itself is pure. The **call** of the resolved
+value is summarized only by its row, if any: a function with no row, or whose
+row constrains its operands, stays unknown on arbitrary arguments.
+`function_valued_property_calls_remain_unknown` pins that direction for every
+function-valued entry, so a read entry is never mistaken for a call
+admission.
 
-Every entry lands with both directions pinned:
+## Global-object member call targets
 
-- a positive `static_function_ref_*_alias_is_pure` test (`Receiver.method`
-  classifies as `Pure`), and
-- a negative `static_function_ref_*_calls_remain_unknown` test
-  (`Receiver.method(args)` classifies as `Unknown`).
+A member read whose abstract receiver is the global object records a
+global-property read but does not establish that the slot contains any
+particular function from `global_escaped_callbacks`. Returning each escaped
+function as an exact lookup candidate would turn a possible callback identity
+into an observed call and can make an unrelated binding timeline look like a
+known conflict. The member result stays `Top`; an opaque call through it still
+uses the existing possible-callback pool and tags those callback effects with
+`opaque_callback_invocation`. `callback_values(Top)` also keeps escaped callback
+reach available to existing call, construction, member and publication paths.
 
-The pairing prevents a future maintainer from misreading a read-pure entry
-as call-pure and promoting it into `PURE_STATIC_CALLS`.
+An exact function candidate supplied by another value-flow branch remains an
+exact call candidate when a callee union also contains `Top`. Its source-backed
+effects stay observed; only the opaque alternative contributes possible-call
+fallback. The focused commuting-statements regression checks that mixed case,
+along with direct calls and known own-data methods. The known getter control
+retains its pre-existing `escaped_callback_closure` provenance; this lookup
+change neither adds nor removes getter modeling.
 
 ## Declared purity — spec trust contracts
 
@@ -433,6 +1182,62 @@ remain graph dependencies, so this annotation does not assert that callbacks
 are deferred or skip their ordering constraints. The materializer rejects this
 annotation for imports, functions, classes, destructuring declarations,
 declarations without an initializer, and ambiguous multiple initialized sites.
+
+`initializer_binding_effects: "source_only"` is an independent lexical-effect
+contract for one selected direct top-level simple variable initializer. During
+its dynamic evaluation, including calls, getters, setters, and coercions, the
+initializer may not read or rebind this chunk's top-level lexical bindings
+beyond its syntactic eager-read and rebind footprint. The assertion follows the
+canonical per-declarator source-unit split: a comma-list sibling initializer
+and other statement work are outside the selected binding's assertion. A
+source-backed read or rebind beyond the asserted footprint rejects it.
+For that initializer, the assertion completes dynamic lexical read/rebind
+coverage while preserving its syntax-derived dependencies.
+
+`initializer_call_effect_inputs` is a separate exact AUTHOR premise for one
+direct imported-call initializer with one fresh anonymous ordinary function
+argument. Its required `resolved_member: { module, name }` reference identifies
+an existing logical-module owner in the importer chunk. The joint selector
+solve supplies the actual declaration, which remains subject to the exact
+initializer-shape checks below. It covers the invoked provider operation's
+global-property,
+general-heap and host-effect domains under an audited stable protocol and
+provider-slot lifetime: only fresh per-call allocations may be written, and
+no mutable application/global/host state may be read. It does not infer that
+promise from `pure_exports`, callback factory evidence, or heap locality.
+The original provider and importer parser bytes are digest-bound; a bundled
+partial replacement additionally requires the exact vendor mapping and a
+separately captured effective bundle digest. Static provider initialization
+must precede the importer without reentry. Source-known writes to identified
+module/global bindings in the already prepared original provider callable
+and uniquely resolved direct local helpers contradict the assertion;
+unresolved helper/alias behavior and the effective replacement remain the
+author's exact-byte audit obligations. This negative check is not an inferred
+absence of effects. Callee/argument evaluation,
+lexical effects, abrupt paths, callback timing and retention, result shape,
+and later use remain independent. The normal root can consume the operation
+domains only after separate `initializer_purity: pure` and settled ordered
+execution evidence. See SPEC § Exact initializer call effect inputs.
+At the selected ordered root, existing callback-factory evidence may transfer
+an opaque fresh carrier from the actual single function argument. It is a
+separate result and callback-retention premise, not a consequence of the
+operation-domain assertion or `pure_exports`. The selected initializer also
+needs its own `initializer_purity: pure` assertion to exclude provider throws;
+known operand throws, mixed/unknown callees and later callback use remain
+conservative. A source-known original provider write still contradicts the
+operation input before any carrier transfer can be consumed.
+For this exact selected root, creating the fresh function argument has no
+effect from syntax in its deferred body. An opaque callback body therefore
+does not make the creation step opaque. The existing activation and captured
+cell checks still apply, and invocation or escape of the retained callback
+continues through the ordinary conservative transfer.
+
+This does not assert purity or freedom from throws, and it does not complete
+coverage of shared-heap effects, foreign registry or configuration access,
+global-object or host effects, result shape, or callbacks retained for later
+use. Those effects remain subject to ordinary analysis. Omission makes no
+assertion. Logical-module `annotations:` and `chunk_renames.annotations:` use
+the same typed field.
 
 When the annotated binding is selected in an analyzed defining chunk and
 exported, the same author-trusted `pure_new` contract applies to each
@@ -497,6 +1302,14 @@ before discarding the value, so calls, property reads, computed keys, and other
 non-literal operands remain excluded; see the [ECMAScript void operator](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-void-operator).
 An ordinary getter's body is deferred and is not evaluated by construction.
 
+The prepared canonical native index validates these field constructor identities
+before the class certificate reaches purity or synchronous execution. It rejects
+shadowed/replaced bindings, dynamic scopes and recognized writes to the native
+family or global object, including mutations supplied by the existing
+whole-program native write census. A11 remains the external integrity
+premise; source-visible checks strengthen this composed proof without making
+purity catalogue admissions unconditional under native replacement.
+
 Purity requires an exact direct top-level `new` initializer after the class
 declaration and a unique class origin in monotone whole-chunk value flow.
 Unknown, rebound, or shadowed alternatives fail this check. This preserves
@@ -514,8 +1327,45 @@ install private fields with PrivateFieldAdd and public fields with
 CreateDataPropertyOrThrow, without consulting an inherited setter.
 The interpreter still tracks retained callbacks and defers later methods.
 The certificate does not prove later methods or field callbacks pure.
+
+The array-ordering analysis additionally requires a distinct heap capability.
+Admitted initializers only install fresh instance state; a native field requires
+an explicit fresh-allocation model under the same guarded native identity.
+Only a certified construction site's own opaque heap effect and body promotion
+are omitted. Callee/argument evaluation and every other call site still
+contribute their effects, including another call to the same binding within
+that statement. Deferred captures stay available for later calls and property
+accesses. Binding initialization and class TDZ constraints remain independent.
+This does not grant heap locality to arbitrary pure or synchronously complete
+calls, or to other native models.
 Direct `eval` or `with` anywhere in the chunk disables the certificate, using
 the same dynamic-scope scan as the shared Set-iterable proof.
+
+## Property absence for checked private constructors
+
+Explicit private constructor models require each assigned field to be absent
+from the intrinsic Object prototype. Reading a missing literal input/result
+property uses the same property-specific premise. Absence is stronger than
+absence of getters: an inherited data value can retain callbacks that the
+current argument-only instance model does not represent. The proof does not
+admit inherited data values, accessors, or standard Object prototype properties.
+
+The canonical whole-program index retains property keys independently of
+native-call family integrity. A known write to another name does not block this
+premise; native call guards keep their existing family checks. Unproved member
+writers, including deferred and post-await bodies, block their possible keys.
+Canonical fresh-receiver certificates and eligible class constructor `this`
+writes are excluded. Derived public fields have no fresh-this guarantee because
+`super` can return a native object. Unknown keys, descriptor/prototype operations,
+dynamic scopes and escaped native capabilities block every property. Native
+capability containment includes records, callable captures and class fields;
+it is separate from receiver identity. Key evidence depending on replaced
+natives is widened before the property proof runs. A11 remains the external
+host-integrity premise; these checks do not prove arbitrary foreign code safe.
+
+The proof changes synchronous callback reachability only. It preserves ordinary
+writer effects, class/input privacy, prefix availability, exposure and alias
+checks. Failure retains the existing conservative execution path.
 
 ## Fresh local record field writes
 
@@ -536,6 +1386,21 @@ callback-effect paths.
 
 ## Audited callback-factory exports
 
+The analyzer also infers a narrower source-derived timing fact for a directly
+exported, stable function declaration or definite top-level function initializer
+that only returns a fresh zero-argument function. The outer function may have
+ordinary identifier parameters, but the admitted importer call supplies exactly
+one inline callback; all other parameters are omitted. The returned function
+may read those parameters and its own locals, call the first callback, and use
+static own data properties of fresh local objects. The proof rejects outer
+execution, exterior captures, extra nested functions, dynamic property effects,
+and any returned-body call or write that could introduce an unrepresented
+callback root. A top-level initializer must retain a single function identity;
+the fact says nothing about availability before that initializer runs in an
+import cycle. This inference only defers the supplied callback on a successful
+factory return. It does not claim purity, suppress eager import evaluation,
+remove possible throws, or relax the author assertions below.
+
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
 `callback_factory_members` are not purity annotations. They assert that a call
 to the named export or static namespace member, with one inline function or
@@ -551,6 +1416,27 @@ ordinary property access on both input and result, and prototype integrity.
 The retained input and returned graph must be fresh ordinary callable/plain-object
 graphs with no proxies or accessors at the call. The returned graph may expose
 or invoke the captured callback later.
+Opaque retained callback sets do not prove this input precondition. Only a result
+of the existing source-proved or audited factory contract has composition
+provenance, and unknown exposure or possible mutation revokes it. Member reads
+and invocation do not transfer provenance to their results. This provenance
+changes callback admission only; it cannot establish purity or the absence of
+other effects from a complete synchronous execution outcome.
+
+The shared literal transfer's `CoveredAllocationOnly` judgment has a separate
+whole-source-coverage precondition and closed parameter-access evidence. It is
+not a replacement for the complete effect ledger needed by general execution
+purity. Unsupported expressions, ambient reads and every non-Evaluate runtime
+transfer are opaque. In particular, neither source erasure in ValueExpr nor
+pre-evaluation of local assignments can discharge an external-write or throw
+obligation.
+Strict equality and `void` discard operand values only after composing their
+access judgments and abrupt outcomes. A conditional's test is retained in the
+same recursive lowering; the bounded strict transfer joins terminal value arms
+and admits only when test and arms have covered access. It proves no exact
+truthiness or runtime equality. Effectful/coercing children and unavailable
+bindings cannot acquire an allocation-only certificate through an outer
+operator. General conditionals remain opaque and keep conservative branch reach.
 For a namespace-member contract, the author must audit the provider and every
 caller/runtime path supplying values used by admitted callbacks, establishing
 that listed factory members retain their identities and behavior through the
@@ -595,6 +1481,17 @@ spreads, arrays, and other expression forms remain conservative.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
+The separate `descriptor_copy_factory_exports` contract covers only a
+single-execution direct imported call with a fresh static object literal. Its
+author premise supplies the provider's descriptor-copy/return-only behavior
+and the lifetime identity of the exact `Object` method slots and ordinary
+target prototype. The shared raw write census rejects known contradictory
+slots; opaque writes remain an author obligation, not a whole-`Object` native
+integrity fact. The checked eager-read and assigned-key syntax prevents input
+getters and copied setters from running during registration. Copied getters
+activate on later reads, and opaque use of the result promotes its retained
+graph. The provider call itself remains ordinarily effectful and throwing.
+
 The separate `retained_callback_factory_exports` and
 `retained_callback_factory_members` contracts additionally admit stable named
 local callbacks and explicitly listed callback positions at exact arities.
@@ -621,24 +1518,42 @@ summary. Neither annotation asserts call purity.
 
 ## `ChunkBinding::PlainData`
 
-A chunk-top binding admits as `PlainData` when its declared value is a
-plain object/array literal, and the chunk-wide write scan can prove no
-post-init mutation can install an accessor on the binding's cell.
-Concrete shapes admitted: `const X = <plain literal>`; `let X = <plain
+`PlainData` is a projection of the heap state in
+<../facts/abstract_domain/heap.rs>: a chunk-top binding whose every
+initializer is a plain-data shape, which is never rebound to anything else,
+and whose every denoted allocation is `escape = Private` and `taint = Clean`.
+The state is solved once per chunk, before purity, from value flow and one
+whole-chunk scan. Concrete shapes admitted: `const X = <plain literal>`; `let X = <plain
 literal>` / `var X = <plain literal>` with every chunk-top re-bind
 being another plain literal (whole-object replacement, no in-place
 mutation); the TS-enum-IIFE shape `var X = ((p) => (p.A = "a", …, p))(X
 || {})` whose IIFE produces a plain object by parameter mutation (see
 `is_ts_enum_iife_init_for_binding`).
 
-The closed local constructor-result proof can also use an exact named
-primitive field from that enum object inside a fresh dense array argument.
-This requires one initializer for the binding, the whole-chunk PlainData
-no-write/no-escape proof, execution of that initializer before the read, and
-the ordinary Object prototype integrity guard. Numeric reverse-mapping writes
-can certify their inner named fields; computed or unknown read keys cannot.
-The member read remains an eager dependency and is evaluated normally. Array
-holes and spreads are outside this proof.
+That IIFE shape is a pre-purity admission shape only: it lets the heap scan
+admit the binding and lets the initializer statement itself classify pure,
+both before synchronous execution runs it. What the enum object holds is
+execution state. Interpreting the call fills the fresh receiver's own fields:
+a parameter-mutation initializer (one simple parameter, no calls, returns
+that parameter, every write a primitive under a primitive key into an
+untainted plain-data object literal) records the exact keys and primitive
+types it stores.
+
+An exact named member of such an object is then known at a later statement's
+program point when the binding is `PlainData` (the whole-chunk no-write,
+no-escape proof), no statement but its declaration writes the binding, the
+initializer has run, and every allocation the binding holds there was filled
+that way. The closed local constructor-result proof can use that member inside
+a fresh dense array argument, under the ordinary Object prototype integrity
+guard. A computed property key (an entry key of a keyed builtin row included)
+or a template substitution that is such a member resolves its coercion
+against the member's settled types: `ToPropertyKey` completes on every
+primitive, `ToString` on every primitive but a Symbol. This removes only the
+coercion/reentry concern: member access and key-expression evaluation remain
+ordinary eager effects. Function bodies run at no fixed program point, so their
+coercions do not resolve this way. Computed enum member names, member
+mutation, opaque escape, reflective writes, accessors, and unknown receiver
+forms continue through conservative handling.
 
 Why member reads on PlainData are pure:
 
@@ -651,25 +1566,33 @@ Why member reads on PlainData are pure:
   copies values via `CreateDataPropertyOrThrow` regardless of the
   source's descriptor shape — the result is plain.
 
-- **No post-init accessor installation.** The chunk-wide write scan
-  rejects any member write (`X.k = …`, `X[k] = …`), member update,
-  member delete, or call to `Object.{defineProperty,defineProperties,
-setPrototypeOf,assign}` /
-  `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}` with
-  `X` as first arg. Plain-ident writes whose RHS is not a
-  plain-literal also disqualify.
+- **`Clean`: no post-init write.** A member write (`X.k = …`,
+  `X[k] = …`), member update or member delete through any tracked alias,
+  or through an expression value flow says reaches the allocation, taints
+  it. A data-property write taints too: member reads are reorderable only
+  while nothing writes the object. Reflective writers
+  (`Object.defineProperty`, `Object.setPrototypeOf`, `Reflect.set`, …)
+  take the object as a call argument, which publishes it.
 
-- **No escaping references.** The write scan above is name-based: it
-  only catches mutations spelled through the candidate's own
-  identifier. An alias (`const Y = X; Object.defineProperty(Y, …)`)
-  or any captured reference (call argument, array element, object
-  property value) would defeat it, so the scan also treats every
-  bare candidate `Ident` outside a short list of provably
-  non-capturing read positions (member receiver, spread source,
+- **`Private`: no escaping references.** Every bare reference to a tracked
+  binding publishes its allocations unless it sits in a provably
+  non-capturing read position: member receiver, spread source,
   `typeof`/`!`/`void` operand, `Object.{keys,values,entries,freeze,
 fromEntries}` single argument with `Object` unshadowed, the vetted
-  TS-enum-IIFE argument, `export { X }`) as
-  an escape and disqualifies the candidate.
+  TS-enum-IIFE argument, an author-proven non-escaping argument
+  (`argument_inputs`), a tracked alias declaration, a tracked alias
+  return from a body only analyzed code can call (below), or
+  `export { X }`. A call argument or stored member value also publishes
+  every allocation value flow says it can reach. A method call `X.k(...)`
+  binds `this` to the receiver, so it publishes the allocation unless the
+  literal's own `k` is an arrow, a function that never uses `this`, or a
+  non-function literal, or `k` is not an own key (an inherited intrinsic
+  under A11); an object spread makes every key unknown.
+
+- **Rebinding is a binding fact.** Assigning a tracked binding anything but
+  a plain literal, a nested `var` initializer, or a `for-in`/`for-of`
+  `var` head excludes that binding. An alias rebound elsewhere does not
+  change the allocation it used to hold.
 
   **Residual assumption for `export { X }`:** consumers in other
   chunks are assumed not to install accessors on an exported PlainData
@@ -677,9 +1600,18 @@ fromEntries}` single argument with `Object` unshadowed, the vetted
   direct literal identities through local assignments, function
   parameters, returns, and static object properties. A direct
   `return X` or concise `() => X` is admitted only when the literal
-  identity is tracked; the scan checks aliases and disqualifies `X`
-  when one is passed to an unknown consumer or used at a mutation
-  site. Other return shapes remain escapes.
+  identity is tracked and the enclosing body is called only by analyzed
+  code: a chunk-top `function f` or `const f =` anonymous function or
+  arrow, declared once, never reassigned and referenced only as a direct
+  call or `new` callee or in an export, or an anonymous function or arrow
+  that is itself the callee. Any other body (`setTimeout(() => X)`, an
+  object method, an accessor, a constructor, a stored callback) can be
+  called by code the scan does not see, which receives `X`; and a
+  non-arrow body mentioning `arguments` can hand itself out through
+  `arguments.callee`. The scan checks the call sites' uses of the result
+  through value flow and disqualifies `X` when one is passed to an unknown
+  consumer or used at a mutation site. Other return shapes remain
+  escapes.
 
 - **Primitive member values do not expose their receiver.** The escape scan
   distinguishes an exact static member read on a chunk-top `const` object
@@ -712,28 +1644,21 @@ config object — including the `let envConfig = {...}` / `envConfig =
 `runtime/environment/env_config.yaml` spec hints in the private downstream repo
 were a workaround for.
 
-## `PURE_OBJECT_CALLS_ON_PLAIN_DATA`
+## `Object` inspection on plain data
 
-Static `Object` methods that are Pure when called with a single
-argument that is structurally a fresh plain-data object/array literal
-(no accessors / methods / `__proto__` / computed keys / spread of
-non-plain-data sources) OR a chunk-top binding that has admitted as
-`ChunkBinding::PlainData`.
-
-The contract is stricter than `PURE_STATIC_CALLS` because every member
-here either invokes `[[Get]]` on own keys (which fires user getters /
-Proxy traps on a general argument) or mutates descriptor state
-(`freeze`). Restricting the argument shape to a fresh plain-data
-receiver — verified syntactically at the call site — closes both
-holes: no own-key access can fire a user accessor (none exist), and
-the mutation in `freeze`'s case targets a value that is not aliased
-through any user-observable channel before the call.
-
-The general-arg form of these calls stays in `PURE_STATIC_FUNCTION_REFS`
-(read-pure, call-unknown), matching the rule that we cannot admit `[[Get]]`
-or descriptor mutation on an arbitrary receiver. New entries need the same
-per-entry ECMA-262 citation as `PURE_STATIC_CALLS`, plus paired tests in
-`purity/classifier_tests.rs`: a positive
+The `Object.{keys,values,entries,freeze,fromEntries}` rows list
+`[[OwnPropertyKeys]]` / `[[GetOwnProperty]]` / `[[Get]]` / `ToObject` (or
+iteration) and, for `freeze`, an integrity write on their operand. Purity
+therefore admits them only on a single argument that is structurally a fresh
+plain-data object/array literal (no accessors / methods / `__proto__` /
+computed keys / spread of non-plain-data sources), a chunk-top binding that
+has admitted as `ChunkBinding::PlainData`, or the namespace facade's fresh
+result. On such a receiver no own-key access can fire a user accessor (none
+exist), and the mutation in `freeze`'s case targets a value that is not
+aliased through any user-observable channel before the call. On an arbitrary
+receiver the calls stay unknown; reading the functions themselves stays pure
+(§ Function-valued data properties). New rows of this kind need paired tests
+in `purity/classifier_tests.rs`: a positive
 `object_<prop>_on_plain_<shape>_classifies_pure` (`Object.<prop>({lit})` is
 Pure) and a negative `object_<prop>_on_<non-plain>_stays_unknown`
 (`Object.<prop>(somefn())` and the opaque-binding form are Unknown).
@@ -741,12 +1666,12 @@ Cycle-breaking behaviour is pinned in <../e2e/object_plain_data_calls_test.rs>.
 
 Soundness per entry:
 
-| Method                                  | ECMA-262 operation and reason it is safe under the receiver gate                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Object.keys(O)`                        | §20.1.2.17: `ToObject(O)` needs no coercion for an object; `EnumerableOwnPropertyNames` uses `[[OwnPropertyKeys]]` and `[[GetOwnProperty]]`. Ordinary plain objects return their own keys and descriptors without user code.                                                                                                                                                      |
-| `Object.values(O)`, `Object.entries(O)` | Like `keys`, then `[[Get]]` for each own key. Every key is a data property on a fresh literal or admitted PlainData binding; `PlainDataWriteScanner` rejects later accessor installation through `Object.defineProperty` or `Object.setPrototypeOf`.                                                                                                                              |
-| `Object.freeze(O)`                      | §20.1.2.6: `SetIntegrityLevel` clears `[[Extensible]]` and makes own descriptors non-configurable (data properties also non-writable), without `[[Get]]` or user code. The mutated literal is fresh, or the admitted PlainData binding has no observable consumer outside the chunk.                                                                                              |
-| `Object.fromEntries(I)`                 | §20.1.2.7: `I[@@iterator]()` uses the built-in iterator only for a fresh, spread-free array. Each entry must be a fresh two-element array with data properties at `[0]` and `[1]` (`is_fresh_entry_array_for_from_entries`). These gates also exclude the observable TypeError for a non-iterable argument. PlainData Object bindings are excluded because they are not iterable. |
+| Method                                  | ECMA-262 operation and reason it is safe under the receiver gate                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Object.keys(O)`                        | §20.1.2.17: `ToObject(O)` needs no coercion for an object; `EnumerableOwnPropertyNames` uses `[[OwnPropertyKeys]]` and `[[GetOwnProperty]]`. Ordinary plain objects return their own keys and descriptors without user code.                                                                                                                                                                                                  |
+| `Object.values(O)`, `Object.entries(O)` | Like `keys`, then `[[Get]]` for each own key. Every key is a data property on a fresh literal or admitted PlainData binding, whose `Private` state excludes later accessor installation through `Object.defineProperty` or `Object.setPrototypeOf`.                                                                                                                                                                           |
+| `Object.freeze(O)`                      | §20.1.2.6: `SetIntegrityLevel` clears `[[Extensible]]` and makes own descriptors non-configurable (data properties also non-writable), without `[[Get]]` or user code. The mutated literal is fresh, or the admitted PlainData binding has no observable consumer outside the chunk.                                                                                                                                          |
+| `Object.fromEntries(I)`                 | §20.1.2.7: `I[@@iterator]()` uses the built-in iterator only for a fresh array (spreads only of fresh arrays). Each entry must be a fresh two-element array with data properties at `[0]` and `[1]`, and each key a safe property key, since `ToPropertyKey` runs on it. These gates also exclude the observable TypeError for a non-iterable argument. PlainData Object bindings are excluded because they are not iterable. |
 
 Out of scope (not admitted; flagged for follow-up review):
 
@@ -759,10 +1684,8 @@ Out of scope (not admitted; flagged for follow-up review):
   Skipped to keep the rule tight; the `assign` path needs its own
   argument-count + result-shape analysis.
 
-- `Object.getOwnPropertyNames(O)` / `getPrototypeOf(O)` /
-  `getOwnPropertyDescriptor(O, k)` — same shape as `keys` but produces
-  a richer return value. Could ride on the same gate in a follow-up;
-  out for v1 to minimize the audit surface.
+- `Object.getPrototypeOf(O)` / `getOwnPropertyDescriptor(O, k)` — richer
+  results and argument-specific behavior remain outside the current gate.
 
 - `Array.from(I[, mapFn])` — sound only when `mapFn` is absent (a
   `mapFn` invokes user code per element). Skipped to avoid the
@@ -771,7 +1694,7 @@ Out of scope (not admitted; flagged for follow-up review):
 ## Host membership nonreentry is separate from purity
 
 `non_reentrant_global_membership` is an explicit root/key host-integrity audit,
-not a builtin whitelist. It narrows callback reentry only for literal-key `in`
+not a builtin row. It narrows callback reentry only for literal-key `in`
 probes on a direct unshadowed `globalThis` or `window`. Key coercion, aliases,
 shadowed roots, effectful receivers and unlisted keys retain fallback. The
 index also rejects recognized root/prototype mutations and global exposure.
@@ -783,3 +1706,49 @@ Source checks cannot establish the complete host or cross-chunk prototype
 surface: its integrity at each probe remains a strong author premise. The
 operator's existing impurity, operand reads/effects and possible throws remain;
 see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership-probes).
+
+## Audited local constructor-factory prototype premises
+
+`retained_record_factory` is a binding-level author assertion, not a purity or
+native-integrity fact. Its bounded admission and proof-use report are specified
+in [SPEC.md](../SPEC.md). The canonical fresh-record call check matters because
+the execution value model can erase assignment targets or sequence prefixes.
+Argument evaluation must run no user code and the stored values must not hide
+an unrepresented callback. An identifier-valued record property is admitted
+only when the binding is initialized and free of dynamic-scope contamination,
+and its value is a primitive literal `const` (one primitive prefix value), one
+source function (stored, not called: retained like an inline callback), or one
+untainted literal array or plain-data object whose current slots are all
+primitive. A shared primitive container holds no callback, and later writes
+through any alias land on the same tracked allocation. Method definitions only
+allocate functions. Template substitutions must be primitive `const`s or
+checked enum reads: `ToString` of an object can call `toString` or
+`Symbol.toPrimitive`, and a Symbol would throw. Spreads stay refused: copying
+reads every own enumerable property, so an accessor or proxy source runs code,
+and the copied keys are not visible to the constructor-read check. The read
+remains part of normal eager execution, so TDZ and dependency ordering stay
+observable.
+Source execution remains essential: nonreentry alone would not justify dropping
+a factory's eager lexical read or a class TDZ. The source-checked constructor
+proof admits only the existing private return-only allocation graph.
+
+Only exact constructor/property and input-object/missing-property pairs are
+author-discharged. Missing reads require actual absence; setter-freedom would
+still admit an inherited callback-valued data property omitted from the retained
+instance graph. Assignments require successful ordinary own data property
+creation, including the absence of inherited interceptors or nonwritable data.
+The ordinary executor still evaluates the selected initializer, wrapper and
+constructors. A typed certificate is minted only when the full return-only
+source proof succeeds and that exact execution completes without unknown calls,
+precision loss or uninitialized reads. Current-owner preparatory proofs keep
+the unchanged classifier verdict. At owner completion, the final projection
+uses the certificate to discharge only that call's impure-callee effect at
+that call span. Earlier-owner proofs, the completed effect frontier, graph
+purity and at-init fallback use this final verdict. Initializer-only purity
+trust still retains its callback fallback roots. Argument and callee effects,
+eager reads and every other classifier purity obligation remain; timing
+completeness alone discharges nothing. The certificate's dependencies, including any captured
+native-integrity evidence, join the resulting purity dependencies; no
+function-body or class-wide purity summary changes. A source
+or runtime fallback does not issue the certificate and retains conservative
+reachability.

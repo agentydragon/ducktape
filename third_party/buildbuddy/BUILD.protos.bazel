@@ -1,7 +1,7 @@
 """BuildBuddy proto definitions (subset for bbapi CLI).
 
 Fetched from github.com/buildbuddy-io/buildbuddy at a pinned commit.
-Only the protos needed by //devinfra/buildbuddy_cli are compiled here.
+Only the protos needed by //devinfra/buildbuddy/bbapi are compiled here.
 """
 
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
@@ -804,6 +804,7 @@ proto_library(
         ":invocation_proto",
         ":iprules_proto",
         ":secrets_proto",
+        ":usage_proto",
         ":user_list_proto",
         ":workflow_proto",
         "@protobuf//:timestamp_proto",
@@ -823,6 +824,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":iprules_go_proto",
         ":secrets_go_proto",
+        ":usage_go_proto",
         ":user_list_go_proto",
         ":workflow_go_proto",
     ],
@@ -910,6 +912,10 @@ proto_library(
     srcs = ["proto/search.proto"],
     deps = [
         ":context_proto",
+        "@kythe_protos//:common_proto",
+        "@kythe_protos//:filetree_proto",
+        "@kythe_protos//:graph_proto",
+        "@kythe_protos//:xref_proto",
     ],
 )
 
@@ -919,6 +925,10 @@ go_proto_library(
     proto = ":search_proto",
     deps = [
         ":context_go_proto",
+        "@kythe_protos//:common_go_proto",
+        "@kythe_protos//:filetree_go_proto",
+        "@kythe_protos//:graph_go_proto",
+        "@kythe_protos//:xref_go_proto",
     ],
 )
 
@@ -967,6 +977,8 @@ proto_library(
     srcs = ["proto/usage.proto"],
     deps = [
         ":context_proto",
+        ":user_id_proto",
+        "@protobuf//:timestamp_proto",
     ],
 )
 
@@ -976,6 +988,7 @@ go_proto_library(
     proto = ":usage_proto",
     deps = [
         ":context_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -1055,7 +1068,40 @@ go_proto_library(
     ],
 )
 
-# ── buildbuddy_service (the full Twirp/gRPC service) ───────────────────
+proto_library(
+    name = "cache_proxy_proto",
+    srcs = ["proto/cache_proxy.proto"],
+    deps = [
+        ":acl_proto",
+        ":context_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "cache_proxy_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy",
+    proto = ":cache_proxy_proto",
+    deps = [
+        ":acl_go_proto",
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "notification_proto",
+    srcs = ["proto/notification.proto"],
+    deps = [":context_proto"],
+)
+
+go_proto_library(
+    name = "notification_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/notification",
+    proto = ":notification_proto",
+    deps = [":context_go_proto"],
+)
+
+# ── buildbuddy_service (the full protolet/gRPC service) ───────────────────
 
 proto_library(
     name = "buildbuddy_service_proto",
@@ -1065,6 +1111,7 @@ proto_library(
         ":auditlog_proto",
         ":bazel_config_proto",
         ":cache_proto",
+        ":cache_proxy_proto",
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
@@ -1074,6 +1121,7 @@ proto_library(
         ":index_proto",
         ":invocation_proto",
         ":iprules_proto",
+        ":notification_proto",
         ":quota_proto",
         ":repo_proto",
         ":resource_proto",
@@ -1103,6 +1151,7 @@ go_proto_library(
         ":auditlog_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
+        ":cache_proxy_go_proto",
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
@@ -1112,6 +1161,7 @@ go_proto_library(
         ":index_go_proto",
         ":invocation_go_proto",
         ":iprules_go_proto",
+        ":notification_go_proto",
         ":quota_go_proto",
         ":repo_go_proto",
         ":resource_go_proto",
@@ -1129,4 +1179,28 @@ go_proto_library(
         ":workspace_go_proto",
         ":zip_go_proto",
     ],
+)
+
+proto_library(
+    name = "api_v1_file_proto",
+    srcs = ["proto/api/v1/file.proto"],
+)
+
+go_proto_library(
+    name = "api_v1_file_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/file",
+    proto = ":api_v1_file_proto",
+)
+
+proto_library(
+    name = "api_v1_invocation_proto",
+    srcs = ["proto/api/v1/invocation.proto"],
+    deps = [":api_v1_file_proto"],
+)
+
+go_proto_library(
+    name = "api_v1_invocation_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/invocation",
+    proto = ":api_v1_invocation_proto",
+    deps = [":api_v1_file_go_proto"],
 )

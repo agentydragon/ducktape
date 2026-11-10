@@ -217,7 +217,7 @@ def fit_private_equity_model(
         tender_observations, prior=config.priors.tender_interval_months_median_prior
     )
     last_tender = max((observation.observed_at for observation in tender_observations), default=None)
-    scale_prior, scale_diagnostics = _estimate_scale_prior(
+    scale_prior = _estimate_scale_prior(
         price_observations, valuation_observations, current_mark=current_mark, priors=config.priors
     )
 
@@ -234,19 +234,6 @@ def fit_private_equity_model(
         tender_price_log_discount_sigma=config.priors.tender_price_log_discount_sigma,
         last_tender_observed_at=last_tender,
         scale_prior=scale_prior,
-        provenance={
-            "observation_count": len(issuer_observations),
-            "price_observation_count": len(price_observations),
-            "valuation_observation_count": len(valuation_observations),
-            "tender_price_observation_count": len(tender_observations),
-            "ppu_mark_observation_count": len(mark_observations),
-            "source_ids": sorted({observation.source_id for observation in issuer_observations}),
-            "empirical_monthly_log_return_mu": empirical_monthly_mu,
-            "empirical_monthly_log_return_sigma": empirical_monthly_sigma,
-            "stock_like_monthly_log_return_mu": config.priors.stock_like_monthly_log_return_mu,
-            "stock_like_monthly_log_return_sigma": config.priors.stock_like_monthly_log_return_sigma,
-            "scale_diagnostics": scale_diagnostics,
-        },
     )
 
 
@@ -331,7 +318,7 @@ def _estimate_scale_prior(
     *,
     current_mark: PriceObservation,
     priors: PrivateEquityTrainingPriors,
-) -> tuple[TrainedPrivateEquityScalePrior, dict[str, float | int]]:
+) -> TrainedPrivateEquityScalePrior:
     if not valuation_observations:
         raise ValueError("private-equity training needs at least one valuation_observation for macro-scale prior")
 
@@ -357,18 +344,10 @@ def _estimate_scale_prior(
     log_share_count = float(np.average(np.asarray(log_share_count_estimates), weights=np.asarray(weights)))
     current_market_cap_usd = current_mark.price_usd_per_share * math.exp(log_share_count)
     soft_cap_market_cap_usd = priors.macro_capacity_reference_usd * priors.macro_capacity_soft_fraction
-    return (
-        TrainedPrivateEquityScalePrior(
-            current_market_cap_usd=current_market_cap_usd,
-            soft_cap_market_cap_usd=soft_cap_market_cap_usd,
-            monthly_log_drift_penalty=priors.macro_capacity_monthly_log_drift_penalty,
-        ),
-        {
-            "valuation_pair_count": len(log_share_count_estimates),
-            "current_market_cap_usd": current_market_cap_usd,
-            "soft_cap_market_cap_usd": soft_cap_market_cap_usd,
-            "macro_capacity_reference_usd": priors.macro_capacity_reference_usd,
-        },
+    return TrainedPrivateEquityScalePrior(
+        current_market_cap_usd=current_market_cap_usd,
+        soft_cap_market_cap_usd=soft_cap_market_cap_usd,
+        monthly_log_drift_penalty=priors.macro_capacity_monthly_log_drift_penalty,
     )
 
 

@@ -69,14 +69,14 @@ py_test(
         "//devinfra/claude/claude_api/hooks/schemas/2.1.105:hook_schemas",
     ],
     deps = [
+        ":json_schema",
         "//:conftest",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:output",
-        "//util:json_schema",
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -96,4 +96,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "json_schema",
+    testonly = True,
+    srcs = ["json_schema.py"],
 )

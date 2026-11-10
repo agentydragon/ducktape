@@ -16,23 +16,44 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/oauth2"
 )
 
-var tokenRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name: "agentplane_mcp_oauth_token_request_duration_seconds",
-	Help: "MCP OAuth discovery and token endpoint request duration",
-}, []string{"operation", "outcome"})
+const tokenRequestDurationMetricName = "agentplane_mcp_oauth_token_request_duration_seconds"
+
+var (
+	tokenRequestOTelDurationOnce sync.Once
+	tokenRequestOTelDuration     metric.Float64Histogram
+)
 
 func observe(operation, outcome string, started time.Time) {
-	tokenRequestDuration.WithLabelValues(operation, outcome).Observe(time.Since(started).Seconds())
+	duration := time.Since(started).Seconds()
+	tokenRequestOTelDurationOnce.Do(func() {
+		instrument, err := otel.Meter("github.com/agentydragon/ducktape/agentplane/action_service/linkage").Float64Histogram(
+			tokenRequestDurationMetricName,
+			metric.WithDescription("MCP OAuth discovery and token endpoint request duration"),
+			metric.WithUnit("s"),
+		)
+		if err != nil {
+			slog.Warn("cannot create OAuth token request duration metric", "error", err)
+			return
+		}
+		tokenRequestOTelDuration = instrument
+	})
+	if tokenRequestOTelDuration != nil {
+		tokenRequestOTelDuration.Record(context.Background(), duration, metric.WithAttributes(
+			attribute.String("operation", operation), attribute.String("outcome", outcome),
+		))
+	}
 }
 
 // Start begins linking an account to the server for the operator, whom the flow records as the table requires: it

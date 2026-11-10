@@ -7,7 +7,13 @@ description: >
 
 You just received rushed/vague instructions from the user.
 
-**STOP. Do NOT execute anything yet.**
+Do not implement the requested change yet.
+
+First, independently research the context needed for an informed readback. For a
+code change, inspect the relevant code, structure, callers, configuration, and
+existing behavior as needed. Use safe read-only operations; do not ask permission
+for this research or skip it merely because the request sounds clear. Scale the
+investigation to the task and report any remaining unknowns.
 
 Paraphrase back your understanding of what was requested:
 
@@ -16,8 +22,6 @@ Paraphrase back your understanding of what was requested:
 - Identify any ambiguities or unknowns
 - State what you plan to do, step by step
 
-You may gather context if needed using safe read-only operations (Read, Grep, Glob, git commands, WebFetch/WebSearch), but skip this if the instructions are already clear.
-
-Do NOT use any state-modifying tools (Edit, Write, MultiEdit, or destructive Bash commands).
+Do not make state-modifying changes while preparing the readback.
 
 Wait for the user to confirm or correct your understanding before proceeding.

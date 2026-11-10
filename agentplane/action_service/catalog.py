@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints,
 
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
+from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
@@ -55,12 +56,13 @@ class McpExecutorBinding(BaseModel):
 
 
 type ExecutorBinding = Annotated[
-    McpExecutorBinding | PodExecutorBinding | OrchestrationExecutorBinding, Field(discriminator="kind")
+    McpExecutorBinding | PodExecutorBinding | OrchestrationExecutorBinding | SessionDelegationExecutorBinding,
+    Field(discriminator="kind"),
 ]
 """Where a group's Actions run. `mcp` reaches a reviewed upstream server; `pod` runs in this
 service, because the caller's own identity is what it acts as and an MCP hop would have to carry
 that assertion over the wire; `orchestration_v1` runs in this service too, because it writes grants
-for that same caller.
+for that same caller; `session_delegation` forwards the admitted caller's verified identity to the owning Session APIs.
 
 A PEP 695 alias and not a bare `Annotated`, so the discriminator survives on the field's own
 annotation: pydantic folds `Annotated` metadata into its `FieldInfo`, where a deployment rendering

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -19,7 +21,7 @@ from airlock.app import create_app
 from airlock.auth import session_cookie_name
 from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
 from airlock.oauth.k8s_client import K8sTokenStore
-from airlock.oauth.provider import GenericOAuth2Provider, TokenData
+from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, TokenData
 from airlock.settings import Settings
 from util.testing.asgi import BoundHTTPServer, bind_http_server
 
@@ -64,12 +66,12 @@ async def http(
         yield http
 
 
-def _operator_cookies(settings: Settings) -> dict[str, str]:
+def _operator_cookies(settings: Settings, subject: str = "operator") -> dict[str, str]:
     session = {
         "user": {
             "issuer": settings.oidc_issuer,
-            "subject": "operator",
-            "username": "operator",
+            "subject": subject,
+            "username": subject,
             "expires_at": time.time() + 3600,
         }
     }
@@ -157,6 +159,80 @@ async def test_api_requires_valid_session(http: httpx.AsyncClient, settings: Set
     assert (await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})).status_code == 401
     http.cookies.update(_operator_cookies(settings))
     assert (await http.get("/api/oauth/providers")).status_code == 200
+
+
+async def test_oauth_callback_keeps_pkce_state_bound_to_operator(
+    monkeypatch: pytest.MonkeyPatch, endpoint: BoundHTTPServer, settings: Settings, mock_k8s_store: MagicMock
+) -> None:
+    monkeypatch.setenv("TEST_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("TEST_CLIENT_SECRET", "test-client-secret")
+    mock_k8s_store.write_token = AsyncMock()
+    token = TokenData(
+        access_token="access-token",
+        refresh_token="refresh-token",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        scope="read",
+    )
+    exchange_calls: list[tuple[str, str | None]] = []
+
+    async def exchange_code(_provider: GenericOAuth2Provider, code: str, code_verifier: str | None = None) -> TokenData:
+        exchange_calls.append((code, code_verifier))
+        return token
+
+    monkeypatch.setattr(GenericOAuth2Provider, "exchange_code", exchange_code)
+
+    oauth = OAuthConfig(
+        target_namespace="airlock-test",
+        providers=[
+            OAuth2ProviderConfig(
+                name="test",
+                display_name="Test Provider",
+                authorize_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                scopes=["read"],
+                refresh_secret=TokenSecretConfig(name="test-refresh"),
+                access_secret=TokenSecretConfig(name="test-access"),
+                use_pkce=True,
+            )
+        ],
+    )
+    settings = settings.model_copy(update={"oauth": oauth})
+
+    app = create_app(settings, include_static=False)
+    async with endpoint.serve(app), httpx.AsyncClient(base_url=endpoint.origin) as http:
+        http.cookies.update(_operator_cookies(settings))
+        first_start = await http.post("/oauth/authorize/test", headers={"Origin": settings.public_base_url})
+        assert first_start.status_code == 303
+        first_params = parse_qs(urlparse(first_start.headers["location"]).query)
+
+        http.cookies.update(_operator_cookies(settings, subject="another-operator"))
+        denied = await http.get("/oauth/callback", params={"code": "auth-code", "state": first_params["state"][0]})
+        assert denied.status_code == 400
+        assert not exchange_calls
+        mock_k8s_store.write_token.assert_not_awaited()
+
+        http.cookies.update(_operator_cookies(settings))
+        start = await http.post("/oauth/authorize/test", headers={"Origin": settings.public_base_url})
+        assert start.status_code == 303
+        authorize_params = parse_qs(urlparse(start.headers["location"]).query)
+        response = await http.get(
+            "/oauth/callback", params={"code": "auth-code", "state": authorize_params["state"][0]}
+        )
+
+    assert response.status_code == 307
+    assert len(exchange_calls) == 1
+    assert exchange_calls[0][0] == "auth-code"
+    verifier = exchange_calls[0][1]
+    assert verifier is not None
+    expected_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    )
+    assert authorize_params["code_challenge"] == [expected_challenge]
+    assert [call.args[0] for call in mock_k8s_store.write_token.await_args_list] == ["test-refresh", "test-access"]
+    assert mock_k8s_store.write_token.await_args_list[0].args[1] == "airlock-test"
+    assert mock_k8s_store.write_token.await_args_list[0].args[2] == token
+    assert mock_k8s_store.write_token.await_args_list[1].args[2] == token
+    assert mock_k8s_store.write_token.await_args_list[1].kwargs["fields"] == ACCESS_TOKEN_FIELDS
 
 
 async def test_mcp_and_tool_approval_routes_are_absent(http: httpx.AsyncClient) -> None:

@@ -23,12 +23,13 @@ from pydantic import BaseModel, ConfigDict
 from cluster.cdk8s import namespaces, opentofu, terraform
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.flux_image_automation_ghcr.image_automation import AUTOMATION_NAME
-from cluster.cdk8s.flux_webhook.chart import WEBHOOK_HOST
+from cluster.cdk8s.flux_image_automation_ghcr import AUTOMATION_NAME
+from cluster.cdk8s.flux_webhook import WEBHOOK_HOST
 from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.platform_sessions import remote as platform_sessions_remote
 from cluster.cdk8s.providers.flux.notification import Receiver, ReceiverResource
 
 NAME = "forgejo-images"
@@ -122,6 +123,12 @@ def chart(app: App) -> Chart:
                     filter=f"req.package.name == '{forgejo_image_automation.package_name(image)}'",
                 )
                 for image in forgejo_image_automation.IMAGES
+            ),
+            *(
+                ReceiverResource.image_repository(
+                    image, namespace=forgejo_image_automation.NAMESPACE, filter=f"req.package.name == '{image}'"
+                )
+                for image in platform_sessions_remote.PROVIDER_IMAGES
             ),
             ReceiverResource.image_update_automation(AUTOMATION_NAME, namespace=forgejo_image_automation.NAMESPACE),
         ],

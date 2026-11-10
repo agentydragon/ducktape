@@ -1,9 +1,10 @@
 # Piraeus block storage
 
 Piraeus (LINSTOR + DRBD) supplies the cluster's local and replicated block
-storage on Talos. One Flux-owned operator and one LINSTOR cluster are declared
-in [`cluster/cdk8s/piraeus.py`](../cdk8s/piraeus.py); every OVH node and the
-OptiPlex run a satellite with an LVM_THIN pool. Node maintenance, evacuation and
+storage on Talos, with NixOS workers Wyrm2 and Rugged also enrolled as satellites.
+One Flux-owned operator and one LINSTOR cluster are declared in
+[`cluster/cdk8s/piraeus.py`](../cdk8s/piraeus.py); every OVH node and the OptiPlex
+run a satellite with an LVM_THIN pool. Node maintenance, evacuation and
 reimaging follow the [node runbook](runbooks/piraeus_node_roll.md).
 
 ## Disk ownership
@@ -23,6 +24,9 @@ device from the by-id path in its per-node satellite configuration
 There is no local-path or Talos user volume on a data disk. System volumes never
 depend on a Piraeus PVC.
 
+Some parked manifests still reference OVH local-path classes removed by the
+migration. Update their storage class before reviving those applications.
+
 LINSTOR creates thin pools at `100%FREE`; creation arguments do not resize an
 existing pool, and automatic pool growth is not enabled. Capacity grows by
 adding pools on other nodes and moving volumes.
@@ -37,6 +41,7 @@ default external-command wait. HDD satellites set `ExtCmd/WaitTimeout=180000`.
 | `piraeus-ssd-local`         | `ssd` |      1 | Strict-local: the PV pins its node; remote access disabled                                         |
 | `piraeus-hdd-local`         | `hdd` |      1 | Strict-local                                                                                       |
 | `piraeus-ssd-2-autodiskful` | `ssd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
+| `piraeus-hdd-2`             | `hdd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
 
 All are WaitForFirstConsumer, Retain and expandable; none is the cluster default.
 The strict-local classes keep the default DRBD layer and rely on the
@@ -44,10 +49,40 @@ application's own replication (CNPG, Seaweed, ClickHouse, Valkey, Mimir/Loki
 peers) or backups for durability. Do not add a second Piraeus copy under an
 application that already replicates.
 
-The replicated class keeps copies and attachments within `hil-ovh`, never across
-the home/OVH link. Node-loss failover is accepted
-([results](../debug/drbd_canary/failover/results.md)); expansion is not yet
-accepted for it; see the [production plan](plans/piraeus_production.md).
+The replicated classes keep copies and attachments within `hil-ovh`, never across
+the home/OVH link. Auto-diskful starts after a diskless consumer has been primary
+for one minute and can resynchronize a full replica before cleaning up an excess
+copy; monitor HDD pool space and resync traffic when workloads move.
+SSD node-loss failover is accepted by the diskless-primary test
+([results](../debug/drbd_canary/failover/results.md)); the accepted test took
+84 seconds with the HA controller and did not require a separate data-copy-loss
+or resync exercise. HDD failure recovery and replicated-volume expansion are not yet accepted; see the
+[production plan](plans/piraeus_production.md).
+
+## NixOS worker pools
+
+Wyrm2 and Rugged also run LINSTOR satellites through the shared
+[`piraeus-host.nix`](../../nix/nixos/modules/piraeus-host.nix) module. Their
+host-local pools are single-copy resources; they do not add independent replicas
+to the OVH replicated class.
+
+Wyrm2 is a Proxmox VM on Atlas. Its 150 GiB SSD and 500 GiB HDD pools use
+hotplugged disks with serials `piraeus-ssd` and `piraeus-hdd`; Proxmox backup and
+replication are disabled for those disks. The
+[Terraform VM declaration](../terraform/main/proxmox-vms.tf) records their device
+identities and zvols: `rpool/data/vm-110-piraeus-ssd` and
+`tank/vm-110-piraeus-hdd`. Atlas's 2026-10-27 inventory found the SSD `rpool` on
+one NVMe with no host-level redundancy and the HDD `tank` on four-disk RAIDZ2.
+The SSD pool therefore depends on preserving `rpool` through an Atlas reinstall
+or draining it first; recheck the host inventory before that work. The same
+inventory found Atlas's LVM `global_filter` excludes `/dev/zd*`, so the host
+does not activate guest volume groups.
+
+Rugged's interim SSD pool uses a dedicated LUKS partition, unlocked after the
+encrypted root is mounted and then initialized by LINSTOR as an LVM physical
+volume. Its full LVM layout remains for the next reinstall. See the
+[Wyrm2](../../nix/nixos/hosts/wyrm2/default.nix) and
+[Rugged](../../nix/nixos/hosts/rugged/default.nix) host configurations.
 
 ## Capacity policy
 

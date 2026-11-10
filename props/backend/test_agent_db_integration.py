@@ -24,6 +24,10 @@ from props.testing.constants import DEFAULT_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 @pytest_asyncio.fixture
 async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[tuple[AgentCredentials, CriticTypeConfig]]:

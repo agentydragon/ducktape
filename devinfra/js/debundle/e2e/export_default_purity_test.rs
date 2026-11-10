@@ -8,7 +8,7 @@
 //!
 //! The fix routes `ExportDefaultExpr` through `classify_expr_purity`
 //! and `ExportDefaultDecl(Class)` through
-//! `class_has_static_observable`.
+//! `classify_class_static_purity`.
 
 use debundle_e2e_support::*;
 

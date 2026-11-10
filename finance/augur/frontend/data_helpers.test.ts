@@ -7,49 +7,49 @@ import { fmtQuanta } from "./lib/format";
 type Portfolio = NonNullable<Parameters<typeof sellableSleeves>[0]>;
 
 const emptyPortfolio: Portfolio = {
-  asOfDate: "2026-10-27",
-  currencyCode: "USD",
-  currencyQuantum: "1",
-  cashQuanta: "0",
+  as_of_date: "2026-10-27",
+  currency_code: "USD",
+  currency_quantum: "1",
+  cash_quanta: "0",
   holdings: [],
-  tlhPortfolios: [],
+  tlh_portfolios: [],
   bonds: [],
-  totalHoldingsValueQuanta: "0",
-  totalHoldingsCostBasisQuanta: "0",
-  totalBondFaceValueQuanta: "0",
+  total_holdings_value_quanta: "0",
+  total_holdings_cost_basis_quanta: "0",
+  total_bond_face_value_quanta: "0",
 };
 
 const holdingDefaults = {
-  positionId: "test-position",
-  accountId: "test-account",
+  position_id: "test-position",
+  account_id: "test-account",
   symbol: "",
-  unitValueQuanta: "1",
+  unit_value_quanta: "1",
   quantity: 1,
-  totalCostBasisQuanta: "0",
+  total_cost_basis_quanta: "0",
   lots: [],
-} satisfies Omit<Portfolio["holdings"][number], "asset" | "currentValueQuanta">;
+} satisfies Omit<Portfolio["holdings"][number], "asset" | "current_value_quanta">;
 
 const managedDefaults = {
-  ownerAgentId: "test-owner",
-  accountId: "test-account",
-  totalCostBasisQuanta: "0",
+  owner_agent_id: "test-owner",
+  account_id: "test-account",
+  total_cost_basis_quanta: "0",
   cohorts: [],
-} satisfies Omit<Portfolio["tlhPortfolios"][number], "portfolioId" | "label" | "asset" | "currentValueQuanta">;
+} satisfies Omit<Portfolio["tlh_portfolios"][number], "portfolio_id" | "label" | "asset" | "current_value_quanta">;
 
 test("TLH timeline renders signed effects and distinguishes zero-cash redemption from modeled loss", () => {
   const currency = { currencyCode: "USD", currencyQuantum: "1" };
   const event = {
     kind: "tlh_financial_effect",
-    monthIndex: 0,
-    causeId: "test-effect",
-    accountId: "test-account",
+    month_index: 0,
+    cause_id: "test-effect",
+    account_id: "test-account",
     operation: "redemption",
-    portfolioId: "test-managed",
-    amountQuanta: "0",
-    shortTermGainQuanta: "2",
-    longTermGainQuanta: "-3",
-    basisChangeQuanta: "-4",
-    incomeQuanta: "5",
+    portfolio_id: "test-managed",
+    amount_quanta: "0",
+    short_term_gain_quanta: "2",
+    long_term_gain_quanta: "-3",
+    basis_change_quanta: "-4",
+    income_quanta: "5",
     _currency: currency,
   } satisfies NonNullable<Parameters<typeof eventLabel>[0]>;
   const redemption = eventLabel(event);
@@ -66,45 +66,45 @@ test("TLH timeline renders signed effects and distinguishes zero-cash redemption
 test("each TLH portfolio is its own sleeve, labelled as itself and apart from lots of its index", () => {
   const portfolio = {
     ...emptyPortfolio,
-    totalHoldingsValueQuanta: "127",
+    total_holdings_value_quanta: "127",
     holdings: [
       {
         ...holdingDefaults,
         label: "Test ETF",
         symbol: "TETF",
         asset: { kind: "security", symbol: "test-index" },
-        currentValueQuanta: "100",
+        current_value_quanta: "100",
       },
       {
         ...holdingDefaults,
-        positionId: "test-twin",
+        position_id: "test-twin",
         label: "Test ETF twin",
         symbol: "TTWN",
         asset: { kind: "security", symbol: "test-index" },
-        currentValueQuanta: "20",
+        current_value_quanta: "20",
       },
       {
         ...holdingDefaults,
-        positionId: "test-private",
+        position_id: "test-private",
         label: "Test private",
-        asset: { kind: "private_equity", issuerId: "test-issuer" },
-        currentValueQuanta: "7",
+        asset: { kind: "private_equity", issuer_id: "test-issuer" },
+        current_value_quanta: "7",
       },
     ],
-    tlhPortfolios: [
+    tlh_portfolios: [
       {
         ...managedDefaults,
-        portfolioId: "test-managed",
+        portfolio_id: "test-managed",
         label: "Test managed",
         asset: { kind: "security", symbol: "test-index" },
-        currentValueQuanta: "250",
+        current_value_quanta: "250",
       },
       {
         ...managedDefaults,
-        portfolioId: "test-managed-bonds",
+        portfolio_id: "test-managed-bonds",
         label: "Test managed bonds",
         asset: { kind: "security", symbol: "test-bonds" },
-        currentValueQuanta: "40",
+        current_value_quanta: "40",
       },
     ],
   } satisfies Portfolio;
@@ -133,22 +133,22 @@ test("each TLH portfolio is its own sleeve, labelled as itself and apart from lo
 test("an unedited target seeds a managed sleeve by portfolio id, beside the security on its index", () => {
   const sellable = sellableSleeves({
     ...emptyPortfolio,
-    totalHoldingsValueQuanta: "300",
+    total_holdings_value_quanta: "300",
     holdings: [
       {
         ...holdingDefaults,
         label: "Test ETF",
         asset: { kind: "security", symbol: "test-index" },
-        currentValueQuanta: "300",
+        current_value_quanta: "300",
       },
     ],
-    tlhPortfolios: [
+    tlh_portfolios: [
       {
         ...managedDefaults,
-        portfolioId: "test-managed",
+        portfolio_id: "test-managed",
         label: "Test managed",
         asset: { kind: "security", symbol: "test-index" },
-        currentValueQuanta: "100",
+        current_value_quanta: "100",
       },
     ],
   });

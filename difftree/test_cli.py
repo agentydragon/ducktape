@@ -32,18 +32,11 @@ def test_cli_columns_actually_shows_content(runner, git_repo_with_changes, monke
     """Test that --columns flag actually controls what appears in output."""
     monkeypatch.chdir(git_repo_with_changes)
 
-    # Test with only tree column - should NOT have counts
-    result_tree_only = runner.invoke(main, ["--columns", "tree"], obj={}, catch_exceptions=False)
-    assert result_tree_only.exit_code == 0
-    assert "main.py" in result_tree_only.output
-    # Should not have +/- counts when counts column is disabled
-    assert "+2" not in result_tree_only.output
-
-    # Test with tree and counts - should have counts
-    result_with_counts = runner.invoke(main, ["--columns", "tree,counts"], obj={}, catch_exceptions=False)
-    assert result_with_counts.exit_code == 0
-    assert "main.py" in result_with_counts.output
-    assert "+2" in result_with_counts.output  # Should show addition count
+    for columns, has_counts in [("tree", False), ("tree,counts", True)]:
+        result = runner.invoke(main, ["--columns", columns], obj={}, catch_exceptions=False)
+        assert result.exit_code == 0
+        assert "main.py" in result.output
+        assert ("+2" in result.output) == has_counts
 
 
 def test_cli_sort_actually_changes_order(runner, temp_git_repo, run_git, monkeypatch):
@@ -59,19 +52,10 @@ def test_cli_sort_actually_changes_order(runner, temp_git_repo, run_git, monkeyp
 
     monkeypatch.chdir(temp_git_repo)
 
-    # Sort by size (default) - z_large should come first
-    result_size = runner.invoke(main, ["--sort", "size"])
-    assert result_size.exit_code == 0
-    z_pos = result_size.output.find("z_large")
-    a_pos = result_size.output.find("a_small")
-    assert z_pos < a_pos, "Larger file should appear first when sorted by size"
-
-    # Sort alphabetically - a_small should come first
-    result_alpha = runner.invoke(main, ["--sort", "alpha"])
-    assert result_alpha.exit_code == 0
-    a_pos_alpha = result_alpha.output.find("a_small")
-    z_pos_alpha = result_alpha.output.find("z_large")
-    assert a_pos_alpha < z_pos_alpha, "Files should be alphabetically ordered"
+    for sort, first, second in [("size", "z_large", "a_small"), ("alpha", "a_small", "z_large")]:
+        result = runner.invoke(main, ["--sort", sort])
+        assert result.exit_code == 0
+        assert 0 <= result.output.find(first) < result.output.find(second)
 
 
 def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):

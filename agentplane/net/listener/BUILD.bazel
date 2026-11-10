@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "listener",
+    srcs = ["listen.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/net/listener",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "listener_test",
+    srcs = ["listen_test.go"],
+    embed = [":listener"],
+)

@@ -7,14 +7,7 @@ package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 py_library(
     name = "client",
     srcs = ["client.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/clickhouse:__pkg__",
-        "//cluster/cdk8s/grafana:__pkg__",
-        "//cluster/cdk8s/langfuse:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -28,7 +21,6 @@ py_library(
     name = "schema",
     srcs = ["schema.py"],
     data = ["schema.sql"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":client",
         "//cluster/cdk8s:flux",
@@ -63,9 +55,9 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -92,6 +84,7 @@ py_test(
         ":client",
         ":installation",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
@@ -108,8 +101,8 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":client",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

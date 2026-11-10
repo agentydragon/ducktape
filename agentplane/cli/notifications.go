@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -22,64 +20,229 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	notificationdocs "github.com/agentydragon/ducktape/agentplane/notification_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 )
 
-const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_URL, AGENTPLANE_NOTIFICATIONS_CREDENTIAL).
+const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_GRPC_URL; optional AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL bearer).
 
 Subscriptions deliver notices to a Session inbox, so a long wait costs no turn; send puts a message in
 another Session's inbox. Inbox reads are non-destructive; acknowledgement advances the handled prefix.
-No command here has an outcome exit code; cancel removes a subscription and never cancels an Action.`
+No command here reports an Action outcome; cancel removes a subscription and never cancels an Action. Inbox retirement
+is irreversible and stops future messages and delivery.`
 
 const (
-	githubEventPrefix  = "GITHUB_EVENT_NAME_"
-	failureKindPrefix  = "SOURCE_FAILURE_KIND_"
-	subscriptionsRoute = "/v1/subscriptions"
-	inboxesRoute       = "/v1/inboxes"
-	messagesRoute      = "/v1/messages"
+	githubEventPrefix = "GITHUB_EVENT_NAME_"
+	failureKindPrefix = "SOURCE_FAILURE_KIND_"
 )
+
+func (a *app) notificationCall(fn func(context.Context, notificationspb.NotificationsClient, []string) error) func(*cobra.Command, []string) error {
+	return func(_ *cobra.Command, args []string) error {
+		conn, err := a.connectGRPC("NOTIFICATIONS_GRPC")
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		ctx, cancel := a.deadline()
+		defer cancel()
+		return fn(ctx, notificationspb.NewNotificationsClient(conn), args)
+	}
+}
+
+func notificationJSON(message proto.Message) ([]byte, error) {
+	body, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(message)
+	if err != nil {
+		return nil, invalidResponse("%v", err)
+	}
+	return body, nil
+}
 
 var pullRequestPattern = regexp.MustCompile(`^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$`)
 
 func (a *app) notificationsCommand() *cobra.Command {
 	return group("notifications", "Follow events, subscriptions and inboxes", notificationsHelp,
+		&cobra.Command{
+			Use:   "guide [subscriptions|inbox|github|messages]",
+			Short: "Read a Notification workflow guide",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				name := "llms.txt"
+				if len(args) == 1 {
+					guides := map[string]string{"subscriptions": "subscriptions.md", "inbox": "inbox_handling.md", "github": "github.md", "messages": "messages.md"}
+					var ok bool
+					if name, ok = guides[args[0]]; !ok {
+						return usageFailure("unknown notifications guide %q", args[0])
+					}
+				}
+				content, err := notificationdocs.Agents.ReadFile("agents/" + name)
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprint(a.stdout, string(content))
+				return err
+			},
+		},
 		group("subscribe", "Subscribe to a source", "Creates a subscription for this Session's inbox.",
-			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) are supported.", a.subscribePullRequestCommand())),
-		a.inboxCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
+			a.subscribeRequestCommand(),
+			group("github", "Subscribe to GitHub activity", "Only pull requests (`pr`) have a dedicated command.", a.subscribePullRequestCommand())),
+		a.inboxCommand(), a.inboxesCommand(), a.subscriptionsCommand(), a.subscriptionCommand(), a.renewCommand(), a.cancelSubscriptionCommand(),
 		a.sendCommand(), a.messageCommand())
 }
 
+func (a *app) subscribeRequestCommand() *cobra.Command {
+	var filename string
+	command := &cobra.Command{
+		Use:   "create --request-file FILE",
+		Short: "Create a subscription from a protobuf JSON request",
+		Long:  "Read a CreateSubscriptionRequest as protobuf JSON from FILE, or - for stdin. Supply sessionId, idempotencyKey and source; retry with the identical request.",
+		Args:  cobra.NoArgs,
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
+			var data []byte
+			var err error
+			if filename == "-" {
+				data, err = io.ReadAll(a.stdin)
+			} else {
+				data, err = os.ReadFile(filename)
+			}
+			if err != nil {
+				return usageFailure("--request-file: %v", err)
+			}
+			var request notificationspb.CreateSubscriptionRequest
+			if err := protojson.Unmarshal(data, &request); err != nil {
+				return usageFailure("--request-file: %v", err)
+			}
+			response, err := svc.CreateSubscription(ctx, &request)
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			if response.GetSubscription().GetCancelled() {
+				return clientFailure(exitConflict, "ALREADY_EXISTS", "idempotency key %s belongs to a cancelled subscription: use a new key", request.GetIdempotencyKey())
+			}
+			encoded, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			return a.showSubscription(encoded)
+		}),
+	}
+	command.Flags().StringVar(&filename, "request-file", "", "protobuf JSON request file; - reads stdin")
+	_ = command.MarkFlagRequired("request-file")
+	return command
+}
+
 func (a *app) inboxCommand() *cobra.Command {
-	return group("inbox", "Read and acknowledge inbox entries", "Reading is non-destructive; acknowledgement advances the handled prefix.",
-		a.readInboxCommand(), a.ackInboxCommand())
+	return group("inbox", "Inspect, read and manage a Session inbox", "Reading is non-destructive; acknowledgement advances the handled prefix.",
+		a.getInboxCommand(), a.readInboxCommand(), a.ackInboxCommand(), a.retireInboxCommand())
+}
+
+func (a *app) inboxesCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "inboxes",
+		Short: "List this account's Session inboxes",
+		Long:  "Notifications.ListInboxes. Lists inboxes opened for this account, including retired inboxes that have not been purged.",
+		Args:  cobra.NoArgs,
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
+			response, err := svc.ListInboxes(ctx, &notificationspb.ListInboxesRequest{})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			inboxes, err := responseField(body, "inboxes")
+			if err != nil {
+				return err
+			}
+			items, err := decode[[]json.RawMessage](inboxes)
+			if err != nil {
+				return err
+			}
+			return a.show(items, inboxLine)
+		}),
+	}
+}
+
+func (a *app) getInboxCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get SESSION_ID",
+		Short: "Show one Session inbox",
+		Long:  "Notifications.GetInbox. Reports the current state of the inbox addressed by Session ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.GetInbox(ctx, &notificationspb.GetInboxRequest{SessionId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			if response.GetInbox() == nil {
+				return a.showOne([]byte("null"), func(json.RawMessage) (string, error) {
+					return "no inbox for session " + args[0], nil
+				})
+			}
+			body, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			inbox, err := responseField(body, "inbox")
+			if err != nil {
+				return err
+			}
+			return a.showOne(inbox, inboxLine)
+		}),
+	}
+}
+
+func (a *app) retireInboxCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "retire SESSION_ID",
+		Short: "Retire a Session inbox",
+		Long: `Notifications.RetireInbox. Irreversibly stops future matching, messages and delivery to the inbox and cancels its
+subscriptions. It does not cancel Actions or withdraw commands already submitted to the runner. Use only when the
+Session no longer needs this inbox.`,
+		Args: cobra.ExactArgs(1),
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.RetireInbox(ctx, &notificationspb.RetireInboxRequest{SessionId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			return a.showOne(body, func(json.RawMessage) (string, error) {
+				return "retired inbox for session " + args[0], nil
+			})
+		}),
+	}
 }
 
 func (a *app) readInboxCommand() *cobra.Command {
 	var after int64
 	var limit int
 	command := &cobra.Command{
-		Use:   "read ID [--after CURSOR] [--limit N]",
+		Use:   "read SESSION_ID [--after CURSOR] [--limit N]",
 		Short: "Read one page of inbox entries",
-		Long: `GET /v1/inboxes/{id}/entries. Reads are non-destructive and return one contiguous page.
+		Long: `Notifications.ReadInbox. Reads are non-destructive and return one contiguous page.
 Continue after the last returned entry's cursor. Text output summarizes the entries; --json prints the
 full response, including provider payloads and the latest notice state. The service returns at most 128
 entries per page, and expired payloads are reported in inbox.expiredThrough.`,
 		Args: cobra.ExactArgs(1),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
 			if after < 0 {
 				return usageFailure("--after must not be negative")
 			}
 			if limit < 1 || limit > maxPage {
 				return usageFailure("--limit must be between 1 and %d", maxPage)
 			}
-			query := url.Values{}
-			query.Set("afterCursor", strconv.FormatInt(after, 10))
-			query.Set("limit", strconv.Itoa(limit))
-			response, err := svc.fetch(ctx, inboxesRoute+"/"+url.PathEscape(args[0])+"/entries", query)
+			response, err := svc.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: args[0], AfterCursor: after, Limit: proto.Int32(int32(limit))})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
 			if err != nil {
 				return err
 			}
-			return a.showOne(response, inboxPageLine)
+			return a.showOne(body, inboxPageLine)
 		}),
 	}
 	command.Flags().Int64Var(&after, "after", 0, "read entries with cursors greater than CURSOR")
@@ -90,9 +253,9 @@ entries per page, and expired payloads are reported in inbox.expiredThrough.`,
 func (a *app) ackInboxCommand() *cobra.Command {
 	var through int64
 	command := &cobra.Command{
-		Use:   "ack ID --through CURSOR",
+		Use:   "ack SESSION_ID --through CURSOR",
 		Short: "Acknowledge a handled inbox prefix",
-		Long: `PUT /v1/inboxes/{id}/acknowledgement. Acknowledgement covers every entry through the cursor,
+		Long: `Notifications.AcknowledgeInbox. Acknowledgement covers every entry through the cursor,
 across all subscriptions in this inbox. Read and handle the whole contiguous prefix first. The service
 never moves the cursor backwards and refuses a cursor beyond the inbox's last entry.`,
 		Args: cobra.ExactArgs(1),
@@ -105,19 +268,12 @@ never moves the cursor backwards and refuses a cursor beyond the inbox's last en
 			}
 			return nil
 		},
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			body := struct {
-				ThroughCursor string `json:"throughCursor"`
-			}{ThroughCursor: strconv.FormatInt(through, 10)}
-			response, err := svc.do(ctx, request{
-				method: http.MethodPut,
-				path:   inboxesRoute + "/" + url.PathEscape(args[0]) + "/acknowledgement",
-				body:   body,
-			})
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{SessionId: args[0], ThroughCursor: through})
 			if err != nil {
-				return err
+				return grpcFailure(ctx, err)
 			}
-			inbox, err := responseField(response, "inbox")
+			inbox, err := notificationJSON(response.GetInbox())
 			if err != nil {
 				return err
 			}
@@ -269,29 +425,15 @@ func responseField(raw []byte, name string) (json.RawMessage, error) {
 	return value, nil
 }
 
-// destination reads the inbox: --destination wins over AGENTPLANE_DESTINATION. Both hold the
-// destination fields of a CreateSubscriptionRequest, `{"destination_ref": {...}, "session_id": "..."}`.
-func (a *app) destination(flag string) (*notificationspb.CreateSubscriptionRequest, error) {
-	source, text := "--destination", flag
-	if text == "" {
-		source, text = "AGENTPLANE_DESTINATION", a.getenv("AGENTPLANE_DESTINATION")
+func (a *app) notificationSessionID(flag string) (string, error) {
+	if flag != "" {
+		return flag, nil
 	}
-	if text == "" {
-		return nil, usageFailure("no destination: set AGENTPLANE_DESTINATION or pass --destination JSON")
+	sessionID := a.getenv("AGENTPLANE_SESSION_ID")
+	if sessionID == "" {
+		return "", usageFailure("no Session: set AGENTPLANE_SESSION_ID or pass --session ID")
 	}
-	var parsed notificationspb.CreateSubscriptionRequest
-	if err := protojson.Unmarshal([]byte(text), &parsed); err != nil {
-		return nil, usageFailure("%s: %v", source, err)
-	}
-	ref := parsed.GetDestinationRef()
-	if ref.GetNamespace() == "" || ref.GetName() == "" || ref.GetUid() == "" || parsed.GetSessionId() == "" {
-		return nil, usageFailure("%s needs destination_ref.namespace, name and uid, and session_id", source)
-	}
-	destination := &notificationspb.CreateSubscriptionRequest{DestinationRef: ref, SessionId: parsed.GetSessionId()}
-	if !proto.Equal(&parsed, destination) {
-		return nil, usageFailure("%s holds only destination_ref and session_id", source)
-	}
-	return destination, nil
+	return sessionID, nil
 }
 
 // parseEvents reads NAME[:ACTION[,ACTION]] filters into their canonical order.
@@ -335,13 +477,13 @@ func subscriptionKey(repository string, number int32, events []*notificationspb.
 
 func (a *app) subscribePullRequestCommand() *cobra.Command {
 	var events []string
-	var key, destinationFlag string
+	var key, sessionFlag string
 	var lifetime optionalInt
 	command := &cobra.Command{
 		Use:   "pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]...",
 		Short: "Follow a pull request",
-		Long: `POST /v1/subscriptions for a GitHub pull request, delivering to the inbox named by
-AGENTPLANE_DESTINATION ({"destination_ref": {...}, "session_id": "..."}) or --destination, which wins.
+		Long: `Notifications.CreateSubscription for a GitHub pull request, delivering to the inbox named by
+AGENTPLANE_SESSION_ID or --session ID, which wins.
 Subscribe first, then read the pull request's current state: this follows from creation, not from history.
 
 By default, pull-request subscriptions include mergeability_changed, which reports the initial
@@ -353,7 +495,7 @@ running it again; --key overrides the key.
 Exit 4 when a changed --lifetime-days (1-30, default 7) meets the same key (renew changes the
 lifetime), and when the key belongs to a cancelled subscription (pass a new --key).`,
 		Args: cobra.ExactArgs(1),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
 			match := pullRequestPattern.FindStringSubmatch(args[0])
 			if match == nil {
 				return usageFailure("want OWNER/REPO#NUMBER, got %q", args[0])
@@ -366,10 +508,11 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 			if err != nil {
 				return err
 			}
-			body, err := a.destination(destinationFlag)
+			sessionID, err := a.notificationSessionID(sessionFlag)
 			if err != nil {
 				return err
 			}
+			body := &notificationspb.CreateSubscriptionRequest{SessionId: sessionID}
 			repository := match[1] + "/" + match[2]
 			body.IdempotencyKey = key
 			if body.IdempotencyKey == "" {
@@ -383,25 +526,25 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 				}},
 				Events: filters,
 			}}}
-			response, err := svc.do(ctx, request{method: http.MethodPost, path: subscriptionsRoute, body: body})
+			response, err := svc.CreateSubscription(ctx, body)
 			if err != nil {
-				return err
+				return grpcFailure(ctx, err)
 			}
-			var created notificationspb.CreateSubscriptionResponse
-			if err := decodeMessage(response, &created); err != nil {
-				return err
-			}
-			if created.GetSubscription().GetCancelled() {
+			if response.GetSubscription().GetCancelled() {
 				return clientFailure(exitConflict, "ALREADY_EXISTS",
 					"idempotency key %s belongs to a cancelled subscription: pass a new --key", body.IdempotencyKey)
 			}
-			return a.showSubscription(response)
+			encoded, err := notificationJSON(response)
+			if err != nil {
+				return err
+			}
+			return a.showSubscription(encoded)
 		}),
 	}
 	command.Flags().StringArrayVar(&events, "event", nil, "NAME[:ACTION[,ACTION]]; replaces defaults; repeatable; mergeability_changed has no actions")
 	command.Flags().Var(&lifetime, "lifetime-days", "subscription lifetime in days (service default 7)")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; derived from the source if absent")
-	command.Flags().StringVar(&destinationFlag, "destination", "", "the destination JSON, instead of AGENTPLANE_DESTINATION")
+	command.Flags().StringVar(&sessionFlag, "session", "", "Session ID, instead of AGENTPLANE_SESSION_ID")
 	return command
 }
 
@@ -420,16 +563,20 @@ func (a *app) subscriptionsCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "subscriptions",
 		Short: "List this account's subscriptions",
-		Long: `GET /v1/subscriptions, following server pages (128) until --limit items (default 50; 0 is unlimited).
+		Long: `Notifications.ListSubscriptions, following server pages (128) until --limit items (default 50; 0 is unlimited).
 To continue, pass the last item's id as --after.`,
 		Args: cobra.NoArgs,
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, _ []string) error {
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
 			items, err := collect(limit, after, func(after string, _ int) ([]json.RawMessage, error) {
-				query := url.Values{}
+				request := &notificationspb.ListSubscriptionsRequest{}
 				if after != "" {
-					query.Set("afterId", after)
+					request.AfterId = proto.String(after)
 				}
-				body, err := svc.fetch(ctx, subscriptionsRoute, query)
+				response, err := svc.ListSubscriptions(ctx, request)
+				if err != nil {
+					return nil, grpcFailure(ctx, err)
+				}
+				body, err := notificationJSON(response)
 				if err != nil {
 					return nil, err
 				}
@@ -454,10 +601,14 @@ func (a *app) subscriptionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "subscription ID",
 		Short: "Show one subscription",
-		Long:  "GET /v1/subscriptions/{id}: its source, version, expiry and any source error. Exit 5 if it is not this account's.",
+		Long:  "Notifications.GetSubscription: its source, version, expiry and any source error. Exit 5 if it is not this account's.",
 		Args:  cobra.ExactArgs(1),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			body, err := svc.fetch(ctx, subscriptionsRoute+"/"+url.PathEscape(args[0]), nil)
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.GetSubscription(ctx, &notificationspb.GetSubscriptionRequest{SubscriptionId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
 			if err != nil {
 				return err
 			}
@@ -471,21 +622,20 @@ func (a *app) renewCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "renew ID [--lifetime-days N]",
 		Short: "Extend a subscription",
-		Long: `GET /v1/subscriptions/{id}, then PATCH it with the version just read and the lifetime (1-30 days,
+		Long: `Notifications.GetSubscription, then RenewSubscription with the version just read and the lifetime (1-30 days,
 default 7). A version that changed in between exits 4: read the subscription and decide again.`,
 		Args: cobra.ExactArgs(1),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			path := subscriptionsRoute + "/" + url.PathEscape(args[0])
-			current, err := svc.fetch(ctx, path, nil)
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			current, err := svc.GetSubscription(ctx, &notificationspb.GetSubscriptionRequest{SubscriptionId: args[0]})
 			if err != nil {
-				return err
+				return grpcFailure(ctx, err)
 			}
-			var read notificationspb.GetSubscriptionResponse
-			if err := decodeMessage(current, &read); err != nil {
-				return err
+			update := &notificationspb.RenewSubscriptionRequest{SubscriptionId: args[0], Version: current.GetSubscription().GetVersion(), LifetimeDays: lifetime.value}
+			response, err := svc.RenewSubscription(ctx, update)
+			if err != nil {
+				return grpcFailure(ctx, err)
 			}
-			update := &notificationspb.RenewSubscriptionRequest{Version: read.GetSubscription().GetVersion(), LifetimeDays: lifetime.value}
-			body, err := svc.do(ctx, request{method: http.MethodPatch, path: path, body: update})
+			body, err := notificationJSON(response)
 			if err != nil {
 				return err
 			}
@@ -500,11 +650,15 @@ func (a *app) cancelSubscriptionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel ID",
 		Short: "Cancel a subscription",
-		Long: `DELETE /v1/subscriptions/{id}. Idempotent. It does not cancel an Action, and accepted notices stay in
+		Long: `Notifications.CancelSubscription. Idempotent. It does not cancel an Action, and accepted notices stay in
 the inbox.`,
 		Args: cobra.ExactArgs(1),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			body, err := svc.do(ctx, request{method: http.MethodDelete, path: subscriptionsRoute + "/" + url.PathEscape(args[0])})
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.CancelSubscription(ctx, &notificationspb.CancelSubscriptionRequest{SubscriptionId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
 			if err != nil {
 				return err
 			}
@@ -514,31 +668,26 @@ the inbox.`,
 }
 
 func (a *app) sendCommand() *cobra.Command {
-	var body, bodyFile, uid, fromSession, key string
+	var body, bodyFile, fromSession, key string
 	command := &cobra.Command{
-		Use:   "send NAMESPACE/SANDBOX SESSION_ID {--body TEXT | --body-file FILE} [--uid UID] [--from-session ID] [--key KEY]",
+		Use:   "send SESSION_ID {--body TEXT | --body-file FILE} [--from-session ID] [--key KEY]",
 		Short: "Message another Session",
-		Long: `POST /v1/messages: puts the text in the inbox of that Session of that Sandbox, which notices it like any
+		Long: `Notifications.SendMessage: puts the text in the inbox of that Session, which notices it like any
 entry. A session_inbox_access rule bound to your ServiceAccount must allow send_message to the Sandbox,
-else exit 1 (PERMISSION_DENIED). --uid sends only to that incarnation; without it the message goes to
-the Sandbox of that name now, and the answer carries its UID. The text is sent as given, from --body or
+else exit 1 (PERMISSION_DENIED). The service resolves the Session's current Sandbox and exact UID.
+The text is sent as given, from --body or
 --body-file (- reads stdin). --from-session is the label of the Session you write from, so the recipient
-can answer you; it defaults to the session_id of AGENTPLANE_DESTINATION, and nothing verifies it.
+can answer you; it defaults to AGENTPLANE_SESSION_ID, and nothing verifies it.
 
 Without --key a random idempotency key is generated and written to stderr before the POST. Retry a
 failed or uncertain send with --key KEY and the same message: the service answers with the message it
 already accepted. The key with another message exits 4. Exit 5 when there is no such Sandbox or
 incarnation, or no record of the Session in it. Exit 3 is UNAVAILABLE (retry with the key) or
 RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait, do not send more).`,
-		Args: cobra.ExactArgs(2),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			namespace, name, ok := strings.Cut(args[0], "/")
-			if !ok || namespace == "" || name == "" || strings.Contains(name, "/") {
-				return usageFailure("want NAMESPACE/SANDBOX, got %q", args[0])
-			}
+		Args: cobra.ExactArgs(1),
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
 			message := &notificationspb.SendMessageRequest{
-				DestinationRef: &notificationspb.DestinationRef{Namespace: namespace, Name: name, Uid: uid},
-				SessionId:      args[1], IdempotencyKey: key, Body: body,
+				SessionId: args[0], IdempotencyKey: key, Body: body,
 			}
 			if bodyFile != "" {
 				text, err := a.readBody(bodyFile)
@@ -547,12 +696,12 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 				}
 				message.Body = text
 			}
-			if fromSession == "" && a.getenv("AGENTPLANE_DESTINATION") != "" {
-				own, err := a.destination("")
+			if fromSession == "" && a.getenv("AGENTPLANE_SESSION_ID") != "" {
+				own, err := a.notificationSessionID("")
 				if err != nil {
 					return err
 				}
-				fromSession = own.GetSessionId()
+				fromSession = own
 			}
 			if fromSession != "" {
 				message.FromSession = &fromSession
@@ -561,19 +710,22 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 				message.IdempotencyKey = uuid.NewString()
 				a.announceKey(message.IdempotencyKey)
 			}
-			response, err := svc.do(ctx, request{method: http.MethodPost, path: messagesRoute, body: message, conflict: "ALREADY_EXISTS"})
+			response, err := svc.SendMessage(ctx, message)
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			encoded, err := notificationJSON(response)
 			if err != nil {
 				return err
 			}
-			return a.showMessage(response)
+			return a.showMessage(encoded)
 		}),
 	}
 	command.Flags().StringVar(&body, "body", "", "the message text")
 	command.Flags().StringVar(&bodyFile, "body-file", "", "read the message text from FILE; - reads stdin")
 	command.MarkFlagsOneRequired("body", "body-file")
 	command.MarkFlagsMutuallyExclusive("body", "body-file")
-	command.Flags().StringVar(&uid, "uid", "", "send only to this incarnation of the Sandbox")
-	command.Flags().StringVar(&fromSession, "from-session", "", "your Session's label; defaults to AGENTPLANE_DESTINATION's session_id")
+	command.Flags().StringVar(&fromSession, "from-session", "", "your Session's label; defaults to AGENTPLANE_SESSION_ID")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; generated and printed on stderr if absent")
 	return command
 }
@@ -597,13 +749,17 @@ func (a *app) messageCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "message ID",
 		Short: "Follow a message you sent",
-		Long: `GET /v1/messages/{id}: whether a notice named it to the recipient (covered), whether the recipient
+		Long: `Notifications.GetMessage: whether a notice named it to the recipient (covered), whether the recipient
 acknowledged its inbox through it (acknowledged) and whether that inbox was retired. The facts are
 independent, and none says the recipient did what you asked. Exit 5 for an unknown ID, a message another
 account sent or a purged inbox; it never means the message was not delivered.`,
 		Args: cobra.ExactArgs(1),
-		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			body, err := svc.fetch(ctx, messagesRoute+"/"+url.PathEscape(args[0]), nil)
+		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, args []string) error {
+			response, err := svc.GetMessage(ctx, &notificationspb.GetMessageRequest{MessageId: args[0]})
+			if err != nil {
+				return grpcFailure(ctx, err)
+			}
+			body, err := notificationJSON(response)
 			if err != nil {
 				return err
 			}
@@ -652,7 +808,7 @@ func subscriptionLine(raw json.RawMessage) (string, error) {
 	if err := decodeMessage(raw, &subscription); err != nil {
 		return "", err
 	}
-	line := fields(subscription.Id, sourceLabel(subscription.Source), "v"+strconv.FormatInt(subscription.Version, 10))
+	line := fields(subscription.Id, sourceLabel(subscription.Source), "v"+strconv.FormatInt(subscription.GetVersion(), 10))
 	if subscription.ExpiresAt != nil {
 		line = fields(line, "expires "+subscription.ExpiresAt.AsTime().UTC().Format(time.RFC3339))
 	}

@@ -17,16 +17,14 @@ Public-critical services run on distributed services (SeaweedFS, CNPG
 Postgres) backed by OVH storage; storage-heavy services that tolerate home
 downtime use Proxmox storage.
 
-| Location | Services                                                               | Rationale                                         |
-| -------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
-| OVH      | Authentik, Grafana, Gateway, DNS automation, cert-mgr                  | Always-on, critical path                          |
-| Home     | Ollama                                                                 | Storage-heavy, tolerates downtime                 |
-| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across the OVH nodes (HDD ×3, NVMe ×3) |
+| Location | Services                                                  | Rationale                                          |
+| -------- | --------------------------------------------------------- | -------------------------------------------------- |
+| OVH      | Authentik, Grafana, Gateway, DNS automation, cert-mgr     | Always-on, critical path                           |
+| Home     | Ollama                                                    | Storage-heavy, tolerates downtime                  |
+| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache, Loki/Mimir/Tempo | Storage and replication vary by service; see below |
 
-CNPG: individual clusters per app. Two sanctioned profiles: OVH-HA (2 instances
-pinned `zone: hil-ovh`, on `local-path-ovh` or `local-path-ovh-ssd`) and
-Proxmox-single (1 instance, `local-path`). See <cnpg_conventions.md>. Known
-deviation: `study-casino-db` runs 3 instances across OVH nodes.
+CNPG uses individual clusters per app. Allowed placement, instance counts, and
+Piraeus storage classes are maintained in <cnpg_conventions.md>.
 
 ## Control-plane scheduling
 
@@ -79,11 +77,11 @@ workloads.
 | DNS       | OK     | OVH CNPG (domain)  | Route 53 records reconciled by stateless ExternalDNS on OVH; Terraform retains domain registration and delegation |
 | Website   | OK     | None (stateless)   |                                                                                                                   |
 | Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                                                                             |
-| Authentik | OK     | OVH hdd tier       | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                   |
-| Grafana   | OK     | OVH hdd tier       | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                     |
+| Authentik | OK     | OVH SSD tier       | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                   |
+| Grafana   | OK     | OVH SSD tier       | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                     |
 
-The DB manifests still name `local-path-ovh` — the deprecated alias re-pinned to
-the hdd tier (<cnpg_conventions.md> § R2).
+The DB manifests select `piraeus-ssd-local` for individual CNPG instances
+(<cnpg_conventions.md> § R2).
 
 **Compliance checklist** for critical-path changes:
 
@@ -94,9 +92,10 @@ the hdd tier (<cnpg_conventions.md> § R2).
 
 **Proxmox-dependent services** (tolerate downtime by design): Ollama,
 ActivityWatch (central store on wyrm2, `piraeus-hdd-local`; device-side
-importers buffer and re-push through downtime), and — both currently suspended —
-BuildBuddy executor and InvenTree. Not the Nix cache: attic runs pinned to
-`hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live in OVH SeaweedFS S3.
+importers buffer and re-push through downtime), the opt-in BuildBuddy KVM executor
+on wyrm2, and suspended InvenTree. Not the Nix cache: attic runs pinned to
+`hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live on a replicated OVH
+Piraeus volume (<nix_cache.md>).
 
 ### Proxmox CSI removed (2026-07-16)
 
@@ -107,8 +106,8 @@ more, so there is no reshuffling of PVCs between Proxmox nodes for a CSI to serv
 (there was, when Proxmox hosted several nodes). It had also started crash-looping after
 the network topology change broke its path to the Proxmox API, and with a single
 physical Proxmox host LVM-local storage has the same failure domain anyway. Rationale
-and full context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers
-now use `lvm-proxmox-hdd`.
+and full context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. Current
+storage classes are defined in <../cdk8s/piraeus.py>.
 
 The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM is back since
 2026-08-05 (tombstoned in `terraform/main/proxmox-vms.tf`): two orphaned CSI-era disks
@@ -156,8 +155,9 @@ generated Gateway Service be the externally exposed object.
 
 ## Secrets: SOPS SSOT
 
-All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed
-but only with the Kubernetes provider, mirroring a small number of secrets
+SOPS holds Git-managed secrets (age-encrypted in Git, decrypted by Flux); some
+credentials are generated or rotated in the cluster. ESO uses the Kubernetes provider,
+mirroring secrets
 cross-namespace — rotator-published tokens out of `flux-system`, shared agent
 credentials out of `claude-sandbox`, Airlock OAuth tokens, CLIProxyAPI keys (stores in
 `generated/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
@@ -238,12 +238,11 @@ access uses `api.allegedly.works:6443` and preserves client-certificate authenti
 
 ## OpenTofu State Backend
 
-All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
-PG backend (CNPG `tofu-state-db-ovh`, schema `main`, OVH hdd tier via the
-deprecated `local-path-ovh` alias). State
-backups have been absent since the backup CronJob's removal 2026-06-01; restoring them
-(CNPG replication or scheduled backups) is
-[#4900](https://github.com/agentydragon/ducktape/issues/4900).
+The former TF roots are consolidated into `cluster/terraform/main/` with a PG backend
+(CNPG `tofu-state-db-ovh`, schema `main`, OVH SSD tier). The cluster has scheduled
+barman-cloud backups and continuous WAL archiving with a 30-day retention policy.
+They are stored in SeaweedFS in the same OVH failure domain; offsite backup remains
+open in <plan.md>.
 
 All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
 in the same `tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`).
@@ -283,8 +282,8 @@ adds a CPU limit. CFS CPU limits are a hard rate limiter enforced by cgroups
 regardless of node load — a pod capped at 60m gets 60ms/s of CPU even on a
 completely idle node. Removing the CPU limit lets cold-start bursts use idle
 capacity; when the node is contended, CFS shares CPU proportionally to requests
-(compressible resource — no pod is killed). Memory limits remain useful
-(`RequestsAndLimits`) since memory is incompressible.
+(compressible resource — no pod is killed). `controlledValues` applies to both CPU
+and memory, so `RequestsOnly` also leaves memory limits at their declared values.
 
 See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
 (fastmcp takes ~6 CPU-seconds to import; at 60m limit this costs 100s wall time).
@@ -385,8 +384,8 @@ applications").
   `cluster/k8s/haku/forgejo-tea/` rather than parked with the rest.
 - **Agentplane repository index**: `cluster/cdk8s/agentplane_index/` — removed from the
   active bundle 2026-10-20 and its namespace and CNPG data deleted (disposable: it rebuilds
-  from Git and Ollama). The cdk8s module, image build and image pins stay for revival; see
-  its README.
+  from Git and Ollama). The cdk8s module and image build stay for revival; automatic image
+  publication, Flux tracking, and the unused image pin were removed. See its README.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
   (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
@@ -413,9 +412,6 @@ applications").
   legacy VM is retired; the VM and its local disk stay untouched until explicitly
   deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
-- **BuildBuddy Executor**: `cluster/parked/buildbuddy-executor/` — scaled to 0;
-  Proxmox-pinned, and atlas/wyrm2 being back (both returned 2026-08) removes that
-  blocker — re-enable when needed.
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
   post-relocation (not unblocked by atlas/wyrm2 returning).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm

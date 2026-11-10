@@ -7,13 +7,15 @@ import contextlib
 import json
 import logging
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import anyio
 import asyncpg
 from babel.numbers import get_currency_precision
+from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -35,6 +37,7 @@ from finance.plaid.spend.allowance import (
     TransactionPeriodId,
     accounting_disposition,
     calculate,
+    daily_reference,
     prepare_accounting,
     round_minor_units,
 )
@@ -42,25 +45,28 @@ from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
-    AnalysisCategoryView,
     CardConfigurationView,
     CardView,
-    ExcludedFlowSummary,
-    PaceEffect,
     PlaidTransactionDetails,
     ProvisionalCardPeriod,
     SpendConfigurationView,
-    SpendTransactionRow,
     SpendTransactionsView,
     SpendView,
     StatementCycle,
     StatementReason,
-    TransactionPeriodSummary,
     UnavailableCardPeriod,
 )
+from finance.plaid.spend.pace_history import PaceHistory, pace_history
+from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
 from finance.plaid.spend.reconciliation_views import allowance_view, sustainability_view
+from finance.plaid.spend.statement_queries import (
+    select_card_accounts,
+    select_card_transactions,
+    select_first_card_transactions,
+    select_statement_snapshots,
+)
 from finance.plaid.spend.sustainability import (
     SustainabilityDashboard,
     SustainabilityView,
@@ -68,42 +74,11 @@ from finance.plaid.spend.sustainability import (
     disabled_view,
     empty_portfolio,
 )
+from finance.plaid.spend.transaction_views import project_transactions
 
 logger = logging.getLogger(__name__)
 
 _CHANNEL = "plaid_spend_changed"
-_COUNTERPARTIES_COLUMN = (
-    "CASE WHEN jsonb_typeof(t.raw_json->'counterparties') = 'array' "
-    "THEN (t.raw_json->'counterparties')::text ELSE '[]' END AS counterparties"
-)
-
-# Read these even when the optional full transaction detail payload is omitted.
-_TRANSACTION_DATES_COLUMNS = """
-    t.raw_json->>'authorized_date' AS authorized_date,
-    t.raw_json->>'authorized_datetime' AS authorized_datetime,
-    t.raw_json->>'datetime' AS posted_datetime
-"""
-
-
-def summarize_excluded_flows(rows: list[SpendTransactionRow]) -> list[ExcludedFlowSummary]:
-    """Summarize only policy exclusions; other accounting dispositions stay separate."""
-    groups: dict[tuple[str, str], list[SpendTransactionRow]] = defaultdict(list)
-    uncategorized = AnalysisCategoryView(id="uncategorized", label="Uncategorized", color="#64748B")
-    for row in rows:
-        if row.disposition == Disposition.EXCLUDED:
-            category = row.category or uncategorized
-            groups[category.id, row.currency].append(row)
-    return [
-        ExcludedFlowSummary(
-            category=group[0].category or uncategorized,
-            currency=currency,
-            debit_minor_units=sum(max(row.amount_minor_units, 0) for row in group),
-            credit_minor_units=sum(max(-row.amount_minor_units, 0) for row in group),
-            transaction_count=len(group),
-            pending_count=sum(row.pending for row in group),
-        )
-        for (_, currency), group in sorted(groups.items())
-    ]
 
 
 class SpendService:
@@ -123,8 +98,7 @@ class SpendService:
         self._coinbase_client = coinbase_client
         self._portfolio_lock = asyncio.Lock()
         self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
-        self._pool: asyncpg.Pool | None = None
-        self._portfolio_sessions: async_sessionmaker[AsyncSession] | None = None
+        self._read_sessions: async_sessionmaker[AsyncSession] | None = None
         self._listening = asyncio.Event()
         self._revision = 0
         self._subscribers: set[asyncio.Queue[None]] = set()
@@ -139,18 +113,16 @@ class SpendService:
 
     @property
     def is_running(self) -> bool:
-        return self._pool is not None
+        return self._read_sessions is not None
 
     @contextlib.asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         async with contextlib.AsyncExitStack() as resources:
-            portfolio_engine, portfolio_sessions = async_session_factory(
-                self._database_url, pool_size=1, max_overflow=0
-            )
-            resources.push_async_callback(portfolio_engine.dispose)
-            pool = await resources.enter_async_context(asyncpg.create_pool(self._database_url, min_size=1, max_size=8))
-            self._pool = pool
-            self._portfolio_sessions = portfolio_sessions
+            read_engine, read_sessions = async_session_factory(self._database_url, pool_size=1, max_overflow=7)
+            resources.push_async_callback(read_engine.dispose)
+            async with read_engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+            self._read_sessions = read_sessions
             try:
                 async with anyio.create_task_group() as task_group:
                     task_group.start_soon(self._listen_forever, name="plaid-spend-listener")
@@ -159,8 +131,7 @@ class SpendService:
                     finally:
                         task_group.cancel_scope.cancel()
             finally:
-                self._pool = None
-                self._portfolio_sessions = None
+                self._read_sessions = None
 
     def report_day(self, instant: datetime) -> date:
         return instant.astimezone(self._configuration.time_zone).date()
@@ -226,110 +197,57 @@ class SpendService:
                 dashboard_url=self._dashboard_url,
             )
 
-        pool = self._require_pool()
-        async with pool.acquire() as connection:
-            account_rows = await connection.fetch(
-                """
-                SELECT a.account_id, a.name AS account_name, a.mask,
-                       COALESCE(
-                           a.iso_currency_code,
-                           a.raw_json #>> '{balances,iso_currency_code}',
-                           a.raw_json #>> '{balances,unofficial_currency_code}',
-                           'USD'
-                       ) AS currency,
-                       l.institution_name,
-                       l.item_id, l.last_synced_at
-                FROM public.accounts AS a
-                JOIN public.links AS l ON l.item_id = a.item_id
-                WHERE a.account_id = ANY($1::text[])
-                  AND a.type = 'credit' AND l.status = 'active'
-                ORDER BY a.account_id
-                """,
-                list(card_configs),
-            )
-            if not account_rows:
-                return SpendView(
-                    generated_at=generated_at,
-                    cards=[],
-                    allowance=await self._read_allowance(
-                        generated_at, allowance_decisions, account_labels, transaction_details, estimate_period_id
-                    ),
-                    dashboard_url=self._dashboard_url,
-                )
+        async with self._require_read_sessions()() as session:
+            account_rows = (await session.execute(select_card_accounts(list(card_configs)))).mappings().all()
+            if account_rows:
+                account_ids = [row["account_id"] for row in account_rows]
+                liability_rows = (await session.execute(select_statement_snapshots(account_ids))).mappings().all()
+                cycle_starts: dict[str, date] = {}
+                for row in liability_rows:
+                    if (cycle_start := _cycle_start(row["last_statement_issue_date"])) is not None:
+                        cycle_starts[row["account_id"]] = cycle_start
+                statement_account_ids = set(cycle_starts)
+                missing_statement_ids = [
+                    row["account_id"] for row in account_rows if row["account_id"] not in cycle_starts
+                ]
+                if missing_statement_ids:
+                    first_transactions = (
+                        (await session.execute(select_first_card_transactions(missing_statement_ids, today)))
+                        .mappings()
+                        .all()
+                    )
+                    cycle_starts.update({row["account_id"]: row["first_date"] for row in first_transactions})
+                counted_accounts = [row for row in account_rows if row["account_id"] in cycle_starts]
+                transaction_rows: Sequence[RowMapping] = ()
+                if counted_accounts:
+                    first_cycle_start = min(cycle_starts[row["account_id"]] for row in counted_accounts)
+                    transaction_rows = (
+                        (
+                            await session.execute(
+                                select_card_transactions(
+                                    [row["account_id"] for row in counted_accounts],
+                                    start_date=min(first_cycle_start, today - timedelta(days=29))
+                                    if card_transactions is not None
+                                    else first_cycle_start,
+                                    through=today,
+                                    include_history=card_transactions is not None,
+                                    include_raw_json=transaction_details is not None,
+                                )
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
 
-            account_ids = [row["account_id"] for row in account_rows]
-            liability_rows = await connection.fetch(
-                """
-                SELECT DISTINCT ON (lc.account_id)
-                       lc.account_id, lc.raw_json->>'last_statement_issue_date' AS last_statement_issue_date
-                FROM public.liability_credit_snapshots AS lc
-                JOIN public.accounts AS a
-                  ON a.account_id = lc.account_id AND a.item_id = lc.item_id
-                JOIN public.links AS l ON l.item_id = a.item_id
-                WHERE lc.account_id = ANY($1::text[]) AND l.status = 'active'
-                ORDER BY lc.account_id, lc.captured_at DESC, lc.id DESC
-                """,
-                account_ids,
+        if not account_rows:
+            return SpendView(
+                generated_at=generated_at,
+                cards=[],
+                allowance=await self._read_allowance(
+                    generated_at, allowance_decisions, account_labels, transaction_details, estimate_period_id
+                ),
+                dashboard_url=self._dashboard_url,
             )
-            cycle_starts: dict[str, date] = {}
-            for row in liability_rows:
-                if (cycle_start := _cycle_start(row["last_statement_issue_date"])) is not None:
-                    cycle_starts[row["account_id"]] = cycle_start
-            statement_account_ids = set(cycle_starts)
-            missing_statement_ids = [row["account_id"] for row in account_rows if row["account_id"] not in cycle_starts]
-            if missing_statement_ids:
-                first_transactions = await connection.fetch(
-                    """SELECT t.account_id, MIN(t.date) AS first_date
-                       FROM public.transactions t
-                       JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
-                       JOIN public.links l ON l.item_id = a.item_id
-                       WHERE t.account_id = ANY($1::text[]) AND t.date <= $2
-                         AND t.removed IS FALSE AND l.status = 'active'
-                       GROUP BY t.account_id""",
-                    missing_statement_ids,
-                    today,
-                )
-                cycle_starts.update({row["account_id"]: row["first_date"] for row in first_transactions})
-            counted_accounts = [row for row in account_rows if row["account_id"] in cycle_starts]
-            transaction_rows: list[asyncpg.Record] = []
-            if counted_accounts:
-                first_cycle_start = min(cycle_starts[row["account_id"]] for row in counted_accounts)
-                raw_column = "t.raw_json," if transaction_details is not None else ""
-                counterparties_column = f"{_COUNTERPARTIES_COLUMN}," if transaction_details is not None else ""
-                transaction_rows = await connection.fetch(
-                    f"""
-                    SELECT t.account_id, t.transaction_id, t.date, t.amount, t.pending,
-                           t.pending_transaction_id,
-                           {_TRANSACTION_DATES_COLUMNS},
-                           t.name, t.merchant_name, t.pfc_primary,
-                           {raw_column}
-                           {counterparties_column}
-                           t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                           COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency,
-                           COALESCE(
-                               t.pfc_detailed,
-                               t.raw_json #>> '{{personal_finance_category,detailed}}'
-                           ) AS pfc_detailed
-                    FROM public.transactions AS t
-                    JOIN public.accounts AS a
-                      ON a.account_id = t.account_id AND a.item_id = t.item_id
-                    JOIN public.links AS l ON l.item_id = a.item_id
-                    WHERE t.account_id = ANY($1::text[])
-                      AND ($4::boolean OR (
-                          t.date <= $3 AND (
-                              t.date >= $2
-                              OR (t.pending IS FALSE AND t.pending_transaction_id IS NOT NULL)
-                          )
-                      ))
-                      AND t.removed IS FALSE AND l.status = 'active'
-                    """,
-                    [row["account_id"] for row in counted_accounts],
-                    min(first_cycle_start, today - timedelta(days=29))
-                    if card_transactions is not None
-                    else first_cycle_start,
-                    today,
-                    card_transactions is not None,
-                )
 
         transactions = [Transaction.model_validate(dict(row)) for row in transaction_rows]
         if card_transactions is not None:
@@ -469,129 +387,68 @@ class SpendService:
             statement_decisions=statement_decisions,
             transaction_details=details_by_key,
         )
-        today = self.report_day(view.generated_at)
-        cycle_report = (
-            next((report for report in view.allowance.spend_periods if report.period.id == PeriodId.CREDIT_CYCLE), None)
-            if view.allowance is not None
-            else None
+        return project_transactions(
+            configuration=self._configuration,
+            view=view,
+            period=period,
+            decisions=decisions,
+            account_labels=labels,
+            card_transactions=card_rows,
+            statement_decisions=statement_decisions,
+            transaction_details=details_by_key,
         )
-        actual_period_id = PeriodId.ROLLING_30D if period == PeriodId.CREDIT_CYCLE and cycle_report is None else period
-        report_period = Period.for_id(
-            PeriodId(actual_period_id), today, cycle_report.period.start if cycle_report else None
-        )
-        start = report_period.start
-        card_currencies = {card.account_id: card.currency for card in view.cards}
-        card_cycle_starts = {
-            card.account_id: card.statement_period.start if card.statement_period.kind != "unavailable" else None
-            for card in view.cards
-        }
-        card_ids = {card.account_id for card in self._configuration.cards if card.enabled}
-        allowance_ids = self._configuration.allowance.spending_account_ids if self._configuration.allowance else set()
-        allowance_policy = self._configuration.allowance
-        labels.update({card.account_id: card.label for card in self._configuration.cards if card.enabled})
-        rows: list[SpendTransactionRow] = []
-        seen: set[tuple[str, str]] = set()
 
-        zone = self._configuration.time_zone
-
-        def add_row(transaction: Transaction, decision: TransactionDecision | None) -> None:
-            day = transaction.report_day(zone)
-            if not start <= day <= today:
-                return
-            key = (transaction.account_id, transaction.transaction_id)
-            if key in seen:
-                return
-            seen.add(key)
-            statement = statement_decisions.get(key)
-            details = details_by_key.get(key, PlaidTransactionDetails())
-            is_card = transaction.account_id in card_ids
-            currency = transaction.currency or card_currencies.get(transaction.account_id) or "USD"
-            card_cycle_start = card_cycle_starts.get(transaction.account_id)
-            if statement is not None:
-                statement_reason = statement[0]
-            elif is_card and card_cycle_start is not None and transaction.date < card_cycle_start:
-                statement_reason = StatementReason.OUTSIDE_CYCLE
-            elif is_card:
-                statement_reason = StatementReason.UNAVAILABLE
-            else:
-                statement_reason = None
-            category = None
-            if decision is not None and allowance_policy is not None:
-                category_id = (
-                    decision.rule.analysis_category
-                    if decision.rule is not None and decision.rule.analysis_category is not None
-                    else "unclassified"
+    async def read_pace_history(self) -> PaceHistory | None:
+        policy = self._configuration.allowance
+        if policy is None:
+            return None
+        now = datetime.now(UTC)
+        synced: list[datetime | None] = []
+        try:
+            async with self._require_read_sessions()() as session, session.begin():
+                await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+                accounts = (
+                    (await session.execute(select_policy_accounts(sorted(policy.spending_account_ids))))
+                    .mappings()
+                    .all()
                 )
-                category_config = allowance_policy.analysis_categories[category_id]
-                category = AnalysisCategoryView(
-                    id=category_id, label=category_config.label, color=category_config.color
+                synced = [_as_utc(row["last_synced_at"]) for row in accounts]
+                valid = len(accounts) == len(policy.spending_account_ids) and all(
+                    row["type"] in ("credit", "depository")
+                    and value is not None
+                    and now - value <= timedelta(hours=policy.max_sync_age_hours)
+                    for row, value in zip(accounts, synced, strict=True)
                 )
-            rows.append(
-                SpendTransactionRow(
-                    date=day,
-                    plaid_date=transaction.date,
-                    account_label=labels.get(transaction.account_id, "Account"),
-                    name=transaction.name,
-                    merchant_name=transaction.merchant_name,
-                    amount_minor_units=_amount_minor_units(transaction.amount, currency),
-                    currency=currency,
-                    pending=transaction.pending,
-                    allowance_in_scope=transaction.account_id in allowance_ids,
-                    disposition=decision.disposition if decision else None,
-                    rule_number=decision.rule_number if decision else None,
-                    rule=decision.rule if decision else None,
-                    reversal_pair=decision.reversal_pair if decision else None,
-                    effective_kind=decision.effective_kind if decision else None,
-                    allowance_minor_units=decision.allowance_minor_units if decision else 0,
-                    pace_effects=[
-                        PaceEffect(
-                            period_id=period_id,
-                            amount_minor_units=decision.pace_effects_minor_units.get(period_id, 0) if decision else 0,
+                if valid:
+                    rows = (
+                        (
+                            await session.execute(
+                                select_policy_transactions(sorted(policy.spending_account_ids), include_raw_json=False)
+                            )
                         )
-                        for period_id in PeriodId
-                        if period_id.rolling_days is not None
-                    ],
-                    statement_minor_units=statement[1]
-                    if statement
-                    else 0
-                    if statement_reason == StatementReason.OUTSIDE_CYCLE
-                    else None,
-                    statement_reason=statement_reason,
-                    pfc_primary=transaction.pfc_primary,
-                    pfc_detailed=transaction.pfc_detailed,
-                    merchant_category_code=transaction.merchant_category_code,
-                    category=category,
-                    counterparties=transaction.counterparties or [],
-                    details=details,
-                )
-            )
-
-        for decision in decisions:
-            add_row(decision.transaction, decision)
-        for transaction in card_rows:
-            add_row(transaction, None)
-        rows.sort(key=lambda row: (row.date, abs(row.amount_minor_units)), reverse=True)
-        unmatched_rows = [
-            row
-            for row in rows
-            if row.allowance_in_scope
-            and row.disposition == Disposition.COUNTED
-            and row.amount_minor_units > 0
-            and (row.effective_kind is None or row.effective_kind == Kind.REVIEW)
-        ]
-        return SpendTransactionsView(
-            generated_at=view.generated_at,
-            requested_period_id=period,
-            period=report_period,
-            summary=TransactionPeriodSummary(
-                transaction_count=len(rows),
-                net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in rows),
-                unmatched_charge_count=len(unmatched_rows),
-                unmatched_charge_minor_units=sum(row.allowance_minor_units for row in unmatched_rows),
-                excluded_flows=summarize_excluded_flows(rows),
-            ),
-            allowance=view.allowance,
-            rows=rows,
+                        .mappings()
+                        .all()
+                    )
+                    evidence = self._configuration.sustainability
+                    return pace_history(
+                        policy,
+                        [Transaction.model_validate(dict(row)) for row in rows],
+                        time_zone=self._configuration.time_zone,
+                        now=now,
+                        last_synced_at=min(value for value in synced if value is not None),
+                        account_history=evidence.account_history if evidence else {},
+                    )
+        except SQLAlchemyError:
+            logger.warning("Could not read pace history from the spending source")
+        return PaceHistory(
+            generated_at=now,
+            time_zone=self._configuration.time_zone.key,
+            currency=policy.currency,
+            status=Status.UNAVAILABLE,
+            last_synced_at=min((value for value in synced if value is not None), default=None),
+            daily_reference_minor_units=round_minor_units(daily_reference(policy.monthly_minor_units), precision=0),
+            windows=[],
+            issues=["Spending account coverage or freshness is unavailable."],
         )
 
     async def _read_allowance(
@@ -606,12 +463,9 @@ class SpendService:
         if policy is None:
             return None
         # No account IDs or names leave the server in the allowance view.
-        async with self._require_pool().acquire() as connection:
-            accounts = await connection.fetch(
-                """SELECT a.account_id, a.name, a.type, l.last_synced_at
-                   FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
-                   WHERE a.account_id = ANY($1::text[]) AND l.status = 'active'""",
-                list(policy.spending_account_ids),
+        async with self._require_read_sessions()() as session:
+            accounts = (
+                (await session.execute(select_policy_accounts(sorted(policy.spending_account_ids)))).mappings().all()
             )
             synced = [_as_utc(row["last_synced_at"]) for row in accounts]
             if account_labels is not None:
@@ -629,6 +483,9 @@ class SpendService:
                     status=Status.UNAVAILABLE,
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
+                    daily_reference_minor_units=round_minor_units(
+                        daily_reference(policy.monthly_minor_units), precision=0
+                    ),
                     activation_at=policy.activation_at,
                     time_zone=self._configuration.time_zone.key,
                     available_minor_units=None,
@@ -653,30 +510,23 @@ class SpendService:
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
-            rows = []
+            rows: Sequence[RowMapping] = ()
             today = self.report_day(now)
             if policy.activation_at <= today:
-                raw_column = "t.raw_json," if transaction_details is not None else ""
-                rows = await connection.fetch(
-                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
-                              t.date, t.amount, t.pending, t.name, t.merchant_name,
-                              t.pfc_primary, t.pfc_detailed,
-                              {_TRANSACTION_DATES_COLUMNS},
-                              {raw_column}
-                              a.type AS account_type,
-                              t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                              {_COUNTERPARTIES_COLUMN},
-                              COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
-                       FROM public.transactions t
-                       JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
-                       JOIN public.links l ON l.item_id = a.item_id
-                       WHERE t.account_id = ANY($1::text[])
-                         AND t.removed IS FALSE AND l.status = 'active'""",
-                    # A posting-date bound can drop late postings or purchases
-                    # that cross midnight in the policy zone. Filter in calculate
-                    # after choosing the effective purchase day instead.
-                    list(policy.spending_account_ids),
+                rows = (
+                    (
+                        await session.execute(
+                            select_policy_transactions(
+                                sorted(policy.spending_account_ids), include_raw_json=transaction_details is not None
+                            )
+                        )
+                    )
+                    .mappings()
+                    .all()
                 )
+                # A posting-date bound can drop late postings or purchases that
+                # cross midnight in the policy zone; calculate filters after
+                # choosing each transaction's effective purchase day.
             if transaction_details is not None:
                 transaction_details.update(
                     {(row["account_id"], row["transaction_id"]): _plaid_details(row["raw_json"]) for row in rows}
@@ -703,7 +553,7 @@ class SpendService:
                 return cached[1]
             try:
                 view = await read_portfolio(
-                    self._require_portfolio_sessions(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
+                    self._require_read_sessions(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
                 )
             except SQLAlchemyError:
                 view = PortfolioView(
@@ -751,16 +601,12 @@ class SpendService:
         account_labels = dict(self._configuration.account_labels)
         account_labels.update({card.account_id: card.label for card in self._configuration.cards})
         try:
-            async with (
-                self._require_pool().acquire() as connection,
-                connection.transaction(isolation="repeatable_read", readonly=True),
-            ):
-                accounts = await connection.fetch(
-                    """SELECT a.account_id, a.type, l.institution_name, l.last_synced_at
-                       FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
-                       WHERE a.account_id = ANY($1::text[]) AND a.detached_at IS NULL
-                         AND l.status = 'active'""",
-                    list(allowance.spending_account_ids),
+            async with self._require_read_sessions()() as session, session.begin():
+                await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+                accounts = (
+                    (await session.execute(select_policy_accounts(sorted(allowance.spending_account_ids))))
+                    .mappings()
+                    .all()
                 )
                 for row in accounts:
                     if row["institution_name"]:
@@ -772,23 +618,17 @@ class SpendService:
                     for row in accounts
                 ):
                     issues.append("Spending account coverage or sync freshness is unavailable.")
-                rows = await connection.fetch(
-                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
-                               t.date, t.amount, t.pending, t.name, t.merchant_name,
-                               t.pfc_primary, t.pfc_detailed, {_TRANSACTION_DATES_COLUMNS},
-                               a.type AS account_type,
-                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                               {_COUNTERPARTIES_COLUMN},
-                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
-                        FROM public.transactions t
-                        JOIN public.accounts a ON a.account_id=t.account_id AND a.item_id=t.item_id
-                        JOIN public.links l ON l.item_id=a.item_id
-                        WHERE t.account_id = ANY($1::text[]) AND t.removed IS FALSE
-                          AND a.detached_at IS NULL AND l.status='active'""",
-                    list(allowance.spending_account_ids),
+                rows = (
+                    (
+                        await session.execute(
+                            select_policy_transactions(sorted(allowance.spending_account_ids), include_raw_json=False)
+                        )
+                    )
+                    .mappings()
+                    .all()
                 )
                 transactions = [Transaction.model_validate(dict(row)) for row in rows]
-        except asyncpg.PostgresError:
+        except SQLAlchemyError:
             issues.append("The spending source could not be read; totals are unavailable.")
         portfolio = await self._read_current_portfolio(now)
         return [
@@ -808,15 +648,10 @@ class SpendService:
             for days in windows_days
         ]
 
-    def _require_pool(self) -> asyncpg.Pool:
-        if self._pool is None:
-            raise RuntimeError("spend database pool is not initialized")
-        return self._pool
-
-    def _require_portfolio_sessions(self) -> async_sessionmaker[AsyncSession]:
-        if self._portfolio_sessions is None:
-            raise RuntimeError("spend portfolio session factory is not initialized")
-        return self._portfolio_sessions
+    def _require_read_sessions(self) -> async_sessionmaker[AsyncSession]:
+        if self._read_sessions is None:
+            raise RuntimeError("spend read session factory is not initialized")
+        return self._read_sessions
 
     async def _listen_forever(self) -> None:
         while True:
@@ -857,10 +692,6 @@ def _cycle_start(last_statement_issue_date: str | None) -> date | None:
     if last_statement_issue_date is None:
         return None
     return date.fromisoformat(last_statement_issue_date) + timedelta(days=1)
-
-
-def _amount_minor_units(major_units: Decimal, currency: str) -> int:
-    return round_minor_units(major_units, get_currency_precision(currency))
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

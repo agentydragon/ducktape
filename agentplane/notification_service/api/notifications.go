@@ -10,7 +10,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 // Notifications is the workloads' API: subscriptions that deliver events from a source into a Session's inbox,
@@ -18,7 +23,6 @@ import (
 type Notifications struct {
 	notificationspb.UnimplementedNotificationsServer
 	store     *store.Store
-	resolver  *auth.Resolver
 	namespace string
 	sandboxes worker.Sandboxes
 	runner    Runner
@@ -26,75 +30,138 @@ type Notifications struct {
 	github    GitHub
 	policy    *inboxaccess.Policy
 	history   SessionHistory
+	sessions  Sessions
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 	timeout          time.Duration
+	wakeups          *wakeups.Hub
+	operatorReader   string
+	debounce         store.Debounce
+	draining         context.Context
+	drain            context.CancelFunc
 }
 
 func NewNotifications(options Options) *Notifications {
+	draining, drain := context.WithCancel(context.Background())
 	return &Notifications{
-		store: options.Store, resolver: options.Resolver, namespace: options.Namespace, sandboxes: options.Sandboxes,
+		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
 		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
-		history: options.History, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
+		history: options.History, sessions: options.Sessions, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
+		wakeups: options.Wakeups, operatorReader: options.OperatorReader, debounce: options.Debounce,
+		draining: draining, drain: drain,
 	}
 }
 
-// caller admits any workload of the namespaces the resolver serves. Its ServiceAccount is who it acts for.
+// Drain ends ongoing watches before graceful server shutdown.
+func (s *Notifications) Drain() { s.drain() }
+
+// caller is the ServiceAccount workload Methods admitted, who it acts for.
 func (s *Notifications) caller(ctx context.Context) (model.ServiceAccount, error) {
-	principal, err := s.resolver.Resolve(ctx)
+	principal, err := auth.Caller(ctx)
 	if err != nil {
 		return model.ServiceAccount{}, admissionRefused{err}
 	}
 	return model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
 }
 
-// serve admits the caller, then runs handle for the account under the request timeout.
+// actor is an admitted workload as it acts on Sessions: an accountActor or an identityActor.
+type actor interface{ isActor() }
+
+// accountActor is a ServiceAccount incarnation.
+type accountActor struct {
+	account model.ServiceAccount
+	uid     string
+}
+
+// identityActor is an Identity incarnation, running in the Sandbox incarnation that controls its
+// workload credential.
+type identityActor struct {
+	identity model.Identity
+	sandbox  model.DestinationRef
+}
+
+func (accountActor) isActor()  {}
+func (identityActor) isActor() {}
+
+// admittedActor is the workload Methods admitted. An Identity caller whose credential no Sandbox
+// controls acts for no Sandbox and is refused with errSandboxMissing.
+func (s *Notifications) admittedActor(ctx context.Context) (actor, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
+		return nil, admissionRefused{err}
+	}
+	if identity, ok := admission.(auth.IdentityAdmission); ok {
+		owner, ok := identity.Caller.Workload.Owner.(auth.ControllerOwner)
+		if !ok || owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
+			return nil, errSandboxMissing
+		}
+		return identityActor{
+			identity: model.Identity{Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID},
+			sandbox:  model.DestinationRef{Namespace: identity.Caller.Workload.Namespace, Name: owner.Name, UID: owner.UID},
+		}, nil
+	}
+	principal, err := auth.Caller(ctx)
+	if err != nil {
+		return nil, admissionRefused{err}
+	}
+	return accountActor{
+		account: model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name},
+		uid:     principal.ServiceAccountUID,
+	}, nil
+}
+
+// serve runs handle for the admitted workload under the request timeout.
 func serve[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request,
-	handle func(context.Context, model.ServiceAccount, *Request) (*Response, error),
+	handle func(context.Context, actor, *Request) (*Response, error),
 ) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	owner, err := s.caller(ctx)
+	caller, err := s.admittedActor(ctx)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
-	response, err := handle(ctx, owner, request)
+	response, err := handle(ctx, caller, request)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
 	return response, nil
 }
 
-// serveOwned is serve for a request about the caller's inboxes and subscriptions: those opened for the Sandbox that
-// runs as its account now. A Sandbox runs as the ServiceAccount of its own name, so one recreated under a deleted
-// Sandbox's name sees none of the deleted one's. An account no Sandbox runs as gets none, or NOT_FOUND if none is nil.
+// serveOwned runs handle under the request timeout for a request about the caller's inboxes and subscriptions:
+// those opened for the Sandbox incarnation it runs in now, owned by its ServiceAccount or Identity incarnation
+// (currentWorkload). A Sandbox recreated under a deleted one's name sees none of the deleted one's. A caller whose
+// Sandbox is gone gets none, or NOT_FOUND if none is nil.
 func serveOwned[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request, none *Response,
 	handle func(context.Context, store.Owner, *Request) (*Response, error),
 ) (*Response, error) {
-	return serve(ctx, s, request, func(ctx context.Context, account model.ServiceAccount, request *Request) (*Response, error) {
-		sandbox, err := s.sandbox(ctx, model.DestinationRef{Namespace: account.Namespace, Name: account.Name})
-		if errors.Is(err, errSandboxMissing) && none != nil {
-			return none, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		return handle(ctx, store.Owner{Account: account, SandboxUID: sandbox.Identity.UID}, request)
-	})
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	caller, err := s.currentWorkload(ctx)
+	if errors.Is(err, errSandboxMissing) && none != nil {
+		return none, nil
+	}
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	response, err := handle(ctx, caller.owner, request)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	return response, nil
 }
 
 func (s *Notifications) CreateSubscription(ctx context.Context, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
 	return serve(ctx, s, request, s.createSubscription)
 }
 
-func (s *Notifications) createSubscription(ctx context.Context, owner model.ServiceAccount, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
+func (s *Notifications) createSubscription(ctx context.Context, owner actor, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
 	body, err := subscribeBody(request)
 	if err != nil {
 		return nil, err
 	}
-	if err := body.Validate(); err != nil {
+	if err := model.CheckText("session_id", body.SessionID, 1, 200); err != nil {
 		return nil, err
 	}
 	subscription, err := s.subscribe(ctx, owner, body)
@@ -197,11 +264,34 @@ func (s *Notifications) listInboxes(ctx context.Context, owner store.Owner, _ *n
 }
 
 func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.readInbox)
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	operator, err := s.operator(ctx)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	if !operator {
+		return serveOwned(ctx, s, request, nil, s.readInbox)
+	}
+	if err := rejectRetiredInboxAddress(request); err != nil {
+		return nil, failure(ctx, err)
+	}
+	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
+		return nil, failure(ctx, err)
+	}
+	page, err := s.store.ReadSession(ctx, s.namespace, request.GetSessionId(), request.GetAfterCursor(), readLimit(request.Limit))
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	response, err := readInboxResponse(page)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	return response, nil
 }
 
 func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-	id, err := parseID("inbox_id", request.GetInboxId())
+	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +299,10 @@ func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, reques
 	if err != nil {
 		return nil, err
 	}
+	return readInboxResponse(page)
+}
+
+func readInboxResponse(page store.InboxPage) (*notificationspb.ReadInboxResponse, error) {
 	response := &notificationspb.ReadInboxResponse{Inbox: inboxView(page.Inbox), Notice: noticeView(page.Notice)}
 	for _, entry := range page.Entries {
 		view, err := entryView(entry)
@@ -225,7 +319,7 @@ func (s *Notifications) AcknowledgeInbox(ctx context.Context, request *notificat
 }
 
 func (s *Notifications) acknowledgeInbox(ctx context.Context, owner store.Owner, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
-	id, err := parseID("inbox_id", request.GetInboxId())
+	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
@@ -241,9 +335,34 @@ func (s *Notifications) RetireInbox(ctx context.Context, request *notificationsp
 }
 
 func (s *Notifications) retireInbox(ctx context.Context, owner store.Owner, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
-	id, err := parseID("inbox_id", request.GetInboxId())
+	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
 	return &notificationspb.RetireInboxResponse{}, s.store.Retire(ctx, owner, id)
+}
+
+// ownedInboxID rejects retired addresses before resolving the Session for its current owner.
+func (s *Notifications) ownedInboxID(ctx context.Context, owner store.Owner, request proto.Message, sessionID string) (uuid.UUID, error) {
+	if err := rejectRetiredInboxAddress(request); err != nil {
+		return uuid.Nil, err
+	}
+	if err := model.CheckText("session_id", sessionID, 1, 200); err != nil {
+		return uuid.Nil, err
+	}
+	return s.store.InboxIDForSession(ctx, owner, sessionID)
+}
+
+func rejectRetiredInboxAddress(request proto.Message) error {
+	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
+		field, _, size := protowire.ConsumeField(unknown)
+		if size < 0 {
+			return invalidRequest("invalid inbox request")
+		}
+		if field == 1 {
+			return invalidRequest("inbox_id is no longer accepted; address the Session by ID")
+		}
+		unknown = unknown[size:]
+	}
+	return nil
 }

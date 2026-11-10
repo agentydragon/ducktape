@@ -1,7 +1,8 @@
 //! Imported wrappers keep callback-body reads deferred until invocation.
 
-use analysis::DepKind;
 use analysis::reports::schema::CallbackFactoryUseKind;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const SOURCE: &str = r#"import { factory } from './peer.js';
@@ -715,6 +716,140 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
 }
 
 #[test]
+fn inferred_two_parameter_module_factory_defers_initializer() {
+    let peers = [(
+        "static/peer",
+        "export var factory = (initialize, cache) => () => {\n\
+         if (!cache) { cache = { exports: {} }; initialize(cache.exports, cache); }\n\
+         return cache.exports;\n\
+         };\n",
+    )];
+    let source = "import { factory } from './peer.js';\n\
+                  const wrapped = factory((exports) => { exports.value = later; });\n\
+                  const later = 42;\n\
+                  console.log(wrapped().value);\n\
+                  export { wrapped, later };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peers),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert_eq!(
+        report["imported_callables"]["factory"]["callback_factory_evidence"][0]["origin"],
+        "inferred_immutable_wrapper",
+    );
+}
+
+#[test]
+fn inferred_factory_accepts_assignment_valued_fresh_member_argument() {
+    let provider =
+        "export var factory = (callback, cache) => () => callback((cache = { value: 1 }).value);\n";
+    let source = "import { factory } from './peer.js';\n\
+                  const wrapped = factory((value) => later + value);\n\
+                  const later = 42;\n\
+                  console.log(wrapped());\n\
+                  export { wrapped, later };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "43\n");
+}
+
+#[test]
+fn inferred_module_factory_rejects_extra_callback_roots_and_mutable_exports() {
+    let app = "import { factory } from './peer.js';\n\
+               const wrapped = factory(() => later);\n\
+               const later = 42;\n\
+               console.log(wrapped());\n";
+    for provider in [
+        // The outer call itself can invoke the supplied callback.
+        "export var factory = (callback, cache) => (callback(), () => cache);\n",
+        // The returned function can invoke an unrepresented host callback.
+        "export var factory = (callback, cache) => () => { globalThis.saved(); return callback(); };\n",
+        // A separate captured binding can read importer state when invoked.
+        "const other = () => globalThis.saved(); export var factory = (callback, cache) => () => { other(); return callback(); };\n",
+        // An inherited property is not part of the fresh returned graph.
+        "export var factory = (callback, cache) => () => { cache = {}; return cache.constructor; };\n",
+        "export var factory = (callback, cache) => () => { const other = () => globalThis.saved(); return callback(); };\n",
+        "export var factory = (callback, cache) => () => { cache = { exports: {} }; return cache['exports']; };\n",
+        "export var factory = (callback, cache) => () => callback((cache = { get value() { return globalThis.saved(); } }).value);\n",
+        "export var factory = (callback, cache) => () => callback((cache = { value: 1 })['value']);\n",
+        "export var factory = (callback, cache) => () => this;\n",
+        "export var factory = (callback = () => 0, cache) => () => callback();\n",
+        "export var factory = ({ callback }, cache) => () => callback();\n",
+        "export var factory = (callback, cache) => () => callback(); factory = callback => callback();\n",
+    ] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                app,
+                vec![
+                    logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                    logical_module("values/later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", provider)]),
+            &["callbacks/wrapped", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn inferred_module_factory_does_not_admit_a_second_supplied_capability() {
+    let provider =
+        "export var factory = (callback, cache) => () => { callback(); return cache(); };\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "import { factory } from './peer.js';\n\
+             const wrapped = factory(() => 1, () => later);\n\
+             const later = 42;\n\
+             console.log(wrapped());\n",
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)]),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
+#[test]
+fn inferred_var_factory_keeps_a_caught_preinitialization_throw() {
+    let source = "import './peer.js';\n";
+    let peer = [
+        (
+            "static/peer",
+            "import './trigger.js';\nexport var factory = (callback, cache) => () => callback();\n",
+        ),
+        (
+            "static/trigger",
+            "import { factory } from './peer.js';\n\
+             let observed = 'none';\n\
+             try { factory(() => 42); } catch (error) { observed = error.name; }\n\
+             console.log(observed);\n",
+        ),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&peer));
+    assert_preserved_entry_output(&fixture, "TypeError\n");
+}
+
+#[test]
 fn audited_inline_factory_defers_its_single_callback() {
     let peers = [(
         "static/peer",
@@ -1160,8 +1295,8 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
 fn private_factory_result_records_reachability_exemption() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-         const wrapped = factory(() => later);\n\
+            "const wrapped = factory(() => later);\n\
+         import { factory } from './peer.js';\n\
          const later = 42;\n\
          console.log(wrapped());\n",
             vec![],
@@ -1191,6 +1326,161 @@ fn private_factory_result_records_reachability_exemption() {
             .iter()
             .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::ClosedResultRoot)
     );
+}
+
+#[test]
+fn private_factory_result_requires_an_exact_initializer_and_retains_summary_evidence() {
+    let mut actual = Vec::new();
+    let mut expected = Vec::new();
+    for (initializer, private, marker) in [
+        ("factory(() => later)", true, 0),
+        ("(factory(() => later))", true, 0),
+        ("((factory)((() => later)))", false, 0),
+        ("(0, factory(() => later))", true, 0),
+        ("(0, factory)(() => later)", false, 0),
+        ("(globalThis.marker = 1, factory(() => later))", false, 1),
+        ("(globalThis.marker = 1, factory)(() => later)", false, 1),
+        ("factory((globalThis.marker = 1, () => later))", false, 1),
+        (
+            "({get current() { globalThis.marker = 1; return factory; }}).current(() => later)",
+            false,
+            1,
+        ),
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\n\
+             globalThis.marker = 0;\nconst wrapped = {initializer};\n\
+             const later = 42;\nconsole.log(globalThis.marker, wrapped());\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]));
+        assert_preserved_entry_output(&fixture, &format!("{marker} 42\n"));
+        let graph = fixture.dependency_graph();
+        let wrapped = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|binding| binding.binding == "wrapped")
+            })
+            .unwrap();
+        let uses: Vec<_> = wrapped
+            .synchronous_execution
+            .as_ref()
+            .unwrap()
+            .callback_factory_uses
+            .iter()
+            .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+            .collect();
+        actual.push((initializer, uses.len()));
+        expected.push((initializer, usize::from(private)));
+        if let [proof] = uses.as_slice() {
+            assert_eq!(proof.summary_ref, graph.imported_callable_summaries[0].id);
+            assert!(
+                !graph.imported_callable_summaries[0]
+                    .callback_factory_evidence
+                    .is_empty()
+            );
+        }
+    }
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn callback_factory_privacy_does_not_cover_throwing_operands() {
+    for initializer in [
+        "((() => { throw new Error('operand'); })(), factory)(() => 42)",
+        "factory((() => { throw new Error('operand'); })())",
+        "({get current() { throw new Error('operand'); }}).current(() => 42)",
+    ] {
+        let source =
+            format!("import {{ factory }} from './peer.js';\nconst wrapped = {initializer};\n");
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]));
+        assert_preserved_entry_error(&fixture, "Error: operand");
+        assert!(fixture.dependency_graph().nodes.iter().all(|node| {
+            node.synchronous_execution.as_ref().is_none_or(|execution| {
+                execution
+                    .callback_factory_uses
+                    .iter()
+                    .all(|proof| proof.kind != CallbackFactoryUseKind::ClosedResultRoot)
+            })
+        }));
+    }
+}
+
+#[test]
+fn private_factory_result_retains_the_audited_summary() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return { invoke: () => callback() }; }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .with_pure_exports(&["factory"])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+    let graph = fixture.dependency_graph();
+    let uses: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .flat_map(|execution| &execution.callback_factory_uses)
+        .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+        .collect();
+    assert_eq!(uses.len(), 1);
+    assert_eq!(
+        graph
+            .imported_callable_summaries
+            .iter()
+            .find(|summary| summary.id == uses[0].summary_ref)
+            .unwrap()
+            .callback_factory_evidence,
+        vec![analysis::CallbackFactoryEvidence::AuthorAssertion {
+            defining_module: "static/peer".into(),
+            export: "factory".into(),
+        }]
+    );
+}
+
+#[test]
+fn acyclic_exported_factory_result_keeps_its_initialization_exemption() {
+    for declaration in [
+        "export const wrapped = factory(() => later);",
+        "const wrapped = factory(() => later);\nexport { wrapped };",
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\n{declaration}\nconst later = 42;\nconsole.log(wrapped());\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
+            "static/peer",
+            "export function factory(callback) { return () => callback(); }\n",
+        )]));
+        assert_preserved_entry_output(&fixture, "42\n");
+        assert_eq!(
+            fixture
+                .dependency_graph()
+                .nodes
+                .iter()
+                .filter_map(|node| node.synchronous_execution.as_ref())
+                .flat_map(|execution| &execution.callback_factory_uses)
+                .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+                .count(),
+            1,
+            "{declaration}"
+        );
+    }
 }
 
 #[test]
@@ -3626,4 +3916,401 @@ fn namespace_capability_privacy_requires_total_supported_family_uses() {
             &[],
         );
     }
+}
+
+#[test]
+fn source_empty_map_record_factory_defers_members_and_getter() {
+    let peer = [(
+        "static/peer",
+        "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { put(key, value) { state.set(key, value); }, get size() { return state.size; }, label() { return readLater().name; } }; }\n",
+    )];
+    let source = "import { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nqueue.put('answer', 42);\nconsole.log(queue.size, queue.label(), readLater().name);\nexport { queue, Later };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&peer),
+    );
+    assert_preserved_entry_output(&fixture, "1 Later Later\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let summary = &report["imported_callables"]["factory"]["returned_record"];
+    assert_eq!(summary["defining_module"], "static/peer");
+    assert_eq!(summary["export"], "factory");
+    assert_eq!(summary["local"], "factory");
+    assert_eq!(summary["source_location"]["source_path"], "static/peer.js");
+    assert_eq!(summary["members"][1]["name"], "size");
+    assert_eq!(
+        summary["members"][1]["captures"],
+        serde_json::json!(["state"])
+    );
+    assert_eq!(
+        summary["members"][2]["captures"],
+        serde_json::json!(["readLater"])
+    );
+    let graph = fixture.dependency_graph();
+    let certificate = &graph.imported_callable_summaries[0];
+    assert!(certificate.callback_factory_evidence.is_empty());
+    let record = certificate.returned_record.as_ref().unwrap();
+    use analysis::analysis_provenance::InferenceRule;
+    assert_eq!(record.inference.conclusion, InferenceRule::ReturnedRecord);
+    assert_eq!(
+        record.inference.derivation_rules,
+        std::collections::BTreeSet::from([
+            InferenceRule::NativeIntegrity,
+            InferenceRule::NativeCallIdentity,
+            InferenceRule::EmptyCollectionConstruction,
+            InferenceRule::StableFunction,
+            InferenceRule::ReturnedRecord,
+        ])
+    );
+    assert!(record.inference.value_input_refs.is_empty());
+    assert_eq!(record.defining_module, "static/peer");
+    assert_eq!(record.export, "factory");
+    assert_eq!(
+        record.source_location.as_ref().unwrap().source_path,
+        "static/peer.js"
+    );
+    assert!(record.members[2].captures.contains("readLater"));
+    let queue = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "queue")
+        })
+        .unwrap();
+    let execution = queue.synchronous_execution.as_ref().unwrap();
+    assert!(execution.inference_uses.contains(
+        &analysis::reports::schema::InferenceUseReport::from(&record.inference)
+    ));
+    assert!(execution.callback_factory_uses.is_empty());
+    let uses = &execution.returned_record_uses;
+    assert!(uses.iter().any(|proof| proof.kind == analysis::reports::schema::ReturnedRecordUseKind::CallTiming));
+    assert!(
+        uses.iter().any(|proof| proof.kind
+            == analysis::reports::schema::ReturnedRecordUseKind::ReturnCapability)
+    );
+    assert!(uses.iter().all(|proof| proof.summary_ref == certificate.id
+        && proof.source_location.as_ref().unwrap().start_line == 3));
+}
+
+#[test]
+fn source_record_capabilities_activate_on_later_use_and_publication() {
+    let peer = "import { later } from './app.js';\nexport function factory() { let state = new Map; return { read() { return later; }, get value() { return later; }, has(key) { return state.has(key); } }; }\n";
+    let host = "export function consume(record) { return record.read(); }\nexport function consumeSaved() { return globalThis.saved.read(); }\n";
+    for (expression, publication) in [
+        ("queue.value", ""),
+        ("queue.read()", ""),
+        ("consume(queue)", ""),
+        ("consumeSaved()", "globalThis.saved = queue;\n"),
+    ] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\nimport {{ consume, consumeSaved }} from './host.js';\nexport let later = 0;\nconst queue = factory();\n{publication}const observed = {expression};\nlater = 42;\nconsole.log(observed, later);\n"
+        );
+        let peers = [("static/peer", peer), ("static/host", host)];
+        let mut statements = vec![];
+        if !publication.is_empty() {
+            statements.push("globalThis.saved = queue;");
+        }
+        let mut together_statements = statements.clone();
+        together_statements.push("later = 42;");
+        let together = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "together",
+                    &[
+                        Member::new("queue"),
+                        Member::new("observed"),
+                        Member::new("later"),
+                    ],
+                    &together_statements,
+                )],
+            )
+            .with_extra_chunks(&peers),
+        );
+        assert_preserved_entry_output(&together, "0 42\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "queue",
+                        &[Member::new("queue"), Member::new("observed")],
+                        &statements,
+                    ),
+                    logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
+                ],
+            )
+            .with_extra_chunks(&peers),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn source_record_factory_rejects_eager_or_unstable_capabilities() {
+    let source = "import { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nexport { queue, Later };\n";
+    for provider in [
+        "export function factory() { const state = new Map(); return { [readLater().name]() { return state.size; } }; }",
+        "export function factory() { const state = new Map(); return { value: ({ get value() { return readLater(); } }).value }; }",
+        "export function factory() { readLater(); const state = new Map(); return { read() { return state.size; } }; }",
+        "const Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+        "export function factory() { const state = new Map(); return { read() { return state.size; } }; } factory = function () { return readLater(); };",
+        "Object.defineProperty(globalThis, 'Map', { value: function () { readLater(); } }); export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+        "globalThis.Map = function () { readLater(); }; export function factory() { const state = new Map(); return { read() { return state.size; } }; }",
+        "export function factory() { const state = new Map(); return { ...{ read() { return state.size; } } }; }",
+    ] {
+        let provider = format!("import {{ readLater }} from './app.js';\n{provider}\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                source,
+                vec![
+                    logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                    logical_module("later", &[Member::new("Later")]),
+                ],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn source_record_factory_with_unresolved_builtin_keeps_conservative_policy() {
+    let source = "import 'node:fs';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
+    let fixture = run_fixture(FixtureOpts::new(source, vec![
+        logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+        logical_module("later", &[Member::new("Later")]),
+    ]).with_extra_chunks(&[("static/peer", "export function factory() { let state = new Map(); return { get size() { return state.size; } }; }\n")]));
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+    let policy: serde_json::Value =
+        read_json(&fixture.report_root.join("static/app/export_reentry.json"));
+    assert_eq!(policy["policy"], "conservative");
+}
+
+#[test]
+fn source_record_factory_does_not_cross_reexports() {
+    let source = "import { factory } from './bridge.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nexport { queue, Later };\n";
+    expect_atomic_conflict_rejection(FixtureOpts::new(source, vec![
+        logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+        logical_module("later", &[Member::new("Later")]),
+    ]).with_extra_chunks(&[
+        ("static/bridge", "export { factory } from './peer.js';\n"),
+        ("static/peer", "import { readLater } from './app.js';\nexport function factory() { let state = new Map(); return { read() { return state.size + readLater().name.length; } }; }\n"),
+    ]), &["queue", "later"], &[]);
+}
+
+#[test]
+fn source_record_deferred_live_cell_access_preserves_the_tdz() {
+    let peer = "import { later } from './app.js';\nexport function factory() { let state = new Map; return { read() { return later; }, get value() { return later; }, has(key) { return state.has(key); } }; }\n";
+    for expression in ["queue.value", "queue.read()"] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\nconst queue = factory();\nconst observed = (() => {{ try {{ return {expression}; }} catch (error) {{ return error.name; }} }})();\nexport const later = 42;\nconsole.log(observed, later);\n"
+        );
+        let peers = [("static/peer", peer)];
+        let together = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "together",
+                    &[
+                        Member::new("queue"),
+                        Member::new("observed"),
+                        Member::new("later"),
+                    ],
+                )],
+            )
+            .with_extra_chunks(&peers),
+        );
+        assert_preserved_entry_output(&together, "ReferenceError 42\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
+                    logical_module("later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&peers),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn unused_or_ineligible_source_record_factory_has_no_graph_proof_use() {
+    let provider = "export function factory() { let state = new Map(); return { get size() { return state.size; } }; }\n";
+    for source in [
+        "import { factory } from './peer.js';\nconsole.log(42);\n",
+        "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
+        "import { factory } from './peer.js';\nfunction use(factory) { return factory(); }\nconsole.log(use(() => 42));\n",
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+        let graph = fixture.dependency_graph();
+        assert!(graph.imported_callable_summaries.is_empty());
+        assert!(graph.nodes.iter().all(|node| {
+            node.synchronous_execution
+                .as_ref()
+                .is_none_or(|execution| execution.returned_record_uses.is_empty())
+        }));
+    }
+}
+
+const SOURCE_RECORD_NAMESPACE_PEER: &str = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
+
+fn source_record_namespace_opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
+        vec![
+            logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+            logical_module("later", &[Member::new("Later")]),
+        ],
+    ).with_extra_chunks(chunks)
+}
+
+fn source_record_with_global_namespace(namespace: &str) -> Fixture {
+    run_fixture(source_record_namespace_opts(&[
+        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+        ("static/namespace", namespace),
+    ]))
+}
+
+#[test]
+fn source_record_native_integrity_preserves_symbol_namespace_writes() {
+    let fixture = source_record_with_global_namespace(
+        "const namespace = Symbol.for('example.registry');\nconst alias = namespace;\nexport function publish(value) { globalThis[alias] = value; }\nexport function clear() { delete globalThis[namespace]; }\n",
+    );
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+}
+
+#[test]
+fn source_record_native_integrity_preserves_closed_entries_namespace_writes() {
+    let fixture = source_record_with_global_namespace(
+        "export function publish() { const root = globalThis; for (const [key, value] of Object.entries({ first: 1, second: 2 })) { Object.defineProperty(root, key, { value, configurable: true }); } }\n",
+    );
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+}
+
+#[test]
+fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
+    for namespace in [
+        "export function publish(key, value) { globalThis[key] = value; }",
+        "const key = 'Map'; export function publish(value) { globalThis[key] = value; }",
+        "let key = Symbol.for('example.registry'); export function replace() { key = 'Map'; } export function publish(value) { globalThis[key] = value; }",
+        "let key = Symbol.for('example.registry'); export function replace() { [key] = ['Map']; } export function publish(value) { globalThis[key] = value; }",
+        "let key = Symbol.for('example.registry'); export function publish(value) { for (key of ['Map']) globalThis[key] = value; }",
+        "export function publish(key, value) { globalThis[key] = value; var key = Symbol.for('example.registry'); }",
+        "export function publish(Symbol, value) { const key = Symbol.for('example.registry'); globalThis[key] = value; }",
+        "export function publish(Object) { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+        "export function publish() { for (let [key, value] of Object.entries({ safe: 1 })) { key = 'Map'; globalThis[key] = value; } }",
+        "export function publish() { for (const [key, value] of Object.entries({ Map: 1 })) globalThis[key] = value; }",
+        "export function publish() { for (const [key, value] of Object.entries({ ['safe']: 1 })) globalThis[key] = value; }",
+        "export function publish() { for (const [key, value] of Object.entries({ get safe() { return 1; } })) globalThis[key] = value; }",
+        "export function publish() { for (const [key = 'Map', value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+        "export function mutate() { Map++; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; globalThis.box.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; const alias = globalThis.box; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; globalThis[key].for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; const alias = globalThis[key]; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+    ] {
+        expect_atomic_conflict_rejection(
+            source_record_namespace_opts(&[
+                ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+                ("static/namespace", namespace),
+            ]),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
+    for (namespace, replacement) in [
+        (
+            "const key = Symbol.for('example.registry'); export function publish(value) { globalThis[key] = value; }",
+            "export function replace() { Symbol.for = () => 'Map'; }",
+        ),
+        (
+            "export function publish() { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+            "export function replace() { Object.entries = () => [['Map', 1]]; }",
+        ),
+        (
+            "export function publish() { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+            "export function replace() { Array.prototype[Symbol.iterator] = function* () { yield 'Map'; }; }",
+        ),
+    ] {
+        let namespace = format!("import './replacement.js';\n{namespace}");
+        expect_atomic_conflict_rejection(
+            source_record_namespace_opts(&[
+                ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+                ("static/namespace", &namespace),
+                ("static/replacement", replacement),
+            ]),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn source_record_native_integrity_handles_long_aliases_and_cycles() {
+    let mut namespace = String::from("const key0 = Symbol.for('example.registry');\n");
+    for index in 1..=256 {
+        namespace.push_str(&format!("const key{index} = key{};\n", index - 1));
+    }
+    namespace.push_str("export function publish(value) { globalThis[key256] = value; }\n");
+    let fixture = source_record_with_global_namespace(&namespace);
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+    expect_atomic_conflict_rejection(
+        source_record_namespace_opts(&[
+            ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+            (
+                "static/namespace",
+                "var first = second; var second = first; export function publish(value) { globalThis[first] = value; }",
+            ),
+        ]),
+        &["queue", "later"],
+        &[],
+    );
+}
+
+#[test]
+fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
+    let source = "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nglobalThis.saved = readLater;\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
+    let namespace = "const key = Symbol.for('example.registry');\nglobalThis[key] = Symbol;\nglobalThis[key].for = () => 'Map';\nglobalThis[Symbol.for('other.registry')] = function () { try { globalThis.saved(); return { size: 'ready' }; } catch (error) { return { size: error.name }; } };\n";
+    let chunks = [
+        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+        ("static/namespace", namespace),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&chunks));
+    assert_preserved_entry_output(&fixture, "ReferenceError Later\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "queue",
+                    &[Member::new("queue"), Member::new("readLater")],
+                    &["globalThis.saved = readLater;"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks),
+        &["queue", "later"],
+        &[],
+    );
 }

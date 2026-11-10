@@ -1,4 +1,5 @@
 use super::*;
+use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -6,7 +7,7 @@ use source_identity::SourceUnitOrdinal;
 /// into a single shape so the "first-order ⊆ lazy" subset invariant
 /// lives in one place ([`Self::record`]) instead of at every
 /// construction site.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PositionBucketed<T> {
     /// At-init position: outside any function/arrow/method/getter/
     /// setter body, constructor body, or instance class-field
@@ -51,6 +52,11 @@ impl PositionBucketed<BTreeSet<Id>> {
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
+    /// Local linkage executes no value expression. Dependency-bearing
+    /// re-exports additionally require their dependency's evaluation order.
+    pub(crate) export_linkage: Option<ExportLinkage>,
+    /// Exact protected iterable producers that must remain in this module.
+    pub(crate) stable_iterable_producers: BTreeSet<SourceUnitOrdinal>,
     pub source_location: Option<SourceLocation>,
     /// Matched retained callback-factory contracts rejected by a visible
     /// namespace guard for a top-level call in this source unit. These facts
@@ -127,36 +133,41 @@ pub struct StatementFacts {
     /// everything else takes the conservative fallback.
     pub declares_direct_function: bool,
     /// Static-key `globalThis.<prop>` cells the statement writes
-    /// at-init (`globalThis.tag = ...` records `"tag"`). Dynamic-key
-    /// accesses bail `cell_writes_summarizable` instead.
+    /// at-init (`globalThis.tag = ...` records `"tag"`). A dynamic key is a
+    /// `DynamicCellWrites` havoc instead.
     pub global_writes: BTreeSet<String>,
     /// Static-key `globalThis.<prop>` cells the statement reads
     /// at-init.
     pub global_reads: BTreeSet<String>,
-    /// `false` when the statement contains a shape that defeats any
-    /// static reasoning about which cells it WRITES (`with`, direct
-    /// or indirect `eval`, `Function(...)`, dynamic-key
-    /// `globalThis[expr]`, `defineProperty`/`Proxy` on the global).
-    /// Consumed by the vendor strip's swap-privacy gate, whose call
-    /// side effects are covered by its own island-reachability
-    /// analysis.
-    pub cell_writes_summarizable: bool,
-    /// `false` whenever `cell_writes_summarizable` is `false`, and
-    /// additionally for shapes that defeat the dataflow-aware
-    /// S-chain's stronger "which cells does this statement TOUCH"
-    /// question: opaque (not classifier-Pure) at-init calls/news
-    /// (I/O is not a cell; callee bodies may touch globals), member
-    /// writes through bindings (aliasing), and statements tainted by
-    /// a global-object alias escape. Downstream passes must treat
-    /// the statement as touching every cell. See `README.md` →
+    /// Source-classifier reasons the statement's cells may be incomplete.
+    /// `dataflow_summarizable` also checks exact operation authority before
+    /// retaining the every-cell fallback, and the graph retains
+    /// the causes on the edges that fallback emits. See `README.md` →
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
-    pub dataflow_summarizable: bool,
+    pub havoc: BTreeSet<DataflowOpacityCause>,
+    /// Causes `trusted_dataflow_summaries` removed from `havoc`, including an
+    /// opaque at-init call it kept out. Empty when the premise changed nothing
+    /// for this statement (docs/premise_provenance.md).
+    pub trusted_summary_discharged: BTreeSet<DataflowOpacityCause>,
+    /// Heap-content cells of the statement's own at-init syntax. These are
+    /// distinct from binding effects: mutating an array changes its contents,
+    /// not the binding that names it. Its calls' cells are
+    /// `SynchronousCalls::heap_contents`.
+    pub(crate) heap_contents: HeapContentCells,
+    /// The whole initializer of a single-declarator top-level declaration,
+    /// when it is an array literal or a proved fresh native Set construction:
+    /// this direct eager occurrence allocates at this statement.
+    pub(crate) heap_one_shot_allocation: Option<EffectCell>,
+    /// Allocation sites in this statement's deferred positions, at any depth.
+    pub(crate) deferred_heap_allocations: BTreeSet<EffectCell>,
+    /// Native premises consumed by proved heap construction at this source unit.
+    pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub purity: Purity,
     pub kind: StatementKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallbackFactoryBarrierFact {
     pub namespace_binding: String,
     pub member: String,
@@ -168,7 +179,7 @@ pub struct CallbackFactoryBarrierFact {
     pub rejection: CallbackFactoryBarrierRejection,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CallbackFactoryBarrierRejection {
     NamespaceMemberWrite {
         witness: CallbackFactoryWriteWitness,
@@ -176,10 +187,21 @@ pub enum CallbackFactoryBarrierRejection {
     NamespaceDynamicPropertyWrite {
         witness: CallbackFactoryWriteWitness,
     },
+    NamespaceCallArgument {
+        witness: CallbackFactoryCallArgumentWitness,
+    },
     UnsupportedGuard,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallbackFactoryCallArgumentWitness {
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub call_span: swc_common::Span,
+    pub argument_index: usize,
+    pub namespace_binding: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallbackFactoryWriteWitness {
     pub statement_ordinal: SourceUnitOrdinal,
     pub receiver_binding: String,
@@ -188,6 +210,29 @@ pub struct CallbackFactoryWriteWitness {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
+    pub initializer_binding_effects:
+        Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
+    /// Whole-original-owner coverage, sealed after its checked root evaluation.
+    pub(crate) completed_initialization:
+        Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
+    /// Report-only reason the original owner's whole-initialization proof was
+    /// refused. This never changes the conservative effect projection.
+    pub(crate) initialization_coverage_refusal:
+        Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
+    /// Report-only outcome of the owner's attempted kernel lane, if any.
+    pub(crate) root_attempt: Option<crate::facts::RootAttempt>,
+    /// Report-only, source-site may-accesses; never a legacy graph input.
+    pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
+    // SavedSynchronousCalls transports both verdicts through the artifact's
+    // shared purity graph; the report projects this runtime field separately.
+    pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
+    pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
+    pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
+    /// Internal call-site certificate produced only after the checked local
+    /// constructor-factory proof and ordinary synchronous execution both
+    /// succeed. It is deliberately separate from the serialized proof-use
+    /// report: report data is not an analysis input.
+    pub local_record_factory_purity: Option<LocalRecordFactoryPurityCertificate>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order
@@ -195,22 +240,191 @@ pub(crate) struct SynchronousCalls {
     /// a real prefix value from a TDZ/initial-`undefined` observation so the
     /// dependency graph can preserve that observation point.
     pub uninitialized_reads: BTreeSet<Id>,
+    /// Bindings in `reads`, `rebinds` and `uninitialized_reads` that only
+    /// conservative paths contributed, each with the first such path.
+    pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
-    pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
+    /// Engine-owned authority transported with staged `ChunkFactAnalysis`.
+    /// Its saved representation requires this field so a cache missing typed
+    /// authority cannot regain `.complete` as legacy authority. Public report
+    /// DTOs are separate diagnostics.
+    pub(crate) binding_effect_coverage: super::sync_effects::BindingEffectCoverage,
+    /// What each plain-array binding the statement reads holds at its program
+    /// point, when its elements are known.
+    pub(crate) settled_array_elements: BTreeMap<Id, SettledElements>,
+    /// For a statement with the `GlobalObjectAliasEscape` havoc: the
+    /// top-level bindings it reads eagerly that may hold the global object
+    /// where it starts (`None` when execution did not settle them).
+    pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
+    /// Heap-content cells of the callables this statement invoked.
+    pub(crate) heap_contents: HeapContentCells,
+    /// Heap reads and writes reached without an assumed callback or fallback
+    /// path. This is a subset of `heap_contents` and is used only to check
+    /// explicit commuting premises; the conservative heap order uses all cells.
+    pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
+    pub precision_losses: Vec<ExecutionPrecisionLoss>,
+    pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
+    pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
+    pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
+    pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
+    pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
+    pub imported_primitive_array_spread_input_uses:
+        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
+    pub inference_uses: Vec<crate::analysis_provenance::InferenceUse>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
+    pub returned_record_uses: Vec<ReturnedRecordUseFact>,
+    pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// Binding effects a statement's synchronous summary assumed rather than
+/// derived: contributed only by a conservative path that assumes code may run
+/// at the statement ([`AssumedEffectReason`]). An effect precise execution of
+/// code the statement definitely runs also reached is not listed: an effect
+/// both observed and assumed is observed. While the interpreter builds an
+/// invocation's outcome the maps are relative to that invocation; the
+/// enclosing statement re-tags them when an assumed path merges them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct FallbackOnlyEffects {
+    pub reads: BTreeMap<Id, AssumedEffectReason>,
+    pub rebinds: BTreeMap<Id, AssumedEffectReason>,
+    pub uninitialized_reads: BTreeMap<Id, AssumedEffectReason>,
+}
+
+impl SynchronousCalls {
+    pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
+        self.heap_contents.extend(cells);
+        if non_assumed {
+            self.non_assumed_heap_accesses.extend_cells(cells);
+        }
+    }
+
+    pub(crate) fn record_heap_read(&mut self, cell: EffectCell, non_assumed: bool) {
+        self.heap_contents.reads.insert(cell.clone());
+        if non_assumed {
+            self.non_assumed_heap_accesses.reads.insert(cell);
+        }
+    }
+
+    pub(crate) fn record_heap_write(&mut self, cell: EffectCell, non_assumed: bool) {
+        self.heap_contents.writes.insert(cell.clone());
+        if non_assumed {
+            self.non_assumed_heap_accesses.writes.insert(cell);
+        }
+    }
+
+    pub(crate) fn binding_effect_authority(&self) -> super::sync_effects::BindingEffectAuthority {
+        let author_source_only = matches!(
+            self.initializer_binding_effects.as_deref(),
+            Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+        );
+        self.binding_effect_coverage
+            .authority(self.complete, author_source_only)
+    }
+
+    pub(crate) fn binding_effect_authority_report(
+        &self,
+    ) -> crate::reports::schema::BindingEffectAuthorityReport {
+        let author_source_only = matches!(
+            self.initializer_binding_effects.as_deref(),
+            Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+        );
+        self.binding_effect_coverage
+            .authority_report(self.complete, author_source_only)
+    }
+
+    /// The assumed path when only a conservative path contributed the read
+    /// of `binding`; `None` when it was observed.
+    pub(crate) fn fallback_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+        self.fallback_only.reads.get(binding)
+    }
+
+    /// As [`Self::fallback_read`], for a rebind of `binding`.
+    pub(crate) fn fallback_rebind(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+        self.fallback_only.rebinds.get(binding)
+    }
+
+    /// As [`Self::fallback_read`], for an observation of `binding` before
+    /// its initializer ran.
+    pub(crate) fn fallback_uninitialized_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+        self.fallback_only.uninitialized_reads.get(binding)
+    }
+}
+
+/// Source- and execution-checked evidence that one exact factory call only
+/// allocates the validated local constructor graph. The settled purity
+/// projection consumes this to discharge only the impure-callee effect at
+/// `call_span`; factory and class purity summaries remain unchanged. An
+/// author assertion may supply otherwise-unproved prototype premises, but
+/// native/source evidence can establish them without an assertion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct LocalRecordFactoryPurityCertificate {
+    pub call_span: swc_common::Span,
+    pub checked_owners: BTreeSet<SourceUnitOrdinal>,
+    pub dependencies: crate::analysis_inputs::ProofDependencies,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallbackFactoryUseFact {
     pub imported_local: String,
     pub evidence: Vec<crate::analysis_inputs::CallbackFactoryEvidence>,
     pub kind: crate::reports::schema::CallbackFactoryUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
-    pub source_location: Option<crate::reports::schema::SourceLocation>,
+    pub source_location: Option<crate::execution_evidence::SourceLocation>,
+    pub span: swc_common::Span,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReturnedRecordUseFact {
+    pub imported_local: String,
+    pub evidence: crate::analysis_inputs::ReturnedRecordSummary,
+    pub kind: crate::reports::schema::ReturnedRecordUseKind,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<crate::execution_evidence::SourceLocation>,
     pub span: swc_common::Span,
 }
 
 impl StatementFacts {
+    /// What one synchronous call of the function or class this statement
+    /// declares runs first-order (before nested closures and `await`):
+    /// a class runs its constructor. The view at-init call promotion uses.
+    pub fn first_order_reads(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.reads.first_order_lazy, |ctor| &ctor.reads)
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_rebinds(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.rebinds.first_order_lazy, |ctor| &ctor.rebinds)
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_calls(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.calls.first_order_lazy, |ctor| &ctor.calls)
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_unresolved_sources(&self) -> &BTreeSet<Id> {
+        self.constructor
+            .as_ref()
+            .map_or(&self.first_order_unresolved_sources, |ctor| {
+                &ctor.unresolved_sources
+            })
+    }
+
+    /// See [`Self::first_order_reads`].
+    pub fn first_order_unresolved_inline_fn(&self) -> bool {
+        self.constructor
+            .as_ref()
+            .map_or(self.first_order_unresolved_inline_fn, |ctor| {
+                ctor.unresolved_inline_fn
+            })
+    }
+
     /// Per-statement (writes, reads) cell summary used by the
     /// dataflow-aware S-chain emission in `graph/` and the vendor
     /// strip's swap-privacy gate. Derived on demand: the
@@ -238,6 +452,8 @@ impl StatementFacts {
         for key in &self.global_reads {
             reads.insert(EffectCell::GlobalProp(key.clone()));
         }
+        writes.extend(self.heap_contents.writes.iter().cloned());
+        reads.extend(self.heap_contents.reads.iter().cloned());
         StatementEffectSummary { writes, reads }
     }
 }
@@ -250,20 +466,94 @@ impl StatementFacts {
 /// Dynamic-keyed accesses (`globalThis[expr]`) are deliberately not
 /// representable here — statements containing them are marked
 /// non-summarizable.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum EffectCell {
     Binding(Id),
     GlobalProp(String),
+    /// Heap contents of one array allocation, keyed by its canonical object
+    /// origin from chunk value flow.
+    ArrayContents(u32),
+    /// Mutable contents of one proved fresh native Set construction.
+    SetContents(u32),
+    /// Own keys and descriptor attributes, shared by every generation of
+    /// this source allocation. Distinct from stored data values.
+    ObjectShape(u32),
+    /// One static own property, conservatively shared by every runtime
+    /// generation of the source allocation. This supplies no strong update.
+    OwnProperty {
+        origin: u32,
+        property: String,
+    },
 }
 
 /// The (writes, reads) cell view of one statement, derived by
-/// [`StatementFacts::effects`]. The summarizability bits live on
-/// [`StatementFacts`] directly (`cell_writes_summarizable`,
+/// [`StatementFacts::effects`]. Its completeness is
+/// [`StatementFacts::havoc`] (`cell_writes_summarizable`,
 /// `dataflow_summarizable`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatementEffectSummary {
     pub writes: BTreeSet<EffectCell>,
     pub reads: BTreeSet<EffectCell>,
+}
+
+/// The elements a plain-array binding holds where a statement starts, as
+/// synchronous execution settled them. Every element is untainted at that
+/// point (design § Heap taint).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum SettledElements {
+    /// Every element is a primitive.
+    Primitive,
+    /// Every element is an untainted plain-data object literal with static
+    /// keys; `shared_keys` are the own keys every object element
+    /// has and holds a primitive under. No value the statement otherwise reads
+    /// reaches those objects.
+    Records { shared_keys: BTreeSet<String> },
+}
+
+/// Heap-content cells one body touches: allocations it performs, cells it
+/// reads and writes, and whether an operation may touch contents the cells do
+/// not name (a heap-frontier barrier in the graph builder).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HeapContentCells {
+    /// Fresh allocations seed later observations without overwriting a prior
+    /// content timeline: source-span identities can denote many runtime arrays.
+    pub allocations: BTreeSet<EffectCell>,
+    pub reads: BTreeSet<EffectCell>,
+    pub writes: BTreeSet<EffectCell>,
+    pub opaque: bool,
+    /// An observation of pre-existing external storage, with no unique source
+    /// allocation birth. Its heap ordering cannot be discharged by completion.
+    pub observes_external_heap: bool,
+}
+
+impl HeapContentCells {
+    pub(crate) fn extend(&mut self, other: &Self) {
+        self.allocations.extend(other.allocations.iter().cloned());
+        self.reads.extend(other.reads.iter().cloned());
+        self.writes.extend(other.writes.iter().cloned());
+        self.opaque |= other.opaque;
+        self.observes_external_heap |= other.observes_external_heap;
+    }
+}
+
+/// Source-known heap may-accesses whose invocation path was not assumed.
+/// Allocations are excluded: a fresh birth is not a content write.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HeapContentAccesses {
+    pub reads: BTreeSet<EffectCell>,
+    pub writes: BTreeSet<EffectCell>,
+}
+
+impl HeapContentAccesses {
+    pub(crate) fn extend(&mut self, other: &Self) {
+        self.reads.extend(other.reads.iter().cloned());
+        self.writes.extend(other.writes.iter().cloned());
+    }
+
+    pub(crate) fn extend_cells(&mut self, cells: &HeapContentCells) {
+        self.reads.extend(cells.reads.iter().cloned());
+        self.writes.extend(cells.writes.iter().cloned());
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -279,11 +569,167 @@ pub struct ChunkFactAnalysis {
     pub redundant_purity_hints: Vec<RedundantPurityHint>,
     /// Author-declared `pure_members: [<prop>, …]` entries the
     /// analyzer would classify pure without the hint — currently
-    /// limited to `(WHITELIST_RECEIVERS, PURE_STATIC_CALLS-prop)`
-    /// pairs (e.g. `pure_members: [isArray]` on a binding named
+    /// limited to intrinsic members whose builtin row admits any
+    /// operands (e.g. `pure_members: [isArray]` on a binding named
     /// `Array`). Surfaced for the same trust-surface-shrinking
     /// reason as `redundant_purity_hints`.
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
+    /// Author-declared `purity: pure` hints no statement of this chunk reads
+    /// by name. The classifier consults a hint only at a direct call of the
+    /// name, and the code graph only at a read of the name as an import, so
+    /// these hints changed no fact (docs/premise_provenance.md).
+    pub unconsulted_purity_hints: BTreeSet<String>,
+}
+
+fn apply_initializer_binding_effects(
+    fact: &mut StatementFacts,
+    source_only_bindings: &BTreeSet<String>,
+) {
+    use crate::reports::schema::InitializerBindingEffectsUse;
+
+    let Some(binding) = fact
+        .declared
+        .iter()
+        .find(|binding| source_only_bindings.contains(binding.0.as_ref()))
+    else {
+        return;
+    };
+    // Authoring admission requires one simple initialized declarator in
+    // this canonical source unit, including split comma-list declarations.
+    if fact.kind != StatementKind::VarDecl
+        || fact.declared.len() != 1
+        || (fact.var_declared.contains(binding) && !fact.var_initializers.contains(binding))
+    {
+        return;
+    }
+    let Some(effects) = fact.synchronous_calls.as_mut() else {
+        return;
+    };
+    let observed_reads: BTreeSet<String> = effects
+        .reads
+        .iter()
+        .map(|(id, _)| id)
+        .filter(|id| !fact.reads.eager.contains(*id) && effects.fallback_read(id).is_none())
+        .chain(effects.uninitialized_reads.iter().filter(|id| {
+            !fact.reads.eager.contains(*id) && effects.fallback_uninitialized_read(id).is_none()
+        }))
+        .map(|id| id.0.to_string())
+        .collect();
+    let observed_rebinds: BTreeSet<String> = effects
+        .rebinds
+        .iter()
+        .filter(|(id, _)| !fact.rebinds.eager.contains(id) && effects.fallback_rebind(id).is_none())
+        .map(|(id, _)| id.0.to_string())
+        .collect();
+    if !observed_reads.is_empty() || !observed_rebinds.is_empty() {
+        effects.initializer_binding_effects =
+            Some(Box::new(InitializerBindingEffectsUse::Contradicted {
+                binding: binding.0.to_string(),
+                reads: observed_reads,
+                rebinds: observed_rebinds,
+            }));
+        return;
+    }
+    // Every out-of-footprint effect left here has fallback provenance.
+    // Keep execution state, values, heap effects and completeness unchanged.
+    let reads_before = effects.reads.len();
+    let rebinds_before = effects.rebinds.len();
+    let uninitialized_before = effects.uninitialized_reads.len();
+    effects
+        .reads
+        .retain(|(id, _)| fact.reads.eager.contains(id));
+    effects
+        .rebinds
+        .retain(|(id, _)| fact.rebinds.eager.contains(id));
+    effects
+        .uninitialized_reads
+        .retain(|id| fact.reads.eager.contains(id));
+    effects
+        .fallback_only
+        .reads
+        .retain(|id, _| fact.reads.eager.contains(id));
+    effects
+        .fallback_only
+        .rebinds
+        .retain(|id, _| fact.rebinds.eager.contains(id));
+    effects
+        .fallback_only
+        .uninitialized_reads
+        .retain(|id, _| fact.reads.eager.contains(id));
+    effects.initializer_binding_effects = Some(Box::new(InitializerBindingEffectsUse::Applied {
+        binding: binding.0.to_string(),
+        narrowed_reads: reads_before - effects.reads.len(),
+        narrowed_rebinds: rebinds_before - effects.rebinds.len(),
+        narrowed_uninitialized_reads: uninitialized_before - effects.uninitialized_reads.len(),
+    }));
+}
+
+impl ChunkFactAnalysis {
+    /// Every `host_behavior.reentry_free_operations` entry some statement's
+    /// execution consumed. The interpreter's only reader of these entries,
+    /// `host_call_does_not_reenter`, records each use it grants, so an entry
+    /// absent here changed no fact of this chunk.
+    pub fn consumed_trusted_dataflow_summaries(&self) -> bool {
+        self.facts
+            .iter()
+            .any(|fact| !fact.trusted_summary_discharged.is_empty())
+    }
+
+    pub fn consumed_reentry_free_operations(&self) -> BTreeSet<spec::ReentryFreeOperation> {
+        self.facts
+            .iter()
+            .filter_map(|fact| fact.synchronous_calls.as_ref())
+            .flat_map(|calls| &calls.author_host_contract_uses)
+            .map(|proof_use| proof_use.operation)
+            .collect()
+    }
+
+    /// Apply author lexical-effect boundaries after raw source execution and
+    /// receipt sealing. Source-owned coverage is never changed by this overlay.
+    pub fn apply_initializer_binding_effects(&mut self, source_only_bindings: &BTreeSet<String>) {
+        for fact in &mut self.facts {
+            apply_initializer_binding_effects(fact, source_only_bindings);
+        }
+    }
+
+    pub fn validate_initializer_binding_effects(
+        &self,
+        source_only_bindings: &BTreeSet<String>,
+    ) -> anyhow::Result<()> {
+        use crate::reports::schema::InitializerBindingEffectsUse;
+
+        let mut consumed = BTreeSet::new();
+        for fact in &self.facts {
+            let Some(effect_use) = fact
+                .synchronous_calls
+                .as_ref()
+                .and_then(|calls| calls.initializer_binding_effects.as_deref())
+            else {
+                continue;
+            };
+            match effect_use {
+                InitializerBindingEffectsUse::Applied { binding, .. } => {
+                    anyhow::ensure!(
+                        consumed.insert(binding.clone()),
+                        "initializer_binding_effects for `{binding}` was applied to multiple source units"
+                    );
+                }
+                InitializerBindingEffectsUse::Contradicted {
+                    binding,
+                    reads,
+                    rebinds,
+                } => anyhow::bail!(
+                    "initializer_binding_effects: source_only for `{binding}` contradicts observed lexical effects at source unit {}: reads {reads:?}, rebinds {rebinds:?}",
+                    fact.ordinal.0
+                ),
+            }
+        }
+        anyhow::ensure!(
+            &consumed == source_only_bindings,
+            "initializer_binding_effects consumption mismatch: configured {source_only_bindings:?}, applied {consumed:?}"
+        );
+        Ok(())
+    }
 }
 
 #[derive(
@@ -308,6 +754,13 @@ pub enum StatementKind {
     SideEffect,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ExportLinkage {
+    Local,
+    Dependency,
+}
+
 /// Policy-independent per-statement facts: everything the analyzer
 /// can compute about a top-level statement from the module text alone,
 /// without consulting `AnalysisInputs`. Produced by
@@ -318,6 +771,7 @@ pub enum StatementKind {
 #[derive(Debug, Clone)]
 pub struct StructuralStatementFacts {
     pub ordinal: SourceUnitOrdinal,
+    pub(crate) export_linkage: Option<ExportLinkage>,
     pub source_location: Option<SourceLocation>,
     pub kind: StatementKind,
     pub declared: BTreeSet<Id>,
@@ -326,9 +780,18 @@ pub struct StructuralStatementFacts {
     pub var_declared: BTreeSet<Id>,
     /// Actual initializer writes; a bare `var x;` does not reset x.
     pub var_initializers: BTreeSet<Id>,
+    /// All `var` declaration and initializer occurrences in this statement,
+    /// including nested lazy syntax. Retained to prove unique stable bindings
+    /// without another AST census.
+    pub(crate) var_declaration_counts: BTreeMap<Id, usize>,
+    pub(crate) var_initializer_counts: BTreeMap<Id, usize>,
+    /// Direct top-level `var name = ...` candidates. Initializer type is
+    /// checked later; this records only source shape and hygienic identity.
+    pub(crate) top_level_var_initializer_candidates: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     pub(crate) member_write_roots: BTreeSet<Id>,
+    pub(crate) argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) constructor: Option<ConstructorFacts>,
     pub at_init_unresolved_sources: BTreeSet<Id>,
@@ -338,8 +801,89 @@ pub struct StructuralStatementFacts {
     pub declares_direct_function: bool,
     pub global_writes: BTreeSet<String>,
     pub global_reads: BTreeSet<String>,
-    pub cell_writes_summarizable: bool,
-    pub dataflow_summarizable: bool,
+    pub havoc: BTreeSet<DataflowOpacityCause>,
+}
+
+/// One shape that defeats the dataflow-aware S-chain's cell tracking for
+/// a statement ([`StatementFacts::havoc`]). The first three
+/// are policy-independent source shapes; `OpaqueAtInitCall` consults the
+/// purity classifier, so a declared-pure hint or exact completed operation
+/// coverage can discharge it without erasing the source provenance.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataflowOpacityCause {
+    /// A member write through a tracked binding or an alias shape: the
+    /// written heap cell cannot be attributed.
+    MemberWriteOrAlias,
+    /// `with`, direct or indirect `eval`, `Function(...)`, a dynamic-key
+    /// global access, or `defineProperty`/`Proxy` on the global object:
+    /// the statement may write arbitrary cells
+    /// ([`StatementFacts::cell_writes_summarizable`]).
+    DynamicCellWrites,
+    /// The statement reads a binding a bare global-object alias flowed
+    /// into (`facts/global_object.rs`), so its summary misses global
+    /// property cells.
+    GlobalObjectAliasEscape,
+    /// An at-init call or `new` the purity classifier does not prove
+    /// `Pure`: I/O is not a cell and callee bodies may touch globals.
+    OpaqueAtInitCall,
+}
+
+impl StatementFacts {
+    /// Whether the dataflow-aware S-chain may use this statement's exact
+    /// cell summary instead of the strict every-prior-impure fallback.
+    pub fn dataflow_summarizable(&self) -> bool {
+        self.havoc.is_empty()
+            || (self.havoc.len() == 1
+                && self.havoc.contains(&DataflowOpacityCause::OpaqueAtInitCall)
+                && self.has_complete_operation_effects())
+    }
+
+    /// Remaining dataflow obligations after applying exact operation authority.
+    /// The source-classifier provenance in `havoc` remains unchanged.
+    pub fn dataflow_opacity(&self) -> BTreeSet<DataflowOpacityCause> {
+        let mut opacity = self.havoc.clone();
+        if self.has_complete_operation_effects() {
+            opacity.remove(&DataflowOpacityCause::OpaqueAtInitCall);
+        }
+        opacity
+    }
+
+    /// Complete lexical effects and initialization domains for this exact
+    /// owner. Neither timing completion nor the source-only initializer proof
+    /// by itself supplies the operation authority needed to refine havoc.
+    fn has_complete_operation_effects(&self) -> bool {
+        self.synchronous_calls.as_ref().is_some_and(|calls| {
+            calls.binding_effect_authority()
+                == super::sync_effects::BindingEffectAuthority::OperationReceipt
+                && calls
+                    .completed_initialization
+                    .as_ref()
+                    .is_some_and(|proof| proof.covers(self.ordinal))
+        })
+    }
+
+    /// Whether the cells the statement WRITES are all in its summary: no
+    /// `with`, `eval`, `Function(...)`, dynamic-key `globalThis[expr]`, or
+    /// `defineProperty`/`Proxy` on the global. Read by the vendor strip's
+    /// swap-privacy gate, whose call side effects are covered by its own
+    /// island-reachability analysis.
+    pub fn cell_writes_summarizable(&self) -> bool {
+        !self
+            .havoc
+            .contains(&DataflowOpacityCause::DynamicCellWrites)
+    }
+}
+
+impl StructuralStatementFacts {
+    /// Source-only contradiction to a selected direct parameter-borrow input.
+    pub fn contradicts_argument_borrow(&self, function: &Id, parameter: &Id, index: usize) -> bool {
+        self.member_write_roots.contains(parameter)
+            || self
+                .argument_value_escapes
+                .get(function)
+                .is_some_and(|indices| indices.contains(&index))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -363,10 +907,150 @@ pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub(crate) value_flow: super::ChunkValueFlow,
-    pub(crate) set_iterable_proof: super::SetIterableProof,
-    pub(crate) local_class_construction_proof: super::LocalClassConstructionProof,
+    pub(crate) dynamic_scope: super::DynamicScopeFact,
+    pub(crate) set_iterable_shapes: super::SetIterableShapes,
+    pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
+    pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
     pub(crate) plain_data_bindings: Vec<String>,
+    /// Top-level `var` binding IDs that pass the structural stability gates.
+    /// Value inference admits only candidates with a proven Number initializer;
+    /// at arbitrary module positions the resulting value class is Number or
+    /// pre-initialization `undefined`, never exact Number.
+    pub(crate) stable_var_number_candidates: BTreeSet<Id>,
+    pub(crate) plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub(crate) plain_data_inference_uses:
+        BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
+    pub(crate) source_semantic_facts:
+        Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
+}
+
+/// Source-only structural census. Selector resolution can consume this before
+/// value-flow roots supplied by validated author inputs are known.
+pub struct StructuralChunkSourceFacts<'a> {
+    pub body: Vec<TopLevelItemView<'a>>,
+    pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
+    pub(crate) imported_bindings: BTreeSet<Id>,
+    pub shadowed: BTreeSet<&'static str>,
+    pub per_statement: Vec<StructuralStatementFacts>,
+    pub top_level_await: Option<SourceUnitOrdinal>,
+}
+
+#[cfg(test)]
+mod initializer_overlay_tests {
+    use super::*;
+    use crate::facts::sync_effects::{BindingEffectAuthority, BindingEffectCoverage};
+    use raw_js_test_support::parse;
+
+    #[test]
+    fn initializer_overlay_preserves_raw_receipts_and_other_effect_domains() {
+        // The author marker hides the source-owned receipt in graph reports;
+        // inspect that independent authority directly after real source analysis.
+        for (source, has_receipt) in [
+            (
+                "const seed = 41; function factory() { return seed; } var result = (seed, factory(), factory());",
+                true,
+            ),
+            (
+                "const seed = 41; function factory() { globalThis.host?.(() => { const value = later; later = 3; return value; }); return seed; } var result = (seed, factory(), factory()); var later = 0;",
+                false,
+            ),
+        ] {
+            let module = parse(source);
+            let mut analysis = analyze_chunk(&module, &AnalysisInputs::default(), None);
+            let result_index = analysis
+                .facts
+                .iter()
+                .position(|fact| fact.declared.iter().any(|binding| binding.0 == "result"))
+                .unwrap();
+            let before = analysis.facts[result_index]
+                .synchronous_calls
+                .as_ref()
+                .unwrap()
+                .clone();
+            let BindingEffectCoverage::OrderedRootInitializer { receipt, .. } =
+                &before.binding_effect_coverage
+            else {
+                panic!("the fixture must exercise ordered root receipt sealing: {before:#?}");
+            };
+            assert_eq!(receipt.is_some(), has_receipt, "{before:#?}");
+            if !has_receipt {
+                assert!(
+                    !before.fallback_only.reads.is_empty(),
+                    "raw fallback must block a source receipt"
+                );
+            }
+            let coverage = serde_json::to_value(&before.binding_effect_coverage).unwrap();
+            let selected = BTreeSet::from(["result".to_string()]);
+            analysis.apply_initializer_binding_effects(&selected);
+            analysis
+                .validate_initializer_binding_effects(&selected)
+                .unwrap();
+            let fact = &analysis.facts[result_index];
+            let after = fact.synchronous_calls.as_ref().unwrap();
+            assert_eq!(
+                serde_json::to_value(&after.binding_effect_coverage).unwrap(),
+                coverage,
+                "an author filter cannot mint, upgrade or reseal a source receipt"
+            );
+            assert_eq!(
+                after.binding_effect_authority(),
+                BindingEffectAuthority::AuthorSourceOnly
+            );
+            assert_eq!(after.complete, before.complete);
+            assert_eq!(after.heap_contents, before.heap_contents);
+            assert_eq!(
+                after.non_assumed_heap_accesses,
+                before.non_assumed_heap_accesses
+            );
+            assert_eq!(
+                serde_json::to_value(&after.completed_initialization).unwrap(),
+                serde_json::to_value(&before.completed_initialization).unwrap()
+            );
+            assert_eq!(after.precision_losses, before.precision_losses);
+            let effects = fact.initialization_effects();
+            assert!(
+                effects.reads.keys().any(
+                    |cell| matches!(cell, EffectCell::Binding(binding) if binding.0 == "seed")
+                ),
+                "the syntax-derived footprint remains in initialization effects"
+            );
+            if !has_receipt {
+                assert!(before.reads.iter().any(|(binding, _)| binding.0 == "later"));
+                assert!(
+                    before
+                        .rebinds
+                        .iter()
+                        .any(|(binding, _)| binding.0 == "later")
+                );
+                for cells in [&effects.reads, &effects.writes] {
+                    assert!(!cells.keys().any(|cell| matches!(cell, EffectCell::Binding(binding) if binding.0 == "later")),
+                        "promoted fallback effects must be narrowed before effect translation validation");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn initializer_overlay_retains_duplicate_and_consumption_guards() {
+        for (source, binding, diagnostic) in [
+            (
+                "var result = 1; var result = 2;",
+                "result",
+                "multiple source units",
+            ),
+            ("var result = 1;", "missing", "consumption mismatch"),
+        ] {
+            let module = parse(source);
+            let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None);
+            let configured = BTreeSet::from([binding.to_string()]);
+            facts.apply_initializer_binding_effects(&configured);
+            let error = facts
+                .validate_initializer_binding_effects(&configured)
+                .unwrap_err();
+            assert!(error.to_string().contains(diagnostic), "{error:#}");
+        }
+    }
 }

@@ -1,0 +1,388 @@
+#!/usr/bin/busybox sh
+# Opt-in, bounded systemd controller changes with a live descendant task.
+set -eu
+busybox=/usr/bin/busybox
+case ${AGENTPLANE_CGROUP_MODE:-pilot} in
+pilot)
+	mode=pilot
+	marker=AGENTPLANE_CGROUP_PILOT
+	pairs=2
+	unit=agentplane-cgroup-pilot-resident.service
+	slice_unit=pilot.slice
+	;;
+stress)
+	mode=stress
+	marker=AGENTPLANE_CGROUP_STRESS
+	pairs=5
+	unit=agentplane-cgroup-stress-resident.service
+	slice_unit=stress.slice
+	;;
+*) exit 2 ;;
+esac
+probe_start_uptime=$("$busybox" awk '{print int($1)}' /proc/uptime)
+slice=/sys/fs/cgroup/$slice_unit
+tracefs=/sys/kernel/tracing
+scratch=$("$busybox" mktemp -d /run/agentplane-cgroup-pilot.XXXXXX)
+"$busybox" chmod 0700 "$scratch"
+record_file=$scratch/record
+trace_owned=no
+trace_mounted=no
+trace_supported=no
+trace_reason=unavailable
+trace_hits_total=0
+trace_buffer_kib=1024
+trace_scan_line_limit=20000
+first_witness_proven=no
+
+emit() {
+	printf '\n%s_%s\n' "$marker" "$*" >"$record_file"
+	bytes=$("$busybox" wc -c <"$record_file")
+	[ "$bytes" -le 2048 ] || exit 1
+	"$busybox" dd if="$record_file" bs=2048 count=1 2>/dev/null
+}
+
+cleanup() {
+	if [ "$trace_owned" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on" || true
+		printf 'nop\n' >"$tracefs/current_tracer" || true
+		printf '\n' >"$tracefs/set_ftrace_pid" || true
+		printf '\n' >"$tracefs/set_graph_function" || true
+		printf '%s\n' "$trace_buffer_initial" >"$tracefs/buffer_size_kb" || true
+		printf '%s\n' "$trace_on_initial" >"$tracefs/tracing_on" || true
+	fi
+	if [ "$trace_mounted" = yes ]; then
+		"$busybox" umount "$tracefs" || true
+	fi
+	"$busybox" timeout -s TERM 12 /usr/bin/systemctl stop "$unit" >/dev/null 2>&1 || true
+	"$busybox" rm -rf "$scratch"
+}
+trap cleanup EXIT
+
+mask() {
+	if [ -r "$1" ]; then
+		"$busybox" head -c 128 "$1" | "$busybox" tr ' ' ',' | "$busybox" tr -d '\n'
+	else
+		printf 'unavailable'
+	fi
+}
+
+has_io() {
+	case ",$1," in
+	*,io,*) printf yes ;;
+	*) printf no ;;
+	esac
+}
+
+stress_budget() {
+	[ "$mode" = stress ] || return 0
+	elapsed=$("$busybox" awk -v start="$probe_start_uptime" '{print int($1) - start}' /proc/uptime)
+	if [ "$elapsed" -ge 60 ]; then
+		emit "UNEXERCISED step=$step reason=active_budget_before_property elapsed=$elapsed limit=75"
+		exit 1
+	fi
+}
+
+resident_alive() {
+	resident_pid=$(/usr/bin/systemctl show -P MainPID "$unit" 2>/dev/null || printf '0')
+	case "$resident_pid" in
+	'' | 0 | *[!0-9]*) return 1 ;;
+	esac
+	[ -d "/proc/$resident_pid" ] &&
+		"$busybox" grep -qx "$resident_pid" "$slice/$unit/cgroup.procs"
+}
+
+snapshot() {
+	root_mask=$(mask /sys/fs/cgroup/cgroup.subtree_control)
+	slice_mask=$(mask "$slice/cgroup.subtree_control")
+	if resident_alive; then resident=yes; else resident=no; fi
+	uptime=$("$busybox" awk '{print $1}' /proc/uptime)
+	emit "SNAPSHOT step=$1 uptime=$uptime root=$root_mask slice=$slice_mask resident=$resident pid=$resident_pid"
+}
+
+setup_trace() {
+	if [ ! -r "$tracefs/available_filter_functions" ]; then
+		if "$busybox" mount -t tracefs tracefs "$tracefs" 2>/dev/null; then
+			trace_mounted=yes
+		else
+			trace_reason=tracefs_unavailable
+			return
+		fi
+	fi
+	if [ ! -w "$tracefs/set_graph_function" ]; then
+		trace_reason=function_graph_unavailable
+		return
+	fi
+	if ! "$busybox" grep -Eq '^cgroup_subtree_control_write([[:space:]]|$)' "$tracefs/available_filter_functions"; then
+		trace_reason=subtree_function_unavailable
+		return
+	fi
+	if [ "$("$busybox" cat "$tracefs/current_tracer")" != nop ]; then
+		trace_reason=tracer_busy
+		return
+	fi
+	filter_state=$("$busybox" head -c 256 "$tracefs/set_ftrace_filter")
+	graph_state=$("$busybox" head -c 256 "$tracefs/set_graph_function")
+	pid_state=$("$busybox" head -c 256 "$tracefs/set_ftrace_pid")
+	case "$filter_state" in
+	'' | '#### all functions enabled ####') ;;
+	*)
+		trace_reason=preexisting_function_filter
+		return
+		;;
+	esac
+	case "$graph_state" in
+	'' | '#### all functions enabled ####') ;;
+	*)
+		trace_reason=preexisting_graph_filter
+		return
+		;;
+	esac
+	case "$pid_state" in
+	'' | 'no pid') ;;
+	*)
+		trace_reason=preexisting_pid_filter
+		return
+		;;
+	esac
+	trace_on_initial=$("$busybox" cat "$tracefs/tracing_on")
+	trace_buffer_initial=$("$busybox" cat "$tracefs/buffer_size_kb")
+	trace_owned=yes
+	if printf '0\n' >"$tracefs/tracing_on" &&
+		printf '%s\n' "$trace_buffer_kib" >"$tracefs/buffer_size_kb" &&
+		printf 'cgroup_subtree_control_write\n' >"$tracefs/set_graph_function" &&
+		printf '1\n' >"$tracefs/set_ftrace_pid" &&
+		printf 'function_graph\n' >"$tracefs/current_tracer"; then
+		trace_supported=yes
+		trace_buffer_actual=$("$busybox" cat "$tracefs/buffer_size_kb")
+		trace_reason=enabled_pid1_graph_${trace_buffer_actual}kib
+	else
+		trace_reason=setup_failed
+	fi
+}
+
+trace_cpu_stats() {
+	phase=$1
+	for cpu in cpu0 cpu1; do
+		stats_file=$tracefs/per_cpu/$cpu/stats
+		captured_stats=$scratch/trace-stats-$phase-$cpu
+		if [ -r "$stats_file" ] && "$busybox" head -c 2048 "$stats_file" >"$captured_stats"; then
+			stats=$("$busybox" awk '
+				BEGIN { overrun = "unavailable"; commit = "unavailable"; dropped = "unavailable" }
+				$1 == "overrun:" { overrun = $2 }
+				$1 == "commit" && $2 == "overrun:" { commit = $3 }
+				$1 == "dropped" && $2 == "events:" { dropped = $3 }
+				END { printf "overrun=%s commit_overrun=%s dropped=%s", overrun, commit, dropped }
+			' "$captured_stats")
+			emit "TRACE_CPU_STATS step=$step phase=$phase cpu=$cpu $stats"
+		else
+			printf 'unavailable\n' >"$captured_stats"
+			emit "TRACE_CPU_STATS step=$step phase=$phase cpu=$cpu unavailable"
+		fi
+	done
+}
+
+trace_integrity() {
+	for cpu in cpu0 cpu1; do
+		status=$("$busybox" awk '
+			FNR == 1 { phase++ }
+			$1 == "overrun:" { counter[phase, "overrun"] = $2 }
+			$1 == "commit" && $2 == "overrun:" { counter[phase, "commit"] = $3 }
+			$1 == "dropped" && $2 == "events:" { counter[phase, "dropped"] = $3 }
+			END {
+				for (i = 1; i <= 2; i++) {
+					for (j = 1; j <= 3; j++) {
+						key = j == 1 ? "overrun" : (j == 2 ? "commit" : "dropped")
+						if (!((i, key) in counter) || counter[i, key] !~ /^[0-9]+$/) { print "unavailable"; exit }
+					}
+				}
+				for (j = 1; j <= 3; j++) {
+					key = j == 1 ? "overrun" : (j == 2 ? "commit" : "dropped")
+					if (counter[2, key] > counter[1, key]) { print "overflow_or_drop"; exit }
+					if (counter[2, key] < counter[1, key]) { print "counter_reset"; exit }
+				}
+				print "clean"
+			}
+		' "$scratch/trace-stats-before-$cpu" "$scratch/trace-stats-after-$cpu")
+		if [ "$status" != clean ]; then
+			printf '%s:%s' "$cpu" "$status"
+			return
+		fi
+	done
+	printf 'clean'
+}
+
+change_property() {
+	step=$1
+	value=$2
+	stress_budget
+	snapshot "${step}_before"
+	if [ "$resident" != yes ]; then
+		emit "UNEXERCISED step=$step reason=no_descendant_task"
+		exit 1
+	fi
+	if [ "$mode" = stress ]; then
+		if [ "$value" = yes ]; then expected_before=no; else expected_before=yes; fi
+		root_before=$(has_io "$root_mask")
+		slice_before=$(has_io "$slice_mask")
+		if [ "$root_before" != "$expected_before" ] || [ "$slice_before" != "$expected_before" ]; then
+			emit "UNEXERCISED step=$step reason=pre_mask_not_transition root_io=$root_before slice_io=$slice_before expected=$expected_before"
+			exit 1
+		fi
+	fi
+	if [ "$trace_supported" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on"
+		printf '\n' >"$tracefs/trace"
+		trace_cpu_stats before
+		printf '1\n' >"$tracefs/tracing_on"
+	fi
+	if "$busybox" timeout -s TERM 12 /usr/bin/systemctl set-property --runtime "$unit" "IOAccounting=$value" >"$scratch/property-output" 2>&1; then
+		property_status=0
+	else
+		property_status=$?
+	fi
+	actual_property=unavailable
+	if [ "$mode" = stress ]; then
+		if [ "$property_status" -ne 0 ]; then
+			emit "UNEXERCISED step=$step reason=property_command_failed property_status=$property_status"
+			exit 1
+		fi
+		if actual_property=$("$busybox" timeout -s TERM 3 /usr/bin/systemctl show -P IOAccounting "$unit" 2>/dev/null); then
+			if [ "$actual_property" != "$value" ]; then
+				emit "UNEXERCISED step=$step reason=property_state_mismatch requested=$value observed=$actual_property"
+				exit 1
+			fi
+		else
+			emit "UNEXERCISED step=$step reason=property_state_unavailable"
+			exit 1
+		fi
+		wait_start=$(
+			"$busybox" awk '{print $1}' /proc/uptime
+		)
+		wait_count=0
+		while :; do
+			root_mask=$(mask /sys/fs/cgroup/cgroup.subtree_control)
+			slice_mask=$(mask "$slice/cgroup.subtree_control")
+			if resident_alive; then resident=yes; else resident=no; fi
+			uptime=$("$busybox" awk '{print $1}' /proc/uptime)
+			root_io=$(has_io "$root_mask")
+			slice_io=$(has_io "$slice_mask")
+			active_elapsed=$("$busybox" awk -v start="$probe_start_uptime" -v now="$uptime" 'BEGIN {print int(now - start)}')
+			wait_elapsed=$("$busybox" awk -v start="$wait_start" -v now="$uptime" 'BEGIN {print int(now - start)}')
+			emit "MASK_WAIT step=$step sample=$wait_count uptime=$uptime wait_seconds=$wait_elapsed active_seconds=$active_elapsed property=$actual_property root=$root_mask slice=$slice_mask resident=$resident pid=$resident_pid"
+			if [ "$resident" != yes ]; then
+				emit "UNEXERCISED step=$step reason=resident_exited_during_mask_wait sample=$wait_count"
+				exit 1
+			fi
+			if [ "$root_io" = "$value" ] && [ "$slice_io" = "$value" ]; then
+				emit "MASK_CONVERGED step=$step sample=$wait_count uptime=$uptime property=$actual_property root=$root_mask slice=$slice_mask resident=$resident"
+				break
+			fi
+			if [ "$active_elapsed" -ge 75 ]; then
+				emit "UNEXERCISED step=$step reason=active_budget_during_mask_wait elapsed=$active_elapsed limit=75"
+				exit 1
+			fi
+			if [ "$wait_elapsed" -ge 6 ]; then
+				emit "UNEXERCISED step=$step reason=no_mask_transition wait_seconds=$wait_elapsed property=$actual_property root_io=$root_io slice_io=$slice_io expected=$value"
+				exit 1
+			fi
+			wait_count=$((wait_count + 1))
+			"$busybox" sleep 1
+		done
+	else
+		"$busybox" sleep 1
+	fi
+	trace_hits=unavailable
+	trace_lock=unavailable
+	trace_rcu=unavailable
+	if [ "$trace_supported" = yes ]; then
+		printf '0\n' >"$tracefs/tracing_on"
+		trace_cpu_stats after
+		trace_lines=$("$busybox" wc -l <"$tracefs/trace")
+		integrity=$(trace_integrity)
+		emit "TRACE_INTEGRITY step=$step total_lines=$trace_lines ring_kib=$trace_buffer_actual counters=$integrity"
+		if [ "$value" != yes ]; then
+			emit "TRACE_CHAIN step=$step status=not_requested reason=off_step"
+		elif [ "$trace_lines" -gt "$trace_scan_line_limit" ]; then
+			emit "TRACE_CHAIN step=$step status=unproven reason=trace_lines_exceed_limit limit=$trace_scan_line_limit"
+		else
+			if "$busybox" awk -v "integrity=$integrity" -f /usr/sbin/agentplane-cgroup-pilot-trace.awk "$tracefs/trace" >"$scratch/trace-chain"; then
+				if [ "$step" = pair1_on ] && [ "$integrity" = clean ] && "$busybox" grep -q '^status=proven ' "$scratch/trace-chain"; then
+					first_witness_proven=yes
+				fi
+				while IFS= read -r trace_chain; do
+					emit "TRACE_CHAIN step=$step $trace_chain"
+				done <"$scratch/trace-chain"
+			else
+				emit "TRACE_CHAIN step=$step status=unproven reason=parser_failed"
+			fi
+		fi
+		trace_hits=$("$busybox" grep -c 'cgroup_update_dfl_csses' "$tracefs/trace" || true)
+		trace_lock=$("$busybox" grep -c 'percpu_down_write' "$tracefs/trace" || true)
+		trace_rcu=$("$busybox" grep -c 'rcu_sync_enter' "$tracefs/trace" || true)
+		trace_hits_total=$((trace_hits_total + trace_hits))
+	fi
+	snapshot "${step}_after"
+	emit "RESULT step=$step value=$value property_status=$property_status observed_property=$actual_property trace=$trace_reason update_hits=$trace_hits lock_hits=$trace_lock rcu_hits=$trace_rcu"
+	io_enabled=$(has_io "$slice_mask")
+	if [ "$property_status" -ne 0 ] || [ "$resident" != yes ] || [ "$io_enabled" != "$value" ]; then
+		emit "UNEXERCISED step=$step property_status=$property_status resident=$resident io_enabled=$io_enabled expected=$value"
+		exit 1
+	fi
+	if [ "$mode" = stress ]; then
+		root_io_enabled=$(has_io "$root_mask")
+		if [ "$root_io_enabled" != "$value" ]; then
+			emit "UNEXERCISED step=$step reason=root_mask_mismatch root_io=$root_io_enabled expected=$value"
+			exit 1
+		fi
+		elapsed=$("$busybox" awk -v start="$probe_start_uptime" '{print int($1) - start}' /proc/uptime)
+		if [ "$elapsed" -gt 75 ]; then
+			emit "UNEXERCISED step=$step reason=active_budget_after_property elapsed=$elapsed limit=75"
+			exit 1
+		fi
+	fi
+}
+
+if [ "$mode" = stress ]; then
+	emit "BEGIN pairs=$pairs direct_root_writes=none active_budget_seconds=75"
+else
+	emit 'BEGIN pairs=2 direct_root_writes=none'
+fi
+/usr/bin/systemctl start --no-block "$unit"
+attempt=0
+until resident_alive; do
+	[ "$attempt" -lt 15 ] || {
+		emit 'UNEXERCISED reason=resident_not_running'
+		exit 1
+	}
+	attempt=$((attempt + 1))
+	"$busybox" sleep 1
+done
+snapshot baseline
+setup_trace
+emit "TRACE_SETUP status=$trace_reason"
+pair=1
+while [ "$pair" -le "$pairs" ]; do
+	change_property "pair${pair}_on" yes
+	if [ "$mode" = stress ] && [ "$pair" -eq 1 ]; then
+		if [ "$first_witness_proven" != yes ]; then
+			emit 'UNEXERCISED step=pair1_on reason=first_witness_unproven'
+			exit 1
+		fi
+		printf '0\n' >"$tracefs/tracing_on"
+		printf 'nop\n' >"$tracefs/current_tracer"
+		printf '\n' >"$tracefs/set_ftrace_pid"
+		printf '\n' >"$tracefs/set_graph_function"
+		trace_supported=no
+		tracing_now=$("$busybox" cat "$tracefs/tracing_on")
+		tracer_now=$("$busybox" cat "$tracefs/current_tracer")
+		emit "TRACE_PHASE after=pair1_on tracing_on=$tracing_now current_tracer=$tracer_now"
+		if [ "$tracing_now" != 0 ] || [ "$tracer_now" != nop ]; then
+			emit 'UNEXERCISED step=pair1_on reason=tracer_reset_failed'
+			exit 1
+		fi
+		trace_reason=disabled_after_first_witness
+	fi
+	change_property "pair${pair}_off" no
+	pair=$((pair + 1))
+done
+emit "SUCCESS transitions=$((pairs * 2)) trace=$trace_reason trace_hits_total=$trace_hits_total"

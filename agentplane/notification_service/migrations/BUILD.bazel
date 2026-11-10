@@ -1,38 +1,30 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-
-pkg_tar(
-    name = "binary_layer",
-    srcs = ["//agentplane/notification_service/migrations/cmd:notifications-migrate"],
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "image",
-    base = "@distroless_static_debian13_linux_amd64",
-    entrypoint = ["/usr/local/bin/notifications-migrate"],
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":binary_layer"],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-    workdir = "/",
-)
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "migrations",
-    srcs = ["migrations.go"],
-    embedsrcs = glob(["notifications/*.sql"]),
+    srcs = [
+        "migrations.go",
+    ],
+    embedsrcs = glob([
+        "notifications/*.sql",
+    ]),
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/migrations",
     visibility = ["//agentplane/notification_service:__subpackages__"],
-    deps = [
-        "@com_github_pressly_goose_v3//:goose",
-        "@com_github_pressly_goose_v3//lock",
-    ],
+    deps = ["//agentplane/postgres/migrate"],
 )
 
-filegroup(
-    name = "notification_migration_files",
-    srcs = glob(["notifications/*.sql"]),
-    visibility = ["//agentplane/notification_service:__subpackages__"],
+go_test(
+    name = "baseline_integration_test",
+    size = "medium",
+    srcs = ["baseline_integration_test.go"],
+    embed = [":migrations"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/notification_service/model",
+        "//agentplane/notification_service/store",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@com_github_pressly_goose_v3//:goose",
+    ],
 )

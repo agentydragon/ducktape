@@ -2,7 +2,8 @@
 
 `finance.plaid.pgweb.query(statement)` returns rows as dictionaries from pgweb's
 `POST /api/query`. The default deployment uses HTTP Basic username `plaid` and
-its password placeholder discovered from Agentplane's live rules. Override
+its password placeholder discovered from Agentplane's live rules. This requires
+the `agentplane` CLI and its configured workload gRPC route. Override
 `base_url` and `username` for another deployment; the matching rules must admit it.
 
 Pass a SQLAlchemy `Select`. It is compiled with the PostgreSQL dialect and

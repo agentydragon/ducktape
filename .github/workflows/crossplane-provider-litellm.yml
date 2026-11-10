@@ -40,12 +40,10 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
-      - uses: ./.github/actions/setup-ci-secrets
-        if: env.PUBLISH == 'true'
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
-
       - name: Authenticate to Forgejo registry
+        env:
+          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
         if: env.PUBLISH == 'true'
         shell: bash
         run: |

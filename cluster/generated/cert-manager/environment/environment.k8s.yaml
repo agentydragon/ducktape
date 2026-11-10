@@ -262,3 +262,49 @@ spec:
   target:
     configMap:
       key: ca-certificates.crt
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentplane-workload-ca
+  namespace: cert-manager
+spec:
+  commonName: agentplane-workload-ca
+  duration: 87600h
+  isCA: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Never
+    size: 256
+  renewBefore: 8760h
+  secretName: agentplane-workload-ca
+  usages:
+    - cert sign
+    - crl sign
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: agentplane-workload
+spec:
+  ca:
+    secretName: agentplane-workload-ca
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: agentplane-workload-ca-bundle
+spec:
+  sources:
+    - secret:
+        key: tls.crt
+        name: agentplane-workload-ca
+  target:
+    configMap:
+      key: ca-certificates.crt
+      metadata:
+        annotations:
+          description: The Agentplane workload CA, which client SVID verifiers trust alone

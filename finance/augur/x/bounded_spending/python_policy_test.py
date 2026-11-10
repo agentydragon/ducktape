@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
@@ -39,7 +40,6 @@ from finance.augur.x.bounded_spending.python_policy import (
     run,
 )
 from finance.augur.x.bounded_spending.stress_paths import equity_only
-from util.bazel.runfiles import get_required_path
 
 RETIREE = AgentId("retiree")
 WORLD = AgentId("world")
@@ -270,11 +270,12 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
 
 def test_actual_profile_cli_uses_same_batch_session_for_both_authoring_forms(tmp_path: Path) -> None:
     reports = []
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for authoring in ["scalar", "batch"]:
         directory = tmp_path / authoring
         subprocess.run(
             [
-                get_required_path("_main/finance/augur/x/bounded_spending/profile_bin"),
+                (runfiles_root / "ducktape/finance/augur/x/bounded_spending/profile_bin"),
                 "--rollouts",
                 "3",
                 "--horizon-months",

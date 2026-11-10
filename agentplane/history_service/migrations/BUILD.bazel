@@ -1,55 +1,19 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-
-pkg_tar(
-    name = "binary_layer",
-    srcs = ["//agentplane/history_service/migrations/cmd:history-migrate"],
-    package_dir = "/usr/local/bin",
-)
-
-oci_image(
-    name = "image",
-    base = "@distroless_static_debian13_linux_amd64",
-    entrypoint = ["/usr/local/bin/history-migrate"],
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":binary_layer"],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-    workdir = "/",
-)
 
 go_library(
     name = "migrations",
-    srcs = [
-        "event_kind_backfill.go",
-        "migrations.go",
-    ],
+    srcs = ["migrations.go"],
     embedsrcs = glob(["history/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/migrations",
     visibility = ["//agentplane/history_service:__subpackages__"],
-    deps = [
-        "//agentplane/proto:event_log_go_proto",
-        "@com_github_lib_pq//:pq",
-        "@com_github_pressly_goose_v3//:goose",
-        "@com_github_pressly_goose_v3//lock",
-        "@org_golang_google_protobuf//proto",
-    ],
+    deps = ["//agentplane/postgres/migrate"],
 )
 
 go_test(
-    name = "event_kind_backfill_test",
-    srcs = [
-        "event_kind_backfill_test.go",
-        "event_kind_backfill_testmain_test.go",
-    ],
+    name = "migrations_test",
+    size = "medium",
+    srcs = glob(["*_test.go"]),
     embed = [":migrations"],
     tags = ["requires_docker"],
-    deps = [
-        "//agentplane/proto:event_go_proto",
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/testing/postgres",
-        "@org_golang_google_protobuf//encoding/protowire",
-        "@org_golang_google_protobuf//proto",
-    ],
+    deps = ["//agentplane/testing/postgres"],
 )

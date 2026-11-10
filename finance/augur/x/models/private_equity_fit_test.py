@@ -6,9 +6,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import IssuerId
+from finance.augur.x.models.jsonl import write_jsonl
 from finance.augur.x.models.private_equity_fit import (
     PrivateEquityTrainingConfig,
     PrivateEquityTrainingPriors,
@@ -21,8 +23,6 @@ from finance.augur.x.models.trained_private_equity import (
     TrainedPrivateEquityModelArtifact,
     TrainedPrivateEquityScalePrior,
 )
-from util.bazel.runfiles import get_required_path
-from util.testing.jsonl import write_jsonl
 
 PRIVATE_COMPANY_A = IssuerId("private_company_a")
 
@@ -177,7 +177,9 @@ def test_train_round_trips_compact_model_and_runtime_samples(tmp_path: Path, row
     write_jsonl(tmp_path / "observations.jsonl", rows)
     config_path = tmp_path / "train.yaml"
     config_path.write_bytes(
-        get_required_path("_main/finance/augur/x/models/private-equity-training-fixture.yaml").read_bytes()
+        (
+            Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/models/private-equity-training-fixture.yaml"
+        ).read_bytes()
     )
 
     artifact = train_from_config(config_path)
@@ -316,8 +318,15 @@ def test_sparse_tender_appreciation_is_shrunk_toward_stock_like_forward_prior(tm
     )
 
     artifact = fit_private_equity_model(observations, config)
+    unshrunk_artifact = fit_private_equity_model(
+        observations,
+        config.model_copy(
+            update={"priors": config.priors.model_copy(update={"stock_like_monthly_log_return_mu_weight_months": 0.0})}
+        ),
+    )
 
-    assert artifact.provenance["empirical_monthly_log_return_mu"] > 0.35
+    assert unshrunk_artifact.monthly_log_return_mu > 0.35
+    assert artifact.monthly_log_return_mu > config.priors.stock_like_monthly_log_return_mu
     assert artifact.monthly_log_return_mu < 0.02
     assert artifact.monthly_log_return_sigma < 0.12
 

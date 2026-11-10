@@ -7,16 +7,17 @@ bucket layout. Overview: <../README.md>.
 
 The publisher asks BuildBuddy which CI test invocation the **commit** has, preferring
 the `//...` devel sweep — a commit can have both a sweep and an affected-set run, and
-only the sweep carries visual manifests, so the run that triggered the publish is
+the sweep can cover more visual tests, so the run that triggered the publish is
 often not the one that ran the tests. Fallback: IDs derived from the run's identity
-(<../../ci/invocation_ids.py>), the only handle on a PR run (which records the merge
-SHA, not the head SHA) or a run cancelled before Bazel started.
+(<../../buildbuddy/ci/invocation_ids.py>), the only handle on a PR run (which records the merge
+SHA, not the head SHA).
 
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
 ~4.4 s per artifact (~16 min for a commit's ~294 files). The artifact listing already
-carries each blob's `bytestream://` URI; the publisher reads them from
-`app.buildbuddy.io/file/download`, eight at a time (<20 s).
+carries each blob's `bytestream://` URI; the publisher passes exact destinations to
+`bbapi blob download` in two manifest calls, one for output records and one for their
+selected screenshot payloads. Each call downloads up to eight blobs concurrently (<20 s for a commit's files).
 
 ## Which PR a run is for
 
@@ -38,77 +39,81 @@ none, which is what lets it advance baseline pointers.
   another fork's CI run doesn't extend to hosting its output in our bucket and
   comments.
 
-## Superseded runs
+## Cancelled runs
 
-A run cancelled as superseded publishes whatever artifacts have reached BuildBuddy
-and posts nothing else (the superseding run brings the real review).
+A cancelled upstream CI run cancels any running visual workflow for that same
+run and attempt. The cancellation job completes an announced PR visual check as
+`cancelled`; the check's external ID includes both run ID and attempt so a delayed
+completion cannot overwrite a rerun's check. The job has no BuildBuddy or S3
+credential. It does not wait for a remote invocation or publish artifacts
+already produced by one. An exact-commit bundle from such a run may therefore
+be absent; per-target baseline resolution falls back to the retained pointer
+and marks the review `baseline_fallback`. A direct
+`pr-visuals-publish --ci-conclusion cancelled` invocation likewise closes its
+check without reading BuildBuddy or S3. A later announcement for the same
+attempt leaves an already-completed check terminal.
 
-**Gotcha: that publish races its own Bazel invocation.** Cancelling the workflow
-doesn't cancel the invocation: the CI run completes at once while Bazel streams
-results for minutes. The publish takes what's there (often nothing) and nothing
-revisits it — e.g. `29154c806`'s publish (14:29–14:31) found no manifests; its sweep
-ended 14:32:27 with all 34; that commit has no bundle.
-
-Damage is bounded to **staleness, never wrongness**, by two properties to preserve:
-
-- Bundles and baseline resolution are per-target, so a partial commit is not a broken
-  baseline: missing targets resolve via the pointer, marked `baseline_fallback`.
-- Only a complete invocation advances a pointer: `publish_only` never writes
-  pointers, and the other path writes only when the run was not cancelled (so
-  bazel-ci finished).
-
-Rapid devel merges (`bazel-ci.yml` cancels superseded runs, ~8 in 10 pushes per
-`ci.yml`) therefore age baselines and add `baseline_fallback` warnings until the
-first uncancelled run. Deferred fix: <../../ci/TODO.md> § Visual publishing races the
-invocation it reads.
+Completed CI runs, including runs whose tests failed, still wait for a confirmed
+complete test invocation before listing artifacts. Only their complete bundles
+can advance devel baseline pointers. A successful CI workflow with no test
+invocation has no visual bundle; `bazel_ci.py` skips `bazel test` when no tests
+are selected.
 
 ## Baseline resolution
 
-Per target, first hit wins:
+Per target, first check `reviews-test-outputs/<base_sha>/tests/<slug>/metadata.json`,
+then the mutable `baselines/reviews-test-outputs/<slug>.json` pointer. Only complete,
+stable targets are eligible. If neither exists, screenshots are new. The new namespace
+intentionally does not read filename-based baselines; devel must publish fresh ones
+after the cutover. Clear the old bundle and pointer namespaces as part of the
+hard cutover; historical pages in those namespaces will no longer be available.
 
-1. `reviews/<base_sha>/tests/<slug>/` — the base commit's devel publication;
-2. retained `commits/<base_sha>/tests/<slug>/` bundle;
-3. `baselines/reviews/<slug>.json` — newest devel commit whose review bundle has the
-   target;
-4. retained pointer `baselines/<slug>.json`;
-5. none → every asset is `new`.
+The `bazel-configuration-exact-v1` comparison profile allows comparisons only for
+one known, equal configuration ID on both sides. A missing, changed, or ambiguous
+configuration is shown as non-comparable. The opaque ID is execution provenance,
+not part of a screenshot's identity; this conservative profile can reject two
+semantically equivalent configurations.
 
-- Metadata records SHA-256 of candidate, Before, and diff PNGs; digest-less baselines
-  resolve their candidate PNG from the retained commit bundle. The `reviews/` and
-  `baselines/reviews/` prefixes isolate overlapping publisher jobs on different
-  released wheels: old jobs keep the old layout, and old URLs stay valid.
-- Devel pushes publish every re-executed target's artifacts even when an unrelated
-  target fails (a flake elsewhere must not drop a valid result); a failed visual
-  target with no manifest can't advance its pointer. Pointers advance after the
-  commit bundle upload completes.
-- Cache hits re-expose nothing, so a fully cached devel run (the norm after the PR's
-  own CI tested the same tree) publishes nothing and advances no pointers; a pointer
-  heals at the next devel run that re-executes its target (e.g. after an RBE image pin
-  bump).
-- Pointer-resolved targets are `baseline_fallback`: the comment warns differences may
-  predate the PR, and each modified/removed screenshot is labelled `stale baseline`
-  with the baseline commit and merge base (whether it differs at the merge base is
-  unknowable — that bundle has no image for the target).
+Metadata retains structured case ID, optional checkpoint, role, and the result
+provenance of every image variant. The collector selects confirmed successful final
+attempts, records retries, and reports missing results, failed results, and collisions.
+Different images from repeated runs are shown as unstable, with each variant and its
+provenance. An incomplete or unstable target never advances its devel pointer and
+cannot establish that a screenshot was removed. Pointer-resolved comparisons are
+labelled stale because their changes can include devel drift.
+
+Discovery starts with targets that expose at least one output record. A target
+that publishes no records at all cannot be identified as a visual producer from
+the artifact listing alone. The determinism sweep supplies an explicit expected
+target list; consumers that require that stronger coverage should do the same.
+
+Candidate, baseline, and diff PNGs use shared SHA-256-addressed blobs. A matching
+candidate digest skips the baseline image read; otherwise the publisher reads and
+verifies the referenced image before comparing pixels. A missing or corrupted
+baseline image is an error, not evidence of a new screenshot. Pointers advance only
+after the review bundle and shared images upload successfully.
 
 ## Check-runs
 
 - **PR visual review**: `in_progress` with the Bazel CI run (linking it); then
   `success` once bundle and comment are done, `failure` on invalid producer output or
-  publisher errors, `neutral` when no test exposed a manifest. Failed CI runs still
+  publisher errors, `neutral` when no test exposed screenshot records. Failed CI runs still
   publish what arrived; summary and comment list failed targets when BuildBuddy
   exposes them. Reviewers can request a manual rerun from the CI run page.
 - **PR visual diffs**: only when a baseline comparison ran; `success` if nothing was
-  modified or removed, else `neutral` — deliberately not a merge gate.
+  modified, removed, unstable or incomplete, else `neutral` — deliberately not a merge gate.
 
 ## Storage
 
 - Each distinct PNG is stored once at `assets/<sha256>.png`, shared across targets,
   commits, and candidate/Before/diff roles; review pages, styles, scripts, and
-  metadata at `reviews/<sha>/`.
+  metadata at `reviews-test-outputs/<sha>/`.
 - Missing images are uploaded with `PutObject` + `If-None-Match: *`, so concurrent
-  publishers can't replace a shared image. Order: every referenced image, then review
-  metadata and pages, then the aggregate gallery index last. A failed image upload
-  blocks review publication and pointer advancement.
+  publishers can't replace a shared image. Shared-image existence checks and uploads
+  run with a fixed worker limit; all finish before review metadata or pages upload.
+  Order: every referenced image, then review metadata and pages, then the aggregate
+  gallery index last. A failed image upload blocks review publication and pointer
+  advancement.
 - Existing commit bundles are not migrated.
 
 ## Released commands

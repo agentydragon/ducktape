@@ -11,7 +11,7 @@ Ask the project adapter for artifacts from the same spec, source, and engine
 revision:
 
 - the active `modules/**/*.yaml` tree and its emitted JavaScript tree;
-- the matching `dependency_graph.json` and, when available, `reports/tree/`;
+- the matching `dependency_graph.json.gz` and, when available, `reports/tree/`;
 - project convention and taxonomy documents;
 - the paths for current architecture notes and worker-ready reorganization
   recommendations.
@@ -124,7 +124,7 @@ for sound reasons may reveal a bad assumption; revise the rule and notes rather
 than normalizing unexplained failures.
 
 Build metrics from stable debundler side outputs, not ad hoc parsing of emitted
-imports. `dependency_graph.json` exposes `module_graph.nodes` with each module's
+imports. `dependency_graph.json.gz` exposes `module_graph.nodes` with each module's
 report path and `module_graph.edges` with typed `edge_kinds` and
 `constrains_init_order`. Use `describe`, `cluster`, `scc`, `coverage`, or
 `graph-summary` output when a metric needs that information. The entry uses the
@@ -291,7 +291,7 @@ jq -r '.outgoing.symbols | to_entries | sort_by(.value) | reverse[] |
   "\(.value)\t\(.key)"' "$REPORT_TREE/<emitted-dir>/index.json" | head -50
 
 # Count module dependencies between top-level report-path buckets.
-jq -r '
+gzip -dc "$GRAPH" | jq -r '
   (.module_graph.nodes | map({key:.key,value:.path}) | from_entries) as $d |
   reduce .module_graph.edges[] as $e ({};
     ($d[$e.source] // error("unknown module source: \($e.source)")) as $s |
@@ -301,10 +301,10 @@ jq -r '
     .["\($sr) -> \($tr)"] += 1
   ) | to_entries | sort_by(.value) | reverse | .[:80][] |
   "\(.value)\t\(.key)"
-' "$GRAPH"
+'
 
 # Count module dependencies between two-segment report-path buckets.
-jq -r '
+gzip -dc "$GRAPH" | jq -r '
   (.module_graph.nodes | map({key:.key,value:.path}) | from_entries) as $d |
   reduce .module_graph.edges[] as $e ({};
     ($d[$e.source] // error("unknown module source: \($e.source)")) as $s |
@@ -314,5 +314,5 @@ jq -r '
     .["\($sr) -> \($tr)"] += 1
   ) | to_entries | sort_by(.value) | reverse | .[:100][] |
   "\(.value)\t\(.key)"
-' "$GRAPH"
+'
 ```

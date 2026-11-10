@@ -37,18 +37,6 @@ var cancellationOutcomes = map[store.CancellationOutcome]action_servicepb.Cancel
 	store.OutcomeTooLate:          action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE,
 }
 
-var policyKinds = map[store.PolicyKind]action_servicepb.PolicyKind{
-	store.PolicyExactActions:               action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
-	store.PolicyArgumentSchema:             action_servicepb.PolicyKind_POLICY_KIND_ARGUMENT_SCHEMA,
-	store.PolicyGitHubRepository:           action_servicepb.PolicyKind_POLICY_KIND_GITHUB_REPOSITORY,
-	store.PolicyGitHubPublicRepository:     action_servicepb.PolicyKind_POLICY_KIND_GITHUB_PUBLIC_REPOSITORY,
-	store.PolicyHomeAssistantEntityControl: action_servicepb.PolicyKind_POLICY_KIND_HOME_ASSISTANT_ENTITY_CONTROL,
-}
-
-var policySources = map[string]action_servicepb.PolicySource{
-	store.PolicySourceRules: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-}
-
 func reversed[Stored, View comparable](views map[Stored]View) map[View]Stored {
 	stored := make(map[View]Stored, len(views))
 	for value, view := range views {
@@ -104,14 +92,25 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 	if err != nil {
 		return nil, err
 	}
-	return &action_servicepb.ActionRequest{
+	view := &action_servicepb.ActionRequest{
 		Id: request.ID.String(), IdempotencyKey: request.IdempotencyKey,
 		Action:    &action_servicepb.ActionIdentity{Group: request.Action.Group, Name: request.Action.Name},
 		Arguments: arguments, Title: request.Title, Description: request.Description,
-		Caller: request.Caller.Proto(), State: request.State, Version: request.Version,
+		State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
-	}, nil
+	}
+	switch caller := request.Caller.(type) {
+	case store.ServiceAccountCaller:
+		view.Caller, view.CallerUid = caller.Account.Proto(), caller.UID
+	case store.IdentityCaller:
+		view.CallerIdentity = caller.Identity.Proto()
+	case store.UnknownCaller:
+		// A newer release's kind of caller: the receipt names none, as the field says.
+	default:
+		panic(fmt.Sprintf("unknown caller %T", caller))
+	}
+	return view, nil
 }
 
 func requestViews(requests []store.ActionRequest) ([]*action_servicepb.ActionRequest, error) {
@@ -134,52 +133,26 @@ func decisionView(decision *store.Decision) (*action_servicepb.Decision, error) 
 		return nil, err
 	}
 	view := &action_servicepb.Decision{
-		Id: decision.ID.String(), Verdict: verdict, Provider: decision.Provider, DecisionNote: decision.DecisionNote,
-		ReasonCode: decision.ReasonCode, ReasonDescription: decision.ReasonDescription,
+		Id: decision.ID.String(), Verdict: verdict,
 		IdempotencyKey: decision.IdempotencyKey, DecidedAt: timestamppb.New(decision.DecidedAt),
 	}
-	if decision.Operator != nil {
-		view.Operator = operator(*decision.Operator)
-	}
-	if decision.PolicyEvidence != nil {
-		if view.PolicyEvidence, err = evidenceView(*decision.PolicyEvidence); err != nil {
-			return nil, err
+	switch decider := decision.Decider.(type) {
+	case store.OperatorDecision:
+		view.Decider = &action_servicepb.Decision_Operator{Operator: &action_servicepb.OperatorDecision{
+			Operator: operator(decider.Operator), DecisionNote: decider.DecisionNote,
+		}}
+	case store.PolicyDecision:
+		policy := &action_servicepb.PolicyDecision{
+			ReasonCode: decider.ReasonCode, ReasonDescription: decider.ReasonDescription,
 		}
-	}
-	return view, nil
-}
-
-func evidenceView(evidence store.PolicyEvidence) (*action_servicepb.PolicyEvidence, error) {
-	view := &action_servicepb.PolicyEvidence{}
-	for _, binding := range evidence.Bindings {
-		view.Bindings = append(view.Bindings, &action_servicepb.BindingEvidence{
-			Namespace: binding.Namespace, Name: binding.Name, ResourceVersion: binding.ResourceVersion,
-		})
-	}
-	for _, set := range evidence.PolicySets {
-		view.PolicySets = append(view.PolicySets, &action_servicepb.PolicySetEvidence{
-			Namespace: set.Namespace, Name: set.Name, Generation: set.Generation,
-		})
-	}
-	matched := evidence.Matched
-	source, err := lookup(policySources, "policy source", matched.Source)
-	if err != nil {
-		return nil, err
-	}
-	kind, err := lookup(policyKinds, "policy kind", matched.Type)
-	if err != nil {
-		return nil, err
-	}
-	if matched.Index > math.MaxInt32 {
-		return nil, fmt.Errorf("%w: policy index %d", errStoredRequest, matched.Index)
-	}
-	view.Matched = &action_servicepb.MatchedPolicy{
-		Namespace: matched.Namespace, PolicySet: matched.PolicySet, Source: source, Index: int32(matched.Index), Type: kind,
-	}
-	if repository := matched.Repository; repository != nil {
-		view.Matched.Repository = &action_servicepb.MatchedRepository{
-			Owner: repository.Owner, Repository: repository.Repository, ConfirmedPublic: repository.ConfirmedPublic,
+		if decider.Evidence != nil {
+			if policy.Evidence, err = decider.Evidence.Proto(); err != nil {
+				return nil, fmt.Errorf("%w: policy evidence: %w", errStoredRequest, err)
+			}
 		}
+		view.Decider = &action_servicepb.Decision_Policy{Policy: policy}
+	default:
+		return nil, fmt.Errorf("%w: decision has unknown decider %T", errStoredRequest, decider)
 	}
 	return view, nil
 }
@@ -195,17 +168,11 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 	view := &action_servicepb.Execution{
 		Id: execution.ID.String(), State: state, CreatedAt: timestamppb.New(execution.CreatedAt),
 		StartedAt: timestamp(execution.StartedAt), CompletedAt: timestamp(execution.CompletedAt),
-		ReconciledAt: timestamp(execution.ReconciledAt),
+		ReconciledAt: timestamp(execution.ReconciledAt), Error: execution.Error,
 	}
 	if execution.Result != nil {
 		view.Result = &structpb.Value{}
 		if err := jsonView("result", execution.Result, view.Result); err != nil {
-			return nil, err
-		}
-	}
-	if execution.Error != nil {
-		view.Error = &structpb.Struct{}
-		if err := jsonView("error", execution.Error, view.Error); err != nil {
 			return nil, err
 		}
 	}
@@ -250,10 +217,15 @@ func validateActionActor(actor *action_servicepb.Principal) error {
 		return nil
 	}
 	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
+		if actor.CallerUid == nil || *actor.CallerUid != "" {
+			return nil
+		}
+	}
+	if identity := actor.GetCallerIdentity(); identity != nil && identity.GetName() != "" && identity.GetUid() != "" && actor.CallerUid == nil {
 		return nil
 	}
-	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
+	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" && actor.CallerUid == nil {
 		return nil
 	}
-	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
+	return fmt.Errorf("an Action actor needs a caller account, a caller Identity, or an operator issuer and subject")
 }

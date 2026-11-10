@@ -8,9 +8,9 @@ on:
       - ".github/actions/build-runner-image/action.yml"
       - ".github/actions/setup-nix-devtools/action.yml"
       - ".github/workflows/buildbuddy-remote-runner-image.yml"
-      - "devinfra/buildbuddy_remote_runner/image.nix"
-      - "devinfra/ci/nix_runner_image.py"
-      - "devinfra/ci/test_nix_runner_image.py"
+      - "devinfra/buildbuddy/images/runner/build.py"
+      - "devinfra/buildbuddy/images/runner/image.nix"
+      - "devinfra/buildbuddy/images/runner/test_build.py"
       - "devinfra/image_pins.json"
       - "flake.lock"
       - "flake.nix"
@@ -71,16 +71,13 @@ jobs:
       - name: Publish changed image
         if: steps.image.outputs.needs_publish == 'true'
         run: |
-          python3 devinfra/ci/nix_runner_image.py publish \
+          python3 devinfra/buildbuddy/images/runner/build.py publish \
             --state "$RUNNER_TEMP/runner-image/state.json" \
             --image "$RUNNER_IMAGE" --tag "$GITHUB_SHA"
 
-      - name: Install the pinned BuildBuddy launcher
+      - name: Install pinned BuildBuddy CLIs
         if: steps.image.outputs.needs_publish == 'true'
-        run: |
-          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
-            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
-          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+        run: nix profile install .#bb .#bbapi
 
       - name: Exercise candidate on a BuildBuddy runner before pinning
         if: steps.image.outputs.needs_publish == 'true'
@@ -96,13 +93,13 @@ jobs:
             bazel-diff --help >/dev/null
             bazelisk test --config=rbe --config=ci \
               --remote_default_exec_properties="container-image=docker://$RBE_CONTAINER_IMAGE" \
-              //devinfra/ci:test_nix_runner_image
+              //devinfra/buildbuddy/images/runner:test_build
 
       - uses: ./.github/actions/mint-automation-token
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         id: app
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          private_key: ${{ secrets.DUCKTAPE_AUTOMATION_PRIVATE_KEY }}
 
       # update_image_pin.py formats the pins file with prettier when it finds it on PATH and
       # writes json.dumps output when it does not. This pin runs in its own job, whose only other
@@ -112,7 +109,7 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
         with:
-          package: prettier
+          installables: ".#prettier"
 
       - name: Pin on the latest branch after verifying its inputs
         if: steps.image.outputs.needs_publish == 'true' && !inputs.candidate_only
@@ -124,9 +121,9 @@ jobs:
         run: |
           git fetch origin "$GITHUB_REF_NAME"
           git checkout --detach FETCH_HEAD
-          python3 devinfra/ci/nix_runner_image.py verify --state "$RUNNER_TEMP/runner-image/state.json"
+          python3 devinfra/buildbuddy/images/runner/build.py verify --state "$RUNNER_TEMP/runner-image/state.json"
           python3 devinfra/update_image_pin.py buildbuddy_remote_runner --digest "$DIGEST" --image "$RUNNER_IMAGE"
-          git add devinfra/image_pins.json devinfra/bbr.json
+          git add devinfra/image_pins.json .bbrc
           if git diff --cached --quiet; then
             echo "Runner image already pinned"
             exit 0
@@ -135,7 +132,7 @@ jobs:
           git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
           git commit -m 'chore: pin BuildBuddy runner image [skip ci]'
           git pull --rebase origin "$GITHUB_REF_NAME"
-          python3 devinfra/ci/nix_runner_image.py verify --state "$RUNNER_TEMP/runner-image/state.json"
+          python3 devinfra/buildbuddy/images/runner/build.py verify --state "$RUNNER_TEMP/runner-image/state.json"
           # A further branch advance is rejected by the ordinary non-force push.
           set +x
           for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do

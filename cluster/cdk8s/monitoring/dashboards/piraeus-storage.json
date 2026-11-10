@@ -32,7 +32,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard covers **Piraeus LVM thin-pool and volume accounting**. Thin-pool used, capacity, and free bytes are physical pool measurements. Diskful PV limits are a separate commitment measure; their ratio to raw capacity is not physical-use percentage and can exceed 100%. Per-copy allocation estimates do not decompose physical pool use.\n\nThe PVC table shows kubelet-reported filesystem use on the consumer node alongside a Bound PV capacity limit. It is separate from both host ext4/XFS filesystem accounting and thin-pool physical use. Raw-block or unmounted PVCs may have no filesystem-use sample.\n\nThe Storage tier selector filters by node labels; Machine filters node-owned panels. This is node-level filtering. If a node later has both SSD and HDD, per-device media labels will be needed to separate those disks."
+        "content": "This dashboard covers **Piraeus LVM thin-pool and volume accounting**. Thin-pool used, capacity, and free bytes are physical pool measurements. Diskful PV limits are a separate commitment measure; their ratio to raw capacity is not physical-use percentage and can exceed 100%. Per-copy allocation estimates do not decompose physical pool use.\n\nThe PVC table shows kubelet-reported filesystem use on the consumer node alongside a Bound PV capacity limit. It is separate from both host ext4/XFS filesystem accounting and thin-pool physical use. Raw-block or unmounted PVCs may have no filesystem-use sample.\n\nStorage pool selects LINSTOR pool names across storage nodes, including machines with multiple pools. Machine filters storage nodes for pool and copy panels and consumer nodes for the PVC table. PVCs with copies in multiple pools appear under each selected pool. The ssd pool is blue; hdd is orange."
       }
     },
     {
@@ -51,31 +51,63 @@
     {
       "id": 26,
       "title": "Physical pool used",
-      "description": "Piraeus thin-pool physical use, summed over the selected storage nodes and pools.",
+      "description": "Piraeus thin-pool physical use, summed over the selected storage nodes by pool name.",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 8,
         "x": 0,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_used_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -85,7 +117,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 27,
@@ -94,27 +151,59 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 8,
+        "x": 8,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_capacity_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -124,7 +213,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 28,
@@ -133,27 +247,59 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 8,
+        "x": 16,
         "y": 7
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_free_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_free_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -163,7 +309,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 29,
@@ -172,27 +343,59 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 7
+        "w": 8,
+        "x": 0,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_committed_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -202,7 +405,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 30,
@@ -211,27 +439,59 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 7
+        "w": 8,
+        "x": 8,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_capacity_bytes{node=~\"$node\"}) - sum(disk_usage:pool_committed_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}) - sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -241,7 +501,32 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
+      },
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "storage_pool",
+                "desc": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {}
+        }
+      ]
     },
     {
       "id": 31,
@@ -250,27 +535,59 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 7
+        "w": 8,
+        "x": 16,
+        "y": 11
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(disk_usage:pool_committed_bytes{node=~\"$node\"}) / sum(disk_usage:pool_capacity_bytes{node=~\"$node\"})",
+          "expr": "sum by (storage_pool) (disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}) / sum by (storage_pool) (disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{storage_pool}}",
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -280,269 +597,78 @@
         },
         "textMode": "auto",
         "colorMode": "value"
-      }
-    },
-    {
-      "id": 32,
-      "title": "Piraeus thin-pool physical use over time",
-      "description": "Physical bytes used and raw capacity per storage node and pool. These series do not include per-volume estimates or ext4/XFS host filesystem bytes.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 11
       },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
+      "transformations": [
         {
-          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} used",
-          "refId": "A"
-        },
-        {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} capacity",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns1001419 · .* used$/"
-            },
-            "properties": [
+          "id": "sortBy",
+          "options": {
+            "sort": [
               {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5794F2"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104952 · .* used$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#B877D9"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104963 · .* used$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#6ED0E0"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^.* capacity$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8e8e8e"
-                }
+                "field": "storage_pool",
+                "desc": false
               }
             ]
           }
-        ]
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 33,
-      "title": "Diskful copy limits vs pool capacity over time",
-      "description": "PV capacity limits of diskful copies compared with raw pool capacity, per storage node and pool. These limits are not allocated bytes.",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 11
-      },
-      "datasource": "${DS_MIMIR}",
-      "targets": [
-        {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} copy limits",
-          "refId": "A"
         },
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
-          "legendFormat": "{{node}} · {{storage_pool}} capacity",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "names": ["Time"]
+            }
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns1001419 · .* copy limits$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5794F2"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104952 · .* copy limits$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#B877D9"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^ovh-ns104963 · .* copy limits$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#6ED0E0"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/^.* capacity$/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8e8e8e"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+        {
+          "id": "rowsToFields",
+          "options": {}
         }
-      }
+      ]
     },
     {
       "id": 34,
       "title": "Piraeus thin-pool accounting by storage node",
-      "description": "Physical capacity, used and free bytes are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
+      "description": "Physical pool usage and capacity are shown separately from the sum of diskful PV limits. Uncommitted headroom is capacity minus those limits and may be negative.",
       "type": "table",
       "gridPos": {
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 15
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "disk_usage:pool_used_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
         },
         {
-          "expr": "disk_usage:pool_free_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_used_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}",
           "format": "table",
           "instant": true,
           "refId": "C"
         },
         {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}",
           "format": "table",
           "instant": true,
           "refId": "D"
         },
         {
-          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"} / on (node, storage_pool) disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}",
           "format": "table",
           "instant": true,
           "refId": "E"
         },
         {
-          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\"} - on (node, storage_pool) disk_usage:pool_committed_bytes{node=~\"$node\"}",
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"} - on (node, storage_pool) disk_usage:pool_committed_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}",
           "format": "table",
           "instant": true,
           "refId": "F"
@@ -694,9 +820,9 @@
             "indexByName": {
               "node": 0,
               "storage_pool": 1,
-              "Value #A": 2,
-              "Value #B": 3,
-              "Value #C": 4,
+              "Value #A": 3,
+              "Value #B": 4,
+              "Value #C": 2,
               "Value #D": 5,
               "Value #E": 6,
               "Value #F": 7
@@ -706,7 +832,7 @@
               "storage_pool": "Pool",
               "Value #A": "Physical capacity",
               "Value #B": "Physical used",
-              "Value #C": "Physical free",
+              "Value #C": "Physical used %",
               "Value #D": "Diskful copy limits",
               "Value #E": "Copy limits / capacity",
               "Value #F": "Uncommitted limit headroom"
@@ -746,6 +872,22 @@
                 "value": 1
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Physical used %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
           }
         ]
       },
@@ -758,6 +900,204 @@
       }
     },
     {
+      "id": 40,
+      "title": "Thin pools on $pool_node",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "repeat": "pool_node",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      }
+    },
+    {
+      "id": 32,
+      "title": "Physical pool usage",
+      "description": "Physical bytes used and raw capacity per storage node and pool. These series do not include per-volume estimates or ext4/XFS host filesystem bytes.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_used_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_pool\"}",
+          "legendFormat": "{{storage_pool}} used",
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_pool\"}",
+          "legendFormat": "{{storage_pool}} capacity",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ssd /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hdd /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ capacity$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "title": "Diskful copy limits",
+      "description": "PV capacity limits of diskful copies compared with raw pool capacity, per storage node and pool. These limits are not allocated bytes.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "disk_usage:pool_committed_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_pool\"}",
+          "legendFormat": "{{storage_pool}} copy limits",
+          "refId": "A"
+        },
+        {
+          "expr": "disk_usage:pool_capacity_bytes{node=~\"$pool_node\", storage_pool=~\"$storage_pool\"}",
+          "legendFormat": "{{storage_pool}} capacity",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ssd /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^hdd /"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ capacity$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 35,
       "type": "row",
       "title": "Piraeus diskful volume copies",
@@ -766,7 +1106,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 35
       },
       "panels": []
     },
@@ -779,12 +1119,12 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 36
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", persistentvolumeclaim!=\"\"}), \"copy\", \"/\", \"namespace\", \"persistentvolumeclaim\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", persistentvolumeclaim=\"\"}), \"copy\", \"/\", \"namespace\", \"resource\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")))",
+          "expr": "topk(15, (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\", persistentvolumeclaim!=\"\"}), \"copy\", \"/\", \"namespace\", \"persistentvolumeclaim\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")) or (label_join(label_join(label_join(sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\", persistentvolumeclaim=\"\"}), \"copy\", \"/\", \"namespace\", \"resource\"), \"location\", \"/\", \"node\", \"storage_pool\"), \"copy\", \" · \", \"copy\", \"location\", \"phase\")))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -796,8 +1136,7 @@
           "unit": "bytes",
           "min": 0,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
+            "mode": "palette-classic"
           },
           "custom": {
             "fillOpacity": 85,
@@ -806,12 +1145,43 @@
             "axisSoftMin": 0
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ssd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hdd"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "orientation": "horizontal",
         "xField": "copy",
-        "stacking": "none",
+        "stacking": "normal",
         "showValue": "never",
         "barWidth": 0.8,
         "groupWidth": 0.7,
@@ -827,7 +1197,28 @@
           "sort": "desc",
           "hideZeros": true
         }
-      }
+      },
+      "transformations": [
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "storage_pool",
+            "rowField": "copy",
+            "valueField": "Value",
+            "emptyValue": "null"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "copy\\storage_pool": "copy"
+            }
+          }
+        }
+      ]
     },
     {
       "id": 37,
@@ -838,18 +1229,18 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 48
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\"})",
+          "expr": "sum by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_allocated_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{node=~\"$node\"})",
+          "expr": "max by (node, storage_pool, phase, resource, persistentvolume, namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"})",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -990,7 +1381,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 62
       },
       "panels": []
     },
@@ -1003,24 +1394,24 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 63
       },
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "expr": "disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_pool\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "expr": "group by (namespace, persistentvolumeclaim, node) (disk_usage:pvc_used_bytes{node=~\"$node\"}) * on (namespace, persistentvolumeclaim) group_left () max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_pool\"})",
           "format": "table",
           "instant": true,
           "refId": "B"
         },
         {
-          "expr": "(disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})) / on (namespace, persistentvolumeclaim) group_left() max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\"})",
+          "expr": "(disk_usage:pvc_used_bytes{node=~\"$node\"} and on (namespace, persistentvolumeclaim) max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_pool\"})) / on (namespace, persistentvolumeclaim) group_left() max by (namespace, persistentvolumeclaim) (disk_usage:volume_capacity_bytes{phase=\"Bound\", storage_pool=~\"$storage_pool\"})",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -1174,32 +1565,19 @@
     "list": [
       {
         "current": {
-          "selected": true,
-          "text": "Both",
-          "value": "ssd|hdd"
+          "text": "All",
+          "value": ["$__all"]
         },
-        "includeAll": false,
-        "label": "Storage tier",
-        "name": "storage_tier",
-        "options": [
-          {
-            "selected": false,
-            "text": "SSD",
-            "value": "ssd"
-          },
-          {
-            "selected": false,
-            "text": "HDD",
-            "value": "hdd"
-          },
-          {
-            "selected": true,
-            "text": "Both",
-            "value": "ssd|hdd"
-          }
-        ],
-        "query": "SSD : ssd,HDD : hdd,Both : ssd|hdd",
-        "type": "custom"
+        "datasource": "${DS_MIMIR}",
+        "definition": "label_values(disk_usage:pool_capacity_bytes, storage_pool)",
+        "includeAll": true,
+        "label": "Storage pool",
+        "multi": true,
+        "name": "storage_pool",
+        "query": "label_values(disk_usage:pool_capacity_bytes, storage_pool)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
       },
       {
         "current": {
@@ -1207,15 +1585,31 @@
           "value": ["$__all"]
         },
         "datasource": "${DS_MIMIR}",
-        "definition": "label_values(kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"}, node)",
+        "definition": "label_values(kube_node_info, node)",
         "includeAll": true,
         "label": "Machine",
         "multi": true,
         "name": "node",
-        "query": "label_values(kube_node_labels{label_storage_allegedly_works_tier=~\"$storage_tier\"}, node)",
+        "query": "label_values(kube_node_info, node)",
         "refresh": 1,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "pool_node",
+        "type": "query",
+        "datasource": "${DS_MIMIR}",
+        "definition": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}, node)",
+        "query": "label_values(disk_usage:pool_capacity_bytes{node=~\"$node\", storage_pool=~\"$storage_pool\"}, node)",
+        "current": {
+          "text": "All",
+          "value": ["$__all"]
+        },
+        "includeAll": true,
+        "multi": true,
+        "hide": 2,
+        "refresh": 1,
+        "sort": 1
       }
     ]
   },

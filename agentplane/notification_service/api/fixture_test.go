@@ -8,29 +8,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -79,10 +84,10 @@ type fakeRunner struct {
 	sessions map[string][]string
 	err      error
 	hangs    bool
-	asked    []sandboxreader.Identity
+	asked    []*sandboxreader.Identity
 }
 
-func (r *fakeRunner) ListSessions(ctx context.Context, sandbox sandboxreader.Identity) ([]string, error) {
+func (r *fakeRunner) ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error) {
 	r.mu.Lock()
 	r.asked = append(r.asked, sandbox)
 	sessions, err, hangs := r.sessions[sandbox.Name], r.err, r.hangs
@@ -106,14 +111,14 @@ func (r *fakeRunner) hang() {
 	r.hangs = true
 }
 
-func (r *fakeRunner) questions() []sandboxreader.Identity {
+func (r *fakeRunner) questions() []*sandboxreader.Identity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]sandboxreader.Identity(nil), r.asked...)
+	return append([]*sandboxreader.Identity(nil), r.asked...)
 }
 
 type actionsCall struct {
-	owner         model.ServiceAccount
+	owner         store.Owner
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -125,7 +130,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -179,6 +184,36 @@ type fakeHistory struct {
 	asked     []string
 }
 
+type fakeSessions struct {
+	placements map[string]*dispatcherpb.Session
+	err        error
+}
+
+func nativeSession(sessionID, name, uid string) *dispatcherpb.Session {
+	identityName := name
+	if identityName == "" {
+		identityName = sandboxName
+	}
+	account, err := kube.ServiceAccount(context.Background(), auth.Account{Namespace: testNamespace, Name: identityName})
+	if err != nil {
+		panic(err)
+	}
+	return &dispatcherpb.Session{SessionId: sessionID, ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: name}, Uid: string(account.UID)}, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
+		EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}},
+	}}}
+}
+
+func (o *fakeSessions) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
+	if o.err != nil {
+		return nil, o.err
+	}
+	opening := o.placements[request.GetSessionId()]
+	if opening == nil {
+		return nil, status.Error(codes.NotFound, "opening not found")
+	}
+	return &dispatcherpb.GetSessionResponse{Session: opening}, nil
+}
+
 func (h *fakeHistory) GetSessionSummary(_ context.Context, request *historypb.GetSessionSummaryRequest, _ ...grpc.CallOption) (*historypb.SessionSummary, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -206,55 +241,50 @@ func (h *fakeHistory) questions() []string {
 }
 
 type serverConfig struct {
-	lease, requestTimeout time.Duration
-	debounce              store.Debounce
-	githubDisabled        bool
-	// operatorReader is the account that may call NotificationsOperator, none when empty.
+	requestTimeout time.Duration
+	debounce       store.Debounce
+	githubDisabled bool
+	// operatorReader is the account allowed to inspect namespace Session diagnostics.
 	operatorReader string
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
 }
 
 type testServer struct {
-	notifications   *Notifications
-	operatorService *NotificationsOperator
-	client          notificationspb.NotificationsClient
-	operator        operatorpb.NotificationsOperatorClient
-	store           *store.Store
-	hub             *wakeups.Hub
-	db              *sql.DB
-	runner          *fakeRunner
-	actions         *fakeActions
-	github          *fakeGitHub
+	notifications *Notifications
+	client        notificationspb.NotificationsClient
+	store         *store.Store
+	hub           *wakeups.Hub
+	db            *sql.DB
+	runner        *fakeRunner
+	actions       *fakeActions
+	github        *fakeGitHub
 	// policy is current and grants nothing until a test grants.
-	policy  *inboxaccess.Policy
-	history *fakeHistory
+	policy   *inboxaccess.Policy
+	history  *fakeHistory
+	openings *fakeSessions
 	// kube holds the Sandboxes the service reads.
 	kube   client.Client
 	config serverConfig
 }
 
-// newServer serves both APIs over the shared database, emptied of earlier tests' inboxes, with a hub listening to
+// newServer serves the API over the shared database, emptied of earlier tests' inboxes, with a hub listening to
 // the channel the watches follow. Sandboxes are read through the real reader over a fake Kubernetes client.
 func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	t.Helper()
 	config := serverConfig{
-		lease: time.Hour, requestTimeout: callDeadline,
+		requestTimeout: callDeadline,
 		debounce:       store.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
 		operatorReader: operatorName, messageBodyLimit: 64,
 	}
 	for _, configure := range configure {
 		configure(&config)
 	}
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, store.WorkChannel, store.InboxChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,33 +316,33 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		}},
 		actions: &fakeActions{},
 		github:  &fakeGitHub{access: store.GitHubAccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
-		policy:  inboxaccess.NewPolicy(time.Hour),
+		policy:  inboxaccess.NewPolicy(),
 		history: &fakeHistory{sandboxes: map[string]*historypb.SandboxRef{
-			testSession: {Namespace: testNamespace, Name: sandboxName},
+			testSession: {Namespace: testNamespace, Name: sandboxName, Uid: proto.String(sandboxUID)},
 		}},
 		kube: kube,
+		openings: &fakeSessions{placements: map[string]*dispatcherpb.Session{
+			testSession:       nativeSession(testSession, sandboxName, sandboxUID),
+			"missing-session": nativeSession("missing-session", sandboxName, sandboxUID),
+		}},
 	}
-	server.policy.Freshness.MarkSynced()
-	server.policy.Freshness.RecordCycle(reader.PolicySets, time.Now())
-	server.policy.Freshness.RecordCycle(reader.PolicyBindings, time.Now())
+	server.policy.Health.MarkSynced()
 	options := Options{
-		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
+		Store: server.store, Wakeups: hub, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
-		SendPolicy: server.policy, History: server.history, MessageBodyLimit: config.messageBodyLimit,
-		Debounce: config.debounce, RequestTimeout: config.requestTimeout, WatchLease: config.lease,
+		SendPolicy: server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
+		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
 	}
 	if !config.githubDisabled {
 		options.GitHub = server.github
 	}
 	server.notifications = NewNotifications(options)
-	server.operatorService = NewNotificationsOperator(options)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(Methods(options, resolver).ServerOptions(config.requestTimeout)...)
 	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
-	operatorpb.RegisterNotificationsOperatorServer(grpcServer, server.operatorService)
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
 	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -321,7 +351,6 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	}
 	t.Cleanup(func() { connection.Close() })
 	server.client = notificationspb.NewNotificationsClient(connection)
-	server.operator = operatorpb.NewNotificationsOperatorClient(connection)
 	return server
 }
 
@@ -343,13 +372,6 @@ func requireCode(t *testing.T, err error, want codes.Code) {
 	}
 }
 
-func unary[Request, Response any](call func(context.Context, *Request, ...grpc.CallOption) (*Response, error)) func(context.Context) error {
-	return func(ctx context.Context) error {
-		_, err := call(ctx, new(Request))
-		return err
-	}
-}
-
 func sandboxRef() *notificationspb.DestinationRef {
 	return &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName, Uid: sandboxUID}
 }
@@ -363,7 +385,7 @@ func actionsSource(requestID uuid.UUID, afterSequence int32) *notificationspb.So
 // createRequest follows a new Action request for the test Session of the test Sandbox.
 func createRequest(key string) *notificationspb.CreateSubscriptionRequest {
 	return &notificationspb.CreateSubscriptionRequest{
-		DestinationRef: sandboxRef(), SessionId: testSession, IdempotencyKey: key, Source: actionsSource(uuid.New(), 0),
+		SessionId: testSession, IdempotencyKey: key, Source: actionsSource(uuid.New(), 0),
 	}
 }
 
@@ -373,6 +395,7 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	request := createRequest(key)
 	if len(sessionID) > 0 {
 		request.SessionId = sessionID[0]
+		s.openings.placements[sessionID[0]] = nativeSession(sessionID[0], sandboxName, sandboxUID)
 		s.runner.mu.Lock()
 		s.runner.sessions[sandboxName] = append(s.runner.sessions[sandboxName], sessionID[0])
 		s.runner.mu.Unlock()
@@ -393,6 +416,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 	if err := s.kube.Create(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: successorUID}}); err != nil {
 		t.Fatal(err)
 	}
+	s.openings.placements["another-session"] = nativeSession("another-session", sandboxName, string(successorUID))
 }
 
 // grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.
@@ -407,7 +431,7 @@ func (s testServer) grantSend(account string, targets policyapi.SandboxTargets) 
 	s.policy.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: testNamespace, Name: account},
+			Subject:    policyapi.Subject{Namespace: testNamespace, Name: account},
 			PolicySets: []string{account + "-send"},
 		},
 	})
@@ -440,9 +464,9 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	if err != nil || due == nil {
 		t.Fatalf("due = %v, %v", due, err)
 	}
-	var events []store.ActionEvent
+	var events []storagecodec.ActionEvent
 	for sequence := int64(1); sequence <= through; sequence++ {
-		events = append(events, store.ActionEvent{
+		events = append(events, storagecodec.ActionEvent{
 			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}
@@ -452,4 +476,13 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	if err := s.store.Release(t.Context(), *claim, nil, nil); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func accountUID(t *testing.T, name string) string {
+	t.Helper()
+	account, err := kube.ServiceAccount(t.Context(), auth.Account{Namespace: testNamespace, Name: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(account.UID)
 }

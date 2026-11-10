@@ -9,8 +9,8 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-// StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers
-// mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
+// StateVolume is the controller-owned PVC for retained environment state. Pod and VM backends keep
+// a directory tree; Firecracker stores the guest state disk and its checkpoints.
 type StateVolume struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
@@ -18,7 +18,7 @@ type StateVolume struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
-	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' || self.type == 'RawDiskImage'",message="state volume requires DirectoryTree or RawDiskImage"
 	Layout VolumeLayout `json:"layout"`
 }
 
@@ -49,9 +49,30 @@ type WorkspaceVolume struct {
 	Layout VolumeLayout                     `json:"layout"`
 }
 
-// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
-// +kubebuilder:validation:ExactlyOneOf=pod;vm
+// FirecrackerTemplate describes a launcher Pod and the two immutable images it mounts.
+type FirecrackerTemplate struct {
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	Pod corev1.PodTemplateSpec `json:"pod"`
+	// +kubebuilder:validation:MinLength=1
+	BootImage string `json:"bootImage"`
+	// +kubebuilder:validation:MinLength=1
+	RunnerImage string `json:"runnerImage"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=32
+	VCPUCount int32 `json:"vcpuCount"`
+	// +kubebuilder:validation:Minimum=128
+	MemoryMiB int64 `json:"memoryMiB"`
+}
+
+// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod, VM and Firecracker.
+// +kubebuilder:validation:ExactlyOneOf=pod;vm;firecracker
 // +kubebuilder:validation:XValidation:rule="!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",message="Pod workspaces require DirectoryTree layout"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || (self.stateVolume.layout.type == 'RawDiskImage' && self.stateVolume.layout.filesystem == 'ext4')",message="Firecracker state requires an ext4 RawDiskImage"
+// +kubebuilder:validation:XValidation:rule="has(self.firecracker) || (self.stateVolume.layout.type == 'DirectoryTree' && !has(self.stateVolume.layout.filesystem))",message="Pod and VM state require DirectoryTree without a filesystem"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || !has(self.workspaceVolume) || (self.workspaceVolume.layout.type != 'DirectoryTree' && self.workspaceVolume.layout.filesystem == 'ext4')",message="Firecracker workspace requires an ext4 disk layout"
+// +kubebuilder:validation:XValidation:rule="!has(self.firecracker) || has(self.workspaceVolume)",message="Firecracker requires a workspace volume"
 type SandboxTemplateSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
@@ -62,6 +83,7 @@ type SandboxTemplateSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	VM              *kubevirtv1.VirtualMachineSpec `json:"vm,omitempty"`
+	Firecracker     *FirecrackerTemplate           `json:"firecracker,omitempty"`
 	StateVolume     StateVolume                    `json:"stateVolume"`
 	WorkspaceVolume *WorkspaceVolume               `json:"workspaceVolume,omitempty"`
 }
@@ -89,10 +111,15 @@ type SandboxSpec struct {
 	// +kubebuilder:default=false
 	// +kubebuilder:validation:Optional
 	Running bool `json:"running"`
-	// WakeOnSend allows authenticated user and notification sends to resume a stopped Sandbox.
-	// Omitted is false so older Sandbox manifests keep wake-on-send disabled.
+	// WakeOnSend allows queued delivery to request an automatic resume when it needs a suspended
+	// Sandbox. Caller lifecycle authority is checked separately, and a requested stop stays sticky.
+	// Omitted is false so older Sandbox manifests keep automatic wake disabled.
 	// +kubebuilder:default=false
 	WakeOnSend bool `json:"wakeOnSend,omitempty"`
+	// ResumePolicy controls whether the Sandbox's own principal, its exact live execution
+	// ServiceAccount or the Identity it acts as, may request resume. Omitted policy and fields
+	// default to deny.
+	ResumePolicy *ResumePolicy `json:"resumePolicy,omitempty"`
 	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
 	// differs from the generation it was suspended at.
 	// +kubebuilder:default=0
@@ -104,6 +131,10 @@ type SandboxSpec struct {
 	// +kubebuilder:validation:MaxLength=32
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m')",message="idleSuspendAfter is at least one minute"
 	IdleSuspendAfter *metav1.Duration `json:"idleSuspendAfter,omitempty"`
+	// Identity is who the Sandbox's workloads act as. It may be set, changed or cleared only while
+	// nothing runs, so an incarnation never changes identity; the next start acts as the new one.
+	// "Nothing runs" is the controller's last status report: never reconciled, or stopStage Stopped.
+	Identity *IdentityRef `json:"identity,omitempty"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
@@ -117,6 +148,22 @@ type SandboxSpec struct {
 	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
 	// +kubebuilder:validation:MaxLength=65536
 	Bootstrap string `json:"bootstrap,omitempty"`
+}
+
+// IdentityRef names an Identity in the Sandbox's namespace.
+type IdentityRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// ResumePolicy contains independent resume permissions for the Sandbox's own principal.
+type ResumePolicy struct {
+	// AllowOwnServiceAccount permits the Sandbox's exact live execution ServiceAccount to request
+	// resume while the Sandbox is idle-suspended, and queued work of the Identity the Sandbox acts
+	// as to wake it then. It does not authorize overriding a requested stop.
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	AllowOwnServiceAccount bool `json:"allowOwnServiceAccount,omitempty"`
 }
 
 // Incarnation is the Pod the Sandbox's runner currently runs in: its own Pod, or its VM's
@@ -133,8 +180,28 @@ type QuiesceAttempt struct {
 	AttemptedAt  metav1.Time `json:"attemptedAt"`
 }
 
+// RunnerCredentialKind is the workload kind a runner credential generation was issued for.
+// +kubebuilder:validation:Enum=Pod;VM
+type RunnerCredentialKind string
+
+const (
+	RunnerCredentialKindPod RunnerCredentialKind = "Pod"
+	RunnerCredentialKindVM  RunnerCredentialKind = "VM"
+)
+
+// RunnerCredential is the incarnation the controller accepted for the Sandbox's WorkloadCredential,
+// which holds the credential ID, URI and Secret.
+type RunnerCredential struct {
+	Kind RunnerCredentialKind `json:"kind"`
+	// PodUID is the Pod the controller started and accepted; a Pod of the Sandbox's name with another
+	// UID is a stale replacement.
+	PodUID string `json:"podUid,omitempty"`
+	// LastVMIUID is the last VMI accepted for the Sandbox's VM.
+	LastVMIUID string `json:"lastVmiUid,omitempty"`
+}
+
 // AutosuspendBlockerReason is a current runner fact that keeps the Sandbox from being idle.
-// +kubebuilder:validation:Enum=ActiveTurn;PendingCommand;Setup;Activation;Bootstrap;Admission
+// +kubebuilder:validation:Enum=ActiveTurn;PendingCommand;Setup;Activation;Bootstrap;Admission;ExecutorRelay
 type AutosuspendBlockerReason string
 
 const (
@@ -144,6 +211,7 @@ const (
 	AutosuspendBlockerActivation     AutosuspendBlockerReason = "Activation"
 	AutosuspendBlockerBootstrap      AutosuspendBlockerReason = "Bootstrap"
 	AutosuspendBlockerAdmission      AutosuspendBlockerReason = "Admission"
+	AutosuspendBlockerExecutorRelay  AutosuspendBlockerReason = "ExecutorRelay"
 )
 
 // AutosuspendBlocker is one live reason the controller must wait before suspending a Sandbox.
@@ -161,7 +229,7 @@ func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
 			if blocker.SessionID == nil || *blocker.SessionID == "" {
 				return fmt.Errorf("autosuspend blocker %q requires a session ID", blocker.Reason)
 			}
-		case AutosuspendBlockerBootstrap, AutosuspendBlockerAdmission:
+		case AutosuspendBlockerBootstrap, AutosuspendBlockerAdmission, AutosuspendBlockerExecutorRelay:
 			if blocker.SessionID != nil {
 				return fmt.Errorf("autosuspend blocker %q cannot have a session ID", blocker.Reason)
 			}
@@ -185,6 +253,9 @@ func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
+	// FirecrackerSuspension retains the admission barrier across controller retries,
+	// checkpoint and thaw. Released keeps the generation for the next attempt.
+	FirecrackerSuspension *FirecrackerSuspension `json:"firecrackerSuspension,omitempty"`
 	// IdleSuspendAt is the controller's next attempt to suspend an idle Sandbox, when one is scheduled.
 	IdleSuspendAt *metav1.Time `json:"idleSuspendAt,omitempty"`
 	// IdleSuspendBlockers are the live runner facts keeping autosuspend from suspending this Sandbox.
@@ -194,6 +265,9 @@ type SandboxStatus struct {
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
 	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.
 	QuiesceAttempt *QuiesceAttempt `json:"quiesceAttempt,omitempty"`
+	// RunnerCredential is the incarnation the controller accepted. It lives under status so writers of
+	// the Sandbox's spec and metadata cannot rebind it.
+	RunnerCredential *RunnerCredential `json:"runnerCredential,omitempty"`
 	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
 	// `spec.running` reads instead.
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`
@@ -202,10 +276,30 @@ type SandboxStatus struct {
 	SuspendedBy *SuspendedBy `json:"suspendedBy,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	SuspendedAtWakeGeneration *int64 `json:"suspendedAtWakeGeneration,omitempty"`
+	// StopStage is how far the controller has taken stopping the Sandbox's workload; absent while
+	// the workload runs or starts. Readers dispatch on it; condition reasons are display only.
+	StopStage StopStage `json:"stopStage,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
+
+type FirecrackerSuspension struct {
+	// +kubebuilder:validation:Minimum=1
+	Generation int64                      `json:"generation"`
+	IdleSince  metav1.MicroTime           `json:"idleSince"`
+	Phase      FirecrackerSuspensionPhase `json:"phase"`
+}
+
+// +kubebuilder:validation:Enum=Preparing;Checkpointing;Resuming;Released
+type FirecrackerSuspensionPhase string
+
+const (
+	FirecrackerSuspendPreparing     FirecrackerSuspensionPhase = "Preparing"
+	FirecrackerSuspendCheckpointing FirecrackerSuspensionPhase = "Checkpointing"
+	FirecrackerSuspendResuming      FirecrackerSuspensionPhase = "Resuming"
+	FirecrackerSuspendReleased      FirecrackerSuspensionPhase = "Released"
+)
 
 // WorkspaceBinding projects the creation record and pins the claim's identity.
 type WorkspaceBinding struct {
@@ -227,7 +321,7 @@ type StateBinding struct {
 	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
 	UID string `json:"uid"`
-	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' || self.type == 'RawDiskImage'",message="state volume requires DirectoryTree or RawDiskImage"
 	Layout VolumeLayout `json:"layout"`
 }
 
@@ -249,6 +343,20 @@ const (
 	SuspendedByRequested SuspendedBy = "Requested"
 )
 
+// +kubebuilder:validation:Enum=Quiescing;Deleting;Stopped
+type StopStage string
+
+const (
+	// The controller is sealing the current incarnation's Sessions before it stops or deletes it. A
+	// Sandbox resumed meanwhile still waits for the seal and gets a new incarnation.
+	StopStageQuiescing StopStage = "Quiescing"
+	// The Sandbox is being deleted and has no Session left to seal; the controller deletes its
+	// workload and runner credentials.
+	StopStageDeleting StopStage = "Deleting"
+	// No Pod or VM runs; the state volume is kept.
+	StopStageStopped StopStage = "Stopped"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,path=sandboxes,singular=sandbox
@@ -257,6 +365,7 @@ const (
 // +kubebuilder:printcolumn:name="Running",type=string,JSONPath=".status.conditions[?(@.type==\"Running\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="a Sandbox name is at most 63 characters"
+// +kubebuilder:validation:XValidation:rule="(has(self.spec.identity) == has(oldSelf.spec.identity) && (!has(self.spec.identity) || self.spec.identity == oldSelf.spec.identity)) || !has(oldSelf.status) || !has(oldSelf.status.operatingMode) || (has(oldSelf.status.stopStage) && oldSelf.status.stopStage == 'Stopped')",message="spec.identity changes only while nothing runs"
 type Sandbox struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from typing import cast
 
 from cdk8s import ApiObjectMetadata
@@ -10,7 +10,9 @@ from cdk8s_plus_34 import ApiResource, IApiResource, Role, RoleBinding, RolePoli
 from constructs import Construct
 
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant, RoleBindingGrant
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.managed_account_admission import add_managed_account_admission
 from cluster.cdk8s.agentplane.policy_controller import NAME
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 
@@ -29,6 +31,8 @@ class PolicyControllerRbac(Construct):
         *,
         account: ServiceAccount,
         assignable_grants: Sequence[KubernetesGrant],
+        accounts_namespace: str,
+        workload_namespaces: Set[str],
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -50,12 +54,40 @@ class PolicyControllerRbac(Construct):
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
-                RolePolicyRule(resources=[custom_resource(_GROUP, "policysets")], verbs=["get", "list", "watch"]),
+                # A ManagedServiceAccount's EgressCredential and use PolicySet, which it owns.
+                RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "policysets"), custom_resource(_GROUP, "egresscredentials")],
+                    verbs=["create", "update", "patch", "get", "list", "watch"],
+                ),
+                RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes")], verbs=["get"]),
                 # Deleting is how a binding expires.
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "policybindings")], verbs=["get", "list", "watch", "delete"]
+                    resources=[custom_resource(_GROUP, "policybindings")],
+                    verbs=["create", "get", "list", "watch", "delete"],
                 ),
                 RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
+                RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "kubernetesrolesets")], verbs=["get", "list", "watch"]
+                ),
+                # PolicyService serves identities and the operator's delete of one.
+                RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch", "delete"]
+                ),
+                # Deleting is how a grant or a managed account expires.
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(_GROUP, "serviceaccountgrants"),
+                        custom_resource(_GROUP, "managedserviceaccounts"),
+                    ],
+                    verbs=["get", "list", "watch", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(_GROUP, "serviceaccountgrants/status"),
+                        custom_resource(_GROUP, "managedserviceaccounts/status"),
+                    ],
+                    verbs=["patch"],
+                ),
                 RolePolicyRule(
                     resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
                 ),
@@ -78,6 +110,64 @@ class PolicyControllerRbac(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             role=Role.from_role_name(self, "role-ref", role_name),
         ).add_subjects(account)
+        # Narrows the EgressCredential and PolicySet writes above to managed accounts' use.
+        add_managed_account_admission(
+            self,
+            namespace=namespace,
+            controller=ServiceAccountRef(namespace=namespace, name=account.name),
+            accounts_namespace=accounts_namespace,
+        )
+        # ManagedServiceAccounts' ServiceAccounts, created and pruned only in the accounts namespace.
+        accounts_role = Role(
+            self,
+            "accounts-role",
+            metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
+            rules=[
+                RolePolicyRule(
+                    resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)],
+                    verbs=["create", "delete", "get", "list", "watch"],
+                )
+            ],
+        )
+        RoleBinding(
+            self,
+            "accounts-role-binding",
+            metadata=ApiObjectMetadata(name=f"{role_name}-accounts", namespace=accounts_namespace),
+            role=accounts_role,
+        ).add_subjects(account)
+        # The workload-identity issuer: it alone writes WorkloadCredential status and workload
+        # Certificates, and deletes the Secrets cert-manager issued for superseded generations.
+        for workload_namespace in sorted(workload_namespaces):
+            issuer_role = Role(
+                self,
+                f"workload-credentials-role-{workload_namespace}",
+                metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
+                rules=[
+                    RolePolicyRule(
+                        resources=[custom_resource(_GROUP, "workloadcredentials")], verbs=["get", "list", "watch"]
+                    ),
+                    RolePolicyRule(
+                        resources=[custom_resource(_GROUP, "workloadcredentials/status")], verbs=["update", "patch"]
+                    ),
+                    # Its Certificates block their record's deletion until they are gone.
+                    RolePolicyRule(
+                        resources=[custom_resource(_GROUP, "workloadcredentials/finalizers")], verbs=["update"]
+                    ),
+                    RolePolicyRule(
+                        resources=[custom_resource("cert-manager.io", "certificates")],
+                        verbs=["create", "get", "list", "watch", "delete"],
+                    ),
+                    RolePolicyRule(
+                        resources=[cast(IApiResource, ApiResource.SECRETS)], verbs=["get", "list", "delete"]
+                    ),
+                ],
+            )
+            RoleBinding(
+                self,
+                f"workload-credentials-role-binding-{workload_namespace}",
+                metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
+                role=issuer_role,
+            ).add_subjects(account)
         cluster_role_name = f"{namespace}-policy-controller"
         k8s.KubeClusterRole(
             self,

@@ -1,11 +1,12 @@
-from aiquota.models import FetchSuccess, ProviderQuota, QuotaWindow
-from aiquota.pace import binding_tint, compute_pace, tint_for
+"""Compact tmux status summary, using the shared provider window selection."""
+
+from aiquota.models import AllQuotas, ProviderQuota
+from aiquota.render.view_model import ProviderView, to_view
 
 # Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
-# Prepended once to the whole segment; each provider then uses its vendor
-# initial: Anthropic / OpenAI / Z.AI.
 _AI_GLYPH = "\uec10"
 PROVIDER_PREFIX = {"claude": "A", "codex": "O", "zai": "Z"}
+_API_PROVIDERS = {"openai_platform", "anthropic_platform"}
 
 TINT_FG = {
     "cool": "blue",
@@ -18,53 +19,50 @@ TINT_FG = {
 }
 
 
-def _window_tint(window: QuotaWindow, *, is_short: bool) -> str:
-    pace = compute_pace(window)
-    return tint_for(pace, window.used_percent, is_short=is_short)
-
-
 def render_provider(pq: ProviderQuota) -> str:
+    return _render_provider(to_view(AllQuotas(providers=[pq], fetched_at=pq.last_output.fetched_at)).providers[0])
+
+
+def _render_provider(pq: ProviderView) -> str:
+    if pq.provider in _API_PROVIDERS:
+        return ""
     prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
-    result = pq.last_output.result
+    windows = pq.display_windows
+    index = pq.summary_index
+    summary = windows[index] if index is not None and 0 <= index < len(windows) else None
+    stale = pq.stale_since is not None
 
-    # Pick the windows to render: prefer the latest fetch when it succeeded,
-    # else fall back to the last successful snapshot.
-    if isinstance(result, FetchSuccess) and result.windows:
-        windows, stale = [window for window in result.windows if window.display], False
-    elif pq.last_success is not None:
-        windows, stale = [window for window in pq.last_success.result.windows if window.display], True
+    if any(window.reset_pending for window in windows):
+        value = "↻?"
+        color = "stale"
+    elif pq.paid_credits_active or pq.currently_over_plan:
+        value = "⚡"
+        color = pq.summary_tint
+    elif summary is not None and summary.exhausted:
+        last_reset = max((window for window in windows if window.exhausted), key=lambda window: window.reset_seconds)
+        value = f"↻{last_reset.reset.replace(' ', '')}"
+        color = summary.tint
+    elif summary is not None:
+        value = f"{summary.used}%"
+        color = summary.tint
+    elif pq.error_summary is not None:
+        value = "!"
+        color = "error"
     else:
-        windows = []
-        stale = False
-
-    errored = not isinstance(result, FetchSuccess)
-    if errored and not windows:
-        return f"#[fg={TINT_FG['error']}]{prefix}:!#[default]"
+        value = "?"
+        color = pq.summary_tint
 
     if stale:
-        if not windows:
-            return f"#[fg={TINT_FG['stale']}]{prefix}:?#[default]"
-        summary = next((window for window in reversed(windows) if window.name is None), windows[-1])
-        return f"#[fg={TINT_FG['stale']}]{prefix}:{round(summary.used_percent)}%*#[default]"
+        value += "*"
+        color = "stale"
+    return f"#[fg={TINT_FG[color]}]{prefix}:{value}#[default]"
 
-    longest_duration = max((window.window_seconds for window in windows), default=0)
-    tints = [_window_tint(window, is_short=window.window_seconds < longest_duration) for window in windows]
-    tint = tints[0] if tints else "unknown"
-    for next_tint in tints[1:]:
-        tint = binding_tint(tint, next_tint)
-    color = TINT_FG.get(tint, "white")
 
-    # Show the more informative window (prefer long if available)
-    if not windows:
-        return f"#[fg={color}]{prefix}:?#[default]"
-
-    summary = next((window for window in reversed(windows) if window.name is None), windows[-1])
-    pct = round(summary.used_percent)
-    return f"#[fg={color}]{prefix}:{pct}%#[default]"
+def render_view(providers: list[ProviderView]) -> str:
+    segments = [_render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
+    return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""
 
 
 def render(providers: list[ProviderQuota]) -> str:
-    segments = [render_provider(pq) for pq in providers]
-    if not segments:
-        return ""
-    return f"{_AI_GLYPH} " + " ".join(segments)
+    segments = [render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
+    return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""

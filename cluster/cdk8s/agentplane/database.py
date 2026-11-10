@@ -18,9 +18,9 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
 from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecCluster, DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
 
-from cluster.cdk8s import cnpg
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.cnpg import ClusterPlacement
+from cluster.cdk8s.cnpg import cluster as cnpg  # Local `cluster` parameters shadow the module name.
+from cluster.cdk8s.cnpg.cluster import ClusterPlacement
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.cnpg.database import Database
@@ -92,8 +92,9 @@ class Db(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment, props: DbProps) -> None:
         super().__init__(scope, id)
         cluster = postgres(env)
+        roles = [*_ROLE_NAMES, *(["central_sampler"] if env.central_sampler is not None else [])]
 
-        for role in _ROLE_NAMES:
+        for role in roles:
             _role_credentials(self, f"role-credentials-{role}", cluster=cluster, role=role)
         _role_credentials(self, "role-credentials-electric", cluster=cluster, role=_ELECTRIC_ROLE, database_name="app")
 
@@ -122,7 +123,7 @@ class Db(Construct):
                         login=True,
                         password_secret=ClusterSpecManagedRolesPasswordSecret(name=_role_secret_name(role)),
                     )
-                    for role in _ROLE_NAMES
+                    for role in roles
                 ]
                 + [
                     ClusterSpecManagedRoles(
@@ -136,7 +137,7 @@ class Db(Construct):
             ),
         )
 
-        for role in _ROLE_NAMES:
+        for role in roles:
             Database(
                 self,
                 f"database-{role}",
@@ -144,5 +145,10 @@ class Db(Construct):
                 cluster=DatabaseSpecCluster(name=cluster.name),
                 name=role,
                 owner=role,
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
+                # Disabling the optional sampler must preserve its authored conversations.
+                database_reclaim_policy=(
+                    DatabaseSpecDatabaseReclaimPolicy.RETAIN
+                    if role == "central_sampler"
+                    else DatabaseSpecDatabaseReclaimPolicy.DELETE
+                ),
             )

@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use selector_match::Mode;
+use selector_match::{Index, Mode};
 
 fn facts(source: &str) -> chunk_facts::ChunkFacts {
     chunk_facts::extract_facts_items(&js_ast::parse_js_module_ast("<t>", source).unwrap().body)
@@ -26,11 +26,13 @@ fn roots(source: &str) -> Vec<chunk_facts::ChunkFacts> {
         .collect()
 }
 
+fn indices(facts: &[chunk_facts::ChunkFacts]) -> Vec<Index> {
+    facts.iter().map(Index::build).collect()
+}
+
 /// The free identifiers of a template given as per-statement facts.
 fn free_of(needle: &[chunk_facts::ChunkFacts]) -> BTreeSet<String> {
-    let indices: Vec<selector_match::Index> =
-        needle.iter().map(selector_match::Index::build).collect();
-    source_match::free_identifiers(&indices)
+    source_match::free_identifiers(&indices(needle))
 }
 
 fn free(source: &str) -> BTreeSet<String> {
@@ -354,9 +356,9 @@ fn multi_statement_sequence_aligns_around_a_stmt_list_hole() {
         let needle = roots("const a = first();\nSTMT_LIST;\nconst b = second();");
         let subject = roots("const a = first();\nx();\ny();\nconst b = second();");
         let alignments = sites(
-            selector_match::match_top_level_sequence(
-                &needle,
-                &subject,
+            selector_match::match_top_level_sequence_indexed(
+                &indices(&needle),
+                &indices(&subject),
                 Mode::Exact,
                 &free_of(&needle),
             )
@@ -375,9 +377,9 @@ fn multi_statement_sequence_enumerates_all_alignments() {
         let needle = roots("STMT_LIST;\nfoo();");
         let subject = roots("foo();\nbar();\nfoo();");
         let alignments = sites(
-            selector_match::match_top_level_sequence(
-                &needle,
-                &subject,
+            selector_match::match_top_level_sequence_indexed(
+                &indices(&needle),
+                &indices(&subject),
                 Mode::Exact,
                 &free_of(&needle),
             )
@@ -396,9 +398,9 @@ fn var_declarator_alignment_prebinding_forces_target_identity() {
         let needle = facts("const c = \"abc\", DECLARATORS_AFTER = null;");
         let subject = facts("const x = \"abc\", y = \"abc\";");
         let free = free_of(std::slice::from_ref(&needle));
-        let to_first = selector_match::var_declarator_alignment(
-            &needle,
-            &subject,
+        let to_first = selector_match::var_declarator_alignment_indexed(
+            &Index::build(&needle),
+            &Index::build(&subject),
             Mode::AlphaAll,
             &[("c", "x")],
             &free,
@@ -406,9 +408,9 @@ fn var_declarator_alignment_prebinding_forces_target_identity() {
         .expect("supported")
         .expect("matches x");
         assert_eq!(to_first.site, vec![Some(0), None]);
-        let to_second = selector_match::var_declarator_alignment(
-            &needle,
-            &subject,
+        let to_second = selector_match::var_declarator_alignment_indexed(
+            &Index::build(&needle),
+            &Index::build(&subject),
             Mode::AlphaAll,
             &[("c", "y")],
             &free,
@@ -428,9 +430,9 @@ fn var_declarator_alignment_rejects_kind_mismatch() {
         let needle = facts("let DECLARATORS_BEFORE = null, c = \"abc\";");
         let subject = facts("const q = \"abc\";");
         assert_eq!(
-            selector_match::var_declarator_alignment(
-                &needle,
-                &subject,
+            selector_match::var_declarator_alignment_indexed(
+                &Index::build(&needle),
+                &Index::build(&subject),
                 Mode::AlphaAll,
                 &[],
                 &free_of(std::slice::from_ref(&needle)),
@@ -451,9 +453,9 @@ fn alpha_scopes_per_function_so_reused_param_names_stay_independent() {
         let needle = roots("function a(p){ g = p; }\nfunction b(p){ h = p; }");
         let subject = roots("function x(e){ M = e; }\nfunction y(t){ N = t; }");
         let alignments = sites(
-            selector_match::match_top_level_sequence(
-                &needle,
-                &subject,
+            selector_match::match_top_level_sequence_indexed(
+                &indices(&needle),
+                &indices(&subject),
                 Mode::AlphaAll,
                 &free_of(&needle),
             )
@@ -473,9 +475,9 @@ fn pairs(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 /// Every alignment of a multi-statement alpha needle, with its free bindings.
 fn alpha_sequence(needle: &str, subject: &str) -> Vec<selector_match::Matched<Vec<Option<usize>>>> {
     let needle = roots(needle);
-    selector_match::match_top_level_sequence(
-        &needle,
-        &roots(subject),
+    selector_match::match_top_level_sequence_indexed(
+        &indices(&needle),
+        &indices(&roots(subject)),
         Mode::AlphaAll,
         &free_of(&needle),
     )
@@ -543,9 +545,9 @@ fn a_free_name_may_bind_the_chunk_name_of_a_renamed_declaration() {
         // `readable` both bind chunk `q`, and the statement still matches.
         let needle = "const DECLARATORS_BEFORE = null, wrap = () => use(q), readable = () => 1;";
         let subject = facts("const z = 0, w = () => use(q), q = () => 1;");
-        let alignment = selector_match::var_declarator_alignment(
-            &facts(needle),
-            &subject,
+        let alignment = selector_match::var_declarator_alignment_indexed(
+            &Index::build(&facts(needle)),
+            &Index::build(&subject),
             Mode::AlphaAll,
             &[],
             &free(needle),

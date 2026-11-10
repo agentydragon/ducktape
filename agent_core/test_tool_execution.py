@@ -200,18 +200,14 @@ async def test_parallel_tool_calls_run_concurrently(rendezvous_server, recording
 
 
 async def _run_malformed_json_test(
-    mcp_tool_provider_echo,
-    recording_handler,
-    make_first_turn: Callable[[ResponsesFactory], ResponsesResult],
-    *,
-    parallel: bool = False,
+    mcp_tool_provider_echo, recording_handler, *first_turn_calls: FunctionCallItem, parallel: bool = False
 ) -> tuple[str, list]:
-    """Helper to run malformed JSON tests with custom first turn."""
+    """Run tool calls and capture the agent's response and events."""
     factory = ResponsesFactory("test-model")
 
     async def handle_request(req: ResponsesRequest) -> ResponsesResult:
         if len(req.input) == 1:
-            return make_first_turn(factory)
+            return factory.make(*first_turn_calls)
         return factory.make_assistant_message("I received an error")
 
     client = make_mock(handle_request)
@@ -229,49 +225,15 @@ async def _run_malformed_json_test(
     return res.text, events
 
 
-async def test_malformed_json_in_tool_arguments(mcp_tool_provider_echo, recording_handler) -> None:
-    """Test that malformed JSON in tool arguments is converted to error tool result."""
+@pytest.mark.parametrize(
+    "arguments", ['{"text": "unterminated string', '["not", "an", "object"]'], ids=["malformed-json", "non-object-json"]
+)
+async def test_invalid_tool_argument_json(mcp_tool_provider_echo, recording_handler, arguments) -> None:
+    call = FunctionCallItem(type="function_call", name=ECHO_TOOL_NAME, arguments=arguments, call_id="test:1")
+    text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, call)
 
-    def make_turn(factory: ResponsesFactory) -> ResponsesResult:
-        malformed_call = FunctionCallItem(
-            type="function_call",
-            name=ECHO_TOOL_NAME,
-            arguments='{"text": "unterminated string',  # Malformed JSON
-            call_id="test:1",
-        )
-        return factory.make(malformed_call)
-
-    text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, make_turn)
-
-    # Agent should complete successfully despite malformed JSON
     assert text == "I received an error"
 
-    # Check that error was emitted as a tool result
-    tool_outputs = [evt for evt in events if isinstance(evt, ToolCallOutput)]
-    assert len(tool_outputs) == 1
-
-    tool_result = tool_outputs[0].result
-    assert_that(tool_result, tool_call_with_error_text(anything()))
-
-
-async def test_non_dict_json_in_tool_arguments(mcp_tool_provider_echo, recording_handler) -> None:
-    """Test that non-dict JSON (like array) in tool arguments is converted to error."""
-
-    def make_turn(factory: ResponsesFactory) -> ResponsesResult:
-        non_dict_call = FunctionCallItem(
-            type="function_call",
-            name=ECHO_TOOL_NAME,
-            arguments='["not", "an", "object"]',  # Valid JSON but not a dict
-            call_id="test:1",
-        )
-        return factory.make(non_dict_call)
-
-    text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, make_turn)
-
-    # Agent should complete successfully
-    assert "error" in text.lower()
-
-    # Check that error was emitted as a tool result
     tool_outputs = [evt for evt in events if isinstance(evt, ToolCallOutput)]
     assert len(tool_outputs) == 1
 
@@ -281,20 +243,15 @@ async def test_non_dict_json_in_tool_arguments(mcp_tool_provider_echo, recording
 
 async def test_malformed_json_parallel_tool_calls(mcp_tool_provider_echo, recording_handler) -> None:
     """Test malformed JSON handling with parallel tool calls enabled."""
-
-    def make_turn(factory: ResponsesFactory) -> ResponsesResult:
-        good_call = FunctionCallItem(
+    text, events = await _run_malformed_json_test(
+        mcp_tool_provider_echo,
+        recording_handler,
+        FunctionCallItem(
             type="function_call", name=ECHO_TOOL_NAME, arguments='{"text": "good call"}', call_id="test:1"
-        )
-        bad_call = FunctionCallItem(
-            type="function_call",
-            name=ECHO_TOOL_NAME,
-            arguments='{"text": "bad',  # Malformed
-            call_id="test:2",
-        )
-        return factory.make(good_call, bad_call)
-
-    text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, make_turn, parallel=True)
+        ),
+        FunctionCallItem(type="function_call", name=ECHO_TOOL_NAME, arguments='{"text": "bad', call_id="test:2"),
+        parallel=True,
+    )
 
     # Agent should complete successfully
     assert text

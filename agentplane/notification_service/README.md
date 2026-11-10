@@ -7,64 +7,148 @@ from the Session's runner entries in the History Service. It authorizes messages
 rules of the PolicySets bound to the sender, which it watches. It does not depend on the integration app or
 connect directly to runners.
 
-Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
+Agents subscribe with a Session ID and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
-confirm that its managed Sandbox is missing or has a different UID, separated by the
-configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
-suspended Sandboxes) resume delivery; owner mismatches and transport failures never
-confirm retirement. Retirement cancels subscriptions and stops retries but retains entries
-and notices for normal retention and inspection; it never acknowledges them or rebinds
-an inbox to a replacement Sandbox.
+Creating a subscription resolves the existing Dispatcher Session and retains its exact Sandbox target,
+UID and live Runtime membership checks. `environment_hosted` supplies the native Session's required
+environment; `central_sampler_v1` supplies its fixed `executor_environment`. Both currently resolve to
+the existing Sandbox-backed destination. Central sampler V1 has no optional attachment API and
+cannot open without an environment; its existing admission, wake and deletion behavior remains.
+Sessions created only through Runtime have no Dispatcher Session and cannot create subscriptions or
+receive new messages. Message sends also resolve the Session, then evaluate the sender's current
+scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
+intact through the placement migration.
+Inbox ownership pins the reviewed ServiceAccount UID as well as the Sandbox UID. A recreated
+ServiceAccount cannot read or mutate its predecessor's inboxes, subscriptions or sent-message receipts.
+An unknown inbox owner UID is established only from the Dispatcher Session's recorded execution identity
+and exact placement; current same-name accounts and History Sandbox references are insufficient.
+Unproven inboxes retain their contents and operator read access. Workers pause source reads and notices
+until the Session proves the original owner; an Action source also requires its recorded `caller_uid`.
+An unknown or different sender UID cannot reuse a previously accepted message key.
 
-Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling,
-GitHub and messaging workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides
+An inbox is also owned by the Identity incarnation the Dispatcher recorded its Session as executing as
+(`Session.identity`), established from the Session authority when a subscription or message opens the inbox,
+when a worker delivers to it, or when the ServiceAccount owner is reconciled; it is immutable once set. A Sandbox
+SVID whose WorkloadCredential names an Identity (resolved in `namespace`, which also holds the policy objects the
+service watches) reads, acknowledges and retires the inboxes and manages the subscriptions of its Sandbox that
+are established for its Identity incarnation; the Sandbox is the credential's controller owner.
+
+An Identity caller also subscribes and messages, by the conservative analogue of the ServiceAccount rules
+(`SESSION_IDENTITY_AUTHZ` in [the task DAG](../plans/task_dag.md) decides the lasting design). It subscribes only
+a Session the Dispatcher recorded as executing as its Identity incarnation alone, placed in the Sandbox that
+controls its credential, to an Action request that incarnation submitted (`ActionRequest.caller_identity`). Its
+send is granted by a `session_inbox_access` rule bound to its Identity, fenced on the live Identity's UID; the
+message records the Identity incarnation, which alone reads it back, and recipients see it as from the name of
+the Sandbox it was sent from. A message to an Identity-run Session goes to the inbox its Identity owns, and only
+while the destination Sandbox's `spec.identity` still names that Identity.
+A Session the Dispatcher recorded as executing as an Identity alone (an Identity-run Sandbox, which has no
+managed ServiceAccount) has an inbox owned by that Identity incarnation and no ServiceAccount; its
+`owner_namespace` and `owner_name` still name the destination Sandbox, so inbox keys and the per-account inbox
+quota stay per Sandbox. Workers deliver to it while the Session's recorded Identity is the inbox's, and treat a
+different one as an owner mismatch.
+
+For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
+subscriptions active. Workers continue reconciling subscription sources and store unread
+entries and prepared notices, but do not submit notices until the original UID is found.
+The configured `unavailable_destination_retry_s` controls the retry interval for an unavailable
+destination; a source due earlier is still read. A same-name replacement never receives the
+old notice. Explicit inbox retirement remains available through the API.
+
+Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
+inbox-handling, GitHub and messaging workflows embedded in the CLI image. The integration app has its own
+generated JSON facade over gRPC; the Notification Service itself serves no HTTP workload API. Update the guides
 when those contracts change.
 
 - [API and caller-visible delivery semantics](docs/api.md)
 - [Storage, worker and delivery architecture](docs/architecture.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
-- `/openapi.json`: the routes and their request and response schemas.
 
 While the History Service is down or rolling, webhooks are still accepted and inbox entries still
 stored, but no notice reaches a Session: a delivery reads the Session's receipts from the History
 Service first and, failing that, releases its claim to retry later. A delivery also waits while the
 History Service lags the runner's journal, so a retry never precedes an admission it has not seen.
 
+Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener.
+Egress routes workload gRPC through an opaque central-proxy CONNECT. Notification verifies the
+certificate chain, explicit clientAuth EKU, expiry, current Sandbox UID and accepted credential ID,
+then resolves the Sandbox's controlled
+ServiceAccount UID. Caller headers cannot select another account. Native gRPC uses this resolver,
+and watch revalidation repeats the live lookup. Backend/operator callers use the same listener
+with their audience-scoped tokens and existing authorization.
+
 ## Running and deployment
 
-`:service_image` (binary `:notification-service`) is the service, and `//agentplane/notification_service/migrations:image`
-its Goose migrator, which the Deployment's init container runs before the service starts. The service needs its own
+`:service_image` contains `notification-service`, which applies Goose migrations before opening
+listeners or starting workers. A startup probe delays health checks until that initialization has
+completed. Replicas use the environment's rolling profile, so migrations must remain compatible with
+both old and new writers during rollout. Goose serializes concurrent starts with a PostgreSQL
+advisory session lock. The service needs its own
 PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
 service-account tokens, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
-A schema change is a Goose file in `migrations/notifications/`. The baseline, `00001_baseline.sql`, takes over a
-database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
-the migrator keeps the advisory lock key the Alembic runner took.
+Subscription creation uses a Session-only request and requires a Dispatcher Session record. Deploy the
+Notification API and CLI images together; creations can fail while old and new versions overlap.
+Message sends also use a Session-only request; old CLI binaries cannot send to the new API during
+the rolling overlap. Once serving replicas and client binaries agree, retry uncertain creations and
+sends with their original idempotency keys.
+The SessionSpec placement cutover also changes the Dispatcher Session projection consumed here;
+roll the Notification service with the matching Dispatcher and sampler contract. Pre-cutover
+Sandbox/service binaries are not a supported compatibility tier, while existing inbox and History
+data are migrated or retained in place.
+New Sessions receive their public ID as `AGENTPLANE_SESSION_ID`; the CLI reads that value directly and
+does not accept the former `AGENTPLANE_DESTINATION` JSON envelope. Existing central Sessions keep the
+prompt frozen when they were opened, which may still show a Sandbox reference and name the old
+variable. Use `--session ID` from such a Session or open a new Session for the current prompt and
+environment. Stored prompts and History are preserved unchanged.
+Rollback rolls both API and CLI images back together. Existing subscriptions and their stored
+destination fences, entries, acknowledgements and notices are not converted or deleted.
 
-The generic `github_observation` inbox identity is read-compatible here for the planned CI/check, review
-and PR lifecycle recovery writers. [Reader PR #12411](https://github.com/agentydragon/ducktape/pull/12411) must deploy to all replicas
-before deploying these writers; retain its image as the data-preserving rollback floor once writing begins.
-Do not overlap old GitHub workers with recovery writers during rollout. If rolling back to the reader-only image,
-disable the GitHub provider until a recovery-capable image is restored, while retaining inbox reads and delivery.
-Never roll back to an older decoder or run a down migration that discards retained notifications.
+Schema changes are Goose migrations. `00013_baseline.sql` creates the current schema directly on an
+empty database. A database with completed version 12 and the required final schema is adopted
+without copying rows or rewriting its Goose history. A partial predecessor must first finish
+migrating with the previous image. Subsequent schema changes use new Goose versions.
+
+The Notification Deployment rolls replicas. Existing replicas continue to accept webhooks and serve
+requests while replacement replicas apply migrations and start. The migration lock serializes schema
+updates, while migration changes must keep old and new service versions compatible throughout the
+rollout.
+
+The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
+commit and nanosecond timestamp; and Message text and optional source Session in native columns.
+GitHub webhook and observation payloads remain JSONB. Subscription `creation_proto` and notice
+`runner_entry` remain binary protobuf snapshots. Expired entries retain identity tombstones while
+their content stays cleared.
+
+At a committed runner cursor, replay decodes the stored snapshot and compares the full `EventEntry` with
+`proto.Equal`. All known fields, including fields added later, and unknown fields recursively must match.
+Unknown field-number groups may be reordered; occurrences and opaque wire bytes within one field number
+remain significant, so this does not equate different non-minimal encodings.
+
+Rollback requires a native-schema-capable service image. Restore a backup only before admitting
+new writes, never over newly accepted work. Keep the Deployment stopped during restore, then verify
+readiness, authorization, inbox reads, new writes, expiry and replay deduplication. Staging
+verification also includes a fresh Action subscription and a real GitHub webhook delivery;
+database checks alone do not prove ingress or runner notice delivery.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
-flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
-and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.
+flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
+and waiting for each watch write to clear transport backpressure. Watches revalidate the bearer and send heartbeats every 15 seconds.
 `message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
-`policy_watch_period_s` (default 60, at least 2) is how long each watch of PolicySets and PolicyBindings stays
-open; sends are refused once a watch has missed three. GitHub is on
+Sends are refused until the PolicySet and PolicyBinding informers have synced, and while either fails to list or
+watch. GitHub is on
 when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
 that fails validation stops startup without printing its value.
 
-One listener (`host`, `port`) serves gRPC (`Notifications`, `NotificationsOperator` and `grpc.health.v1`), the HTTP
-form of `Notifications` (the routes of [`notifications.proto`](notifications.proto); the operator service has none),
-the agent documentation (`/llms.txt`, `/docs/agents/` and `/openapi.json`, the document generated from that proto,
-which answer without the database) and, when GitHub is on, `POST /v1/webhooks/github`. Health checks take no bearer: service `""` is readiness (the LISTEN
+The native gRPC listener (`rpc.listen_address`) serves `Notifications` and `grpc.health.v1`.
+`rpc.tls` supplies its server certificate and key, and `rpc.auth` explicitly admits SPIFFE and/or
+Kubernetes bearer authentication. Both modes retain the same method and inbox ownership policy.
+A certificate combined with bearer or delegation metadata is refused.
+The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
+paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
+the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
 process answers). Four workers claim inboxes, and one that returns or fails ends the process, logging the types of
 its error and never its message.
@@ -78,7 +162,9 @@ Configuration changes require a service restart.
 
 `actions` retains its `url` and `token_file` settings, plus optional `request_timeout_s` (default 5).
 The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, using h2c for `http`
-and TLS for `https`. `runner_gateway` uses `control_target` and `token_file` for per-Sandbox
+and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA
+without presenting a client certificate. This block applies independently of the legacy Actions URL scheme.
+`runner_gateway` uses `control_target` and `token_file` for per-Sandbox
 runner live-state checks.
 `history_service` and `session_dispatcher` each contain a `target` and `token_file`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks
@@ -136,19 +222,16 @@ repair does not invent `created`, `in_progress` or `completed` actions. The exis
 command and default filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
 
-Migration 00007 copies the landed aggregate recovery tables into native-resource storage, preserving observation
-sequences, payloads, subscription boundaries and pending snapshots. It retains the legacy tables and columns;
-both legacy and native event logs use GitHub retention. Stop legacy GitHub workers before applying this copy and
-starting the new writers, so writes cannot continue in the old tables after the copy. Keep the reader-capable
-image available for rollback with its GitHub provider disabled, and preserve the migrated database. Existing
-notifications retain their original payload shape; only new facts use the native resource fields.
+Migration 11 retires the legacy aggregate GitHub CI tables and normalization/cursor columns. The
+operator accepted discarding fourteen historical observations missing from native history after
+overlapping writers during migration 7. Existing inbox copies, acknowledgements and native observation identities
+remain intact; the discarded facts are not replayed. Pending legacy subscription snapshots block
+the migration. Native tables and inbox payloads can retain the original aggregate JSON shape, so
+legacy payload-field compatibility remains necessary.
 
-Migration 00008 adds durable current review refresh state and pull-request review/lifecycle observations. These
-records use the same retention setting and do not reconstruct review history or lifecycle transitions missed
-between observations.
-
-The migration gives existing deliveries its own timestamp because their actual ingestion times
-were not recorded. They first become eligible after the configured retention interval from migration.
+Current review refresh state and pull-request review/lifecycle observations use the same retention
+setting and do not reconstruct transitions missed between observations. Deliveries predating the
+original retention migration use its timestamp because their actual ingestion times were not recorded.
 Deletes free space for PostgreSQL to reuse; they do not immediately shrink its volume.
 
 ### Runner notice debounce
@@ -185,7 +268,7 @@ Staging is enabled and the operator has installed the App; see the
 [live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
 For another environment, register a separate App, supply its credentials through encrypted deployment
 configuration and `secretKeyRef`, and expose only `/v1/webhooks/github` through HTTPS ingress with
-matching network policy and TLS. Never expose the workload API publicly. Verify real App delivery
+matching network policy and TLS. The only public path is the signed webhook; never expose the workload gRPC listener publicly. Verify real App delivery
 through inbox and harness rather than relying solely on configuration or a successful ingress response.
 
 GitHub issue subscriptions require the App installation to grant Issues read permission; generated

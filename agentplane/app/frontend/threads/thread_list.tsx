@@ -3,15 +3,17 @@
  * Sandbox no longer exists: the sidebar's navigation and the landing page's whole content.
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
-import type { SandboxView, ThreadView } from "../api/schema";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
-import { archiveThread } from "./client";
+import { type ThreadView, archiveThread } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
+import { attachedHarness } from "../harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
@@ -21,8 +23,9 @@ import { type ThreadNotices, useThreadNotices } from "./thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import { timestampLabel } from "./thread_presentation";
 
-function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
+function GroupStateIcon({ sandbox }: { sandbox: EnvironmentDescriptor | null }): JSX.Element {
   if (sandbox === null) {
     return (
       <Tooltip label="Sandbox deleted" withArrow>
@@ -53,7 +56,7 @@ function ThreadRow({
   onToggleArchived,
 }: {
   thread: ThreadView;
-  sandbox: SandboxView | null;
+  sandbox: EnvironmentDescriptor | null;
   fresh: boolean;
   current: boolean;
   detailed: boolean;
@@ -61,7 +64,13 @@ function ThreadRow({
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
-  const label = thread.name ?? thread.id;
+  const threadId = thread.metadata.threadId;
+  const label = thread.metadata.name ?? threadId;
+  const archived = thread.metadata.archived;
+  const summary = thread.summary;
+  const harness = attachedHarness(summary.attached);
+  const model = summary.attached?.spec?.model;
+  const lastEventAt = timestampLabel(summary.lastEventAt);
   const readonly = sandbox === null;
   const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
   const archiveBlock = archiveBlockReason(thread);
@@ -69,7 +78,7 @@ function ThreadRow({
     "agentplane-thread-list-row",
     current ? "current" : "",
     readonly ? "readonly" : "",
-    thread.archived ? "archived" : "",
+    archived ? "archived" : "",
     status.kind === "stopped" ? "stopped" : "",
   ]
     .filter(Boolean)
@@ -93,35 +102,34 @@ function ThreadRow({
       <ThreadStatusIndicator
         kind={status.kind}
         label={status.label}
-        inboxes={notices.bySession?.get(thread.id) ?? []}
-        live={notices.live}
+        inbox={notices.bySession.get(threadId)}
+        live={notices.live.has(threadId)}
       />
       <span className="agentplane-thread-list-row-text">
         <span className="agentplane-thread-list-row-name">{label}</span>
         {detailed && (
           <span className="agentplane-thread-list-row-detail">
-            {harnessLabel(thread.harness)}
-            {thread.model ? ` · ${thread.model}` : ""} ·{" "}
-            {thread.last_event_at ? <TimeAgo value={thread.last_event_at} /> : "no events yet"}
+            {harnessLabel(harness)}
+            {model ? ` · ${model}` : ""} · {lastEventAt ? <TimeAgo value={lastEventAt} /> : "no events yet"}
           </span>
         )}
       </span>
-      <Tooltip label={thread.archived ? "Unarchive" : (archiveBlock ?? "Archive")} withArrow>
+      <Tooltip label={archived ? "Unarchive" : (archiveBlock ?? "Archive")} withArrow>
         <ActionIcon
           className="agentplane-thread-list-row-action"
           size="xs"
           variant="subtle"
-          disabled={!thread.archived && archiveBlock !== null}
+          disabled={!archived && archiveBlock !== null}
           aria-label={
-            thread.archived ? `Unarchive ${label}` : archiveBlock ? `${archiveBlock} · ${label}` : `Archive ${label}`
+            archived ? `Unarchive ${label}` : archiveBlock ? `${archiveBlock} · ${label}` : `Archive ${label}`
           }
-          title={!thread.archived ? (archiveBlock ?? undefined) : undefined}
+          title={!archived ? (archiveBlock ?? undefined) : undefined}
           onClick={(event) => {
             event.stopPropagation();
             onToggleArchived(thread);
           }}
         >
-          {thread.archived ? <IconArchiveOff size={11} /> : <IconArchive size={11} />}
+          {archived ? <IconArchiveOff size={11} /> : <IconArchive size={11} />}
         </ActionIcon>
       </Tooltip>
     </div>
@@ -183,11 +191,11 @@ function ThreadGroupSection({
       )}
       {group.threads.map((thread) => (
         <ThreadRow
-          key={thread.id}
+          key={thread.metadata.threadId}
           thread={thread}
           sandbox={group.sandbox}
           fresh={fresh}
-          current={current === thread.id}
+          current={current === thread.metadata.threadId}
           detailed={detailed}
           notices={notices}
           onOpen={onOpen}
@@ -213,26 +221,27 @@ export function ThreadList({
   const threadRoute = useMatch("/threads/:threadId");
   const sandboxRoute = useMatch("/sandboxes/:name");
   const live = useRequiredThreadsLive();
+  const sandboxesLive = useRequiredSandboxesLive();
   const { listing, setListing, searchInput, setSearchInput } = useThreadListing();
   const data = live.snapshot;
-  const fresh = snapshotFresh(live);
+  const fresh = snapshotFresh(live) && sandboxInventoryFresh(sandboxesLive);
   const [error, setError] = useState<string | null>(null);
 
   const threads = data?.threads ?? [];
   const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
-    Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    Object.fromEntries((sandboxesLive.snapshot ?? []).map((sandbox) => [sandbox.target!.name, sandbox])),
     listing.includeArchived,
     current
   );
   const archived = data?.archived_count ?? 0;
-  const notices = useThreadNotices(threads.map((thread) => thread.id));
+  const notices = useThreadNotices(threads.map((thread) => thread.metadata.threadId));
 
   async function toggleArchived(thread: ThreadView): Promise<void> {
     setError(null);
     try {
-      await archiveThread(thread.id, !thread.archived);
+      await archiveThread(thread.metadata.threadId, !thread.metadata.archived);
     } catch (reason: unknown) {
       setError(displayableError(reason));
     }
@@ -240,7 +249,7 @@ export function ThreadList({
 
   function openThread(thread: ThreadView): void {
     onNavigate();
-    void navigate(`/threads/${encodeURIComponent(thread.id)}`);
+    void navigate(`/threads/${encodeURIComponent(thread.metadata.threadId)}`);
   }
 
   return (
@@ -270,11 +279,11 @@ export function ThreadList({
       )}
       {groups.map((group) => (
         <ThreadGroupSection
-          key={group.sandboxName}
+          key={group.identity}
           group={group}
           fresh={fresh}
           current={current}
-          currentSandbox={sandboxRoute?.params.name === group.sandboxName}
+          currentSandbox={group.sandbox !== null && sandboxRoute?.params.name === group.sandboxName}
           detailed={detailed}
           notices={notices}
           onNavigate={onNavigate}

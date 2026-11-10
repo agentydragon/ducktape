@@ -16,6 +16,10 @@ from props.db.database import Database
 from props.db.models import Snapshot, SnapshotFile
 from props.db.sync.sync import sync_snapshot_files_to_db
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 SLUG = SnapshotSlug("test-sync-files/train1")
 
 

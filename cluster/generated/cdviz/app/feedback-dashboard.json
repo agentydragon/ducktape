@@ -1,0 +1,1342 @@
+{
+  "uid": "ducktape-ci-feedback",
+  "title": "Commit to CI feedback",
+  "description": "Exact-head PR feedback clocks, required-gate policy replay, and censored outcomes. Completion timestamps are not check-query or agent-delivery timestamps.",
+  "schemaVersion": 42,
+  "version": 1,
+  "editable": false,
+  "timezone": "utc",
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "tags": ["ci", "ci-feedback", "github-actions"],
+  "templating": {
+    "list": [
+      {
+        "name": "scope",
+        "label": "Scope",
+        "type": "custom",
+        "query": "PR, devel, all",
+        "options": [
+          {
+            "selected": true,
+            "text": "PR",
+            "value": "PR"
+          },
+          {
+            "selected": false,
+            "text": "devel",
+            "value": "devel"
+          },
+          {
+            "selected": false,
+            "text": "all",
+            "value": "all"
+          }
+        ],
+        "current": {
+          "text": "PR",
+          "value": "PR"
+        },
+        "hide": 0,
+        "skipUrlSync": false,
+        "multi": false,
+        "includeAll": false,
+        "description": "PR includes heads with an associated PR number; devel includes unassociated devel/main branch heads; all also includes unknown PR associations."
+      },
+      {
+        "name": "clock",
+        "label": "Clock",
+        "type": "custom",
+        "query": "PR head event, Workflow creation proxy, all",
+        "options": [
+          {
+            "selected": true,
+            "text": "PR head event",
+            "value": "PR head event"
+          },
+          {
+            "selected": false,
+            "text": "Workflow creation proxy",
+            "value": "Workflow creation proxy"
+          },
+          {
+            "selected": false,
+            "text": "all",
+            "value": "all"
+          }
+        ],
+        "current": {
+          "text": "PR head event",
+          "value": "PR head event"
+        },
+        "hide": 0,
+        "skipUrlSync": false,
+        "multi": false,
+        "includeAll": false,
+        "description": "Default to the observed PR head event clock. Choose Workflow creation proxy for fallback-only comparisons; all pools both clocks and is a descriptive mixed-clock view."
+      },
+      {
+        "name": "bucket",
+        "label": "Bucket size",
+        "type": "custom",
+        "query": "1m : 1 minute, 5m : 5 minutes, 15m : 15 minutes, 30m : 30 minutes, 1h : 1 hour, 3h : 3 hours, 6h : 6 hours, 12h : 12 hours, 1d : 1 day, 1w : 1 week",
+        "options": [
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1 minute"
+          },
+          {
+            "selected": false,
+            "text": "5m",
+            "value": "5 minutes"
+          },
+          {
+            "selected": false,
+            "text": "15m",
+            "value": "15 minutes"
+          },
+          {
+            "selected": false,
+            "text": "30m",
+            "value": "30 minutes"
+          },
+          {
+            "selected": true,
+            "text": "1h",
+            "value": "1 hour"
+          },
+          {
+            "selected": false,
+            "text": "3h",
+            "value": "3 hours"
+          },
+          {
+            "selected": false,
+            "text": "6h",
+            "value": "6 hours"
+          },
+          {
+            "selected": false,
+            "text": "12h",
+            "value": "12 hours"
+          },
+          {
+            "selected": false,
+            "text": "1d",
+            "value": "1 day"
+          },
+          {
+            "selected": false,
+            "text": "1w",
+            "value": "1 week"
+          }
+        ],
+        "current": {
+          "text": "1h",
+          "value": "1 hour"
+        },
+        "hide": 0,
+        "skipUrlSync": false,
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false,
+        "description": "Arrival-cohort size for the latency trend. Other panels use the full selected time range."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "How to read these clocks",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Each row is one head occurrence in the arrival cohort. **PR head event** starts at GitHub\u2019s PR opening or head-change timestamp: a proxy, not the commit\u2019s actual push time. **Workflow creation proxy** starts at the first observed workflow. Select one clock for comparable percentiles.\n\nResults use job completion timestamps, before webhook or agent delivery. Green replays the **latest observed required-check policy**; this is not historical merge eligibility. Missing results remain pending or unknown. Timed rates include censored heads in their denominators; younger heads are still observing. Blank timings mean no sample."
+      }
+    },
+    {
+      "id": 2,
+      "title": "First verdict latency",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_2",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  COUNT(*) FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS n,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS p50_seconds,\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS p90_seconds,\n  PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict IN ('red', 'green') AND first_verdict_seconds IS NOT NULL) AS p99_seconds\nFROM feedback"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "custom": {
+            "minWidth": 80,
+            "width": 120
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "n"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads (N)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "P50"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "P90"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "P99"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "P50/P90/P99 from arrival to the first red or green verdict. N counts only heads with a verdict; null quantiles with N=0 are intentionally blank, not zero."
+    },
+    {
+      "id": 3,
+      "title": "First red vs first green",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 5
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_3",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n), verdicts(verdict) AS (VALUES ('red'::text), ('green'::text)), latencies AS (\n  SELECT samples.verdict, samples.seconds\n  FROM feedback\n  CROSS JOIN LATERAL (VALUES\n    ('red'::text, feedback.red_seconds),\n    ('green'::text, feedback.green_seconds)\n  ) AS samples(verdict, seconds)\n)\nSELECT\n  verdicts.verdict,\n  COUNT(latencies.seconds) AS n,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY latencies.seconds) AS p50_seconds,\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY latencies.seconds) AS p90_seconds\nFROM verdicts\nLEFT JOIN latencies\n  ON latencies.verdict = verdicts.verdict\n  AND latencies.seconds IS NOT NULL\nGROUP BY verdicts.verdict\nORDER BY CASE verdicts.verdict WHEN 'red' THEN 1 ELSE 2 END"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "custom": {
+            "minWidth": 80,
+            "width": 120
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "n"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads (N)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "P50"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "P90"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "verdict"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Verdict type"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "Independent first-red and first-green clocks, so a recovered head contributes to both. N counts heads with that observed timestamp; absent samples stay blank."
+    },
+    {
+      "id": 4,
+      "title": "First-verdict latency (${bucket:text} buckets)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 16,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_4",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  GREATEST(DATE_BIN(${bucket:sqlstring}::interval, arrived_at, TIMESTAMPTZ '2000-01-03 00:00:00+00'), $__timeFrom()::timestamptz) AS time,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p90\",\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p90\"\nFROM feedback\nWHERE first_verdict_seconds IS NOT NULL\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Red p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Red p90"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Green p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Green p90"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#56A64B"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Arrival cohorts grouped by Bucket size, aligned to UTC midnight with weeks beginning Monday. Only observed red/green verdicts contribute; missing buckets mean no samples, not zero latency. The first partial bucket is plotted at the range start so large buckets remain visible."
+    },
+    {
+      "id": 5,
+      "title": "Head outcomes",
+      "type": "table",
+      "gridPos": {
+        "x": 16,
+        "y": 11,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_5",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT state, COUNT(*) AS heads\nFROM feedback\nGROUP BY state\nORDER BY CASE state\n  WHEN 'green' THEN 1\n  WHEN 'red' THEN 2\n  WHEN 'pending' THEN 3\n  WHEN 'cancelled' THEN 4\n  WHEN 'superseded' THEN 5\n  ELSE 6\nEND"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "custom": {
+            "minWidth": 80,
+            "width": 120
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heads"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Outcome"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "Counts by exact-head state in the arrival cohort. Canceled and superseded are separate from red/green verdicts; pending and unknown remain visible."
+    },
+    {
+      "id": 6,
+      "title": "Verdict / green within 5 / 10 / 20 minutes",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_6",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n), limits(label, seconds) AS (\n  VALUES ('5 minutes'::text, 300), ('10 minutes'::text, 600), ('20 minutes'::text, 1200)\n)\nSELECT\n  limits.label,\n  COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n  ) AS eligible_heads,\n  COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at < limits.seconds * INTERVAL '1 second'\n  ) AS still_observing,\n  COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n      AND feedback.first_verdict IN ('red', 'green')\n      AND feedback.first_verdict_seconds <= limits.seconds\n  ) AS heads_with_verdict,\n  100.0 * COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n      AND feedback.first_verdict IN ('red', 'green')\n      AND feedback.first_verdict_seconds <= limits.seconds\n  ) / NULLIF(COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n  ), 0) AS verdict_rate_percent,\n  COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n      AND feedback.green_seconds <= limits.seconds\n  ) AS heads_green,\n  100.0 * COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n      AND feedback.green_seconds <= limits.seconds\n  ) / NULLIF(COUNT(*) FILTER (\n    WHERE $__timeTo()::timestamptz - feedback.arrived_at >= limits.seconds * INTERVAL '1 second'\n  ), 0) AS green_rate_percent\nFROM feedback\nCROSS JOIN limits\nGROUP BY limits.label, limits.seconds\nORDER BY limits.seconds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "custom": {
+            "minWidth": 80,
+            "width": 120
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "eligible_heads"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Eligible"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heads_with_verdict"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads with verdict"
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "verdict_rate_percent"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Verdict %"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heads_green"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads green"
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "green_rate_percent"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Green %"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Window"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "still_observing"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Still observing"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "Both rates use every head at least the threshold old as of the dashboard end, including censored heads. Still-observing counts arrivals younger than that threshold. Verdict counts first red or green; green counts heads with observed all-required-gates green. Empty denominators have blank rates, not 0%."
+    },
+    {
+      "id": 7,
+      "title": "Required-policy replay coverage",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_7",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  COUNT(*) AS heads,\n  MAX(policy_observed_at) AS latest_observed_policy_replay,\n  COUNT(*) FILTER (WHERE policy_observed_at IS NOT NULL) AS policy_snapshot_heads,\n  COUNT(*) FILTER (\n    WHERE policy_observed_at IS NOT NULL\n      AND required_gates > 0\n      AND observed_gates = required_gates\n  ) AS fully_observed_gate_heads,\n  COUNT(*) FILTER (\n    WHERE missing_gates IS NOT NULL AND BTRIM(missing_gates) <> ''\n  ) AS heads_with_named_missing_gates,\n  COUNT(*) FILTER (WHERE policy_observed_at IS NULL) AS heads_without_policy\nFROM feedback"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "custom": {
+            "minWidth": 80,
+            "width": 120
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heads"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads"
+              },
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "policy_snapshot_heads"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Heads with policy snapshot"
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fully_observed_gate_heads"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "All gates observed"
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heads_with_named_missing_gates"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "displayName",
+                "value": "Missing results"
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latest_observed_policy_replay"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "displayName",
+                "value": "Policy observed at"
+              },
+              {
+                "id": "custom.width",
+                "value": 245
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heads_without_policy"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "No policy snapshot"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 135
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "Latest observed policy replay is taken as of the selected dashboard end; the timestamp is shown in the table. Coverage counts do not establish historical eligibility, and equal gate counts alone do not mean a head is green. The recent-head table retains exact missing gate names and per-head policy observation time."
+    },
+    {
+      "id": 8,
+      "title": "Recent exact-head feedback",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "feedback_8",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  arrived_at AS \"Arrived\",\n  pr AS \"PR\",\n  LEFT(head_sha, 10) AS \"Head SHA\",\n  state AS \"State\",\n  first_verdict AS \"First verdict\",\n  ROUND(first_verdict_seconds::numeric, 1) AS \"Verdict seconds\",\n  ROUND(red_seconds::numeric, 1) AS \"Red seconds\",\n  ROUND(green_seconds::numeric, 1) AS \"Green seconds\",\n  observed_gates::text || '/' || required_gates::text AS \"Gates\",\n  clock AS \"Arrival clock\",\n  missing_gates AS \"Missing gates\",\n  repository AS \"Repository\",\n  url AS \"URL\"\nFROM feedback\nORDER BY arrived_at DESC\nLIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "custom": {
+            "minWidth": 80,
+            "width": 120
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "URL"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open PR or commit",
+                    "url": "${__value.raw}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Head SHA"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open commit",
+                    "url": "${__data.fields[\"URL\"]}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "displayName",
+                "value": "Commit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Missing gates"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 105
+              },
+              {
+                "id": "displayName",
+                "value": "Missing"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Repository"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PR"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 45
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open pull request",
+                    "url": "https://github.com/${__data.fields[\"Repository\"]}/pull/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Arrived"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Arrived"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "State"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "State"
+              },
+              {
+                "id": "custom.width",
+                "value": 65
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "green": {
+                        "text": "green",
+                        "color": "green"
+                      },
+                      "red": {
+                        "text": "red",
+                        "color": "red"
+                      },
+                      "pending": {
+                        "text": "pending",
+                        "color": "yellow"
+                      },
+                      "cancelled": {
+                        "text": "cancelled",
+                        "color": "gray"
+                      },
+                      "superseded": {
+                        "text": "superseded",
+                        "color": "purple"
+                      },
+                      "unknown": {
+                        "text": "unknown",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "First verdict"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "First verdict"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verdict seconds"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Feedback"
+              },
+              {
+                "id": "custom.width",
+                "value": 85
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Red seconds"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Red latency"
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Green seconds"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Green latency"
+              },
+              {
+                "id": "custom.width",
+                "value": 75
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Arrival clock"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Clock"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gates"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "custom.width",
+                "value": 55
+              },
+              {
+                "id": "displayName",
+                "value": "Seen/req"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "One row per head, newest arrival first. Null timing fields indicate that verdict has not been observed; the URL points to the PR or commit when available."
+    }
+  ]
+}

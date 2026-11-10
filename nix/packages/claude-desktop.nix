@@ -15,7 +15,7 @@
   pkgs,
 }:
 let
-  version = "2.31226.1";
+  version = "4.23118.0";
   desktopFile = "com.anthropic.Claude.desktop";
 in
 pkgs.stdenv.mkDerivation {
@@ -24,7 +24,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop/claude-desktop_${version}_amd64.deb";
-    hash = "sha256-Wpvr38sd9s44dns3Pzp/q/dxVqLd2KP10Elh2lveMF4=";
+    hash = "sha256-GtmW6MqrBcmzdGRgUcQMtrudhPNxdW8VuNNyiJdRWpc=";
   };
 
   nativeBuildInputs = with pkgs; [
@@ -125,9 +125,6 @@ pkgs.stdenv.mkDerivation {
 
     runHook postInstall
   '';
-
-  # The .deb's desktop-entry filename; the GitHub-proxy wrapper rewrites it.
-  passthru = { inherit desktopFile; };
 
   meta = {
     description = "Claude Desktop — Anthropic's Electron desktop app (Linux beta)";

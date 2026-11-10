@@ -43,14 +43,18 @@
 //! - **Capture facts, not conservative sets**: capture is
 //!   reference-precise — a target bound in a nested scope is harmless
 //!   when the source is shadowed (or never referenced) inside that scope,
-//!   and the e2e suite pins valid specs of exactly that shape. A flat
+//!   while an introduced target is refused if it captures an unchanged
+//!   parser-unresolved reference. The e2e suite pins valid specs of the
+//!   harmless nested-target shape. A flat
 //!   occupied-name set cannot express this, so the caller supplies the
 //!   `(source, target)` pairs a scope-aware walk of the **un-renamed**
 //!   body withholds ([`ScopeOccupancy::Body::captured`]): the read-only
 //!   `RenameCaptureProbe` over [`RenameLedger::pending_renames`]
-//!   for the entry body, the derive clone's candidate walk for module
-//!   bodies. Captured explicit/import-induced intents are hard errors;
-//!   cosmetic heuristic intents are dropped. The post-seal executor
+//!   for the entry body, the derive clone's candidate walk for naturalized
+//!   module bodies, and the assembled-body probe for import-local mints.
+//!   These probes also compare unresolved references against the parser's
+//!   exact unresolved context. Captured explicit/import-induced intents are
+//!   hard errors; cosmetic heuristic intents are dropped. The post-seal executor
 //!   `debug_assert!`s its own capture set is empty, pinning probe and
 //!   executor to one verdict.
 //!
@@ -73,7 +77,7 @@
 //!
 //! Once a chunk's ledger is sealed, no pass may move declarations
 //! between modules — structural moves (entry-body split, residual
-//! sweep, rebind folds, atomic-group module synthesis) all happen before
+//! sweep, atomic-group module synthesis) all happen before
 //! collection finishes. The materializer satisfies the collection side
 //! (intents are collected from the finalized `ChunkPlan`), and every
 //! ledger executes post-seal only.
@@ -92,7 +96,7 @@
 //!   below). It cannot merge downstream: its sealed Chunk projection is
 //!   an input to plan building and assignment analysis, which run before the
 //!   post-split bodies exist.
-//! - **Entry ledger** (`lower_chunk`): the chunk_renames entries staying
+//! - **Entry ledger** (`prepare_candidate_emission_plan`): the chunk_renames entries staying
 //!   in entry plus entry import-local mints (`Chunk` scope) AND the
 //!   auto-grown residual public exports (`EntryPublicExports` scope — a
 //!   separate namespace from local-binding renames). One seal validates
@@ -203,7 +207,7 @@
 //! - Import-local disambiguation (fresh-local `$N` minting) —
 //!   `imports/import_emit.rs::disambiguate_*` mint through
 //!   [`RenameLedger::mint`]. The entry-side call site in
-//!   `lower.rs::lower_chunk` submits into the entry ledger (scope:
+//!   `lower.rs::prepare_candidate_emission_plan` submits into the entry ledger (scope:
 //!   `Chunk`, origin: `ImportInduced`); the module-side call sites in
 //!   `imports/imports_cross.rs` submit into the per-plan import ledger (scope:
 //!   `Module`, origin: `ImportInduced`).
@@ -211,7 +215,7 @@
 //!   `exports.rs::auto_grown_residual_exports` (mints a grown public
 //!   export past pre-existing public names via [`RenameLedger::mint`];
 //!   scope: `EntryPublicExports`, origin: `ImportInduced`; sealed in
-//!   `lower_chunk`'s export-growth phase).
+//!   `prepare_candidate_emission_plan`'s export-growth phase).
 //!
 //! Vendor boundary renames (`vendor/`) run in a separate pipeline stage on
 //! different artifacts and are out of this ledger's scope.
@@ -367,11 +371,12 @@ pub enum ScopeOccupancy {
         /// with both levels; a collision is an internal invariant
         /// violation).
         nested: BTreeSet<String>,
-        /// `(source, target)` pairs the rename visitor's scope stack
-        /// withheld on the pre-seal application/preview walk of this
-        /// scope's body: the target was shadowed at a reference of the
-        /// un-shadowed source, so applying the rename would capture.
-        /// Seal turns these into [`SealError::ChunkRenamesCaptured`] or
+        /// `(source, target)` pairs whose application changes reference
+        /// resolution on the pre-seal application/preview walk of this
+        /// scope's body. This includes a nested binding shadowing a rename
+        /// target at a source reference and an introduced target capturing
+        /// an unchanged parser-resolved unresolved reference. Seal turns
+        /// these into [`SealError::ChunkRenamesCaptured`] or
         /// [`SealError::ModuleRenamesCaptured`].
         captured: BTreeSet<(String, String)>,
     },
@@ -415,14 +420,15 @@ pub enum SealError {
         label: String,
         violations: Vec<ModuleRenameViolation>,
     },
-    /// Explicit or import-induced `chunk_renames` that a nested binding of the entry body of
-    /// `chunk` would capture, as `(source, target)` pairs.
+    /// Explicit or import-induced `chunk_renames` that would change
+    /// reference resolution in the entry body of `chunk`, as
+    /// `(source, target)` pairs.
     ChunkRenamesCaptured {
         chunk: String,
         captured: BTreeSet<(String, String)>,
     },
-    /// Explicit or import-induced renames that a nested binding of the body `label` would
-    /// capture, as `(source, target)` pairs.
+    /// Explicit or import-induced renames that would change reference
+    /// resolution in the body `label`, as `(source, target)` pairs.
     ModuleRenamesCaptured {
         label: String,
         captured: BTreeSet<(String, String)>,
@@ -505,11 +511,11 @@ impl fmt::Display for SealError {
             ),
             Self::ChunkRenamesCaptured { chunk, captured } => write!(
                 f,
-                "chunk_renames for chunk {chunk} would be captured by a nested binding: {captured:?}"
+                "chunk_renames for chunk {chunk} would change reference resolution: {captured:?}"
             ),
             Self::ModuleRenamesCaptured { label, captured } => write!(
                 f,
-                "renames for module {label} would be captured by a nested binding: {captured:?}"
+                "renames for module {label} would change reference resolution: {captured:?}"
             ),
             Self::MintedTargetOccupied { scope, from, to } => write!(
                 f,

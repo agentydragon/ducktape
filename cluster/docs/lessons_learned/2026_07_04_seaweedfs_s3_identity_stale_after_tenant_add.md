@@ -57,7 +57,9 @@ kubectl -n seaweedfs get pods -l app.kubernetes.io/component=s3
 kubectl -n oci-cache logs deploy/zot | grep -i InvalidAccessKeyId
 ```
 
-## Fix (now)
+## Historical recovery (July 2026)
+
+The pod deletion below was the recovery during this incident, before Reloader's annotation-mode rollout was configured. Current Reloader settings automatically roll the S3 gateway when ESO updates its referenced Secret ([Reloader configuration](../../cdk8s/reloader.py), [SeaweedFS declaration](../../cdk8s/seaweedfs/cluster.py)). Use manual deletion only when diagnosis confirms gateway Pods remain stale.
 
 Force the pods to reload the current config. **Delete the pods** rather than patching the
 Deployment — the operator does not revert a pod deletion; the ReplicaSet recreates them and
@@ -71,15 +73,16 @@ kubectl -n seaweedfs delete pod -l app.kubernetes.io/component=s3
 restart's `restartedAt` annotation has survived operator reconciliation), but pod deletion
 is the surest bet given the revert behavior above.
 
-**This restart is a required manual step whenever adding/rotating a legacy static
-SeaweedFS S3 tenant.** Operator-managed filer IAM identities hot-reload instead.
+Before annotation-mode reload was configured, this restart was required after adding or
+rotating a legacy static tenant. Current Reloader configuration handles that rollout;
+operator-managed filer IAM identities hot-reload instead.
 
-## Durable options (none is a drop-in)
+## Follow-up status
 
 The operator is already on the latest (v1.0.30 / chart 0.1.33) — there is no newer-version
 fix. The static-`configSecret` model is the constraint.
 
-1. **Reloader `reloadStrategy: annotations`** — cheapest and now validated. When
+1. **Implemented: Reloader `reloadStrategy: annotations`.** When
    Reloader fired with its default _env-var_ patch, we watched the operator revert the
    container-spec drift (fresh RS scaled to 0), yet a `restartedAt` _annotation_ (not in
    the CR) survived on the same pod template. A 2026-07-04 throwaway Seaweed experiment
@@ -91,7 +94,8 @@ fix. The static-`configSecret` model is the constraint.
    is a **global** Reloader setting (affects every managed workload), but `annotations`
    is the less invasive patch mode for operator-owned workloads because it avoids
    mutating container specs.
-2. **Automate the restart** (the guaranteed fallback if A doesn't survive the operator). A
+2. **A separate restart reconciler is not currently needed.** Revisit only if annotation-mode
+   rollouts stop surviving operator reconciliation. The proposed fallback was a
    small reconciler in `cluster/provisioners/` (matching grocy/inventree/matrix) that hashes
    `seaweedfs-s3-config` and, on change, runs `kubectl delete pod -l
 app.kubernetes.io/component=s3` — pod deletion is _not_ reverted by the operator. Isolated
@@ -105,5 +109,6 @@ app.kubernetes.io/component=s3` — pod deletion is _not_ reverted by the operat
    credential-isolation boundary: keep every key confidential and rely on bucket policy
    for authorization.
 
-**Recommended order:** migrate operator-managed buckets to (3). Keep (1)/(2) only for
-legacy identities that still require the assembled static JSON.
+**Current guidance:** Prefer filer-backed dynamic identities for operator-managed buckets.
+Legacy static identities reload through the current annotation-mode Reloader configuration;
+use manual pod deletion only if diagnostics confirm stale gateway replicas.

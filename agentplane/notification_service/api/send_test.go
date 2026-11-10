@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
+	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,7 +16,7 @@ type blockedStream struct {
 	release chan struct{}
 }
 
-func (s blockedStream) Send(*operatorpb.WatchSessionNoticesResponse) error {
+func (s blockedStream) Send(*pb.WatchInboxResponse) error {
 	<-s.release
 	return nil
 }
@@ -26,7 +26,7 @@ func TestAWriteTheCallerDoesNotReadFailsAtTheTimeout(t *testing.T) {
 	t.Cleanup(func() { close(stream.release) })
 	failed := make(chan error, 1)
 	go func() {
-		failed <- sendWithin(stream, 10*time.Millisecond, &operatorpb.WatchSessionNoticesResponse{})
+		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &pb.WatchInboxResponse{})
 	}()
 	select {
 	case err := <-failed:

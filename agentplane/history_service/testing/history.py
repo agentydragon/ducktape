@@ -13,17 +13,16 @@ from typing import Self
 from uuid import UUID, uuid4
 
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from agentplane import sandbox_resource
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
-from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
-from agentplane.postgres.wakeups import notify
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
+from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
@@ -40,7 +39,7 @@ class History:
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         # The runner's latest snapshot per Session, announced again with every push: an announcement replaces the
         # stored feed state, and the service stores it only once the committed entries cover its cursor.
-        self._attached: dict[UUID, runner_pb2.Attached] = {}
+        self._attached: dict[UUID, session_pb2.Attached] = {}
 
     async def open(
         self, session_id: UUID, *, sandbox_name: str | None = None, sandbox_namespace: str | None = None
@@ -91,7 +90,7 @@ class History:
         session_id: UUID,
         entries: Sequence[event_log_pb2.EventEntry],
         *,
-        attached: runner_pb2.Attached | None = None,
+        attached: session_pb2.Attached | None = None,
     ) -> None:
         """Push `entries` as the Session's writer and return once the fold has caught up with them.
 
@@ -113,7 +112,7 @@ class History:
         )
         await self.service.until(lambda: self._operational_status_is_failed(session_id))
 
-    async def set_attached(self, session_id: UUID, attached: runner_pb2.Attached) -> None:
+    async def set_attached(self, session_id: UUID, attached: session_pb2.Attached) -> None:
         """Announce the runner's snapshot. A snapshot ahead of the Session's entries is stored once they cover it."""
         snapshot = self._snapshot(session_id, attached)
         self._attached[session_id] = snapshot
@@ -123,21 +122,11 @@ class History:
         await self._folded(session_id, committed, snapshot)
 
     @staticmethod
-    def _snapshot(session_id: UUID, attached: runner_pb2.Attached) -> runner_pb2.Attached:
-        snapshot = runner_pb2.Attached()
+    def _snapshot(session_id: UUID, attached: session_pb2.Attached) -> session_pb2.Attached:
+        snapshot = session_pb2.Attached()
         snapshot.CopyFrom(attached)
         snapshot.session_id = str(session_id)
         return snapshot
-
-    async def clear_sandbox_identity(self, session_id: UUID) -> None:
-        """Inject a committed History row without Sandbox identity for reader error tests."""
-        async with self.engine.begin() as connection:
-            result = await connection.execute(
-                text("UPDATE session_history SET sandbox_namespace = NULL, sandbox_name = NULL WHERE id = :id"),
-                {"id": session_id},
-            )
-        if result.rowcount != 1:
-            raise ValueError("open the Session first")
 
     async def fail_feed(self, session_id: UUID, *, error: str, error_cursor: int | None = None) -> None:
         """A folded failure state for UI tests, not a fake archive failure."""
@@ -145,20 +134,18 @@ class History:
             checkpoint = await session.get(ThreadCheckpoint, session_id)
             if checkpoint is None:
                 raise ValueError("record the Session's first entries before failing its feed")
-            view = await session.get(
-                ThreadEntity, (session_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
-            )
-            if view is None:
+            row = await session.get(ThreadEntity, (session_id, checkpoint.projection_epoch, "view_state", "current"))
+            if row is None:
                 raise ValueError("thread checkpoint has no current controls")
-            view.state = {
-                **view.state,
-                "operational": {
-                    "status": "failed",
-                    "last_verified_cursor": str(checkpoint.through_cursor),
-                    "feed_error": {"cursor": None if error_cursor is None else str(error_cursor), "message": error},
-                },
-            }
-            await notify(session, Channel.SUMMARIES)
+            view = thread_entity_from_record(row)
+            operational = view.view_state.operational
+            operational.status = history_service_pb2.THREAD_FEED_STATUS_FAILED
+            operational.last_verified_cursor = checkpoint.through_cursor
+            if error_cursor is not None:
+                operational.feed_error.cursor = error_cursor
+            operational.feed_error.message = error
+            row.state = thread_entity_state_json(view)
+            await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 
     @staticmethod
     async def fence_fold(session: AsyncSession, session_id: UUID) -> None:
@@ -172,10 +159,16 @@ class History:
             text("SELECT 1 FROM session_projection_lease WHERE session_id = :id FOR UPDATE"), {"id": session_id}
         )
 
-    async def announce_fold_commit(self) -> None:
-        """Commit the notice a fold commit sends, without folding anything."""
-        async with self.sessions.begin() as session:
-            await notify(session, Channel.SUMMARIES)
+    @asynccontextmanager
+    async def fence_ingress(self, session_id: UUID) -> AsyncIterator[None]:
+        """Hold the History row the runner ingress updates, until the caller leaves the context."""
+        async with self.engine.begin() as connection:
+            row = await connection.execute(
+                text("SELECT 1 FROM session_history WHERE id = :id FOR UPDATE"), {"id": session_id}
+            )
+            if row.first() is None:
+                raise ValueError(f"create Session {session_id} before fencing its ingress")
+            yield
 
     async def _writer(self, session_id: UUID) -> ServiceAccountRef | None:
         async with self.engine.connect() as connection:
@@ -189,23 +182,29 @@ class History:
     async def _bound_writer(self, session_id: UUID) -> ServiceAccountRef:
         writer = await self._writer(session_id)
         if writer is None:
-            raise ValueError("open the Session first")
+            raise ValueError("record the Session first")
         return writer
 
     async def _operational_status_is_failed(self, session_id: UUID) -> bool:
-        async with self.sessions() as session:
-            checkpoint = await session.get(ThreadCheckpoint, session_id)
-            if checkpoint is None:
-                return False
-            view = await session.get(
-                ThreadEntity, (session_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
+        response = await self.service.reader.read_thread_entities(
+            history_service_pb2.ReadThreadEntitiesRequest(
+                session_id=str(session_id),
+                keys=history_service_pb2.EntityKeys(
+                    keys=[
+                        history_service_pb2.EntityKey(
+                            entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
+                        )
+                    ]
+                ),
             )
-        if view is None:
-            return False
-        operational = view.state["operational"]
-        return isinstance(operational, dict) and operational["status"] == "failed"
+        )
+        return any(
+            entity.HasField("view_state")
+            and entity.view_state.operational.status == history_service_pb2.THREAD_FEED_STATUS_FAILED
+            for entity in response.entities
+        )
 
-    async def _folded(self, session_id: UUID, committed: int, attached: runner_pb2.Attached | None) -> None:
+    async def _folded(self, session_id: UUID, committed: int, attached: session_pb2.Attached | None) -> None:
         """Wait for the summary to show the entries through `committed` and, once they cover it, `attached`."""
 
         def shows(summary: history_service_pb2.SessionSummary) -> bool:

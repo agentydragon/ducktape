@@ -1,0 +1,385 @@
+//! Property absence on the intrinsic Object prototype, separate from native call identity.
+
+use super::*;
+use crate::reports::schema::{NativePrototypeMutation, NativePrototypeMutationKind};
+use swc_common::DUMMY_SP;
+
+fn descriptor_method(property: &str) -> bool {
+    matches!(
+        property,
+        "defineProperty"
+            | "defineProperties"
+            | "setPrototypeOf"
+            | "__defineGetter__"
+            | "__defineSetter__"
+    )
+}
+
+fn identity_property(property: &str) -> bool {
+    matches!(property, "__proto__" | "constructor" | "prototype")
+}
+
+// This census uses source-only aliases. Captured value assertions must not
+// discharge a source-only prototype absence obligation.
+fn prototype_intrinsic_roots(
+    value: &ValueExpr,
+    aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    index: &ExecutionIndex,
+    declared: &BTreeSet<Id>,
+) -> IntrinsicRoots {
+    intrinsic_roots(
+        value,
+        aliases,
+        &index.census_globals,
+        declared,
+        &BTreeMap::new(),
+        &CallableReturnInputs::default(),
+    )
+    .into_iter()
+    .filter_map(|root| match root {
+        NativeReceiverRoot::Intrinsic(root)
+        | NativeReceiverRoot::IntrinsicPrototype(root)
+        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(root),
+        NativeReceiverRoot::OrdinaryDirect { .. }
+        | NativeReceiverRoot::OrdinaryDescendant { .. }
+        | NativeReceiverRoot::ArrayIteratorPrototype
+        | NativeReceiverRoot::SetIteratorPrototype
+        | NativeReceiverRoot::BundleGlobal => None,
+    })
+    .collect()
+}
+
+fn contained_roots(
+    value: &ValueExpr,
+    aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    index: &ExecutionIndex,
+    declared: &BTreeSet<Id>,
+) -> IntrinsicRoots {
+    let mut roots = prototype_intrinsic_roots(value, aliases, index, declared);
+    match value {
+        ValueExpr::ObjectLiteral(_, properties) => {
+            for (_, value) in properties.iter() {
+                roots.extend(contained_roots(value, aliases, index, declared));
+            }
+        }
+        ValueExpr::Alloc(Kind::Function, key) => {
+            for id in index
+                .prototype_callable_reads
+                .get(key)
+                .into_iter()
+                .flatten()
+            {
+                roots.extend(prototype_intrinsic_roots(
+                    &ValueExpr::Binding(id.clone()),
+                    aliases,
+                    index,
+                    declared,
+                ));
+            }
+        }
+        ValueExpr::Alloc(Kind::Class, key) => {
+            if let Some(owner) = index.class_owners.get(key) {
+                for (key, callable) in &index.callables {
+                    if callable.owner == *owner {
+                        for id in index
+                            .prototype_callable_reads
+                            .get(key)
+                            .into_iter()
+                            .flatten()
+                        {
+                            roots.extend(prototype_intrinsic_roots(
+                                &ValueExpr::Binding(id.clone()),
+                                aliases,
+                                index,
+                                declared,
+                            ));
+                        }
+                    }
+                }
+            }
+            if let Some(class) = index.class_values.get(key) {
+                for value in class.static_fields.values() {
+                    roots.extend(contained_roots(value, aliases, index, declared));
+                }
+            }
+        }
+        ValueExpr::Member(base, property, _, _) => {
+            roots.extend(contained_roots(base, aliases, index, declared));
+            if property.as_deref().is_some_and(identity_property) {
+                roots.insert(NativeIntrinsic::Object);
+            }
+        }
+        ValueExpr::ArrayIteratorPrototype(expression)
+        | ValueExpr::SetIteratorPrototype(expression) => {
+            roots.extend(contained_roots(expression, aliases, index, declared));
+        }
+        ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
+            roots.extend(contained_roots(callee, aliases, index, declared));
+            for argument in args.iter() {
+                roots.extend(contained_roots(argument, aliases, index, declared));
+            }
+        }
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
+            let options = value.result_alternatives().expect("alternative expression");
+            for option in options {
+                roots.extend(contained_roots(option, aliases, index, declared));
+            }
+        }
+        _ => {}
+    }
+    // Reflect does not have a family in the native-call catalogue, but is a
+    // descriptor capability when it is passed or destructured.
+    if matches!(value, ValueExpr::Binding(id) if id.0.as_ref() == "Reflect") {
+        roots.insert(NativeIntrinsic::Object);
+    }
+    roots
+}
+
+fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: &mut BTreeSet<Id>) {
+    value.bindings(bindings);
+    match value {
+        ValueExpr::ObjectLiteral(_, properties) => {
+            for (_, value) in properties.iter() {
+                contained_root_bindings(value, index, bindings);
+            }
+        }
+        ValueExpr::Alloc(Kind::Function, key) => {
+            bindings.extend(
+                index
+                    .prototype_callable_reads
+                    .get(key)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            );
+        }
+        ValueExpr::Alloc(Kind::Class, key) => {
+            if let Some(owner) = index.class_owners.get(key) {
+                for (key, callable) in &index.callables {
+                    if callable.owner == *owner {
+                        bindings.extend(
+                            index
+                                .prototype_callable_reads
+                                .get(key)
+                                .into_iter()
+                                .flatten()
+                                .cloned(),
+                        );
+                    }
+                }
+            }
+            if let Some(class) = index.class_values.get(key) {
+                for value in class.static_fields.values() {
+                    contained_root_bindings(value, index, bindings);
+                }
+            }
+        }
+        ValueExpr::Member(base, ..) => contained_root_bindings(base, index, bindings),
+        ValueExpr::ArrayIteratorPrototype(expression)
+        | ValueExpr::SetIteratorPrototype(expression) => {
+            contained_root_bindings(expression, index, bindings);
+        }
+        ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
+            contained_root_bindings(callee, index, bindings);
+            for argument in args.iter() {
+                contained_root_bindings(argument, index, bindings);
+            }
+        }
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
+            let options = value.result_alternatives().expect("alternative expression");
+            for option in options {
+                contained_root_bindings(option, index, bindings);
+            }
+        }
+        ValueExpr::Binding(_)
+        | ValueExpr::Primitive(_)
+        | ValueExpr::StrictEquality(..)
+        | ValueExpr::LogicalNot(_)
+        | ValueExpr::Void(_)
+        | ValueExpr::Undefined
+        | ValueExpr::NonCallable(_)
+        | ValueExpr::Unknown
+        | ValueExpr::Alloc(..) => {}
+    }
+}
+
+struct CapabilityContainmentRules<'a> {
+    bindings: Vec<(Id, ValueExpr)>,
+    index: &'a ExecutionIndex,
+    declared: &'a BTreeSet<Id>,
+}
+
+impl IterativeRules for CapabilityContainmentRules<'_> {
+    type Key = Id;
+    type Fact = NativeReceiverRoots;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        let (target, value) = &self.bindings[*rule];
+        let mut reads = BTreeSet::new();
+        contained_root_bindings(value, self.index, &mut reads);
+        let aliases = read_intrinsic_aliases(context, reads);
+        let roots = contained_roots(value, &aliases, self.index, self.declared);
+        let roots: NativeReceiverRoots = roots
+            .into_iter()
+            .map(NativeReceiverRoot::Intrinsic)
+            .collect();
+        if !roots.is_empty() {
+            context.propose(target.clone(), roots);
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let previous_len = current.len();
+        current.extend(contribution);
+        current.len() != previous_len
+    }
+}
+
+impl ExecutionIndex {
+    pub(super) fn collect_prototype_mutations(
+        &self,
+        aliases: &BTreeMap<Id, NativeReceiverRoots>,
+        assignments: &[&(Id, ValueExpr)],
+        declared: &BTreeSet<Id>,
+    ) -> Vec<NativePrototypeMutation> {
+        // Capability containment is separate from receiver identity: a record
+        // holding a native is not itself a native mutation receiver.
+        let bindings = assignments
+            .iter()
+            .copied()
+            .map(|(id, value)| (id.clone(), value.clone()))
+            .chain(
+                self.hoisted_bindings
+                    .iter()
+                    .map(|(id, key)| (id.clone(), ValueExpr::Alloc(Kind::Function, *key))),
+            )
+            .chain(
+                self.class_bindings
+                    .iter()
+                    .map(|(key, id)| (id.clone(), ValueExpr::Alloc(Kind::Class, *key))),
+            )
+            .collect::<Vec<_>>();
+        let producer_count = bindings.len();
+        let mut inference = IterativeInference::new(CapabilityContainmentRules {
+            bindings,
+            index: self,
+            declared,
+        });
+        for (id, roots) in aliases {
+            inference.seed(id.clone(), roots.clone());
+        }
+        let capabilities = inference.solve(0..producer_count).into_values();
+        let mutation = |owner, span, kind, key: Option<&PropertyKeyExpr>| {
+            let evidence =
+                key.map(|key| property_key_evidence(key, &self.property_key_assignments, declared));
+            let properties = match evidence.as_ref().map(|evidence| &evidence.domain) {
+                Some(PropertyKeyDomain::FiniteStrings(keys))
+                    if !keys.contains("__proto__") && !keys.contains("prototype") =>
+                {
+                    Some(keys.clone())
+                }
+                Some(PropertyKeyDomain::Symbol) => Some(BTreeSet::new()),
+                _ => None,
+            };
+            NativePrototypeMutation {
+                chunk_id: String::new(),
+                statement_ordinal: owner,
+                source_location: None,
+                kind,
+                properties,
+                key_dependencies: evidence
+                    .map(|evidence| evidence.dependencies)
+                    .unwrap_or_default(),
+                span,
+            }
+        };
+        let mut mutations = Vec::new();
+        for write in &self.intrinsic_writes {
+            // Every syntactic property writer is relevant until its receiver
+            // has an allocation proof. This includes borrowed methods and
+            // native aliases stored in arbitrary source-owned containers.
+            if write.constructor_this.is_some_and(|key| {
+                self.local_constructors
+                    .values()
+                    .any(|constructor| constructor.key == Some(key))
+            }) {
+                continue;
+            }
+            let kind = match write.operation {
+                NativeMutationOperation::PropertyAssignment | NativeMutationOperation::Update => {
+                    NativePrototypeMutationKind::Write
+                }
+                NativeMutationOperation::Delete => NativePrototypeMutationKind::Delete,
+                _ => NativePrototypeMutationKind::Reflective,
+            };
+            // A reflective operation can also affect descriptors or prototypes;
+            // initially retain its whole property surface as unknown.
+            let key = (kind != NativePrototypeMutationKind::Reflective)
+                .then_some(write.key.as_ref())
+                .flatten();
+            mutations.push(mutation(write.owner, write.span, kind, key));
+        }
+        for (owner, _, span, key) in &self.prototype_field_writes {
+            mutations.push(mutation(
+                *owner,
+                *span,
+                NativePrototypeMutationKind::Write,
+                Some(key),
+            ));
+        }
+        // A native descriptor capability can escape through an alias, bind/call,
+        // an imported helper, or a legacy accessor method. Such paths are not
+        // closed by the older native-family mutation census.
+        for call in &self.prototype_calls {
+            // Prototype/constructor paths on otherwise untracked receivers
+            // can recover a native without naming a builtin. Retain the read
+            // even inside a deferred closure or an unindexed accessor body.
+            if let ValueExpr::Member(base, Some(property), _, _) = &call.callee
+                && identity_property(property)
+                && prototype_intrinsic_roots(base, aliases, self, declared).is_empty()
+            {
+                mutations.push(mutation(
+                    call.owner,
+                    call.span,
+                    NativePrototypeMutationKind::Escape,
+                    None,
+                ));
+                continue;
+            }
+            let member = match &call.callee {
+                ValueExpr::Member(_, property, _, _) => Some(property),
+                _ => None,
+            };
+            if member.is_some_and(|property| property.as_deref().is_none_or(descriptor_method)) {
+                mutations.push(mutation(
+                    call.owner,
+                    call.span,
+                    NativePrototypeMutationKind::Reflective,
+                    None,
+                ));
+                continue;
+            }
+            if call.args.iter().any(|argument| {
+                let roots = contained_roots(argument, &capabilities, self, declared);
+                !roots.is_empty()
+            }) {
+                mutations.push(mutation(
+                    call.owner,
+                    call.span,
+                    NativePrototypeMutationKind::Escape,
+                    None,
+                ));
+            }
+        }
+        for owner in &self.dynamic_scope_owners {
+            mutations.push(mutation(
+                *owner,
+                DUMMY_SP,
+                NativePrototypeMutationKind::DynamicScope,
+                None,
+            ));
+        }
+        mutations
+    }
+}

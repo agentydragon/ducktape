@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - agentplane-test-cluster.k8s.yaml
+components:
+  - ../../k8s/agentplane_test_cluster_image_pins

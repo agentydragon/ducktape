@@ -4,10 +4,10 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.native.claude.testing.harness import ClaudeLauncher
 from agentplane.native.claude.testing.messages import AnthropicMessages
-from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture
@@ -24,6 +24,6 @@ def claude(workspace: Path, native_logs: Path, base_environment: dict[str, str],
         workspace=workspace,
         logs=native_logs,
         config=config,
-        binary=str(get_required_path("claude_code_cli_linux_x64/claude")),
+        binary=str(Runfiles.CreateOrRaise().root() / "claude_code_cli_linux_x64/claude"),
         base_environment=base_environment,
     )

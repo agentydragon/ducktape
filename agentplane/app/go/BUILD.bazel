@@ -1,0 +1,343 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "main_lib",
+    srcs = [
+        "appconfigapi.go",
+        "appservice.go",
+        "config.go",
+        "frontend_config.go",
+        "main.go",
+        "operatorapi.go",
+        "runnerapi.go",
+        "runtime.go",
+        "sandboxapi.go",
+        "schema_export.go",
+        "server.go",
+        "sessionapi.go",
+        "statusapi.go",
+        "streamapi.go",
+        "threadreadapi.go",
+        "trace_relay.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/go",
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:linkage_service_go_proto",
+        "//agentplane/action_service:operator_action_service_go_proto",
+        "//agentplane/action_service:web_push_service_go_proto",
+        "//agentplane/app:app_service_go_proto",
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/bridge",
+        "//agentplane/app/go/federation",
+        "//agentplane/app/go/historyclient",
+        "//agentplane/app/go/historydata",
+        "//agentplane/app/go/historywatch",
+        "//agentplane/app/go/httperror",
+        "//agentplane/app/go/migrations",
+        "//agentplane/app/go/proxy",
+        "//agentplane/app/go/sandboxes",
+        "//agentplane/app/go/status",
+        "//agentplane/app/go/threads",
+        "//agentplane/egress:egress_admin_go_proto",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/grpc/bearer",
+        "//agentplane/grpc/facade",
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/kubeclient",
+        "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/net/listener",
+        "//agentplane/notification_service:notifications_go_proto",
+        "//agentplane/observability",
+        "//agentplane/policy/v1:policy_service_go_proto",
+        "//agentplane/postgres/migrate",
+        "//agentplane/postgres/wakeups",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/sandboxes/runtimeconfig",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_go_logr_logr//:logr",
+        "@com_github_go_viper_mapstructure_v2//:mapstructure",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@com_github_lib_pq//:pq",
+        "@com_github_spf13_viper//:viper",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_sigs_controller_runtime//pkg/log",
+        "@io_k8s_utils//ptr",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/structpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_binary(
+    name = "agentplane-app",
+    embed = [":main_lib"],
+    pure = "on",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+go_binary(
+    name = "export_schema_bin",
+    embed = [":main_lib"],
+    pure = "on",
+    visibility = ["//agentplane/app:__subpackages__"],
+)
+
+go_test(
+    name = "server_test",
+    srcs = ["server_test.go"],
+    embed = [":main_lib"],
+    deps = ["//agentplane/app/go/auth"],
+)
+
+go_test(
+    name = "trace_relay_test",
+    srcs = ["trace_relay_test.go"],
+    embed = [":main_lib"],
+)
+
+go_test(
+    name = "action_facade_test",
+    srcs = ["action_facade_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service:operator_action_service_go_proto",
+        "//agentplane/action_service:web_push_service_go_proto",
+        "//agentplane/app/go/proxy",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/grpc/facade",
+        "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/notification_service:notifications_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)
+
+go_test(
+    name = "policy_facade_test",
+    srcs = ["policy_facade_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/proxy",
+        "//agentplane/egress:egress_admin_go_proto",
+        "//agentplane/egress:egress_rules_go_proto",
+        "//agentplane/grpc/facade",
+        "//agentplane/policy/v1:policy_service_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)
+
+go_test(
+    name = "schema_export_test",
+    srcs = ["schema_export_test.go"],
+    embed = [":main_lib"],
+)
+
+go_test(
+    name = "runnerapi_test",
+    srcs = ["runnerapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/proto:session_go_proto",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":main_lib"],
+    deps = ["//agentplane/sandboxes/runtimeconfig"],
+)
+
+go_test(
+    name = "appconfigapi_test",
+    srcs = ["appconfigapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/sandboxes/runtimeconfig",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
+
+go_test(
+    name = "statusapi_test",
+    srcs = ["statusapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/status",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
+
+go_test(
+    name = "policyapi_test",
+    srcs = ["policyapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
+
+go_test(
+    name = "sessionapi_test",
+    srcs = ["sessionapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app:app_service_go_proto",
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/bridge",
+        "//agentplane/app/go/sandboxes",
+        "//agentplane/app/go/threads",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_google_uuid//:uuid",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel_sdk//trace",
+        "@io_opentelemetry_go_otel_sdk//trace/tracetest",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "operatorapi_test",
+    srcs = ["operatorapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/action_service:linkage_service_go_proto",
+        "//agentplane/app/go/auth",
+        "//agentplane/proto:identity_go_proto",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "threadreadapi_test",
+    srcs = ["threadreadapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app:app_service_go_proto",
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/threads",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "streamapi_test",
+    srcs = ["streamapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/app/go/proxy",
+        "//agentplane/app/go/sandboxes",
+        "//agentplane/app/go/threads",
+        "//agentplane/egress:egress_admin_go_proto",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/grpc/facade",
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/structpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "staging_config_test",
+    srcs = ["staging_config_test.go"],
+    data = ["//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml"],
+    embed = [":main_lib"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/app/go.stagingConfigRlocation": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
+    deps = [
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

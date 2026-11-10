@@ -1,5 +1,6 @@
 """Synthetic coverage for the Bun standalone graph reader and CLI."""
 
+import json
 import struct
 from pathlib import Path
 
@@ -16,9 +17,11 @@ from devinfra.js.bun_standalone_extract import (
 )
 
 
-def synthetic_graph(entries: list[tuple[str, bytes]]) -> bytes:
+def synthetic_graph(entries: list[tuple[str, bytes]], loaders: tuple[int, ...] = ()) -> bytes:
     """Encode only the Bun graph fields this reader needs, with neutral modules."""
     payload = bytearray(MODULE_ENTRY_SIZE * len(entries))
+    for index, loader in enumerate(loaders):
+        payload[index * MODULE_ENTRY_SIZE + 49] = loader
     for index, (name, contents) in enumerate(entries):
         name_bytes = name.encode()
         name_offset = len(payload)
@@ -65,6 +68,34 @@ def test_conjunctive_markers_reject_no_match(alias_modules: list[dict]) -> None:
         select_alias_module(alias_modules, "selected.js=factory::missing", "::")
 
 
+def test_exclusion_markers_disambiguate(alias_modules: list[dict]) -> None:
+    name, selected = select_alias_module(alias_modules, "selected.js=provider", exclude_marker_sets=[("factory",)])
+    assert name == "selected.js"
+    assert selected["name"] == "c.js"
+
+
+def test_exclusion_marker_set_requires_every_marker() -> None:
+    modules = [
+        {"name": "a.js", "contents": b"provider startServer"},
+        {"name": "b.js", "contents": b"provider startServer export"},
+    ]
+    name, selected = select_alias_module(
+        modules, "selected.js=provider", exclude_marker_sets=[("startServer", "export")]
+    )
+    assert name == "selected.js"
+    assert selected["name"] == "a.js"
+
+
+def test_exclusions_reject_zero_remaining_candidates(alias_modules: list[dict]) -> None:
+    with pytest.raises(ExtractError, match="matched 2 modules before exclusions and 0 after exclusions"):
+        select_alias_module(alias_modules, "selected.js=provider", exclude_marker_sets=[("factory",), ("provider",)])
+
+
+def test_exclusions_reject_ambiguous_remaining_candidates(alias_modules: list[dict]) -> None:
+    with pytest.raises(ExtractError, match="matched 2 modules before exclusions and 2 after exclusions"):
+        select_alias_module(alias_modules, "selected.js=factory", exclude_marker_sets=[("not-present",)])
+
+
 def test_empty_marker_is_rejected(alias_modules: list[dict]) -> None:
     with pytest.raises(ExtractError, match="non-empty"):
         select_alias_module(alias_modules, "selected.js=factory::", "::")
@@ -92,6 +123,57 @@ def test_two_aliases_for_one_source_are_rejected(tmp_path: Path) -> None:
                 "second.js=two_marker",
             ]
         )
+
+
+def test_alias_without_filters_a_structural_duplicate_in_binary_cli(tmp_path: Path) -> None:
+    shared_config_provider = b"var config = globalThis.sharedConfig; export { config };"
+    duplicate_entry = b"globalThis.sharedConfig; export { startService };"
+    binary = tmp_path / "binary"
+    binary.write_bytes(
+        synthetic_graph(
+            [
+                ("/$bunfs/root/config-provider.js", shared_config_provider),
+                ("/$bunfs/root/entry-copy.js", duplicate_entry),
+            ]
+        )
+    )
+    output = tmp_path / "extracted"
+    assert (
+        main(
+            [
+                str(binary),
+                str(output),
+                "--alias-all",
+                "sharedConfig.js=globalThis.sharedConfig",
+                "--alias-without",
+                "sharedConfig.js=startService",
+            ]
+        )
+        == 0
+    )
+    assert (output / "sharedConfig.js").read_bytes() == shared_config_provider
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        pytest.param(
+            ["--alias-without", "missing.js=duplicate", "--alias", "provider.js=provider"],
+            r"no --alias or --alias-all selector for 'missing\.js'",
+            id="unknown-alias-name",
+        ),
+        pytest.param(
+            ["--alias", "provider.js=provider", "--alias-without", "provider.js=::duplicate"],
+            "alias-without expects non-empty NAME and MARKER values",
+            id="empty-marker",
+        ),
+    ],
+)
+def test_alias_without_rejects_invalid_configuration(tmp_path: Path, flags: list[str], message: str) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(synthetic_graph([("/$bunfs/root/a.js", b"provider")]))
+    with pytest.raises(SystemExit, match=message):
+        main([str(binary), str(tmp_path / "extracted"), *flags])
 
 
 def test_virtual_source_path_and_stable_alias_are_both_written(tmp_path: Path) -> None:
@@ -128,6 +210,31 @@ def test_debundle_list_excludes_non_utf8_and_non_js_files(tmp_path: Path) -> Non
         == 0
     )
     assert (output / "js-files.txt").read_text().splitlines() == ["$bunfs/root/b.js", "factory.js\t$bunfs/root/a.js"]
+
+
+def test_embedded_loaders_name_each_module_loader(tmp_path: Path) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(
+        synthetic_graph(
+            [("/$bunfs/root/a.js", b"export {};"), ("/$bunfs/root/b.md", b"# b"), ("/$bunfs/root/c.node", b"")],
+            loaders=(1, 13, 10),
+        )
+    )
+    output = tmp_path / "extracted"
+    manifest = output / "embedded-loaders.json"
+    assert main([str(binary), str(output), "--only-js", "--embedded-loaders", str(manifest)]) == 0
+    assert json.loads(manifest.read_text()) == {
+        "$bunfs/root/a.js": "js",
+        "$bunfs/root/b.md": "text",
+        "$bunfs/root/c.node": "napi",
+    }
+
+
+def test_embedded_loaders_reject_an_unknown_loader(tmp_path: Path) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(synthetic_graph([("/$bunfs/root/a.x", b"x")], loaders=(200,)))
+    with pytest.raises(SystemExit, match="unknown Bun loader 200"):
+        main([str(binary), str(tmp_path / "out"), "--embedded-loaders", str(tmp_path / "loaders.json")])
 
 
 if __name__ == "__main__":

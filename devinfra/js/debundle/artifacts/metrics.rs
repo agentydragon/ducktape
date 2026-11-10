@@ -5,15 +5,18 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
-use analysis::DepKind;
+use analysis_model::DepKind;
 use anyhow::Result;
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::ChunkId;
-use crate::paths::{join_module_path, module_path_dirname};
+use crate::paths::{
+    join_module_path, module_path_child_of, module_path_directory_ancestors, module_path_dirname,
+    module_path_first_segment, module_path_is_within,
+};
 use crate::reports::{ChunkDecompositionOutput, ModuleRef, SelectedModuleLowering, write_json};
 use output_layout::{report_path_for_directory, report_path_for_file};
+use source_identity::ChunkId;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OutputMetrics {
@@ -63,7 +66,8 @@ pub struct OutputFileMetric {
 }
 
 impl OutputMetrics {
-    pub(crate) fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
+    /// Build aggregate metrics from the files rendered by the output writer.
+    pub fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
         let metrics = metrics.into_iter().collect::<Vec<_>>();
         let total = OutputSize::sum(metrics.iter());
         let top_level_entry = size_for_role(&metrics, OutputRole::TopLevelEntry);
@@ -292,7 +296,8 @@ impl OutputSize {
     }
 }
 
-pub(crate) fn write_tree_reports(
+/// Write the per-file and directory reports for rendered output files.
+pub fn write_tree_reports(
     report_tree_root: &Path,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     file_metrics: &[OutputFileMetric],
@@ -328,7 +333,7 @@ fn build_directory_dependency_manifests(
     let mut directories = BTreeMap::<String, DirectoryAccumulator>::new();
 
     // Per-edge invocations of `module_path_dirname` and
-    // `directory_ancestors_for_file` recompute the same path manipulations
+    // `module_path_directory_ancestors` recompute the same path manipulations
     // many times — the same source/target files recur across many
     // facts. Memoize both keyed on the input path so each unique path
     // pays the path-parsing cost exactly once per call to this function.
@@ -370,7 +375,7 @@ fn build_directory_dependency_manifests(
             let source_ancestors =
                 memoize_ancestors(&mut ancestors_cache, &fact.source_file).to_vec();
             for dir in source_ancestors {
-                if path_is_in_directory(&fact.target_file, &dir) {
+                if module_path_is_within(&fact.target_file, &dir) {
                     continue;
                 }
                 let accumulator = directories.entry(dir.clone()).or_default();
@@ -387,7 +392,7 @@ fn build_directory_dependency_manifests(
             let target_ancestors =
                 memoize_ancestors(&mut ancestors_cache, &fact.target_file).to_vec();
             for dir in target_ancestors {
-                if path_is_in_directory(&fact.source_file, &dir) {
+                if module_path_is_within(&fact.source_file, &dir) {
                     continue;
                 }
                 let accumulator = directories.entry(dir.clone()).or_default();
@@ -425,7 +430,7 @@ fn memoize_ancestors<'cache>(
     file: &str,
 ) -> &'cache [String] {
     if !cache.contains_key(file) {
-        cache.insert(file.to_string(), directory_ancestors_for_file(file));
+        cache.insert(file.to_string(), module_path_directory_ancestors(file));
     }
     cache.get(file).expect("just inserted")
 }
@@ -461,7 +466,7 @@ fn build_file_dependency_manifests(
                 role: metric.role,
                 bytes: metric.bytes,
                 lines: metric.lines,
-                chunk_id: metric.file.split('/').next().map(str::to_string),
+                chunk_id: module_path_first_segment(&metric.file).map(str::to_string),
                 module: metric.module.clone(),
                 incoming: boundary.incoming.into_file_summary(),
                 outgoing: boundary.outgoing.into_file_summary(),
@@ -484,14 +489,14 @@ struct DirectoryAccumulator {
 
 impl DirectoryAccumulator {
     fn add_file(&mut self, directory: &str, metric: &OutputFileMetric) {
-        if let Some((child, is_directory)) = direct_child_path(directory, &metric.file) {
+        if let Some((child, is_directory)) = module_path_child_of(directory, &metric.file) {
             if is_directory {
-                self.directories.insert(child);
+                self.directories.insert(child.to_string());
             } else {
-                self.files.insert(child);
+                self.files.insert(child.to_string());
             }
         }
-        if let Some(chunk_id) = metric.file.split('/').next() {
+        if let Some(chunk_id) = module_path_first_segment(&metric.file) {
             self.chunk_ids.insert(chunk_id.to_string());
         }
     }
@@ -670,44 +675,6 @@ impl DirectionalFileAccumulator {
             files: histogram_into_pairs(self.files),
         }
     }
-}
-
-fn directory_ancestors_for_file(file: &str) -> Vec<String> {
-    let dir = module_path_dirname(file);
-    let mut ancestors = vec![String::new()];
-    if dir.is_empty() {
-        return ancestors;
-    }
-    let mut current = String::new();
-    for part in dir.split('/').filter(|part| !part.is_empty()) {
-        if current.is_empty() {
-            current.push_str(part);
-        } else {
-            current.push('/');
-            current.push_str(part);
-        }
-        ancestors.push(current.clone());
-    }
-    ancestors
-}
-
-fn path_is_in_directory(path: &str, directory: &str) -> bool {
-    directory.is_empty()
-        || path == directory
-        || path
-            .strip_prefix(directory)
-            .is_some_and(|rest| rest.starts_with('/'))
-}
-
-fn direct_child_path(directory: &str, file: &str) -> Option<(String, bool)> {
-    let rest = if directory.is_empty() {
-        file
-    } else {
-        file.strip_prefix(directory)?.strip_prefix('/')?
-    };
-    let mut parts = rest.split('/');
-    let first = parts.next()?;
-    Some((first.to_string(), parts.next().is_some()))
 }
 
 fn output_fraction(part: &OutputSize, total: &OutputSize) -> OutputFraction {

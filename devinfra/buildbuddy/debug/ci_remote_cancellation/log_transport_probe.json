@@ -1,0 +1,123 @@
+{
+  "observed_date_utc": "2026-10-31",
+  "outside_github_incident": {
+    "client_context": "Local Nix devshell bbr benchmark launched by this session, outside GitHub Actions",
+    "source_commit": "7d4079880e93f57bbc6019ba1134854fbf0219f8",
+    "bb_cli_version": "5.0.498",
+    "outer_invocation_id": "ab9396a7-c8ef-4d1c-ad96-506c0472d412",
+    "replacement_outer_invocation_id": "bed0fc63-54f3-463d-97d8-c77fbcf2e544",
+    "exact_reset_time_utc": null,
+    "error": "rpc error: code = Internal desc = streaming logs: read log stream: stream terminated by RST_STREAM with error code: INTERNAL_ERROR",
+    "original_log_size_bytes": 448722,
+    "original_log_sha256": "47076dce03fc241acd7a4d44dc31fcb7492d31109facf38b3fc9aa73ce8a0072",
+    "error_line_numbers": [3971],
+    "first_embedded_repo_sync_utc": "2026-10-31T06:46:07.996Z",
+    "replacement_embedded_repo_sync_utc": "2026-10-31T07:18:12.958Z",
+    "limits": "Embedded producer timestamps do not identify GetEventLog RPC start or reset time; invocation attempt metadata was later overwritten."
+  },
+  "github_elapsed_markers": [
+    {
+      "job": "failed-job-124312184823",
+      "last_waiting_marker": [891, "2026-10-30T21:07:28.9734541Z"],
+      "error_timestamp": "2026-10-30T21:16:53.3200805Z",
+      "elapsed_from_waiting_seconds": 564.346626,
+      "log_start_markers": [
+        [892, "2026-10-30T21:08:04.4357991Z"],
+        [9007, "2026-10-30T21:10:08.9871259Z"],
+        [17133, "2026-10-30T21:17:26.1290908Z"]
+      ]
+    },
+    {
+      "job": "failed-job-124318119119",
+      "last_waiting_marker": [883, "2026-10-30T21:18:54.5675272Z"],
+      "error_timestamp": "2026-10-30T21:33:20.7453461Z",
+      "elapsed_from_waiting_seconds": 866.177819,
+      "log_start_markers": [
+        [884, "2026-10-30T21:19:42.3800769Z"],
+        [9143, "2026-10-30T21:33:49.5264963Z"]
+      ]
+    },
+    {
+      "job": "failed-job-124330549416",
+      "last_waiting_marker": [878, "2026-10-30T21:51:09.6668509Z"],
+      "error_timestamp": "2026-10-30T21:57:03.2883697Z",
+      "elapsed_from_waiting_seconds": 353.621519,
+      "log_start_markers": [
+        [879, "2026-10-30T21:51:40.5837748Z"],
+        [8995, "2026-10-30T21:57:33.7003936Z"]
+      ]
+    }
+  ],
+  "controlled_probe": {
+    "invocation_id": "4524703c-ee24-4449-84fd-9b5041f358a2",
+    "client_context": "Local Nix devshell, outside GitHub Actions",
+    "bb_cli_version": "5.0.498",
+    "endpoint": "remote.buildbuddy.io:443",
+    "endpoint_ipv4_observed": "216.226.68.241",
+    "whole_run_retries_disabled": true,
+    "estimated_compute_units": 1,
+    "outer_timeout_minutes": 16,
+    "script_start_utc": "2026-10-31T11:29:55.315156856Z",
+    "script_silence_start_utc": "2026-10-31T11:32:55.321799147Z",
+    "script_silence_end_utc": "2026-10-31T11:38:55.323282140Z",
+    "script_end_utc": "2026-10-31T11:41:55.329Z",
+    "script_exit_code": 0,
+    "local_exit_code": 0,
+    "local_completion_line_utc": "2026-10-31T11:42:03.060991377Z",
+    "script_schedule": "3 heartbeats 60 seconds apart; sleep 360 seconds; 3 heartbeats 60 seconds apart",
+    "observers": [
+      {
+        "log_file": "eventlog-remote.log",
+        "log_sha256": "5d03bb1cc318b61c6f894ccb747976fc1bdc05d6eb7ac37e812ee221d5e3e021",
+        "rpc_started_utc": "2026-10-31T11:32:30.500462034Z",
+        "rpc_ended_utc": "2026-10-31T11:42:02.742758572Z",
+        "duration_seconds": 572.242296,
+        "messages_received": 243,
+        "normal_eof": true,
+        "rst_stream": false,
+        "message_count_in_producer_silence": 162,
+        "max_message_gap_during_observed_silence_seconds": 3.135879,
+        "sum_buffer_bytes_including_repeated_live_buffers": 391617
+      },
+      {
+        "log_file": "eventlog-remote-v2.log",
+        "log_sha256": "7087e3381ecdadcc2c2f1ae9600158c993a70e9e2d01e1f1d517732806c2bdd0",
+        "rpc_started_utc": "2026-10-31T11:34:34.644848907Z",
+        "rpc_ended_utc": "2026-10-31T11:42:02.758685728Z",
+        "duration_seconds": 448.113837,
+        "messages_received": 203,
+        "normal_eof": true,
+        "rst_stream": false,
+        "message_count_in_producer_silence": 133,
+        "max_message_gap_during_observed_silence_seconds": 3.148571,
+        "sum_buffer_bytes_including_repeated_live_buffers": 331267,
+        "sum_grpc_inpayload_wire_length_bytes": 334523,
+        "response_header_names": ["alt-svc", "content-type", "date", "server", "via", "x-envoy-upstream-service-time"],
+        "response_trailer_names": []
+      }
+    ],
+    "invocation_attempt_transition": {
+      "new_attempt": "2",
+      "created_at_utc": "2026-10-31T11:35:16.950Z",
+      "updated_at_utc": "2026-10-31T11:35:17.075Z",
+      "run_id_unchanged": true,
+      "observer_streams_uninterrupted": true,
+      "producer_retry_reason_known": false
+    },
+    "limits": [
+      "One low-volume run; not a failure-rate estimate or proof against all timeout thresholds.",
+      "Observers attached after the original CLI and had shorter RPC lifetimes.",
+      "io.EOF is normal completion; diagnostic status.Convert EOF reported Unknown, which is not a server error."
+    ],
+    "runner_action_execution_id": "bb-snapshot/uploads/b35ac373-75c1-4f40-83fc-01e28a3d6d2f/blobs/blake3/0a1c54a829eafad10cb13537e784dbc1cfed58b541175a28ad3f0a4d9654984f/149",
+    "remote_script_sha256": "00f982f528e8521e594071a31c6ebe5fd10ac977ac4df4e6643d3255a85d926b",
+    "observer_v2_source_sha256": "748e5effd1ecc66b3b6b4df28ae4431e7724a61221e645a8cd1dfe6349c2eeeb",
+    "producer_stderr": {
+      "downloaded": true,
+      "size_bytes": 24077,
+      "resource": "bb-snapshot/uploads/b35ac373-75c1-4f40-83fc-01e28a3d6d2f/blobs/blake3/bc2edcd4cfcbcf78d1e7d820e4e87fc72f1a04471847b950b3b3031f88054b85/24077",
+      "sha256": "0501b1e85f31c5d515653cd2af398c31ed701ced4065d181a2e13d1dd513180e",
+      "retry_stream_reset_error_diagnostic_matches": 0
+    }
+  }
+}

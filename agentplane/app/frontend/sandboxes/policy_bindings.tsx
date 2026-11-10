@@ -1,10 +1,13 @@
 import { Button, Group, MultiSelect, Select, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { BindingView } from "../api/schema";
+import type { PolicyBinding } from "../../../policy/v1/policy_service_pb";
+import type { PolicyResources } from "../policy/watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
-import { api, displayableError } from "../client";
+import { displayableError, fetchText } from "../client";
+import { getSandboxForm } from "../app_config_client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
 /** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
 const GRANT_DURATIONS = [
@@ -14,6 +17,13 @@ const GRANT_DURATIONS = [
   { value: "168", label: "7 days" },
   { value: "forever", label: "Until revoked" },
 ];
+
+async function mutatePolicy(method: "POST" | "DELETE", path: string, body?: unknown): Promise<void> {
+  await fetchText(`/upstream/policy/v1${path}`, {
+    method,
+    ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+}
 
 /** Grants to a sandbox that is already running; each grant is its own binding, revoked on its own. */
 function GrantPolicySets({
@@ -59,11 +69,11 @@ function GrantPolicySets({
 
 /** The bindings that name the sandbox's ServiceAccount, where an operator adds one or revokes one. */
 export function PolicyBindingsSection({
-  sandbox,
-  bindings,
+  target,
+  resources,
 }: {
-  sandbox: string;
-  bindings: BindingView[] | null;
+  target: EnvironmentTarget;
+  resources: PolicyResources | null;
 }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   // The namespace's policy sets of any rule type, the ones picked to grant this sandbox next, and for how long.
@@ -73,34 +83,50 @@ export function PolicyBindingsSection({
   const [granting, setGranting] = useState(false);
 
   useEffect(() => {
-    void (async () => {
-      const { data, error: failure } = await api.GET("/sandboxes/form");
-      setError(failure ? displayableError(failure) : null);
-      if (!failure) setPolicySets(data.policy_sets);
-    })();
+    void getSandboxForm().then(
+      (form) => {
+        setError(null);
+        setPolicySets(form.policySets);
+      },
+      (failure: unknown) => setError(displayableError(failure))
+    );
   }, []);
 
   // What the API server now holds, granted or revoked, arrives on the page's stream; nothing to
   // re-read here.
-  async function revoke(binding: string): Promise<void> {
-    const { error: failure } = await api.DELETE("/policy-bindings/{name}", {
-      params: { path: { name: binding } },
-    });
-    setError(failure ? displayableError(failure) : null);
+  async function revoke(binding: PolicyBinding): Promise<void> {
+    const name = binding.identity?.name;
+    const uid = binding.identity?.uid;
+    if (!name || !uid) {
+      setError("PolicyBinding identity is unavailable; refresh the Sandbox policy view");
+      return;
+    }
+    const path = `/sandboxes/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}/policy-bindings/${encodeURIComponent(name)}`;
+    const query = new URLSearchParams({ sandboxUid: target.uid, bindingUid: uid });
+    try {
+      await mutatePolicy("DELETE", `${path}?${query}`);
+      setError(null);
+    } catch (failure) {
+      setError(displayableError(failure));
+    }
   }
 
   async function grant(): Promise<void> {
-    const { error: failure } = await api.POST("/sandboxes/{name}/policy-bindings", {
-      params: { path: { name: sandbox } },
-      body: {
-        policy_sets: picked,
-        expires_at: duration === "forever" ? null : new Date(Date.now() + Number(duration) * 3_600_000).toISOString(),
-      },
-    });
-    setError(failure ? displayableError(failure) : null);
-    if (!failure) {
+    const path = `/sandboxes/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.name)}/policy-bindings`;
+    const body = {
+      sandboxUid: target.uid,
+      policySets: picked,
+      ...(duration === "forever"
+        ? {}
+        : { expiresAt: new Date(Date.now() + Number(duration) * 3_600_000).toISOString() }),
+    };
+    try {
+      await mutatePolicy("POST", path, body);
+      setError(null);
       setPicked([]);
       setGranting(false);
+    } catch (failure) {
+      setError(displayableError(failure));
     }
   }
 
@@ -131,7 +157,14 @@ export function PolicyBindingsSection({
           onGrant={() => void grant()}
         />
       )}
-      {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
+      {resources && (
+        <BindingsTable
+          bindings={resources.bindings}
+          policySets={resources.sets}
+          onRevoke={(binding) => void revoke(binding)}
+          subjectKind="ServiceAccount"
+        />
+      )}
     </Stack>
   );
 }

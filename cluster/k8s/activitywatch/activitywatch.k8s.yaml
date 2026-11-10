@@ -206,20 +206,6 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: activitywatch-readonly
-  namespace: activitywatch
-spec:
-  ports:
-    - name: http
-      port: 5600
-      protocol: TCP
-      targetPort: 5601
-  selector:
-    app.kubernetes.io/name: activitywatch
----
-apiVersion: v1
-kind: Service
-metadata:
   annotations:
     description: Bearer-gated ActivityWatch write endpoint (bearer-proxy sidecar, 5602), fronted by the public write HTTPRoute for desktop importers.
   name: write

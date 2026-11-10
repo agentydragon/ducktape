@@ -25,6 +25,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -36,7 +37,6 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -59,7 +59,7 @@ _ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
 MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
 KEY_FILES = ("client-key.sops.yaml", "management-key.sops.yaml")
 
-_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/cli_proxy_api/config.yaml")).read_text()
+_CONFIG = (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/cli_proxy_api/config.yaml").read_text()
 
 
 def _namespace(scope: Construct) -> None:

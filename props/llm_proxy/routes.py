@@ -26,14 +26,16 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openai_utils.api_shape import LLMApiShape
 from openai_utils.model import ResponseUsage
-from props.backend.auth import AgentRole, Auth, AuthenticatedIdentity
-from props.backend.deps import AdminDb, Config
+from props.backend.auth import parse_credentials, validate_postgres_credentials_async
+from props.backend.deps import Config
 from props.config import LLMProxyConfig, UpstreamConfig
+from props.db.async_database import AsyncDatabase
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
+from props.llm_proxy.database import ProxyDb
 
 logger = logging.getLogger(__name__)
 
@@ -83,14 +85,14 @@ def _resolve_upstream_url(config: UpstreamConfig) -> str:
     raise ValueError("Upstream config must have url or url_env")
 
 
-def _get_upstream_route(
-    model_id: str, session: Session, config: LLMProxyConfig, api_shape: LLMApiShape
+async def _get_upstream_route(
+    model_id: str, session: AsyncSession, config: LLMProxyConfig, api_shape: LLMApiShape
 ) -> UpstreamRoute:
     """Look up upstream routing info for a model.
 
     Returns UpstreamRoute with resolved URL, API key, and model name to send.
     """
-    metadata = session.get(ModelMetadata, model_id)
+    metadata = await session.get(ModelMetadata, model_id)
     if metadata is None:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
     metadata_api_shape = LLMApiShape(metadata.api_shape)
@@ -120,13 +122,13 @@ def _get_upstream_route(
     return UpstreamRoute(url=upstream_url, api_key=api_key, model_name=model_name)
 
 
-def _check_budget(session: Session, agent_run_id: UUID, budget_usd: float) -> None:
+async def _check_budget(session: AsyncSession, agent_run_id: UUID, budget_usd: float) -> None:
     """Check if agent has exceeded its budget. Raises HTTPException(429) if over budget.
 
     Uses the agent_run_budget_status view which recursively sums descendant costs.
     Zero-cost calls (e.g. local models with $0 pricing) are always allowed.
     """
-    status = session.get(AgentRunBudgetStatus, agent_run_id)
+    status = await session.get(AgentRunBudgetStatus, agent_run_id)
     if status is None:
         raise HTTPException(status_code=500, detail=f"Agent run {agent_run_id} not found in budget view")
     if status.tree_spent_usd == 0 and budget_usd == 0:
@@ -137,24 +139,33 @@ def _check_budget(session: Session, agent_run_id: UUID, budget_usd: float) -> No
         )
 
 
-def require_llm_access(auth: Auth, admin_db: AdminDb) -> LLMAccess:
+async def require_llm_access(request: Request, admin_db: ProxyDb) -> LLMAccess:
     """FastAPI dependency requiring LLM API access (agent credentials only).
 
-    Returns (agent_run_id, allowed_model, budget_usd) or raises HTTPException.
+    Validates agent PostgreSQL credentials without blocking the event loop.
     """
-    if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole)):
+    authorization = request.headers.get("authorization")
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization required")
+    parsed = parse_credentials(authorization)
+    if parsed is None:
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    username, password = parsed
+    agent_run_id = await validate_postgres_credentials_async(username, password, admin_db.config)
+
+    if agent_run_id is None:
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    with admin_db.session() as session:
-        agent_run = session.get(AgentRun, auth.role.agent_run_id)
+    async with admin_db.session() as session:
+        agent_run = await session.get(AgentRun, agent_run_id)
         if agent_run is None:
-            raise HTTPException(status_code=401, detail="Agent run not found")
+            raise HTTPException(status_code=401, detail="Invalid agent token")
 
         if agent_run.status != AgentRunStatus.IN_PROGRESS:
             raise HTTPException(status_code=403, detail=f"Agent run is not in progress (status={agent_run.status})")
 
         return LLMAccess(
-            agent_run_id=auth.role.agent_run_id,
+            agent_run_id=agent_run_id,
             allowed_model=agent_run.model,
             budget_usd=agent_run.budget_usd,
             parent_agent_run_id=agent_run.parent_agent_run_id,
@@ -246,9 +257,9 @@ def _upstream_auth_headers(api_shape: LLMApiShape, api_key: str) -> dict[str, st
     return headers
 
 
-def _log_request(
+async def _log_request(
     *,
-    session: Session,
+    session: AsyncSession,
     agent_run_id: UUID,
     model: str,
     api_shape: LLMApiShape,
@@ -274,7 +285,7 @@ def _log_request(
         latency_ms=latency_ms,
     )
     session.add(llm_request)
-    session.commit()
+    await session.commit()
 
 
 def _props_metadata_field(api_shape: LLMApiShape) -> str:
@@ -308,7 +319,8 @@ def _merge_props_metadata(
     if access.parent_agent_run_id is not None:
         props_metadata["props.parent_agent_run_id"] = str(access.parent_agent_run_id)
 
-    # The langfuse_otel callback maps trace_metadata to Langfuse trace attributes.
+    # LiteLLM does not export trace_metadata to Langfuse
+    # (cluster/cdk8s/litellm/docs/langfuse_tracing.md); see props/TODO.md.
     body[field] = {**metadata, "trace_metadata": {**trace_metadata, **props_metadata}}
 
 
@@ -324,7 +336,7 @@ async def _read_json_object(request: Request) -> dict[str, Any]:
 
 async def _proxy_request(
     request: Request,
-    admin_db: AdminDb,
+    admin_db: AsyncDatabase,
     config: Config,
     access: LLMAccess,
     *,
@@ -355,9 +367,9 @@ async def _proxy_request(
             raise HTTPException(status_code=400, detail="Stateful mode 'previous_response_id' is not supported")
 
     # Resolve upstream routing and check budget
-    with admin_db.session() as session:
-        _check_budget(session, access.agent_run_id, access.budget_usd)
-        upstream = _get_upstream_route(request_model, session, config, api_shape)
+    async with admin_db.session() as session:
+        await _check_budget(session, access.agent_run_id, access.budget_usd)
+        upstream = await _get_upstream_route(request_model, session, config, api_shape)
 
     # Rewrite model in request body to upstream model name
     body["model"] = upstream.model_name
@@ -379,8 +391,8 @@ async def _proxy_request(
             )
         except httpx.TimeoutException:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            with admin_db.session() as session:
-                _log_request(
+            async with admin_db.session() as session:
+                await _log_request(
                     session=session,
                     agent_run_id=access.agent_run_id,
                     model=request_model,
@@ -393,8 +405,8 @@ async def _proxy_request(
             raise HTTPException(status_code=504, detail="Upstream timeout")
         except httpx.RequestError as e:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            with admin_db.session() as session:
-                _log_request(
+            async with admin_db.session() as session:
+                await _log_request(
                     session=session,
                     agent_run_id=access.agent_run_id,
                     model=request_model,
@@ -419,8 +431,8 @@ async def _proxy_request(
     if upstream_response.status_code >= 400:
         error = f"HTTP {upstream_response.status_code}"
 
-    with admin_db.session() as session:
-        _log_request(
+    async with admin_db.session() as session:
+        await _log_request(
             session=session,
             agent_run_id=access.agent_run_id,
             model=request_model,
@@ -436,7 +448,7 @@ async def _proxy_request(
 
 @router.post("/v1/responses")
 async def responses(
-    request: Request, admin_db: AdminDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
+    request: Request, admin_db: ProxyDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
 ) -> JSONResponse:
     """Proxy OpenAI Responses API requests."""
     return await _proxy_request(
@@ -446,7 +458,7 @@ async def responses(
 
 @router.post("/v1/chat/completions")
 async def chat_completions(
-    request: Request, admin_db: AdminDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
+    request: Request, admin_db: ProxyDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
 ) -> JSONResponse:
     """Proxy OpenAI Chat Completions API requests."""
     return await _proxy_request(
@@ -456,7 +468,7 @@ async def chat_completions(
 
 @router.post("/v1/messages")
 async def messages(
-    request: Request, admin_db: AdminDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
+    request: Request, admin_db: ProxyDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
 ) -> JSONResponse:
     """Proxy Anthropic Messages API requests."""
     return await _proxy_request(

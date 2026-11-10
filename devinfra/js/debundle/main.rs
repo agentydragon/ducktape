@@ -1,3 +1,4 @@
+use analysis_identity::ANALYSIS_ENGINE_SHA256;
 use debundle_cli::run_debundle_cli_from_process;
 use swc_common::{GLOBALS, Globals};
 
@@ -9,5 +10,7 @@ fn main() -> std::process::ExitCode {
     // `Globals` instance per process keeps `Mark` identity comparable
     // across chunks.
     let globals = Globals::default();
-    GLOBALS.set(&globals, run_debundle_cli_from_process)
+    GLOBALS.set(&globals, || {
+        run_debundle_cli_from_process(ANALYSIS_ENGINE_SHA256)
+    })
 }

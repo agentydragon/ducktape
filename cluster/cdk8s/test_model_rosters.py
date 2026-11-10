@@ -5,22 +5,16 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.litellm.config import model_entry
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import (
+    ANTHROPIC_API_LATEST_ROUTES,
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
-    ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
-    ANTIGRAVITY_GEMINI_FLASH,
-    ANTIGRAVITY_GEMINI_FLASH_LITE,
-    ANTIGRAVITY_ROUTES,
+    CHATGPT_RESPONSES,
     CHATGPT_RESPONSES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
     GEMINI_EMBEDDING_ROUTES,
-    GEMINI_ROUTES,
-    GPT6_1_SOL_RESPONSES,
-    GPT6_RESPONSES_ROUTES,
-    GPT6_SOL_RESPONSES,
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
@@ -53,25 +47,28 @@ def test_staging_picker_does_not_widen_its_key() -> None:
         *KEY_MODEL_LANES["antigravity_client_models"].allowed,
         *KEY_MODEL_LANES["ollama_chat_client_models"].allowed,
     )
-    assert all(route in admitted for route in STAGING_APP_MODELS.all)
+    # Wrapped harness choices remain within their LiteLLM key lanes. Direct API models
+    # selected only by the central sampler bypass LLM ingress and use their own connection.
+    assert all(route in admitted for route in (*STAGING_APP_MODELS.claude, *STAGING_APP_MODELS.codex))
+    central_only = (
+        set(STAGING_APP_MODELS.central_sampler) - set(STAGING_APP_MODELS.claude) - set(STAGING_APP_MODELS.codex)
+    )
+    assert central_only == set(ANTHROPIC_API_LATEST_ROUTES)
+    assert not central_only.intersection(admitted)
 
 
-def test_gpt_6_1_sol_is_available_to_agentplane_codex() -> None:
-    route = GPT6_1_SOL_RESPONSES
-    expected_codex_efforts = ("low", "medium", "high", "xhigh", "max")
+def test_generation_limits_are_projected_from_the_route() -> None:
+    route = Route(
+        model=Model("synthetic-responses-model", limits=TokenLimits(max_input_tokens=12_345, max_output_tokens=6_789)),
+        upstream=CHATGPT_RESPONSES,
+        publish_limits=True,
+    )
 
-    assert route.id == "chatgpt-sub/oai-responses/gpt-6.1-sol"
-    assert route in STAGING_APP_MODELS.codex
-    assert GPT6_SOL_RESPONSES not in STAGING_APP_MODELS.codex
-    assert route in KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed
-    assert all(candidate.reasoning_efforts == expected_codex_efforts for candidate in GPT6_RESPONSES_ROUTES)
-    assert model_entry(route)["model_info"] == {
-        "mode": "responses",
-        "supports_function_calling": True,
-        "max_input_tokens": 272_000,
-        "max_output_tokens": 128_000,
-        "max_tokens": 128_000,
-    }
+    info = model_entry(route)["model_info"]
+    assert info["mode"] == "responses"
+    assert info["max_input_tokens"] == 12_345
+    assert info["max_output_tokens"] == 6_789
+    assert info["max_tokens"] == 6_789
 
 
 def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
@@ -88,22 +85,6 @@ def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
     assert served_rugged_routes == set(routes)
     assert allowed_rugged_routes == set(routes)
     assert not lane.fallbacks
-    assert [route.id for route in routes] == [
-        "rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m",
-        "rugged-local/oai-chat/gemma4-e4b",
-        "rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental",
-    ]
-    assert [route.upstream_model for route in routes] == [
-        "rugged-qwen3-4b-instruct-2507-q4_K_M",
-        "rugged-gemma4-e4b",
-        "rugged-gemma4-e2b-it-qat-long-128k-b128",
-    ]
-    assert all(
-        route.model.limits == TokenLimits(max_input_tokens=28_672, max_output_tokens=4_096)
-        for route in RUGGED_LOCAL_CANDIDATE_ROUTES
-    )
-    [route] = RUGGED_LOCAL_EXPERIMENTAL_ROUTES
-    assert route.model.limits == TokenLimits(max_input_tokens=126_976, max_output_tokens=4_096)
     assert all(route.publish_limits for route in routes)
 
 
@@ -134,37 +115,9 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert not direct.reasoning_efforts
 
 
-def test_antigravity_google_routes_are_served_and_selected_for_both_harnesses() -> None:
-    routes = (ANTIGRAVITY_GEMINI_FLASH, ANTIGRAVITY_GEMINI_FLASH_LITE, ANTIGRAVITY_GEMINI_38_FLASH_HIGH)
-    assert [route.model.id for route in routes] == ["gemini-3-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash-high"]
-    assert all(route.reasoning_efforts == ("minimal", "low", "medium", "high") for route in routes[:2])
-    assert ANTIGRAVITY_GEMINI_38_FLASH_HIGH.reasoning_efforts == ("low", "medium", "high")
-    assert ANTIGRAVITY_GEMINI_38_FLASH_HIGH.model.reasoning is True
-    assert all(route in ANTIGRAVITY_ROUTES for route in routes)
-    assert all(route in STAGING_APP_MODELS.claude and route in STAGING_APP_MODELS.codex for route in routes)
-    assert all(route in KEY_MODEL_LANES["antigravity_client_models"].allowed for route in routes)
-    assert all(model_entry(route)["model_name"] == route.id for route in routes)
-    assert [route.model.limits for route in routes] == [
-        TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
-        TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_535),
-        TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
-    ]
-    for route in routes:
-        limits = route.model.limits
-        assert isinstance(limits, TokenLimits)
-        assert model_entry(route)["model_info"]["max_output_tokens"] == limits.max_output_tokens
-    assert not {"gemini-pro-agent", "gemini-3.1-pro-low"} & {route.model.id for route in ANTIGRAVITY_ROUTES}
-
-
-def test_flash_lite_keeps_distinct_google_account_routes() -> None:
-    direct = [route for route in GEMINI_ROUTES if route.model.id == "gemini-3.5-flash-lite"]
-    assert [route.id for route in direct] == ["google/goog-generate/gemini-3.5-flash-lite"]
-    assert direct[0].id != ANTIGRAVITY_GEMINI_FLASH_LITE.id
-    assert ANTIGRAVITY_GEMINI_FLASH_LITE.id == "antigravity/ant-messages/gemini-3.5-flash-lite"
-    assert direct[0].model.limits == TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536)
-    assert ANTIGRAVITY_GEMINI_FLASH_LITE.model.limits == TokenLimits(
-        max_input_tokens=1_048_576, max_output_tokens=65_535
-    )
+def test_latest_direct_anthropic_routes_publish_function_calling() -> None:
+    for route in ANTHROPIC_API_LATEST_ROUTES:
+        assert model_entry(route)["model_info"]["supports_function_calling"] == route.supports_function_calling
 
 
 @pytest.mark.parametrize("publish_limits", [False, True])

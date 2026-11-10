@@ -1,7 +1,7 @@
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 use std::process::Command;
 
-use debundle_e2e_support::GraphFixture;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -568,4 +568,62 @@ fn cluster_default_limit_and_all_replay_without_conflicting_flags() {
             .any(|argument| argument == "--limit" || argument == "--limit=20")
     );
     assert_eq!(replay_printed(&all)["argv"], all["argv"]);
+}
+
+#[test]
+fn flat_transform_ignores_tree_environment_defaults_in_replay() {
+    let fixture = GraphFixture::new("const value = 1;", &[]);
+    let mut command = fixture.process(&["run", "--spec", "not-read.yaml", "--print-invocation"]);
+    command.env("DEBUNDLE_TREE_SOURCE_ROOT", "inherited-source");
+    command.env("DEBUNDLE_OUT", "inherited-output");
+    let record = run_json(&mut command);
+    let argv = record["argv"].as_array().unwrap();
+    assert!(
+        !argv
+            .iter()
+            .any(|value| value == "--tree-source-root" || value == "--out-root")
+    );
+    assert_eq!(replay_printed(&record)["argv"], record["argv"]);
+}
+
+#[test]
+fn explicit_flat_tree_conflicts_are_refused_before_dispatch() {
+    let fixture = GraphFixture::new("const value = 1;", &[]);
+    for flag in [
+        "--tree-config",
+        "--tree-modules",
+        "--tree-vendor-marks",
+        "--tree-source-root",
+        "--out-root",
+    ] {
+        let output = fixture
+            .process(&["run", "--spec", "not-read.yaml", flag, "explicit"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains(flag) && error.contains("cannot be used with --spec"),
+            "{error}"
+        );
+    }
+    let output = fixture
+        .process(&[
+            "spec",
+            "project-analysis",
+            "--spec",
+            "not-read.yaml",
+            "--tree-modules",
+            "explicit",
+            "--out",
+            "not-written",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("--tree-modules cannot be used with --spec"),
+        "{error}"
+    );
 }

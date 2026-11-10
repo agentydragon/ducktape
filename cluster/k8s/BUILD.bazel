@@ -32,7 +32,9 @@ exports_files(
 )
 
 exports_files(
-    ["clickhouse/cluster/public-coder-credentials.sops.yaml"],
+    [
+        "clickhouse/cluster/public-coder-credentials.sops.yaml",
+    ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
@@ -40,4 +42,9 @@ exports_files(
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/validation:__pkg__",
     ],
+)
+
+exports_files(
+    ["agents/plaid-mcp/readonly-role.sql"],
+    visibility = ["//cluster/cdk8s/plaid_mcp:__pkg__"],
 )

@@ -172,8 +172,10 @@ func TestRequestViewsDoNotDependOnTheReader(t *testing.T) {
 	want := f.get(t, request.ID)
 	sameJSON(t, want.Arguments, body.Arguments)
 	sameJSON(t, want.Execution.Result, []byte(result))
-	sameJSON(t, want.Execution.Error, []byte(failure))
-	if want.Caller != caller.Account {
+	if got := want.Execution.Error; got.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN || got.GetMessage() != "test message" {
+		t.Errorf("an error stored under a kind this release does not name reads %v", got)
+	}
+	if accountOf(want.Caller) != caller.Account {
 		t.Errorf("caller = %+v", want.Caller)
 	}
 	for name, principal := range map[string]ReadPrincipal{"owner": caller, "operator": operator, "service reader": reader} {
@@ -223,7 +225,7 @@ func (f fixture) decidedAt(t *testing.T, key string, admission Admission, verdic
 }
 
 func vote(verdict Verdict) *ProviderVote {
-	return &ProviderVote{Provider: "test-provider", Verdict: verdict, ReasonCode: "test_reason"}
+	return &ProviderVote{Verdict: verdict, Policy: PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE}}
 }
 
 func (f fixture) history(t *testing.T, page HistoryPage) ([]ActionRequest, *string) {

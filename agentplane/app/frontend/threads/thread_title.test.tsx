@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "../api/schema";
+import type { ThreadView } from "./client";
 import { ThreadTitle } from "./thread_title";
+import { threadView } from "./testing/state";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -14,24 +16,26 @@ const fetchMock = vi.hoisted(() => {
 });
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const THREAD: ThreadView = {
-  id: "10000000-0000-4000-8000-000000000001",
-  sandbox: "title-test",
-  harness: "HARNESS_CLAUDE",
-  model: "test-model",
-  cwd: "/test-workspace",
-  created_at: "2026-01-01T00:00:00Z",
-  name: "Test stored name",
-  archived: false,
-  last_cursor: 0,
-  harness_state: "HARNESS_STATE_RUNNING",
-};
+const CREATED_AT = "2026-01-01T00:00:00Z";
+const THREAD: ThreadView = threadView({
+  metadata: {
+    threadId: "10000000-0000-4000-8000-000000000001",
+    createdAt: timestampFromDate(new Date(CREATED_AT)),
+    name: "Test stored name",
+  },
+  summary: { sandbox: { name: "title-test" } },
+});
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockImplementation(async (request: Request) => {
-    return Response.json({ ...THREAD, ...((await request.clone().json()) as { name: string | null }) });
+    const body = (await request.clone().json()) as { name?: string };
+    return Response.json({
+      threadId: THREAD.metadata.threadId,
+      createdAt: CREATED_AT,
+      ...(body.name === undefined ? {} : { name: body.name }),
+    });
   });
 });
 afterEach(async () => {
@@ -54,7 +58,7 @@ async function render(thread: ThreadView | null): Promise<{
     act(async () =>
       root.render(
         <MantineProvider env="test">
-          <ThreadTitle threadId={THREAD.id} thread={next} onRenamed={onRenamed} onError={() => {}} />
+          <ThreadTitle threadId={THREAD.metadata.threadId} thread={next} onRenamed={onRenamed} onError={() => {}} />
         </MantineProvider>
       )
     );
@@ -92,21 +96,27 @@ it("waits for the thread before taking typing, with the thread id as its placeho
   const { input } = await render(null);
 
   expect(input.disabled).toBe(true);
-  expect(input.placeholder).toBe(THREAD.id);
-  expect(container.textContent).not.toContain(THREAD.id);
+  expect(input.placeholder).toBe(THREAD.metadata.threadId);
+  expect(container.textContent).not.toContain(THREAD.metadata.threadId);
 });
 
 it("commits the trimmed name on Enter", async () => {
   const { input, onRenamed } = await render(THREAD);
-  expect(container.textContent).not.toContain(THREAD.id);
+  expect(container.textContent).not.toContain(THREAD.metadata.threadId);
 
   await type(input, "  Test typed name  ");
   await press(input, "Enter");
 
   expect(await renames()).toEqual([
-    { path: `/threads/${THREAD.id}`, method: "PATCH", body: { name: "Test typed name" } },
+    {
+      path: `/upstream/app/v1/threads/${THREAD.metadata.threadId}`,
+      method: "PATCH",
+      body: { threadId: THREAD.metadata.threadId, name: "Test typed name" },
+    },
   ]);
-  expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: "Test typed name" });
+  expect(onRenamed).toHaveBeenCalledWith(
+    expect.objectContaining({ threadId: THREAD.metadata.threadId, name: "Test typed name" })
+  );
 });
 
 it("puts the stored name back on Escape and sends nothing", async () => {
@@ -135,17 +145,26 @@ it("clears the name when a blank one is committed by moving away", async () => {
   await type(input, "   ");
   await act(async () => input.blur());
 
-  expect(await renames()).toEqual([{ path: `/threads/${THREAD.id}`, method: "PATCH", body: { name: null } }]);
-  expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: null });
+  expect(await renames()).toEqual([
+    {
+      path: `/upstream/app/v1/threads/${THREAD.metadata.threadId}`,
+      method: "PATCH",
+      body: { threadId: THREAD.metadata.threadId },
+    },
+  ]);
+  expect(onRenamed).toHaveBeenCalledWith(expect.objectContaining({ threadId: THREAD.metadata.threadId }));
+  expect(onRenamed.mock.calls[0]?.[0].name).toBeUndefined();
 });
 
 it("shows a rename from elsewhere unless a name is being typed", async () => {
   const { input, rerender } = await render(THREAD);
 
-  await rerender({ ...THREAD, name: "Test renamed elsewhere" });
+  await rerender(
+    threadView({ metadata: { ...THREAD.metadata, name: "Test renamed elsewhere" }, summary: THREAD.summary })
+  );
   expect(input.value).toBe("Test renamed elsewhere");
 
   await type(input, "Test typed name");
-  await rerender({ ...THREAD, name: "Test renamed again" });
+  await rerender(threadView({ metadata: { ...THREAD.metadata, name: "Test renamed again" }, summary: THREAD.summary }));
   expect(input.value).toBe("Test typed name");
 });

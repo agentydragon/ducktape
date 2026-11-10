@@ -214,7 +214,7 @@ id keeps the classic `exec_command` function-call shape the tests assert.
 
 ## What the runner consumes
 
-The runner in `agentplane/runner/` translates these surfaces into its protocol; everything else
+The runner in `agentplane/env/e2e/` translates these surfaces into its protocol; everything else
 stays evidence in `Native` events. Observed with the pinned builds while writing it:
 
 - Claude: `--session-id` fixes a fresh session's id, so the runner never waits for one;
@@ -254,7 +254,7 @@ the scenario under test; a bridge that turns any of these on must widen the rost
   Claude `--tools` omits `WebSearch`, `WebFetch`.
 - **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`);
   a catalog id would replace the function-call tools with one JS `exec` tool.
-  [Runner code mode](../../runner/test_codex_code_mode.py) serves GPT-6 Luna's bundled entry instead,
+  [Runner code mode](../../env/e2e/test_codex_code_mode.py) serves GPT-6 Luna's bundled entry instead,
   and the scripted Codex model answers a shell call there with an `exec` script.
 - **Session title generation**: Claude `--name` preset suppresses the separate title model call;
   Codex threads start `ephemeral` unless a test resumes.

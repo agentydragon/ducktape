@@ -2,11 +2,8 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -221,8 +218,8 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 			if state.lastSuccess.Valid || !state.nextAttempt.Valid || state.nextAttempt.Time.After(now()) {
 				t.Errorf("subscription state = %+v, want no success and due at once", state)
 			}
-			if holder := g.claimHolder(t); !holder.Valid || holder.UUID != claim.lease {
-				t.Errorf("claim = %v, want the worker's %s", holder, claim.lease)
+			if holder := g.claimHolder(t); !holder.Valid || holder.UUID != claim.held.Holder {
+				t.Errorf("claim = %v, want the worker's %s", holder, claim.held.Holder)
 			}
 		})
 	}
@@ -305,67 +302,36 @@ func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	})
 }
 
-func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
-	for _, vector := range loadGolden(t).Events {
-		var identity map[string]json.RawMessage
-		if err := json.Unmarshal(vector.Event, &identity); err != nil {
-			t.Fatal(err)
-		}
-		if string(identity["provider"]) != `"github"` {
-			continue
-		}
-		t.Run(vector.Name, func(t *testing.T) {
-			var event string
-			var actionValue *string
-			if err := json.Unmarshal(identity["event"], &event); err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal(identity["action"], &actionValue); err != nil {
-				t.Fatal(err)
-			}
-			// The subject is one the event can be followed on.
-			var subject model.GitHubSubject = model.PullRequestSubject{Number: 7}
-			about := onPullRequest(7)
-			switch {
-			case model.EventName(event) == model.EventIssues:
-				subject, about = model.IssueSubject{Number: 7}, onIssue(7)
-			case slices.Contains(model.GitHubReferenceEvents(), model.EventName(event)):
-				subject, about = model.BranchSubject{Name: "main"}, onBranch("main")
-			}
-			options := func(label string) []deliveryOption {
-				options := []deliveryOption{about, labelled(label)}
-				if actionValue != nil {
-					options = append(options, withAction(*actionValue))
-				}
-				return options
-			}
-
-			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(subject, model.EventFilter{Event: model.EventName(event)}), "follow")
-			delivery := g.deliver(t, event, options("recorded by Python")...)
-			// The entry Python wrote for this delivery: its identity with the ids this delivery has, the rest as Python
-			// wrote it.
-			identity["app_id"] = json.RawMessage(strconv.FormatInt(g.app, 10))
-			identity["repository_id"] = json.RawMessage(strconv.FormatInt(g.repository, 10))
-			identity["delivery_id"] = json.RawMessage(strconv.Quote(delivery.DeliveryID.String()))
-			recorded, err := json.Marshal(identity)
-			if err != nil {
-				t.Fatal(err)
-			}
-			g.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, 1, $2::jsonb, '{}'::jsonb, now())`,
-				g.inbox, string(recorded))
-			g.exec(t, `INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, 1)`, sub.ID)
-			g.exec(t, `UPDATE inbox SET last_cursor = 1 WHERE id = $1`, g.inbox)
-
-			g.reconcileAll(t, sub)
-			if page := g.read(t, g.inbox, 0); len(page.Entries) != 1 || page.Inbox.LastCursor != 1 {
-				t.Fatalf("inbox holds %d entries up to cursor %d, want only the one Python wrote", len(page.Entries), page.Inbox.LastCursor)
-			}
-
-			// A delivery that is not Python's is still delivered, so the first match was not an accident.
-			g.deliver(t, event, options("control")...)
-			g.reconcileAll(t, sub)
-			g.requireDelivered(t, "", "control")
-		})
+func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
+	g := newGitHubFixture(t)
+	action := "created"
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7},
+		model.EventFilter{Event: model.EventIssueComment}), "follow")
+	delivery := g.deliver(t, string(model.EventIssueComment), onPullRequest(7), withAction(action), labelled("recorded"))
+	event := model.GitHubEvent{
+		AppID: g.app, DeliveryID: delivery.DeliveryID, RepositoryID: g.repository,
+		Event: model.EventIssueComment, Action: &action,
 	}
+	tx, err := g.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertEntry(t.Context(), tx, g.inbox, 1, event, delivery.Payload, time.Now().UTC()); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	g.exec(t, `INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, 1)`, sub.ID)
+	g.exec(t, `UPDATE inbox SET last_cursor = 1 WHERE id = $1`, g.inbox)
+
+	g.reconcileAll(t, sub)
+	if page := g.read(t, g.inbox, 0); len(page.Entries) != 1 || page.Inbox.LastCursor != 1 {
+		t.Fatalf("inbox holds %d entries up to cursor %d, want the existing entry only", len(page.Entries), page.Inbox.LastCursor)
+	}
+
+	g.deliver(t, string(model.EventIssueComment), onPullRequest(7), withAction(action), labelled("control"))
+	g.reconcileAll(t, sub)
+	g.requireDelivered(t, "recorded", "control")
 }

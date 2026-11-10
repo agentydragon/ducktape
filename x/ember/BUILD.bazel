@@ -44,11 +44,11 @@ py_test(
     deps = [
         ":system_prompt",
         "//:conftest",
-        "//util/bazel:runfiles",
         "//x/ember:matrix_client",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

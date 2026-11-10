@@ -9,6 +9,10 @@ There is no JSON/jq instruction interpreter and no browser-side test driver.
 
 ## Responsibilities
 
+The shared Chromium executable and launch flags live in `util/testing/browser/`; ordinary
+Playwright fixtures use those without depending on visual capture policy. This package owns
+deterministic contexts, render health, visual fixtures, and screenshot publication.
+
 - **Tests** own fixture selection, readiness, actions, assertions, scrolling, pointer
   placement and screenshot checkpoints. Use normal functions and pytest parameterization.
   Fixture identifiers select data, not viewport, theme, readiness, or interactions. Reuse a
@@ -17,7 +21,7 @@ There is no JSON/jq instruction interpreter and no browser-side test driver.
 - **TS harnesses** mount production components and provide synthetic fixture data or fake
   services. A shared/generated fixture catalog may enumerate data; it must not contain
   selectors, clicks, waits, or capture instructions.
-- **`VisualHarness` / `VisualPage`** (`util/testing/visual_capture.py`) own browser lifecycle,
+- **`VisualHarness` / `VisualPage`** (`util/testing/frontend_visual/capture.py`) own browser lifecycle,
   render-health checks, screenshot mechanics and review publication.
 - **`py_visual_test`** owns Bazel runfiles, the Python entry point and the `visual` tag.
 
@@ -28,15 +32,15 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from util.testing.visual_capture import VisualHarness
+from util.testing.frontend_visual.capture import VisualHarness
 
-# gazelle:include_dep //util/testing:visual_fixtures
-pytest_plugins = ("util.testing.visual_fixtures",)
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
+pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 async def test_details(visual: VisualHarness) -> None:
-    async with visual.open("example") as view:
+    async with visual.open() as view:
         await view.page.get_by_role("button", name="Details").click()
         panel = view.page.get_by_role("region", name="Details")
         await expect(panel).to_be_visible()
@@ -56,8 +60,8 @@ Gazelle-managed libraries rather than loading sibling test modules into one runn
 setup APIs, configure the mocks and mount the component from Python before asserting
 readiness. Do not add a name-to-recipe registry just to open a page.
 
-`visual.open()` accepts browser geometry (`util/testing/viewports.py`), color scheme,
-query parameters and an optional frozen instant. Inline harnesses use `window_globals`
+`visual.open()` accepts browser geometry (`util/testing/frontend_visual/viewports.py`), color scheme,
+explicit query parameters and an optional frozen instant. Inline harnesses use `window_globals`
 instead of a query. The macro's `page_url` gives an inline document an origin for
 storage; `served_documents` supplies mock iframe documents.
 
@@ -66,52 +70,75 @@ The shared pytest plugin also provides a per-test `view` yield fixture, with ord
 an unnamed harness and closes its isolated browser context after the test. App-specific
 fixtures can depend on it to prepare reusable state without hiding test interactions.
 
-With `view`, `await view.capture()` derives the PNG name from the pytest function and
-parameter IDs, followed by `.png`. Use readable parameter IDs; do not wire a parallel
-`image_name` column just to identify each case. The `capture_name` fixture exposes this same identity to
-harnesses that need their own page-opening fixture. Pass it as `visual.open(capture_name=...)`
-to use unnamed capture there too. It never selects fixture data or app behavior.
+For a real server or an otherwise app-owned browser context, use
+`async with open_visual_page(context, test_outputs, title="...") as view:`. It creates
+and closes the page, records load errors before navigation, and optionally enables the
+shared trace policy with `trace=True`. The caller owns the context, cookies, routes,
+and navigation.
 
-`view.capture()` also accepts an explicit unique output name and optional caption;
-use explicit names for multiple checkpoints in one test. Pass a strict
-`Locator` to crop one component, omit it to capture the viewport, or use
-`full_page=True`. Crops retain the nearest-pixel rounding convention.
-`devtools_viewport` retains device-pixel compatibility for existing galleries.
-Duplicate output names within an execution fail instead of overwriting an image.
+The root pytest configuration provides `test_outputs`, a generic fixture bound to the full
+repository-relative pytest node ID, including parameter IDs. It can publish any output role via
+`test_outputs.publish(...)`; `test_outputs.case_id` exposes the same ID for browser and native UI
+helpers. The function-scoped `visual` fixture binds that ID to its `VisualHarness`, while
+the session-scoped Playwright driver remains shared. With `view`, `await view.capture()`
+writes the default screenshot (`checkpoint=None`) for that case. Use readable parameter IDs.
+App-owned fixtures call `visual.open()` without passing an ID. Outside pytest, construct
+`VisualHarness(..., outputs=BoundTestOutputs(output_dir, case_id))` with an explicit case identity.
 
-`VisualHarness.open()` retains a standard Playwright trace for each named case by default.
-Custom deterministic-context fixtures can use the same policy and Playwright trace lifecycle
-through `playwright_trace(context, output_dir, capture_name)` in
-`util.testing.visual_capture`, passing the pytest case name as the capture identity. Use
-`VISUAL_TRACE=0` to disable tracing. Set `VISUAL_TRACE_CAPTURE_NAME` to the exact
-`capture_name` to retain only that case; the `capture_name` fixture supplies the pytest
-case identity. Calls without `capture_name` are not traced.
+`VisualPage.outputs` is a `BoundTestOutputs` writer from `devinfra.testing.output_writer`,
+bound to the page's output directory and case ID. Use `view.outputs.publish(...)` for
+additional roles or checkpoints alongside `view.capture()`; both publish under the same
+case identity. The writer is independent of pytest, so real-server pages can use it too.
+
+`test_outputs.publish(role="diagnostics", suffix="json", data=json.dumps(details))`
+accepts text (encoded as UTF-8) or bytes. Code that writes to a file handle can use
+`with test_outputs.open(role="diagnostics", suffix="json") as output:` and write
+text to `output`; pass `mode="wb"` for bytes. The handle writes to a temporary file and
+publishes on successful exit. An exception publishes nothing, and a second write to
+the same case, checkpoint and role fails. Use `publish_file(...)` for an existing
+file.
+
+`view.capture()` accepts an optional checkpoint name and caption. Use a distinct
+checkpoint for each additional capture in one test. Pass a strict `Locator` to crop
+one component, omit it to capture the viewport, or use `full_page=True`. Crops
+retain the nearest-pixel rounding convention. `devtools_viewport` retains device-pixel
+compatibility for existing galleries. Duplicate case/checkpoint/role claims fail.
+
+`VisualHarness.open()` retains a standard Playwright trace for its bound case by default.
+Custom deterministic-context fixtures can use `playwright_trace(context, outputs,
+checkpoint)` with a `BoundTestOutputs` writer. Set `VISUAL_TRACE=0` to disable tracing. Set
+`VISUAL_TRACE_CAPTURE_NAME` to the exact full `case_id` to retain only that case.
+When a test opens multiple pages, give each a distinct `trace_checkpoint`. Trace files
+are staged in temporary directories for every opening, and a duplicate case/checkpoint trace fails
+without replacing the first record. If a failing test also cannot publish its trace,
+the raw trace is copied to undeclared outputs and the exception note names it.
 
 To trace one case, set `VISUAL_TRACE_CAPTURE_NAME` and filter the Bazel target:
 
 ```bash
 bbr test //package:visual_test \
   --test_arg=-k --test_arg=test_details \
-  --test_env=VISUAL_TRACE_CAPTURE_NAME=details
+  --test_env=VISUAL_TRACE_CAPTURE_NAME='example/test_visual.py::test_details'
 ```
 
-The trace is written as `<capture_name>.trace.zip` in the test output directory,
-including when the case passes. It contains Playwright DOM snapshots and network
-activity; use it only with synthetic visual cases. `VISUAL_TRACE` accepts `0` or `1`
-and defaults to `1`.
+The trace is recorded under `test-outputs/` with role `trace`, including when the
+case passes. It contains Playwright DOM snapshots and network activity; use it only
+with synthetic visual cases. `VISUAL_TRACE` accepts `0` or `1` and defaults to `1`.
 
 ## One way in
 
 Every review screenshot comes from a page of `deterministic_browser_context`
-(`util/testing/frontend_visual.py`) published by `VisualPage.capture()`. Choose the entry by
+(`util/testing/frontend_visual/context.py`) published by `VisualPage.capture()`. Choose the entry by
 where the page is served:
 
 - Mounted by a bundled harness: `VisualHarness.open()` or the `view` fixture
-  (`util/testing/visual_fixtures.py`).
-- Served by a real server: `deterministic_browser_context(...)` plus `VisualPage(page, ...)`,
-  constructed before navigating.
-- Native UI (GNOME shell, ...): `publish_review_png()` (`util/testing/visual_review.py`), as
-  `util/testing/gnome.py` does.
+  (`util/testing/frontend_visual/fixtures.py`).
+- Served by a real server: `deterministic_browser_context(...)` plus
+  `with VisualPage(page, ...) as view:`, entered before navigating. Exiting the context checks
+  for uncaught page errors, including errors after the last screenshot. If another error is
+  already propagating, the page error is attached to it as a note.
+- Native UI (GNOME shell, ...): `publish_output()` (`devinfra/testing/output_writer.py`), as
+  `gnome/testing/session.py` does.
 
 Traps, each of which renders differently from one execution to the next or hides a failure:
 
@@ -135,6 +162,13 @@ mount; inline pages include that CSS automatically. Capture waits for fonts, ima
 paint and the fixture network ledger, and checks uncaught page errors and escaped requests.
 These are **not** application-readiness conditions: the test must assert its content first.
 
+Capture then repaints the whole page (`repaint` in `page_capture.py`) before taking the
+screenshot. Chromium's compositor can keep a layer's tiles rastered for the pixel alignment the
+layer had when the tiles were made. A sticky heading changes alignment as it sticks and unsticks,
+so without the repaint its text landed a device pixel off depending on scroll timing. A DevTools
+capture also hides the text caret, as `page.screenshot()` does by default, because the caret blinks
+on wall-clock time.
+
 The launcher pins Chromium's native device scale to the context's emulated scale with
 `--force-device-scale-factor`. Emulation alone changes the DOM's `devicePixelRatio` while
 leaving the native widget at its default scale (1 on RBE). Chromium's [screenshot handler] then rescales the
@@ -151,10 +185,9 @@ Real-server tests may construct `VisualPage` before navigating an existing deter
 page, with their own server setup and network policy. Diagnostic screenshots need not be
 published as visual-review assets.
 
-Screenshots and `visual-review.json` go to Bazel undeclared outputs. There are no
+Screenshots, diagnostics, and traces go to Bazel undeclared outputs as test-output records. There are no
 checked-in pixel baselines: behavior/render health are hard gates, while pixel changes
-are reviewed through `devinfra/pr_visuals`. Preserve target names and asset filenames
-when migrating so the publisher can match existing baselines.
+are reviewed through `devinfra/pr_visuals`. The collector compares structured case and checkpoint identities across runs.
 
 Run browser tests on RBE through `bbr`, or use PR CI. Pytest selection/sharding and the
 weekly `visual`-tagged determinism sweep continue to apply. Inspect both test results and

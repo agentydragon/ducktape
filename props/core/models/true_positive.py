@@ -37,41 +37,6 @@ class LineRange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class FileOccurrence(BaseModel):
-    """One file in an occurrence (for OpenAI strict mode compatibility)."""
-
-    path: Path = Field(description="File path")
-    ranges: list[LineRange] | None = Field(default=None, description="Line ranges or None for unspecified")
-    model_config = ConfigDict(extra="forbid")
-
-
-class Occurrence(BaseModel):
-    """One occurrence of a TruePositive.
-
-    Authoring guidance:
-    - A TruePositive represents one logical problem (id, rationale, properties). Use
-      one TruePositive with multiple Occurrences when the same logical problem appears
-      in several places but should be tracked together.
-    - Prefer Occurrence-level notes for location-specific guidance; keep the
-      TruePositive.rationale for the global explanation and acceptance criteria.
-    """
-
-    files: list[FileOccurrence] = Field(
-        description=(
-            "List of files with their line ranges. "
-            + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
-        )
-    )
-    note: str | None = Field(
-        description=(
-            "Occurrence-specific explanatory note, for details unique to this occurrence; "
-            "do not repeat issue-level rationale here."
-        )
-    )
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class TruePositiveOccurrence(BaseModel):
     """One occurrence of a true positive.
 

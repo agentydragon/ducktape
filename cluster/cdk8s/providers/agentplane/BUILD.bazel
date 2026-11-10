@@ -9,13 +9,11 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "egress_credential",
     srcs = ["egress_credential.py"],
-    visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//agentplane/crds:egresscredential",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -29,6 +27,7 @@ py_test(
         ":egress_credential",
         "//:conftest",
         "//agentplane/crds:egresscredential",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
@@ -37,10 +36,7 @@ py_test(
 py_library(
     name = "policy_set",
     srcs = ["policy_set.py"],
-    visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//agentplane/crds:policyset",
         "@pypi//cdk8s",
@@ -55,6 +51,53 @@ py_library(
     deps = [
         "//agentplane/crds:policybinding",
         "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "identity",
+    srcs = ["identity.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:identity",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "kubernetes_role_set",
+    srcs = ["kubernetes_role_set.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:kubernetesroleset",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "service_account_grant",
+    srcs = ["service_account_grant.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":kubernetes_role_set",
+        "//agentplane/crds:serviceaccountgrant",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "workload_credential",
+    srcs = ["workload_credential.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:workloadcredential",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

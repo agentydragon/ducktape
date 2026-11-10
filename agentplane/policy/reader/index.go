@@ -5,8 +5,10 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // NumberedRule is one of a set's rules of the reader's type, numbered by its position among all of
@@ -34,17 +36,40 @@ type Index[R any] struct {
 	// refused holds each set with a rule of this type that does not parse, which grants nothing.
 	refused  map[string]Refusal
 	bindings map[string]policyapi.PolicyBinding
+	// expiries fire a change at each binding's expiresAt, when it stops granting with no event.
+	expiries map[string]*time.Timer
+	// identities holds the UID of each live Identity in the policy namespace, by name.
+	identities map[string]types.UID
+	changed    chan struct{}
+	now        func() time.Time
 }
 
 // NewIndex returns an empty Index of the rules whose type is ruleType, each read by parse.
 func NewIndex[R any](ruleType string, parse func(policyapi.Rule) (R, error)) *Index[R] {
 	return &Index[R]{
-		ruleType: ruleType,
-		parse:    parse,
-		sets:     map[string]PolicySet[R]{},
-		refused:  map[string]Refusal{},
-		bindings: map[string]policyapi.PolicyBinding{},
+		ruleType:   ruleType,
+		parse:      parse,
+		sets:       map[string]PolicySet[R]{},
+		refused:    map[string]Refusal{},
+		bindings:   map[string]policyapi.PolicyBinding{},
+		expiries:   map[string]*time.Timer{},
+		identities: map[string]types.UID{},
+		changed:    make(chan struct{}),
+		now:        time.Now,
 	}
+}
+
+// Changed closes after the next index mutation. Obtain it before reading to avoid missing a change.
+func (i *Index[R]) Changed() <-chan struct{} {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return i.changed
+}
+
+// notifyChanged is called with mu held.
+func (i *Index[R]) notifyChanged() {
+	close(i.changed)
+	i.changed = make(chan struct{})
 }
 
 // PutPolicySet adds or replaces a set. A set with a rule of this type that does not parse is
@@ -54,6 +79,7 @@ func (i *Index[R]) PutPolicySet(set *policyapi.PolicySet) {
 	parsed, err := i.parseSet(set)
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
 	if err != nil {
 		slog.Warn("PolicySet refused", "policySet", set.Name, "error", err)
 		delete(i.sets, set.Name)
@@ -67,6 +93,7 @@ func (i *Index[R]) PutPolicySet(set *policyapi.PolicySet) {
 func (i *Index[R]) DeletePolicySet(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
 	delete(i.sets, name)
 	delete(i.refused, name)
 }
@@ -132,19 +159,83 @@ func (i *Index[R]) resolve(names []string) Resolution[R] {
 	return resolution
 }
 
-// PutBinding adds or replaces a binding. A binding that exists grants: the Policy Controller
-// deletes it at expiry.
+// PutBinding adds or replaces a binding. A binding grants while it exists and is live: the Policy
+// Controller deletes it at expiry, and until then the index treats an expired one as absent.
 func (i *Index[R]) PutBinding(binding *policyapi.PolicyBinding) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
+	i.stopExpiry(binding.Name)
 	i.bindings[binding.Name] = *binding.DeepCopy()
+	if expiresAt := binding.Spec.ExpiresAt; expiresAt != nil {
+		if remaining := expiresAt.Sub(i.now()); remaining > 0 {
+			i.expiries[binding.Name] = time.AfterFunc(remaining, func() {
+				i.mu.Lock()
+				defer i.mu.Unlock()
+				i.notifyChanged()
+			})
+		}
+	}
 }
 
 func (i *Index[R]) DeleteBinding(name string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	defer i.notifyChanged()
+	i.stopExpiry(name)
 	delete(i.bindings, name)
 }
+
+// stopExpiry is called with mu held.
+func (i *Index[R]) stopExpiry(name string) {
+	if timer, ok := i.expiries[name]; ok {
+		timer.Stop()
+		delete(i.expiries, name)
+	}
+}
+
+// PutIdentity records the UID of a live Identity. A binding names an Identity lookup only while the
+// Identity of its name has the lookup's UID.
+func (i *Index[R]) PutIdentity(identity *policyapi.Identity) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	defer i.notifyChanged()
+	i.identities[identity.Name] = identity.UID
+}
+
+func (i *Index[R]) DeleteIdentity(name string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	defer i.notifyChanged()
+	delete(i.identities, name)
+}
+
+// Subject is who a lookup asks about: a ServiceAccount or an Identity. A binding names exactly one
+// kind of subject, so a lookup of one kind never finds a binding of the other.
+type Subject interface{ subject() }
+
+// ServiceAccount is a Kubernetes ServiceAccount, as the caller authenticated. It names the bindings
+// whose subject is that ServiceAccount.
+type ServiceAccount policyapi.ServiceAccountRef
+
+// Identity is one incarnation of an Identity in the policy namespace: its name and UID. It names the
+// bindings whose subject is that name, only while the live Identity of that name has that UID.
+//
+// UID fencing protects stale principals: a credential of a deleted incarnation gains nothing from a
+// same-named successor. It does not end a binding. A binding's lifetime comes from its
+// ownerReference to its Identity, which the app and Dispatcher must set, so garbage collection
+// deletes an agent's bindings with the Identity.
+//
+// The WorkloadCredential resolver yields Identity subjects (agentplane/docs/workload_authentication.md,
+// "How a verifier resolves a peer"). The egress proxy and the Action Service look them up; the other
+// services do in SERVICES_IDENTITY_PRINCIPAL (agentplane/plans/task_dag.md).
+type Identity struct {
+	Name string
+	UID  types.UID
+}
+
+func (ServiceAccount) subject() {}
+func (Identity) subject()       {}
 
 // Grant is one binding naming the caller, and the sets with rules of this type it grants.
 type Grant[R any] struct {
@@ -155,7 +246,7 @@ type Grant[R any] struct {
 // Grants returns the bindings that give the caller rules of this type, in binding-name order. A
 // binding names its sets in grant order; a missing or refused set takes nothing from the others,
 // and a set with no rules of this type is another reader's and grants this one nothing.
-func (i *Index[R]) Grants(caller policyapi.ServiceAccountRef) []Grant[R] {
+func (i *Index[R]) Grants(caller Subject) []Grant[R] {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	var granted []Grant[R]
@@ -181,7 +272,7 @@ type BindingResolution[R any] struct {
 
 // Bindings returns every binding naming the subject, in binding-name order, with how the sets it
 // names stand, including a binding that grants this reader nothing.
-func (i *Index[R]) Bindings(subject policyapi.ServiceAccountRef) []BindingResolution[R] {
+func (i *Index[R]) Bindings(subject Subject) []BindingResolution[R] {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	var found []BindingResolution[R]
@@ -192,14 +283,28 @@ func (i *Index[R]) Bindings(subject policyapi.ServiceAccountRef) []BindingResolu
 	return found
 }
 
-// naming is the names of the bindings naming the subject, sorted.
-func (i *Index[R]) naming(subject policyapi.ServiceAccountRef) []string {
+// naming is the names of the live bindings naming the subject, sorted.
+func (i *Index[R]) naming(subject Subject) []string {
 	var names []string
+	now := i.now()
 	for name, binding := range i.bindings {
-		if binding.Spec.Subject == subject {
+		if i.names(binding.Spec.Subject, subject) && policyapi.Live(binding.Spec.ExpiresAt, now) {
 			names = append(names, name)
 		}
 	}
 	slices.Sort(names)
 	return names
+}
+
+// names reports whether a binding's subject is the lookup's.
+func (i *Index[R]) names(bound policyapi.Subject, subject Subject) bool {
+	switch subject := subject.(type) {
+	case ServiceAccount:
+		return bound.Identity == nil && bound.Namespace == subject.Namespace && bound.Name == subject.Name
+	case Identity:
+		live, ok := i.identities[subject.Name]
+		return bound.Identity != nil && bound.Identity.Name == subject.Name && ok && live == subject.UID
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
 }

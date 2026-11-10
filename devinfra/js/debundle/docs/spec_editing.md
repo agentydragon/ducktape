@@ -3,6 +3,21 @@
 Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 `comment:` fields. Operational base: `cli.md`.
 
+## References to logical members
+
+`chunk_analysis_options.<chunk>.initializer_call_effect_inputs[].resolved_member`
+names an existing logical member by `{module, name}`. Its key follows the
+logical module path and readable member name, so an owner rename changes the
+reference. `bindings rename`, `bindings assign`, `bindings unassign`,
+`modules merge`, `modules refine`, and `modules delete --force` edit the
+logical-module tree but do not read or rewrite `chunk_analysis_options`. When
+one of these edits changes or removes a referenced module path or member name,
+update or remove every referring input in the same authoring change. The normal
+source-analysis resolver rejects missing or stale references; it never falls
+back to a source selector or raw binding spelling. References to
+`chunk_renames` entries are unsupported because those entries do not create
+logical-module ownership claims.
+
 ## Workflow: executing a delegated assignment
 
 Use the [snapshot-backed adapter contract](../skills/shared/workflow.md#adapter-contract)
@@ -23,7 +38,11 @@ operation-specific recipe.
    criteria. A current-source proof does not establish future stability.
 4. Apply the reviewed edit and retain its proposed-assignment gate result. Remove
    now-owned entries from the project's non-emitting rename/annotation patch
-   stream when applicable. Never edit the upstream bundle or generated output.
+   stream when applicable. Review attached comments/notes against current source
+   and gate evidence: stale ownership explanations can survive a correct move.
+   Transfer meaningful module comments before deleting empty shells; preserve
+   actual author contracts and selector-debt provenance. Never edit the upstream
+   bundle or generated output.
 5. Regenerate through the worker's adapter command, then run its uniqueness,
    runtime, and applicable CI checks. Record the results separately using
    [execution evidence](../skills/shared/workflow.md#execution-evidence).
@@ -38,6 +57,16 @@ is expected to fail after edits; it is not a post-edit gate.
 If source discovery becomes broad, return it to intake. If the destination is
 architecturally unclear, return it to the architect. Use [failure routing](../skills/shared/workflow.md#failure-routing)
 for graph and gate failures.
+
+## Inspect ownership before editing
+
+Start with a bounded `describe <module-path> --limit 20`, or pass known owner
+paths to `describe --batch owners.json --limit 20`. Then inspect specific
+bindings with `--direction incoming` and `--reason lazy_use` when looking for
+lazy consumers. These are filtered graph views, not a complete ownership or gate
+proof. Check the reported omitted counts and read the source behind candidate
+consumers; use `--all` for an intentional exhaustive artifact rather than as the
+first query over a high-fanout family.
 
 ## Workflow: reorganizing existing modules
 
@@ -95,6 +124,17 @@ debundle graph-summary --format text
 Use `debundle graph-summary --include-proposals` only when aggregate
 proposal and diagnostic counts matter; the default is a fast graph
 summary.
+
+For a bounded owner pass, choose `graph-summary --limit N` when looking for
+large residual atomic groups or `modules propose --limit N` when choosing among
+proposals. Put the owners to inspect in `owners.json`, then query their raw
+incoming edges with `debundle describe --batch owners.json --direction incoming
+--limit N`; add repeated `--reason KIND` filters when they narrow the question.
+The report's `edge_census` keeps the complete filtered counts by dependency kind
+and normalized role while detail rows are limited. Incoming and outgoing
+counts are separate incidences, and an internal edge can occur in both. Treat
+the census as navigation evidence; only the assignment gate evaluates whether
+an edit is valid.
 
 For a focused look at one proposal before applying:
 
@@ -219,13 +259,52 @@ and the destinations each member would land in.
    ```
    `debundle coverage` reports per-atom spec coverage; rows tagged
    "split" by current YAML are not landable until the assignment agrees.
-4. **Either expand the move set or revisit the assignment.** The
-   diagnostic does not auto-compute the minimal completion ("also move
-   `rRe` and `MRe`"); read the printed atom membership and add the
-   missing moves to your batch.
-5. **Re-run** with the expanded batch.
+4. **Diagnose before choosing the repair.** Follow the shared
+   [assignment diagnosis](../skills/shared/workflow.md#diagnose-a-rejected-assignment)
+   to distinguish a genuinely unsafe split from conservative analysis or a tool
+   defect. If the complete atom forms a coherent module, include its missing
+   members in the move batch; the diagnostic does not compute that completion.
+   Otherwise revise the boundary or investigate the blocking proof.
+5. **Re-run** the normal gate on the candidate; co-location alone does not
+   establish acceptance.
 
 The gate refuses; nothing on disk has changed.
+
+## Workflow: proposing commutations
+
+When `gate cut` shows a blocking SCC whose cut is `sequenced` edges with
+opaque effects (an unknown call, an escaped global alias), co-location is not
+the only remedy: a `commuting_statements` entry
+([SPEC § Commuting statements](../SPEC.md#commuting-statements)) certifies that
+the two source units are order-independent during initialization.
+
+1. **Draft.** Run `debundle spec propose-commutations --graph <graph>
+--source-root <root> [--modules <chunk tree>] --out commutations.yaml`
+   ([cli.md § Proposing commutations](cli.md#proposing-commutations-spec-propose-commutations)).
+   It proposes one entry per `sequenced` source-unit pair inside the SCC that
+   the gate would accept, the best 50 by default (`--all` for every one),
+   ranked single-pair cuts first (the pair that alone
+   breaks the SCC may sit on an arc the gate's cut did not pick), and reports
+   separately the pairs the gate would
+   reject, the endpoints without a unique selector, and the `eager_use` edges
+   that still need co-location. Its `sccs` rows say whether all proposals
+   together break each SCC; when they cannot, the residual component member
+   paths and blocking edge counts show a surviving constraint. Predictions
+   preserve third-statement order through the same closure as the gate.
+   `counts_are_lower_bounds` marks an analysis stopped after proving a cycle;
+   its reported cyclic groups and counts need not be the full inventory.
+2. **Audit.** For each proposal read both statements at the reported locations
+   and establish the premise yourself: neither observes the other's effect.
+   The explanation says only why the analysis could not prove the order
+   irrelevant; the draft is a candidate, not a fact.
+3. **Apply.** Copy the audited entries into
+   `chunk_analysis_options.<chunk>.commuting_statements` of the spec (the
+   draft is already grouped under that key) and write the `note` with the
+   reason the pair commutes. Drop the rest.
+4. **Validate.** Run `debundle run` (or `spec validate`): the gate rejects an
+   entry that contradicts a source fact and warns about one that inerts
+   nothing, and the rejection report shows what the accepted entries bought
+   (`inert_commuting_edges`).
 
 ## Workflow: applying a reviewed source-unit assignment
 
@@ -248,9 +327,9 @@ Then preview and apply the same reviewed file:
 
 ```bash
 debundle modules refine --batch reviewed-source-units.json --dry-run \
-  --graph dependency_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json.gz --modules spec/modules --source-root source
 debundle modules refine --batch reviewed-source-units.json \
-  --graph dependency_graph.json --modules spec/modules --source-root source
+  --graph dependency_graph.json.gz --modules spec/modules --source-root source
 ```
 
 This command moves existing selector entries for each source unit as a unit. It
@@ -373,7 +452,7 @@ Source-module comments and notes are composed as described in
 
 The edit gate checks direct claims against the dependency graph and, for typed
 `kind` pins, the original source before checking the post-merge assignment.
-Pass `--graph <dependency_graph.json>` for the chunk's edge topology and
+Pass `--graph <dependency_graph.json.gz>` for the chunk's edge topology and
 `--source-root <dir>` when the graph's relative source paths are not otherwise
 resolvable. It rejects missing or ambiguous local claims, mismatched typed
 claims, and merges that would create cross-module cycles or split an atomic
@@ -392,7 +471,9 @@ imports only (`lowering/imports/imports_runtime.rs`).
 ## Comments and notes
 
 Module YAMLs, binding annotations, and `anonymous_statements:` entries accept
-optional `comment:` and `note:` strings. `comment:` survives rebuilds and emits
+optional `comment:` and `note:` strings; the config's `host_behavior` block
+accepts `note:` only, for the audited executable's identity (<SPEC.md> § Host
+behavior). `comment:` survives rebuilds and emits
 into generated JS: a module comment at the top of its file, a binding comment
 above its declaring statement, and an anonymous-statement comment above its matched
 statement. An empty comment emits nothing. Claimed declarators of one
@@ -405,7 +486,8 @@ debt rationale, provenance, source-unit IDs, and source-call trivia in non-emitt
 `note:` (or omit them). Both fields survive YAML rewrites; `#` YAML comments do
 not, because the rewriters re-emit the files without them. Per-binding metadata
 belongs under `annotations.<export_name>`, which also accepts `purity`, `effect`,
-`initializer_purity`, `pure_members`, and `no_sync_callback_members`.
+`initializer_purity`, `initializer_binding_effects`, `pure_members`, and
+`no_sync_callback_members`.
 
 On `modules merge`, non-empty source-module comments join the target comment
 with `--- from <source>:` dividers. The command adds `merged from: <sources>`

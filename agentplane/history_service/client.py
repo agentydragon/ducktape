@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -13,23 +13,32 @@ from uuid import UUID
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc.calls import bearer, raise_status
-from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
+from agentplane.grpc.calls import bearer, dial, raise_status
 from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
 
 
 @dataclass(frozen=True)
-class SessionOpened:
+class SessionRecorded:
     session_id: UUID
     # Recording order; a watch resumed after it misses no later Session.
     position: int
 
 
 class HistoryServiceClient:
-    def __init__(self, target: str, *, token_file: Path, request_timeout_s: float) -> None:
+    def __init__(
+        self,
+        target: str,
+        *,
+        token_file: Path,
+        request_timeout_s: float,
+        channel_credentials: grpc.ChannelCredentials | None = None,
+        server_name: str | None = None,
+    ) -> None:
         self.target = target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
+        self.channel_credentials = channel_credentials
+        self.server_name = server_name
         self._channel: grpc.aio.Channel | None = None
         self._stub: history_service_pb2_grpc.HistoryServiceAsyncStub | None = None
 
@@ -38,8 +47,8 @@ class HistoryServiceClient:
         if self._stub is None:
             # A local subchannel pool makes a channel after `redial()` dial anew; from the process-wide
             # pool it would inherit the closed channel's connection.
-            self._channel = grpc.aio.insecure_channel(
-                self.target, options=(*LARGE_EVENT_RECEIVE_OPTIONS, ("grpc.use_local_subchannel_pool", 1))
+            self._channel = dial(
+                self.target, channel_credentials=self.channel_credentials, server_name=self.server_name
             )
             self._stub = history_service_pb2_grpc.HistoryServiceStub(self._channel)
         return self._stub
@@ -52,7 +61,13 @@ class HistoryServiceClient:
 
     def new_client(self) -> HistoryServiceClient:
         """Create an independent channel with this client's endpoint and credentials."""
-        return HistoryServiceClient(self.target, token_file=self.token_file, request_timeout_s=self.request_timeout_s)
+        return HistoryServiceClient(
+            self.target,
+            token_file=self.token_file,
+            request_timeout_s=self.request_timeout_s,
+            channel_credentials=self.channel_credentials,
+            server_name=self.server_name,
+        )
 
     async def read_session_events(
         self, session_id: str, *, after_cursor: int = 0, limit: int = 128
@@ -64,83 +79,57 @@ class HistoryServiceClient:
             history_service_pb2.ReadSessionEventsRequest(session_id=session_id, after_cursor=after_cursor, limit=limit),
         )
 
-    async def read_session_observations(
-        self, session_id: str, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
-    ) -> history_service_pb2.ReadSessionObservationsResponse:
-        if (
-            not session_id
-            or not 1 <= limit <= 200
-            or (before_cursor is not None and before_cursor < 0)
-            or (after_cursor is not None and after_cursor < 0)
-            or (before_cursor is not None and after_cursor is not None)
-        ):
-            raise ValueError("invalid session observation page")
-        request = history_service_pb2.ReadSessionObservationsRequest(session_id=session_id, limit=limit)
-        if before_cursor is not None:
-            request.before_cursor = before_cursor
-        if after_cursor is not None:
-            request.after_cursor = after_cursor
-        return await self.unary(self.stub.ReadSessionObservations, request)
+    async def follow_session(
+        self, session_id: str, *, after_cursor: int = 0
+    ) -> AsyncGenerator[history_service_pb2.FollowSessionResponse]:
+        """Yield committed raw history until the server asks the caller to reconnect."""
+        if not session_id or after_cursor < 0:
+            raise ValueError("invalid session history cursor")
+        request = history_service_pb2.FollowSessionRequest(
+            session_id=session_id, after_cursor=after_cursor, follow=True
+        )
+        call = self.stub.FollowSession(request, metadata=await bearer(self.token_file))
+        handshake: float | None = self.request_timeout_s
+        try:
+            while True:
+                try:
+                    async with asyncio.timeout(handshake):
+                        response = await call.read()
+                except grpc.aio.AioRpcError as error:
+                    raise_status(error)
+                handshake = None
+                if response is grpc.aio.EOF:
+                    raise ConnectionError("History Service ended the raw history follow without planned renewal")
+                assert isinstance(response, history_service_pb2.FollowSessionResponse)
+                yield response
+                if response.HasField("reconnect_required"):
+                    return
+        finally:
+            call.cancel()
 
     async def get_session_summary(self, session_id: str) -> history_service_pb2.SessionSummary:
         return await self.unary(
             self.stub.GetSessionSummary, history_service_pb2.GetSessionSummaryRequest(session_id=session_id)
         )
 
-    async def batch_get_session_summaries(
-        self, session_ids: Collection[str]
-    ) -> list[history_service_pb2.SessionSummary]:
-        response = await self.unary(
-            self.stub.BatchGetSessionSummaries,
-            history_service_pb2.BatchGetSessionSummariesRequest(session_ids=session_ids),
-        )
-        return list(response.summaries)
-
-    async def find_sessions(
-        self,
-        *,
-        sandbox_name: str | None = None,
-        sandbox_name_contains: str | None = None,
-        sandbox_uid: str | None = None,
-    ) -> list[history_service_pb2.SessionSandbox]:
-        """Every Session written by the exact Sandbox UID/name, or whose name contains the text."""
-        request = history_service_pb2.FindSessionsRequest()
-        if sandbox_name is not None:
-            request.sandbox_name = sandbox_name
-        if sandbox_name_contains is not None:
-            request.sandbox_name_contains = sandbox_name_contains
-        if sandbox_uid is not None:
-            request.sandbox_uid = sandbox_uid
-        return list((await self.unary(self.stub.FindSessions, request)).sessions)
-
     async def read_thread_entities(
         self, request: history_service_pb2.ReadThreadEntitiesRequest
     ) -> history_service_pb2.ReadThreadEntitiesResponse:
         return await self.unary(self.stub.ReadThreadEntities, request)
-
-    async def read_entity_evidence(
-        self, request: history_service_pb2.ReadEntityEvidenceRequest
-    ) -> history_service_pb2.ReadEntityEvidenceResponse:
-        return await self.unary(self.stub.ReadEntityEvidence, request)
-
-    async def read_native_frames(
-        self, request: history_service_pb2.ReadNativeFramesRequest
-    ) -> history_service_pb2.ReadNativeFramesResponse:
-        return await self.unary(self.stub.ReadNativeFrames, request)
 
     async def watch_session_summaries(self) -> AsyncGenerator[None]:
         """Yield once per change notice until planned renewal, which returns; anything else raises."""
         async for _ in self._watch(history_service_pb2.WatchSessionSummariesRequest()):
             yield
 
-    async def watch_session_openings(self, *, after_position: int) -> AsyncIterator[SessionOpened]:
+    async def watch_recorded_sessions(self, *, after_position: int) -> AsyncGenerator[SessionRecorded]:
         """Yield each Session recorded after `after_position`, in recording order, until planned renewal,
         which returns; anything else raises."""
-        request = history_service_pb2.WatchSessionSummariesRequest(opened_after=after_position)
+        request = history_service_pb2.WatchSessionSummariesRequest(recorded_after=after_position)
         async for message in self._watch(request):
-            if message.HasField("session_opened"):
-                yield SessionOpened(
-                    session_id=UUID(message.session_opened.session_id), position=message.session_opened.position
+            if message.HasField("session_recorded"):
+                yield SessionRecorded(
+                    session_id=UUID(message.session_recorded.session_id), position=message.session_recorded.position
                 )
 
     async def _watch(

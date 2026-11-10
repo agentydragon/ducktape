@@ -20,6 +20,7 @@
 //! extension.
 
 use analysis::DependencyGraphReport;
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use peel::propose::propose;
 use spec::ModulePath;
@@ -72,7 +73,12 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let report = propose(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
+    let report = propose(
+        &analysis::DependencyGraphInput::from_report(report_graph).unwrap(),
+        &claims(&[("Foo", "features/foo")]),
+        10_000,
+    )
+    .unwrap();
 
     let extension = report
         .proposals
@@ -138,7 +144,7 @@ export { anchor, Foo, Bar };
         ],
     );
     let report = propose(
-        &report_graph,
+        &analysis::DependencyGraphInput::from_report(report_graph).unwrap(),
         &claims(&[("Foo", "features/foo"), ("Bar", "features/bar")]),
         10_000,
     )
@@ -179,7 +185,12 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let report = propose(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
+    let report = propose(
+        &analysis::DependencyGraphInput::from_report(report_graph).unwrap(),
+        &claims(&[("Foo", "features/foo")]),
+        10_000,
+    )
+    .unwrap();
 
     // No extension of `features/foo` should be proposed for the
     // intra-residual anon.

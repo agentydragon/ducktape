@@ -1,4 +1,5 @@
 pub mod binding;
+mod candidate_assessment;
 pub mod comment;
 pub mod edit_gate;
 pub mod gate;
@@ -12,41 +13,41 @@ pub mod validate;
 mod bindings_commands;
 mod contract_audit;
 mod inspection_commands;
+mod integrity_explanation;
 mod modules_commands;
+mod propose_commutations;
 mod selector_explanation;
 mod selector_input;
 mod snapshot;
+mod source_unit_refine;
 mod spec_commands;
+mod spec_lint;
+mod static_imports;
 
+use analyze_command::AnalyzeArgs;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
-use graph_provenance::{GraphMismatch, GraphMismatchReason};
+use graph_provenance::{CurrentRoots, GraphMismatch, GraphMismatchReason};
+use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
-use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
+use pipeline::{
+    GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformRunOptions,
+    run_transform_with_analysis,
+};
 use std::process::ExitCode;
+use transform_command::TransformArgs;
 
 use crate::bindings_commands::BindingsNs;
-use crate::gate::{GateArgs, InspectionRoots, run_gate_cli};
+use crate::gate::{GateArgs, run_gate_cli};
 use crate::inspection_commands::{DescribeArgs, InspectSourceArgs};
 use crate::invocation::ResolvedInvocation;
 use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
 
-/// Read and JSON-parse an `dependency_graph.json` into an [`DependencyGraphReport`],
-/// the load every `cli` verb that takes `--graph` shares.
-pub(crate) fn load_dependency_graph_report(
-    path: &std::path::Path,
-) -> Result<analysis::DependencyGraphReport> {
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str(&text)
-        .with_context(|| format!("parsing dependency graph {}", path.display()))
-}
-
 /// Which current authoring scope a graph-backed command actually interprets.
 #[derive(Clone, Copy)]
-enum GraphCompatibilityScope<'a> {
+pub(crate) enum GraphCompatibilityScope<'a> {
     AuthoredModuleTree {
         tree_config: Option<&'a std::path::Path>,
     },
@@ -54,47 +55,40 @@ enum GraphCompatibilityScope<'a> {
 }
 
 /// Shared pre-edit/pre-query check for any operation that joins a saved graph
-/// to current authoring files. Historical graph-only views use the loader above.
+/// to current authoring files. Historical graph-only views load a `DependencyGraphInput` directly.
 pub(crate) fn verify_graph_compatibility(
     graph_path: &std::path::Path,
     modules_root: &std::path::Path,
     selector_source_root: Option<&std::path::Path>,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    roots: &CurrentRoots,
     tree_config: Option<&std::path::Path>,
-) -> Result<()> {
+) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     verify_graph_compatibility_with_scope(
         graph_path,
-        modules_root,
+        Some(modules_root),
         selector_source_root,
-        spec_root,
-        graph_source_root,
-        graph_package_roots,
+        roots,
         GraphCompatibilityScope::AuthoredModuleTree { tree_config },
     )
 }
 
-fn verify_graph_compatibility_with_scope(
+/// `modules_root` is required by the authored-module-tree scope; the
+/// exact-source-unit scope uses it only to reject a fallback source shadow
+/// when no selector root is supplied.
+pub(crate) fn verify_graph_compatibility_with_scope(
     graph_path: &std::path::Path,
-    modules_root: &std::path::Path,
+    modules_root: Option<&std::path::Path>,
     selector_source_root: Option<&std::path::Path>,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    roots: &CurrentRoots,
     scope: GraphCompatibilityScope<'_>,
-) -> Result<()> {
+) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     let graph = graph_provenance::read_graph_header(graph_path)?;
     verify_graph_header_compatibility(
         graph_path,
         &graph,
         modules_root,
         selector_source_root,
-        &InspectionRoots {
-            spec_root: spec_root.map(std::path::Path::to_path_buf),
-            graph_source_root: graph_source_root.map(std::path::Path::to_path_buf),
-            graph_package_roots: graph_package_roots.clone(),
-        },
+        roots,
         scope,
     )
 }
@@ -102,14 +96,18 @@ fn verify_graph_compatibility_with_scope(
 fn verify_graph_header_compatibility(
     graph_path: &std::path::Path,
     graph: &graph_provenance::GraphHeader,
-    modules_root: &std::path::Path,
+    modules_root: Option<&std::path::Path>,
     selector_source_root: Option<&std::path::Path>,
-    roots: &InspectionRoots,
+    roots: &CurrentRoots,
     scope: GraphCompatibilityScope<'_>,
-) -> Result<()> {
+) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     let (require_module_scope, tree_config) = match scope {
         GraphCompatibilityScope::AuthoredModuleTree { tree_config } => (true, tree_config),
         GraphCompatibilityScope::ExactSourceUnit => (false, None),
+    };
+    let scoped_modules_root = match (require_module_scope, modules_root) {
+        (true, None) => anyhow::bail!("a module-scoped graph check requires --modules"),
+        (_, modules_root) => modules_root,
     };
     let provenance = graph.provenance.as_ref().ok_or_else(|| {
         GraphMismatch::new(
@@ -120,18 +118,15 @@ fn verify_graph_header_compatibility(
             None,
         )
     })?;
-    let current = graph_provenance::CurrentRoots {
-        spec: roots.spec_root.clone(),
-        source: roots.graph_source_root.clone(),
-        packages: roots.graph_package_roots.clone(),
-    };
-    let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
-    if require_module_scope && provenance.modules_directory.is_none() {
+    let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(roots)?;
+    if let (true, None) = (require_module_scope, &provenance.modules_directory) {
         return Err(GraphMismatch::new(
             GraphMismatchReason::ModuleScope {
                 chunk_id: graph.chunk_id.clone(),
                 expected: Vec::new(),
-                actual: graph_provenance::absolute(modules_root)?,
+                actual: graph_provenance::absolute(
+                    scoped_modules_root.expect("checked by the scope match above"),
+                )?,
             },
             regenerate_command.clone(),
             Some(regenerate_cwd.clone()),
@@ -141,11 +136,12 @@ fn verify_graph_header_compatibility(
     // `inspect-source --id unit:*` resolves a saved node without interpreting
     // current module claims, so it skips only this authored-scope check.
     if require_module_scope {
+        let modules_root = scoped_modules_root.expect("checked by the scope match above");
         let directory = provenance
             .modules_directory
             .as_ref()
             .expect("checked above");
-        let base = current
+        let base = roots
             .spec
             .as_ref()
             .unwrap_or(&provenance.roots.spec)
@@ -192,7 +188,7 @@ fn verify_graph_header_compatibility(
                 .config_path
                 .as_ref()
                 .map(|path| {
-                    current
+                    roots
                         .spec
                         .as_ref()
                         .unwrap_or(&provenance.roots.spec)
@@ -211,74 +207,80 @@ fn verify_graph_header_compatibility(
             }
         }
     }
-    provenance.verify(&current)?;
-    let source = provenance
-        .chunk_sources
-        .iter()
-        .find(|source| source.chunk_id == graph.chunk_id)
-        .with_context(|| {
-            format!(
-                "graph {} lacks source mapping for chunk {}",
-                graph_path.display(),
-                graph.chunk_id
-            )
-        })?;
-    let selector_path = if let Some(root) = selector_source_root {
-        graph_provenance::validate_relative_path(&source.source_path)?;
-        Some(root.join(&source.source_path))
-    } else {
-        // Legacy source-backed selectors search fallback roots when no flag is
-        // supplied. If that search finds a file, it must be the analyzed one.
-        // If it finds none, a graph/spec-only query can still proceed; a later
-        // source-backed selector read will fail in the resolver as before.
-        anonymous_resolution::resolve_source_file(
-            &source.source_path.to_string_lossy(),
-            None,
-            graph_path,
-            modules_root,
-        )
-        .ok()
-    };
-    if let Some(path) = selector_path {
-        let expected_path =
-            provenance.resolve(&source.input_file.root, &source.input_file.path, &current)?;
-        let canonical_expected = graph_provenance::absolute(&expected_path)?;
-        let canonical_actual = graph_provenance::absolute(&path)?;
-        if canonical_actual != canonical_expected {
+    let source_context = provenance.verify_chunk_source(roots, &graph.chunk_id)?;
+    let expected_path = graph_provenance::absolute(source_context.input_file())?;
+    let source_path = source_context.source_path().to_string_lossy();
+    let selector_candidate = if let Some(root) = selector_source_root {
+        let canonical_root = graph_provenance::absolute(root)?;
+        let logical_path = source_context.source_path();
+        let candidate = if !logical_path.is_absolute()
+            && graph_provenance::validate_relative_path(logical_path).is_ok()
+        {
+            Some(canonical_root.join(logical_path))
+        } else {
+            None
+        };
+        let root_contains_input =
+            canonical_root.is_dir() && expected_path.starts_with(&canonical_root);
+        let candidate_exists = match candidate.as_ref().map(std::fs::symlink_metadata) {
+            Some(Ok(_)) => true,
+            Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => true,
+            _ => false,
+        };
+        let canonical_candidate = if candidate_exists {
+            candidate.as_ref().map(|candidate| {
+                graph_provenance::absolute(candidate).unwrap_or_else(|_| candidate.clone())
+            })
+        } else {
+            None
+        };
+        if !root_contains_input
+            || canonical_candidate
+                .as_ref()
+                .is_some_and(|candidate| candidate != &expected_path)
+        {
             return Err(GraphMismatch::new(
                 GraphMismatchReason::SelectorSourceRoot {
                     chunk_id: graph.chunk_id.clone(),
-                    expected: canonical_expected,
-                    actual: canonical_actual,
+                    expected: expected_path,
+                    actual: canonical_candidate.unwrap_or_else(|| {
+                        candidate
+                            .clone()
+                            .unwrap_or_else(|| canonical_root.join(logical_path))
+                    }),
                 },
                 regenerate_command.clone(),
                 Some(regenerate_cwd.clone()),
             )
             .into());
         }
-        let actual = match std::fs::read(&path) {
-            Ok(bytes) => graph_provenance::sha256(&bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("reading selector source {}", path.display()));
-            }
-        };
-        if actual != source.sha256 {
+        candidate.filter(|_| candidate_exists)
+    } else {
+        modules_root.and_then(|modules_root| {
+            anonymous_resolution::find_source_file_candidate(
+                &source_path,
+                None,
+                graph_path,
+                modules_root,
+            )
+        })
+    };
+    if let Some(candidate) = selector_candidate {
+        let canonical_candidate = graph_provenance::absolute(&candidate)?;
+        if canonical_candidate != expected_path {
             return Err(GraphMismatch::new(
-                GraphMismatchReason::SelectorSource {
-                    path,
+                GraphMismatchReason::SelectorSourceRoot {
                     chunk_id: graph.chunk_id.clone(),
-                    expected: source.sha256.clone(),
-                    actual,
+                    expected: expected_path,
+                    actual: canonical_candidate,
                 },
-                regenerate_command.clone(),
-                Some(regenerate_cwd.clone()),
+                regenerate_command,
+                Some(regenerate_cwd),
             )
             .into());
         }
     }
-    Ok(())
+    Ok(source_context)
 }
 
 #[derive(Debug, Parser)]
@@ -299,7 +301,7 @@ pub struct DebundleArgs {
     #[arg(long, global = true, env = "DEBUNDLE_GRAPH_SOURCE_ROOT")]
     graph_source_root: Option<std::path::PathBuf>,
     /// Relocated package root used by graph compatibility; repeat for each package.
-    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = pipeline::parse_package_root_kv)]
+    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = package_args::parse_package_root_kv)]
     graph_package_roots: Vec<(String, std::path::PathBuf)>,
     #[command(flatten)]
     invocation: InvocationArgs,
@@ -324,6 +326,54 @@ impl InvocationArgs {
     }
 }
 
+/// Args for `debundle run`.
+#[derive(Debug, ClapArgs)]
+pub(crate) struct RunArgs {
+    #[command(flatten)]
+    pub(crate) transform: TransformArgs,
+    /// JSON {"modules":[{"chunk":"app","module":"features/view"}]}:
+    /// retain only these modules after resolving the complete spec and its
+    /// contracts. An empty list retains no named modules. Requires
+    /// inline_in_entry, per_atomic_group, or coarse_atomic_groups for every
+    /// materialized chunk.
+    /// Omitted members keep their source names in entry or generated residual
+    /// modules; normal gates and emission still run.
+    #[arg(long, conflicts_with = "graphs", value_name = "JSON")]
+    pub(crate) ownership_subset: Option<std::path::PathBuf>,
+    /// Take the cross-module summaries and per-chunk facts from this analysis
+    /// artifact (`debundle analyze`) instead of recomputing them. The run
+    /// refuses an artifact computed by another engine, from other sources,
+    /// or for another analysis projection, naming what differs.
+    #[arg(long)]
+    pub(crate) analysis: Option<std::path::PathBuf>,
+    /// Serialize complete dependency/program graphs for graph-backed queries.
+    #[arg(long)]
+    pub(crate) graphs: bool,
+    /// Write reports under this output root, with no JS/assets. Uses the same
+    /// canonical validators and requires a precomputed analysis artifact.
+    #[arg(
+        long,
+        requires = "analysis",
+        conflicts_with = "dry_run",
+        value_name = "OUT_ROOT"
+    )]
+    pub(crate) reports_only: Option<std::path::PathBuf>,
+    /// Stream all effect-conflict pairs and cells as per-chunk JSONL beside
+    /// reports. An accepted dry-run suppresses reports and refuses this request.
+    #[arg(long)]
+    pub(crate) effect_conflicts_jsonl: bool,
+    /// Export JSONL only for these materialized chunks (repeatable). Analysis
+    /// and bounded reports still cover the full configured input.
+    #[arg(long = "effect-conflicts-chunk", requires = "effect_conflicts_jsonl", value_parser = artifact::paths::normalize_module_path)]
+    pub(crate) effect_conflicts_chunks: Vec<String>,
+    /// Stream complete diagnostic evidence independently of full graphs (repeatable).
+    #[arg(long = "full-report", value_name = "KIND")]
+    pub(crate) full_reports: Vec<FullReportKind>,
+    /// Select only these full-report sinks; all summaries and checks stay exact.
+    #[arg(long = "full-report-chunk", requires = "full_reports", value_parser = artifact::paths::normalize_module_path)]
+    pub(crate) full_report_chunks: Vec<String>,
+}
+
 #[derive(Debug, Subcommand)]
 enum DebundleCommand {
     /// Run the debundle transform pipeline from a flat or tree-shaped spec.
@@ -333,9 +383,16 @@ enum DebundleCommand {
     /// unrealizable spec is rejected (there is no `run --no-verify` — fix
     /// the spec), and the rejection evidence (`cycles.json` /
     /// `atomic_group_conflicts.json`) is written under
-    /// `reports/tree/<chunk>/` next to `dependency_graph.json`, where
+    /// `reports/tree/<chunk>/` next to `dependency_graph.json.gz`, where
     /// `debundle gate list` / `gate describe` read it.
-    Run(TransformArgs),
+    Run(RunArgs),
+    /// Compute the analysis (cross-module summaries and every analysed
+    /// chunk's facts) from a projection written by `debundle spec
+    /// project-analysis`, as an artifact `debundle run --analysis` reads.
+    ///
+    /// The projection is the only spec input, so the artifact stays valid
+    /// across every spec edit that leaves the projection unchanged.
+    Analyze(AnalyzeArgs),
     /// Per-binding spec verbs (list, assign, unassign, rename, comment).
     Bindings(BindingsNs),
     /// Module-level spec verbs (list, merge, delete, propose, apply, comment).
@@ -356,6 +413,13 @@ enum DebundleCommand {
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
     InspectSource(InspectSourceArgs),
+    /// Explain which native-integrity guards a source unit failed and which
+    /// census witnesses leave each required intrinsic slot unknown.
+    #[command(name = "explain-integrity")]
+    ExplainIntegrity(integrity_explanation::ExplainIntegrityArgs),
+    /// Query original chunks' resolved ordinary static ESM import paths.
+    #[command(name = "static-imports")]
+    StaticImports(static_imports::StaticImportsArgs),
     /// List SCCs in the module-quotient graph.
     Scc(SccArgs),
     /// List the module-quotient neighbors of a binding's source_unit.
@@ -368,12 +432,37 @@ enum DebundleCommand {
     Snapshot(snapshot::SnapshotArgs),
 }
 
+fn cli_command() -> clap::Command {
+    DebundleArgs::command().mut_subcommand("modules", |modules| {
+        modules
+            .mut_subcommand("refine", |refine| {
+                // These commands did not previously consume the shared transform
+                // environment defaults. Keep their opt-in context explicit while
+                // leaving those defaults available to the existing run/edit verbs.
+                refine
+                    .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                    .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+            })
+            .mut_subcommand("apply", |apply| {
+                apply
+                    .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                    .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+            })
+    })
+}
+
 /// Parse the current process arguments with Clap metadata available for
 /// resolving environment values and defaults, then dispatch the command.
-pub fn run_debundle_cli_from_process() -> ExitCode {
+pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> ExitCode {
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
-    let command = DebundleArgs::command();
+    let command = cli_command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
+    if let Err(error) = transform_command::validate_transform_arg_matches(&matches) {
+        command
+            .clone()
+            .error(clap::error::ErrorKind::ArgumentConflict, error.to_string())
+            .exit();
+    }
     let args = DebundleArgs::from_arg_matches(&matches)
         .expect("Clap validated DebundleArgs before constructing ArgMatches");
     let query_format = top_level_query_format(&args.command);
@@ -389,7 +478,7 @@ pub fn run_debundle_cli_from_process() -> ExitCode {
         } else {
             None
         };
-        run_debundle_cli(args, invocation)
+        run_debundle_cli(args, invocation, analysis_engine_sha256)
     })();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -402,12 +491,20 @@ pub fn run_debundle_cli_from_process() -> ExitCode {
                 }
             }
             eprintln!("{error:#}");
-            ExitCode::from(1)
+            if error.downcast_ref::<GateRejected>().is_some() {
+                ExitCode::from(GATE_REJECTED_EXIT_CODE)
+            } else {
+                ExitCode::from(1)
+            }
         }
     }
 }
 
-fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) -> Result<()> {
+fn run_debundle_cli(
+    args: DebundleArgs,
+    invocation: Option<ResolvedInvocation>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     if let Some(record) = invocation {
         if let Some(path) = &args.invocation.invocation_out {
             let mut bytes = serde_json::to_vec_pretty(&record)?;
@@ -420,79 +517,127 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             return Ok(());
         }
     }
-    let graph_package_roots = pipeline::collect_package_roots(args.graph_package_roots)?;
-    if let Err(error) = verify_mixed_graph_command(
-        &args.command,
-        args.spec_root.as_deref(),
-        args.graph_source_root.as_deref(),
-        &graph_package_roots,
-    ) {
-        if top_level_query_format(&args.command).is_none() {
-            emit_graph_mismatch_json(command_output_format(&args.command), &error);
+    let roots = CurrentRoots {
+        spec: args.spec_root,
+        source: args.graph_source_root,
+        packages: package_args::collect_package_roots(args.graph_package_roots)?,
+    };
+    let describe_query = match &args.command {
+        DebundleCommand::Describe(describe_args) => {
+            Some(inspection_commands::validate_describe_query(describe_args)?)
         }
-        return Err(error);
-    }
+        _ => None,
+    };
+    let source_context = match verify_mixed_graph_command(&args.command, &roots) {
+        Ok(source_context) => source_context,
+        Err(error) => {
+            if top_level_query_format(&args.command).is_none() {
+                emit_graph_mismatch_json(command_output_format(&args.command), &error);
+            }
+            return Err(error);
+        }
+    };
     let writes_with_graph = match &args.command {
         DebundleCommand::Bindings(args) => args.writes_with_graph(),
         DebundleCommand::Modules(args) => args.writes_with_graph(),
         _ => false,
     };
     let result = match args.command {
-        DebundleCommand::Run(args) => {
-            let dry_run = args.dry_run;
+        DebundleCommand::Run(RunArgs {
+            transform: mut args,
+            ownership_subset,
+            analysis,
+            graphs,
+            reports_only,
+            effect_conflicts_jsonl,
+            effect_conflicts_chunks,
+            full_reports,
+            full_report_chunks,
+        }) => {
+            if let Some(root) = &reports_only {
+                if let Some(out_root) = &args.context.auxiliary.out_root {
+                    anyhow::ensure!(
+                        graph_provenance::absolute(root)? == graph_provenance::absolute(out_root)?,
+                        "--reports-only and --out-root must name the same output root"
+                    );
+                }
+                args.context.auxiliary.out_root = Some(root.clone());
+            }
+            let artifacts = reports_only.map_or(RunArtifacts::Program, |out_root| {
+                RunArtifacts::ReportsOnly { out_root }
+            });
+            let output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
-            run_transform_cli(
+            run_transform_with_analysis(
                 &cli,
                 TransformRunOptions {
-                    dry_run,
+                    ownership_subset: ownership_subset
+                        .as_deref()
+                        .map(lowering::ownership_subset::OwnershipSubset::read)
+                        .transpose()?,
+                    output,
+                    artifacts,
+                    graph_reports: if graphs {
+                        lowering::GraphReportSelection::Full
+                    } else {
+                        lowering::GraphReportSelection::None
+                    },
                     keep_going,
                     report_dir_override: None,
                     list_template_identifiers: false,
+                    effect_conflicts_jsonl,
+                    effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
+                    full_reports: full_reports.into_iter().collect(),
+                    full_report_chunks: full_report_chunks.into_iter().collect(),
                 },
+                analysis
+                    .as_deref()
+                    .map(|path| pipeline::AnalysisArtifactInput {
+                        path,
+                        analysis_engine_sha256,
+                    }),
             )?;
-            if dry_run {
+            if output == RunOutput::DryRun {
                 println!("dry-run: transform pipeline checks passed; no outputs written");
             }
             Ok(())
         }
-        DebundleCommand::Bindings(args) => bindings_commands::run(args),
-        DebundleCommand::Modules(args) => modules_commands::run(args),
+        DebundleCommand::Analyze(args) => args.run(analysis_engine_sha256),
+        DebundleCommand::Bindings(args) => {
+            bindings_commands::run(args, source_context.as_ref(), analysis_engine_sha256)
+        }
+        DebundleCommand::Modules(args) => {
+            modules_commands::run(args, source_context.as_ref(), analysis_engine_sha256)
+        }
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),
-        DebundleCommand::Coverage(args) => inspection_commands::run_coverage(args),
-        DebundleCommand::GraphSummary(args) => inspection_commands::run_graph_summary(args),
+        DebundleCommand::Coverage(args) => {
+            inspection_commands::run_coverage(args, source_context.as_ref())
+        }
+        DebundleCommand::GraphSummary(args) => {
+            inspection_commands::run_graph_summary(args, source_context.as_ref())
+        }
         DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
             describe_args,
-            InspectionRoots {
-                spec_root: args.spec_root.clone(),
-                graph_source_root: args.graph_source_root.clone(),
-                graph_package_roots: graph_package_roots.clone(),
-            },
+            source_context,
+            describe_query.expect("Describe query was validated before graph preflight"),
         ),
-        DebundleCommand::InspectSource(args) => inspection_commands::run_inspect_source(args),
+        DebundleCommand::InspectSource(args) => {
+            inspection_commands::run_inspect_source(args, source_context.as_ref())
+        }
+        DebundleCommand::StaticImports(args) => static_imports::run(args),
+        DebundleCommand::ExplainIntegrity(explain_args) => {
+            integrity_explanation::run(explain_args, roots)
+        }
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
-        DebundleCommand::Spec(args) => spec_commands::run(args),
+        DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref()),
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
-        DebundleCommand::Gate(gate_args) => run_gate_cli(
-            gate_args,
-            InspectionRoots {
-                spec_root: args.spec_root.clone(),
-                graph_source_root: args.graph_source_root.clone(),
-                graph_package_roots: graph_package_roots.clone(),
-            },
-        ),
-        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(
-            snapshot_args,
-            graph_provenance::CurrentRoots {
-                spec: args.spec_root,
-                source: args.graph_source_root,
-                packages: graph_package_roots,
-            },
-        ),
+        DebundleCommand::Gate(gate_args) => run_gate_cli(gate_args, roots),
+        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(snapshot_args, roots),
     };
     if result.is_ok() && writes_with_graph {
         eprintln!(
@@ -510,6 +655,8 @@ fn command_output_format(command: &DebundleCommand) -> OutputFormat {
         DebundleCommand::GraphSummary(args) => args.format,
         DebundleCommand::Describe(args) => args.format,
         DebundleCommand::InspectSource(args) => args.format,
+        DebundleCommand::StaticImports(args) => args.format,
+        DebundleCommand::ExplainIntegrity(args) => args.format,
         _ => None,
     };
     OutputFormat::resolve(format)
@@ -626,45 +773,48 @@ fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
         DebundleCommand::GraphSummary(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Describe(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::InspectSource(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::StaticImports(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::ExplainIntegrity(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Scc(args) => Some(OutputFormat::resolve(args.format)),
         DebundleCommand::Cluster(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::Spec(args) => args.query_format(),
         _ => None,
     }
 }
 
 fn verify_mixed_graph_command(
     command: &DebundleCommand,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
-) -> Result<()> {
+    roots: &CurrentRoots,
+) -> Result<Option<graph_provenance::VerifiedGraphSourceContext>> {
     match command {
-        DebundleCommand::Bindings(args) => {
-            args.verify_graph(spec_root, graph_source_root, graph_package_roots)
-        }
-        DebundleCommand::Modules(args) => {
-            args.verify_graph(spec_root, graph_source_root, graph_package_roots)
-        }
+        DebundleCommand::Bindings(args) => args.verify_graph(roots),
+        DebundleCommand::Modules(args) => args.verify_graph(roots),
         DebundleCommand::Coverage(args) => verify_graph_compatibility(
             &args.common.dependency_graph_path,
             &args.common.modules_root,
             args.source_root.as_deref(),
-            spec_root,
-            graph_source_root,
-            graph_package_roots,
+            roots,
             None,
-        ),
+        )
+        .map(Some),
         DebundleCommand::GraphSummary(args) if args.include_proposals => {
             verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 None,
             )
+            .map(Some)
         }
+        DebundleCommand::Describe(args) => verify_graph_compatibility(
+            &args.common.dependency_graph_path,
+            &args.common.modules_root,
+            args.source_root.as_deref(),
+            roots,
+            args.tree_config.as_deref(),
+        )
+        .map(Some),
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
             let graph = args.graph.as_deref().context("--id requires --graph")?;
             let modules = args.modules.as_deref().context("--id requires --modules")?;
@@ -674,19 +824,19 @@ fn verify_mixed_graph_command(
             )?;
             verify_graph_compatibility_with_scope(
                 graph,
-                modules,
+                Some(modules),
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 if args.id.as_deref().is_some_and(|id| id.starts_with("unit:")) {
                     GraphCompatibilityScope::ExactSourceUnit
                 } else {
                     GraphCompatibilityScope::AuthoredModuleTree { tree_config: None }
                 },
             )
+            .map(Some)
         }
-        _ => Ok(()),
+        DebundleCommand::Spec(args) => args.verify_graph(roots),
+        _ => Ok(None),
     }
 }
 
@@ -722,14 +872,14 @@ mod tests {
     use std::path::PathBuf;
 
     use clap::Parser;
-    use pipeline::TransformArgs;
+    use transform_command::TransformArgs;
 
     use super::{DebundleArgs, DebundleCommand};
 
     fn parsed_run_args(argv: &[&str]) -> TransformArgs {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");
         match parsed.command {
-            DebundleCommand::Run(args) => args,
+            DebundleCommand::Run(args) => args.transform,
             other => panic!("expected run command, got {other:?}"),
         }
     }

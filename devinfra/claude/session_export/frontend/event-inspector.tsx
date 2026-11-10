@@ -1,6 +1,6 @@
 import { useState, type JSX } from "react";
 import { Box, Code, Group, NativeSelect, Stack, Text, TextInput } from "@mantine/core";
-import type { Event } from "./api/schema";
+import type { Event } from "./schema";
 
 export function eventKind(event: Event): string {
   const subtype = event.payload.subtype;

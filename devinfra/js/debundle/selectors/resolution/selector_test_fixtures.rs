@@ -1,10 +1,10 @@
 //! Declarative inputs shared by compiler and solver tests; no expected outcomes.
 
-use analysis::SourceUnitId;
 use selector_ir::{
     ClaimKind, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram, SelectorTargetId,
     SourceUnitTerm, StringTerm, VariableDomain,
 };
+use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
 
 pub fn source_unit_fact(source_unit: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {

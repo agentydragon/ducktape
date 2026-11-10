@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"maps"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,24 +21,45 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 )
 
 const subscriptionID = "00000000-0000-0000-0000-0000000000b1"
 
+func TestNotificationsGuideIsAvailableWithoutServiceConfiguration(t *testing.T) {
+	code, stdout, stderr := invoke(nil, "notifications", "guide", "inbox")
+	if code != 0 || !strings.Contains(stdout, "acknowledge") {
+		t.Fatalf("guide: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestSubscribeCreateAcceptsActionSourceAsProtoJSON(t *testing.T) {
+	server := answering(pullRequestSubscription(1, false))
+	cli := newCLI(notificationsEnv(serveNotifications(t, server)), `{"sessionId":"session-1","idempotencyKey":"follow-1","source":{"actions":{"requestId":"action-1","afterSequence":7}}}`)
+	if code := cli.run("notifications", "subscribe", "create", "--request-file", "-"); code != 0 {
+		t.Fatalf("create: exit %d: %s", code, cli.stderr.String())
+	}
+	requests := received[*notificationspb.CreateSubscriptionRequest](server)
+	if len(requests) != 1 || requests[0].GetSessionId() != "session-1" || requests[0].GetIdempotencyKey() != "follow-1" || requests[0].GetSource().GetActions().GetRequestId() != "action-1" || requests[0].GetSource().GetActions().GetAfterSequence() != 7 {
+		t.Fatalf("create requests: %v", requests)
+	}
+}
+
 // notificationsServer is the Notification Service's gRPC API with canned answers. Every CLI call reaches it
-// through the real gRPC-Gateway facade, so the routes, JSON and error bodies are the service's own.
+// directly over gRPC, preserving the service's typed requests and status codes.
 type notificationsServer struct {
 	notificationspb.UnimplementedNotificationsServer
 
-	create func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error)
-	list   func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error)
-	get    func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error)
-	renew  func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error)
-	cancel func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error)
-	send   func(*notificationspb.SendMessageRequest) (*notificationspb.Message, error)
-	lookup func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error)
+	create  func(*notificationspb.CreateSubscriptionRequest) (*notificationspb.Subscription, error)
+	list    func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error)
+	get     func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error)
+	renew   func(*notificationspb.RenewSubscriptionRequest) (*notificationspb.Subscription, error)
+	cancel  func(*notificationspb.CancelSubscriptionRequest) (*notificationspb.Subscription, error)
+	send    func(*notificationspb.SendMessageRequest) (*notificationspb.Message, error)
+	lookup  func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error)
+	inboxes func() ([]*notificationspb.Inbox, error)
+	inbox   func(*notificationspb.GetInboxRequest) (*notificationspb.Inbox, error)
+	retire  func(*notificationspb.RetireInboxRequest) error
 
 	mu            sync.Mutex
 	calls         []proto.Message
@@ -110,7 +128,122 @@ func (s *notificationsServer) GetMessage(ctx context.Context, request *notificat
 	return &notificationspb.GetMessageResponse{Message: message}, err
 }
 
-// serveNotifications runs the servicer behind the gateway and returns the facade's base URL.
+func (s *notificationsServer) ReadInbox(ctx context.Context, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
+	s.record(ctx, request)
+	return &notificationspb.ReadInboxResponse{Inbox: &notificationspb.Inbox{Id: "inbox", SessionId: request.GetSessionId()}}, nil
+}
+
+func (s *notificationsServer) AcknowledgeInbox(ctx context.Context, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
+	s.record(ctx, request)
+	return &notificationspb.AcknowledgeInboxResponse{Inbox: &notificationspb.Inbox{Id: "inbox", SessionId: request.GetSessionId(), Acknowledged: request.GetThroughCursor()}}, nil
+}
+
+func (s *notificationsServer) ListInboxes(ctx context.Context, request *notificationspb.ListInboxesRequest) (*notificationspb.ListInboxesResponse, error) {
+	s.record(ctx, request)
+	inboxes, err := s.inboxes()
+	return &notificationspb.ListInboxesResponse{Inboxes: inboxes}, err
+}
+
+func (s *notificationsServer) GetInbox(ctx context.Context, request *notificationspb.GetInboxRequest) (*notificationspb.GetInboxResponse, error) {
+	s.record(ctx, request)
+	inbox, err := s.inbox(request)
+	return &notificationspb.GetInboxResponse{Inbox: inbox}, err
+}
+
+func (s *notificationsServer) RetireInbox(ctx context.Context, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
+	s.record(ctx, request)
+	return &notificationspb.RetireInboxResponse{}, s.retire(request)
+}
+
+func TestInboxInventoryAndRetirementUseGRPC(t *testing.T) {
+	servicer := &notificationsServer{
+		inboxes: func() ([]*notificationspb.Inbox, error) {
+			return []*notificationspb.Inbox{
+				{Id: "inbox-1", SessionId: "session-1"},
+				{Id: "inbox-2", SessionId: "session-2", Retired: true},
+			}, nil
+		},
+		inbox: func(request *notificationspb.GetInboxRequest) (*notificationspb.Inbox, error) {
+			if request.GetSessionId() == "session-5" {
+				return nil, nil
+			}
+			return &notificationspb.Inbox{Id: "inbox-1", SessionId: request.GetSessionId()}, nil
+		},
+		retire: func(*notificationspb.RetireInboxRequest) error { return nil },
+	}
+	env := notificationsEnv(serveNotifications(t, servicer))
+
+	code, stdout, stderr := invoke(env, "notifications", "inboxes", "--json")
+	if code != 0 {
+		t.Fatalf("inboxes: exit %d: %s", code, stderr)
+	}
+	var listed []json.RawMessage
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		listed = append(listed, json.RawMessage(line))
+	}
+	if len(listed) != 2 {
+		t.Fatalf("inboxes JSON lines = %q, want two", stdout)
+	}
+	var first, second notificationspb.Inbox
+	if err := protojson.Unmarshal(listed[0], &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := protojson.Unmarshal(listed[1], &second); err != nil {
+		t.Fatal(err)
+	}
+	if first.GetId() != "inbox-1" || second.GetId() != "inbox-2" || !second.GetRetired() {
+		t.Fatalf("listed inboxes = %v, %v", &first, &second)
+	}
+
+	code, stdout, stderr = invoke(env, "notifications", "inbox", "get", "session-3", "--json")
+	if code != 0 {
+		t.Fatalf("inbox get: exit %d: %s", code, stderr)
+	}
+	var got notificationspb.Inbox
+	if err := protojson.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.GetSessionId() != "session-3" {
+		t.Fatalf("inbox get returned session %q, want session-3", got.GetSessionId())
+	}
+
+	code, stdout, stderr = invoke(env, "notifications", "inbox", "get", "session-5")
+	if code != 0 || stdout != "no inbox for session session-5\n" {
+		t.Fatalf("inbox get without an inbox: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = invoke(env, "notifications", "inbox", "retire", "session-4", "--json")
+	if code != 0 || stdout != "{}\n" {
+		t.Fatalf("inbox retire: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	listRequests := received[*notificationspb.ListInboxesRequest](servicer)
+	getRequests := received[*notificationspb.GetInboxRequest](servicer)
+	retireRequests := received[*notificationspb.RetireInboxRequest](servicer)
+	if len(listRequests) != 1 || len(getRequests) != 2 || getRequests[0].GetSessionId() != "session-3" || getRequests[1].GetSessionId() != "session-5" || len(retireRequests) != 1 || retireRequests[0].GetSessionId() != "session-4" {
+		t.Fatalf("inbox requests: list %v, get %v, retire %v", listRequests, getRequests, retireRequests)
+	}
+}
+
+func TestInboxCommandsAddressTheSession(t *testing.T) {
+	s := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, s))
+	if code, _, stderr := invoke(env, "notifications", "inbox", "read", "session-1", "--after", "2", "--limit", "5"); code != 0 {
+		t.Fatalf("read: %d %s", code, stderr)
+	}
+	if code, _, stderr := invoke(env, "notifications", "inbox", "ack", "session-1", "--through", "4"); code != 0 {
+		t.Fatalf("ack: %d %s", code, stderr)
+	}
+	reads := received[*notificationspb.ReadInboxRequest](s)
+	acks := received[*notificationspb.AcknowledgeInboxRequest](s)
+	if len(reads) != 1 || reads[0].GetSessionId() != "session-1" || reads[0].GetAfterCursor() != 2 || reads[0].GetLimit() != 5 {
+		t.Errorf("reads: %v", reads)
+	}
+	if len(acks) != 1 || acks[0].GetSessionId() != "session-1" || acks[0].GetThroughCursor() != 4 {
+		t.Errorf("acks: %v", acks)
+	}
+}
+
+// serveNotifications runs the Notification gRPC servicer.
 func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -121,20 +254,12 @@ func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	notificationspb.RegisterNotificationsServer(server, servicer)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	handler, err := facade.NewHandler(ctx, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	facadeServer := httptest.NewServer(handler)
-	t.Cleanup(facadeServer.Close)
-	return facadeServer.URL
+	return "http://" + listener.Addr().String()
 }
 
 func pullRequestSubscription(version int64, cancelled bool) *notificationspb.Subscription {
 	return &notificationspb.Subscription{
-		Id: subscriptionID, InboxId: "00000000-0000-0000-0000-0000000000b2", IdempotencyKey: "k", Version: version,
+		Id: subscriptionID, InboxId: "00000000-0000-0000-0000-0000000000b2", IdempotencyKey: proto.String("k"), Version: proto.Int64(version),
 		Cancelled: cancelled, ExpiresAt: timestamppb.New(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
 		Source: &notificationspb.Source{Provider: &notificationspb.Source_Github{Github: &notificationspb.GitHubSource{
 			Repository: "owner/repo",
@@ -197,8 +322,8 @@ func TestSubscribeToAPullRequest(t *testing.T) {
 		t.Fatalf("exit %d, %d creations, stdout %q, stderr %q", code, len(sent), stdout, stderr)
 	}
 	got := sent[0]
-	if ref := got.GetDestinationRef(); ref.GetNamespace() != "test-ns" || ref.GetName() != "test-sandbox" || ref.GetUid() != "test-uid" || got.GetSessionId() != "test-session" {
-		t.Errorf("destination = %v %q, want the environment's", ref, got.GetSessionId())
+	if got.GetSessionId() != "test-session" {
+		t.Errorf("Session = %q, want the environment's", got.GetSessionId())
 	}
 	github := got.GetSource().GetGithub()
 	if github.GetRepository() != "owner/repo" || github.GetSubject().GetPullRequest().GetNumber() != 7 {
@@ -302,13 +427,13 @@ func TestSubscribeOnlyToMergeabilityReplacesTheDefaultEvents(t *testing.T) {
 	}
 }
 
-func TestSubscribeDestinationFlagWinsOverTheEnvironment(t *testing.T) {
+func TestSubscribeSessionFlagWinsOverTheEnvironment(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))
-	flag := `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"from-flag"}`
-	invoke(env, subscribeArgs("--destination", flag)...)
-	delete(env, "AGENTPLANE_DESTINATION")
-	invoke(env, subscribeArgs("--destination", flag)...)
+	flag := "from-flag"
+	invoke(env, subscribeArgs("--session", flag)...)
+	delete(env, "AGENTPLANE_SESSION_ID")
+	invoke(env, subscribeArgs("--session", flag)...)
 	code, _, _ := invoke(env, subscribeArgs()...)
 	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
 	if len(sent) != 2 || sent[0].GetSessionId() != "from-flag" || sent[1].GetSessionId() != "from-flag" || code != 2 {
@@ -335,7 +460,7 @@ func TestSubscribeToARetiredInboxExitsRefusedNamingTheCode(t *testing.T) {
 	servicer := failing(status.Error(codes.FailedPrecondition, "inbox is retired"))
 	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), append(subscribeArgs(), "--json")...)
 	got := errorOf(t, stderr)
-	if code != 1 || stdout != "" || got.Code != "FAILED_PRECONDITION" || got.HTTPStatus == nil || *got.HTTPStatus != http.StatusBadRequest || got.Message != "inbox is retired" {
+	if code != 1 || stdout != "" || got.Code != "FAILED_PRECONDITION" || got.HTTPStatus != nil || got.Message != "inbox is retired" {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 1 naming FAILED_PRECONDITION, not the 400 it arrives as", code, stdout, got)
 	}
 }
@@ -470,18 +595,12 @@ func TestSubscriptionsFollowPagesOf128(t *testing.T) {
 	}
 }
 
-func TestDestinationIsStrictAboutItsFields(t *testing.T) {
+func TestSubscribeRequiresSessionID(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))
-	for _, destination := range []string{
-		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"x","source":{}}`,
-		`{"destination_ref":{"namespace":"n","name":"s"},"session_id":"x"}`,
-		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"}}`,
-		`not json`,
-	} {
-		if code, stdout, _ := invoke(env, subscribeArgs("--destination", destination)...); code != 2 || stdout != "" {
-			t.Errorf("destination %s: exit %d, stdout %q; want exit 2", destination, code, stdout)
-		}
+	delete(env, "AGENTPLANE_SESSION_ID")
+	if code, stdout, _ := invoke(env, subscribeArgs()...); code != 2 || stdout != "" {
+		t.Errorf("exit %d, stdout %q; want exit 2 without AGENTPLANE_SESSION_ID", code, stdout)
 	}
 	if sent := received[*notificationspb.CreateSubscriptionRequest](servicer); len(sent) != 0 {
 		t.Errorf("%d creations after bad destinations, want none", len(sent))
@@ -507,7 +626,7 @@ func messaging(message *notificationspb.Message, err error) *notificationsServer
 }
 
 func sendArgs(extra ...string) []string {
-	return append([]string{"notifications", "send", "test-recipient-ns/test-recipient", "test-recipient-session"}, extra...)
+	return append([]string{"notifications", "send", "test-recipient-session"}, extra...)
 }
 
 func TestSendAMessageFromThisSession(t *testing.T) {
@@ -518,12 +637,11 @@ func TestSendAMessageFromThisSession(t *testing.T) {
 		t.Fatalf("exit %d, %d sends, stdout %q, stderr %q", code, len(sent), stdout, stderr)
 	}
 	want := &notificationspb.SendMessageRequest{
-		DestinationRef: &notificationspb.DestinationRef{Namespace: "test-recipient-ns", Name: "test-recipient"},
-		SessionId:      "test-recipient-session", IdempotencyKey: sent[0].GetIdempotencyKey(), Body: "Please review the change.",
+		SessionId: "test-recipient-session", IdempotencyKey: sent[0].GetIdempotencyKey(), Body: "Please review the change.",
 		FromSession: proto.String("test-session"),
 	}
 	if !proto.Equal(sent[0], want) {
-		t.Errorf("sent %v, want %v: any incarnation, from the Session of AGENTPLANE_DESTINATION", sent[0], want)
+		t.Errorf("sent %v, want %v: addressed by Session ID, from AGENTPLANE_SESSION_ID", sent[0], want)
 	}
 	// The generated key is on stderr before the POST, for a retry with --key.
 	if got := decodeObject(t, stderr); sent[0].GetIdempotencyKey() == "" || got["idempotency_key"] != sent[0].GetIdempotencyKey() {
@@ -535,14 +653,14 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 	servicer := messaging(acceptedMessage(), nil)
 	env := notificationsEnv(serveNotifications(t, servicer))
 	c := newCLI(env, "line one\nline two\n")
-	code := c.run(sendArgs("--body-file", "-", "--uid", "test-recipient-uid", "--from-session", "test-flag-session", "--key", "test-key")...)
-	delete(env, "AGENTPLANE_DESTINATION")
+	code := c.run(sendArgs("--body-file", "-", "--from-session", "test-flag-session", "--key", "test-key")...)
+	delete(env, "AGENTPLANE_SESSION_ID")
 	invoke(env, sendArgs("--body", "test body", "--key", "test-key-2")...)
 	sent := received[*notificationspb.SendMessageRequest](servicer)
 	if code != 0 || len(sent) != 2 {
 		t.Fatalf("exit %d, %d sends, stderr %q", code, len(sent), c.stderr.String())
 	}
-	if got := sent[0]; got.GetBody() != "line one\nline two\n" || got.GetDestinationRef().GetUid() != "test-recipient-uid" ||
+	if got := sent[0]; got.GetBody() != "line one\nline two\n" || got.GetSessionId() != "test-recipient-session" ||
 		got.GetFromSession() != "test-flag-session" || got.GetIdempotencyKey() != "test-key" {
 		t.Errorf("sent %v; want stdin as given, the flags' UID, Session and key", got)
 	}
@@ -550,7 +668,7 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 		t.Errorf("stderr %q, want nothing when --key is given", c.stderr.String())
 	}
 	if sent[1].FromSession != nil {
-		t.Errorf("from_session %q without AGENTPLANE_DESTINATION, want none", sent[1].GetFromSession())
+		t.Errorf("from_session %q without AGENTPLANE_SESSION_ID, want none", sent[1].GetFromSession())
 	}
 }
 
@@ -558,17 +676,11 @@ func TestSendRefusesAMalformedCommandBeforeSending(t *testing.T) {
 	servicer := messaging(acceptedMessage(), nil)
 	env := notificationsEnv(serveNotifications(t, servicer))
 	for name, args := range map[string][]string{
-		"no namespace":    {"notifications", "send", "test-recipient", "test-recipient-session", "--body", "x"},
-		"nested name":     {"notifications", "send", "test-ns/a/b", "test-recipient-session", "--body", "x"},
-		"no text":         sendArgs(),
-		"two texts":       sendArgs("--body", "x", "--body-file", "-"),
-		"missing file":    sendArgs("--body-file", t.TempDir()+"/test-missing"),
-		"bad destination": sendArgs("--body", "x"),
+		"extra destination": {"notifications", "send", "test-ns/test-recipient", "test-recipient-session", "--body", "x"},
+		"no text":           sendArgs(),
+		"two texts":         sendArgs("--body", "x", "--body-file", "-"),
+		"missing file":      sendArgs("--body-file", t.TempDir()+"/test-missing"),
 	} {
-		env := maps.Clone(env)
-		if name == "bad destination" {
-			env["AGENTPLANE_DESTINATION"] = "not json"
-		}
 		if code, stdout, _ := invoke(env, args...); code != 2 || stdout != "" {
 			t.Errorf("%s: exit %d, stdout %q; want exit 2", name, code, stdout)
 		}
@@ -617,31 +729,6 @@ func TestMessageShowsWhatTheSenderCanFollow(t *testing.T) {
 	}
 	if strings.Contains(stdout, "covered") {
 		t.Errorf("stdout %q says covered, which this message is not", stdout)
-	}
-}
-
-func TestEgressRulesPassThroughAndProxyRefusalsAreAttributed(t *testing.T) {
-	rules := `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[{"name":"basic","rules":[{"hosts":["api.example.com"],"methods":{"values":["GET"]},"paths":null,"credential":null}]}]}`
-	var refuse atomic.Bool
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		if refuse.Load() {
-			w.Header().Set(egressHeader, "denied; reason=no-rule")
-			reply(w, 403, "")
-			return
-		}
-		reply(w, 200, rules)
-	})
-	code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if code != 0 || strings.TrimSpace(stdout) != rules {
-		t.Errorf("exit %d, stdout %q; want the rules as served", code, stdout)
-	}
-	if code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules"); code != 0 || !strings.Contains(stdout, "api.example.com") {
-		t.Errorf("text mode: exit %d, stdout %q", code, stdout)
-	}
-	refuse.Store(true)
-	code, _, stderr := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if got := errorOf(t, stderr); code != 1 || got.Source != sourceEgress || got.Reason == nil || *got.Reason != "no-rule" {
-		t.Errorf("exit %d, envelope %+v; want exit 1 attributed to the egress proxy", code, got)
 	}
 }
 
@@ -702,5 +789,18 @@ func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 		status.GetReviews().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T12:02:00Z" ||
 		status.GetReviews().GetRefreshingUntil().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T12:03:00Z" {
 		t.Fatalf("summary did not preserve review status: %v", &status)
+	}
+}
+
+func TestNotificationClientOmitsBearerWhenCredentialIsUnset(t *testing.T) {
+	servicer := answering(pullRequestSubscription(1, false))
+	env := notificationsEnv(serveNotifications(t, servicer))
+	delete(env, "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL")
+	code, _, stderr := invoke(env, "notifications", "subscriptions", "--limit", "1", "--json")
+	if code != 0 {
+		t.Fatalf("subscriptions: exit %d: %s", code, stderr)
+	}
+	if len(servicer.authorization) != 0 {
+		t.Fatalf("authorization = %v; want no bearer when the gRPC credential is unset", servicer.authorization)
 	}
 }

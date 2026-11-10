@@ -76,32 +76,26 @@ fn unpublished_metadata_target_stays_deferred_after_opaque_call() {
     let fixture = run_fixture(
         FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
     );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/controllers/controller.js",
-        &["Controller"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
     assert_preserved_entry_output(&fixture, "42 read,record\n");
+    // These are internal modules of the designated entry, not alternative ESM
+    // roots. Probe their export boundaries after that entry initializes them.
+    assert_generated_module_after_entry_script(
+        &fixture,
+        r#"const controller = await import('./static/app/modules/controllers/controller.js');
+const dynamic = await import('./static/app/modules/values/dynamic.js');
+const later = await import('./static/app/modules/values/later.js');
+console.log('Controller' in controller, 'later' in controller,
+  'dynamic' in dynamic, 'later' in dynamic, 'later' in later, 'dynamic' in later);
+"#,
+        "true false true false true false\n",
+    );
 }
 
 #[test]
 fn published_metadata_target_keeps_early_method_read() {
     let source = source_with_opaque_write().replace(
-        "const prefix = new globalThis.Error();",
-        "globalThis.saved = Controller;\nconst prefix = new globalThis.Error();",
+        "const prefix = new globalThis.Date();",
+        "globalThis.saved = Controller;\nconst prefix = new globalThis.Date();",
     );
     let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
     claimed.push(logical_module(
@@ -119,7 +113,7 @@ fn source_with_opaque_write() -> String {
     SOURCE
         .replace(
             "const later = 42;",
-            r#"const prefix = new globalThis.Error();
+            r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 42;

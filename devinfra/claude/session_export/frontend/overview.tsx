@@ -1,7 +1,7 @@
 import type { JSX, ReactNode } from "react";
 import { Alert, Badge, Button, Code, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 
-import type { SyncStatus } from "./api/schema";
+import type { SyncStatus } from "./schema";
 import { ago, every, lastEvent, nextPoll, plural, untilExpiry } from "./status";
 
 type Props = {

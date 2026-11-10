@@ -77,26 +77,6 @@ class FileEntry:
         )
 
 
-@dataclass
-class DeviceInfo:
-    version: str
-    mac: str
-    ssid: str
-    maxtime: str
-
-
-@dataclass
-class CardConfig:
-    """Card WiFi AP configuration. Read/write via gconfig/sconfig (unverified)."""
-
-    ssid: str = ""
-    password: str = ""
-    auth: str = "WPA2"
-    channel: str = "6"
-    mac: str = ""
-    repeater: bool = False
-
-
 class EZShareClient:
     """Client for ez Share WiFi SD card."""
 
@@ -111,11 +91,6 @@ class EZShareClient:
         base = urllib.parse.urlsplit(self._base)
         return urllib.parse.urlunsplit((base.scheme, base.netloc, parsed.path, parsed.query, parsed.fragment))
 
-    def _get_bytes(self, path: str, timeout: int = 30) -> bytes:
-        with urllib.request.urlopen(f"{self._base}{path}", timeout=timeout) as r:
-            data: bytes = r.read()
-        return data
-
     def _get_url_bytes(self, url: str, timeout: int = 30) -> bytes:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             data: bytes = r.read()
@@ -125,27 +100,6 @@ class EZShareClient:
         # Strip encoding declaration — gb2312 is unsupported by ET's string parser.
         # All filenames in practice are ASCII so this is safe.
         return ET.fromstring(data.replace(b'encoding="gb2312"', b""))
-
-    def get_version(self) -> str:
-        root = self._parse_xml(self._get_bytes("/client?command=version"))
-        return root.findtext(".//version") or ""
-
-    def get_mac(self) -> str:
-        root = self._parse_xml(self._get_bytes("/client?command=devicemac"))
-        return root.findtext(".//mac") or ""
-
-    def get_ssid(self) -> str:
-        root = self._parse_xml(self._get_bytes("/client?command=devicemac"))
-        return root.findtext(".//ssid") or ""
-
-    def get_maxtime(self) -> str:
-        root = self._parse_xml(self._get_bytes("/client?command=maxtime"))
-        return root.findtext(".//time") or ""
-
-    def get_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            version=self.get_version(), mac=self.get_mac(), ssid=self.get_ssid(), maxtime=self.get_maxtime()
-        )
 
     def listdir_url(self, url: str) -> list[FileEntry]:
         """List a directory by its GETFILELIST URL. Excludes '.' and '..' entries."""
@@ -178,26 +132,6 @@ class EZShareClient:
             while chunk := r.read(65536):
                 f.write(chunk)
         tmp.rename(dest)
-
-    # Card config (unverified on this firmware)
-    def get_config(self) -> CardConfig:
-        root = self._parse_xml(self._get_bytes("/pdclient.cgi?command=gconfig"))
-        data = {child.tag: child.text or "" for child in root}
-        return CardConfig(
-            ssid=data.get("ssid", ""),
-            password=data.get("password", ""),
-            auth=data.get("auth", "WPA2"),
-            channel=data.get("chanel", "6"),
-            mac=data.get("mac", ""),
-            repeater=data.get("repeater") == "1",
-        )
-
-    def reboot(self) -> None:
-        self._get_bytes("/pdclient.cgi?command=reboot")
-
-    def login(self, password: str) -> bool:
-        data = self._get_bytes(f"/pdclient.cgi?command=Login&password={urllib.parse.quote(password)}")
-        return b"<clientLogin>1</clientLogin>" in data
 
 
 def download_relpath(download_url: str) -> str:

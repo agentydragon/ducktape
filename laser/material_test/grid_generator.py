@@ -31,7 +31,7 @@ from laser.lightburn.lbrn2_writer import (
     VAlign,
     XForm,
 )
-from laser.ruida.rd_writer import RdJob, RdLayer, RdRect
+from laser.ruida.rd_format import RdJob, RdLayer, RdRect
 
 # ── Cut parameter enum ─────────────────────────────────────────────────────────
 

@@ -22,7 +22,7 @@ from agent_core.events import AssistantText, Response, ToolCall
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool
 from agent_core.tool_provider import ToolProvider
-from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
+from openai_utils.model import Model, SystemMessage, UserMessage
 from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
 from skills.info_gathering.evals.harness import (
     add_common_args,
@@ -130,13 +130,7 @@ class _TwentyQuestionsRunner:
     """Runs a single 20Q eval game with two Agent instances communicating in a loop."""
 
     def __init__(
-        self,
-        *,
-        name: str,
-        model: OpenAIModelProto,
-        agent_system: str,
-        sim_system: str,
-        agent_tool_provider: ToolProvider,
+        self, *, name: str, model: Model, agent_system: str, sim_system: str, agent_tool_provider: ToolProvider
     ) -> None:
         self.name = name
         self.model = model
@@ -249,7 +243,7 @@ class _TwentyQuestionsRunner:
 async def run_twenty_questions(
     *,
     name: str,
-    model: OpenAIModelProto,
+    model: Model,
     agent_system: str,
     first_user_message: str,
     sim_system: str,

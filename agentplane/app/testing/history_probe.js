@@ -1,8 +1,8 @@
 // Opt-in per-frame geometry probe for investigating history layout in browser tests.
 // Read back through window.__historyProbe (history_probe.py).
 //
-// The history positions its rows with `transform`, which the browser's layout-instability API
-// does not count, so this also compares what each frame painted with the frame before it. A frame
+// Compare each mounted row's position with the previous frame and attribute movement to scrolling,
+// in addition to collecting browser layout-instability entries. A frame
 // is read in the task after its animation callbacks, style, layout and resize-observer delivery
 // have run, which is when the browser has committed it: a `requestAnimationFrame` callback runs
 // before all of those and would report a state the frame never shows.

@@ -27,6 +27,13 @@ bazelisk run //finance/plaid/spend/desktop:plaid_spend_cli
 The CLI reads the same view and status over the session D-Bus interface as the panel extension. OAuth tokens remain
 owned by the daemon and stored in Secret Service.
 
+The panel's **Customize panel…** menu opens preferences for independently showing and ordering the status icon,
+abbreviated available balance, pace percentage, and sparkline. A switch in the menu or preferences chooses the 7- or
+30-day pace. The percentage compares the selected recorded purchase average with the daily leash, independently of
+the existing forecast/pace warning also shown in the expanded view. Green means at or below the leash, yellow above 100% through 120%, and red above
+120% or when the allowance is exhausted. The sparkline uses backend-calculated daily history, with a dotted line at
+the current leash and gaps for unknown coverage. Exact available balance remains in the menu.
+
 ## Wire contract
 
 The client calls `GET /api/v1/view` and `GET /api/v1/events` on the configured HTTPS API base. Both use
@@ -35,11 +42,23 @@ subsequent notifications are full JSON views under the `view` event name. Each v
 `generated_at` and `cards` fields. A card has a discriminated `statement_period` (`statement`, `provisional`, or
 `unavailable`) and server-computed spend, pending, limit, percentage, alert, and sync fields.
 
-When present, the `allowance` object supplies the available balance, monthly credit, period-keyed spend and recorded
-pace, unmatched charge totals, a separate forecast, next credit and sync time; unavailable allowance states are shown
-without inventing a balance. Money fields use the currency's minor unit. `spend_percent` and `alert_state` are rendered
-as supplied; `spend_percent` is a decimal string in JSON. The desktop client does not calculate alerts or spend. Null
-spend and unavailable periods render as unavailable.
+When present, the `allowance` object supplies the available balance, monthly credit, daily reference rate, period-keyed
+spend and recorded pace, unmatched charge totals, a separate forecast, next credit and sync time; unavailable allowance
+states are shown without inventing a balance. Money fields use the currency's minor unit. The service supplies
+`daily_reference_minor_units`; desktop clients use it without recalculating it. Card `spend_percent` and `alert_state`
+are rendered as supplied; `spend_percent` is a decimal string in JSON. The panel derives the selected pace percentage
+and its color from the supplied daily values; spend itself is calculated by the server. Null spend and unavailable
+periods render as unavailable.
+
+When the sparkline is enabled, the extension requests `GetPaceHistory()` from the daemon after each view update; the
+daemon calls the authenticated `GET /api/v1/pace-history` endpoint on demand. Missing history or an older daemon or
+server leaves the graph unavailable while the rest of the panel continues to work. This separate endpoint does not
+change the strict view shape used by older clients. See the [API description](../README.md#api) for coverage and
+reconstruction semantics.
+
+`AllowanceView` is strict. A client built before this required field was added rejects the extra field from a newer API,
+and a client built with the new model rejects an older API response that omits it. Release the desktop package and
+service contract together; neither side can be safely staggered while this strict shape is in use.
 
 ## Login and credentials
 

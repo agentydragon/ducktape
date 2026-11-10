@@ -1,0 +1,161 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_testonly = True)
+
+py_library(
+    name = "namespaces",
+    srcs = ["namespaces.py"],
+    visibility = [
+        "//agentplane/system_tests/x/shared_cluster:__subpackages__",
+    ],
+)
+
+py_library(
+    name = "operator_releases",
+    srcs = ["operator_releases.py"],
+)
+
+py_binary(
+    name = "lease_bin",
+    main_module = "agentplane.system_tests.x.shared_cluster.lease",
+    deps = [":lease"],
+)
+
+py_library(
+    name = "render_infrastructure",
+    srcs = ["render_infrastructure.py"],
+    deps = [
+        ":operator_releases",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "render_infrastructure_bin",
+    main_module = "agentplane.system_tests.x.shared_cluster.render_infrastructure",
+    deps = [":render_infrastructure"],
+)
+
+genrule(
+    name = "infrastructure_manifests",
+    srcs = [
+        "//agentplane/crds",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "@cert_manager_v1_21_2_release//file",
+        "@kubevirt_operator_bundle//file",
+        "@kyverno_install//file",
+    ],
+    outs = [
+        "infrastructure/agentplane-crds.yaml",
+        "infrastructure/cert-manager.yaml",
+        "infrastructure/cert-manager-probe.yaml",
+        "infrastructure/kubevirt-operator.yaml",
+        "infrastructure/kubevirt.yaml",
+        "infrastructure/kyverno.yaml",
+        "infrastructure/trust-manager.yaml",
+        "infrastructure/trust-manager-probe.yaml",
+    ],
+    cmd = """
+$(location :render_infrastructure_bin) \\
+  --cert-manager $(location @cert_manager_v1_21_2_release//file) \\
+  --trust-manager $(location //agentplane/system_tests/k3s/pki:trust_manager_install_yaml) \\
+  --kubevirt-operator $(location @kubevirt_operator_bundle//file) \\
+  --kyverno $(location @kyverno_install//file) \\
+  $$(printf -- '--crd %s ' $(locations //agentplane/crds:crds)) \\
+  --output $(@D)/infrastructure
+""",
+    tools = [":render_infrastructure_bin"],
+)
+
+pkg_tar(
+    name = "infrastructure_layer",
+    srcs = [
+        "bootstrap",
+        ":infrastructure_manifests",
+    ],
+    package_dir = "/opt/agentplane-test-cluster",
+    visibility = ["//agentplane/system_tests/x/shared_cluster:__subpackages__"],
+)
+
+py_test(
+    name = "test_infrastructure",
+    srcs = ["test_infrastructure.py"],
+    data = [":infrastructure_layer"],
+    env = {"INFRASTRUCTURE_LAYER_RLOCATION": "$(rlocationpath :infrastructure_layer)"},
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "permissions",
+    srcs = ["permissions.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_test(
+    name = "test_permissions",
+    srcs = ["test_permissions.py"],
+    deps = [
+        ":permissions",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "allocation",
+    srcs = ["allocation.py"],
+    deps = [
+        ":namespaces",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "lease",
+    srcs = ["lease.py"],
+    deps = [
+        ":allocation",
+        ":namespaces",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_allocation",
+    srcs = ["test_allocation.py"],
+    data = [":lease_bin"],
+    env = {"LEASE_BINARY_RLOCATION": "$(rlocationpath :lease_bin)"},
+    deps = [
+        ":allocation",
+        ":namespaces",
+        ":permissions",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)

@@ -1,0 +1,1960 @@
+//! A narrowly selected native call can retain the existing call model while
+//! unknown receiver writes elsewhere in the provider remain visible.
+
+use analysis::StatementKind;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::reflective_provider::{
+    REFLECT_CHUNKS, REFLECT_FILES, unknown_receiver_witness,
+};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, json_execution_rows, json_has_unknown_call_target, json_node_declaring,
+    source_unit_for_binding,
+};
+use debundle_e2e_support::*;
+
+const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
+const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
+
+fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
+    NativeOperationInputContract {
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &["marker"],
+        )),
+        operation: NativeOperationKind::Symbol,
+        audited_source_sha256: source_sha256(source),
+        note: Some("Neutral fixture audits this one initialization call.".to_string()),
+    }
+}
+
+fn marker_input(source: &str) -> NativeOperationInputContract {
+    let declaration = source
+        .lines()
+        .find(|line| line.starts_with("const marker ="))
+        .expect("fixture has a direct marker initializer");
+    input_for(source, declaration)
+}
+
+fn symbol_for_input(source: &str) -> NativeOperationInputContract {
+    let mut input = marker_input(source);
+    input.operation = NativeOperationKind::SymbolFor;
+    input
+}
+
+fn primitive_set_input(source: &str) -> NativeOperationInputContract {
+    let declaration = source
+        .lines()
+        .find(|line| line.starts_with("const made = new Set("))
+        .expect("fixture has a direct Set initializer");
+    NativeOperationInputContract {
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &["made"],
+        )),
+        operation: NativeOperationKind::SetFromPrimitiveArray,
+        audited_source_sha256: source_sha256(source),
+        note: Some("Neutral fixture audits this one Set construction site.".to_string()),
+    }
+}
+
+fn selected_native_input(
+    source: &str,
+    declaration: &str,
+    binding: &str,
+    operation: NativeOperationKind,
+) -> NativeOperationInputContract {
+    NativeOperationInputContract {
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            declaration.trim(),
+            &[binding],
+        )),
+        operation,
+        audited_source_sha256: source_sha256(source),
+        note: Some("Neutral fixture audits this exact native operation.".to_string()),
+    }
+}
+
+#[test]
+fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
+    const DECLARATION: &str =
+        "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
+    const SOURCE: &str = "import { Box } from './box.js';\nconst prior = ['p'];\nconst memo = new Box(() => 1);\nvar seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);\nexport { prior, memo, seed, sibling, merged };\nconsole.log(prior.length, merged.size);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "sets",
+                &[
+                    Member::new("seed"),
+                    Member::new("sibling"),
+                    Member::new("merged"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()])
+        .with_native_operation_inputs(
+            "static/app",
+            vec![
+                selected_native_input(
+                    SOURCE,
+                    DECLARATION,
+                    "seed",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                ),
+                selected_native_input(
+                    SOURCE,
+                    DECLARATION,
+                    "sibling",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                ),
+                selected_native_input(
+                    SOURCE,
+                    DECLARATION,
+                    "merged",
+                    NativeOperationKind::SetFromSetSpread,
+                ),
+            ],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let graph = fixture.dependency_graph();
+    let memo = source_unit_for_binding(&graph, "memo");
+    let seed = source_unit_for_binding(&graph, "seed");
+    for binding in ["seed", "sibling", "merged"] {
+        let set = source_unit_for_binding(&graph, binding);
+        assert!(
+            !graph.edges.iter().any(|edge| {
+                edge.source == set && edge.target == memo && edge.edge_kind == DepKind::Sequenced
+            }),
+            "fresh {binding} construction still depends on an earlier opaque effect: {graph:#?}"
+        );
+    }
+    let merged = source_unit_for_binding(&graph, "merged");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == merged && edge.target == seed && edge.edge_kind == DepKind::EagerUse
+        }),
+        "certified spread lost its source Set allocation dependency: {graph:#?}"
+    );
+    let observation = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_kind == StatementKind::SideEffect)
+        .expect("the following console observation");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == observation.id
+                && edge.target == seed
+                && edge.edge_kind == DepKind::Sequenced
+        }),
+        "the following observation lost the live Set frontier: {graph:#?}"
+    );
+    assert!(
+        !graph.edges.iter().any(|edge| {
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.statement_kind == StatementKind::Export && node.id == edge.source)
+                && edge.edge_kind == DepKind::Sequenced
+        }),
+        "a local export list must not execute a heap event: {graph:#?}"
+    );
+}
+
+#[test]
+fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 1\n");
+    let graph = fixture.dependency_graph();
+    let seed = source_unit_for_binding(&graph, "seed");
+    let memo = source_unit_for_binding(&graph, "memo");
+    assert!(
+        graph.edges.iter().any(|edge| edge.source == seed
+            && edge.target == memo
+            && edge.edge_kind == DepKind::Sequenced),
+        "borrowed array's live frontier disappeared: {graph:#?}"
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert_eq!(
+        json_node_declaring(&graph, "seed")["synchronous_execution"]["complete"],
+        true
+    );
+    assert_eq!(
+        json_node_declaring(&graph, "unique")["purity"]["kind"],
+        "pure",
+        "the static-member source keeps its existing native purity admission: {graph}"
+    );
+    assert_eq!(
+        json_node_declaring(&graph, "unique")["synchronous_execution"]["complete"],
+        true,
+        "the static-member source keeps its existing effect frontier: {graph}"
+    );
+}
+
+#[test]
+fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Box } from './box.js';\nconst input = ['a'];\nconst memo = new Box(() => 1);\nconst result = new Set(input);\nconsole.log(result.size, result.has('a'));\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 true\n");
+    let graph = fixture.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let memo = source_unit_for_binding(&graph, "memo");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result && edge.target == memo && edge.edge_kind == DepKind::Sequenced
+        }),
+        "the borrowed input keeps its live ArrayContents frontier: {graph:#?}"
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert_eq!(
+        json_node_declaring(&graph, "result")["synchronous_execution"]["complete"],
+        true
+    );
+}
+
+#[test]
+fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
+    const DECLARATION: &str =
+        "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
+    const SOURCE: &str = "globalThis.saved = () => factory();\nvar seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(merged.size, LaterError.name);\nexport { factory, LaterError };\n";
+    let inputs = || {
+        vec![
+            selected_native_input(
+                SOURCE,
+                DECLARATION,
+                "seed",
+                NativeOperationKind::SetFromPrimitiveArray,
+            ),
+            selected_native_input(
+                SOURCE,
+                DECLARATION,
+                "sibling",
+                NativeOperationKind::SetFromPrimitiveArray,
+            ),
+            selected_native_input(
+                SOURCE,
+                DECLARATION,
+                "merged",
+                NativeOperationKind::SetFromSetSpread,
+            ),
+        ]
+    };
+    let opts = || {
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "sets",
+                    &[
+                        Member::new("seed"),
+                        Member::new("sibling"),
+                        Member::new("merged"),
+                    ],
+                    &["globalThis.saved = () => factory();"],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+    };
+    let inferred =
+        run_fixture(opts().with_native_operation_inputs("static/app", inputs()[..2].to_vec()));
+    assert_preserved_entry_output(&inferred, "2 LaterError\n");
+    let inferred_graph = serde_json::to_value(inferred.dependency_graph()).unwrap();
+    assert!(
+        json_node_declaring(&inferred_graph, "merged")["synchronous_execution"]["inference_uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
+        "the census-proved spread retains inferred provenance: {inferred_graph}"
+    );
+    let fixture = run_fixture(opts().with_native_operation_inputs("static/app", inputs()));
+    assert_preserved_entry_output(&fixture, "2 LaterError\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(
+        uses.len(),
+        3,
+        "all exact Set operations must retain evidence: {graph}"
+    );
+    assert!(
+        uses.iter()
+            .any(|use_site| use_site["evidence"]["operation"] == "set_from_set_spread")
+    );
+    assert!(
+        !json_has_unknown_call_target(json_node_declaring(&graph, "merged")),
+        "certified spread must remove its exact constructor frontier: {graph}"
+    );
+}
+
+/// A repeated `var` whose construction sits at a later declaration site: the
+/// input's template pins that site, so provider validation finds the Set
+/// construction there. (Resolving the binding's first, bare site instead
+/// finds no declaration in the selected statement and rejects the spec.)
+#[test]
+fn repeated_var_input_selects_the_matched_declaration_site() {
+    const DECLARATION: &str = "var seed = new Set(['a']);";
+    const SOURCE: &str =
+        "var seed;\nvar seed = new Set(['a']);\nconsole.log(seed.size);\nexport { seed };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(SOURCE, vec![logical_module("sets", &[Member::new("seed")])])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    SOURCE,
+                    DECLARATION,
+                    "seed",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                )],
+            ),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+}
+
+#[test]
+fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
+    const DECLARATION: &str =
+        "var seed = new Set([1]), sibling = new Set([2]), merged = new Set([...seed, 3]);";
+    let source = format!("{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n");
+    let seed = selected_native_input(
+        &source,
+        DECLARATION,
+        "seed",
+        NativeOperationKind::SetFromPrimitiveArray,
+    );
+    let sibling = selected_native_input(
+        &source,
+        DECLARATION,
+        "sibling",
+        NativeOperationKind::SetFromPrimitiveArray,
+    );
+    let spread = selected_native_input(
+        &source,
+        DECLARATION,
+        "merged",
+        NativeOperationKind::SetFromSetSpread,
+    );
+    let same_output = || {
+        FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "sets",
+                &[
+                    Member::new("seed"),
+                    Member::new("sibling"),
+                    Member::new("merged"),
+                ],
+            )],
+        )
+    };
+    expect_rejection_containing_all(
+        same_output()
+            .with_native_operation_inputs("static/app", vec![seed.clone(), spread.clone()]),
+        &["uncertified intervening source unit"],
+    );
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("seed", &[Member::new("seed"), Member::new("sibling")]),
+                logical_module("merged", &[Member::new("merged")]),
+            ],
+        )
+        .with_native_operation_inputs("static/app", vec![seed, sibling, spread]),
+        &["atomic-group conflict"],
+    );
+}
+
+#[test]
+fn set_spread_interval_accepts_zero_or_multiple_inert_siblings() {
+    for siblings in [0, 2] {
+        let middle = (0..siblings)
+            .map(|index| format!("sibling{index} = new Set([{index}]), "))
+            .collect::<String>();
+        let declaration =
+            format!("var seed = new Set([1]), {middle}merged = new Set([...seed, 3]);");
+        let source = format!("{declaration}\nconsole.log(merged.size);\nexport {{}};\n");
+        let mut bindings = vec![Member::new("seed")];
+        let mut inputs = vec![selected_native_input(
+            &source,
+            &declaration,
+            "seed",
+            NativeOperationKind::SetFromPrimitiveArray,
+        )];
+        for index in 0..siblings {
+            let name = ["sibling0", "sibling1"][index];
+            bindings.push(Member::new(name));
+            inputs.push(selected_native_input(
+                &source,
+                &declaration,
+                name,
+                NativeOperationKind::SetFromPrimitiveArray,
+            ));
+        }
+        bindings.push(Member::new("merged"));
+        inputs.push(selected_native_input(
+            &source,
+            &declaration,
+            "merged",
+            NativeOperationKind::SetFromSetSpread,
+        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![logical_module("sets", &bindings)])
+                .with_native_operation_inputs("static/app", inputs),
+        );
+        assert_preserved_entry_output(&fixture, "2\n");
+    }
+}
+
+#[test]
+fn set_spread_rejects_intervening_mutators_and_callbacks() {
+    for intervening in [
+        "seed.add(4)",
+        "(seed[Symbol.iterator] = function* () { yield 9; })",
+        "unknown()",
+    ] {
+        let declaration = format!(
+            "var seed = new Set([1]), intervening = {intervening}, merged = new Set([...seed, 3]);"
+        );
+        let source = format!("{declaration}\nconsole.log(merged.size);\nexport {{}};\n");
+        let inputs = vec![
+            selected_native_input(
+                &source,
+                &declaration,
+                "seed",
+                NativeOperationKind::SetFromPrimitiveArray,
+            ),
+            selected_native_input(
+                &source,
+                &declaration,
+                "merged",
+                NativeOperationKind::SetFromSetSpread,
+            ),
+        ];
+        expect_rejection_containing_all(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "sets",
+                    &[
+                        Member::new("seed"),
+                        Member::new("intervening"),
+                        Member::new("merged"),
+                    ],
+                )],
+            )
+            .with_native_operation_inputs("static/app", inputs),
+            &["uncertified intervening source unit"],
+        );
+    }
+}
+
+#[test]
+fn set_spread_rejects_native_protocol_replacement_in_another_chunk() {
+    const DECLARATION: &str = "var seed = new Set([1]), merged = new Set([...seed, 3]);";
+    const MUTATION: &str = "const proto = Set.prototype; Object.defineProperty(proto, 'add', { value: function replacement() {} }); export {};\n";
+    let source = format!(
+        "import './mutation.js';\n{DECLARATION}\nconsole.log(merged.size);\nexport {{}};\n"
+    );
+    let inputs = vec![
+        selected_native_input(
+            &source,
+            DECLARATION,
+            "seed",
+            NativeOperationKind::SetFromPrimitiveArray,
+        ),
+        selected_native_input(
+            &source,
+            DECLARATION,
+            "merged",
+            NativeOperationKind::SetFromSetSpread,
+        ),
+    ];
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "sets",
+                &[Member::new("seed"), Member::new("merged")],
+            )],
+        )
+        .with_extra_chunks(&[("static/mutation", MUTATION)])
+        .with_native_operation_inputs("static/app", inputs),
+        &[
+            "required Set construction protocol slot write",
+            "static/mutation",
+        ],
+    );
+}
+
+#[test]
+fn certified_spread_keeps_later_alias_mutation_order() {
+    const DECLARATION: &str = "var seed = new Set([1]), merged = new Set([...seed, 3]);";
+    let source = format!(
+        "{DECLARATION}\nconst alias = merged;\nalias.add(4);\nconst after = merged.has(4);\nconsole.log(after);\nexport {{}};\n"
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "sets",
+                &[
+                    Member::new("seed"),
+                    Member::new("merged"),
+                    Member::new("alias"),
+                ],
+            )],
+        )
+        .with_native_operation_inputs(
+            "static/app",
+            vec![
+                selected_native_input(
+                    &source,
+                    DECLARATION,
+                    "seed",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                ),
+                selected_native_input(
+                    &source,
+                    DECLARATION,
+                    "merged",
+                    NativeOperationKind::SetFromSetSpread,
+                ),
+            ],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "true\n");
+    let graph = fixture.dependency_graph();
+    let unit = |ordinal| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .expect("fixture source unit")
+            .id
+            .as_str()
+    };
+    for (later, earlier) in [(3, 1), (4, 3)] {
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.edge_kind == DepKind::Sequenced
+                    && edge.source == unit(later)
+                    && edge.target == unit(earlier)
+            }),
+            "later alias Set effects must retain S order: {later} -> {earlier}: {:#?}",
+            graph.edges
+        );
+    }
+}
+
+#[test]
+fn selected_primitive_set_construction_removes_its_opaque_frontier() {
+    const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nvar firstReason = 'alpha', secondReason = 'beta';\nconst made = new Set([firstReason, secondReason]);\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(made.size, LaterError.name);\nexport { factory, LaterError, reflect };\n";
+    let opts = || {
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "made",
+                    &[
+                        Member::new("firstReason"),
+                        Member::new("secondReason"),
+                        Member::new("made"),
+                    ],
+                    &["globalThis.saved = () => factory();"],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES)
+    };
+    let control = run_rejection_fixture(opts());
+    let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
+    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
+    let conflicts = control.atomic_group_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["made", "later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            })
+        }),
+        "the unproved constructor must block this split: {conflicts:#?}"
+    );
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&control_graph, "made")),
+        "unproved Set construction still has a call frontier: {control_graph}"
+    );
+    let fixture = run_fixture(
+        opts().with_native_operation_inputs("static/app", vec![primitive_set_input(SOURCE)]),
+    );
+    assert_preserved_entry_output(&fixture, "2 LaterError\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert!(
+        !json_has_unknown_call_target(json_node_declaring(&graph, "made")),
+        "the selected constructor should consume its native input: {graph}"
+    );
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(
+        uses.len(),
+        1,
+        "exactly the selected Set site uses the premise: {graph}"
+    );
+    assert_eq!(uses[0]["evidence"]["operation"], "set_from_primitive_array");
+    unknown_receiver_witness(&program_graph);
+}
+
+#[test]
+fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
+    const SOURCE: &str = "const emptyMap = new Map();\nconst made = new Set(['alpha', 'beta']);\nconsole.log(made.size, emptyMap.size);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(SOURCE, vec![logical_module("sets", &[Member::new("made")])])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs(
+                "static/app",
+                vec![
+                    primitive_set_input(SOURCE),
+                    selected_native_input(
+                        SOURCE,
+                        "const emptyMap = new Map();",
+                        "emptyMap",
+                        NativeOperationKind::MapEmpty,
+                    ),
+                ],
+            ),
+    );
+    assert_preserved_entry_output(&fixture, "2 0\n");
+
+    let report = fixture.effect_translation_validation();
+    assert!(report["legacy_gate_accepts"].as_bool().unwrap_or(false));
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "the reordered native owners have complete effect coverage: {report:#}"
+    );
+    assert_eq!(
+        report["emitted_order"],
+        serde_json::json!([1, 0, 2]),
+        "{report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "the exact native constructor result completes its named source owner: {report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"]["native_operation_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "both completed native owners retain their exact author premises: {report:#}"
+    );
+}
+
+#[test]
+fn weak_map_empty_input_is_site_local_and_keeps_later_behavior_opaque() {
+    const SOURCE: &str = "function publish(key, value) { globalThis[key] = value; }\nconst key = {};\nconst cache = new WeakMap();\nlet other = new WeakMap();\nconst present = cache.has(key);\nconsole.log(present, Boolean(other));\n";
+    let opts = || FixtureOpts::new(SOURCE, vec![]);
+
+    let fallback = run_fixture(opts());
+    assert_preserved_entry_output(&fallback, "false true\n");
+    let fallback_graph = serde_json::to_value(fallback.dependency_graph()).unwrap();
+    assert!(json_has_unknown_call_target(json_node_declaring(
+        &fallback_graph,
+        "cache"
+    )));
+
+    let fixture = run_fixture(opts().with_native_operation_inputs(
+        "static/app",
+        vec![selected_native_input(
+            SOURCE,
+            "const cache = new WeakMap();",
+            "cache",
+            NativeOperationKind::WeakMapEmpty,
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "false true\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(
+        !json_has_unknown_call_target(json_node_declaring(&graph, "cache")),
+        "the selected empty constructor should consume its exact-site input: {graph}"
+    );
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&graph, "other")),
+        "the input must not establish program-wide WeakMap integrity: {graph}"
+    );
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&graph, "present")),
+        "empty construction must not certify later WeakMap methods: {graph}"
+    );
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(
+        uses.len(),
+        1,
+        "only the selected constructor uses the input: {graph}"
+    );
+    assert_eq!(uses[0]["evidence"]["operation"], "weak_map_empty");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "cache");
+}
+
+#[test]
+fn weak_map_empty_input_rejects_known_sibling_chunk_writes() {
+    const SOURCE: &str =
+        "import './mutation.js';\nconst collection = new WeakMap();\nexport { collection };\n";
+    for mutation in [
+        "WeakMap = function replacement() {};\n",
+        "globalThis.WeakMap = function replacement() {};\n",
+    ] {
+        let input = selected_native_input(
+            SOURCE,
+            "const collection = new WeakMap();",
+            "collection",
+            NativeOperationKind::WeakMapEmpty,
+        );
+        expect_rejection_containing_all(
+            FixtureOpts::new(SOURCE, vec![])
+                .with_extra_chunks(&[("static/mutation", mutation)])
+                .with_native_operation_inputs("static/app", vec![input]),
+            &["global WeakMap replacement", "static/mutation"],
+        );
+    }
+}
+
+#[test]
+fn source_known_set_construction_protocol_writes_reject_the_input() {
+    for mutation in [
+        "globalThis.Set = function replacement() {};",
+        "Set.prototype.add = function replacement() {};",
+        "const proto = Set.prototype; delete proto.add;",
+        "Object.defineProperty(Set.prototype, 'add', { get() { return function replacement() {}; } });",
+    ] {
+        let source = format!(
+            "const made = new Set([1, 2]);\n{mutation}\nconsole.log(made.size);\nexport {{}};\n"
+        );
+        assert!(
+            std::panic::catch_unwind(|| {
+                expect_rejection_containing_all(
+                    rejected_opts(&source, "made", primitive_set_input(&source)),
+                    &["required native slot write"],
+                );
+            })
+            .is_ok(),
+            "source-known protocol mutation escaped validation: {mutation}"
+        );
+    }
+    for source in [
+        "const made = new Set([1, 2]);\nconst Set = function replacement() {};\nexport {};\n",
+        "const made = new Set([...values]);\nexport {};\n",
+        "const made = new Set([unknown]);\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n(reason) = {};\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n[reason] = [{}];\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\nfor (reason of [{}]) {}\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\nfor (reason in { changed: true }) {}\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n(reason)++;\nexport {};\n",
+    ] {
+        expect_rejection_containing_all(
+            rejected_opts(source, "made", primitive_set_input(source)),
+            &[
+                "direct unshadowed new Set([primitive literals or earlier stable primitive bindings])",
+            ],
+        );
+    }
+}
+
+#[test]
+fn dependent_array_iterator_key_remains_an_opaque_witness() {
+    let source = "const made = new Set([1, 2]);\nconst before = Array.prototype[Symbol.iterator];\nArray.prototype[Symbol.iterator] = function replacement() {};\nArray.prototype[Symbol.iterator] = before;\nconsole.log(made.size);\nexport {};\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![primitive_set_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "2\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert!(
+        program_graph["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| witnesses.iter().any(|witness| {
+                witness["target_slots"].as_array().is_some_and(|slots| {
+                    slots.iter().any(|slot| {
+                        slot["receiver"] == serde_json::json!({"prototype": "array"})
+                            && slot["key"] == "symbol_iterator"
+                    })
+                }) && witness["key_dependencies"]
+                    .as_array()
+                    .is_some_and(|deps| deps.iter().any(|dependency| dependency == "symbol"))
+            })),
+        "computed Symbol.iterator writes must retain their dependency: {graph}"
+    );
+}
+
+#[test]
+fn array_iterator_next_alias_retains_a_typed_opaque_witness() {
+    let source = "const made = new Set([1, 2]);\nconst proto = Object.getPrototypeOf([][Symbol.iterator]());\nconst original = proto.next;\nproto.next = function replacement() { return { done: true }; };\nproto.next = original;\nconsole.log(made.size);\nexport {};\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![primitive_set_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "2\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert!(
+        program_graph["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| witnesses.iter().any(|witness| {
+                witness["target_slots"].as_array().is_some_and(|slots| {
+                    slots.iter().any(|slot| {
+                        slot["receiver"] == "array_iterator_prototype"
+                            && slot["key"] == serde_json::json!({ "string": "next" })
+                    })
+                }) && witness["key_dependencies"]
+                    .as_array()
+                    .is_some_and(|deps| deps.iter().any(|dependency| dependency == "symbol"))
+            })),
+        "Array iterator prototype aliases must stay typed but dependency-opaque: {graph}"
+    );
+}
+
+#[test]
+fn set_iterator_next_alias_retains_a_typed_opaque_witness() {
+    let source = "const proto = Object.getPrototypeOf(new Set()[Symbol.iterator]());\nconst original = proto.next;\nproto.next = function replacement() { return { done: true }; };\nproto.next = original;\nconsole.log('done');\nexport {};\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "done\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert!(
+        program_graph["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| witnesses.iter().any(|witness| {
+                witness["target_slots"].as_array().is_some_and(|slots| {
+                    slots.iter().any(|slot| {
+                        slot["receiver"] == "set_iterator_prototype"
+                            && slot["key"] == serde_json::json!({ "string": "next" })
+                    })
+                }) && witness["key_dependencies"].as_array().is_some_and(|deps| {
+                    deps.iter().any(|dependency| dependency == "set")
+                        && deps.iter().any(|dependency| dependency == "symbol")
+                })
+            })),
+        "Set iterator prototype aliases must stay typed and dependency-opaque: {graph}"
+    );
+}
+
+#[test]
+fn cross_chunk_set_protocol_mutation_rejects_the_input() {
+    const MUTATION: &str =
+        "const proto = Set.prototype; proto.add = function replacement() {};\nexport {};\n";
+    let source = "import './mutation.js';\nconst made = new Set([1, 2]);\nconsole.log(made.size);\nexport {};\n";
+    let opts = rejected_opts(source, "made", primitive_set_input(source))
+        .with_extra_chunks(&[("static/mutation", MUTATION)]);
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "required Set construction protocol slot write",
+            "static/mutation",
+        ],
+    );
+}
+
+#[test]
+fn shadowed_local_set_receiver_does_not_contradict_native_construction() {
+    let source = "const made = new Set([1, 2]);\nfunction touch(Set) { Set.prototype.add = function replacement() {}; }\ntouch({ prototype: {} });\nconsole.log(made.size);\nexport {};\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![primitive_set_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "2\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+}
+
+#[test]
+fn construction_premise_preserves_later_aliased_mutator_order() {
+    let source = "const made = new Set([1]);\nconst alias = made;\nalias.add(2);\nalias.delete(1);\nalias.clear();\nconst count = made.size;\nconsole.log(count);\nexport {};\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![primitive_set_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "0\n");
+    let graph = fixture.dependency_graph();
+    let unit = |ordinal| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .expect("fixture source unit")
+            .id
+            .as_str()
+    };
+    for (later, earlier) in [(3, 2), (4, 3), (5, 4)] {
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.edge_kind == DepKind::Sequenced
+                    && edge.source == unit(later)
+                    && edge.target == unit(earlier)
+            }),
+            "selected construction must retain later Set method and accessor order: {later} -> {earlier}: {:#?}",
+            graph.edges
+        );
+    }
+}
+
+fn split_opts(input: Option<NativeOperationInputContract>) -> FixtureOpts<'static> {
+    let opts = FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module_with_anon(
+                "marker",
+                &[Member::new("marker")],
+                &["globalThis.saved = () => factory();"],
+            ),
+            logical_module("factory", &[Member::new("factory")]),
+            logical_module("later", &[Member::new("LaterError")]),
+        ],
+    );
+    let opts = opts
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES);
+    match input {
+        Some(input) => opts.with_native_operation_inputs("static/app", vec![input]),
+        None => opts,
+    }
+}
+
+fn rejected_opts<'a>(
+    source: &'a str,
+    selected_binding: &'static str,
+    input: NativeOperationInputContract,
+) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module("selected", &[Member::new(selected_binding)])],
+    )
+    .with_native_operation_inputs("static/app", vec![input])
+}
+
+#[test]
+fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
+    let control = run_rejection_fixture(split_opts(None));
+    let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
+    unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
+    let conflicts = control.atomic_group_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            BASELINE_CONFLICT_MODULES.iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            })
+        }),
+        "unexpected no-input atomic-group conflicts: {conflicts:#?}"
+    );
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&control_graph, "marker")),
+        "without the input, the selected initializer retains its unknown-call precision loss: {control_graph}"
+    );
+
+    let fixture = run_fixture(split_opts(Some(marker_input(SOURCE))));
+    assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\nconsole.log(entry.marker.description, entry.factory().name, entry.LaterError.name);\nconst receiver = [];\nconst target = Object.getPrototypeOf(receiver);\nconst key = '__native_operation_input_probe__';\nconst before = Object.getOwnPropertyDescriptor(target, key);\ntry { entry.reflect(receiver, key); console.log(target[key]); } finally { if (before) Object.defineProperty(target, key, before); else delete target[key]; }\n",
+        "marker LaterError LaterError\nchanged\n",
+    );
+
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(
+        uses.len(),
+        1,
+        "only the selected call consumes this input: {graph}"
+    );
+    assert_eq!(uses[0]["evidence"]["operation"], "symbol");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+    assert_eq!(uses[0]["source_location"]["source_path"], "static/app.js");
+    assert_eq!(uses[0]["source_location"]["start_line"], 3);
+
+    let unknown_receiver_witness = unknown_receiver_witness(&program_graph);
+    assert!(
+        unknown_receiver_witness["affected_roots"]
+            .as_array()
+            .is_some_and(|roots| roots.iter().any(|root| root == "global_object")),
+        "the unknown receiver remains connected to the global object: {unknown_receiver_witness}"
+    );
+    assert!(
+        unknown_receiver_witness["value_input_refs"]
+            .as_array()
+            .is_none_or(Vec::is_empty),
+        "this premise must not refine the reflective helper's receiver: {graph}"
+    );
+    assert!(
+        unknown_receiver_witness["target_slots"]
+            .as_array()
+            .is_some_and(|slots| slots
+                .iter()
+                .any(|slot| { slot["receiver"] == "unknown" && slot["key"] == "unknown" })),
+        "the opaque reflective write must retain its unknown slot witness: {graph}"
+    );
+}
+
+#[test]
+fn selected_symbol_for_call_removes_only_its_synthetic_reentry_barrier() {
+    let source = SOURCE.replace("Symbol('marker')", "Symbol.for('marker')");
+    let opts = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "marker",
+                &[Member::new("marker")],
+                &["globalThis.saved = () => factory();"],
+            ),
+            logical_module("factory", &[Member::new("factory")]),
+            logical_module("later", &[Member::new("LaterError")]),
+        ],
+    )
+    .with_extra_chunks(REFLECT_CHUNKS)
+    .with_extra_files(REFLECT_FILES)
+    .with_native_operation_inputs("static/app", vec![symbol_for_input(&source)]);
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0]["evidence"]["operation"], "symbol_for");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+    unknown_receiver_witness(&program_graph);
+}
+
+#[test]
+fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
+    let source = "const values = [];\nconsole.log('before', values.length);\nconst marker = Symbol.for('fixture.key');\nvalues.push('after');\nconsole.log('after', values.length);\nexport { values, marker };\n";
+    let modules = || {
+        vec![
+            logical_module_with_anon(
+                "outer",
+                &[Member::new("values")],
+                &[
+                    "console.log('before', values.length);",
+                    "values.push('after');",
+                    "console.log('after', values.length);",
+                ],
+            ),
+            logical_module("inner", &[Member::new("marker")]),
+        ]
+    };
+    let baseline = run_rejection_fixture(FixtureOpts::new(source, modules()));
+    let baseline_graph = serde_json::to_value(baseline.dependency_graph()).unwrap();
+    assert_eq!(
+        json_node_declaring(&baseline_graph, "marker")["purity"]["kind"],
+        "not_pure"
+    );
+    assert_eq!(
+        json_node_declaring(&baseline_graph, "marker")["purity"]["reasons"][0]["rule"],
+        "unknown_call"
+    );
+    assert!(
+        baseline.cycles().iter().any(|cycle| {
+            let members = cycle["modules"].as_array().expect("cycle modules");
+            ["outer", "inner"].iter().all(|module| {
+                members
+                    .iter()
+                    .any(|member| member.as_str() == Some(*module))
+            })
+        }),
+        "unselected member call should retain the outer/inner/outer cycle"
+    );
+
+    let fixture = run_fixture(
+        FixtureOpts::new(source, modules())
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "before 0\nafter 1\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\nconsole.log(Symbol.keyFor(entry.marker), entry.marker === Symbol.for('fixture.key'), entry.values.join(','));\n",
+        "fixture.key true after\n",
+    );
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let marker = json_node_declaring(&graph, "marker");
+    assert_eq!(marker["purity"]["kind"], "pure");
+    assert_eq!(
+        marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+        0
+    );
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+
+    for (call, description) in [
+        ("Symbol()", "undefined"),
+        ("Symbol('fixture.key')", "fixture.key"),
+    ] {
+        let source = source.replace("Symbol.for('fixture.key')", call);
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, modules())
+                .with_native_operation_inputs("static/app", vec![marker_input(&source)]),
+        );
+        assert_preserved_entry_output(&fixture, "before 0\nafter 1\n");
+        assert_generated_module_after_entry_script(
+            &fixture,
+            "const entry = await import('./static/app/entry.js');\nconsole.log(typeof entry.marker, entry.marker.description, entry.values.join(','));\n",
+            &format!("symbol {description} after\n"),
+        );
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let marker = json_node_declaring(&graph, "marker");
+        assert_eq!(marker["purity"]["kind"], "pure", "{call}: {graph}");
+        assert_eq!(
+            marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+            0
+        );
+        let uses = json_execution_rows(&graph, "native_operation_input_uses");
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0]["evidence"]["operation"], "symbol");
+    }
+}
+
+#[test]
+fn selected_symbol_for_rejects_other_callees_and_nonprimitive_conversion() {
+    for (source, expected) in [
+        (
+            "const marker = Symbol.for('key');\nconst Symbol = { for: () => 'wrong' };\nexport { marker };\n",
+            "shadowed Symbol",
+        ),
+        (
+            "const marker = Symbol['for']('key');\nexport { marker };\n",
+            "Symbol.for dot call",
+        ),
+        (
+            "const marker = Symbol?.for('key');\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const call = Symbol.for;\nconst marker = call('key');\nexport { marker };\n",
+            "Symbol.for dot call",
+        ),
+        (
+            "const marker = Symbol.for(...['key']);\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol.for(Symbol());\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol.for({ toString() { return 'key'; } });\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            rejected_opts(source, "marker", symbol_for_input(source)),
+            &[expected],
+        );
+    }
+    for (source, expected) in [
+        (
+            "const marker = Symbol(...['key']);\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol({ toString() { return 'key'; } });\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol(unknown);\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            rejected_opts(source, "marker", marker_input(source)),
+            &[expected],
+        );
+    }
+}
+
+#[test]
+fn known_symbol_for_replacement_in_another_chunk_contradicts_the_input() {
+    for mutation in [
+        "const original = Symbol.for; Symbol.for = () => 'wrong'; Symbol.for = original;",
+        "Object.defineProperty(Symbol, 'for', { get() { return () => 'wrong'; } });",
+    ] {
+        let source =
+            "import './mutation.js';\nconst marker = Symbol.for('key');\nexport { marker };\n";
+        expect_rejection_containing_all(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("marker", &[Member::new("marker")])],
+            )
+            .with_extra_chunks(&[("static/mutation", mutation)])
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+            &["Symbol.for replacement", "static/mutation"],
+        );
+    }
+}
+
+#[test]
+fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
+    let source = "console.log('before');\nconst marker = Symbol.for(1n + 1);\nconsole.log('after');\nexport { marker };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+    );
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+    assert_eq!(
+        json_node_declaring(&graph, "marker")["purity"]["kind"],
+        "not_pure"
+    );
+
+    let source =
+        "const marker = Symbol(1);\nconsole.log(marker.description);\nexport { marker };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![marker_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+}
+
+#[test]
+fn sibling_global_symbol_replacement_contradicts_symbol_for_input() {
+    let source = "import './mutation.js';\nconst marker = Symbol.for('key');\nexport { marker };\n";
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("marker", &[Member::new("marker")])],
+        )
+        .with_extra_chunks(&[(
+            "static/mutation",
+            "globalThis.Symbol = { for: () => 'changed' };\n",
+        )])
+        .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+        &["global Symbol replacement", "static/mutation"],
+    );
+}
+
+/// An assignment to the unqualified global binding replaces the global slot
+/// and leaves the name global, so writes through it stay positively known.
+#[test]
+fn global_binding_assignments_contradict_symbol_for_input() {
+    for (mutation, expected) in [
+        (
+            "Symbol = { for: () => 'changed' };\n",
+            "global Symbol replacement",
+        ),
+        (
+            "[Symbol] = [{ for: () => 'changed' }];\n",
+            "global Symbol replacement",
+        ),
+        (
+            "function never() { Symbol = null; }\nSymbol.for = () => 'wrong';\n",
+            "global Symbol replacement",
+        ),
+    ] {
+        let source =
+            "import './mutation.js';\nconst marker = Symbol.for('key');\nexport { marker };\n";
+        expect_rejection_containing_all(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("marker", &[Member::new("marker")])],
+            )
+            .with_extra_chunks(&[("static/mutation", mutation)])
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+            &[expected, "static/mutation"],
+        );
+    }
+}
+
+#[test]
+fn source_selected_symbol_input_rejects_unsupported_or_contradicted_facts() {
+    for (source, expected) in [
+        (
+            "const marker = Symbol('marker');\nconst Symbol = function(value) { return value; };\nexport { marker };\n",
+            "shadowed Symbol",
+        ),
+        (
+            "const marker = Symbol('marker');\nconst originalSymbol = globalThis.Symbol;\nglobalThis.Symbol = function replacement() {};\nglobalThis.Symbol = originalSymbol;\nexport { marker };\n",
+            "global Symbol replacement",
+        ),
+        (
+            "Object.defineProperty(globalThis, 'Symbol', { configurable: true, get() { return function replacement() {}; } });\nconst marker = Symbol('marker');\nexport { marker };\n",
+            "global Symbol replacement",
+        ),
+        (
+            "const marker = Symbol(globalThis.markerDescription);\nexport { marker };\n",
+            "syntactically primitive argument",
+        ),
+        (
+            "const marker = Symbol?.('marker');\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol(...['marker']);\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const selected = globalThis['Symbol']('marker');\nexport { selected };\n",
+            "direct uncomputed Symbol identifier",
+        ),
+    ] {
+        let declaration = source
+            .lines()
+            .find(|line| line.contains("const marker =") || line.contains("const selected ="))
+            .expect("negative fixture has selected declaration");
+        let selected_name = if declaration.starts_with("const selected") {
+            "selected"
+        } else {
+            "marker"
+        };
+        let mut input = input_for(source, declaration);
+        if selected_name == "selected" {
+            input.selector = SourceUnitSelector::SourceMatch(source_match_selector(
+                declaration.trim(),
+                &["selected"],
+            ));
+        }
+        expect_rejection_containing_all(rejected_opts(source, selected_name, input), &[expected]);
+    }
+}
+
+#[test]
+fn source_hash_is_checked_before_a_symbol_input_is_used() {
+    let source = "const marker = Symbol('marker');\nexport { marker };\n";
+    let mut input = marker_input(source);
+    input.audited_source_sha256 = "0".repeat(64);
+    expect_rejection_containing_all(
+        rejected_opts(source, "marker", input),
+        &["audited_source_sha256"],
+    );
+}
+
+#[test]
+fn unselected_symbol_site_keeps_the_strict_fallback() {
+    let source = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nconst other = Symbol('other');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nconsole.log(marker.description, other.description, made.name);\nexport { marker, other, factory, LaterError, reflect };\n";
+    let opts = FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "marker",
+                &[Member::new("marker")],
+                &["globalThis.saved = () => factory();"],
+            ),
+            logical_module("other", &[Member::new("other")]),
+            logical_module("factory", &[Member::new("factory")]),
+            logical_module("later", &[Member::new("LaterError")]),
+        ],
+    )
+    .with_extra_chunks(REFLECT_CHUNKS)
+    .with_extra_files(REFLECT_FILES)
+    .with_native_operation_inputs("static/app", vec![marker_input(source)]);
+    let rejected = run_rejection_fixture(opts);
+    let conflicts = rejected.atomic_group_conflicts();
+    assert!(
+        conflicts.iter().any(|conflict| {
+            let claims = conflict["claims"].as_array().expect("conflict claims");
+            ["other", "later"].iter().all(|module| {
+                claims
+                    .iter()
+                    .any(|claim| claim["module"].as_str() == Some(*module))
+            })
+        }),
+        "unselected Symbol call must retain the synthetic reentry conflict: {conflicts:#?}"
+    );
+    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&graph, "other")),
+        "the unselected primitive Symbol call must retain its unknown-call precision loss: {graph}"
+    );
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(
+        uses.len(),
+        1,
+        "other Symbol call has no author evidence: {graph}"
+    );
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+}
+
+#[test]
+fn known_symbol_replacement_in_another_analyzed_chunk_contradicts_the_input() {
+    const MUTATION: &str = "const originalSymbol = globalThis.Symbol;\nglobalThis.Symbol = function replacement() {};\nglobalThis.Symbol = originalSymbol;\nexport {};\n";
+    let source = "import './mutation.js';\nconst marker = Symbol('marker');\nexport { marker };\n";
+    let input = marker_input(source);
+    let opts = FixtureOpts::new(
+        source,
+        vec![logical_module("marker", &[Member::new("marker")])],
+    )
+    .with_extra_chunks(&[("static/mutation", MUTATION)])
+    .with_native_operation_inputs("static/app", vec![input]);
+    expect_rejection_containing_all(opts, &["global Symbol replacement", "static/mutation"]);
+}
+
+#[test]
+fn exact_global_symbol_slot_rejects_aliases_and_reflective_writes() {
+    for mutation in [
+        "const root = globalThis; root.Symbol = function replacement() {};",
+        "const root = globalThis; delete root.Symbol;",
+        "const root = globalThis; Object.defineProperty(root, 'Symbol', { get() { return function replacement() {}; } });",
+        "const root = globalThis; Object.assign(root, { Symbol: function replacement() {} });",
+        "const root = globalThis; Object.defineProperties(root, { Symbol: { value: function replacement() {} } });",
+    ] {
+        let source =
+            format!("const marker = Symbol('marker');\n{mutation}\nexport {{ marker }};\n");
+        expect_rejection_containing_all(
+            rejected_opts(&source, "marker", marker_input(&source)),
+            &["global Symbol replacement"],
+        );
+    }
+}
+
+#[test]
+fn unrelated_global_write_preserves_exact_symbol_input() {
+    let source = "const marker = Symbol('marker');\nconst root = globalThis;\nObject.assign(root, { unrelated: 1 });\nconsole.log(marker.description);\nexport { marker };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![marker_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "marker\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+    // A literal source names only `unrelated`, which holds no intrinsic.
+    assert!(
+        program_graph["native_integrity_witnesses"].is_null(),
+        "{program_graph}"
+    );
+}
+
+#[test]
+fn native_slot_census_preserves_paths_keys_and_opaque_writes_across_chunks() {
+    let source = "import './mutation.js';\nconsole.log('ok');\n";
+    let mutation = "export function mutate() { const proto = Set.prototype; proto.add = function(value) { return value; }; Set.sibling = 1; Array.prototype[Symbol.iterator] = function* () {}; Object.defineProperty(proto, 'delete', { value: function() {} }); const unknown = globalThis.maybe; Object.defineProperty(unknown, 'add', { value: function() {} }); }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/mutation", mutation)]),
+    );
+    assert_preserved_entry_output(&fixture, "ok\n");
+    let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
+    let slots: Vec<_> = program_graph["native_integrity_witnesses"]
+        .as_array()
+        .expect("native mutation witnesses")
+        .iter()
+        .filter(|witness| witness["source_location"]["source_path"] == "static/mutation.js")
+        .flat_map(|witness| witness["target_slots"].as_array().into_iter().flatten())
+        .collect();
+    for expected in [
+        serde_json::json!({"receiver": {"prototype": "set"}, "key": {"string": "add"}}),
+        serde_json::json!({"receiver": {"constructor": "set"}, "key": {"string": "sibling"}}),
+        serde_json::json!({"receiver": {"prototype": "array"}, "key": "symbol_iterator"}),
+        serde_json::json!({"receiver": {"prototype": "set"}, "key": {"string": "delete"}}),
+        serde_json::json!({"receiver": "unknown", "key": {"string": "add"}}),
+    ] {
+        assert!(
+            slots.contains(&&expected),
+            "missing {expected} from {slots:?}"
+        );
+    }
+}
+
+#[test]
+fn primitive_argument_throw_is_preserved_by_the_selected_call_path() {
+    let source = "console.log('before');\nconst marker = Symbol(1n + 1);\nconsole.log('after');\nexport { marker };\n";
+    let opts = FixtureOpts::new(source, vec![])
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", vec![marker_input(source)]);
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(uses.len(), 1, "the exact selected call is still reported");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+}
+
+fn encoder_input(source: &str) -> NativeOperationInputContract {
+    let declaration = source
+        .lines()
+        .find(|line| line.starts_with("const encoder ="))
+        .unwrap();
+    selected_native_input(
+        source,
+        declaration,
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    )
+}
+
+fn encoder_opts(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(source, vec![])
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES)
+}
+
+#[test]
+fn exact_encoder_input_keeps_adjacent_construction_and_returned_methods_opaque() {
+    let source = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst encoder = new TextEncoder();\nconst adjacent = new TextEncoder();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst encoded = encoder.encode('ok');\nconst getter = globalThis.TextEncoder;\nconsole.log(encoded.length, adjacent.encoding, Boolean(getter));\nexport { encoder, adjacent, factory, LaterError, reflect };\n";
+    let opts = || {
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values",
+                &[
+                    Member::new("encoder"),
+                    Member::new("adjacent"),
+                    Member::new("factory"),
+                    Member::new("LaterError"),
+                    Member::new("encoded"),
+                    Member::new("getter"),
+                ],
+                &[
+                    "globalThis.saved = () => factory();",
+                    "console.log(encoded.length, adjacent.encoding, Boolean(getter));",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES)
+    };
+    let control = run_fixture(opts());
+    let graph = serde_json::to_value(control.dependency_graph()).unwrap();
+    assert!(json_has_unknown_call_target(json_node_declaring(
+        &graph, "encoder"
+    )));
+    let all = run_fixture(
+        opts().with_program_premises(
+            serde_json::from_value(serde_json::json!({
+                "intrinsics_never_written": { "families": "all" }
+            }))
+            .unwrap(),
+        ),
+    );
+    let all_graph = serde_json::to_value(all.dependency_graph()).unwrap();
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&all_graph, "encoder")),
+        "old all-family assertions cannot supply a new host identity: {all_graph}"
+    );
+    let mut input = encoder_input(source);
+    input.selector = SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
+        module: "values".into(),
+        name: "encoder".into(),
+    });
+    let fixture = run_fixture(opts().with_native_operation_inputs("static/app", vec![input]));
+    assert_preserved_entry_output(&fixture, "2 utf-8 true\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let program = serde_json::to_value(fixture.program_graph()).unwrap();
+    unknown_receiver_witness(&program);
+    assert!(
+        !json_has_unknown_call_target(json_node_declaring(&graph, "encoder")),
+        "{graph}"
+    );
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&graph, "adjacent")),
+        "{graph}"
+    );
+    assert!(
+        json_has_unknown_call_target(json_node_declaring(&graph, "encoded")),
+        "{graph}"
+    );
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(uses.len(), 1, "{graph}");
+    assert_eq!(uses[0]["evidence"]["operation"], "text_encoder_empty");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "encoder");
+    assert_eq!(uses[0]["source_location"]["start_line"], 3);
+}
+
+#[test]
+fn exact_encoder_input_removes_only_selected_reentry_constraint() {
+    let source = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst encoder = new TextEncoder();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(encoder.encoding, LaterError.name);\nexport { encoder, factory, LaterError, reflect };\n";
+    let opts = || {
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "encoder",
+                    &[Member::new("encoder")],
+                    &["globalThis.saved = () => factory();"],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES)
+    };
+    assert!(
+        !run_rejection_fixture(opts())
+            .atomic_group_conflicts()
+            .is_empty()
+    );
+    let fixture =
+        run_fixture(opts().with_native_operation_inputs("static/app", vec![encoder_input(source)]));
+    assert_preserved_entry_output(&fixture, "utf-8 LaterError\n");
+}
+
+#[test]
+fn encoder_input_rejects_unsupported_shape_and_identity() {
+    for initializer in [
+        "new TextEncoder('utf-8')",
+        "new TextEncoder(...[])",
+        "TextEncoder()",
+        "new globalThis.TextEncoder()",
+        "new (0, TextEncoder)()",
+        "(sideEffect(), new TextEncoder())",
+        "(globalThis.result = new TextEncoder())",
+        "new OtherEncoder()",
+    ] {
+        let source = format!("const encoder = {initializer};\nexport {{ encoder }};\n");
+        expect_rejection_containing_all(
+            encoder_opts(&source)
+                .with_native_operation_inputs("static/app", vec![encoder_input(&source)]),
+            &["native_operation_inputs"],
+        );
+    }
+    let source = "class TextEncoder {}\nconst encoder = new TextEncoder();\nexport { encoder };\n";
+    expect_rejection_containing_all(
+        encoder_opts(source)
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        &["native_operation_inputs"],
+    );
+}
+
+#[test]
+fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
+    for (initializer, operation) in [
+        ("new Map([])", NativeOperationKind::MapEmpty),
+        ("new Map(undefined)", NativeOperationKind::MapEmpty),
+        ("new Map(...[])", NativeOperationKind::MapEmpty),
+        ("new WeakMap([])", NativeOperationKind::WeakMapEmpty),
+        ("new WeakMap(undefined)", NativeOperationKind::WeakMapEmpty),
+        ("new WeakMap(...[])", NativeOperationKind::WeakMapEmpty),
+        ("new Set([])", NativeOperationKind::SetEmpty),
+        ("new Set(undefined)", NativeOperationKind::SetEmpty),
+        ("new Set(...[])", NativeOperationKind::SetEmpty),
+        ("new globalThis.Map()", NativeOperationKind::MapEmpty),
+        (
+            "new globalThis.WeakMap()",
+            NativeOperationKind::WeakMapEmpty,
+        ),
+        ("new globalThis.Set()", NativeOperationKind::SetEmpty),
+        ("new Alias()", NativeOperationKind::MapEmpty),
+        ("new Alias()", NativeOperationKind::WeakMapEmpty),
+        ("new (0, Map)()", NativeOperationKind::MapEmpty),
+        ("new (0, WeakMap)()", NativeOperationKind::WeakMapEmpty),
+        ("(sideEffect(), new Map())", NativeOperationKind::MapEmpty),
+        (
+            "(sideEffect(), new WeakMap())",
+            NativeOperationKind::WeakMapEmpty,
+        ),
+        (
+            "(globalThis.result = new Set())",
+            NativeOperationKind::SetEmpty,
+        ),
+        (
+            "(globalThis.result = new WeakMap())",
+            NativeOperationKind::WeakMapEmpty,
+        ),
+        ("new Map()", NativeOperationKind::SetEmpty),
+        ("new Map()", NativeOperationKind::WeakMapEmpty),
+        ("new WeakMap()", NativeOperationKind::MapEmpty),
+        ("new WeakMap()", NativeOperationKind::SetEmpty),
+        ("new Set()", NativeOperationKind::MapEmpty),
+    ] {
+        let declaration = format!("const collection = {initializer};");
+        let source = format!("{declaration}\n");
+        expect_rejection_containing_all(
+            FixtureOpts::new(&source, vec![]).with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    &source,
+                    &declaration,
+                    "collection",
+                    operation,
+                )],
+            ),
+            &["native_operation_inputs"],
+        );
+    }
+
+    for (source, operation, constructor) in [
+        (
+            "class Map {}\nconst collection = new Map();\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+        ),
+        (
+            "class Set {}\nconst collection = new Set();\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+        ),
+        (
+            "class WeakMap {}\nconst collection = new WeakMap();\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new WeakMap();",
+        ),
+        (
+            "const Alias = Map;\nconst collection = new Alias();\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Alias();",
+        ),
+        (
+            "const Alias = Set;\nconst collection = new Alias();\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Alias();",
+        ),
+        (
+            "const Alias = WeakMap;\nconst collection = new Alias();\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new Alias();",
+        ),
+        (
+            "const collection = new Map();\neval('');\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+        ),
+        (
+            "const collection = new Set();\neval('');\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![]).with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    source,
+                    constructor,
+                    "collection",
+                    operation,
+                )],
+            ),
+            &["native_operation_inputs"],
+        );
+    }
+
+    for (source, operation, constructor, write) in [
+        (
+            "const collection = new Map();\nMap = replacement;\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+            "Map",
+        ),
+        (
+            "const collection = new Set();\nSet = replacement;\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+            "Set",
+        ),
+        (
+            "const collection = new WeakMap();\nWeakMap = replacement;\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new WeakMap();",
+            "WeakMap",
+        ),
+        (
+            "const collection = new Map();\nglobalThis.Map = replacement;\n",
+            NativeOperationKind::MapEmpty,
+            "const collection = new Map();",
+            "Map",
+        ),
+        (
+            "const collection = new Set();\nglobalThis.Set = replacement;\n",
+            NativeOperationKind::SetEmpty,
+            "const collection = new Set();",
+            "Set",
+        ),
+        (
+            "const collection = new WeakMap();\nglobalThis.WeakMap = replacement;\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new WeakMap();",
+            "WeakMap",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![]).with_native_operation_inputs(
+                "static/app",
+                vec![selected_native_input(
+                    source,
+                    constructor,
+                    "collection",
+                    operation,
+                )],
+            ),
+            &[write, "contradicted"],
+        );
+    }
+}
+
+#[test]
+fn encoder_input_rejects_known_slot_writes_including_alias_and_sibling() {
+    for mutation in [
+        "TextEncoder = function replacement() {};",
+        "const root = globalThis; root.TextEncoder = function replacement() {};",
+        "Object.defineProperty(globalThis, 'TextEncoder', { get() { return function replacement() {}; } });",
+    ] {
+        let source =
+            format!("const encoder = new TextEncoder();\n{mutation}\nexport {{ encoder }};\n");
+        expect_rejection_containing_all(
+            encoder_opts(&source)
+                .with_native_operation_inputs("static/app", vec![encoder_input(&source)]),
+            &["TextEncoder", "contradicted"],
+        );
+    }
+    let source =
+        "import './mutation.js';\nconst encoder = new TextEncoder();\nexport { encoder };\n";
+    expect_rejection_containing_all(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[(
+                "static/mutation",
+                "globalThis.TextEncoder = function replacement() {};\n",
+            )])
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        &["TextEncoder", "static/mutation"],
+    );
+}
+
+#[test]
+fn encoder_input_rejects_stale_digest_and_mismatched_selector() {
+    let source = "const encoder = new TextEncoder();\nexport { encoder };\n";
+    let mut stale = encoder_input(source);
+    stale.audited_source_sha256 = "0".repeat(64);
+    expect_rejection_containing_all(
+        encoder_opts(source).with_native_operation_inputs("static/app", vec![stale]),
+        &["sha256"],
+    );
+    let mut mismatched = encoder_input(source);
+    mismatched.selector = SourceUnitSelector::SourceMatch(source_match_selector(
+        "const missing = new TextDecoder();",
+        &["missing"],
+    ));
+    expect_rejection_containing_all(
+        encoder_opts(source).with_native_operation_inputs("static/app", vec![mismatched]),
+        &["native_operation_inputs"],
+    );
+}
+
+#[test]
+fn unannotated_encoder_census_proves_timing_but_preserves_purity_fallback() {
+    let source =
+        "const encoder = new TextEncoder();\nconsole.log(encoder.encoding);\nexport { encoder };\n";
+    let opts = || FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline());
+    let fixture = run_fixture(opts());
+    assert_preserved_entry_output(&fixture, "utf-8\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let node = json_node_declaring(&graph, "encoder");
+    assert!(!json_has_unknown_call_target(node), "{graph}");
+    assert_eq!(node["purity"]["kind"], "not_pure");
+    assert!(json_execution_rows(&graph, "native_operation_input_uses").is_empty());
+    let fixture =
+        run_fixture(opts().with_native_operation_inputs("static/app", vec![encoder_input(source)]));
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let node = json_node_declaring(&graph, "encoder");
+    assert_eq!(node["purity"]["kind"], "pure");
+    assert_eq!(
+        node["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+        0
+    );
+}
+
+#[test]
+fn encoder_input_rejects_ambiguous_constructor_selection() {
+    let source = "const encoder = new TextEncoder();\nconst adjacent = new TextEncoder();\nexport { encoder, adjacent };\n";
+    expect_rejection_containing_all(
+        encoder_opts(source)
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        &["native_operation_inputs"],
+    );
+}
+
+#[test]
+fn encoder_input_selects_one_comma_declarator_without_parentheses() {
+    let source = "import { reflect } from './reflect.js';\nvar limit = 1e4, encoder = new TextEncoder;\nconsole.log(limit, encoder.encoding);\nexport { limit, encoder, reflect };\n";
+    let input = selected_native_input(
+        source,
+        "var limit = 1e4, encoder = new TextEncoder;",
+        "encoder",
+        NativeOperationKind::TextEncoderEmpty,
+    );
+    let fixture =
+        run_fixture(encoder_opts(source).with_native_operation_inputs("static/app", vec![input]));
+    assert_preserved_entry_output(&fixture, "10000 utf-8\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(uses.len(), 1, "{graph}");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "encoder");
+    assert!(
+        !json_has_unknown_call_target(json_node_declaring(&graph, "encoder")),
+        "{graph}"
+    );
+    assert_eq!(
+        json_node_declaring(&graph, "encoder")["purity"]["kind"],
+        "pure"
+    );
+}

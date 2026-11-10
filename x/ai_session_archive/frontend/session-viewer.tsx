@@ -1,0 +1,1071 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Center,
+  Checkbox,
+  Group,
+  Loader,
+  Menu,
+  NativeSelect,
+  Paper,
+  Popover,
+  ScrollArea,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
+
+import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
+import { ArchiveTranscript } from "./transcript";
+import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
+import type { EventRecord, Harness, SessionKind, SessionSummary } from "./schema";
+import { ResizeHandle, usePaneSize, type PaneSize } from "../../../util/frontend/resize_handle";
+import { HistoryRecorderTools } from "../../../util/frontend/transcript/history_recorder_tools";
+import { historyRecorder } from "./history-recorder";
+
+const SESSION_PAGE_SIZE = 50;
+const SESSION_SIDEBAR_MIN_WIDTH = 240;
+const SESSION_SIDEBAR_MAX_WIDTH = 520;
+const SESSION_SIDEBAR_DEFAULT_WIDTH = 320;
+const SESSION_TRANSCRIPT_MIN_WIDTH = 360;
+const SESSION_RESIZE_HANDLE_WIDTH = 8;
+const SESSION_KINDS: { value: SessionKind; label: string }[] = [
+  { value: "main", label: "Main sessions" },
+  { value: "subagent", label: "Subagents" },
+  { value: "guardian", label: "Guardian" },
+  { value: "unknown", label: "Unknown" },
+];
+
+function maxSessionSidebarWidth(layoutWidth: number): number {
+  return Math.max(
+    SESSION_SIDEBAR_MIN_WIDTH,
+    Math.min(SESSION_SIDEBAR_MAX_WIDTH, layoutWidth - SESSION_TRANSCRIPT_MIN_WIDTH - SESSION_RESIZE_HANDLE_WIDTH)
+  );
+}
+
+function parentLinkLabel(kind: string | null): string | null {
+  switch (kind) {
+    case null:
+      return null;
+    case "claude_path_inferred":
+      return "Parent inferred from Claude subagent path";
+    case "codex_parent_thread_id":
+      return "Parent linked from Codex parent_thread_id";
+    case "codex_parent_thread_id_unresolved":
+      return "Codex parent_thread_id is unresolved";
+    case "codex_parent_thread_id_ambiguous":
+      return "Codex parent_thread_id is ambiguous";
+    case "codex_parent_thread_id_inconsistent":
+      return "Conflicting Codex parent_thread_id values";
+    default:
+      return `Parent link source: ${kind.replaceAll("_", " ")}`;
+  }
+}
+
+function transcriptStatus(session: SessionSummary): { label: string; color: string } {
+  switch (session.transcript_status) {
+    case "captured":
+      return { label: session.latest_version_record_count === 0 ? "Latest capture empty" : "Captured", color: "green" };
+    case "pending":
+      return { label: "Inventory only", color: "yellow" };
+    case "failed":
+      return { label: "Import failed", color: "red" };
+    case "unavailable":
+      return { label: "No captured version", color: "gray" };
+  }
+}
+
+function TranscriptStatusBadge({
+  session,
+  size,
+  className,
+}: {
+  session: SessionSummary;
+  size: "xs" | "sm";
+  className?: string;
+}): JSX.Element | null {
+  if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
+  const status = transcriptStatus(session);
+  return (
+    <Badge className={className} size={size} color={status?.color} variant="light">
+      {status?.label}
+    </Badge>
+  );
+}
+
+function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
+  switch (status) {
+    case "pending":
+      return "Restic inventory found a file, but no transcript version has been imported yet.";
+    case "failed":
+      return "Importing an inventoried file failed, so no transcript version is available.";
+    case "unavailable":
+      return "No transcript version is available. Inventory alone does not establish that a usable file was captured; the source may be absent or unavailable.";
+    case "captured":
+      return "The index reports a captured version, but no version details are available.";
+  }
+}
+
+function RelatedSessionsIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M6 7v10m0 0h5a7 7 0 0 0 7-7V7" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="6" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="6" cy="19" r="2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="18" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
+  const { sessionId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const search = new URLSearchParams(location.search);
+  const selectedMachineId = search.get("machine") ?? "";
+  const selectedHarness = search.get("harness") ?? "";
+  const kindSelection = search.has("kind") ? search.getAll("kind") : ["main", "unknown"];
+  const kindScope = SESSION_KINDS.filter(({ value }) => kindSelection.includes(value))
+    .map(({ value }) => value)
+    .join(",");
+  const selectedKinds = useMemo(() => (kindScope === "" ? [] : (kindScope.split(",") as SessionKind[])), [kindScope]);
+  const requestedVersionId = search.get("version");
+  const queryClient = useQueryClient();
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const mobileSessionListRef = useRef<HTMLElement>(null);
+  const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
+  const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false);
+  const [relatedSessionsOpen, setRelatedSessionsOpen] = useState(false);
+  const sidebarMaxWidth = maxSessionSidebarWidth(layoutWidth);
+  const storedSidebarPane = usePaneSize(
+    "ai-session-archive-sidebar-width",
+    SESSION_SIDEBAR_DEFAULT_WIDTH,
+    SESSION_SIDEBAR_MIN_WIDTH,
+    sidebarMaxWidth
+  );
+  const sidebarWidth = Math.min(storedSidebarPane.size, sidebarMaxWidth);
+  const sidebarPane: PaneSize = {
+    ...storedSidebarPane,
+    size: sidebarWidth,
+    max: sidebarMaxWidth,
+    resize: (size) => storedSidebarPane.resize(Math.min(size, sidebarMaxWidth)),
+    step: (delta) => storedSidebarPane.step(delta),
+  };
+  const machinesQuery = useQuery({
+    queryKey: ["ai-session-archive", "machines"],
+    queryFn: ({ signal }) => api.listMachines(signal),
+  });
+  const machines = machinesQuery.data ?? [];
+  const {
+    progress: importProgress,
+    loading: loadingImportProgress,
+    error: importProgressError,
+  } = useMachineImportProgress(api);
+  const sessionListQueryKey = [
+    "ai-session-archive",
+    "sessions",
+    selectedMachineId || null,
+    selectedHarness || null,
+    selectedKinds,
+  ] as const;
+  const sessionsQuery = useInfiniteQuery({
+    queryKey: sessionListQueryKey,
+    queryFn: ({ pageParam, signal }) =>
+      api.listSessions(
+        {
+          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
+          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
+          ...(pageParam === null ? {} : { cursor: pageParam }),
+          kinds: selectedKinds,
+          limit: SESSION_PAGE_SIZE,
+        },
+        signal
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: selectedKinds.length > 0,
+  });
+  const sessionPages = sessionsQuery.data?.pages ?? [];
+  const sessions = useMemo(
+    () =>
+      mergeById(
+        [],
+        sessionPages.flatMap((page) => page.data)
+      ),
+    [sessionPages]
+  );
+  const sessionCursor = sessionPages.at(-1)?.next_cursor ?? null;
+  const loadingSessions = selectedKinds.length > 0 && sessionsQuery.isLoading;
+  const loadingMoreSessions = sessionsQuery.isFetchingNextPage;
+  const loadedSessionScope = selectedKinds.length === 0 || sessionsQuery.data !== undefined;
+
+  const listedSelectedSession = sessions.find((session) => session.id === sessionId) ?? null;
+  const selectedSessionQuery = useQuery({
+    queryKey: ["ai-session-archive", "session", sessionId ?? null],
+    queryFn: ({ signal }) => {
+      if (sessionId === undefined) throw new Error("A session ID is required.");
+      return api.getSession(sessionId, signal);
+    },
+    enabled: sessionId !== undefined && listedSelectedSession === null,
+  });
+  const fetchedSession =
+    sessionId !== undefined && selectedSessionQuery.data?.id === sessionId ? selectedSessionQuery.data : null;
+  const selectedSession = listedSelectedSession ?? fetchedSession;
+  const loadingSelectedSession =
+    sessionId !== undefined && listedSelectedSession === null && selectedSessionQuery.isLoading;
+  const selectedSessionError = selectedSessionQuery.error === null ? null : errorMessage(selectedSessionQuery.error);
+
+  const versionsQuery = useQuery({
+    queryKey: [
+      "ai-session-archive",
+      "versions",
+      selectedSession?.id ?? null,
+      selectedSession?.latest_version_id ?? null,
+    ],
+    queryFn: ({ signal }) => {
+      if (selectedSession === null) throw new Error("A selected session is required.");
+      return api.listVersions(selectedSession.id, signal);
+    },
+    enabled: selectedSession !== null,
+  });
+  const versions = versionsQuery.data ?? [];
+  const hasLoadedVersions = versionsQuery.data !== undefined;
+  const requestedVersionUnavailable =
+    requestedVersionId !== null && hasLoadedVersions && !versions.some((version) => version.id === requestedVersionId);
+  const selectedVersionId = !hasLoadedVersions
+    ? null
+    : requestedVersionId !== null
+      ? (versions.find((version) => version.id === requestedVersionId)?.id ?? null)
+      : (versions.find((version) => version.id === selectedSession?.latest_version_id)?.id ?? versions[0]?.id ?? null);
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
+  const loadingVersions = selectedSession !== null && versionsQuery.isLoading;
+
+  const eventQuery = useInfiniteQuery({
+    queryKey: ["ai-session-archive", "events", selectedSession?.id ?? null, selectedVersionId],
+    queryFn: ({ pageParam, signal }) => {
+      if (selectedSession === null || selectedVersionId === null) {
+        throw new Error("A selected session version is required.");
+      }
+      return api.listEvents(selectedSession.id, selectedVersionId, pageParam, signal);
+    },
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: selectedSession !== null && selectedVersionId !== null,
+  });
+  const eventPages = eventQuery.data?.pages ?? [];
+  const events = useMemo(
+    () =>
+      mergeByOrdinal(
+        [],
+        eventPages.flatMap((page) => page.data)
+      ),
+    [eventPages]
+  );
+  const eventCursor = eventPages.at(-1)?.next_cursor ?? null;
+  const loadingEvents = eventQuery.isLoading;
+  const loadingEarlierEvents = eventQuery.isFetchingNextPage;
+  const eventScope = `${selectedSession?.id ?? ""}\u0000${selectedVersionId ?? ""}`;
+
+  const parentSessionId = selectedSession?.parent_session_id ?? null;
+  const parentSessionQuery = useQuery({
+    queryKey: ["ai-session-archive", "session", parentSessionId],
+    queryFn: ({ signal }) => {
+      if (parentSessionId === null) throw new Error("A parent session ID is required.");
+      return api.getSession(parentSessionId, signal);
+    },
+    enabled: parentSessionId !== null,
+  });
+  const parentSession = parentSessionQuery.data?.id === parentSessionId ? parentSessionQuery.data : null;
+  const loadingParentSession = parentSessionId !== null && parentSessionQuery.isLoading;
+  const parentSessionLoadError = parentSessionQuery.error === null ? null : errorMessage(parentSessionQuery.error);
+
+  const childSessionsQuery = useInfiniteQuery({
+    queryKey: ["ai-session-archive", "children", selectedSession?.id ?? null],
+    queryFn: ({ pageParam, signal }) => {
+      if (selectedSession === null) throw new Error("A selected session is required.");
+      return api.listSessions(
+        {
+          parentSessionId: selectedSession.id,
+          ...(pageParam === null ? {} : { cursor: pageParam }),
+          limit: SESSION_PAGE_SIZE,
+        },
+        signal
+      );
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: selectedSession !== null,
+  });
+  const childPages = childSessionsQuery.data?.pages ?? [];
+  const childSessions = useMemo(
+    () =>
+      mergeById(
+        [],
+        childPages.flatMap((page) => page.data)
+      ),
+    [childPages]
+  );
+  const childSessionCursor = childPages.at(-1)?.next_cursor ?? null;
+  const loadingChildSessions = selectedSession !== null && childSessionsQuery.isLoading;
+  const loadingMoreRelatedSessions = childSessionsQuery.isFetchingNextPage;
+  const childSessionsLoadError = childSessionsQuery.error === null ? null : errorMessage(childSessionsQuery.error);
+  const error =
+    [machinesQuery.error, sessionsQuery.error, versionsQuery.error, eventQuery.error].find(
+      (reason): reason is Error => reason !== null
+    ) ?? null;
+  const errorText = error === null ? null : errorMessage(error);
+  const loadingMachines = machinesQuery.isLoading;
+
+  const machineNames = useMemo(
+    () => new Map(machines.map((machine) => [machine.id, machine.display_name])),
+    [machines]
+  );
+  const selectedVersionIsEarlierCapture =
+    selectedVersion !== null &&
+    selectedSession !== null &&
+    selectedSession.latest_version_id !== null &&
+    selectedVersion.id !== selectedSession.latest_version_id;
+  const hasParentRelation =
+    selectedSession !== null &&
+    (selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null);
+  const hasParentMetadata =
+    hasParentRelation ||
+    (selectedSession !== null &&
+      (selectedSession.parent_native_session_id !== null ||
+        selectedSession.parent_native_session_id_conflict === true ||
+        (selectedSession.parent_native_session_id_candidates?.length ?? 0) > 0));
+  const hasCapturedParentSession = selectedSession !== null && selectedSession.parent_session_id !== null;
+  const relatedSessionCount = childSessions.length + Number(hasCapturedParentSession);
+  const hasMoreRelatedChildren = childSessionsQuery.hasNextPage;
+  const relatedSessionCountLabel = `${relatedSessionCount}${hasMoreRelatedChildren ? "+" : ""}`;
+  const loadingRelatedSessions = loadingParentSession || loadingChildSessions;
+  const hasRelatedSessions =
+    selectedSession !== null &&
+    (hasParentMetadata ||
+      childSessions.length > 0 ||
+      loadingRelatedSessions ||
+      parentSessionLoadError !== null ||
+      childSessionsLoadError !== null);
+
+  useEffect(() => {
+    const layout = layoutRef.current;
+    if (layout === null) return;
+    const updateWidth = (): void => {
+      if (layout.clientWidth > 0) setLayoutWidth(layout.clientWidth);
+    };
+    updateWidth();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateWidth);
+      return () => window.removeEventListener("resize", updateWidth);
+    }
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(layout);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!mobileSessionListOpen) return;
+    const previousFocus = document.activeElement;
+    const sidebar = mobileSessionListRef.current;
+    const focusableElements = (): HTMLElement[] => [
+      ...(sidebar?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) ?? []),
+    ];
+    focusableElements()[0]?.focus();
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setMobileSessionListOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = focusableElements();
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
+  }, [mobileSessionListOpen]);
+
+  useEffect(() => {
+    setRelatedSessionsOpen(false);
+  }, [selectedSession?.id]);
+
+  useEffect(() => {
+    if (sessionId === undefined && loadedSessionScope && !loadingSessions && sessions[0]) {
+      navigate(`/sessions/${encodeURIComponent(sessions[0].id)}${location.search}`, { replace: true });
+    }
+  }, [sessionId, loadedSessionScope, loadingSessions, sessions, location.search, navigate]);
+
+  // Scroll and layout callbacks can call these again before a render publishes isFetchingNextPage.
+  // cancelRefetch: false joins the in-flight page; the default would abort it and refetch.
+  const loadMoreSessions = (): void => {
+    if (sessionsQuery.hasNextPage) void sessionsQuery.fetchNextPage({ cancelRefetch: false });
+  };
+
+  const loadEarlierEvents = (): void => {
+    if (eventQuery.hasNextPage) void eventQuery.fetchNextPage({ cancelRefetch: false });
+  };
+
+  const loadMoreRelatedSessions = (): void => {
+    if (childSessionsQuery.hasNextPage) void childSessionsQuery.fetchNextPage({ cancelRefetch: false });
+  };
+
+  const sessionPath = (targetId: string): string => {
+    const params = new URLSearchParams(location.search);
+    params.delete("version");
+    const query = params.toString();
+    return `/sessions/${encodeURIComponent(targetId)}${query ? `?${query}` : ""}`;
+  };
+
+  const changeFilter = (name: "machine" | "harness", value: string): void => {
+    if (value) search.set(name, value);
+    else search.delete(name);
+    search.delete("version");
+    navigate(`/?${search.toString()}`);
+  };
+
+  const changeKinds = (values: string[]): void => {
+    search.delete("kind");
+    for (const { value } of SESSION_KINDS) {
+      if (values.includes(value)) search.append("kind", value);
+    }
+    if (values.length === 0) search.set("kind", "");
+    navigate(`${location.pathname}?${search.toString()}`);
+  };
+
+  const changeVersion = (versionId: string): void => {
+    if (versionId) search.set("version", versionId);
+    else search.delete("version");
+    const query = search.toString();
+    const nextPath = `${location.pathname}${query ? `?${query}` : ""}`;
+    if (nextPath !== `${location.pathname}${location.search}`) navigate(nextPath);
+  };
+
+  return (
+    <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
+      <Box component="header" className="session-browser-header">
+        <Box>
+          <Group gap="xs" justify="space-between" wrap="nowrap">
+            <Title order={1} size="h3">
+              Local agent sessions
+            </Title>
+            <HistoryRecorderTools
+              recorder={historyRecorder}
+              label="Transcript recorder"
+              downloadPrefix="ai-session-archive-history-recording"
+              position="bottom-end"
+            />
+          </Group>
+          <Text size="sm" c="dimmed">
+            Captured Claude Code and Codex CLI conversations
+          </Text>
+        </Box>
+        <MachineImportProgressSummary
+          progress={importProgress}
+          loading={loadingImportProgress}
+          error={importProgressError}
+          returnTo={`${location.pathname}${location.search}`}
+        />
+      </Box>
+      {errorText !== null && (
+        <Alert color="red" title="Session data unavailable">
+          {errorText}
+        </Alert>
+      )}
+      <Box
+        ref={layoutRef}
+        className="session-browser-layout"
+        style={{ "--session-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
+        {mobileSessionListOpen && (
+          <button
+            type="button"
+            className="session-browser-mobile-backdrop"
+            aria-label="Close session list"
+            tabIndex={-1}
+            onClick={() => setMobileSessionListOpen(false)}
+          />
+        )}
+        <Paper
+          component="aside"
+          ref={mobileSessionListRef}
+          aria-label="Session list"
+          aria-modal={mobileSessionListOpen || undefined}
+          role={mobileSessionListOpen ? "dialog" : "complementary"}
+          id="session-browser-sidebar"
+          withBorder
+          radius="sm"
+          p="xs"
+          className={`session-browser-sidebar${mobileSessionListOpen ? " session-browser-sidebar-open" : ""}`}
+        >
+          <Stack gap="xs" style={{ height: "100%", minHeight: 0 }}>
+            <Group className="session-browser-mobile-sidebar-heading" justify="space-between" align="center">
+              <Text size="sm" fw={600}>
+                Session list
+              </Text>
+              <Button size="xs" variant="default" onClick={() => setMobileSessionListOpen(false)}>
+                Close
+              </Button>
+            </Group>
+            <Select
+              label="Machine"
+              aria-label="Filter by machine"
+              data={[
+                { value: "", label: "All machines" },
+                ...machines.map((machine) => ({ value: machine.id, label: machine.display_name })),
+              ]}
+              value={selectedMachineId}
+              onChange={(value) => changeFilter("machine", value ?? "")}
+              disabled={loadingMachines}
+              placeholder={loadingMachines ? "Loading machines…" : "All machines"}
+            />
+            <NativeSelect
+              label="Harness"
+              aria-label="Filter by harness"
+              value={selectedHarness}
+              onChange={(event) => changeFilter("harness", event.currentTarget.value)}
+              data={[
+                { value: "", label: "All harnesses" },
+                { value: "claude", label: "Claude Code" },
+                { value: "codex", label: "Codex CLI" },
+              ]}
+            />
+            <Checkbox.Group label="Session kinds" value={selectedKinds} onChange={changeKinds}>
+              <SimpleGrid cols={2} spacing={4} mt={4}>
+                {SESSION_KINDS.map(({ value, label }) => (
+                  <Checkbox key={value} value={value} label={label} size="xs" />
+                ))}
+              </SimpleGrid>
+            </Checkbox.Group>
+            <Button
+              size="xs"
+              variant="default"
+              loading={loadingSessions}
+              onClick={() => void queryClient.resetQueries({ queryKey: sessionListQueryKey, exact: true })}
+            >
+              Refresh session list
+            </Button>
+            <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+              {loadingSessions ? (
+                <Center h={200}>
+                  <Loader size="sm" aria-label="Loading sessions" />
+                </Center>
+              ) : sessions.length === 0 ? (
+                <Center h={160} px="md">
+                  <Text size="sm" c="dimmed" ta="center">
+                    No captured sessions match these filters.
+                  </Text>
+                </Center>
+              ) : (
+                <Stack gap={4}>
+                  {sessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      machineName={machineNames.get(session.machine_id) ?? session.machine_id}
+                      selected={session.id === sessionId}
+                      to={sessionPath(session.id)}
+                      onClick={() => setMobileSessionListOpen(false)}
+                    />
+                  ))}
+                </Stack>
+              )}
+              {sessionCursor !== null && (
+                <Button
+                  fullWidth
+                  variant="default"
+                  mt="xs"
+                  loading={loadingMoreSessions}
+                  onClick={() => void loadMoreSessions()}
+                >
+                  Load more sessions
+                </Button>
+              )}
+            </ScrollArea>
+          </Stack>
+        </Paper>
+
+        <ResizeHandle
+          pane={sidebarPane}
+          axis="x"
+          className="session-browser-resize-handle"
+          aria-label="Resize session list"
+          aria-controls="session-browser-sidebar"
+          aria-valuetext={`${sidebarWidth} pixels`}
+        />
+
+        <Paper
+          component="section"
+          aria-label="Session transcript"
+          withBorder
+          radius="sm"
+          p="md"
+          className="session-browser-transcript"
+        >
+          <Group className="session-browser-mobile-toolbar" gap="xs" wrap="wrap">
+            <Button
+              className="session-browser-mobile-toggle"
+              variant="default"
+              size="xs"
+              aria-controls="session-browser-sidebar"
+              aria-expanded={mobileSessionListOpen}
+              onClick={() => setMobileSessionListOpen(true)}
+            >
+              Session list
+            </Button>
+          </Group>
+          {selectedSession === null ? (
+            <Center style={{ flex: 1 }}>
+              {loadingSelectedSession ? (
+                <Loader size="sm" aria-label="Loading selected session" />
+              ) : (
+                <Text c="dimmed">
+                  {selectedSessionError !== null
+                    ? `Could not load session ${sessionId}: ${selectedSessionError}`
+                    : "Select a session to view its captured versions."}
+                </Text>
+              )}
+            </Center>
+          ) : (
+            <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
+              <Group justify="space-between" align="start" wrap="nowrap">
+                <Box style={{ minWidth: 0, flex: 1 }}>
+                  <Group gap="xs" mb={4}>
+                    <Badge variant="light">{harnessLabel(selectedSession.harness)}</Badge>
+                    <Text size="sm" c="dimmed">
+                      {machineNames.get(selectedSession.machine_id) ?? selectedSession.machine_id}
+                    </Text>
+                    {selectedSession.identity_inferred && (
+                      <Badge color="orange" variant="light">
+                        Identity inferred
+                      </Badge>
+                    )}
+                    <TranscriptStatusBadge session={selectedSession} size="sm" />
+                    {selectedVersionIsEarlierCapture && (
+                      <Badge size="xs" color="orange" variant="light">
+                        Earlier capture
+                      </Badge>
+                    )}
+                    {selectedVersion !== null && selectedVersion.parse_issue_count > 0 && (
+                      <Badge size="xs" color="orange" variant="light">
+                        {selectedVersion.parse_issue_count} parse warning
+                        {selectedVersion.parse_issue_count === 1 ? "" : "s"}
+                      </Badge>
+                    )}
+                    {selectedSession.native_session_id_conflict && (
+                      <Badge color="red" variant="light">
+                        Conflicting native session IDs
+                      </Badge>
+                    )}
+                  </Group>
+                  <Group className="session-browser-title-row" gap="xs" wrap="nowrap" align="center">
+                    <Title order={2} size="h4" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                      {selectedSession.title || "Untitled session"}
+                    </Title>
+                    {hasRelatedSessions && (
+                      <Popover
+                        opened={relatedSessionsOpen}
+                        onChange={setRelatedSessionsOpen}
+                        position={layoutWidth <= 760 ? "top-end" : "bottom-end"}
+                        offset={8}
+                        width="min(440px, calc(100vw - 32px))"
+                        withinPortal
+                        shadow="md"
+                      >
+                        <Popover.Target>
+                          <Button
+                            className="session-browser-related-trigger"
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => setRelatedSessionsOpen((open) => !open)}
+                            aria-label={`Related sessions (${relatedSessionCount} shown${hasMoreRelatedChildren ? ", more available" : ""})`}
+                            aria-controls="session-browser-related-dropdown"
+                            aria-expanded={relatedSessionsOpen}
+                          >
+                            <RelatedSessionsIcon />
+                            <Badge
+                              className="session-browser-related-count"
+                              size="sm"
+                              variant="light"
+                              aria-hidden="true"
+                            >
+                              {relatedSessionCountLabel}
+                            </Badge>
+                          </Button>
+                        </Popover.Target>
+                        <Popover.Dropdown className="session-browser-related-dropdown">
+                          <Paper
+                            component="section"
+                            id="session-browser-related-dropdown"
+                            aria-label="Related sessions"
+                          >
+                            <Stack gap="xs">
+                              <Text size="sm" fw={600}>
+                                Related sessions
+                              </Text>
+                              {hasParentMetadata && (
+                                <Stack gap={4}>
+                                  <Group gap="xs" wrap="wrap">
+                                    <Text size="xs" c="dimmed">
+                                      Parent
+                                    </Text>
+                                    {selectedSession.parent_session_id !== null && parentSession !== null ? (
+                                      <Button
+                                        component={Link}
+                                        to={sessionPath(parentSession.id)}
+                                        variant="subtle"
+                                        size="xs"
+                                        onClick={() => {
+                                          setRelatedSessionsOpen(false);
+                                          setMobileSessionListOpen(false);
+                                        }}
+                                      >
+                                        {parentSession.title || "Untitled parent session"}
+                                      </Button>
+                                    ) : selectedSession.parent_session_id !== null && loadingParentSession ? (
+                                      <Loader size="xs" aria-label="Loading parent session" />
+                                    ) : parentSessionLoadError !== null ? (
+                                      <Text size="xs" c="red" role="alert">
+                                        Could not load parent session: {parentSessionLoadError}
+                                      </Text>
+                                    ) : (
+                                      <Text size="xs" c="dimmed">
+                                        Parent session could not be resolved to a captured session.
+                                      </Text>
+                                    )}
+                                    {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
+                                      <Badge className="session-browser-relation-badge" color="orange" variant="light">
+                                        {parentLinkLabel(selectedSession.parent_link_kind)}
+                                      </Badge>
+                                    )}
+                                    {typeof selectedSession.parent_native_session_id === "string" && (
+                                      <Text size="xs" c="dimmed">
+                                        Native parent ID: {selectedSession.parent_native_session_id}
+                                      </Text>
+                                    )}
+                                    {selectedSession.parent_native_session_id_conflict && (
+                                      <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
+                                        Conflicting native parent ID candidates:{" "}
+                                        {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") ||
+                                          "unavailable"}
+                                      </Text>
+                                    )}
+                                    {parentSession?.identity_inferred && (
+                                      <Text size="xs" c="orange">
+                                        Parent transcript is not captured; its identity is inferred.
+                                      </Text>
+                                    )}
+                                  </Group>
+                                </Stack>
+                              )}
+                              {(childSessions.length > 0 ||
+                                loadingChildSessions ||
+                                childSessionsLoadError !== null) && (
+                                <Stack gap={2}>
+                                  <Text size="xs" c="dimmed">
+                                    Child sessions
+                                  </Text>
+                                  {childSessions.length > 0 && (
+                                    <div
+                                      className="session-browser-related-children"
+                                      role="region"
+                                      aria-label="Child sessions"
+                                      tabIndex={0}
+                                    >
+                                      <Stack gap={2} role="list">
+                                        {childSessions.map((child) => (
+                                          <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
+                                            <Button
+                                              component={Link}
+                                              to={sessionPath(child.id)}
+                                              variant="subtle"
+                                              size="xs"
+                                              onClick={() => {
+                                                setRelatedSessionsOpen(false);
+                                                setMobileSessionListOpen(false);
+                                              }}
+                                            >
+                                              {child.title || "Untitled child session"}
+                                            </Button>
+                                            {parentLinkLabel(child.parent_link_kind) !== null && (
+                                              <Badge
+                                                className="session-browser-relation-badge"
+                                                color="orange"
+                                                variant="light"
+                                              >
+                                                {parentLinkLabel(child.parent_link_kind)}
+                                              </Badge>
+                                            )}
+                                            <Text size="xs" c="dimmed">
+                                              {formatDateTime(child.last_activity_at)}
+                                            </Text>
+                                          </Group>
+                                        ))}
+                                      </Stack>
+                                    </div>
+                                  )}
+                                  {loadingChildSessions && <Loader size="xs" aria-label="Loading child sessions" />}
+                                  {childSessionsLoadError !== null && (
+                                    <Text size="xs" c="red" role="alert">
+                                      Could not load child sessions: {childSessionsLoadError}
+                                    </Text>
+                                  )}
+                                  {childSessionCursor !== null && (
+                                    <Button
+                                      variant="default"
+                                      size="xs"
+                                      loading={loadingMoreRelatedSessions}
+                                      onClick={() => void loadMoreRelatedSessions()}
+                                    >
+                                      Load more child sessions
+                                    </Button>
+                                  )}
+                                </Stack>
+                              )}
+                            </Stack>
+                          </Paper>
+                        </Popover.Dropdown>
+                      </Popover>
+                    )}
+                  </Group>
+                  <Group gap="xs" align="baseline">
+                    {selectedSession.cwd !== null && (
+                      <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                        {selectedSession.cwd}
+                      </Text>
+                    )}
+                    <Text size="xs" c="dimmed">
+                      Started {formatDateTime(selectedSession.started_at)} · Last active{" "}
+                      {formatDateTime(selectedSession.last_activity_at)}
+                    </Text>
+                  </Group>
+                  {selectedSession.native_session_id_conflict && (
+                    <Text size="xs" c="red" mt={4} style={{ overflowWrap: "anywhere" }}>
+                      Native session ID candidates:{" "}
+                      {(selectedSession.native_session_id_candidates ?? []).join(", ") || "unavailable"}
+                    </Text>
+                  )}
+                </Box>
+                <Group gap="xs" wrap="nowrap" style={{ flex: "0 0 auto" }}>
+                  <Menu position="bottom-end" width="min(90vw, 420px)" withinPortal>
+                    <Menu.Target>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        aria-label="Conversation options"
+                        title="Conversation options"
+                      >
+                        <IconDotsVertical size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown style={{ maxHeight: "min(70dvh, 480px)", overflowY: "auto" }}>
+                      <Menu.Label>Captured versions</Menu.Label>
+                      {loadingVersions ? (
+                        <Menu.Item disabled>Loading versions…</Menu.Item>
+                      ) : (
+                        <>
+                          {requestedVersionUnavailable && <Menu.Item disabled>Requested capture unavailable</Menu.Item>}
+                          {versions.map((version) => (
+                            <Menu.RadioItem
+                              key={version.id}
+                              value={version.id}
+                              data-version-id={version.id}
+                              checked={selectedVersionId === version.id}
+                              closeMenuOnClick
+                              style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+                              onClick={() =>
+                                changeVersion(version.id === selectedSession.latest_version_id ? "" : version.id)
+                              }
+                            >
+                              {`${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`}
+                            </Menu.RadioItem>
+                          ))}
+                          {versions.length === 0 && !requestedVersionUnavailable && (
+                            <Menu.Item disabled>No captured versions</Menu.Item>
+                          )}
+                        </>
+                      )}
+                      {selectedVersion !== null && (
+                        <>
+                          <Menu.Divider />
+                          <Menu.Label>
+                            <Stack gap={2}>
+                              <Text size="xs">
+                                {selectedVersion.complete ? "All JSONL lines parsed" : "Some JSONL lines did not parse"}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {selectedVersion.parse_issue_count} parse issues · SHA-256{" "}
+                                {selectedVersion.sha256.slice(0, 12)}
+                              </Text>
+                            </Stack>
+                          </Menu.Label>
+                        </>
+                      )}
+                    </Menu.Dropdown>
+                  </Menu>
+                </Group>
+              </Group>
+              {requestedVersionUnavailable ? (
+                <Center h={180}>
+                  <Stack align="center" gap="xs" maw={480}>
+                    <Text size="sm" fw={600}>
+                      Requested capture unavailable
+                    </Text>
+                    <Text size="sm" c="dimmed" ta="center">
+                      This captured version is not available for this session. Choose another version or view the
+                      current capture.
+                    </Text>
+                    <Button variant="light" size="xs" onClick={() => changeVersion("")}>
+                      View current capture
+                    </Button>
+                  </Stack>
+                </Center>
+              ) : loadingVersions ? (
+                <Center style={{ flex: 1 }}>
+                  <Loader size="sm" aria-label="Loading captured versions" />
+                </Center>
+              ) : selectedVersion === null ? (
+                <Center h={180}>
+                  <Stack align="center" gap="xs" maw={480}>
+                    <Text size="sm" fw={600}>
+                      {transcriptStatus(selectedSession)?.label}
+                    </Text>
+                    <Text size="sm" c="dimmed" ta="center">
+                      {noVersionExplanation(selectedSession.transcript_status)}
+                    </Text>
+                  </Stack>
+                </Center>
+              ) : loadingEvents && events.length === 0 ? (
+                <Center style={{ flex: 1 }}>
+                  <Loader size="sm" aria-label="Loading conversation records" />
+                </Center>
+              ) : (
+                <ArchiveTranscript
+                  scopeId={eventScope}
+                  records={events}
+                  earlier={{
+                    available: eventCursor !== null,
+                    loading: loadingEarlierEvents,
+                    load: () => void loadEarlierEvents(),
+                  }}
+                  tail={
+                    <>
+                      {events.length === 0 && !loadingEvents && (
+                        <Text size="sm" c="dimmed">
+                          This captured version contains no JSONL records.
+                        </Text>
+                      )}
+                    </>
+                  }
+                />
+              )}
+            </Stack>
+          )}
+        </Paper>
+      </Box>
+    </Stack>
+  );
+}
+
+function SessionRow({
+  session,
+  machineName,
+  selected,
+  to,
+  onClick,
+}: {
+  session: SessionSummary;
+  machineName: string;
+  selected: boolean;
+  to: string;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <Button
+      component={Link}
+      to={to}
+      onClick={onClick}
+      variant={selected ? "light" : "subtle"}
+      color={selected ? "blue" : "gray"}
+      fullWidth
+      justify="flex-start"
+      className="session-browser-session-row"
+      aria-current={selected ? "page" : undefined}
+      styles={{
+        root: { height: "auto", padding: "8px", textAlign: "left" },
+        label: { display: "block", width: "100%" },
+      }}
+    >
+      <Box className="session-browser-session-row-content">
+        <Text className="session-row-machine" size="xs" fw={600} truncate>
+          {machineName}
+        </Text>
+        <Text className="session-row-harness" size="xs" c="dimmed">
+          {harnessLabel(session.harness)}
+        </Text>
+        <Text className="session-row-time" size="xs" c="dimmed">
+          {formatDateTime(session.last_activity_at)}
+        </Text>
+        <Text className="session-row-title" size="sm" fw={500} lineClamp={2} style={{ whiteSpace: "normal" }}>
+          {session.title || "Untitled session"}
+        </Text>
+        <TranscriptStatusBadge className="session-row-status" session={session} size="xs" />
+      </Box>
+    </Button>
+  );
+}
+
+function mergeById<T extends { id: string }>(previous: T[], incoming: T[]): T[] {
+  const byId = new Map(previous.map((item) => [item.id, item]));
+  for (const item of incoming) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
+function mergeByOrdinal(previous: EventRecord[], incoming: EventRecord[]): EventRecord[] {
+  const byOrdinal = new Map(previous.map((event) => [event.ordinal, event]));
+  for (const event of incoming) byOrdinal.set(event.ordinal, event);
+  return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
+}
+
+function formatDateTime(value: string | null): string {
+  if (value === null) return "Unknown time";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes;
+  for (const unit of units) {
+    value /= 1024;
+    if (value < 1024 || unit === "GB") return `${value.toFixed(value < 10 ? 1 : 0)} ${unit}`;
+  }
+  return `${bytes} B`;
+}
+
+function errorMessage(reason: unknown, fallback = "Could not load local sessions."): string {
+  return reason instanceof Error ? reason.message : fallback;
+}

@@ -3,25 +3,26 @@
 //! `analysis::reports::schema`. The wire-stable key codecs
 //! (`source_unit_key`, `module_key`, …) live in `analysis::reports`.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
-use analysis::graph::EdgeRole;
+use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis::reports::schema::{
-    CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, ImportedCallableSummaryReport,
-    LineRange,
+    CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, CommutingStatementsReport,
+    ImportedCallableSummaryReport, LineRange, ReturnedRecordUseReport,
 };
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
-    CallbackFactoryContractReport, CallbackFactoryRejectionReport,
-    CallbackFactoryWriteWitnessReport, DepKind, DependencyEdgeReport, DependencyGraphReport,
-    EdgeRoleReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport,
-    ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SourceUnitClass,
-    SourceUnitReport,
+    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DependencyEdgeReport,
+    DependencyGraphReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey,
+    ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport,
+    QuotientSccReport, SourceUnitClass, SourceUnitReport,
 };
 use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;
@@ -37,6 +38,8 @@ struct AtomicEdgeAccumulator {
 
 pub(crate) fn build_dependency_graph_report(
     assignment_analysis: &AssignmentAnalysis,
+    program_graph: std::path::PathBuf,
+    author_inputs: &AuthorInputLocations<'_>,
 ) -> DependencyGraphReport {
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
@@ -54,7 +57,7 @@ pub(crate) fn build_dependency_graph_report(
         },
         || {
             rayon::join(
-                || build_source_unit_nodes_and_edges(assignment_analysis),
+                || build_source_unit_nodes_and_edges(assignment_analysis, author_inputs),
                 || build_atomic_graph_report(assignment_analysis),
             )
         },
@@ -62,33 +65,53 @@ pub(crate) fn build_dependency_graph_report(
     let (quotient_nodes, quotient_edges) = quotient_pair;
     let (mut nodes, edges) = nodes_edges;
     let purity_causes = collect_purity_causes(&mut nodes);
-    let mut imported_callable_summaries = BTreeMap::<String, Vec<_>>::new();
+    let mut imported_callable_summaries = BTreeMap::<String, (Vec<_>, Option<_>)>::new();
     for source_unit in assignment_analysis.inputs().dependency_graph().iter_nodes() {
         for proof_use in &source_unit.callback_factory_uses {
-            let previous = imported_callable_summaries
-                .insert(proof_use.imported_local.clone(), proof_use.evidence.clone());
-            assert!(previous.is_none_or(|evidence| evidence == proof_use.evidence));
+            let entry = imported_callable_summaries
+                .entry(proof_use.imported_local.clone())
+                .or_default();
+            assert!(entry.0.is_empty() || entry.0 == proof_use.evidence);
+            entry.0 = proof_use.evidence.clone();
+        }
+        for proof_use in &source_unit.returned_record_uses {
+            let entry = imported_callable_summaries
+                .entry(proof_use.imported_local.clone())
+                .or_default();
+            assert!(
+                entry
+                    .1
+                    .as_ref()
+                    .is_none_or(|evidence| evidence == &proof_use.evidence)
+            );
+            entry.1 = Some(proof_use.evidence.clone());
         }
     }
     let imported_callable_summaries = imported_callable_summaries
         .into_iter()
         .map(
-            |(imported_local, callback_factory_evidence)| ImportedCallableSummaryReport {
-                id: format!("imported_callable:{imported_local}"),
-                imported_local,
-                callback_factory_evidence,
+            |(imported_local, (callback_factory_evidence, returned_record))| {
+                ImportedCallableSummaryReport {
+                    id: format!("imported_callable:{imported_local}"),
+                    imported_local,
+                    callback_factory_evidence,
+                    returned_record,
+                }
             },
         )
         .collect();
     let quotient_sccs =
         build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
     DependencyGraphReport {
-        provenance: None,
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
+        program_graph,
         nodes,
         purity_causes,
         imported_callable_summaries,
         edges,
+        commuting_statements: build_commuting_statements_reports(
+            assignment_analysis.inputs().dependency_graph(),
+        ),
         quotient: ModuleQuotientReport {
             nodes: quotient_nodes,
             edges: quotient_edges,
@@ -134,7 +157,7 @@ fn attach_cause_refs(
         let index = causes.len();
         causes.push(PurityCauseReport {
             id: id.clone(),
-            purity: Purity::Pure,
+            purity: Purity::pure(),
         });
         let mut callee = (**cause).clone();
         attach_cause_refs(&mut callee, ids, causes);
@@ -149,6 +172,7 @@ fn attach_cause_refs(
 /// the assignment-of()/export-name-for()/etc.\ touches paired in cache.
 fn build_source_unit_nodes_and_edges(
     assignment_analysis: &AssignmentAnalysis,
+    author_inputs: &AuthorInputLocations<'_>,
 ) -> (Vec<SourceUnitReport>, Vec<DependencyEdgeReport>) {
     let assignment = assignment_analysis.assignment();
     let dependency_graph = assignment_analysis.inputs().dependency_graph();
@@ -165,14 +189,42 @@ fn build_source_unit_nodes_and_edges(
             declared_bindings: binding_reports(assignment_analysis, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
+            heap_native_integrity_uses: node.heap_native_integrity_uses.clone(),
             synchronous_execution: node.synchronous_execution.as_ref().map(|execution| {
                 let mut report = execution.clone();
+                for rejection in &mut report.local_record_factory_rejections {
+                    if let Some(publication) = &mut rejection.first_class_members_publication {
+                        publication.source_location = publication
+                            .top_level_owner
+                            .and_then(|owner| source_units_by_ordinal.get(&owner))
+                            .and_then(|source_unit| source_unit.source_location.clone());
+                        if let Some(callsite) = &mut publication.bounded_fallback_callsite {
+                            callsite.source_location = callsite
+                                .top_level_owner
+                                .and_then(|owner| source_units_by_ordinal.get(&owner))
+                                .and_then(|source_unit| source_unit.source_location.clone());
+                        }
+                    }
+                }
+                author_inputs.render_synchronous_execution(&mut report);
                 report.callback_factory_uses = node.callback_factory_uses.iter().map(|proof_use| {
                     CallbackFactoryUseReport {
                         summary_ref: format!("imported_callable:{}", proof_use.imported_local),
                         kind: proof_use.kind,
                         lexical_statement_ordinal: proof_use.lexical_statement_ordinal,
                         source_location: proof_use.source_location.clone(),
+                    }
+                }).collect();
+                report.returned_record_uses = node.returned_record_uses.iter().map(|proof_use| {
+                    ReturnedRecordUseReport {
+                        summary_ref: format!("imported_callable:{}", proof_use.imported_local),
+                        kind: proof_use.kind, lexical_statement_ordinal: proof_use.lexical_statement_ordinal,
+                        source_location: proof_use.source_location.clone(),
+                        native_integrity_value_inputs: proof_use
+                            .evidence
+                            .inference
+                            .value_input_refs
+                            .clone(),
                     }
                 }).collect();
                 report
@@ -204,6 +256,27 @@ fn build_source_unit_nodes_and_edges(
                         } => CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite {
                             witness: witness_report(witness),
                         },
+                        CallbackFactoryBarrierRejection::NamespaceCallArgument { witness } => {
+                            let witness_source = source_units_by_ordinal
+                                .get(&witness.statement_ordinal)
+                                .expect("call argument witness must identify a graph source unit");
+                            let opaque_call = witness_source.synchronous_execution.as_ref()
+                                .is_some_and(|execution| execution.precision_losses.iter().any(|loss| {
+                                    loss.is_unknown_call_target_at(witness.statement_ordinal, witness.call_span)
+                                }));
+                            CallbackFactoryRejectionReport::NamespaceCallArgument {
+                                witness: CallbackFactoryCallArgumentWitnessReport {
+                                    source_unit: source_unit_key(witness_source.id),
+                                    statement_ordinal: witness.statement_ordinal,
+                                    source_location: witness_source.source_location.clone(),
+                                    namespace_binding: Atom::from(witness.namespace_binding.as_str()),
+                                    call_span_start: witness.call_span.lo.0,
+                                    call_span_end: witness.call_span.hi.0,
+                                    argument_index: witness.argument_index,
+                                    opaque_call,
+                                },
+                            }
+                        }
                         CallbackFactoryBarrierRejection::UnsupportedGuard => {
                             CallbackFactoryRejectionReport::UnsupportedGuard
                         }
@@ -242,18 +315,30 @@ fn build_source_unit_nodes_and_edges(
         .collect();
     let edges = dependency_graph
         .iter_edges()
-        .map(|edge| DependencyEdgeReport {
-            id: edge.id.report_key(),
-            source: source_unit_key(edge.from),
-            target: source_unit_key(edge.to),
-            edge_kind: edge.reason.kind,
-            binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
-            statement_ordinal: edge.reason.statement_ordinal,
-            constrains_init_order: edge.reason.constrains_init_order(),
-            role: edge_role_report(edge.reason.role()),
-        })
+        .map(DependencyEdgeReport::from_edge)
         .collect();
     (nodes, edges)
+}
+
+fn build_commuting_statements_reports(
+    dependency_graph: &analysis::DependencyGraph,
+) -> Vec<CommutingStatementsReport> {
+    dependency_graph
+        .commuting_premises()
+        .iter()
+        .map(|premise| CommutingStatementsReport {
+            reference: premise.reference.clone(),
+            spec_location: premise.spec_location.clone(),
+            a: source_unit_key(premise.a),
+            b: source_unit_key(premise.b),
+            inerted_edge_ids: premise
+                .inerted_edges
+                .iter()
+                .map(|id| id.report_key())
+                .collect(),
+            note: premise.note.clone(),
+        })
+        .collect()
 }
 
 fn binding_reports<'a, I>(
@@ -606,19 +691,6 @@ fn destination_kind(
     {
         ModuleRole::Specified => ModuleDestinationKind::Specified,
         ModuleRole::Unassigned => ModuleDestinationKind::Unassigned,
-    }
-}
-
-/// Map a typed [`EdgeRole`] to its wire-format projection. `None`
-/// is shorthand for `EdgeRole::Direct` (skipped from the JSON wire
-/// shape via `skip_serializing_if = Option::is_none`); promoted
-/// edges round-trip through [`EdgeRoleReport::PromotedAtInit`].
-fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
-    match role {
-        EdgeRole::Direct => None,
-        EdgeRole::PromotedAtInit { callee_source_unit } => Some(EdgeRoleReport::PromotedAtInit {
-            callee_source_unit: source_unit_key(callee_source_unit),
-        }),
     }
 }
 

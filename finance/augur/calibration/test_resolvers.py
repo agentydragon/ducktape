@@ -113,30 +113,43 @@ def test_inflation_yoy_counts_window() -> None:
     # index grows 100 -> 103.5 over 12 months (3.5% YoY) for all rollouts; threshold 3% ABOVE -> all YES.
     matrix = np.ones((3, 13), dtype=np.float64) * 100.0
     matrix[:, 12] = 103.5
-    yes = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=12, horizon_months=12)
+    yes = inflation_yoy_counts(
+        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=12, horizon_months=12, as_of=AS_OF
+    )
     assert (yes.yes, yes.no) == (3, 0)
     # A trailing window reaching before month 0 (as_of) is not covered by the sample -> UNRESOLVED.
-    early = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=6, horizon_months=12)
+    early = inflation_yoy_counts(
+        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=6, horizon_months=12, as_of=AS_OF
+    )
     assert (early.yes, early.no, early.unresolved) == (0, 0, 3)
 
 
 def test_inflation_yoy_counts_with_pre_as_of_history() -> None:
-    # Near-term YoY (at_month=2) looks back 10 months into real pre-as_of history.
+    # The latest real CPI month may lag as_of; the denominator still uses the exact month 10
+    # calendar months before as_of (July 2025), rather than the previous available row.
     matrix = np.full((3, 13), 330.0, dtype=np.float64)
     matrix[:, 2] = 340.0  # numerator
-    history = np.full(12, 300.0, dtype=np.float64)  # history[-10] == 300 -> yoy = 340/300 - 1 = 13.3%
+    history = {date(2025, 7, 1): 300.0, date(2025, 8, 1): 310.0, date(2026, 3, 1): 320.0}
     scored = inflation_yoy_counts(
-        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12, history=history
+        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12, as_of=AS_OF, history=history
     )
     assert (scored.yes, scored.no, scored.unresolved) == (3, 0, 0)
     # Without history the same near-term market is UNRESOLVED (the look-back precedes as_of).
-    no_hist = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12)
-    assert no_hist.unresolved == 3
-    # History too short to cover the look-back -> still UNRESOLVED.
-    short = inflation_yoy_counts(
-        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12, history=np.full(5, 300.0)
+    no_hist = inflation_yoy_counts(
+        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12, as_of=AS_OF
     )
-    assert short.unresolved == 3
+    assert no_hist.unresolved == 3
+    # Missing the exact July observation remains unresolved despite adjacent months being present.
+    missing_month = inflation_yoy_counts(
+        matrix,
+        threshold=0.03,
+        direction=Direction.ABOVE,
+        at_month=2,
+        horizon_months=12,
+        as_of=AS_OF,
+        history={date(2025, 6, 1): 300.0, date(2025, 8, 1): 310.0, date(2026, 3, 1): 320.0},
+    )
+    assert (missing_month.yes, missing_month.no, missing_month.unresolved) == (0, 0, 3)
 
 
 def test_level_by_date_counts_touch() -> None:

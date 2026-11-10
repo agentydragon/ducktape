@@ -57,24 +57,14 @@ def test_default_pydantic_generates_oneof():
         validate_openai_strict_mode_schema(schema, "PetWithDiscriminator")
 
 
-def test_custom_schema_generates_anyof():
-    """Verify that OpenAICompatibleSchema converts oneOf to anyOf."""
+def test_custom_schema_generates_anyof_and_passes_strict_mode_validation():
+    """Verify custom anyOf conversion and strict-mode acceptance."""
     schema = PetWithDiscriminator.model_json_schema(schema_generator=OpenAICompatibleSchema)
 
-    # Custom schema generator uses anyOf
     assert "anyOf" in schema["properties"]["animal"]
     assert "oneOf" not in schema["properties"]["animal"]
-
-    # Discriminator metadata is preserved
     assert "discriminator" in schema["properties"]["animal"]
     assert schema["properties"]["animal"]["discriminator"]["propertyName"] == "pet_type"
-
-
-def test_custom_schema_passes_strict_mode_validation():
-    """Verify that anyOf discriminated unions pass OpenAI strict mode validation."""
-    schema = PetWithDiscriminator.model_json_schema(schema_generator=OpenAICompatibleSchema)
-
-    # This should pass validation (no exception)
     validate_openai_strict_mode_schema(schema, "PetWithDiscriminator")
 
 
@@ -95,25 +85,16 @@ def test_inline_ref_conflict_raises():
         _inline_refs_with_siblings(schema)
 
 
-def test_inline_ref_unknown_def_left_alone():
-    """$ref pointing to a non-existent def is left unchanged."""
-    schema: dict[str, Any] = {
-        "type": "object",
-        "properties": {"x": {"$ref": "#/$defs/Missing", "description": "hmm"}},
-        "$defs": {},
-    }
+@pytest.mark.parametrize(
+    ("reference", "description", "extra_schema"),
+    [("#/$defs/Missing", "hmm", {"$defs": {}}), ("https://example.com/schema.json", "external", {})],
+    ids=["missing-local-definition", "external-reference"],
+)
+def test_unresolvable_ref_is_unchanged(reference: str, description: str, extra_schema: dict[str, Any]) -> None:
+    expected = {"$ref": reference, "description": description}
+    schema: dict[str, Any] = {"type": "object", "properties": {"x": expected.copy()}, **extra_schema}
     _inline_refs_with_siblings(schema)
-    assert schema["properties"]["x"] == {"$ref": "#/$defs/Missing", "description": "hmm"}
-
-
-def test_inline_ref_non_defs_path_left_alone():
-    """$ref with a non-#/$defs/ path is not inlined even with siblings."""
-    schema: dict[str, Any] = {
-        "type": "object",
-        "properties": {"x": {"$ref": "https://example.com/schema.json", "description": "external"}},
-    }
-    _inline_refs_with_siblings(schema)
-    assert schema["properties"]["x"]["$ref"] == "https://example.com/schema.json"
+    assert schema["properties"]["x"] == expected
 
 
 # ---------------------------------------------------------------------------

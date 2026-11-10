@@ -2,16 +2,12 @@
 
 The implemented raw-entry API and its cursor, correction and renewal contract are in the
 [History Service README](../history_service/README.md#read-and-follow-one-session).
-The browser stays on Electric; a browser facade remains separate work.
-
-## What the orchestration executor builds on it
-
-`read_turns` and `wait_for_turn` are implemented in the Go executor;
-[its README](../action_service/orchestration_v1/README.md#reading-and-waiting-for-turns) owns their contract.
+The browser reads snapshots through the generated History facade and follows its Thread view through Electric.
 
 ## Remaining consumers and decisions
 
 - Move the Notification Service's outcome scan only if `NOTIFICATION_COMMAND_OUTCOME_DESIGN` still
-  requires History reads. The app's raw debug reads stay on `ReadSessionEvents`.
+  requires History reads. The app's raw debug view also uses History's observation and native-frame
+  reads alongside `ReadSessionEvents`.
 - Decide whether `ReadSessionEvents` can later become `FollowSession` with `follow = false`, once
   its callers need nothing else from it.

@@ -1,0 +1,48 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "cluster",
+    srcs = ["cluster.py"],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
+    deps = [
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "backup",
+    srcs = ["backup.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cluster",
+        "//cluster/cdk8s/providers/cnpg:objectstore",
+        "//cluster/cdk8s/providers/cnpg:scheduledbackup",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "operator",
+    srcs = ["operator.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:artifact_generators",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/providers/flux:helmrelease",
+        "@pypi//cdk8s",
+    ],
+)

@@ -8,6 +8,7 @@
 //! [`crate::AssignmentAnalysis`] — the assignment-and-derived state
 //! that depends on which output-module assignment the spec chose.
 
+use source_identity::{ChunkId, SourceUnitId};
 use std::collections::{BTreeSet, HashMap};
 
 use swc_atoms::Atom;
@@ -15,8 +16,8 @@ use swc_ecma_ast::Id;
 
 use analysis::reports::source_unit_key;
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, DependencyGraph,
-    LocalBindings, ModuleId, PlannedModule,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, DependencyGraph, LocalBindings,
+    ModuleId, PlannedModule,
 };
 
 /// Per-chunk inputs + IR + input-derived caches.
@@ -36,7 +37,7 @@ pub struct AssignmentInputs {
     binding_catalogue: BindingCatalogue,
     planned_modules: Vec<PlannedModule>,
     dependency_graph: DependencyGraph,
-    source_unit_report_ids_by_binding: HashMap<Id, Vec<String>>,
+    source_unit_ids_by_binding: HashMap<Id, Vec<SourceUnitId>>,
     binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
 }
 
@@ -63,8 +64,7 @@ impl AssignmentInputs {
         chunk_renames: &HashMap<Id, Atom>,
     ) -> Result<Self, BindingScopeError> {
         let local_bindings = binding_catalogue.local_view(chunk_identity)?;
-        let source_unit_report_ids_by_binding =
-            build_source_unit_report_ids_by_binding(&dependency_graph);
+        let source_unit_ids_by_binding = build_source_unit_ids_by_binding(&dependency_graph);
         let binding_lookup_by_id =
             build_binding_lookup_by_id(local_bindings.as_map(), chunk_renames, &planned_modules);
         Ok(Self {
@@ -72,7 +72,7 @@ impl AssignmentInputs {
             binding_catalogue,
             planned_modules,
             dependency_graph,
-            source_unit_report_ids_by_binding,
+            source_unit_ids_by_binding,
             binding_lookup_by_id,
         })
     }
@@ -121,7 +121,7 @@ impl AssignmentInputs {
     }
 
     /// Canonical module identity for `id` — the [`spec::ModulePath`]
-    /// every wire artifact (`dependency_graph.json` module table,
+    /// every wire artifact (`dependency_graph.json.gz` module table,
     /// `cycles.json`, `atomic_group_conflicts.json`) and diagnostic
     /// uses to denote this module. Parses the in-process
     /// `PlannedModule.id` (`"<chunk_id>::<path>"`) down to the clean
@@ -165,38 +165,57 @@ impl AssignmentInputs {
         &self,
         ids: impl IntoIterator<Item = &'a BindingId>,
     ) -> Result<Vec<String>, BindingScopeError> {
-        let mut report_ids = Vec::new();
-        for id in ids {
-            self.binding_catalogue.check_binding_id(id)?;
-            if let Some(ids) = self.source_unit_report_ids_by_binding.get(id.swc_id()) {
-                report_ids.extend(ids.iter().cloned());
-            }
-        }
-        Ok(report_ids
+        Ok(self
+            .source_unit_ids_for_bindings(ids)?
             .into_iter()
+            .map(source_unit_key)
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect())
     }
+
+    /// Declaration source units for one binding, sorted by typed graph ID.
+    /// Reads, calls, and writes of the binding do not add source units here.
+    pub fn source_unit_ids_for_binding(
+        &self,
+        id: &BindingId,
+    ) -> Result<&[SourceUnitId], BindingScopeError> {
+        self.binding_catalogue.check_binding_id(id)?;
+        Ok(self
+            .source_unit_ids_by_binding
+            .get(id.swc_id())
+            .map(Vec::as_slice)
+            .unwrap_or(&[]))
+    }
+
+    /// Declaration source units for these bindings, sorted by typed graph ID.
+    /// Reads, calls, and writes of a binding do not add source units here.
+    pub fn source_unit_ids_for_bindings<'a>(
+        &self,
+        ids: impl IntoIterator<Item = &'a BindingId>,
+    ) -> Result<Vec<SourceUnitId>, BindingScopeError> {
+        let mut source_unit_ids = BTreeSet::new();
+        for id in ids {
+            source_unit_ids.extend(self.source_unit_ids_for_binding(id)?.iter().copied());
+        }
+        Ok(source_unit_ids.into_iter().collect())
+    }
 }
 
 /// Reverse-index `dependency_graph.nodes[].declared` so graph and planner reports
-/// can resolve a binding `Id` → source units that declare-it in a single hash
-/// lookup. Most bindings come from exactly one source unit;
-/// the `Vec<String>` shape accommodates the rare cases where the same
-/// hygiene-identity ends up on multiple source units (anonymous statements
-/// that share a synthetic source unit).
-fn build_source_unit_report_ids_by_binding(
+/// can resolve a binding `Id` → typed source units that declare it in a single
+/// hash lookup. Repeated declarations remain distinct source units, and each
+/// binding uses the source-unit boundaries recorded by the analysis.
+fn build_source_unit_ids_by_binding(
     dependency_graph: &DependencyGraph,
-) -> HashMap<Id, Vec<String>> {
-    let mut by_binding: HashMap<Id, BTreeSet<String>> = HashMap::new();
+) -> HashMap<Id, Vec<SourceUnitId>> {
+    let mut by_binding: HashMap<Id, BTreeSet<SourceUnitId>> = HashMap::new();
     for node in dependency_graph.iter_nodes() {
-        let report_id = source_unit_key(node.id);
         for binding in &node.declared {
             by_binding
                 .entry(binding.clone())
                 .or_default()
-                .insert(report_id.clone());
+                .insert(node.id);
         }
     }
     by_binding

@@ -1,5 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
+exports_files(
+    ["contract_audit.md"],
+    visibility = ["//devinfra/js/debundle:__subpackages__"],
+)
+
 py_library(
     name = "gen_synth_corpus",
     srcs = ["gen_synth_corpus.py"],

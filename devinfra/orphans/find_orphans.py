@@ -1,7 +1,8 @@
 """Find orphaned files and py_library targets.
 
 Detects two kinds of orphans:
-1. Git-tracked files not in any Bazel target's srcs/data.
+1. Git-tracked files not found in the selected Bazel source-input attributes
+   or dependency closures.
 2. py_library targets not transitively depended on by any entry point
    (py_binary, py_test, oci_image, etc.).
 
@@ -9,8 +10,8 @@ Also reports whitelist entries that are no longer needed (dead patterns),
 and for each pattern shows how many matching files are covered by Bazel.
 
 Usage:
-    bazel run //devinfra/orphans:find_orphans_bin           # List orphans + dead whitelist entries
-    bazel run //devinfra/orphans:find_orphans_bin -- --check  # Fail if orphans or dead entries exist
+    bb run //devinfra/orphans:find_orphans_bin           # List orphans + dead whitelist entries
+    bb run //devinfra/orphans:find_orphans_bin -- --check  # Fail if orphans or dead entries exist
 """
 
 import argparse
@@ -22,7 +23,7 @@ from textwrap import dedent
 import pathspec
 import pygit2
 
-from util.bazel.workspace import BazelLabel, BazelWorkspace, detect_bazel_backend, get_build_workspace_directory
+from devinfra.bazel.workspace import BazelLabel, BazelWorkspace, detect_bazel_backend, get_build_workspace_directory
 
 
 @dataclasses.dataclass
@@ -60,16 +61,17 @@ def query_orphan_py_libraries(workspace: BazelWorkspace, *, keep_going: bool = F
 def query_bazel_files(workspace: BazelWorkspace) -> set[Path]:
     """Query all source files covered by Bazel targets.
 
-    Uses labels(srcs/data, //...) for standard attributes, and adds full
-    deps() traversal for rules that hold source files in non-standard
-    attributes (create_data_blob uses issue_files rather than srcs/data
-    for specimen YAML).
-    All sets are retrieved in a single bazel query invocation.
+    Uses srcs/data directly and traverses the entry_point and compile_data
+    inputs, which may refer to filegroups or generated targets. It also
+    traverses create_data_blob dependencies for its issue_files attribute.
+    Other nonstandard attributes and nested workspaces may still be missed.
+    All sets are retrieved in a single Bazel query invocation.
     """
     expr = (
         "kind('source file',"
         "  labels(srcs, //...)"
         "  union labels(data, //...)"
+        "  union deps(labels(entry_point, //...) union labels(compile_data, //...))"
         "  union deps(kind('create_data_blob', //...))"
         ")"
     )

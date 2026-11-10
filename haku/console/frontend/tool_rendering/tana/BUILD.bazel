@@ -60,7 +60,7 @@ ts_library(
         "//haku/console/frontend:tana_client",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:server_ids",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 

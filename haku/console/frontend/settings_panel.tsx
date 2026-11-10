@@ -1,8 +1,9 @@
 import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
-import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
+import { type JSX, useEffect, useState, type ReactNode } from "react";
 
-import type { AgentView, DeploymentInfo } from "./api/schema";
-import { useAsyncResource, type AsyncResource } from "./async_resource";
+import { queryOptions, useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+
+import type { AgentView, DeploymentInfo } from "./schema";
 import { fetchDeploymentInfo, displayableError, listAgents, updateAgentAccessProfile } from "./client";
 import { ExternalLink } from "./link";
 import { POLL_REFRESH_INTERVAL_MS } from "./periodic_refresh";
@@ -81,13 +82,14 @@ function ResourcePanel<T>({
 }: {
   title?: string;
   description?: string;
-  resource: AsyncResource<T>;
+  resource: Pick<UseQueryResult<T>, "data" | "error">;
   label: string;
   emptyMessage?: string;
   isEmpty?: (data: T) => boolean;
   children: (data: T) => ReactNode;
 }) {
-  const { data, error } = resource;
+  const { data } = resource;
+  const error = resource.error === null ? null : displayableError(resource.error);
   const errorNotice =
     error && data ? (
       <Text c="red" size="sm">
@@ -260,23 +262,37 @@ function SystemStatusTable({ deployment }: { deployment: DeploymentInfo }) {
   );
 }
 
+const agentsOptions = queryOptions({
+  queryKey: ["settings", "agents"],
+  queryFn: ({ signal }) => listAgents(signal),
+});
+const deploymentOptions = queryOptions({
+  queryKey: ["settings", "deployment"],
+  queryFn: ({ signal }) => fetchDeploymentInfo(signal),
+});
+
 export function SettingsPanel(): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
-  const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
-  const resourceOptions = (tab: SettingsTab, pollMs?: number) => ({
-    enabled: activeTab === tab,
-    pollMs,
-    formatError: displayableError,
+  const client = useQueryClient();
+  const agentsResource = useQuery({
+    ...agentsOptions,
+    enabled: activeTab === "agents",
+    refetchInterval: POLL_REFRESH_INTERVAL_MS,
   });
-  const agentsResource = useAsyncResource(listAgents, resourceOptions("agents", POLL_REFRESH_INTERVAL_MS));
-  const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system", POLL_REFRESH_INTERVAL_MS));
+  const deploymentResource = useQuery({
+    ...deploymentOptions,
+    enabled: activeTab === "system",
+    refetchInterval: POLL_REFRESH_INTERVAL_MS,
+  });
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
-  const refreshAgents = agentsResource.refresh;
-  const refreshDeployment = deploymentResource.refresh;
-  const refreshActiveTab = useCallback(() => {
-    if (activeTab === "agents") return refreshAgents();
-    if (activeTab === "system") return refreshDeployment();
-  }, [activeTab, refreshAgents, refreshDeployment]);
+  useEffect(
+    () => () => {
+      void client.cancelQueries({
+        queryKey: activeTab === "agents" ? agentsOptions.queryKey : deploymentOptions.queryKey,
+      });
+    },
+    [activeTab, client]
+  );
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
@@ -293,33 +309,29 @@ export function SettingsPanel(): JSX.Element {
     else url.searchParams.set("tab", tab);
     window.history.replaceState(null, "", url);
   }
-  function changeAgentAccessProfile(agent: AgentView, accessProfileId: string) {
-    setSavingAgentId(agent.agent_id);
-    updateAgentAccessProfile(agent.agent_id, accessProfileId).then(
-      (updated) => {
-        agentsResource.update((current) =>
-          current
-            ? {
-                ...current,
-                agents: current.agents.map((item) => (item.agent_id === updated.agent_id ? updated : item)),
-              }
-            : null
-        );
-        setSavingAgentId(null);
-        toastSuccess(
-          "Agent access profile updated",
-          `${updated.display_name} now uses ${updated.access_profile_id?.replaceAll("_", " ")}.`
-        );
-      },
-      (e: unknown) => {
-        setSavingAgentId(null);
-        toastError("Couldn't update Agent access profile", e);
-      }
-    );
-  }
-
-  const loading =
-    activeTab === "agents" ? agentsResource.loading : activeTab === "system" ? deploymentResource.loading : false;
+  const accessProfileMutation = useMutation({
+    networkMode: "always",
+    retry: false,
+    mutationFn: ({ agent, accessProfileId }: { agent: AgentView; accessProfileId: string }) =>
+      updateAgentAccessProfile(agent.agent_id, accessProfileId),
+    onSuccess: async (updated) => {
+      await client.cancelQueries({ queryKey: agentsOptions.queryKey });
+      client.setQueryData(
+        agentsOptions.queryKey,
+        (current) =>
+          current && {
+            ...current,
+            agents: current.agents.map((item) => (item.agent_id === updated.agent_id ? updated : item)),
+          }
+      );
+      toastSuccess(
+        "Agent access profile updated",
+        `${updated.display_name} now uses ${updated.access_profile_id?.replaceAll("_", " ")}.`
+      );
+    },
+    onError: (error) => toastError("Couldn't update Agent access profile", error),
+  });
+  const loading = activeTab === "agents" ? agentsResource.isFetching : deploymentResource.isFetching;
 
   return (
     <Tabs
@@ -333,7 +345,15 @@ export function SettingsPanel(): JSX.Element {
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Text fw={700}>Settings</Text>
-          <Button size="xs" variant="light" color="gray" loading={loading} onClick={refreshActiveTab}>
+          <Button
+            size="xs"
+            variant="light"
+            color="gray"
+            loading={loading}
+            onClick={() => {
+              void (activeTab === "agents" ? agentsResource.refetch() : deploymentResource.refetch());
+            }}
+          >
             Refresh
           </Button>
         </div>
@@ -367,8 +387,10 @@ export function SettingsPanel(): JSX.Element {
                       key={agent.agent_id}
                       agent={agent}
                       accessProfiles={agentAccessProfiles}
-                      saving={savingAgentId !== null}
-                      onAccessProfileChange={changeAgentAccessProfile}
+                      saving={accessProfileMutation.isPending}
+                      onAccessProfileChange={(agent, accessProfileId) =>
+                        accessProfileMutation.mutate({ agent, accessProfileId })
+                      }
                     />
                   ))}
                 </Table.Tbody>

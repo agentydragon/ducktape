@@ -8,7 +8,9 @@ series the Trinity study's bonds are.
 the 20-year maturity the monograph documents, and compares the result to its published annual
 returns. Its docstring carries the attribution: the construction is quoted from the monograph
 rather than chosen, and the one difference — the yield universe — is a known defect with no
-public fix.
+public fix. The reproduction uses only Moody's Aaa yields and is bounded to July 1926 through
+December 1987, returning the monograph's 1927–1987 annual observations; later evidence years
+are outside this published comparison.
 
 This is the external check on augur's bond arithmetic. `bond_fund`'s own tests pin a
 one-period identity against Damodaran and a handful of internal invariants; only this one runs

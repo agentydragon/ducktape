@@ -1,21 +1,11 @@
-"""Macro: ts_library — one Bazel target per TypeScript module, type-checked as it builds.
+"""Compile each TypeScript module against its dependencies' generated `.d.ts`.
 
-`js_library` only stages files; it never runs the compiler. A frontend built from it
-therefore needs a second, whole-project `tsc` target that lists every file again, and the
-two lists drift silently — a file added to the library graph but not to the checker's
-inputs is simply never type-checked, and nothing fails.
+The target's `srcs` are also its complete source roster for type checking.
 
-`ts_library` removes the second list. Each target compiles its own `srcs` against its
-deps' generated `.d.ts`, and the file list it checks is the file list it builds, so a
-file cannot be in the graph but outside the checker. Adding a file means adding it in
-one place.
-
-Where that check runs depends on `isolated_typecheck`. By default emit and check are one
-action, so `bazel build` of the target fails on a type error. Under `isolated_typecheck`
-they are separate actions and the build target carries only the emit — the check moves to
-the generated `<name>_typecheck` target, which is not tagged `manual` and so is included
-by `//...` and by the bazel-diff affected set that <../ci/bazel_ci.py> builds. CI still
-fails; a bare `bazel build //pkg:lib` no longer does.
+By default emit and check share an action. `isolated_typecheck` splits them: the build
+only emits, and the non-manual `<name>_typecheck` target checks. `//...` and the
+bazel-diff affected set built by <../ci/bazel_ci.py> include that target;
+a bare `bazel build //pkg:lib` does not.
 
 Deviation from stock `ts_project`: the tsconfig is passed as a dict rather than a label,
 so rules_ts writes a per-target config whose `files` array is exactly this target's
@@ -31,15 +21,12 @@ def ts_library(name, srcs, tsconfig, isolated_typecheck = False, deps = [], **kw
     """A TypeScript library: type-checks its own sources and emits `.js` + `.d.ts`.
 
     Args:
-        name: Target name. Consumers depend on it exactly as they would a `js_library`.
-        srcs: This target's `.ts`/`.tsx` sources. Becomes the generated tsconfig's
-            `files` array, so it is the whole program — imports of other targets resolve
-            through their `.d.ts`.
+        name: Target name.
+        srcs: This target's `.ts`/`.tsx` sources; imports resolve through deps' `.d.ts`.
         tsconfig: Label of the shared `ts_config` holding the compiler options, which the
             generated per-target config extends.
-        isolated_typecheck: Split declaration emit from type checking, so a consumer's
-            emit no longer waits on its dependency's whole program being checked and the
-            checks fan out in parallel. Opt-in per package: it requires
+        isolated_typecheck: Split emit/check so consumer emits and checks can fan out.
+            Opt-in per package: it requires
             `isolatedDeclarations` in the shared `ts_config` — rules_ts validates that the
             two agree — which in turn requires an explicit type annotation on every
             exported symbol in the package.

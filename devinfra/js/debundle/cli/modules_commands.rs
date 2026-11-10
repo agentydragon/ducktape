@@ -1,18 +1,24 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::binding::{SourceUnitAssignment, run_source_unit_refine};
+use crate::binding::CandidateEffectAssessmentContext;
+use crate::candidate_assessment::CandidateEffectAssessmentExistingTreeArgs;
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
+use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
+use crate::source_unit_refine::{
+    SourceUnitAssignment, SourceUnitRefineOptions, run_source_unit_refine,
+};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
-use peel::propose::{
-    DEFAULT_SIZE_CAP_LINES, ModuleDecompositionCoarseningMode, ModuleDecompositionOptions,
-    ModuleDecompositionReport, ModuleDecompositionStrategy, ProposalOptions,
-    decompose_modules_from_files_with_options,
+use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
+use peel::decompose::{
+    ModuleDecompositionCoarseningMode, ModuleDecompositionOptions, ModuleDecompositionReport,
+    ModuleDecompositionStrategy, decompose_modules_from_files_with_options,
 };
+use peel::propose::{DEFAULT_SIZE_CAP_LINES, ProposalOptions};
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
 use std::{fs, io::Read};
@@ -54,82 +60,63 @@ impl ModulesNs {
     }
     pub(super) fn verify_graph(
         &self,
-        spec_root: Option<&std::path::Path>,
-        graph_source_root: Option<&std::path::Path>,
-        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
-    ) -> Result<()> {
+        roots: &CurrentRoots,
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
         match &self.command {
-            ModulesNsCommand::Merge(args) => verify_edit(
-                &args.edit,
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
-            ),
-            ModulesNsCommand::Delete(args) => verify_edit(
-                &args.edit,
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
-            ),
+            ModulesNsCommand::Merge(args) => verify_edit(&args.edit, roots),
+            ModulesNsCommand::Delete(args) => verify_edit(&args.edit, roots),
             ModulesNsCommand::Propose(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
-            ),
+            )
+            .map(Some),
             ModulesNsCommand::Apply(args) => crate::verify_graph_compatibility(
                 &args.graph,
                 &args.modules_root,
                 Some(&args.source_root),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
-            ),
+            )
+            .map(Some),
             ModulesNsCommand::Refine(args) => crate::verify_graph_compatibility(
                 &args.graph,
                 &args.modules_root,
                 Some(&args.source_root),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
-            ),
+            )
+            .map(Some),
             ModulesNsCommand::Decompose(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 args.tree_config.as_deref(),
-            ),
-            _ => Ok(()),
+            )
+            .map(Some),
+            _ => Ok(None),
         }
     }
 }
 
 fn verify_edit(
     edit: &crate::edit_gate::GraphEditArgs,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
-) -> Result<()> {
+    roots: &CurrentRoots,
+) -> Result<Option<VerifiedGraphSourceContext>> {
     if let Some(graph) = &edit.dependency_graph_path {
-        crate::verify_graph_compatibility(
+        return crate::verify_graph_compatibility(
             graph,
             &edit.modules_root,
             edit.source_root.as_deref(),
-            spec_root,
-            graph_source_root,
-            graph_package_roots,
+            roots,
             None,
-        )?;
+        )
+        .map(Some);
     }
-    Ok(())
+    Ok(None)
 }
 
 #[derive(Debug, Subcommand)]
@@ -149,8 +136,10 @@ enum ModulesNsCommand {
     /// `--- from <source>:` divider, and `merged from: <sources>`
     /// provenance lands in the target's `note:`. Validates the
     /// post-merge assignment with the realizability gate (requires
-    /// `--graph` unless `--no-verify`).
-    Merge(MergeArgs),
+    /// `--graph` unless `--no-verify`). `--dry-run --analysis` additionally
+    /// reports statement-order commutation for the exact merged candidate; it
+    /// requires the full tree transform context and does not change the gate.
+    Merge(Box<MergeArgs>),
     /// Delete one or more module YAML files. Refuses non-empty modules unless `--force`.
     ///
     /// "Non-empty" means any `members:`, `source_matches:`,
@@ -160,7 +149,10 @@ enum ModulesNsCommand {
     /// assignment, so the gate is a no-op; `--force` deletions of
     /// non-empty modules run the realizability gate against the
     /// post-delete spec (requires `--graph` unless `--no-verify`).
-    Delete(DeleteArgs),
+    /// `--dry-run --analysis` additionally reports statement-order
+    /// commutation for the exact post-delete candidate. It requires the full
+    /// tree transform context and does not change the legacy gate.
+    Delete(Box<DeleteArgs>),
     /// Emit module-assignment proposals derived from the atomic DAG.
     ///
     /// Read-only: surfaces *suggested* binding → module assignments +
@@ -168,6 +160,11 @@ enum ModulesNsCommand {
     /// `modules apply` (see docs/cli.md). With `--source-root`, JSON rows
     /// carry `landable_today`, `unaddressable_anonymous_source_unit_ids`, and
     /// `landability_notes` from full-JS-AST selector uniqueness.
+    /// Rows also carry bounded `observed_consumers` evidence: incoming value
+    /// reads, writes, and scheduling/promoted edges to added source units, with
+    /// source units, current modules, raw edges, and total/omitted counts.
+    /// Consumers already in the resulting proposal class are excluded. This
+    /// evidence does not infer semantic ownership.
     /// `landable_today` is `false` both for proposals with unaddressable
     /// anonymous statements and for `blocked_residual_dependency`
     /// proposals (outgoing constraining edges into other residual classes)
@@ -175,6 +172,9 @@ enum ModulesNsCommand {
     /// before they can land.
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
+    /// `--dry-run --analysis` additionally reports statement-order commutation for
+    /// the exact candidate using the full tree transform context; it does not
+    /// change the realizability gate.
     Apply(ModulesApplyArgs),
     /// Move reviewed existing source-unit claims as one validated batch.
     ///
@@ -185,7 +185,9 @@ enum ModulesNsCommand {
     /// assignment to match the requested assignment before running the normal
     /// realizability and atomic-group gates. Import/export scaffolding and
     /// residual source units cannot be moved. Module comments and notes stay with
-    /// their original YAML module.
+    /// their original YAML module. `--dry-run --analysis` additionally reports
+    /// statement-order commutation for the exact candidate; it requires the full
+    /// tree transform context and does not change the gate verdict.
     Refine(ModulesRefineArgs),
     /// Report a read-only, gate-checked refinement of existing module groups.
     ///
@@ -272,7 +274,7 @@ struct ModuleDecomposeArgs {
 
 #[derive(Debug, ClapArgs)]
 struct ModulesRefineArgs {
-    /// JSON array of reviewed source-unit IDs and destination module paths; `-` reads stdin.
+    /// JSON array of reviewed source-unit IDs and extensionless destination module IDs; `-` reads stdin.
     #[arg(long)]
     batch: String,
 
@@ -291,6 +293,11 @@ struct ModulesRefineArgs {
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
+
+    /// Opt-in report-only relocation assessment using the complete transform
+    /// context and a verified staged analysis artifact. Requires --dry-run.
+    #[command(flatten)]
+    effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
 
     /// Validate the complete edit without writing module YAML.
     #[arg(long)]
@@ -577,7 +584,10 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
     }
 }
 
-fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
+fn run_module_decompose(
+    args: ModuleDecomposeArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     anyhow::ensure!(
         !args.include_residual || args.atomic,
         "--include-residual requires --atomic"
@@ -588,6 +598,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             modules_root: args.common.modules_root,
             tree_config: args.tree_config,
             source_root: args.source_root,
+            source_context: source_context.cloned(),
             size_cap_lines: DEFAULT_SIZE_CAP_LINES,
         },
         ModuleDecompositionOptions {
@@ -621,7 +632,11 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
     )
 }
 
-fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
+fn run_modules_refine(
+    args: ModulesRefineArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     let text = if args.batch == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
@@ -631,13 +646,39 @@ fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
     };
     let assignments: Vec<SourceUnitAssignment> =
         serde_json::from_str(&text).context("parsing modules refine batch")?;
+    let edit = GraphEditArgs {
+        modules_root: args.modules_root.clone(),
+        dry_run: args.dry_run,
+        no_verify: false,
+        dependency_graph_path: Some(args.graph.clone()),
+        source_root: Some(args.source_root.clone()),
+        format: args.format,
+    };
+    let candidate_context =
+        args.effect_assessment
+            .resolve(&edit, source_context, args.tree_config.as_deref())?;
+    let effect_assessment_context =
+        candidate_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
+                transform: &context.transform,
+                analysis: pipeline::AnalysisArtifactInput {
+                    path: &context.analysis_path,
+                    analysis_engine_sha256,
+                },
+                graph_source: context.graph_source,
+            });
     let outcome = match run_source_unit_refine(
         &args.modules_root,
         &args.graph,
         &args.source_root,
-        args.tree_config.as_deref(),
-        assignments,
-        args.dry_run,
+        source_context,
+        SourceUnitRefineOptions {
+            tree_config: args.tree_config.as_deref(),
+            assignments,
+            dry_run: args.dry_run,
+            effect_assessment_context,
+        },
     ) {
         Ok(outcome) => outcome,
         Err(err) => {
@@ -645,6 +686,7 @@ fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
             return Err(err);
         }
     };
+    outcome.outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(args.format) {
         OutputFormat::Text => println!(
             "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",
@@ -694,13 +736,17 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
     }
 }
 
-pub(super) fn run(args: ModulesNs) -> Result<()> {
+pub(super) fn run(
+    args: ModulesNs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-        ModulesNsCommand::Merge(m) => run_merge(m),
-        ModulesNsCommand::Delete(d) => run_delete(d),
+        ModulesNsCommand::Merge(m) => run_merge(*m, source_context, analysis_engine_sha256),
+        ModulesNsCommand::Delete(d) => run_delete(*d, source_context, analysis_engine_sha256),
         ModulesNsCommand::Propose(p) => {
-            let report = run_plan_work_report(&p)?;
+            let report = run_plan_work_report(&p, source_context)?;
             emit_report(
                 p.format,
                 &report,
@@ -708,9 +754,13 @@ pub(super) fn run(args: ModulesNs) -> Result<()> {
                 "writing propose output",
             )
         }
-        ModulesNsCommand::Decompose(args) => run_module_decompose(args),
-        ModulesNsCommand::Apply(args) => run_modules_apply(args),
-        ModulesNsCommand::Refine(args) => run_modules_refine(args),
+        ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context),
+        ModulesNsCommand::Apply(args) => {
+            run_modules_apply(args, source_context, analysis_engine_sha256)
+        }
+        ModulesNsCommand::Refine(args) => {
+            run_modules_refine(args, source_context, analysis_engine_sha256)
+        }
         ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }

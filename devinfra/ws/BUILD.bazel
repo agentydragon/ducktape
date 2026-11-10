@@ -6,7 +6,7 @@ py_library(
     srcs = ["cli.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//util:agent_sandbox",
+        ":agent_sandbox",
         "@pypi//typer",
     ],
 )
@@ -29,6 +29,8 @@ py_wheel(
     entry_points = {"console_scripts": ["ws = devinfra.ws.cli:main"]},
     python_requires = ">=3.14",
     # SYNC: propagatedBuildInputs in nix/packages/default.nix (ws).
+    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the Nix
+    # inputs once the pinned ws wheel no longer imports util.agent_sandbox.
     requires = [
         "ducktape-util",
         "typer",
@@ -48,4 +50,9 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
+)
+
+py_library(
+    name = "agent_sandbox",
+    srcs = ["agent_sandbox.py"],
 )

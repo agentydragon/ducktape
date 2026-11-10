@@ -34,9 +34,9 @@ py_library(
     name = "push_images",
     srcs = ["push_images.py"],
     deps = [
-        "//util:env",
-        "//util:oci",
-        "//util/bazel:runfiles",
+        ":env",
+        "//devinfra/oci",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -85,27 +85,22 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":runtime",
         "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:database",
-        "//util/testing:undeclared_outputs",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//props/agents:__subpackages__"],
-    deps = [
-        "//props/testing/fixtures:e2e_container",
-        "//props/testing/fixtures:e2e_infra",
-    ],
+    name = "env",
+    srcs = ["env.py"],
 )

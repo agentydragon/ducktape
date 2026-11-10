@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI environment: CI-only SOPS credentials + registry/release credentials.
+# CI release credential decrypted from SOPS.
 # Usage: source devinfra/secrets/ci_env.sh
 #
 # Age recipients: ci (+ admin via the individual CI secret files)
@@ -21,25 +21,6 @@
 
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-
-# Attic binary cache writer token for `main` namespace.
-# Auto-rotated by the attic-rotate-ducktape-ci-writer CronJob in the cluster
-# (see cluster/k8s/agents/attic-jwt-rotation/).
-# CLEANUP(added 2026-05-04): Delete secrets/ci/attic-token.sops.yaml once no
-# out-of-tree consumer reads it.
-try_export ATTIC_TOKEN "$REPO_ROOT/secrets/ci/attic-main-writer.sops.yaml" '["attic_token"]'
-
-# Props registry: CI pushes agent images through the props backend proxy
-# (PROPS_REGISTRY_URL=props.allegedly.works), authenticating as the evaluator
-# Postgres role; the proxy records definitions and forwards to Forgejo.
-try_export PROPS_REGISTRY_USERNAME "$REPO_ROOT/secrets/ci/props-registry.sops.yaml" '["username"]'
-try_export PROPS_REGISTRY_PASSWORD "$REPO_ROOT/secrets/ci/props-registry.sops.yaml" '["password"]'
-
-# Forgejo images registry: CI pushes ducktape in-cluster images directly to the
-# Forgejo OCI registry (git.allegedly.works/ducktape-ci/<image>) as the
-# ducktape-ci tenant user (tf/gitops/forgejo-images).
-try_export FORGEJO_IMAGES_USERNAME "$REPO_ROOT/secrets/ci/forgejo-images-registry.sops.yaml" '["username"]'
-try_export FORGEJO_IMAGES_PASSWORD "$REPO_ROOT/secrets/ci/forgejo-images-registry.sops.yaml" '["password"]'
 
 # GitHub releases (agentydragon account, contents:write on ducktape)
 try_export GH_RELEASE_PAT "$REPO_ROOT/secrets/ci/gh-release-pat.sops.yaml" '["token"]'

@@ -12,8 +12,7 @@ from typing import IO
 
 import yaml
 from pydantic import BaseModel
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 
 class Entry(BaseModel):
@@ -103,7 +102,7 @@ def load_exclusions(path: str | None) -> Exclusions:
 
 def load_default_exclusions() -> Exclusions:
     """Load the bundled exclusions.yaml from runfiles."""
-    path = get_required_path("_main/devinfra/claude/web_env/exclusions.yaml")
+    path = Runfiles.CreateOrRaise().root() / "ducktape/devinfra/claude/web_env/exclusions.yaml"
     data = yaml.safe_load(path.read_text())
     return Exclusions.model_validate(data)
 

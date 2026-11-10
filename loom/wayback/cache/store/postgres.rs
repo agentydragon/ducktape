@@ -11,7 +11,7 @@ use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::sqlx::postgres::PgListener;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, Database, DatabaseConnection, DbBackend, EntityTrait,
-    ExprTrait, QueryFilter, QueryOrder, Schema, Set, Statement, TryInsertResult,
+    ExprTrait, QueryFilter, QueryOrder, Schema, Set, Statement,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -551,65 +551,6 @@ impl ArchiveStore for PostgresArchiveStore {
             }
         };
         Ok(timeout(wait, notified).await.unwrap_or(false))
-    }
-
-    async fn try_acquire_fill_lease(
-        &self,
-        key: &FillLeaseKey,
-        owner: &str,
-        ttl: Duration,
-    ) -> Result<bool> {
-        let now_ms = epoch_ms();
-        let expires_at_ms = now_ms + duration_ms(ttl);
-        let endpoint = key.endpoint.as_str().to_string();
-        let lease_key = key.key.clone();
-
-        let updated = fill_lease::Entity::update_many()
-            .col_expr(fill_lease::Column::Owner, Expr::value(owner.to_string()))
-            .col_expr(fill_lease::Column::ExpiresAtMs, Expr::value(expires_at_ms))
-            .filter(
-                Condition::all()
-                    .add(fill_lease::Column::Endpoint.eq(endpoint.clone()))
-                    .add(fill_lease::Column::LeaseKey.eq(lease_key.clone()))
-                    .add(fill_lease::Column::ExpiresAtMs.lte(now_ms)),
-            )
-            .exec(&self.db)
-            .await?;
-        if updated.rows_affected > 0 {
-            return Ok(true);
-        }
-
-        let active = fill_lease::ActiveModel {
-            endpoint: Set(endpoint),
-            lease_key: Set(lease_key),
-            owner: Set(owner.to_string()),
-            expires_at_ms: Set(expires_at_ms),
-        };
-        let mut conflict =
-            OnConflict::columns([fill_lease::Column::Endpoint, fill_lease::Column::LeaseKey]);
-        conflict.do_nothing();
-        match fill_lease::Entity::insert(active)
-            .on_conflict(conflict.to_owned())
-            .try_insert()
-            .exec(&self.db)
-            .await?
-        {
-            TryInsertResult::Inserted(_) => Ok(true),
-            TryInsertResult::Conflicted | TryInsertResult::Empty => Ok(false),
-        }
-    }
-
-    async fn release_fill_lease(&self, key: &FillLeaseKey, owner: &str) -> Result<()> {
-        fill_lease::Entity::delete_many()
-            .filter(
-                Condition::all()
-                    .add(fill_lease::Column::Endpoint.eq(key.endpoint.as_str()))
-                    .add(fill_lease::Column::LeaseKey.eq(key.key.clone()))
-                    .add(fill_lease::Column::Owner.eq(owner.to_string())),
-            )
-            .exec(&self.db)
-            .await?;
-        Ok(())
     }
 }
 

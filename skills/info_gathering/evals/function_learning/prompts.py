@@ -1,10 +1,11 @@
 """Prompt loading helpers for the function learning eval."""
 
+from python.runfiles import Runfiles
+
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
-from util.bazel.runfiles import get_required_path
 
-_FIRST_USER_MSG_RLOCATION = "_main/skills/info_gathering/evals/function_learning/first_user_message.txt"
+_FIRST_USER_MSG_RLOCATION = "ducktape/skills/info_gathering/evals/function_learning/first_user_message.txt"
 
 _BASE_PREAMBLE = (
     "You are playing a function-learning game. There is a secret function "
@@ -25,7 +26,7 @@ def build_system_prompt(*, skill: str) -> str:
 
 
 def first_user_message(fn: SecretFunction, turn_limit: int, function_description: str, eval_timeout_s: int) -> str:
-    template = get_required_path(_FIRST_USER_MSG_RLOCATION).read_text().strip()
+    template = (Runfiles.CreateOrRaise().root() / _FIRST_USER_MSG_RLOCATION).read_text().strip()
     return template.format(
         max_input=fn.max_input,
         max_output=fn.max_output,

@@ -7,9 +7,27 @@
 import { act, type JSX, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
 
 import { createElectricThreadSync, electricThreadSync } from "./electric_sync";
-import { type PayloadRef, type ThreadEntity, type ThreadSync, type ThreadWindow } from "./thread_sync";
+import { electricEntityVariant } from "./testing/electric_entity";
+import { Operation } from "../../../proto/command_pb";
+import { ItemKind } from "../../../proto/event_pb";
+import { type ThreadSync, type ThreadWindow } from "./thread_sync";
+import {
+  ReadThreadEntitiesRequestSchema,
+  ReadThreadEntitiesResponseSchema,
+  ThreadCommandOutcome,
+  ThreadCommandSchema,
+  ThreadFeedStatus,
+  ThreadItemSchema,
+  ThreadPayloadField,
+  ThreadPayloadReferenceSchema,
+  ThreadViewStateSchema,
+  type ReadThreadEntitiesRequest,
+  type ThreadEntity,
+  type ThreadPayloadReference,
+} from "../../../history_service/history_service_pb";
 
 type Json = Record<string, unknown>;
 
@@ -23,12 +41,7 @@ const SCHEMAS: Record<string, Json> = {
     cursor: { type: "int8", not_null: true },
     revision_cursor: { type: "int8", not_null: true },
     pending: { type: "bool", not_null: true },
-    turn_id: { type: "text" },
     state: { type: "jsonb", not_null: true },
-    text_ref: { type: "jsonb" },
-    arguments_ref: { type: "jsonb" },
-    output_ref: { type: "jsonb" },
-    input_ref: { type: "jsonb" },
   },
   thread_payload_chunk: {
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
@@ -68,81 +81,102 @@ function relationOf(path: string): string {
   return path === "entities" ? "thread_entity" : "thread_payload_chunk";
 }
 
-function item(index: number, epoch = "epoch-1", extra: Json = {}): Json {
+// Encode generated fixture variants at the Electric SQL-row boundary.
+function entityRow(
+  entity: ThreadEntity["entity"],
+  {
+    cursor,
+    epoch = "epoch-1",
+    entityId,
+    entityIndex = cursor,
+    revisionCursor = cursor,
+  }: {
+    cursor: string;
+    epoch?: string;
+    entityId: string;
+    entityIndex?: string;
+    revisionCursor?: string;
+  }
+): Json {
+  const { kind, pending, state } = electricEntityVariant(entity);
   return {
     thread_id: "thread",
     projection_epoch: epoch,
-    entity_kind: "item",
-    entity_id: `item-${index}`,
-    entity_index: String(index),
-    cursor: String(index),
-    revision_cursor: String(index),
-    pending: "false",
-    turn_id: "turn",
-    state: JSON.stringify({
-      kind: 1,
-      tool_name: "",
-      completion: null,
-      tool_succeeded: null,
-      recovery: null,
-      recovery_reason: null,
-    }),
-    text_ref: null,
-    arguments_ref: null,
-    output_ref: null,
-    input_ref: null,
-    ...extra,
+    entity_kind: kind,
+    entity_id: entityId,
+    entity_index: entityIndex,
+    cursor,
+    revision_cursor: revisionCursor,
+    pending: String(pending),
+    state: JSON.stringify(state),
   };
+}
+
+function item(
+  index: number | string,
+  epoch = "epoch-1",
+  init: MessageInitShape<typeof ThreadItemSchema> = {},
+  extra: { entityId?: string; entityIndex?: string; revisionCursor?: string } = {}
+): Json {
+  const cursor = String(index);
+  return entityRow(
+    { case: "item", value: create(ThreadItemSchema, { kind: ItemKind.ASSISTANT_TEXT, turnId: "turn", ...init }) },
+    {
+      cursor,
+      epoch,
+      entityId: extra.entityId ?? `item-${index}`,
+      entityIndex: extra.entityIndex,
+      revisionCursor: extra.revisionCursor,
+    }
+  );
 }
 
 function viewState(through: string, epoch = "epoch-1"): Json {
-  return {
-    ...item(0, epoch),
-    entity_kind: "view_state",
-    entity_id: "current",
-    revision_cursor: through,
-    state: JSON.stringify({
-      controls: { applied_model: null, applied_reasoning_effort: null, active_turn_id: null, harness_state: null },
-      operational: { status: "active", last_verified_cursor: through, feed_error: null },
-    }),
-  };
+  return entityRow(
+    {
+      case: "viewState",
+      value: create(ThreadViewStateSchema, {
+        controls: {},
+        operational: { status: ThreadFeedStatus.ACTIVE, lastVerifiedCursor: BigInt(through) },
+      }),
+    },
+    { cursor: "0", epoch, entityId: "current", revisionCursor: through }
+  );
 }
 
-function command(id: string, index: number): Json {
-  return {
-    ...item(index),
-    entity_kind: "command",
-    entity_id: id,
-    state: JSON.stringify({
-      operation: "submit_input",
-      outcome: "failed",
-      outcome_cursor: "9",
-      outcome_reason: null,
-      requested_value: null,
-    }),
-  };
+function command(id: string, index: number, init: MessageInitShape<typeof ThreadCommandSchema> = {}): Json {
+  const state = create(ThreadCommandSchema, {
+    operation: Operation.SUBMIT_INPUT,
+    outcome: ThreadCommandOutcome.FAILED,
+    outcomeCursor: BigInt(index),
+    ...init,
+  });
+  return entityRow(
+    { case: "command", value: state },
+    { cursor: String(index), entityId: id, revisionCursor: String(state.outcomeCursor || BigInt(index)) }
+  );
 }
 
-function textRef(owner: string, chunks: number): string {
-  return JSON.stringify({
-    projection_epoch: "epoch-1",
-    owner_cursor: "1",
-    owner_id: owner,
-    field: "text",
-    revision_cursor: "1",
-    generation: "1",
-    chunk_count: String(chunks),
+function textRef(owner: string, chunks: number, cursor = 1n, generation = cursor): ThreadPayloadReference {
+  return create(ThreadPayloadReferenceSchema, {
+    projectionEpoch: "epoch-1",
+    ownerCursor: cursor,
+    ownerId: owner,
+    field: ThreadPayloadField.TEXT,
+    revisionCursor: cursor,
+    generation,
+    chunkCount: BigInt(chunks),
   });
 }
 
-function chunk(owner: string, index: number, text: string): Json {
+function chunk(owner: string, index: number, text: string, cursor = "1", generation = cursor): Json {
   return {
     thread_id: "thread",
     projection_epoch: "epoch-1",
-    owner_cursor: "1",
+    owner_cursor: cursor,
     owner_id: owner,
     field: "text",
-    generation: "1",
+    generation,
     chunk_index: String(index),
     // Electric sends JSON columns as JSON-encoded scalars; its client decodes this to a string.
     text: JSON.stringify(text),
@@ -191,29 +225,56 @@ class FakeSync {
   refusingBodies = false;
   /** How many live reads of entities are still to be refused 400, which stops the client. */
   refusingLive = 0;
+  /** Held generated scope reads let tests publish watch changes while one read is in flight. */
+  beforeScopeRead: (() => Promise<void>) | null = null;
+  readonly scopeBodies: ReadThreadEntitiesRequest[] = [];
   readonly requests: { thread: string; method: string; path: string; query: URLSearchParams; subset: Subset | null }[] =
     [];
   readonly #live = new Map<string, Connection>();
-  // The held scope read, answered by `respond`.
-  #held: ((response: Response) => void) | null = null;
+  readonly #scopeWatchers = new Set<ReadableStreamDefaultController<Uint8Array>>();
   // Handles Electric has rotated away from, each with the one its 409 names instead.
   readonly #rotated = new Map<string, string>();
   // Each subset answers from further along the log than any stream has read.
   #snapshots = 0;
 
   fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     const method = init?.method ?? "GET";
+    const pathname = url.pathname;
+    if (pathname === "/upstream/history/v1/session-summaries:watch") {
+      this.requests.push({ thread: "", method, path: "scope-watch", query: url.searchParams, subset: null });
+      return this.#scopeWatch(init?.signal ?? undefined);
+    }
+    const scopeMatch = pathname.match(/^\/upstream\/history\/v1\/sessions\/([^/]+)\/entities$/);
+    if (scopeMatch !== null) {
+      const thread = decodeURIComponent(scopeMatch[1]!);
+      this.requests.push({ thread, method, path: "scope", query: url.searchParams, subset: null });
+      if (typeof init?.body !== "string") return Response.json({ message: "missing request body" }, { status: 400 });
+      const request = fromJson(ReadThreadEntitiesRequestSchema, JSON.parse(init.body) as JsonValue);
+      this.scopeBodies.push(request);
+      if (
+        method !== "POST" ||
+        request.projectionEpoch !== "" ||
+        request.window.case !== "range" ||
+        request.window.value.startEntityIndex !== 0n ||
+        request.window.value.limit !== 1
+      ) {
+        return Response.json({ message: "invalid generated scope request" }, { status: 400 });
+      }
+      if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
+      if (this.unreachable) throw new TypeError("Failed to fetch");
+      await this.beforeScopeRead?.();
+      return this.folded ? this.scope() : Response.json({ detail: "Session is not recorded" }, { status: 404 });
+    }
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
-    const [thread, path] = url.pathname.replace("/threads/", "").split("/sync/");
-    this.requests.push({ thread: decodeURIComponent(thread), method, path, query: url.searchParams, subset });
-    if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
+    const [thread, syncPath] = pathname.replace("/threads/", "").split("/sync/");
+    this.requests.push({ thread: decodeURIComponent(thread), method, path: syncPath, query: url.searchParams, subset });
     if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
     if (this.unreachable) throw new TypeError("Failed to fetch");
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
-    const relation = relationOf(path);
+    const relation = relationOf(syncPath);
     // Electric resolves a shape's handle from its definition.
-    const handle = url.searchParams.get("handle") ?? `${path}-1`;
+    const handle = url.searchParams.get("handle") ?? `${syncPath}-1`;
     const successor = this.#rotated.get(handle);
     if (successor !== undefined) return Response.json([], { status: 409, headers: headers(relation, successor) });
     const instead = subset?.where === "entity_index < $1" ? await this.olderPage?.() : undefined;
@@ -240,7 +301,7 @@ class FakeSync {
       });
     if (url.searchParams.get("live_sse") !== "true")
       return Response.json({ message: "the store follows shapes over SSE" }, { status: 400 });
-    if (path === "entities" && this.refusingLive > 0) {
+    if (syncPath === "entities" && this.refusingLive > 0) {
       this.refusingLive--;
       return Response.json({ message: "test refusal" }, { status: 400 });
     }
@@ -255,9 +316,9 @@ class FakeSync {
     }
     const body = new ReadableStream<Uint8Array>({
       start: (events) => {
-        this.#live.set(path, { query: url.searchParams, events });
+        this.#live.set(syncPath, { query: url.searchParams, events });
         init?.signal?.addEventListener("abort", () => {
-          if (this.#live.get(path)?.events === events) this.#live.delete(path);
+          if (this.#live.get(syncPath)?.events === events) this.#live.delete(syncPath);
           events.error(new DOMException("aborted", "AbortError"));
         });
       },
@@ -268,27 +329,48 @@ class FakeSync {
   };
 
   scope(): Response {
-    return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
+    return Response.json(
+      toJson(
+        ReadThreadEntitiesResponseSchema,
+        create(ReadThreadEntitiesResponseSchema, {
+          projectionEpoch: this.epoch,
+          throughCursor: BigInt(this.through),
+        })
+      )
+    );
   }
 
-  #hold(signal?: AbortSignal | null): Promise<Response> {
-    return new Promise((resolve, reject) => {
-      this.#held = resolve;
-      signal?.addEventListener("abort", () => {
-        this.#held = null;
-        reject(new DOMException("aborted", "AbortError"));
-      });
-    });
+  publishScopeChange(): void {
+    for (const controller of this.#scopeWatchers) controller.enqueue(this.#scopeFrame());
   }
 
-  /** Answer the held scope read. */
-  async respond(response: () => Response): Promise<void> {
-    await vi.waitFor(() => {
-      if (this.#held === null) throw new Error("No scope read is held");
+  #scopeFrame(): Uint8Array {
+    return new TextEncoder().encode('{"result":{"changed":{}}}\n');
+  }
+
+  #scopeWatch(signal?: AbortSignal): Response {
+    const body = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        this.#scopeWatchers.add(controller);
+        controller.enqueue(this.#scopeFrame());
+        signal?.addEventListener(
+          "abort",
+          () => {
+            this.#scopeWatchers.delete(controller);
+            try {
+              controller.close();
+            } catch {
+              // The stream reader may already have cancelled this response.
+            }
+          },
+          { once: true }
+        );
+      },
+      cancel: () => {
+        // The abort callback also removes controllers; cancellation is idempotent.
+      },
     });
-    const resolve = this.#held!;
-    this.#held = null;
-    await act(async () => resolve(response()));
+    return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
   }
 
   /** The offset the shape's open SSE connection reads from. */
@@ -336,9 +418,10 @@ class FakeSync {
   }
 
   #entitySubset(subset: Subset): Json[] {
-    const index = (row: Json) => Number(row.entity_index);
-    const newestFirst = (rows: Json[]) => [...rows].sort((left, right) => index(right) - index(left));
-    const bound = Number(subset.params?.["1"]);
+    const index = (row: Json) => BigInt(String(row.entity_index));
+    const newestFirst = (rows: Json[]) =>
+      [...rows].sort((left, right) => (index(right) > index(left) ? 1 : index(right) < index(left) ? -1 : 0));
+    const bound = BigInt(subset.params?.["1"] ?? "0");
     const rows =
       subset.where === undefined
         ? newestFirst(this.entities)
@@ -421,7 +504,7 @@ function Shown({ children }: { children: (rows: ThreadEntity[], history: ThreadW
 }
 
 function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }): JSX.Element {
-  const items = rows.filter((row) => row.entityKind === "item");
+  const items = rows.filter((row) => row.entity.case === "item");
   return (
     <>
       <p data-testid="items">{items.map((row) => `${row.entityId}@${row.revisionCursor.toString()}`).join(" ")}</p>
@@ -434,7 +517,7 @@ function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }
   );
 }
 
-function Body({ id, reference }: { id: string; reference: PayloadRef }): JSX.Element {
+function Body({ id, reference }: { id: string; reference: ThreadPayloadReference }): JSX.Element {
   const { body, error, retry } = electricThreadSync.usePayload(reference);
   return (
     <>
@@ -444,6 +527,10 @@ function Body({ id, reference }: { id: string; reference: PayloadRef }): JSX.Ele
       {error && <button onClick={retry}>retry {id}</button>}
     </>
   );
+}
+
+function textReference(entity: ThreadEntity): ThreadPayloadReference | undefined {
+  return entity.entity.case === "item" ? entity.entity.value.textRef : undefined;
 }
 
 function Commands({ ids }: { ids: readonly string[] }): JSX.Element {
@@ -463,15 +550,83 @@ function thread(sync: FakeSync, count: number, epoch = "epoch-1"): void {
   sync.entities = [viewState(sync.through, epoch), ...Array.from({ length: count }, (_, n) => item(n + 1, epoch))];
 }
 
+it("keeps protobuf uint64 cursors exact above JavaScript's safe integer range", async () => {
+  const sync = stubSync();
+  const cursor = 9_007_199_254_740_993n;
+  const cursorText = cursor.toString();
+  sync.through = cursorText;
+  sync.entities = [
+    viewState(cursorText),
+    item(
+      cursorText,
+      "epoch-1",
+      { textRef: textRef("big-item", 1, cursor, cursor) },
+      {
+        entityId: "big-item",
+        entityIndex: cursorText,
+      }
+    ),
+  ];
+  sync.chunks = [chunk("big-item", 0, "large cursor body", cursorText, cursorText)];
+
+  const container = await renderThread(
+    <Shown>
+      {(rows) => (
+        <>
+          <p data-testid="items">
+            {rows
+              .filter((row) => row.entity.case === "item")
+              .map((row) => row.entityId)
+              .join(" ")}
+          </p>
+          {rows.map((row) => {
+            const reference = textReference(row);
+            return reference ? <Body key={row.entityId} id={row.entityId} reference={reference} /> : null;
+          })}
+        </>
+      )}
+    </Shown>
+  );
+
+  await vi.waitFor(() => expect(bodyText(container, "big-item")).toBe("large cursor body"));
+  expect(container.querySelector('[data-testid="items"]')?.textContent).toBe("big-item");
+  expect(sync.posted("chunks/text")[0]?.params).toEqual({ "1": "big-item", "2": cursorText });
+});
+
+it.each([
+  ["negative entity index", "-1"],
+  ["entity index above PostgreSQL BIGINT", "9223372036854775808"],
+])("rejects a %s from Electric", async (_description, entityIndex) => {
+  const sync = stubSync();
+  sync.through = "1";
+  sync.entities = [viewState("1"), item(1, "epoch-1", {}, { entityIndex })];
+
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  expect(itemsShown(container)).toEqual([]);
+});
+
+it("rejects a payload reference beyond PostgreSQL BIGINT", async () => {
+  const sync = stubSync();
+  sync.through = "1";
+  const outOfRange = 9_223_372_036_854_775_808n;
+  sync.entities = [viewState("1"), item(1, "epoch-1", { textRef: textRef("item-1", 1, outOfRange) })];
+
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  expect(itemsShown(container)).toEqual([]);
+});
+
 it("keeps a failed settings command in the shared window after a different browser sent it", async () => {
   const sync = stubSync();
-  const failed = command("model-from-another-browser", 2);
-  failed.state = JSON.stringify({
-    operation: "change_model",
-    outcome: "failed",
-    outcome_cursor: "3",
-    outcome_reason: "Model unavailable",
-    requested_value: "next-model",
+  const failed = command("model-from-another-browser", 2, {
+    operation: Operation.CHANGE_MODEL,
+    outcome: ThreadCommandOutcome.FAILED,
+    outcomeCursor: 3n,
+    outcomeReason: "Model unavailable",
+    requestedValue: "next-model",
   });
   sync.entities = [viewState(sync.through), failed];
   const container = await renderThread(
@@ -479,7 +634,7 @@ it("keeps a failed settings command in the shared window after a different brows
       {(rows) => (
         <p data-testid="projected-commands">
           {rows
-            .filter((row) => row.entityKind === "command")
+            .filter((row) => row.entity.case === "command")
             .map((row) => row.entityId)
             .join(",")}
         </p>
@@ -515,7 +670,7 @@ it("opens one shape on the tail and pages older rows into it", async () => {
     limit: 30,
   });
   // One shape: every request after the first names its handle.
-  expect(new Set(sync.requests.map((request) => request.path))).toEqual(new Set(["scope", "entities"]));
+  expect(new Set(sync.requests.map((request) => request.path))).toEqual(new Set(["scope", "scope-watch", "entities"]));
   expect(new Set(sync.requests.map((request) => request.query.get("handle")).filter(Boolean))).toEqual(
     new Set(["entities-1"])
   );
@@ -573,7 +728,7 @@ it("asks for no page before the tail after one found the window's epoch gone", a
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
   const before = olderPages(sync).length;
-  // The scope read the 410 prompts is held, so the retired window stays on screen.
+  // The History read cannot open a new window because this session is not folded.
   sync.folded = false;
   sync.epoch = "epoch-2";
   const older = container.querySelector("button")!;
@@ -586,22 +741,43 @@ it("asks for no page before the tail after one found the window's epoch gone", a
   expect(olderPages(sync).length - before).toBe(1);
 });
 
-it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {
+it("waits for a summary change when History has not recorded the Session, then opens it", async () => {
   const sync = stubSync();
   thread(sync, 3);
   sync.folded = false;
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
 
-  await sync.respond(() => new Response(null, { status: 204 }));
-  // Already held again, before any timer could have fired.
-  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+  await vi.waitFor(() => expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(1));
   // No window has opened: the view has nothing to show yet.
   expect(container.textContent).toBe("");
 
   sync.folded = true;
-  await sync.respond(() => sync.scope());
+  sync.publishScopeChange();
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+  expect(sync.scopeBodies[0]?.projectionEpoch).toBe("");
+  const window = sync.scopeBodies[0]?.window;
+  if (window?.case !== "range") throw new Error("expected a range window");
+  expect(window.value.startEntityIndex).toBe(0n);
+  expect(window.value.limit).toBe(1);
+  expect(sync.requests.find((request) => request.path === "scope-watch")?.query.size).toBe(0);
+});
+
+it("uses a valid scope despite repeated unrelated summary changes during the read", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  sync.beforeScopeRead = () => held;
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(sync.scopeBodies).toHaveLength(1));
+
+  for (let index = 0; index < 20; index++) sync.publishScopeChange();
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  release();
+
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  expect(sync.scopeBodies).toHaveLength(1);
 });
 
 it("applies live changes to the rows it holds, and new rows, but not rows it has not loaded", async () => {
@@ -611,8 +787,8 @@ it("applies live changes to the rows it holds, and new rows, but not rows it has
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
 
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(130, "epoch-1", { revision_cursor: "131" })),
-    change(relation, "update", item(5, "epoch-1", { revision_cursor: "72" })),
+    change(relation, "update", item(130, "epoch-1", {}, { revisionCursor: "131" })),
+    change(relation, "update", item(5, "epoch-1", {}, { revisionCursor: "72" })),
     change(relation, "insert", item(131)),
   ]);
 
@@ -634,7 +810,7 @@ it("keeps reading the live log from where it was when a subset answers from furt
   // The stream reads on from where it was, so what the subset's position is past still reaches it.
   expect(await sync.liveOffset("entities")).toBe(reading);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(130, "epoch-1", { revision_cursor: "131" })),
+    change(relation, "update", item(130, "epoch-1", {}, { revisionCursor: "131" })),
   ]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-130@131"));
 });
@@ -678,7 +854,7 @@ it("follows a stopped window on from where its log was read, by itself, showing 
   expect(await sync.liveOffset("entities")).toBe(reading);
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(scopes);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(3, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "update", item(3, "epoch-1", {}, { revisionCursor: "71" })),
     change(relation, "insert", item(4)),
   ]);
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-4@4"));
@@ -788,17 +964,23 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
   sync.through = "2";
   sync.entities = [
     viewState("2"),
-    item(1, "epoch-1", { text_ref: textRef("a", 2) }),
-    item(2, "epoch-1", { text_ref: textRef("b", 1) }),
+    item(1, "epoch-1", { textRef: textRef("item-1", 2) }),
+    item(2, "epoch-1", { textRef: textRef("item-2", 1, 2n) }),
   ];
-  sync.chunks = [chunk("a", 0, "Hel"), chunk("a", 1, "lo"), chunk("a", 2, " there"), chunk("b", 0, "Bye")];
+  sync.chunks = [
+    chunk("item-1", 0, "Hel"),
+    chunk("item-1", 1, "lo"),
+    chunk("item-1", 2, " there"),
+    chunk("item-2", 0, "Bye", "2"),
+  ];
   const container = await renderThread(
     <Shown>
       {(rows) => (
         <>
-          {rows.map((row) =>
-            row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
-          )}
+          {rows.map((row) => {
+            const reference = textReference(row);
+            return reference ? <Body key={row.entityId} id={row.entityId} reference={reference} /> : null;
+          })}
         </>
       )}
     </Shown>
@@ -809,11 +991,13 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
   expect(others).toEqual([]);
   expect(read.where).toBe("(owner_id = $1 AND generation = $2) OR (owner_id = $3 AND generation = $4)");
   const params = read.params!;
-  expect(new Set([`${params["1"]}@${params["2"]}`, `${params["3"]}@${params["4"]}`])).toEqual(new Set(["a@1", "b@1"]));
+  expect(new Set([`${params["1"]}@${params["2"]}`, `${params["3"]}@${params["4"]}`])).toEqual(
+    new Set(["item-1@1", "item-2@2"])
+  );
 
-  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 3, "!"))]);
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("item-1", 3, "!"))]);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 4) })),
+    change(relation, "update", item(1, "epoch-1", { textRef: textRef("item-1", 4) })),
   ]);
   await vi.waitFor(() => expect(body("item-1")).toBe("Hello there!"));
 });
@@ -821,15 +1005,16 @@ it("loads the bodies in view in one read, as far as each reference spans, and fo
 it("decodes a NUL-containing JSON payload chunk from Electric as the original string", async () => {
   const sync = stubSync();
   sync.through = "1";
-  sync.entities = [viewState("1"), item(1, "epoch-1", { text_ref: textRef("nul", 1) })];
-  sync.chunks = [chunk("nul", 0, "before\u0000after")];
+  sync.entities = [viewState("1"), item(1, "epoch-1", { textRef: textRef("item-1", 1) })];
+  sync.chunks = [chunk("item-1", 0, "before\u0000after")];
   const container = await renderThread(
     <Shown>
       {(rows) => (
         <>
-          {rows.map((row) =>
-            row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
-          )}
+          {rows.map((row) => {
+            const reference = textReference(row);
+            return reference ? <Body key={row.entityId} id={row.entityId} reference={reference} /> : null;
+          })}
         </>
       )}
     </Shown>
@@ -864,9 +1049,10 @@ const bodiesView = (
   <Shown>
     {(rows) => (
       <>
-        {rows.map((row) =>
-          row.textRef ? <Body key={row.entityId} id={row.entityId} reference={row.textRef} /> : null
-        )}
+        {rows.map((row) => {
+          const reference = textReference(row);
+          return reference ? <Body key={row.entityId} id={row.entityId} reference={reference} /> : null;
+        })}
       </>
     )}
   </Shown>
@@ -913,7 +1099,7 @@ it("reads only what changed when the reader comes back to a thread, keeping the 
   expect(itemsShown(container)).toContain("item-11@11");
 
   const asked = since(sync, left, "thread");
-  expect(asked.filter((request) => request.method === "POST")).toEqual([]);
+  expect(asked.filter((request) => request.method === "POST" && request.path !== "scope")).toEqual([]);
   // The log is read on from where the reader left it.
   const [read] = asked.filter((request) => request.path === "entities");
   expect([read.query.get("handle"), read.query.get("offset")]).toEqual(["entities-1", reading]);
@@ -930,7 +1116,9 @@ it("shows the rows it held at once on coming back to a thread that has not moved
   await switchThread(threads, "thread", itemsView);
 
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
-  expect(since(sync, left, "thread").filter((request) => request.method === "POST")).toEqual([]);
+  expect(
+    since(sync, left, "thread").filter((request) => request.method === "POST" && request.path !== "scope")
+  ).toEqual([]);
 });
 
 it("opens a new window on coming back to a thread whose epoch changed while the reader was away", async () => {
@@ -978,8 +1166,8 @@ function bodyStopped(container: HTMLElement, id: string): string | null | undefi
 
 function threadWithBody(sync: FakeSync): void {
   sync.through = "2";
-  sync.entities = [viewState("2"), item(1, "epoch-1", { text_ref: textRef("a", 2) })];
-  sync.chunks = [chunk("a", 0, "Hel"), chunk("a", 1, "lo")];
+  sync.entities = [viewState("2"), item(1, "epoch-1", { textRef: textRef("item-1", 2) })];
+  sync.chunks = [chunk("item-1", 0, "Hel"), chunk("item-1", 1, "lo")];
 }
 
 it("keeps the bodies it held when the reader leaves a thread, and follows their appends on coming back", async () => {
@@ -995,12 +1183,14 @@ it("keeps the bodies it held when the reader leaves a thread, and follows their 
   await switchThread(threads, "thread", bodiesView);
 
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
-  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 2, " there"))]);
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("item-1", 2, " there"))]);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+    change(relation, "update", item(1, "epoch-1", { textRef: textRef("item-1", 3) })),
   ]);
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
-  expect(since(sync, left, "thread").filter((request) => request.method === "POST")).toEqual([]);
+  expect(
+    since(sync, left, "thread").filter((request) => request.method === "POST" && request.path !== "scope")
+  ).toEqual([]);
 });
 
 it("reads the bodies it held again on coming back when their log was retired meanwhile", async () => {
@@ -1014,10 +1204,10 @@ it("reads the bodies it held again on coming back when their log was retired mea
   const left = sync.requests.length;
 
   sync.retire("chunks/text-1", "chunks/text-2");
-  sync.chunks.push(chunk("a", 2, " there"));
+  sync.chunks.push(chunk("item-1", 2, " there"));
   await switchThread(threads, "thread", bodiesView);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+    change(relation, "update", item(1, "epoch-1", { textRef: textRef("item-1", 3) })),
   ]);
 
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
@@ -1034,10 +1224,10 @@ it("reads the bodies in view again when Electric retires their log, for the chun
   const before = sync.posted("chunks/text").length;
 
   // Written while the log was rebuilt, so on neither its old nor its new life.
-  sync.chunks.push(chunk("a", 2, " there"));
+  sync.chunks.push(chunk("item-1", 2, " there"));
   await sync.rotate("chunks/text", "chunks/text-2");
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+    change(relation, "update", item(1, "epoch-1", { textRef: textRef("item-1", 3) })),
   ]);
 
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
@@ -1051,7 +1241,7 @@ async function threadWithRefusedBody(sync: FakeSync): Promise<HTMLDivElement> {
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello"));
   sync.refusingBodies = true;
   await sync.send("entities", (relation) => [
-    change(relation, "insert", item(2, "epoch-1", { text_ref: textRef("b", 1) })),
+    change(relation, "insert", item(2, "epoch-1", { textRef: textRef("item-2", 1, 2n) })),
   ]);
   await vi.waitFor(() => expect(bodyStopped(container, "item-2")).not.toBeNull());
   return container;
@@ -1062,9 +1252,9 @@ it("stops only the bodies a refused read left unloaded, whatever arrives for the
   const container = await threadWithRefusedBody(sync);
 
   expect(bodyStopped(container, "item-1")).toBeNull();
-  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("a", 2, " there"))]);
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("item-1", 2, " there"))]);
   await sync.send("entities", (relation) => [
-    change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
+    change(relation, "update", item(1, "epoch-1", { textRef: textRef("item-1", 3) })),
   ]);
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
   expect(bodyStopped(container, "item-1")).toBeNull();
@@ -1076,7 +1266,7 @@ it("takes a body as no longer stopped once its chunks arrive", async () => {
   const container = await threadWithRefusedBody(sync);
 
   sync.refusingBodies = false;
-  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("b", 0, "Bye"))]);
+  await sync.send("chunks/text", (relation) => [change(relation, "insert", chunk("item-2", 0, "Bye", "2"))]);
 
   await vi.waitFor(() => expect(bodyText(container, "item-2")).toBe("Bye"));
   expect(bodyStopped(container, "item-2")).toBeNull();
@@ -1087,7 +1277,7 @@ it("reads a stopped body again on retry", async () => {
   const container = await threadWithRefusedBody(sync);
 
   sync.refusingBodies = false;
-  sync.chunks.push(chunk("b", 0, "Bye"));
+  sync.chunks.push(chunk("item-2", 0, "Bye", "2"));
   await act(async () =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === "retry item-2")!.click()
   );
@@ -1101,7 +1291,7 @@ it("reads a stopped body again by itself", async () => {
   const container = await threadWithRefusedBody(sync);
 
   sync.refusingBodies = false;
-  sync.chunks.push(chunk("b", 0, "Bye"));
+  sync.chunks.push(chunk("item-2", 0, "Bye", "2"));
 
   // The first attempt follows the failure within a second.
   await vi.waitFor(() => expect(bodyText(container, "item-2")).toBe("Bye"), { timeout: 2_000 });
@@ -1123,10 +1313,14 @@ it("retains the windows of the last few threads the reader left, not every one",
   // The first thread left is the one forgotten; the latest is not.
   let mark = sync.requests.length;
   await visit("thread");
-  expect(since(sync, mark, "thread").filter((request) => request.method === "POST")).not.toEqual([]);
+  expect(since(sync, mark, "thread").some((request) => request.method === "POST" && request.path === "entities")).toBe(
+    true
+  );
   mark = sync.requests.length;
   await visit("other-9");
-  expect(since(sync, mark, "other-9").filter((request) => request.method === "POST")).toEqual([]);
+  expect(
+    since(sync, mark, "other-9").filter((request) => request.method === "POST" && request.path === "entities")
+  ).toEqual([]);
 });
 
 /** The owners of the bodies the thread's reads named, in the order they were read. */
@@ -1141,9 +1335,13 @@ function threadWithBodies(sync: FakeSync, owners: readonly string[]): void {
   sync.through = String(owners.length);
   sync.entities = [
     viewState(sync.through),
-    ...owners.map((owner, index) => item(index + 1, "epoch-1", { text_ref: textRef(owner, 1) })),
+    ...owners.map((owner, index) => {
+      const cursor = BigInt(index + 1);
+      const entityId = `item-${index + 1}`;
+      return item(index + 1, "epoch-1", { textRef: textRef(entityId, 1, cursor) });
+    }),
   ];
-  sync.chunks = owners.map((owner) => chunk(owner, 0, `text of ${owner}`));
+  sync.chunks = owners.map((owner, index) => chunk(`item-${index + 1}`, 0, `text of ${owner}`, String(index + 1)));
 }
 
 it("reads the bodies of every row it holds, not only the ones in view, and has them when a reader shows one", async () => {
@@ -1152,7 +1350,7 @@ it("reads the bodies of every row it holds, not only the ones in view, and has t
   const threads = createElectricThreadSync();
   // Nothing in this view shows a body.
   await renderThread(itemsView, threads);
-  await vi.waitFor(() => expect([...ownersRead(sync)].sort()).toEqual(["a", "b", "c"]));
+  await vi.waitFor(() => expect([...ownersRead(sync)].sort()).toEqual(["item-1", "item-2", "item-3"]));
 
   await switchThread(threads, "thread", bodiesView);
   await vi.waitFor(() => expect(bodyText(document.body)).toBe("text of a"));
@@ -1195,7 +1393,7 @@ it("reads a body a reader shows ahead of the ones waiting to be read ahead, whic
     <Shown>
       {(rows) => {
         const oldest = rows.find((row) => row.entityId === "item-1")!;
-        return <Body id={oldest.entityId} reference={oldest.textRef!} />;
+        return <Body id={oldest.entityId} reference={textReference(oldest)!} />;
       }}
     </Shown>
   );
@@ -1205,5 +1403,5 @@ it("reads a body a reader shows ahead of the ones waiting to be read ahead, whic
   expect(sync.posted("chunks/text")).toHaveLength(3);
   release();
   await vi.waitFor(() => expect(ownersRead(sync)).toHaveLength(45));
-  expect(new Set(ownersRead(sync))).toEqual(new Set(owners));
+  expect(new Set(ownersRead(sync))).toEqual(new Set(owners.map((_, index) => `item-${index + 1}`)));
 });

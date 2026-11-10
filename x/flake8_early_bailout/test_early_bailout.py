@@ -34,7 +34,6 @@ def test_inverted_if_else():
     assert len(errors) == 1
     assert "EB100" in errors[0]
     assert "invert condition and return early" in errors[0]
-    print("✓ Detected inverted if/else pattern")
 
 
 def test_deeply_nested_ifs():
@@ -55,7 +54,6 @@ def test_deeply_nested_ifs():
     errors = get_errors(code)
     assert len(errors) >= 1
     assert any("EB101" in error for error in errors)
-    print("✓ Detected nested if pattern")
 
 
 def test_no_error_for_balanced_if_else():
@@ -73,7 +71,6 @@ def test_no_error_for_balanced_if_else():
     """
     errors = get_errors(code)
     assert len(errors) == 0
-    print("✓ No error for balanced if/else")
 
 
 def test_loop_with_inverted_pattern():
@@ -95,15 +92,6 @@ def test_loop_with_inverted_pattern():
     assert len(errors) == 1
     assert "EB100" in errors[0]
     assert "continue or break" in errors[0]
-    print("✓ Detected inverted pattern in loop")
-
-
-if __name__ == "__main__":
-    test_inverted_if_else()
-    test_deeply_nested_ifs()
-    test_no_error_for_balanced_if_else()
-    test_loop_with_inverted_pattern()
-    print("\nAll tests passed!")
 
 
 if __name__ == "__main__":

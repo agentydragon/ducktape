@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -11,81 +11,38 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
-    deps = [
-        "//agentplane:crd_group",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "models",
-    srcs = ["models.py"],
-    deps = [
-        "//util/exec:models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "actions",
-    srcs = ["actions.py"],
-    # The group key and its Action names, so the staging policy that auto-approves them is written
-    # from the roster that offers them rather than from a second copy.
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        ":binding",
-        ":models",
-        "//agentplane/action_service:catalog",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_actions",
-    srcs = ["test_actions.py"],
-    deps = [
-        ":actions",
-        ":binding",
-        "//:conftest",
-        "//agentplane/action_service:conftest",
-        "@pypi//jsonschema",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//referencing",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 go_library(
     name = "sandbox",
     srcs = [
-        "actions.go",
         "exec.go",
         "executor.go",
         "inventory.go",
     ],
-    embedsrcs = ["input_schemas.json"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/sandbox",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/sandbox/contract",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
-        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "//agentplane/workload_identity/requester",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/labels",
         "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_apimachinery//pkg/util/wait",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/remotecommand",
         "@io_k8s_client_go//util/exec",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
     ],
 )
 
@@ -101,16 +58,26 @@ go_test(
     embed = [":sandbox"],
     embedsrcs = ["golden.json"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/sandbox/contract",
         "//agentplane/action_service/store",
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/go/auth",
+        "//agentplane/workload_auth/auth",
+        "//agentplane/workload_identity/api/v1alpha1",
+        "//agentplane/workload_identity/requester",
+        "//agentplane/workload_identity/resolver",
+        "//agentplane/workload_identity/testing",
         "@com_github_google_uuid//:uuid",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_client_go//util/exec",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
     ],
 )

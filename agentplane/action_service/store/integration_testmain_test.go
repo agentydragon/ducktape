@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
@@ -36,20 +35,22 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	return fixture{Store: New(db), db: db, url: dsn}
 }
 
 var (
-	caller      = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
-	otherCaller = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-other-caller"}}
+	caller      = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
+	otherCaller = CallerPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-other-caller"}, ServiceAccountUID: "test-other-caller-uid"}
 	operator    = OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
 	reader      = ServiceReaderPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-reader"}}
 )
+
+// accountOf is the ServiceAccount a request records as its caller; the zero value for any other kind of caller.
+func accountOf(recorded Caller) ServiceAccount {
+	serviceAccount, _ := recorded.(ServiceAccountCaller)
+	return serviceAccount.Account
+}
 
 // input is a submission named by its key. Copies change what they set.
 func input(key string) ActionRequestInput {
@@ -61,12 +62,12 @@ func input(key string) ActionRequestInput {
 	}
 }
 
-func (f fixture) submit(t *testing.T, owner CallerPrincipal, key string) ActionRequest {
+func (f fixture) submit(t *testing.T, owner Owner, key string) ActionRequest {
 	t.Helper()
 	return f.submitInput(t, owner, input(key), Admission{RequestID: uuid.New()})
 }
 
-func (f fixture) submitInput(t *testing.T, owner CallerPrincipal, body ActionRequestInput, admission Admission) ActionRequest {
+func (f fixture) submitInput(t *testing.T, owner Owner, body ActionRequestInput, admission Admission) ActionRequest {
 	t.Helper()
 	request, err := f.Submit(t.Context(), owner, body, admission)
 	if err != nil {
@@ -76,7 +77,7 @@ func (f fixture) submitInput(t *testing.T, owner CallerPrincipal, body ActionReq
 }
 
 // allowed is a request an operator allowed, so its Execution awaits dispatch.
-func (f fixture) allowed(t *testing.T, owner CallerPrincipal, key string) ActionRequest {
+func (f fixture) allowed(t *testing.T, owner Owner, key string) ActionRequest {
 	t.Helper()
 	return f.decide(t, f.submit(t, owner, key), VerdictAllow)
 }
@@ -132,6 +133,16 @@ func (f fixture) count(t *testing.T, query string, args ...any) int {
 		t.Fatal(err)
 	}
 	return count
+}
+
+// storedError is the `action_execution.error` document of a request's Execution.
+func (f fixture) storedError(t *testing.T, id uuid.UUID) []byte {
+	t.Helper()
+	var document []byte
+	if err := f.db.QueryRowContext(t.Context(), `SELECT error FROM action_execution WHERE request_id = $1`, id).Scan(&document); err != nil {
+		t.Fatal(err)
+	}
+	return document
 }
 
 // awaitBound only fails a test whose condition never comes.

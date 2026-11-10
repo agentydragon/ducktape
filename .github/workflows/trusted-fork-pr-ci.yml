@@ -30,54 +30,23 @@ permissions:
   contents: read
 
 jobs:
-  merge-commit:
-    name: Resolve PR merge commit
-    # Same-repo PRs get their merge commit from the pull_request run in ci.yml.
-    if: github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  fork-context:
+    uses: ./.github/workflows/trusted-fork-pr-context.yml
     permissions:
       contents: read
       pull-requests: read
-    outputs:
-      # Empty when there is nothing to build: GitHub builds no merge commit for a
-      # conflicted PR, and a PR that moved on is covered by the run for its new head.
-      sha: ${{ steps.resolve.outputs.sha }}
-    steps:
-      # pull_request_target runs trusted base-branch code. This job reads PR metadata;
-      # it never checks out PR-controlled code.
-      - uses: actions/checkout@v7
-        with:
-          # Always run the trusted helper from devel. Event-time base.sha can point to
-          # a commit from before this helper was added, breaking long-lived PRs.
-          ref: devel
-          fetch-depth: 1
-      - name: Resolve the merge commit GitHub built for this PR head
-        id: resolve
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 devinfra/ci/pr_mergeability.py resolve
 
   bazel-ci:
-    needs: [merge-commit]
-    if: needs.merge-commit.outputs.sha != ''
+    needs: [fork-context]
+    if: needs.fork-context.outputs.source_commit != ''
     uses: ./.github/workflows/bazel-ci.yml
     permissions:
       contents: read
       pull-requests: read
       statuses: write
     with:
-      # PRs authored by the agent identity or repository owner already own the only
-      # injected capability. All other authors wait for a fork-ci-review review.
-      environment: >-
-        ${{
-          github.event.pull_request.user.login != 'agentydragon-agent' &&
-          github.event.pull_request.user.login != 'agentydragon' &&
-          'fork-ci-review' || ''
-        }}
-      source_commit: ${{ needs.merge-commit.outputs.sha }}
+      environment: ${{ needs.fork-context.outputs.environment }}
+      source_commit: ${{ needs.fork-context.outputs.source_commit }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
       # actions/checkout v6 refuses fork code under pull_request_target unless
@@ -88,25 +57,20 @@ jobs:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   nix-wheel-check:
-    needs: [merge-commit]
-    if: needs.merge-commit.outputs.sha != ''
+    needs: [fork-context]
+    if: needs.fork-context.outputs.source_commit != ''
     uses: ./.github/workflows/nix-wheel-check.yml
     permissions:
       contents: read
       pull-requests: read
     with:
-      environment: >-
-        ${{
-          github.event.pull_request.user.login != 'agentydragon-agent' &&
-          github.event.pull_request.user.login != 'agentydragon' &&
-          'fork-ci-review' || ''
-        }}
-      source_commit: ${{ needs.merge-commit.outputs.sha }}
+      environment: ${{ needs.fork-context.outputs.environment }}
+      source_commit: ${{ needs.fork-context.outputs.source_commit }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       allow_unsafe_pr_checkout: true
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+      ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}
 
   nix-wheel-check-required:
     # Branch protection requires this exact context. The reusable workflow's own
@@ -124,7 +88,7 @@ jobs:
       - name: Require the trusted fork Nix result
         if: needs.nix-wheel-check.result != 'success'
         run: |
-          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and the Resolve PR merge commit job."
+          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and the Resolve fork PR context job."
           exit 1
       - name: Confirm the trusted fork Nix result
         if: needs.nix-wheel-check.result == 'success'

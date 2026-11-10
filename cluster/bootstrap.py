@@ -22,16 +22,16 @@ from pathlib import Path
 
 import pygit2
 from kubernetes import client, config
+from python.runfiles import Runfiles
 
 from cluster.network_readiness import (
     restart_cilium_operator_gateway_controller,
     verify_clusterip_routing,
     wait_for_cilium_health,
 )
-from util.bazel.runfiles import get_required_path
-from util.bazel.workspace import get_build_workspace_directory
+from devinfra.bazel.workspace import get_build_workspace_directory
 
-_TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
+_TOFU_BIN = Runfiles.CreateOrRaise().root() / "multitool/tools/tofu/tofu"
 
 SCRIPT_DIR = get_build_workspace_directory() / "cluster"
 TF_DIR = SCRIPT_DIR / "terraform" / "main"

@@ -5,14 +5,14 @@
  * page no worse off, and saying so on screen each time only teaches the reader to ignore it. So a
  * stream counts as degraded only once it has been off for `DEGRADED_AFTER_MS` without a break, and
  * the topbar shows a spinner for it; at `STALE_AFTER_MS` the spinner turns amber. A stream that is
- * connected but whose server-side source has stopped moving is stale at once, with the reason in
+ * connected but whose server-side source reports its watch unhealthy is stale at once, with the reason in
  * `stalled`. The spinner is the only place any of this shows; the details are in its tooltip.
  */
 import { Box, Loader, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState, useSyncExternalStore } from "react";
 
 import { isoTime, timeAgo } from "./format_time";
-import type { StreamConnection } from "./live_stream";
+import type { StreamConnection } from "./stream_reader";
 
 export const DEGRADED_AFTER_MS = 5_000;
 export const STALE_AFTER_MS = 60_000;

@@ -6,7 +6,7 @@ test output against stored `.ambr` files in `__snapshots__/` directories.
 ## Setup
 
 Set `uses_syrupy = True` on the `py_test` target. This wires `BazelAmberExtension`
-(<util/testing/bazel_snapshot_extension.py>) which copies updated `.ambr` files to
+(<devinfra/testing/bazel_snapshot_extension.py>) which copies updated `.ambr` files to
 Bazel's undeclared test outputs for RBE retrieval, and registers a pytest plugin
 that prints the update command on snapshot mismatch.
 
@@ -58,12 +58,12 @@ Bazel in the test sandbox). Bazel downloads undeclared test outputs to
 
 `uses_syrupy = True` injects two args:
 
-- `--snapshot-default-extension=util.testing.bazel_snapshot_extension.BazelAmberExtension`
+- `--snapshot-default-extension=devinfra.testing.bazel_snapshot_extension.BazelAmberExtension`
   — syrupy uses this class for all snapshot I/O
-- `-p util.testing.bazel_snapshot_extension` — registers the module as a
+- `-p devinfra.testing.bazel_snapshot_extension` — registers the module as a
   pytest plugin (enables the `pytest_terminal_summary` mismatch hint)
 
-And adds `//util/testing:bazel_snapshot_extension` to deps.
+And adds `//devinfra/testing:bazel_snapshot_extension` to deps.
 
 Gotcha when extending: syrupy stores the extension **class** (not an instance) in
 `_queued_snapshot_writes` and calls classmethod `write_snapshot(...)` at flush;

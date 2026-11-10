@@ -3,7 +3,7 @@
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
-Sandbox availability, an unconfirmed open attempt, opening in progress, or model availability.
+Sandbox availability, an unconfirmed Session creation, Session materialization in progress, or model availability.
 
 ## Thread names
 
@@ -17,6 +17,20 @@ snapshot, with a client-side countdown and the full deadline on hover. A stale s
 timing as unavailable; a Sandbox that has not appeared yet shows no autosuspend state. Model activity
 and turn completion remain separate signals; when their relative ages match and their timestamps are
 within a minute, the composer combines them while keeping the exact idle timestamp on hover.
+
+## Runtime diagnostics
+
+The Status tab shows the Runtime's desired lifecycle mode and generation alongside the aggregate
+controller's published stage. When progress belongs to the desired generation, it also shows the
+controller's first unmet barrier and its resource/process identity, available admission count,
+journal seal identity, acknowledgement cursor, and surfaced lifecycle error. When progress belongs
+to an older generation, it is labeled as last progress and its blocker and error are withheld.
+
+## Tool calls
+
+A lone tool call renders its compact tool summary directly. Only runs of multiple steps have an
+additional group summary. Expanding a tool call reserves room for its arguments and output before
+the next history row.
 
 ## Thread history scrolling
 
@@ -39,8 +53,8 @@ browser on desktop and phone.
 - **An appended message, reader scrolled up**: nothing moves. The reader keeps reading exactly
   where they were.
 - **A message actively streaming, reader following, it is the last message**: the view tracks its
-  growth so the growing edge stays visible — the message's own start must never scroll off the top
-  of the screen while it is still generating.
+  growth so the growing edge stays visible. When the message is taller than the viewport, its
+  growing tail takes priority over keeping its start visible.
 - **A message actively streaming or otherwise resizing anywhere else** — off-screen above or below
   the viewport, or while the reader is not following — must not move the reader's scroll position,
   even by a pixel.
@@ -62,3 +76,11 @@ browser on desktop and phone.
   portion currently on screen.
 - None of the above ever produces a visible flash of blank space or a scrollbar that visibly jumps
   and then corrects.
+
+## Thread view recorder
+
+Thread view recorder can record scrolling across Thread switches and download the recording locally.
+The recording includes Thread/view identities, bounded row geometry and virtualizer state, and
+before/after geometry for component scroll corrections. It excludes message bodies and tool
+payloads. Layout sampling runs only while recording; the export reports truncation when its
+snapshot limit is reached.

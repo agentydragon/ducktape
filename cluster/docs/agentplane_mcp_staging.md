@@ -36,9 +36,11 @@ the declared staging deployment contract.
 - Authentik discovery/JWKS/token traffic uses the existing TLS-SNI-bounded egress to
   `auth.allegedly.works`. No forward-auth outpost is inserted into MCP streaming. The public
   hostname uses the existing wildcard DNS record and Gateway wildcard certificate.
-- Hosted Sandboxes use the generated Actions RPC/facade through egress. The proxy substitutes the
-  Pod-bound workload token for the inert placeholder; a workload does not authenticate to `/mcp`
-  and receives no operator or OAuth-management authority. See the [Action Service caller
+- Hosted Sandboxes call native Action gRPC through the credential-holding sidecar. The sidecar
+  presents the Sandbox runner SVID to Action Service through an opaque CONNECT tunnel, and the
+  service resolves it against live Sandbox state. This route uses no HTTP facade, bearer-token
+  substitution or proxy caller assertion. A workload does not authenticate to `/mcp` and receives
+  no operator or OAuth-management authority. See the [Action Service caller
   contract](../../agentplane/action_service/SPEC.md#caller-admission-and-connection-authority).
 
 The upstream provider includes `offline_access`, which Authentik requires alongside the requested
@@ -46,27 +48,12 @@ scope to issue refresh tokens ([provider documentation](https://docs.goauthentik
 The Fernet key uses 32 cryptographically random bytes from Terraform's `random_id`, encoded as
 padded URL-safe base64 ([resource documentation](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id)).
 
-## Action Service configuration rollout
-
-The generated Action Service settings retain `integrated_connection_service: false` and
-`max_wait_seconds: 180` while older pinned images may still parse those keys. The new Action Service
-rejects `integrated_connection_service: true`, defaults the field to false, and registers no
-integrated MCP or Connection endpoints. Its `max_wait_seconds` is only a compatibility tombstone,
-capped at the generated 180-second maximum;
-the MCP edge owns external caller wait limits. Keep `direct_wait_seconds` because Action Service
-orchestration uses it.
-
-Remove the two compatibility keys from generated manifests only after the image containing the
-false-only/no-op parser is observed running. Deploy that config removal before removing the parser
-fields in a later image. This sequence preserves compatibility with an older image during rollout.
-Serving-path and config rollouts do not implicitly move or delete database rows.
-
 ## Acceptance after deployment
 
 Use these deployment acceptance checks after the image and route changes reconcile:
 
-1. Check Terraform/Reflector delivery, Flux readiness, the intended app, Actions, edge and migrator
-   revisions, successful migration, and Secret references without printing Secret contents. Confirm
+1. Check Terraform/Reflector delivery, Flux readiness, the intended app, Actions and edge serving
+   image revisions, successful startup migrations and Secret references without printing Secret contents. Confirm
    the public route resolves to the edge and private REST/operator paths are not routed publicly.
 2. Add the MCP URL in Claude.ai. Complete DCR, log into the integration app, name the Connection,
    choose `agentplane-staging/claude-ai`, and authorize. Confirm upstream login returns through the
@@ -80,9 +67,11 @@ Use these deployment acceptance checks after the image and route changes reconci
    recovery of existing receipts. Unbind the Connection and confirm old access/refresh credentials
    no longer authorize new work; immutable history remains and already-claimed execution is not
    killed.
-5. From a hosted Sandbox, run the CLI catalog and harmless submission/receipt flow through the
-   generated Actions RPC/facade. Verify egress substitutes the workload token for the placeholder.
-   This requires no DCR and must not acquire operator authority.
+5. From a hosted Sandbox, run the CLI catalog and harmless submission/receipt flow over native
+   Action gRPC through the credential-holding sidecar. Confirm Action Service admits the runner
+   SVID, while central egress carries service TLS opaquely through CONNECT without bearer-token
+   substitution or a proxy caller assertion. This requires no DCR and must not acquire operator
+   authority.
 
 The app supports explicit Connection rebind and confirmed reconnect during consent. Policy editing,
 upstream credentialed tool migration, and Haku retirement remain outside this deployment check.

@@ -1,7 +1,7 @@
 # Submit an Action and establish its result
 
 The commands are `agentplane actions …`; each command's `--help` lists its flags and exit statuses.
-Without the command, use the generated [OpenAPI reference](/openapi.json) for HTTP routes and schemas.
+For MCP clients, use tool discovery and `get_action` to read the live argument schema.
 
 ## Discover and check access
 

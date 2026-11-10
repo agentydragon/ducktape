@@ -4,19 +4,10 @@ Provides consistent date handling across CLI and API components.
 """
 
 import datetime
-from collections.abc import Callable
 
 
 def parse_date(date_string: str | None = None) -> datetime.datetime:
-    """
-    Parse a date string to a datetime object.
-
-    Args:
-        date_string: Date string in various formats
-
-    Returns:
-        datetime object
-    """
+    """Parse an ISO date/datetime or YYYY-MM-DD, defaulting to local now for missing or empty input."""
     if not date_string:
         return datetime.datetime.now()
 
@@ -31,15 +22,7 @@ def parse_date(date_string: str | None = None) -> datetime.datetime:
 
 
 def _normalize_date(date: str | datetime.date | datetime.datetime | None = None) -> datetime.datetime:
-    """
-    Convert various date formats to a datetime object.
-
-    Args:
-        date: Date to normalize (default: current date)
-
-    Returns:
-        Normalized datetime object
-    """
+    """Keep datetimes, turn dates into midnight, parse strings, or default None to local now."""
     if date is None:
         return datetime.datetime.now()
 
@@ -53,33 +36,8 @@ def _normalize_date(date: str | datetime.date | datetime.datetime | None = None)
     return parse_date(date)
 
 
-def _format_with_template[T](
-    date: str | datetime.date | datetime.datetime | None, formatter: Callable[[datetime.datetime], T]
-) -> T:
-    """
-    Format a date using a formatter function.
-
-    Args:
-        date: Date to format (default: current date)
-        formatter: Formatting function that takes a datetime and returns formatted value
-
-    Returns:
-        Formatted date according to the formatter function
-    """
-    normalized_date = _normalize_date(date)
-    return formatter(normalized_date)
-
-
 def format_date_for_api(date: str | datetime.date | datetime.datetime | None = None) -> str:
-    """
-    Format a date for the Habitify API (ISO format with timezone).
-
-    Args:
-        date: Date to format (default: current date)
-
-    Returns:
-        Date in ISO format with timezone
-    """
+    """Date-only becomes midnight +00:00; ISO strings with Z/+ keep offsets (Z -> +00:00); other values receive +00:00."""
     # Special case for YYYY-MM-DD string format - optimize to avoid parsing
     if isinstance(date, str) and len(date.split("-")) == 3:
         try:
@@ -96,5 +54,4 @@ def format_date_for_api(date: str | datetime.date | datetime.datetime | None = N
     if isinstance(date, datetime.date) and not isinstance(date, datetime.datetime):
         return f"{date.isoformat()}T00:00:00+00:00"
 
-    # Use the common formatter for other cases
-    return _format_with_template(date, lambda d: d.strftime("%Y-%m-%dT%H:%M:%S+00:00"))
+    return _normalize_date(date).strftime("%Y-%m-%dT%H:%M:%S+00:00")

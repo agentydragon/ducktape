@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/ssh-mcp
-    newTag: devel-20261022093040-b29377e # {"$imagepolicy": "flux-system:ssh-mcp:tag"}
+    newTag: devel-20261106050625-c86ac23 # {"$imagepolicy": "flux-system:ssh-mcp:tag"}

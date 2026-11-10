@@ -9,16 +9,26 @@ skill_package(
         skill_mapping(
             srcs = [
                 "SKILL.md",
+                "references/execution_graphs.md",
+                "references/executor_queues.md",
+                "scripts/analyze_executions.py",
                 "scripts/attribution.py",
                 "scripts/checks.jq",
+                "scripts/collect.py",
                 "scripts/collect.sh",
                 "scripts/contention.jq",
                 "scripts/evidence.sh",
+                "scripts/gate_headroom.py",
                 "scripts/inspect.sh",
+                "scripts/snapshot_analysis.py",
                 "scripts/summarize.jq",
                 "scripts/test_costs.jq",
             ],
             preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = ["//devinfra/ci/skills/shared:reporting.md"],
+            prefix = "references",
         ),
         skill_mapping(
             srcs = ["//devinfra/ci/reports:publish.py"],
@@ -68,9 +78,38 @@ jq(
 ]]
 
 py_library(
+    name = "analyze_executions",
+    srcs = ["scripts/analyze_executions.py"],
+)
+
+py_library(
     name = "artifact_tools",
-    srcs = [
-        "scripts/attribution.py",
+    srcs = ["scripts/attribution.py"],
+)
+
+py_library(
+    name = "gate_headroom",
+    srcs = ["scripts/gate_headroom.py"],
+)
+
+py_library(
+    name = "snapshot_analysis",
+    srcs = ["scripts/snapshot_analysis.py"],
+)
+
+py_library(
+    name = "collect",
+    srcs = ["scripts/collect.py"],
+)
+
+py_test(
+    name = "test_analyze_executions",
+    srcs = ["test_analyze_executions.py"],
+    deps = [
+        ":analyze_executions",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -79,6 +118,39 @@ py_test(
     srcs = ["test_artifacts.py"],
     deps = [
         ":artifact_tools",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gate_headroom",
+    srcs = ["test_gate_headroom.py"],
+    deps = [
+        ":gate_headroom",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_snapshot_analysis",
+    srcs = ["test_snapshot_analysis.py"],
+    deps = [
+        ":snapshot_analysis",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_collect",
+    srcs = ["test_collect.py"],
+    deps = [
+        ":collect",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -143,6 +143,7 @@ rust_test(
     deps = [
         ":ibflex",
         "@crates//:rust_decimal",
+        "@crates//:serde-xml-rs",
         "@crates//:url",
     ],
 )

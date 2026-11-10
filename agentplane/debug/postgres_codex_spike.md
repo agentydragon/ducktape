@@ -1,9 +1,11 @@
 # Postgres Codex sampler spike
 
-Baseline merged in [PR #12207](https://github.com/agentydragon/ducktape/pull/12207), 2026-10-27: `/root/postgres_harness_spike` implements the operator-dispatched
-code-mode-only experiment in `agentplane/x/postgres_codex`, branch `x/postgres-codex-20261027`.
-This report describes a custom outer loop reusing upstream components; it is not a persistence fork
-or a production replacement. No staging changes or live inference were requested or performed.
+Baseline merged in [PR #12207](https://github.com/agentydragon/ducktape/pull/12207), 2026-10-27. The
+operator-dispatched code-mode-only experiment was implemented in `/root/postgres_harness_spike` under
+`agentplane/x/postgres_codex`, branch `x/postgres-codex-20261027`. The test-only source and Bazel targets
+have since been removed; this report preserves the measured behavior and limitations. The experiment was
+a custom outer loop reusing upstream components, not a persistence fork or production replacement. No
+staging changes or live inference were requested or performed.
 
 ## What the slice establishes
 
@@ -16,7 +18,8 @@ a truncated provider stream, sampler SIGKILL while sampling, and executor SIGKIL
 
 All seven integration cases passed in **51.9 seconds** on RBE, invocation
 [`8a1a2810-b81f-45ea-b971-ad6cec41e15a`](https://app.buildbuddy.io/invocation/8a1a2810-b81f-45ea-b971-ad6cec41e15a).
-The invocation also named all five runtime libraries so their mypy and Ruff aspects ran:
+The invocation also named all five runtime libraries so their mypy and Ruff aspects ran. The command below
+is the historical validation command; its Bazel targets have since been removed:
 
 ```sh
 bbr test //agentplane/x/postgres_codex:test_sampler \
@@ -77,12 +80,12 @@ It executes actual upstream patch code by argv. It does not replicate upstream s
 PTY/stdin, image handling or formatted tool metadata. Neither remote process effects nor live V8
 isolate state become transactional because their intent was committed in Postgres.
 
-The [experimental contract](../x/postgres_codex/SPEC.md) lists the intended status of every omitted
-headless capability. This slice makes custom conversation storage feasible with a small adapter;
-whether the omitted control features are acceptable remains a product decision. Prefer upstream
-central Codex for broad feature compatibility today. A custom loop becomes a reasonable candidate
-if code-mode-only, completed-cell checkpoints and the narrower tool contract are accepted, with
-provider tracking and uncertainty reconciliation explicitly owned. Frontend tracing is separate work;
+The implementation-time experimental contract listed the status of every omitted headless capability;
+this report preserves its key boundaries. At the time, the slice showed custom conversation storage was
+feasible with a small adapter, while the acceptability of omitted control features remained a product
+decision. The reported recommendation was to prefer upstream central Codex for broad feature compatibility;
+a custom loop was a candidate only if its code-mode-only scope and narrower tool contract were accepted,
+with explicit owners for provider tracking and uncertainty reconciliation. Frontend tracing is separate work;
 the operator explicitly removed it as an acceptance gate because Langfuse provides partial links.
 
 ## Process-control extension
@@ -116,7 +119,7 @@ call, stops sampling and allows only explicit new input to reopen the turn. Prov
 local HTTP cancellation; provider completion and partial remote effects are not rolled back. Lost
 cleanup outcomes remain `effects_unknown` with a blocking intent, including an interrupt that occurs
 between transitions. Stdin mutations and shell commands are never automatically retried. The
-[experimental SPEC](../x/postgres_codex/SPEC.md) describes deadlines and remaining omissions.
+implementation-time SPEC described deadlines and remaining omissions, summarized above.
 
 The extension has **1,277 physical runtime Python lines**, including comments/blanks, across
 `store.py` 435, `executor.py` 193, `code_mode.py` 331, `sampler.py` 127, `main.py` 116 and `control.py` 75. The baseline was 563; the
@@ -140,6 +143,8 @@ in 33.2 and 42.5 seconds. Its stack dumps observed PostgreSQL image loading in
 `util.oci.push_to_daemon`; fixture setup took 19.14 and 22.50 seconds. This establishes final-code
 passes for all 20 cases across the two invocations, with a target-timeout flake still observed in
 the ordinary parallel run. No deadlines were increased.
+
+The command below is the historical validation command; its Bazel targets have since been removed:
 
 ```sh
 bbr test //agentplane/x/postgres_codex:test_controls \

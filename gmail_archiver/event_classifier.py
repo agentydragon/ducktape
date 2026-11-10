@@ -9,33 +9,12 @@ from typing import Annotated, Literal
 
 import openai
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
-from pydantic_core import core_schema
 
 from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.models import Email
+from openai_utils.json_schema import openai_json_schema
 
 logger = logging.getLogger(__name__)
-
-
-class OpenAICompatibleSchema(GenerateJsonSchema):
-    """Generate OpenAI strict mode compatible JSON schemas.
-
-    - Converts oneOf to anyOf (OpenAI doesn't support oneOf)
-    - Marks all fields as required (OpenAI strict mode requirement)
-    """
-
-    def field_is_required(
-        self, field: core_schema.ModelField | core_schema.DataclassField | core_schema.TypedDictField, total: bool
-    ) -> bool:
-        # OpenAI strict mode requires all properties to be in 'required'
-        return True
-
-    def tagged_union_schema(self, schema: core_schema.TaggedUnionSchema) -> JsonSchemaValue:
-        json_schema = super().tagged_union_schema(schema)
-        if "oneOf" in json_schema:
-            json_schema["anyOf"] = json_schema.pop("oneOf")
-        return json_schema
 
 
 class DBSASFGroupReminderData(BaseModel):
@@ -148,8 +127,7 @@ CONFIDENCE GUIDELINES:
 - Medium confidence (0.5-0.8): Probable match but some ambiguity
 - Low confidence (0.0-0.5): Weak match or unclear"""
 
-        # Generate OpenAI-compatible schema (converts oneOf to anyOf)
-        schema = EmailTemplateExtraction.model_json_schema(schema_generator=OpenAICompatibleSchema)
+        schema = openai_json_schema(EmailTemplateExtraction)
 
         # Use Responses API with structured outputs
         response = await self.client.responses.create(

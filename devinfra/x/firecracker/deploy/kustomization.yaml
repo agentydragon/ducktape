@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - rbac.yaml
+  - auth-token-eso.yaml
+  - deployment.yaml
+  - service.yaml
+  - kvm_device_plugin
+configMapGenerator:
+  - name: firecracker-manager-config
+    namespace: claude-sandbox
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true

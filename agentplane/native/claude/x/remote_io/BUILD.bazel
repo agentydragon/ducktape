@@ -31,11 +31,11 @@ py_test(
         "//agentplane/native/claude:conftest",
         "//agentplane/native/claude/testing:anthropic_sse",
         "//agentplane/native/claude/testing:messages",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -57,10 +57,10 @@ py_test(
         "//agentplane/native/claude/testing:harness",
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/claude/testing:model",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

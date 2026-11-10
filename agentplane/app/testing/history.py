@@ -1,72 +1,61 @@
-"""App Thread identities for fixture Sessions, opened in the scripted history database as well."""
+"""Script fixture Sessions through History; observe their archive through its public API."""
 
-from typing import override
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine
+import grpc
 
-from agentplane.app.database_updates import Channel
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.models import Thread
-from agentplane.app.threads.summaries import Summaries
+from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import notify
+from agentplane.proto import event_log_pb2
+
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/history_service:history_service_pb2
 
 SANDBOX_NAMESPACE = "test-history-sandbox-namespace"
 
 
 def fixture_session_id(sandbox: str, session_id: str) -> UUID:
-    """The public ID a fixture's Session alias stands for; a canonical UUID stands for itself."""
     try:
         return UUID(session_id)
     except ValueError:
         return uuid5(NAMESPACE_URL, sandbox + "/" + session_id)
 
 
-class SeededEventLogStore(EventLogStore):
-    """Opens a fixture's Session in the history database as well; every read is production."""
-
-    def __init__(
-        self,
-        engine: AsyncEngine,
-        *,
-        history: History | None,
-        history_reader: HistoryServiceClient,
-        summaries: Summaries,
-        sandbox_namespaces: dict[str, str] | None = None,
-    ) -> None:
-        self.engine = engine
+class SessionHistory:
+    def __init__(self, history: History, *, sandbox_namespaces: dict[str, str] | None = None) -> None:
         self.history = history
-        self.reader = history_reader
-        self.sandbox_namespaces = {} if sandbox_namespaces is None else sandbox_namespaces
-        super().__init__(engine, history_reader=history_reader, summaries=summaries)
-
-    @override
-    async def open(self, session_id: str) -> UUID:
-        """Open the Thread of a Session the app discovered, without the History Service's confirmation:
-        a fixture's runner may reach the History Service only through the app's own ingestion."""
-        public_id = UUID(session_id)
-        await self._insert(public_id)
-        return public_id
-
-    async def register(self, sandbox: str, session_id: str) -> UUID:
-        """Open a fixture Session in History; a non-UUID `session_id` is a stable test alias."""
-        public_id = fixture_session_id(sandbox, session_id)
-        if self.history is not None:
-            await self.history.open(
-                public_id, sandbox_name=sandbox, sandbox_namespace=self.sandbox_namespaces.get(sandbox)
-            )
-        return public_id
+        self.reader: HistoryServiceClient = history.service.reader
+        self.sandbox_namespaces = sandbox_namespaces or {}
 
     async def seed(self, sandbox: str, session_id: str) -> UUID:
-        """Register a fixture's Session and open its Thread."""
-        public_id = await self.register(sandbox, session_id)
-        await self._insert(public_id)
+        public_id = fixture_session_id(sandbox, session_id)
+        await self.history.open(public_id, sandbox_name=sandbox, sandbox_namespace=self.sandbox_namespaces.get(sandbox))
         return public_id
 
-    async def _insert(self, public_id: UUID) -> None:
-        async with self._sessions.begin() as session:
-            if await session.scalar(insert(Thread).values(id=public_id).on_conflict_do_nothing().returning(Thread.id)):
-                await notify(session, Channel.THREADS)
+    async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
+        entries: list[event_log_pb2.EventEntry] = []
+        while len(entries) < limit:
+            page = await self.reader.read_session_events(
+                str(thread_id), after_cursor=after_cursor, limit=min(1000, limit - len(entries))
+            )
+            entries.extend(page.entries)
+            if not page.entries or page.entries[-1].cursor >= page.last_cursor:
+                break
+            after_cursor = page.entries[-1].cursor
+        return entries
+
+    async def last_cursor(self, thread_id: UUID) -> int:
+        return (await self.reader.get_session_summary(str(thread_id))).folded_through
+
+    async def read_watermark(self, thread_id: UUID) -> int:
+        return (await self.reader.get_session_summary(str(thread_id))).committed_cursor
+
+    async def session_summary(self, thread_id: UUID) -> history_service_pb2.SessionSummary | None:
+        try:
+            return await self.reader.get_session_summary(str(thread_id))
+        except ServiceError as error:
+            if error.code != grpc.StatusCode.NOT_FOUND:
+                raise
+            return None

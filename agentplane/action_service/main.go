@@ -1,8 +1,5 @@
-// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
-// `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, `OperatorActionService`'s Decisions and MCP server linkages, and `WebPushService`, over gRPC and their HTTP
-// facade under /v1/, the MCP linkage's OAuth callback and Client ID Metadata Document, the agent documentation, the
-// standard gRPC health service and the process's Prometheus metrics at /metrics. It runs the dispatch worker, which
+// Command actions is the Go Action Service, over the Action Service's PostgreSQL database. It serves Action,
+// operator, linkage, Web Push and health APIs over gRPC. It runs the dispatch worker, which
 // runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
 // awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
 // server's.
@@ -13,7 +10,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
@@ -21,7 +17,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -31,28 +26,39 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/mcpexec"
+	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	orchestrationv1 "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
+	sessiondelegation "github.com/agentydragon/ducktape/agentplane/action_service/session_delegation"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -62,11 +68,10 @@ import (
 )
 
 const (
+	migrationOnlyDatabaseURLEnv = "AGENTPLANE_ACTIONS_DATABASE_URL"
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop, as the Python
 	// service's graceful shutdown does.
 	shutdownGrace = 5 * time.Second
-	// readHeaderTimeout bounds a request's headers.
-	readHeaderTimeout = 10 * time.Second
 	// maxConnections and idleConnections size the pool as the Python service's: four kept and two more under load.
 	maxConnections  = 6
 	idleConnections = 4
@@ -82,11 +87,10 @@ type deps struct {
 }
 
 func inClusterDeps() (deps, error) {
-	kubeConfig, err := rest.InClusterConfig()
+	kubeConfig, err := kubeclient.Config("")
 	if err != nil {
 		return deps{}, err
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
 	// client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
@@ -100,11 +104,14 @@ func inClusterDeps() (deps, error) {
 // run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
 // and reading the cluster's policy objects.
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+		return fmt.Errorf("migrate Action Service database: %w", err)
+	}
 	cluster, err := inClusterDeps()
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	listener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
 		return err
 	}
@@ -144,16 +151,16 @@ func (e executors) Route(action store.ActionIdentity) (worker.Executor, bool) {
 }
 
 // readiness is the health service of probes, whose readiness also needs the policy index available: a replica whose
-// watches have wedged would auto-decide from a frozen copy, so it leaves the Service instead.
+// watches are failing would auto-decide from a copy it cannot vouch for, so it leaves the Service instead.
 type readiness struct {
 	*probes.Probes
-	policy *reader.Freshness
+	policy *watchhealth.Health
 }
 
 func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	if request.GetService() == "" {
-		if status := r.policy.Status(time.Now()); !status.Available {
-			slog.WarnContext(ctx, "policy index unavailable", "synced", status.Synced, "stale_after", status.StaleAfter, "ages", status.Ages)
+		if status := r.policy.Status(); !status.Available {
+			slog.WarnContext(ctx, "policy index unavailable", "synced", status.Synced, "draining", status.Draining, "failing", status.Failing)
 			return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_NOT_SERVING}, nil
 		}
 	}
@@ -161,33 +168,47 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 }
 
 // sandboxExecutors builds the Executor of each sandbox group, and gives the group the Actions it offers: they are
-// declared, not discovered, so a direct tool the roster lacks is a typo found now. The offered templates are read once,
-// here, so that a missing or unsafe one stops the service rather than failing each create.
+// declared, not discovered, so a direct tool the roster lacks is a typo found now. Each group requests its boxes'
+// WorkloadCredentials. The offered templates are read once, here, so that a missing or unsafe one stops the service
+// rather than failing each create.
 func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	var exec sandbox.Exec
-	var client kubernetes.Interface
+	var kubeClient kubernetes.Interface
+	var records client.Client
+	var credentials requester.Requester
 	for key, group := range groups.Groups() {
 		binding, isSandbox := group.Executor.(catalog.PodBinding)
 		if !isSandbox {
 			continue
 		}
-		if client == nil {
+		if kubeClient == nil {
 			var err error
-			if client, err = kubernetes.NewForConfig(kube); err != nil {
+			if kubeClient, err = kubernetes.NewForConfig(kube); err != nil {
 				return nil, err
 			}
-			exec = sandbox.KubernetesExec(kube, client)
+			exec = sandbox.KubernetesExec(kube, kubeClient)
+			scheme := runtime.NewScheme()
+			if err := workloadapi.AddToScheme(scheme); err != nil {
+				return nil, err
+			}
+			// Uncached: a box's credential is read back as the API server holds it.
+			if records, err = client.New(kube, client.Options{Scheme: scheme}); err != nil {
+				return nil, err
+			}
+			if credentials, err = requester.New(records, records); err != nil {
+				return nil, err
+			}
 		}
-		inventory := sandbox.NewInventory(binding, client, exec)
+		inventory := sandbox.NewInventory(binding, kubeClient, exec, credentials, records)
 		if err := inventory.CheckTemplates(ctx); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
-		if err := offer(key, group, sandbox.Actions(binding)); err != nil {
-			return nil, err
-		}
 		executor, err := sandbox.NewExecutor(binding, inventory)
 		if err != nil {
+			return nil, err
+		}
+		if err := offer(key, group, executor.Actions()); err != nil {
 			return nil, err
 		}
 		byGroup[key] = executor
@@ -214,7 +235,7 @@ func offer(key string, group *catalog.Group, actions map[string]catalog.ActionDe
 // orchestrationExecutors builds the Executor of each orchestration_v1 group, and gives the group the Actions it
 // offers. They reach the API server through kube, and call the Session Dispatcher and the History Service.
 func orchestrationExecutors(
-	groups *catalog.Catalog, kube *rest.Config, dispatcher dispatcherpb.SessionDispatcherClient,
+	groups *catalog.Catalog, kube *rest.Config, environment environmentpb.EnvironmentServiceClient, dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient, directWait time.Duration,
 ) (map[string]worker.Executor, error) {
 	scheme := runtime.NewScheme()
@@ -233,19 +254,47 @@ func orchestrationExecutors(
 		if !isOrchestration {
 			continue
 		}
-		if err := offer(key, group, orchestrationv1.Actions()); err != nil {
-			return nil, err
-		}
-		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher, history, directWait); err != nil {
+		executor, err := orchestrationv1.NewExecutor(key, binding, kubeClient, environment, dispatcher, history, directWait)
+		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
+		if err := offer(key, group, executor.Actions()); err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
+	}
+	return byGroup, nil
+}
+
+// sessionDelegationExecutors builds the exact existing-environment Session operations. Unlike orchestration_v1,
+// these groups do not read or write Kubernetes grants; every backend call carries the Action caller's verified UID.
+func sessionDelegationExecutors(
+	groups *catalog.Catalog,
+	environment environmentpb.EnvironmentServiceClient,
+	dispatcher dispatcherpb.SessionDispatcherClient,
+	history historypb.HistoryServiceClient,
+) (map[string]worker.Executor, error) {
+	byGroup := map[string]worker.Executor{}
+	for key, group := range groups.Groups() {
+		binding, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding)
+		if !isSessionDelegation {
+			continue
+		}
+		executor, err := sessiondelegation.NewExecutor(key, binding, environment, dispatcher, history)
+		if err != nil {
+			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
+		}
+		if err := offer(key, group, executor.Actions()); err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
 	}
 	return byGroup, nil
 }
 
 // dial connects to p as this service's workload.
 func dial(p peer) (*grpc.ClientConn, error) {
-	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)))
+	return bearer.Dial(p.Target, p.TokenFile, time.Duration(p.RequestTimeoutSeconds*float64(time.Second)), p.TLS)
 }
 
 // mcpExecutors builds the Executor of each MCP group, which withdraws the group's Actions until its server lists them:
@@ -281,13 +330,21 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 	return identity, notifier, err
 }
 
-// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount.
+// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount, or, by
+// SVID, its Identity of the policy namespace.
 func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
-	workloads, err := auth.NewResolver(d.Reviews, c.TokenAudience, c.CallerServiceAccountNamespaces)
+	workloads, err := auth.NewResolver(d.Reviews, c.tokenAudience(), c.CallerServiceAccountNamespaces)
 	if err != nil {
 		return nil, err
 	}
 	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
+	if c.RPC.Has(listener.SPIFFE) {
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+		if err != nil {
+			return nil, err
+		}
+	}
 	if c.operatorsEnabled() {
 		if options.Operators, err = api.NewOperatorVerifier(c.OperatorOIDC); err != nil {
 			return nil, err
@@ -296,27 +353,12 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	return api.NewGate(options), nil
 }
 
-// newRoutes is the listener's HTTP routes but the linkages': the HTTP form of the gRPC services under /v1/ (served by
-// httpFacade), the agent documentation, which needs neither the database nor a peer, and the metrics.
-func newRoutes(httpFacade http.Handler) (*http.ServeMux, error) {
-	docs, err := fs.Sub(agentDocs, "docs/agents")
-	if err != nil {
-		return nil, err
-	}
-	routes := http.NewServeMux()
-	routes.Handle("/v1/", httpFacade)
-	routes.Handle("/metrics", promhttp.Handler())
-	facade.MountAgentDocs(routes, docs, openAPI)
-	return routes, nil
-}
-
-// serve answers on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
-// tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. gRPC and the HTTP routes
-// share the listener. The worker, the MCP groups, the refreshes and Web Push delivery drain from then on, beside the
-// listener's shutdown, and serve returns once they have and the policy watches have stopped.
+// serve answers gRPC on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
+// tokens, delivers Web Push and keeps the policy index until ctx ends or the listener fails. The worker,
+// the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
+// returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	watchPeriod := c.policyWatchPeriod()
-	policy := informer.NewIndex(reader.StaleAfterCycles*watchPeriod, c.CallerServiceAccountNamespaces)
+	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
 	admission, err := gate(c, d, policy)
 	if err != nil {
 		return err
@@ -368,11 +410,43 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		}
 		defer history.Close()
 		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube,
-			dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history), time.Duration(c.DirectWaitSeconds*float64(time.Second)))
+			environmentpb.NewEnvironmentServiceClient(dispatcher), dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history), time.Duration(c.DirectWaitSeconds*float64(time.Second)))
 		if err != nil {
 			return err
 		}
 		maps.Copy(byGroup, orchestrators)
+	}
+	// The delegated Dispatcher peer is also the shared EnvironmentService listener. Its projected token and the
+	// History token are read for every call, and the executor adds the durable Action caller envelope to each one.
+	if c.SessionDelegationDispatcher != nil {
+		dispatcherConn, err := workloadgrpc.DialDelegated(
+			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
+			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
+			c.SessionDelegationDispatcher.TLS,
+		)
+		if err != nil {
+			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
+		}
+		defer dispatcherConn.Close()
+		historyConn, err := workloadgrpc.DialDelegated(
+			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
+			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
+			c.SessionDelegationHistory.TLS,
+		)
+		if err != nil {
+			return fmt.Errorf("dial delegated History Service: %w", err)
+		}
+		defer historyConn.Close()
+		delegated, err := sessionDelegationExecutors(
+			c.ActionGroups,
+			environmentpb.NewEnvironmentServiceClient(dispatcherConn),
+			dispatcherpb.NewSessionDispatcherClient(dispatcherConn),
+			historypb.NewHistoryServiceClient(historyConn),
+		)
+		if err != nil {
+			return err
+		}
+		maps.Copy(byGroup, delegated)
 	}
 	requests := store.New(db)
 	supervisors, err := mcpExecutors(c.ActionGroups, linkages)
@@ -407,7 +481,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 
-	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, watchPeriod)
+	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace)
 	if err != nil {
 		return err
 	}
@@ -424,41 +498,27 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}()
 
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer(
+	grpcOptions := []grpc.ServerOption{
 		observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
-	)
-	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
+	}
+	transport, err := c.RPC.ServerCredentials(environment_runtime_transport.ActionsURI)
+	if err != nil {
+		return fmt.Errorf("Action Service RPC TLS: %w", err)
+	}
+	if transport != nil {
+		grpcOptions = append(grpcOptions, grpc.Creds(transport))
+	}
+	grpcServer := grpc.NewServer(grpcOptions...)
+	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Health})
 	actionAPI := api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
+	// The callback is public: its single-use state, not a bearer, authorizes completion.
+	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
-	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
-	// while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	registrations := []facade.Registration{
-		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
-		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
-		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
-	}
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, registrations...)
-	if err != nil {
-		return err
-	}
-	routes, err := newRoutes(httpFacade)
-	if err != nil {
-		return err
-	}
-	// The OAuth provider's redirect to the callback and the authorization server's fetch of the document carry no
-	// bearer, so they are plain HTTP beside the facade.
-	linkages.Mount(routes)
-	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
-	facade.MountGRPC(server, grpcServer)
-
 	working, drain := context.WithCancel(ctx)
 	var supervising sync.WaitGroup
 	for _, executor := range supervisors {
@@ -506,7 +566,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		dispatcher.Run(working, wakeups)
 	}()
 	failed := make(chan error, 1)
-	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(listener)) }()
 	var result error
 	select {
 	case result = <-failed:
@@ -518,9 +578,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
-	if err := server.Shutdown(stopped); err != nil {
-		server.Close()
-	}
+	graceful.Stop(stopped, grpcServer)
 	<-worked
 	supervising.Wait()
 	return result
@@ -528,13 +586,21 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
+	if err != nil {
+		slog.Error("Action Service migration failed", "error", err)
+		os.Exit(1)
+	}
+	if handled {
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Action Service configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "action-service")
 	if err != nil {
 		slog.Error("Action Service tracing setup failed", "error", err)

@@ -74,6 +74,117 @@ console.log(collection.value);
 }
 
 #[test]
+fn replaced_global_collection_constructors_can_reenter() {
+    let cases = [
+        (
+            "Set",
+            "globalThis.Set = function Set() { try { globalThis.saved(); return { value: \"ready\" }; } catch (error) { return { value: error.name }; } };",
+            vec![],
+        ),
+        (
+            "Map",
+            "root.Map = function Map() { try { globalThis.saved(); return { value: \"ready\" }; } catch (error) { return { value: error.name }; } };",
+            vec![Member::new("root")],
+        ),
+        (
+            "WeakMap",
+            "globalThis[key] = function WeakMap() { try { globalThis.saved(); return { value: \"ready\" }; } catch (error) { return { value: error.name }; } };",
+            vec![Member::new("key")],
+        ),
+        (
+            "WeakSet",
+            "globalThis.WeakSet = function WeakSet() { try { globalThis.saved(); return { value: \"ready\" }; } catch (error) { return { value: error.name }; } };",
+            vec![],
+        ),
+    ];
+
+    for (constructor, replacement, mutator_members) in cases {
+        let prelude = match constructor {
+            "Map" => "const root = globalThis;\n",
+            "WeakMap" => "const key = \"WeakMap\";\n",
+            _ => "",
+        };
+        let source = format!(
+            "globalThis.saved = () => later;\n{prelude}{replacement}\nconst collection = new {constructor}();\nconst later = 42;\nconsole.log(collection.value);\n"
+        );
+        let mut members = vec![Member::new("collection")];
+        members.extend(mutator_members);
+        let anon = ["globalThis.saved = () => later;", replacement];
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "ReferenceError\n");
+
+        expect_atomic_conflict_rejection(
+            collection_opts(&source, &members, &anon),
+            &["values/collection", "values/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn replaced_set_with_nonempty_primitive_array_can_reenter() {
+    let source = r#"globalThis.saved = () => later;
+globalThis.Set = function Set() { try { globalThis.saved(); return { value: "ready" }; } catch (error) { return { value: error.name }; } };
+const collection = new Set([1]);
+const later = 42;
+console.log(collection.value);
+"#;
+    let opts = collection_opts(
+        source,
+        &[Member::new("collection")],
+        &[
+            "globalThis.saved = () => later;",
+            "globalThis.Set = function Set() { try { globalThis.saved(); return { value: \"ready\" }; } catch (error) { return { value: error.name }; } };",
+        ],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
+    expect_atomic_conflict_rejection(opts, &["values/collection", "values/later"], &[]);
+}
+
+#[test]
+fn replaced_array_iterator_can_reenter_set_constructor() {
+    let source = r#"globalThis.saved = () => later;
+Array.prototype[Symbol.iterator] = function* () { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } yield 1; };
+const collection = new Set([1]);
+const later = 42;
+console.log(globalThis.observed, collection.size);
+"#;
+    let opts = collection_opts(
+        source,
+        &[Member::new("collection")],
+        &[
+            "globalThis.saved = () => later;",
+            "Array.prototype[Symbol.iterator] = function* () { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } yield 1; };",
+        ],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError 1\n");
+    expect_atomic_conflict_rejection(opts, &["values/collection", "values/later"], &[]);
+}
+
+#[test]
+fn replaced_set_adder_can_reenter_nonempty_primitive_array_constructor() {
+    let source = r#"globalThis.saved = () => later;
+Set.prototype.add = function add(value) { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return this; };
+const collection = new Set([1]);
+const later = 42;
+console.log(globalThis.observed, collection.size);
+"#;
+    let opts = collection_opts(
+        source,
+        &[Member::new("collection")],
+        &[
+            "globalThis.saved = () => later;",
+            "Set.prototype.add = function add(value) { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return this; };",
+        ],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
+    expect_atomic_conflict_rejection(opts, &["values/collection", "values/later"], &[]);
+}
+
+#[test]
 fn map_iterable_can_reenter() {
     let source = r#"globalThis.saved = () => later;
 const items = { [Symbol.iterator]() {

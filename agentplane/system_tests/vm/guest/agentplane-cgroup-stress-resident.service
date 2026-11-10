@@ -1,0 +1,9 @@
+[Unit]
+Description=Resident descendant task for opt-in cgroup stress
+ConditionKernelCommandLine=agentplane.cgroup-stress=1
+
+[Service]
+Type=simple
+Slice=stress.slice
+ExecStart=/usr/bin/busybox sleep 120
+TimeoutStartSec=15s

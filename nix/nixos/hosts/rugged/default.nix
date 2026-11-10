@@ -28,7 +28,6 @@ in
     ./hardware-configuration.nix
     ../../modules/claude-desktop.nix
     ../../modules/k8s-workstation.nix
-    ../../modules/github-api-recorder.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
     ./nebula-underlay-refresh.nix
@@ -58,12 +57,11 @@ in
       # Scopes the journal-only promtail DaemonSet to systemd/journald nodes
       # (the promtail-journal HelmRelease in cluster/cdk8s/monitoring/loki.py).
       "node-vendor" = "nixos";
+      # Kubelet applies this only at registration; the live node was labelled by hand.
+      "storage.allegedly.works/piraeus-ready" = "true";
     };
     nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
-
-  # Attribution for the GitHub GraphQL quota drain; see the module header.
-  ducktape.githubApiRecorder.enable = true;
 
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;

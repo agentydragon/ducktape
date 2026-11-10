@@ -26,7 +26,7 @@
       "release": "ws"
     },
     "bbr": {
-      "target": "//:bbr_wheel",
+      "target": "//devinfra/buildbuddy:bbr_wheel",
       "filename": "bbr-0.1.0-py3-none-any.whl",
       "release": "bbr"
     },
@@ -81,7 +81,7 @@
       "release": "plaid-spend-desktop"
     },
     "bbapi": {
-      "target": "//devinfra/buildbuddy_cli:bbapi",
+      "target": "//devinfra/buildbuddy/bbapi:bbapi",
       "filename": "bbapi",
       "release": "bbapi"
     },
@@ -142,7 +142,7 @@
       "nixPackage": true
     },
     "bbr": {
-      "tests": "//devinfra:test_bbr",
+      "tests": "//devinfra/buildbuddy:test_bbr",
       "nixPackage": true
     },
     "claude-statusline": {
@@ -158,7 +158,7 @@
       "nixPackage": true
     },
     "ducktape-util": {
-      "tests": "//util/...",
+      "tests": "//devinfra/bazel/... //util/...",
       "nixPackage": true
     },
     "ducktape-network-monitor": {
@@ -178,7 +178,7 @@
       "nixPackage": true
     },
     "bbapi": {
-      "tests": "//devinfra/buildbuddy_cli/...",
+      "tests": "//devinfra/buildbuddy/bbapi/...",
       "nixPackage": false
     },
     "claude-hook": {

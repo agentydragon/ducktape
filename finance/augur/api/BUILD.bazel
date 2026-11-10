@@ -16,25 +16,6 @@ py_library(
 )
 
 py_library(
-    name = "casing",
-    srcs = ["casing.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "casing_test",
-    srcs = ["casing_test.py"],
-    deps = [
-        ":casing",
-        ":conftest",
-        ":schemas",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "calibration_wire",
     srcs = ["calibration_wire.py"],
     deps = [
@@ -134,6 +115,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -257,21 +239,21 @@ py_test(
     size = "medium",
     srcs = ["server_test.py"],
     data = [
-        ":public_fixture_calibration_catalog",
         ":public_fixture_config",
         ":public_fixture_properties",
         ":server_bin",
+        "//finance/augur/calibration:example_openai_catalog",
     ],
     deps = [
         ":conftest",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/testing:server",
-        "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -280,9 +262,9 @@ py_test(
     size = "medium",
     srcs = ["test_calibration_endpoint.py"],
     data = [
-        ":public_fixture_calibration_catalog",
         ":public_fixture_config",
         ":public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
     ],
     deps = [
         ":config",
@@ -291,9 +273,11 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/calibration:catalog",
+        "//finance/augur/calibration:macro_anchors",
         "//finance/augur/calibration:testing",
         "//finance/augur/model:series",
         "//finance/augur/x/models:sample_sanity",
+        "//finance/evidence:loading",
         "//finance/evidence:markets",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -322,7 +306,6 @@ py_library(
     srcs = ["server.py"],
     deps = [
         ":calibration_wire",
-        ":casing",
         ":catalog",
         ":config",
         ":deployment",
@@ -338,6 +321,7 @@ py_library(
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/product:portfolio",
+        "//finance/augur/product:service",
         "//finance/augur/product:wire",
         "//finance/augur/sim:money",
         "//finance/augur/x/models:sample_sanity",
@@ -348,6 +332,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -369,7 +354,7 @@ py_library(
         "//finance/augur/product:scenarios",
         "//finance/augur/product:service",
         "//finance/augur/product:wire",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -452,14 +437,7 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
-        ":config",
-        ":finance",
-        ":portfolio_source_config",
         ":server",
-        ":wire",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:ids",
-        "//finance/augur/x/models:independent",
         "//finance/budget:wire",
     ],
 )
@@ -468,6 +446,14 @@ py_binary(
     name = "export_schema_bin",
     main_module = "finance.augur.api.export_schema",
     deps = [":export_schema"],
+)
+
+genrule(
+    name = "frontend_openapi_json",
+    outs = ["frontend_openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//finance/augur/frontend/lib:__pkg__"],
 )
 
 filegroup(
@@ -480,11 +466,28 @@ filegroup(
     srcs = ["testdata/properties.json"],
 )
 
-# The public fixture config registers a calibration catalog at
-# `../../calibration/example_openai_catalog.yaml`; anything that loads that config at
-# startup (the server binary under test, the calibration endpoint test) needs the
-# catalog in its runfiles at the resolved path.
-filegroup(
-    name = "public_fixture_calibration_catalog",
-    srcs = ["//finance/augur/calibration:example_openai_catalog"],
+py_test(
+    name = "test_response_serialization",
+    srcs = ["test_response_serialization.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+        "//finance/augur/calibration:example_openai_catalog",
+    ],
+    deps = [
+        ":config",
+        ":conftest",
+        ":server",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:testing",
+        "//finance/budget:schema",
+        "//finance/budget:service",
+        "//finance/budget:wire",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
 )

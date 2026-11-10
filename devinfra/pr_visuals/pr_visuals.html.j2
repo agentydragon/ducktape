@@ -22,15 +22,17 @@
     <main>
       {% for test in tests %}
       <section data-title="{{ test.title | lower }}" data-changed-count="{{ test.sort_changed_count }}" data-largest-change="{{ test.sort_largest_change }}">
-        <h2><a href="tests/{{ test.slug }}/index.html">{{ test.title }}</a></h2>
+        <h2><a href="tests/{{ test.slug }}/index.html">{% if test.title == test.target_label %}<code>{{ test.target_label }}</code>{% else %}{{ test.title }}{% endif %}</a></h2>
         <p>
-          <code>{{ test.target_label }}</code>
-          {% if test.summary %}
-            · {{ test.summary.modified }} modified, {{ test.summary.new }} new, {{ test.summary.removed }} removed, {{ test.summary.unchanged }} unchanged
+          {% if test.title != test.target_label %}<code>{{ test.target_label }}</code> · {% endif %}{% if test.summary %}
+            {{ test.summary.modified }} modified, {{ test.summary.new }} new, {{ test.summary.removed }} removed, {{ test.summary.unchanged }} unchanged, {{ test.summary.unstable }} unstable
           {% else %}
-            · {{ test.assets | length }} assets
+            {{ test.assets | length }} assets
+            {% set unstable_count = test.assets | selectattr("classification", "equalto", "unstable") | list | length %}
+            {% if unstable_count %} · {{ unstable_count }} unstable{% endif %}
           {% endif %}
         </p>
+        {% if test.issues %}<p role="alert">Incomplete or non-comparable visual results; open the target for details.</p>{% endif %}
         <div class="assets">
           {% if test.preview and test.preview.classification == "modified" %}
           <figure>
@@ -51,7 +53,7 @@
             <a class="sample-frame" href="{{ test.preview.anchor_url }}">
               <img src="{{ test.preview.candidate_url }}" alt="{{ test.preview.label }}" loading="lazy">
             </a>
-            <figcaption>{{ test.preview.label }} (new)</figcaption>
+            <figcaption>{{ test.preview.label }} ({{ test.preview.classification }})</figcaption>
           </figure>
           {% elif not test.summary %}
             {% for asset in test.assets[:2] %}
@@ -59,7 +61,7 @@
               <a class="sample-frame" href="{{ asset.anchor_url }}">
                 <img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy">
               </a>
-              <figcaption>{{ asset.label }}</figcaption>
+              <figcaption>{{ asset.label }}{% if asset.classification == "unstable" %} (unstable){% endif %}</figcaption>
             </figure>
             {% endfor %}
           {% endif %}

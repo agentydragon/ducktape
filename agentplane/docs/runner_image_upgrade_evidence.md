@@ -1,6 +1,6 @@
 # Same-storage runner image upgrade: staging evidence
 
-On 2026-10-09 UTC, an existing **Codex** Thread in a staging `runner-ducktape`
+On 2026-10-09 UTC, an existing **Codex** Thread in a staging `environment-tools`
 Sandbox continued after its runner image changed. This establishes the
 pause/patch/resume route as viable for that Thread; it does not make it a
 reliable automatic migration or update step. The operator is comfortable

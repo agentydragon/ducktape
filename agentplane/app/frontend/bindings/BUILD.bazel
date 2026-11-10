@@ -23,9 +23,8 @@ ts_library(
     srcs = ["state.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:status_mark",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/policy/v1:policy_service_pb",
     ],
 )
 
@@ -34,9 +33,37 @@ agentplane_vitest_test(
     srcs = ["state.test.ts"],
     deps = [
         ":state",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:schema",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+ts_library(
+    name = "credential_watch",
+    srcs = ["credential_watch.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/egress:egress_rules_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "credential_watch_test",
+    srcs = ["credential_watch.test.tsx"],
+    deps = [
+        ":credential_watch",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:watch_stream",
     ],
 )
 
@@ -45,16 +72,19 @@ ts_library(
     srcs = ["table.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":credential_watch",
         ":state",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:mark_glyph",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:time_ago",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/egress:egress_rules_pb",
+        "//agentplane/policy/api/v1alpha1:policy_types_pb",
+        "//agentplane/policy/v1:policy_service_pb",
         "//util/frontend:code_block",
     ],
 )

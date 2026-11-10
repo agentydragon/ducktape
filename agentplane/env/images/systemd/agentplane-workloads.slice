@@ -1,0 +1,11 @@
+[Unit]
+Description=Agentplane harness and script resource aggregate
+# Keep Runtime-managed workloads until Runtime completes its lifecycle drain.
+DefaultDependencies=no
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes
+IOAccounting=yes
+MemorySwapMax=0

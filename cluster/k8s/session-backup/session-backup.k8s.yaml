@@ -11,7 +11,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: session-backup-data
+  name: session-backup-data-hdd
   namespace: session-backup
 spec:
   accessModes:
@@ -19,7 +19,7 @@ spec:
   resources:
     requests:
       storage: 100Gi
-  storageClassName: piraeus-ssd-2-autodiskful
+  storageClassName: piraeus-hdd-2
   volumeMode: Filesystem
 ---
 apiVersion: apps/v1
@@ -90,7 +90,7 @@ spec:
               name: secret-session-backup-rest-server-auth
               readOnly: true
             - mountPath: /data
-              name: pvc-session-backup-data
+              name: pvc-session-backup-data-hdd
       dnsPolicy: ClusterFirst
       hostNetwork: false
       restartPolicy: Always
@@ -113,9 +113,9 @@ spec:
               - key: .htpasswd
                 path: .htpasswd
             secretName: session-backup-rest-server-auth
-        - name: pvc-session-backup-data
+        - name: pvc-session-backup-data-hdd
           persistentVolumeClaim:
-            claimName: session-backup-data
+            claimName: session-backup-data-hdd
             readOnly: false
 ---
 apiVersion: v1
@@ -173,6 +173,14 @@ spec:
   ingress:
     - fromEntities:
         - ingress
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ai-session-archive-importer
+            k8s:io.kubernetes.pod.namespace: session-backup
       toPorts:
         - ports:
             - port: "8000"

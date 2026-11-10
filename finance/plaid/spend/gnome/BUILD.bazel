@@ -9,6 +9,8 @@ pkg_files(
     srcs = [
         "extension.js",
         "metadata.json",
+        "prefs.js",
+        "schemas/org.gnome.shell.extensions.plaid-spend.gschema.xml",
         "stylesheet.css",
     ],
     strip_prefix = strip_prefix.from_pkg(),
@@ -32,6 +34,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    deps = ["//gnome/testing:fake_daemon_js"],
 )
 
 eslint_test(
@@ -47,19 +50,23 @@ py_test(
         ":fake_daemon",
         ":plaid_spend_extension",
         ":test_fixtures",
-        "//gnome/test_image:gnome_shell_test",
     ],
     requires_docker = True,
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:output_writer",
+        "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:gnome",
-        "//util/testing:undeclared_outputs",
+        "//finance/plaid/spend:models",
+        "//finance/plaid/spend/testing:dashboard",
+        "//gnome/test_image:gnome_shell_test",
+        "//gnome/testing:fake_daemon",
+        "//gnome/testing:session",
+        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
     ],
 )

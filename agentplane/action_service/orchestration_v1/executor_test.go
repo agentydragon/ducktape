@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
+	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -30,19 +31,42 @@ import (
 
 func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	f := newFixture(t)
-	launched := resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, `{
+	launched := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, `{
 		"name": "test-worker", "template": "test-template", "policy_sets": ["test-extra-policy"],
 		"inbox_tags": ["test-tag"], "bootstrap": "true", "wake_on_send": true, "idle_suspend_after_seconds": 600,
-		"launcher_grants": ["submit_input", "send_message", "open_session", "read_turns", "wait_for_turn"]
+		"launcher_grants": ["submit_input", "send_message", "create_session", "read_turns", "wait_for_turn"]
 	}`))
 	var sandbox sandboxapi.Sandbox
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if launched.Sandbox != (SandboxRef{Name: "test-worker", UID: sandbox.UID}) {
+	if launched.Sandbox != (contract.SandboxRef{Name: "test-worker", UID: sandbox.UID}) {
 		t.Errorf("launch answered %v, want the Sandbox %s", launched.Sandbox, sandbox.UID)
 	}
-	if want := []string{"open_session", "read_turns", "send_message", "submit_input", "wait_for_turn"}; !slices.Equal(launched.LauncherGrants, want) {
+	var intent struct {
+		Caller struct {
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+		} `json:"caller"`
+		Request struct {
+			LaunchOrigin struct {
+				Caller struct {
+					Namespace string `json:"namespace"`
+					Name      string `json:"name"`
+				} `json:"caller"`
+				ActionGroup string `json:"action_group"`
+			} `json:"launch_origin"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal([]byte(sandbox.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
+		t.Fatal(err)
+	}
+	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" ||
+		intent.Request.LaunchOrigin.Caller.Namespace != f.caller.Namespace ||
+		intent.Request.LaunchOrigin.Caller.Name != f.caller.Name || intent.Request.LaunchOrigin.ActionGroup != testGroup {
+		t.Errorf("launch attribution = %+v", intent)
+	}
+	if want := []string{"create_session", "read_turns", "send_message", "submit_input", "wait_for_turn"}; !slices.Equal(launched.LauncherGrants, want) {
 		t.Errorf("launch granted %q, want %q", launched.LauncherGrants, want)
 	}
 	spec := sandbox.Spec
@@ -56,7 +80,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.launcher"}, &binding); err != nil {
 		t.Fatal(err)
 	}
-	if binding.Spec.Subject != (policyapi.ServiceAccountRef{Namespace: f.caller.Namespace, Name: f.caller.Name}) ||
+	if binding.Spec.Subject != (policyapi.Subject{Namespace: f.caller.Namespace, Name: f.caller.Name}) ||
 		!slices.Equal(binding.Spec.PolicySets, []string{"test-worker.launcher"}) {
 		t.Errorf("the launcher grant binds %+v", binding.Spec)
 	}
@@ -82,7 +106,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if inbox == nil || !reflect.DeepEqual(inbox.Targets.Sandboxes, []policyapi.SandboxTarget{{Name: "test-worker", UID: sandbox.UID}}) {
 		t.Errorf("the inbox rule is %+v, want send_message to this Sandbox alone", inbox)
 	}
-	if actions == nil || !reflect.DeepEqual(actions.Policy.Actions, map[string]policyapi.ActionNames{testGroup: {"open_session", "read_turns", "submit_input", "wait_for_turn"}}) {
+	if actions == nil || !reflect.DeepEqual(actions.Policy.Actions, map[string]policyapi.ActionNames{testGroup: {"create_session", "read_turns", "submit_input", "wait_for_turn"}}) {
 		t.Fatalf("the Action rule is %+v, want the granted Actions of this group", actions)
 	}
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(actions.Policy.Schema.Raw))
@@ -94,12 +118,12 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, request := range []struct {
-		sandbox SandboxRef
+		sandbox contract.SandboxRef
 		matches bool
 	}{
-		{SandboxRef{Name: "test-worker", UID: sandbox.UID}, true},
-		{SandboxRef{Name: "test-worker", UID: "00000000-0000-0000-0000-000000000000"}, false},
-		{SandboxRef{Name: "test-other", UID: sandbox.UID}, false},
+		{contract.SandboxRef{Name: "test-worker", UID: sandbox.UID}, true},
+		{contract.SandboxRef{Name: "test-worker", UID: "00000000-0000-0000-0000-000000000000"}, false},
+		{contract.SandboxRef{Name: "test-other", UID: sandbox.UID}, false},
 	} {
 		arguments := map[string]any{"sandbox": map[string]any{"name": request.sandbox.Name, "uid": string(request.sandbox.UID)}, "text": "hi"}
 		if matched := rule.Validate(arguments) == nil; matched != request.matches {
@@ -132,11 +156,11 @@ func TestALaunchWithoutGrantsWritesNone(t *testing.T) {
 func TestTheSameLaunchAdoptsItsSandboxAndAnotherIsRefused(t *testing.T) {
 	f := newFixture(t)
 	launch := `{"name": "test-worker", "template": "test-template", "policy_sets": [%s], "launcher_grants": ["send_message"]}`
-	first := resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy", "test-default-policy"`)))
+	first := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy", "test-default-policy"`)))
 	if err := kube.Delete(t.Context(), &policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Namespace: f.namespace, Name: "test-worker.launcher"}}); err != nil {
 		t.Fatal(err)
 	}
-	again := resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy", "test-extra-policy"`)))
+	again := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy", "test-extra-policy"`)))
 	if again.Sandbox != first.Sandbox {
 		t.Errorf("the same launch answered %v, then %v", first.Sandbox, again.Sandbox)
 	}
@@ -144,25 +168,28 @@ func TestTheSameLaunchAdoptsItsSandboxAndAnotherIsRefused(t *testing.T) {
 		t.Errorf("the same launch did not restore its launcher grant: %v", err)
 	}
 	other := store.ServiceAccount{Namespace: f.namespace, Name: "test-other-caller"}
-	if kind := f.attempt(t, other, actionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != "sandbox_exists" {
-		t.Errorf("another caller's launch of the name failed %q, want sandbox_exists", kind)
+	if kind := f.attempt(t, other, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Errorf("another caller's launch of the name failed %v, want sandbox_exists", kind)
 	}
-	if kind := f.attempt(t, f.caller, actionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy"`)).failure(); kind != "sandbox_exists" {
-		t.Errorf("another launch of the name failed %q, want sandbox_exists", kind)
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy"`)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Errorf("another launch of the name failed %v, want sandbox_exists", kind)
 	}
 }
 
 func TestALaunchNamingAPolicySetItCannotBindIsRefused(t *testing.T) {
 	f := newFixture(t)
-	f.launch(t, "test-worker", grantSendMessage)
-	for _, test := range []struct{ policySet, kind string }{
-		{"test-absent-policy", "unknown_policy_set"},
+	f.launch(t, "test-worker", contract.GrantSendMessage)
+	for _, test := range []struct {
+		policySet string
+		kind      action_servicepb.ExecutionErrorKind
+	}{
+		{"test-absent-policy", action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET},
 		// Bound to the new Sandbox's account, it would give that account the first launcher's grant.
-		{"test-worker.launcher", "launcher_policy_set"},
+		{"test-worker.launcher", action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_POLICY_SET},
 	} {
 		arguments := fmt.Sprintf(`{"name": "test-second", "template": "test-template", "policy_sets": [%q]}`, test.policySet)
-		if kind := f.attempt(t, f.caller, actionLaunchSandbox, arguments).failure(); kind != test.kind {
-			t.Errorf("a launch naming %s failed %q, want %s", test.policySet, kind, test.kind)
+		if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, arguments).failure(); kind != test.kind {
+			t.Errorf("a launch naming %s failed %v, want %v", test.policySet, kind, test.kind)
 		}
 	}
 	err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-second"}, &sandboxapi.Sandbox{})
@@ -176,27 +203,28 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 	launched := f.launch(t, "test-worker")
 	session, command := uuid.NewString(), uuid.NewString()
 	sandbox := fmt.Sprintf(`{"name": %q, "uid": %q}`, launched.Name, launched.UID)
-	opening := resultOf[map[string]any](f.attempt(t, f.caller, actionOpenSession, fmt.Sprintf(`{
+	opening := resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionCreateSession, fmt.Sprintf(`{
 		"sandbox": %s, "session_id": %q, "setup_script": "true",
 		"spec": {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/test/{session_id}", "instructions": "test"}
 	}`, sandbox, session)))
-	if opening["session_id"] != session || opening["state"] != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
-		t.Errorf("open_session answered %v", opening)
+	status, _ := opening["status"].(map[string]any)
+	if opening["session_id"] != session || status["materialization"] != "SESSION_MATERIALIZATION_WAITING" {
+		t.Errorf("create_session answered %v", opening)
 	}
-	dispatch := resultOf[map[string]any](f.attempt(t, f.caller, actionSubmitInput,
+	dispatch := resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionSubmitInput,
 		fmt.Sprintf(`{"sandbox": %s, "session_id": %q, "command_id": %q, "text": "hello"}`, sandbox, session, command)))
 	if dispatch["command_id"] != command {
 		t.Errorf("submit_input answered %v", dispatch)
 	}
 	want := []proto.Message{
-		&dispatcherpb.OpenSessionRequest{
-			SessionId: session, Sandbox: launched.Name, SetupScript: new("true"),
-			Spec: &runnerpb.SessionSpec{
-				Harness: runnerpb.Harness_HARNESS_CODEX, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
+		&dispatcherpb.CreateSessionRequest{
+			SessionId: session, SetupScript: new("true"),
+			Spec: &sessionpb.SessionSpec{
+				Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}}, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
 			},
 		},
 		&dispatcherpb.SubmitInputRequest{
-			CommandId: command, SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID), Text: "hello",
+			CommandId: command, SessionId: session, ExpectedSandboxUid: string(launched.UID), Text: "hello",
 		},
 	}
 	if received := f.dispatcher.received(); !slices.EqualFunc(received, want, proto.Equal) {
@@ -205,14 +233,33 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 
 	replaced := fmt.Sprintf(`{"name": %q, "uid": "00000000-0000-0000-0000-000000000000"}`, launched.Name)
 	absent := fmt.Sprintf(`{"name": "test-absent", "uid": %q}`, launched.UID)
-	for target, kind := range map[string]string{replaced: "sandbox_replaced", absent: "sandbox_not_found"} {
+	for target, kind := range map[string]action_servicepb.ExecutionErrorKind{replaced: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_REPLACED, absent: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_FOUND} {
 		arguments := fmt.Sprintf(`{"sandbox": %s, "session_id": %q, "command_id": %q, "turn_id": "test-turn"}`, target, session, command)
-		if failed := f.attempt(t, f.caller, actionInterruptTurn, arguments).failure(); failed != kind {
-			t.Errorf("interrupt_turn of %s failed %q, want %s", target, failed, kind)
+		if failed := f.attempt(t, f.caller, contract.ActionInterruptTurn, arguments).failure(); failed != kind {
+			t.Errorf("interrupt_turn of %s failed %v, want %v", target, failed, kind)
 		}
 	}
 	if received := f.dispatcher.received(); len(received) != len(want) {
 		t.Errorf("the Dispatcher received %d requests for other incarnations", len(received)-len(want))
+	}
+}
+
+func TestCentralSamplerHarnessReachesDispatcher(t *testing.T) {
+	f := newFixture(t)
+	launched := f.launch(t, "test-worker")
+	session := uuid.NewString()
+	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionCreateSession, fmt.Sprintf(`{
+		"sandbox": {"name": %q, "uid": %q}, "session_id": %q,
+		"spec": {"harness": "HARNESS_CENTRAL_SAMPLER", "model": "test-model", "cwd": "/test/{session_id}"}
+	}`, launched.Name, launched.UID, session)))
+	want := &dispatcherpb.CreateSessionRequest{
+		SessionId: session,
+		Spec: &sessionpb.SessionSpec{
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}}}}, Model: "test-model", Cwd: "/test/" + session,
+		},
+	}
+	if got := f.dispatcher.received(); len(got) != 1 || !proto.Equal(got[0], want) {
+		t.Fatalf("dispatcher received %v, want %v", got, want)
 	}
 }
 
@@ -222,19 +269,25 @@ func TestADispatcherRefusalFailsAndAnyOtherErrorLeavesTheOutcomeUnknown(t *testi
 	arguments := fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}, "session_id": %q, "command_id": %q, "text": "hello"}`,
 		launched.Name, launched.UID, uuid.NewString(), uuid.NewString())
 	f.dispatcher.refuse(status.Error(codes.AlreadyExists, "command_id was used for other work"))
-	if kind := f.attempt(t, f.caller, actionSubmitInput, arguments).failure(); kind != "id_reused" {
+	if kind := f.attempt(t, f.caller, contract.ActionSubmitInput, arguments).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ID_REUSED {
 		t.Errorf("a refused submit_input failed %q, want id_reused", kind)
 	}
 	f.dispatcher.refuse(status.Error(codes.Unavailable, "dispatcher storage unavailable"))
-	if attempt := f.attempt(t, f.caller, actionSubmitInput, arguments); !errors.Is(attempt.err, worker.ErrOutcomeUnknown) {
+	if attempt := f.attempt(t, f.caller, contract.ActionSubmitInput, arguments); !errors.Is(attempt.err, worker.ErrOutcomeUnknown) {
 		t.Errorf("an unavailable Dispatcher ended the attempt %s, %v; want its outcome unknown", attempt.outcome.State, attempt.err)
 	}
 }
 
-// What list_launch_presets answers copies into launch_sandbox's and open_session's arguments as it is.
+func TestEnvironmentCreateUnavailableLeavesLaunchOutcomeUnknown(t *testing.T) {
+	if err := launchError(status.Error(codes.Unavailable, "connection ended after create")); !errors.Is(err, worker.ErrOutcomeUnknown) {
+		t.Fatalf("uncertain create = %v, want outcome unknown", err)
+	}
+}
+
+// What list_launch_presets answers copies into launch_sandbox's and create_session's arguments as it is.
 func TestThePresetsFillTheirActionsArguments(t *testing.T) {
 	f := newFixture(t)
-	listed := resultOf[PresetList](f.attempt(t, f.caller, actionListLaunchPresets, `{}`))
+	listed := resultOf[PresetList](f.attempt(t, f.caller, contract.ActionListLaunchPresets, `{}`))
 	preset, listedPreset := listed.Presets["test-preset"]
 	if !listedPreset || len(listed.Presets) != 1 {
 		t.Fatalf("list_launch_presets answered %v, want the test preset", listed)
@@ -252,25 +305,25 @@ func TestThePresetsFillTheirActionsArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	launched := resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, string(launchArguments))).Sandbox
-	session, err := json.Marshal(map[string]any{"sandbox": launched, "session_id": uuid.NewString(), "spec": preset.OpenSession.Spec})
+	launched := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, string(launchArguments))).Sandbox
+	session, err := json.Marshal(map[string]any{"sandbox": launched, "session_id": uuid.NewString(), "spec": preset.CreateSession.Spec})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultOf[map[string]any](f.attempt(t, f.caller, actionOpenSession, string(session)))
+	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionCreateSession, string(session)))
 }
 
 func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 	for name, presets := range map[string]string{
 		"an unknown field": `{"p": {"title": "t", "launch": {"template": "t", "image": "i"},
-			"open_session": {"spec": {"harness": "HARNESS_CODEX", "model": "m", "cwd": "/"}}}}`,
-		"no harness": `{"p": {"title": "t", "launch": {"template": "t"}, "open_session": {"spec": {"model": "m", "cwd": "/"}}}}`,
+			"create_session": {"spec": {"harness": "HARNESS_CODEX", "model": "m", "cwd": "/"}}}}`,
+		"no harness": `{"p": {"title": "t", "launch": {"template": "t"}, "create_session": {"spec": {"model": "m", "cwd": "/"}}}}`,
 		"no template": `{"p": {"title": "t", "launch": {},
-			"open_session": {"spec": {"harness": "HARNESS_CLAUDE", "model": "m", "cwd": "/"}}}}`,
+			"create_session": {"spec": {"harness": "HARNESS_CLAUDE", "model": "m", "cwd": "/"}}}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			binding := catalog.OrchestrationBinding{Description: "d", Namespace: "test", Presets: json.RawMessage(presets)}
-			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, 30*time.Second); err == nil {
+			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, nil, 30*time.Second); err == nil {
 				t.Error("NewExecutor() accepted the presets")
 			}
 		})
@@ -279,6 +332,7 @@ func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 
 // A launcher grant names an Action of this group by its name, and its rule matches the Action's `sandbox` argument.
 func TestEveryGrantableActionIsOfferedAndTakesItsSandbox(t *testing.T) {
+	f := newFixture(t)
 	var launch struct {
 		Properties struct {
 			LauncherGrants struct {
@@ -288,15 +342,16 @@ func TestEveryGrantableActionIsOfferedAndTakesItsSandbox(t *testing.T) {
 			} `json:"launcher_grants"`
 		} `json:"properties"`
 	}
-	offered := Actions()
-	if err := json.Unmarshal(offered[actionLaunchSandbox].InputSchema, &launch); err != nil {
+	offered := f.executor.Actions()
+	if err := json.Unmarshal(offered[contract.ActionLaunchSandbox].InputSchema, &launch); err != nil {
 		t.Fatal(err)
 	}
-	grantable := slices.DeleteFunc(launch.Properties.LauncherGrants.Items.Enum, func(grant string) bool { return grant == grantSendMessage })
-	if !slices.Equal(slices.Sorted(slices.Values(grantable)), slices.Sorted(slices.Values(sandboxActions))) {
-		t.Errorf("launcher_grants offers %q, want this group's Actions on one Sandbox, %q", grantable, sandboxActions)
+	grantable := slices.DeleteFunc(launch.Properties.LauncherGrants.Items.Enum, func(grant string) bool { return grant == contract.GrantSendMessage })
+	wantActions := f.executor.inputs.SandboxActions()
+	if !slices.Equal(slices.Sorted(slices.Values(grantable)), slices.Sorted(slices.Values(wantActions))) {
+		t.Errorf("launcher_grants offers %q, want this group's Actions on one Sandbox, %q", grantable, wantActions)
 	}
-	for _, action := range sandboxActions {
+	for _, action := range wantActions {
 		var schema struct {
 			Required []string `json:"required"`
 		}

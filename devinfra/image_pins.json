@@ -1,15 +1,27 @@
 {
   "rbe_container": {
     "image": "ghcr.io/agentydragon/rbe-container-image",
-    "digest": "sha256:478978590586fa9688ed0b5d8b02c7c8534ed80824b72d27e1c51e9fe53df207"
+    "digest": "sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5"
   },
   "buildbuddy_remote_runner": {
     "image": "ghcr.io/agentydragon/buildbuddy-remote-runner",
-    "digest": "sha256:9165e7710dfceae6e66079448bf54ae0bd9b2ccf62721d1fc00b2695378be277"
+    "digest": "sha256:850d96c5bf659d417420eba7b919185a6a3e522808e7852991002ffdb9dda72d"
+  },
+  "busybox_1_38": {
+    "image": "mirror.gcr.io/library/busybox",
+    "digest": "sha256:f97baa533a26513c453a362be331a43eb60214302f449c16571b23cea141dce4",
+    "tag": "1.38",
+    "platforms": ["linux/amd64"]
+  },
+  "k3s_test_node": {
+    "image": "docker.io/rancher/k3s",
+    "digest": "sha256:b032bfb68a10fee30ab60c160d32a6b3af7ea33620e9f7a29d59890e42ceefed",
+    "tag": "v1.34.12-k3s1",
+    "platforms": ["linux/amd64"]
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
-    "digest": "sha256:28e2bf6691d9a80e28738d3a8932217230f77f8b3d29aa1dec59e061a6b17560",
+    "digest": "sha256:6ff6717f99a9238f4d5762ad4c1eb88e543e2f31115b1ecffe4a9a4847871c42",
     "platforms": ["linux/amd64"]
   },
   "excalidraw": {
@@ -20,6 +32,114 @@
   "blackbox_exporter": {
     "image": "quay.io/prometheus/blackbox-exporter",
     "digest": "sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc",
+    "platforms": ["linux/amd64"]
+  },
+  "mitmproxy_12_2_3": {
+    "image": "mirror.gcr.io/mitmproxy/mitmproxy",
+    "digest": "sha256:68afa70d7b6ac9d269b88f88534f9ffceb363b4ce31703a78702341fba82e831",
+    "tag": "12.2.3",
+    "platforms": ["linux/amd64"]
+  },
+  "registry_3": {
+    "image": "mirror.gcr.io/library/registry",
+    "digest": "sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33",
+    "tag": "3",
+    "platforms": ["linux/amd64"]
+  },
+  "postgres_18": {
+    "image": "mirror.gcr.io/library/postgres",
+    "digest": "sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "tag": "18",
+    "platforms": ["linux/amd64"]
+  },
+  "electric_1_8_1": {
+    "image": "docker.io/electricsql/electric-temp",
+    "digest": "sha256:910d5ebeca68c87c930ccd1b35426c7bc94d79c099ccacc8f27547b74fb4353a",
+    "tag": "1.8.1",
+    "platforms": ["linux/amd64"]
+  },
+  "ryuk": {
+    "image": "mirror.gcr.io/testcontainers/ryuk",
+    "digest": "sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+    "tag": "0.14.0",
+    "platforms": ["linux/amd64"]
+  },
+  "nginx_unprivileged": {
+    "image": "mirror.gcr.io/nginxinc/nginx-unprivileged",
+    "digest": "sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9",
+    "tag": "1.31-alpine",
+    "platforms": ["linux/amd64"]
+  },
+  "cert_manager_controller": {
+    "digest": "sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8",
+    "image": "quay.io/jetstack/cert-manager-controller",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.21.2"
+  },
+  "cert_manager_webhook": {
+    "digest": "sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae",
+    "image": "quay.io/jetstack/cert-manager-webhook",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.21.2"
+  },
+  "cert_manager_cainjector": {
+    "digest": "sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562",
+    "image": "quay.io/jetstack/cert-manager-cainjector",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.21.2"
+  },
+  "trust_manager": {
+    "digest": "sha256:0521921c2a46d14d0417336b20bcde69215ef3164f2977cc939d53c6e5224a17",
+    "image": "quay.io/jetstack/trust-manager",
+    "platforms": ["linux/amd64"],
+    "tag": "v0.25.0"
+  },
+  "kubevirt_virt_operator": {
+    "digest": "sha256:3596b23097e0e2709d7ea744d018a9b40990735fab04aa5a415bca034b22f68a",
+    "image": "quay.io/kubevirt/virt-operator",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_api": {
+    "digest": "sha256:3f5ed85fc6563a5a2d27dcf282bcceec6ff00a38f43b572a1f33f5d819c713b4",
+    "image": "quay.io/kubevirt/virt-api",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_controller": {
+    "digest": "sha256:76669dbe9f1c4a7635406050738480770fe0e50eca8a532692c48f40ee087b68",
+    "image": "quay.io/kubevirt/virt-controller",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_handler": {
+    "digest": "sha256:1a9b89a11bc90d536ec78c8462cf83592ce1429a7acd1d31af5359fa094303f6",
+    "image": "quay.io/kubevirt/virt-handler",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kubevirt_virt_launcher": {
+    "digest": "sha256:574fabe0ff9719fa1e3800dcca8530fa4e02fd71ef74109508e59800e13e8b5d",
+    "image": "quay.io/kubevirt/virt-launcher",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.8.2"
+  },
+  "kyverno_kyverno": {
+    "digest": "sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb",
+    "image": "ghcr.io/kyverno/kyverno",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.19.1"
+  },
+  "kyverno_kyvernopre": {
+    "digest": "sha256:c25c47461f06f2845a48c319ae86fbbc1730a7b9ed5b701889c9dc1f9ee94b09",
+    "image": "ghcr.io/kyverno/kyvernopre",
+    "platforms": ["linux/amd64"],
+    "tag": "v1.19.1"
+  },
+  "generic_device_plugin": {
+    "image": "ghcr.io/squat/generic-device-plugin",
+    "digest": "sha256:66c8d5c270eb2b721f1064c549b9b7898152a6d2f0163380a5d37dc7636c20ff",
+    "tag": "0.2.0",
     "platforms": ["linux/amd64"]
   }
 }

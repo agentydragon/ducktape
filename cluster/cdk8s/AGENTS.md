@@ -70,7 +70,8 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   field fails at synth. For a complete settings file, construct the full model with
   typed keyword arguments and pass it to `yaml_config` before `SettingsFile`.
   `yaml_config` and `json_config` serialize models recursively, including models nested in
-  source mappings and lists, emitting only explicitly set model fields. Keep models typed
+  source mappings and lists, including model defaults such as union discriminators. A plain
+  mapping preserves absent keys for partial settings; nested model values are complete. Keep models typed
   until this text boundary; use `model_dump` only for an explicit field projection or
   different serialization policy.
   For a file fragment whose other values come from runtime sources, check the present
@@ -102,9 +103,9 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   node). Find how the tree already does it before writing a helper; a second shape for the
   same job is a review finding even if both work.
 - **One helper per repeated shape**: cluster facts in `cilium.py` (`egress_via_gateway`,
-  `dns_egress`, `fqdn_fence`, ...), generic shapes in `providers/cilium/network_policy.py`
+  `dns_egress`, ...), generic shapes in `providers/cilium/network_policy.py`
   (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
-  `agentplane/migrate_container.py`, `node_scheduling.py`, `pod_policy.py`,
+  `node_scheduling.py`, `pod_policy.py`,
   `api_resource.custom_resource`. Parameterize only variation call sites actually have.
 - **A value feeding two artifacts lives once** (web-push hosts: one tuple in
   `agentplane/staging.py` feeds both the Action Service allowlist and its egress rule).
@@ -240,8 +241,15 @@ helper, class or indirection.
   copy a generator literal into an assertion.
 - **Code is not its deployment**: STYLE.md § Testing; here, tests of code under `x/` or
   `haku/` never read `cluster/` or synthesize a cluster chart.
-- **Construct tests use synthetic props** (`Chart(Testing.app(), ...)`, pattern:
+- **Construct tests use synthetic props** (`Chart(scratch_app, ...)`, pattern:
   `test_fleet_rules.py`); invariants use real environments.
+- **Test apps and charts are the `scratch_app`/`scratch_chart` fixtures** (`testing/scratch.py`,
+  exposed by `conftest.py`), outdir under `tmp_path`; one test's charts share its `scratch_app`
+  (distinct ids). Module/session-scoped fixtures call `scratch_app_factory()`.
+  `Testing.app()`/`Testing.chart()` are banned (ruff `TID251`): each call leaks a
+  `/tmp/cdk8s.outdir.*`. Helpers take the `App`/`Chart` as a parameter; outside pytest, use
+  `App()`. The conftest imports cdk8s, so every test under this tree needs jsii's Node runtime
+  (`data` + `JSII_NODE`).
 
 ## Adding a fleet rule
 

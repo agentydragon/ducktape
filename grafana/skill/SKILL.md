@@ -1,0 +1,180 @@
+---
+name: grafana
+description: >-
+  Create and verify Grafana dashboards end to end. Use for any Grafana dashboard
+  authoring or change in the cluster: validate every datasource query, render a
+  temporary candidate before merge when possible, inspect it visually in a real
+  browser, and verify the deployed dashboard after Flux applies it.
+---
+
+# Grafana dashboards
+
+Use this skill for every new or changed dashboard under
+`cluster/cdk8s/monitoring/dashboards/`. The deliverable is a
+dashboard that renders real data in Grafana, not merely valid JSON or a query
+that works after an agent manually edits it.
+
+A new dashboard is two edits: the `<name>.json` file in that directory, and its line in
+`FILE_DASHBOARDS` of `cluster/cdk8s/monitoring/grafana_dashboard_inputs.py`, mapping each of its
+datasource inputs to a datasource name. `bb run //cluster/cdk8s:generate_manifests` then
+writes its `GrafanaDashboard` and `configMapGenerator` entry. A component's own dashboard
+sits beside the generator module that deploys it, declared as that module's `DASHBOARD`
+(for example, `cluster/cdk8s/github_exporter/dashboard.json`). AIQuota history is
+under `monitoring/dashboards/` but remains deployed by `monitoring/aiquota_analytics.py` alongside its
+ClickHouse datasource.
+
+## Credential consent
+
+Before running the verifier or any live Grafana validation that reads the
+`monitoring/grafana-admin-password` Secret, tell the user that the check will
+read and use the Grafana admin credential, and ask for explicit permission.
+Creating or verifying a dashboard does not itself imply permission to retrieve
+or use that credential. Do not run `kubectl get secret`, log in to Grafana, or
+start the verifier until the user grants permission.
+
+If the user declines, do not substitute another privileged credential. Perform
+static checks and non-credential validation only, and report that live query and
+render verification remains outstanding. A future read-only verifier mode may
+use a Viewer service-account token, but it must not be assumed to exist until
+the verifier supports it and the user provides permission for that credential.
+
+## Required verifier
+
+Run the packaged verifier from the repository root:
+
+```bash
+bb run //grafana/skill:verify_dashboard -- \
+  --dashboard cluster/cdk8s/monitoring/dashboards/<dashboard>.json \
+  --screenshot-dir /tmp/grafana-<dashboard>-verify
+```
+
+This uses the live Grafana API and a real headless Chromium browser. Under
+Bazel, it uses the repository's pinned `@chrome_headless_shell` binary; direct
+invocations may set `GRAFANA_CHROME_PATH` as a fallback. It reads the admin
+credentials from the Kubernetes Secret named
+`monitoring/grafana-admin-password`; values are never printed. The candidate
+mode creates a uniquely named temporary dashboard through Grafana's HTTP API,
+renders that dashboard, and deletes it in a `finally` path. It never overwrites
+the dashboard being developed.
+
+After the PR is merged and Flux has applied the dashboard, run the same verifier
+against the real UID instead of the candidate file:
+
+```bash
+bb run //grafana/skill:verify_dashboard -- \
+  --live-uid <dashboard-uid> \
+  --screenshot-dir /tmp/grafana-<dashboard>-live
+```
+
+Wait for the `GrafanaDashboard` resource to report successful application and
+for the Grafana API to return the new dashboard version before this post-merge
+run. If candidate rendering was impossible before merge, this live run is
+mandatory before reporting success to the user.
+
+The verifier fails on any of these conditions:
+
+- a datasource query returns HTTP 4xx/5xx or a Grafana result error;
+- a panel returns no frames or only empty values;
+- a query request still contains an unresolved Grafana macro or dashboard
+  variable, including `$__rate_interval`, `$__all`, `$node`, or `${topk}`;
+- a query result is entirely zero without an explicit
+  `--allow-all-zero-panel` exception and an explanation in the handoff;
+- the browser sees datasource request failures, page errors, PromQL/LogQL parse
+  errors, or Grafana's `No data` state;
+- a panel title is absent from the rendered dashboard. Known dashboard-variable
+  placeholders in titles must expand to visible text; structural row titles are
+  not panel titles and are skipped.
+
+The browser verifier scrolls to the end of the dashboard so repeated rows and
+their panels are rendered even when the dashboard expands beyond a fixed number
+of viewports. It waits for datasource query requests to finish after each scroll
+before capturing that viewport, and fails if a request remains pending for 45s.
+
+The verifier writes a full-page PNG. The agent must open representative
+screenshots with `view_image` and inspect them visually, including at least one
+time-series panel, one table/stat panel, and every panel group likely to be
+empty. A screenshot file existing or a browser returning HTTP 200 is not visual
+verification.
+
+## Authoring and verification contract
+
+1. Inspect the actual Grafana datasource names and UIDs, the dashboard operator
+   resource, and the current metrics/log labels before writing expressions.
+2. Datasource names and types are not UIDs: a datasource named `Loki` with type
+   `loki` can have a generated UID, so do not guess `"uid": "loki"`. Use a
+   verified UID explicitly provisioned by the deployment, or an operator input.
+   For operator-managed file dashboards, use `"datasource": "${DS_LOKI}"` and
+   map it in `FILE_DASHBOARDS` with `datasources={"DS_LOKI": "Loki"}`. Regenerate
+   and inspect `GrafanaDashboard.spec.datasources`. The operator substitutes
+   the datasource **name**, so `{"uid": "${DS_LOKI}"}` becomes `{"uid": "Loki"}`
+   and fails when that name differs from the UID. Update both
+   `panel.datasource` and each `target.datasource`; a target overrides its panel.
+   Candidate verification uses the Python source mappings for monitoring
+   dashboards and applies that same name substitution before creating its
+   temporary dashboard. It checks the resulting name against live Grafana
+   datasources; it does not repair a UID-shaped placeholder into a valid UID.
+   For a dashboard owned by another generator, pass
+   `--grafana-dashboard-manifest <generated-resource-file>`. After import, query
+   and render the live dashboard: `DashboardSynchronized=True` does not prove
+   datasource references work.
+3. Do not rely on Grafana macros unless the browser request proves that the
+   installed datasource plugin expands them. Fixed windows such as `[5m]` are
+   valid and predictable. In particular, never ship a literal
+   `$__rate_interval` into a PromQL or LogQL range selector.
+4. Treat `$__all` as a dashboard/UI variable value, not as a value to paste into
+   a PromQL label matcher. The browser request must contain the intended regex
+   or explicit selected values. Verify the actual request payload, not only the
+   dashboard JSON.
+5. For joins against Kubernetes metadata, deduplicate the metadata side before
+   joining. A syntactically valid query can still fail over a time range with a
+   duplicate-series match-group error.
+6. Test every target with the actual Grafana `/api/ds/query` endpoint over a
+   representative recent range. HTTP 200 alone is insufficient: inspect result
+   errors, frame contents, and numeric values.
+7. Keep physical device I/O, cAdvisor/container I/O, SeaweedFS logical traffic,
+   Loki log bytes, and Mimir ingestion separate. They overlap and must not be
+   presented as additive totals without an explicit accounting model.
+8. Keep the default range practical. Large Loki range scans can be slow enough
+   that a dashboard looks empty while requests are still running; start with a
+   bounded range such as one hour and verify the chosen interval against the
+   panel's resolution.
+9. If a panel legitimately has no samples or is legitimately all zero, do not
+   silently weaken the verifier. Add an explicit allow-list argument for that
+   panel and record why it is expected in the PR/handoff.
+
+## Deployment check
+
+The generated `GrafanaDashboard` and its ConfigMap are applied by Flux. A
+successful Bazel/Kustomize build proves wiring, not that Grafana imported the
+new dashboard. After merge, check the live resource and dashboard API, then run
+the live verifier:
+
+```bash
+kubectl -n monitoring get grafanadashboard <dashboard-name> -o yaml
+curl -fsS https://grafana.allegedly.works/api/dashboards/uid/<dashboard-uid>
+```
+
+Do not use Grafana's `/render/d-solo` endpoint as the sole visual check. This
+installation may return a successful HTTP response containing Grafana's
+"no image renderer available" placeholder. Use authenticated Chrome instead.
+
+## Known failure modes captured here
+
+- Grafana's query API can return HTTP 200 with an empty frame, so status-only
+  checks missed the original broken dashboard.
+- The browser request can retain `$__rate_interval` even when an agent's manual
+  API probe substituted a range first. Only the browser's actual request body
+  proves dashboard interpolation.
+- Loki rejects an unresolved range macro with `not a valid duration string`,
+  while Prometheus/Mimir may return an apparently successful but empty result.
+- Grafana's Explore/drilldown extension parses the panel expression separately;
+  an unresolved macro can produce `PromQL query has parsing errors` even when a
+  different API probe looked healthy.
+- A duplicate `kube_pod_info` or `kube_node_labels` match can break range queries
+  while instant queries appear healthy. Validate both query modes where a panel
+  uses them.
+- The Grafana image-renderer plugin is not guaranteed to be installed. A PNG
+  response from `/render` is not evidence that a panel was painted.
+- A URL containing `var-node=$__all` may not exercise the same expansion as the
+  dashboard's UI `All` selection. Inspect the payload generated by the exact URL
+  the user will use.

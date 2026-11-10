@@ -1,27 +1,13 @@
 # Augur frontend UI recommendations
 
-Captured 2026-05-28 from a review of the then-`.jsx` `app` and `forms` modules
-(the frontend has since moved to TypeScript — `app.tsx`, `forms.tsx`) and the
-then-checked-in visual-test screenshots (now published per-PR via
-`devinfra/pr_visuals` instead). This file is now only the active UX
-backlog; delete entries as they land and tombstone the file once empty.
-Re-checked 2026-08-16: none of the items below have landed — no confirm/undo on
-reset, no copy-URL affordance, no `localStorage` persistence, no currency
-shorthand parsing, and `MantineProvider defaultColorScheme="auto"` still has no
-in-app override.
+Open UX follow-ups for the current scenario editor and results views.
 
-## Form Sidebar
+## Scenario editor
 
-1. **Sectional hierarchy and collapse.** Group the flat scenario sidebar into
-   top-level sections such as Scenario, Property, Funding and exits, and
-   Advanced. The existing `<details>` pattern is enough; Mantine Accordion is
-   also fine. Advanced controls should default collapsed.
-2. **Safer reset.** Reset currently destroys edits with no recovery. Add
-   confirmation, or split it into Undo last change and Reset to defaults.
-3. **Share scenario.** State already round-trips through the URL. Add a Copy URL
-   affordance near reset/rerun controls.
-4. **Persisted scenarios and comparison.** Save scenarios to localStorage and
-   support a pinned baseline or side-by-side overlay.
+- Consider default-collapsing advanced controls.
+- **Safer reset.** Add confirmation or undo for resetting the active scenario.
+- **Share scenario.** Add a Copy URL affordance near the scenario controls.
+- **Persisted scenarios.** Save scenarios to localStorage.
 
 ## Results Pane
 

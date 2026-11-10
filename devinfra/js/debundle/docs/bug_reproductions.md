@@ -7,10 +7,13 @@ code investigation. If a query, selector, extraction, or validation command is
 awkward or fails, make a small, obvious recovery attempt when appropriate.
 Report minor UX friction or small bugs and the workaround in the task result.
 
-Pause the spec or investigation task and report a substantive toolkit bug or
-missing capability. Do this as soon as the problem is clear, or when working
-around it would take roughly ten tool calls or start requiring Debundle
-implementation debugging. Do not quietly replace Debundle with a custom
+Report a substantive toolkit bug or missing capability as soon as it is clear,
+or when working around it would take roughly ten tool calls or start requiring
+Debundle implementation debugging. A scoped lane worker returns the blocker
+to the orchestrator instead of silently expanding its assignment. The
+orchestrator keeps the spec objective active and chooses among
+[general semantics, sound specific recognition and an audited annotation](../skills/shared/workflow.md#choose-the-solution-depth),
+then routes authorized work. Do not quietly replace Debundle with a custom
 extractor, graph parser, or source rewrite that belongs in the toolkit. Do not
 treat output from a failed or bypassed gate as verified.
 
@@ -27,9 +30,11 @@ tooling issue is handled.
    fails for the same reason through the real `debundle` CLI. Show that it
    fails before the fix; a fixture that already passes on the base revision is
    not a regression test for this bug.
-3. Reconsider the design if the reduced case exposes a missing capability or
-   an unsound assumption. Fix the underlying behavior, then show the fixture
-   turns green and land the fixture with the fix.
+3. Choose the solution depth for the reduced case. A correct sufficient-condition
+   recognizer or explicit contract can address the underlying limitation without
+   general interpretation. Keep the selected proof or assertion visible, show
+   the fixture turns green and land it with the change. Acceptance of the
+   synthetic case still needs downstream evidence for the original blocker.
 
 Write new fixture code with neutral names and shapes such as `a`, `b`,
 `foo`, `bar`, `interface`, `class`, `provider`, or `factory`. Strip every
@@ -41,6 +46,13 @@ contract: emitted exports, source shape, file layout, or runtime behavior.
 If the private failure cannot genuinely be reproduced with a synthetic
 fixture, explain that limit in the PR, add coverage at the next useful level,
 and smoke-test the private corpus.
+
+For a proof-coverage regression, assert the exact source owner's operation
+receipt and the effect assessment alongside the actual executable inversion
+and runtime result. An incomplete effect assessment can coexist with an
+accepted ordinary gate and emitted inversions: the effect report is currently
+report-only. A negative control should verify the missing receipt or uncovered
+effect, rather than assume that it prevents every reorder.
 
 ## Downstream acceptance and stricter checks
 

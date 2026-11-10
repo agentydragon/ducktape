@@ -24,8 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -33,6 +32,8 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+var ironProxyBinaryRlocation, ironProxyPatchedBinaryRlocation string
 
 const (
 	testAudience = "iron-bridge-test"
@@ -98,12 +99,8 @@ func newTestBridge(t *testing.T) testBridge {
 		t.Fatal(err)
 	}
 
-	index := policy.NewIndex(time.Hour)
-	now := time.Now()
-	for _, kind := range []reader.Kind{policy.Credentials, reader.PolicySets, reader.PolicyBindings, policy.Secrets} {
-		index.Freshness.RecordCycle(kind, now)
-	}
-	index.Freshness.MarkSynced()
+	index := policy.NewIndex()
+	index.Health.MarkSynced()
 	index.PutCredential(resources.Credential{
 		Name:   "api",
 		Source: resources.SecretKey{Name: "keys", Key: "api"},
@@ -126,7 +123,7 @@ func newTestBridge(t *testing.T) testBridge {
 	index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "policies"},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.ServiceAccountRef{Namespace: "workloads", Name: "runner"},
+			Subject:    policyapi.Subject{Namespace: "workloads", Name: "runner"},
 			PolicySets: []string{"egress"},
 		},
 	})
@@ -252,7 +249,7 @@ func exchangeInnerGET(t *testing.T, conn net.Conn, reader *bufio.Reader, target,
 }
 
 type ironProxyConfig struct {
-	binary          string
+	binaryRlocation string
 	caCert          string
 	caKey           string
 	upstreamCA      string
@@ -261,16 +258,12 @@ type ironProxyConfig struct {
 
 func startIronProxy(t *testing.T, transformAddress string) string {
 	t.Helper()
-	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binary: "binary", sendRequestBody: true})
+	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binaryRlocation: ironProxyBinaryRlocation, sendRequestBody: true})
 }
 
 func startConfiguredIronProxy(t *testing.T, transformAddress string, settings ironProxyConfig) string {
 	t.Helper()
-	files, err := runfiles.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	binary, err := files.Rlocation("ducktape_iron_proxy/" + settings.binary + "_/" + settings.binary)
+	binary, err := runfiles.Rlocation(settings.binaryRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +483,7 @@ func TestTransformRequestReadinessRejectsBeforeTokenReview(t *testing.T) {
 
 func TestTransformRequestRequiresAvailablePolicyIndex(t *testing.T) {
 	lab := newTestBridge(t)
-	lab.index.Freshness.MarkDraining()
+	lab.index.Health.MarkDraining()
 	response, err := lab.client.TransformRequest(context.Background(), &transformv1.TransformRequestRequest{
 		Request: &transformv1.HttpRequest{
 			Method: http.MethodConnect,

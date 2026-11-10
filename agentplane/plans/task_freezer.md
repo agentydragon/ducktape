@@ -7,16 +7,82 @@ These are not promises to perform every former acceptance test. Waived or redund
 are removed, not stored here as obligations. Security/data-loss bugs with concrete evidence belong
 in active work. See [maintenance conventions](../docs/task_dag_maintenance.md).
 
+## Agent-facing platform information
+
+### `AGENT_PLATFORM_INFORMATION_DESIGN` — consolidate documentation and system-configuration access
+
+**Deferred at the operator's request; revisit when prioritizing a consistent agent-facing discovery
+and access design.** Access is currently spread across injected guidance, service `/llms.txt` indexes,
+CLI help and schemas, MCP `get_guide`, live discovery APIs and deployment/runtime configuration.
+Inventory those paths and propose coherent ownership and progressive disclosure for documentation
+and current system configuration, with realistic shell and MCP-only workflows, including agents with
+no attached environment. Distinguish static documentation from live configuration and caller-effective
+capabilities; define freshness, version and failure semantics before consolidating the surfaces.
+Coordinate with the [platform-guidance ownership design](task_dag.md#platform_guidance_ownership_design--decide-platform-guidance-ownership-and-composition)
+and [service naming design](task_dag.md#platform_service_names_design--stable-sidecar-names-for-platform-services).
+This records a later design and consolidation TODO; it selects no new service or transport and does
+not block the current documentation or delegation work.
+
 ## Legacy leftovers
 
 Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 
 ### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
 
-`workload_auth/README.md` calls `agentplane-egress` a compatibility audience that may become
-`agentplane-workload`. Renaming needs every verifier to accept both until running Sandbox Pods carry
-the new projected token, or a Sandbox restart: an accept-both release, then dropping the old audience
-once every Sandbox Pod started after that release.
+Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
+(`workload_auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
+longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
+name stays relevant; any rename must coordinate those verifiers and their projected tokens.
+
+## Sandboxes and Action boxes
+
+### `SANDBOX_BOX_CONVERGENCE` — Sandboxes and Action boxes as one object type
+
+**Direction, not scheduled (operator, 2026-11-10).** Both offer "execute something here", in
+divergent ways. The shared shape: a workload acting as an Identity, a `WorkloadCredential`, SVID
+egress, exec, a lifetime, and access grants. Today they diverge:
+
+- Identity reference: a Sandbox by name (`spec.identity`), a box by name and UID.
+- Access: a Sandbox's acting is implied for its bound Identity and its lifecycle needs grants; a box
+  is reached through its `caller-identity` labels, and its acting Identity always equals its
+  requester.
+- Lifecycle: the Sandbox Controller versus Action Service records; only Sandboxes suspend and resume.
+- Credential ownership: Sandbox-controlled versus `NoController`.
+- Harnesses: only Sandboxes run them.
+
+Guideline: new identity and access decisions on either side move toward the shared shape where it
+is cheap. Boxes and Sandboxes converge on the plan's
+[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting in the workload is
+implied for its bound Identity, so box access keyed on the box's acting Identity is correct;
+lifecycle (create, dispose, rebind) needs an explicit grant. A box's acting Identity is its
+requester today, so this changes no behaviour. Linked from `ACTION_BOX_IDLE_REAPER` and
+`SANDBOX_IDENTITY_SPEC` in the [DAG](task_dag.md).
+
+## Workload credentials
+
+Deferred by the operator on 2026-11-09 with the proxy bearer hop removal (#15247)
+([workload authentication](../docs/workload_authentication.md#standing-workloads)).
+
+### `STANDING_WORKLOAD_INCARNATIONS` — standing workloads' weaker credential
+
+Revisit when a standing workload needs Pod provenance or its shared credential's reach becomes a
+concern. A standing record is one non-rotating credential with no Pod provenance, weaker than the
+per-incarnation credentials of Sandboxes and boxes: bring standing workloads up to per-incarnation
+credentials, or accept the weaker guarantee everywhere.
+
+## Haku
+
+### `HAKU_ACTION_NATIVE_CLIENT` — migrate the existing Haku Action client
+
+**Explicitly deferred by operator, 2026-11-08; revisit before Haku next needs Action tool
+execution.** Haku UI's `ActionClient` still calls the retired Action HTTP facade. Migrate that
+client to native Action gRPC through its credential-holding sidecar, retaining its existing
+Pod-bound bearer and method authorization until the shared identity cutover. Do not restore the
+removed facade, expose the token to the UI workload or have the proxy assert the caller. Keep
+idempotent submission, operator approval and result/error behavior. **When promoted, confirm**
+Haku's existing tool-call path submits and receives a receipt through the current service API, and
+unauthorized or expired credentials fail before admission. This client/API drift is separate from
+the proxy hop migration and does not wait on the shared identity design.
 
 ## Notifications and operations
 
@@ -54,26 +120,19 @@ wake/delivery. A future design might add switches to Sandbox spec, but must defi
 semantics, trusted event attribution, decision placement and how unannounced entries make progress.
 No per-event switches, per-peer wake grants or owner move are selected or required for v1.
 
-### `SANDBOX_LIFECYCLE_AUTHORIZATION_DESIGN` — delegated lifecycle controls
-
-Revisit on a concrete need for agents to manage lifecycle or explicit operator prioritization.
-V1 keeps explicit suspend/resume and wake-setting edits as operator controls while preserving
-trusted backend automation. If delegation is needed, compare native Kubernetes RBAC with narrow
-backend operations on Sandbox targets/collections; general Sandbox patch access can edit unrelated
-spec fields. Define grant administration and preserve lifecycle guards. The longer-term direction
-is wake-on-message by default and transparent suspension/resume, not routine granular lifecycle
-management. Current defaults are unchanged; this review does not block v1 messaging.
-
 ### `NOTIFICATION_WORKER_ISOLATION` — separate notification API and delivery workers
 
 Only if worker deaths cause actual operational trouble. Keep workers in-process; first address the specific failure with current supervision/claims/retries.
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
-Only if idle Action-history polling cost matters. Add a read-authorized Action change feed without
-giving Notifications operator authority or cross-service database access. Use one shared feed per
-replica as an invalidation source; drain canonical events from persisted `actions_after_sequence`
-on startup, reconnect, subscription creation and invalidation. Register before catch-up reads,
+Only if idle Action-history polling cost matters. Evaluate using the existing read-authorized
+`WatchActionRequests` as an invalidation source before adding another feed. It sends a snapshot and
+changes, has no resume cursor, and can be unbounded without a state filter; verify the Notification
+service's actual read scope, cost and whether every relevant transition invalidates. Use one shared
+feed per replica without granting operator authority or cross-service database access; drain canonical
+events from persisted `actions_after_sequence` on startup, reconnect, subscription creation and
+invalidation. Register before catch-up reads,
 fence racing invalidations and commit progress with inbox entries. Waiting on the feed must not
 hold an inbox lease or occupy a delivery worker. Reconnect with rotating credentials and bounded
 backoff; preserve delivery retries and retention scheduling. Test missed signals, reconnect,
@@ -116,10 +175,6 @@ Extract from concrete repeated source implementations, not a hypothetical univer
 ### `HOME_ASSISTANT_NOTIFICATIONS` — entity and event subscriptions
 
 On an operator-selected source/use case. Define bounded entity/event filters, retained state versus edge semantics and authorized source access first.
-
-### `CRON_NOTIFICATIONS` — scheduled notifications for agents
-
-On scheduling demand. Review missed-tick/timezone/overlap policy before implementing durable schedules; it does not authorize wake.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
@@ -168,17 +223,15 @@ If adopting automatic recovery for the native-effect-before-durable-receipt wind
 
 Same narrow evidence-first rule for Codex; no dependency on completing Claude research.
 
-### `CODEX_RECOVERY_PROTOCOL` — reconcile through documented app-server history APIs
-
-When the supported public history API can replace private rollout parsing. Refresh the selected CLI pin and prove retained/absent/revised/unknown semantics; see [investigation](../debug/codex_app_server_history_apis.md).
-
 ### `LLM_INGRESS_REQUEST_RECENCY` — direct outbound request timing
 
 If event-derived Thread recency proves too approximate, consider recording a metadata-only
-request timestamp at the authenticated LLM ingress when forwarding toward LiteLLM. Today ingress
-verifies Sandbox/Pod identity, **not Session identity**: multiple Threads in the same Sandbox can
-make only a Sandbox-level timestamp trustworthy. Per-Thread measurement would first need a trusted
-Session attribution path; do not use caller-supplied Thread headers or label shared-Sandbox traffic
+request timestamp at the authenticated LLM ingress when forwarding toward LiteLLM. The ingress
+accepts a canonical Session ID from an explicitly trusted central sampler for attribution, but it
+does not independently verify Session ownership. Ordinary Sandbox callers cannot supply that
+header; for them only the verified Sandbox/Pod identity is available. Multiple Threads can share a
+Sandbox, so a trustworthy per-Thread timestamp for native harnesses still needs a trusted attribution
+path. Do not treat an arbitrary caller-supplied Thread header as proof or label shared-Sandbox traffic
 as one Thread's requests. A forwarded request is still not proof the provider accepted it or that
 its cache was hit. Review retention and read authorization before persisting timestamps; do not log
 prompts or credentials for this indicator. This does not block the event-derived UI candidate.
@@ -273,18 +326,51 @@ or access policy. Multiagent authority decisions can use the evidence without re
 
 On a selected model/effort capability gap. [Runtime control contract](../docs/runtime_control.md); admission is not native effect.
 
+## Sampler reliability follow-ups
+
+### `CENTRAL_SAMPLER_RELIABILITY_FOLLOWUP` — investigate instability observed in normal use
+
+Deferred by the operator on 2026-10-31. Revisit only if normal use still exposes sampler or JS/exec
+instability. The dedicated continuation/disruption exercise, coverage audit and additional acceptance
+tests are not scheduled and do not gate the sprint or daily CI agent. On a concrete failure, retain
+the Session's evidence, reproduce the affected boundary and select proportional regression coverage.
+Existing tests and the [runtime/recovery contracts](../central_sampler/SPEC.md#runtime-and-effects)
+remain authoritative; the [deployed evidence](../central_sampler/docs/rollout_acceptance.md)
+records what was actually exercised.
+
 ## Runtime redesign and offline acceptance
 
 Requires a fresh operator product/architecture decision. These alternatives are not prerequisites for service-owned input metadata or ordinary session history.
 
+### `POD_EXECUTOR_COMPANION_REVIEW` — consider removing the executor companion
+
+Operator requested, 2026-11-10; revisit when prioritizing Pod executor lifecycle simplification.
+Compare the current PID 1 companion with alternatives such as running Codex exec-server as PID 1
+and using Kubernetes container replacement. Determine how each detects owner loss, triggers and
+proves cleanup despite a fast Runtime restart or stale status, gates executor access, reaps orphaned
+children, and supplies the claim's environment. Compare privileges, control ownership and operational
+cost. Preserve separate executor resource limits and the [execution ownership contract](../env/runtime/execution/SPEC.md#ownership-and-admission),
+including fencing escaped descendants before a successor and not replaying uncertain effects. This
+is a design investigation; it does not select removal or block current work.
+
+### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
+
+Deferred by the operator on 2026-10-31; revisit when selective sampling recovery is prioritized.
+Consider preserving completed reasoning/items from an interrupted response only where the actual
+provider and route accept the resulting continuation. The [Luna/Haiku spike](https://github.com/agentydragon/ducktape/pull/13344)
+found that a complete reasoning tail is accepted by Luna and rejected by Haiku; adding a recovery
+notice is a separate request shape. Check opaque signatures/encrypted content, message ordering,
+call/result pairing and proxy transformations. Preserve earlier executed tools and report retained,
+absent or revised items through `ConversationReconciled`. This does not gate whole-response
+abandonment or authorize automatic replay.
+
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-The central-sampling portion is now owned by active `HARNESS_PLACEMENT_DESIGN` in
-[task DAG](task_dag.md#harness_placement_design--sampler-placement-and-state-authority), informed by
-`CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE` (operator, 2026-10-27). Do not create a competing authority
-decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
+The central-sampling portion shipped as the opt-in [central sampler](../central_sampler/README.md)
+([placement decision](sampling_outside_sandboxes.md#accepted-central-sampler-v1)); do not create a
+competing authority decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
 selected. Central-admission implementation still waits for the reviewed authority design. Transport direction
-is settled separately by the [runner control stream](../docs/runner_control.md), which currently retains
+is settled separately by the [runner control](../docs/runner_control.md), which currently retains
 runner durability.
 
 ### `RUNNER_JOURNAL_SETTLEMENT` — settle deltas in the runner journal too
@@ -299,29 +385,13 @@ Conditional on thin-runner design: determine which continuation evidence require
 
 Equivalent conditional evidence for Codex; no generic success claim across harnesses.
 
-### `RUNNER_CENTRAL_ADMISSION` — durable commands at the central authority
-
-Conditional on the authority decision. Durable central admission/redelivery is distinct from storing input annotations.
-
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 
-Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner dial-out is a separate, existing transport ([runner control stream](../docs/runner_control.md)).
-
-### `COMMAND_QUEUE_DECISION` — where submission becomes durable
-
-Only if offline acceptance is requested. Compare runner-first with a central service queue; do not assume the integration app must own it. Metadata persistence does not select this option.
-
-### `THREAD_COMMAND_DELIVERY` — optional app command delivery queue
-
-Conditional on the queue decision; implement only at the chosen authority. Old app-outbox proposals are alternatives, not a ready implementation plan.
-
-### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
-
-Conditional on selecting an outbox: one ingress, no competing relays. Remains behind queue implementation.
+Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner control currently uses private mTLS gRPC ([runner control](../docs/runner_control.md)).
 
 ### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
 
-When promising submit-and-close-browser provisioning. Review server-owned create/open/submit orchestration after idempotent creation and bootstrap receipts; only require an outbox if the chosen contract needs offline acceptance.
+When promising submit-and-close-browser provisioning. Review server-owned create/open/submit orchestration after idempotent creation and bootstrap receipts; reuse Dispatcher command admission rather than adding a second command queue.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
@@ -353,10 +423,6 @@ names remain set, changed, and cleared by operators.
 ### `T3` — thread search and lookup
 
 Transcript full-text search/lookup remains deferred; ordinary paginated Thread browsing is independent.
-
-### `ELEVATE` — agent-requested temporary permission
-
-Operator-reviewed temporary permission requests for ServiceAccount/Sandbox callers; preserve explicit authority, expiry and revocation.
 
 ### `ACCESS` — delegated versus brokered external access
 
@@ -391,8 +457,8 @@ Session UUID as their key and record the Sandbox UID beside it (operator, 2026-1
 ### `API_AGGREGATION` — serve agent-facing records as a Kubernetes aggregated API
 
 Held by the operator, 2026-10-17. [The exploration](api_aggregation_exploration.md) has the candidates and costs.
-`ActionRequest`'s workload half is the only record worth it, once the Action Service is Go and a
-`kubectl`-style client surface for it is wanted. RBAC as sender authorization does not need it: a
+`ActionRequest`'s workload half is the only identified candidate if a `kubectl`-style client
+surface is wanted. The Action Service already runs in Go. RBAC as sender authorization does not need it: a
 service asks `SubjectAccessReview`, which belongs to the sender-grant and agent-authority choices.
 
 ## Broader verification inventory
@@ -422,3 +488,21 @@ Claude runs one process per Session; Codex runs one app-server per Runner for al
 Sessions, so reaping that process touches every one of them. Reaping must account for native children and
 background work ([child evidence](../native/docs/child_sessions.md),
 [background work](../docs/background_work.md)), which the current busy signal does not track.
+
+## Frontend
+
+### `FRONTEND_QUERY_CACHE` — a query cache for ad-hoc fetches
+
+**Frozen; operator, 2026-10-30: think about it later.** About eight fetch-in-`useEffect` blocks with
+manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
+TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). See the
+[idiom audit](standard_idioms.md).
+Partly done: Action request details and thread evidence readers use TanStack Query (#14884,
+#14887); the System page's `setInterval` poll and other effect fetches remain.
+
+### `FRONTEND_CONNECT_ES` — typed streaming clients
+
+**Frozen; operator, 2026-10-30: think about it later.** Backend watches use a shared handwritten
+stream reader for grpc-gateway NDJSON; consumers such as Policy and Egress decode messages with
+their generated protobuf schemas. Connect-ES streaming clients could replace the framing and request
+plumbing, at the cost of revisiting the app's deliberate gateway choice (`app/README.md`).

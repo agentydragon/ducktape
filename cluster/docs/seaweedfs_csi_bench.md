@@ -1,5 +1,7 @@
 # SeaweedFS CSI driver — Tana-workload benchmark
 
+This benchmark used the former `seaweedfs-ovh` class, which has since been retired.
+
 The CSI driver (chart v0.2.21 / image `chrislusf/seaweedfs-csi-driver:v1.4.14`,
 FUSE-backed) was stood up to evaluate whether `seaweedfs-ovh` is suitable
 storage for a Chromium-profile workload (`tana-mcp`'s `~/.config/tana`,
@@ -49,7 +51,6 @@ Tana's profile fsyncs Cookies / DIPS-wal / IndexedDB sqlite on every change.
 A FUSE-over-network filesystem fundamentally can't serve SQLite-style
 sync writes the way a local filesystem can.
 
-The CSI driver is kept installed for blob-shaped workloads where SeaweedFS
-is the right tool (large, mostly-append, no fsync-per-update). Tana stays
-on `local-path-ovh`, with a periodic Volsync backup _into_ seaweedfs (which
-plays to the backend's strengths).
+The CSI driver is kept installed for workloads suited to SeaweedFS. Tana now uses
+`emptyDir` for its re-derivable profile rather than the local-path PVC and VolSync
+backup described at the time of this test; see <../cdk8s/tana_mcp.py>.

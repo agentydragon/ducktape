@@ -47,7 +47,7 @@
 //! sites only `debug_assert!` seal's no-capture guarantee.
 
 use swc_atoms::Atom;
-use swc_common::Span;
+use swc_common::{Span, SyntaxContext};
 
 use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
 use crate::plans::ModulePlan;
@@ -58,6 +58,7 @@ use crate::rename_ledger::{
 use crate::visitors::{RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, ensure};
+use binding_targets::binding_names;
 use js_ast::is_binding_identifier;
 use js_ast::str_value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -93,6 +94,7 @@ impl NaturalizedModuleBody {
         module: ModuleId,
         plan_driven: BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
+        unresolved_context: SyntaxContext,
     ) -> Result<Self> {
         let source_facts = crate::body_facts::collect_module_body_facts(&body);
         let original_references = source_facts
@@ -109,6 +111,7 @@ impl NaturalizedModuleBody {
             module,
             plan_driven,
             chunk_top_level_mark,
+            unresolved_context,
             &original_references,
         )?;
         // If a pre-existing reference already used the emitted Id, two
@@ -179,6 +182,7 @@ fn naturalize_module_body(
     module: ModuleId,
     plan_driven: BTreeMap<String, String>,
     chunk_top_level_mark: swc_common::Mark,
+    unresolved_context: SyntaxContext,
     original_references: &BTreeSet<String>,
 ) -> Result<NaturalizationResult> {
     // Occupancy facts for seal-time target validation, computed against
@@ -262,9 +266,10 @@ fn naturalize_module_body(
     // The real body is mutated only by the post-seal executor below.
     //
     // The candidate plan-driven walk on the clone doubles as the capture
-    // probe for the Module scope: its scope stack reports the precise
-    // capture facts seal validates (a target bound nested is harmless
-    // when the source is shadowed there). The derive pass then performs
+    // probe for the Module scope: it reports both target-shadow conflicts
+    // and unresolved references captured by a new target. A nested target
+    // binding remains harmless when the source is shadowed there. The
+    // derive pass then performs
     // exactly the pre-ledger derive-and-apply walk — outer scopes derive
     // against subtrees that already carry their nested scopes' renames —
     // submitting each scope's raw candidates as Function-scope intents
@@ -285,7 +290,8 @@ fn naturalize_module_body(
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
     } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven_by_id);
+        let mut naturalizer =
+            RenameAndShorthandNaturalizer::new(&plan_driven_by_id, unresolved_context);
         for item in derive_body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
         }
@@ -296,6 +302,7 @@ fn naturalize_module_body(
         free_allowed: &free_effective,
         reserved: &reserved,
         chunk_top_level_mark,
+        unresolved_context,
         ledger: &mut ledger,
         occupancy: &mut occupancy,
     };
@@ -332,7 +339,8 @@ fn naturalize_module_body(
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
     } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&explicit_by_id);
+        let mut naturalizer =
+            RenameAndShorthandNaturalizer::new(&explicit_by_id, unresolved_context);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
         }
@@ -342,7 +350,10 @@ fn naturalize_module_body(
             naturalizer.captured,
         );
     }
-    let mut applier = SealedScopeRenameApplier { sealed: &sealed };
+    let mut applier = SealedScopeRenameApplier {
+        sealed: &sealed,
+        unresolved_context,
+    };
     for item in body.iter_mut() {
         item.visit_mut_with(&mut applier);
     }
@@ -392,6 +403,7 @@ struct ScopedHeuristicNaturalizer<'a> {
     /// scope-local rename must not target any of them.
     reserved: &'a BTreeSet<String>,
     chunk_top_level_mark: swc_common::Mark,
+    unresolved_context: SyntaxContext,
     /// Sink for the per-scope raw candidates (Function-scope intents).
     ledger: &'a mut RenameLedger,
     /// Sink for each deriving subtree's name facts; passed to seal so it
@@ -406,6 +418,7 @@ struct ScopedHeuristicNaturalizer<'a> {
 /// derivation validated against.
 struct SealedScopeRenameApplier<'a> {
     sealed: &'a SealedRenames,
+    unresolved_context: SyntaxContext,
 }
 
 impl SealedScopeRenameApplier<'_> {
@@ -423,7 +436,7 @@ impl VisitMut for SealedScopeRenameApplier<'_> {
         if local.is_empty() {
             return;
         }
-        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&local, self.unresolved_context);
         function.params.visit_mut_with(&mut renamer);
         if let Some(body) = function.body.as_mut() {
             rename_root_stmts(&mut renamer, &mut body.stmts);
@@ -437,7 +450,7 @@ impl VisitMut for SealedScopeRenameApplier<'_> {
         if local.is_empty() {
             return;
         }
-        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&local, self.unresolved_context);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
             ArrowFunctionBody::FunctionBody(body) => {
@@ -454,7 +467,7 @@ impl VisitMut for SealedScopeRenameApplier<'_> {
         if local.is_empty() {
             return;
         }
-        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&local, self.unresolved_context);
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
         }
@@ -561,30 +574,7 @@ fn function_root_binding_ids(function: &Function) -> BTreeMap<String, Id> {
 }
 
 fn collect_pat_binding_ids(pat: &Pat, out: &mut BTreeMap<String, Id>) {
-    match pat {
-        Pat::Ident(ident) => {
-            out.insert(ident.id.sym.to_string(), ident.id.to_id());
-        }
-        Pat::Rest(rest) => collect_pat_binding_ids(&rest.arg, out),
-        Pat::Assign(assign) => collect_pat_binding_ids(&assign.left, out),
-        Pat::Array(array) => {
-            for elem in array.elems.iter().flatten() {
-                collect_pat_binding_ids(elem, out);
-            }
-        }
-        Pat::Object(object) => {
-            for prop in &object.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => collect_pat_binding_ids(&kv.value, out),
-                    ObjectPatProp::Assign(assign) => {
-                        out.insert(assign.key.id.sym.to_string(), assign.key.id.to_id());
-                    }
-                    ObjectPatProp::Rest(rest) => collect_pat_binding_ids(&rest.arg, out),
-                }
-            }
-        }
-        Pat::Invalid(_) | Pat::Expr(_) => {}
-    }
+    out.extend(binding_names(pat).map(|id| (id.0.to_string(), id)));
 }
 
 impl ScopedHeuristicNaturalizer<'_> {
@@ -781,7 +771,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         // body's statements directly) so the own-binding isn't treated as a
         // shadow; nested subtrees still suppress.
         let typed_local = self.typed_scope_renames(&local, &root_ids);
-        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local, self.unresolved_context);
         function.params.visit_mut_with(&mut renamer);
         if let Some(body) = function.body.as_mut() {
             rename_root_stmts(&mut renamer, &mut body.stmts);
@@ -805,7 +795,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             return;
         }
         let typed_local = self.typed_scope_renames(&local, &root_ids);
-        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local, self.unresolved_context);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
             ArrowFunctionBody::FunctionBody(body) => {
@@ -832,7 +822,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             return;
         }
         let typed_local = self.typed_scope_renames(&local, &root_ids);
-        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local, self.unresolved_context);
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
         }

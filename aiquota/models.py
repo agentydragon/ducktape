@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
 
 class QuotaWindow(BaseModel):
@@ -40,6 +41,67 @@ class PaidCredits(BaseModel):
     unlimited: bool = False
 
 
+class OpenAIPlatformCreditGrant(BaseModel):
+    granted_usd: Decimal
+    used_usd: Decimal
+    effective_at: datetime
+    expires_at: datetime | None
+    is_scheduled: bool
+    is_held_for_prepaid_transition: bool
+
+
+class OpenAIPlatformCredits(BaseModel):
+    total_available_usd: Decimal
+    total_paid_available_usd: Decimal
+    grants: list[OpenAIPlatformCreditGrant]
+
+
+class AnthropicPlatformCreditAmount(BaseModel):
+    amount_minor: int
+    exponent: int = Field(ge=0, le=9)
+
+
+class AnthropicPlatformCreditValue(BaseModel):
+    credits: AnthropicPlatformCreditAmount | None = None
+    money: object | None = None
+
+
+class AnthropicPlatformProduct(BaseModel):
+    product: str
+    model_family: str | None = None
+    model_version: str | None = None
+
+
+class AnthropicPlatformScope(BaseModel):
+    kind: str
+    applies_to: list[AnthropicPlatformProduct] = Field(default_factory=list)
+
+
+class AnthropicPlatformTranche(BaseModel):
+    id: str
+    name: str | None = None
+    currency: str
+    granted_at: datetime
+    expires_at: datetime | None = None
+    granted: AnthropicPlatformCreditValue
+    remaining: AnthropicPlatformCreditValue
+    scope: AnthropicPlatformScope
+
+
+class AnthropicPlatformOrganization(BaseModel):
+    uuid: str
+    name: str
+    currency: str | None = None
+    balance: AnthropicPlatformCreditValue | None = None
+    tranches: list[AnthropicPlatformTranche] = Field(default_factory=list)
+    promo_tranches: list[AnthropicPlatformTranche] = Field(default_factory=list)
+    error: str | None = None
+
+
+class AnthropicPlatformCredits(BaseModel):
+    organizations: list[AnthropicPlatformOrganization]
+
+
 class PrepaidBalanceAvailable(BaseModel):
     """An exact provider-reported prepaid monetary balance."""
 
@@ -58,6 +120,16 @@ class PrepaidBalanceUnavailable(BaseModel):
 PrepaidBalance = Annotated[PrepaidBalanceAvailable | PrepaidBalanceUnavailable, Field(discriminator="kind")]
 
 
+class ClaudeResetGrant(BaseModel):
+    label: str
+    remaining: int = Field(ge=0)
+    original: int = Field(ge=0)
+    starts_at: AwareDatetime | None = None
+    expires_at: AwareDatetime | None = None
+    paused: bool = False
+    usable_now: bool | None = None
+
+
 class FetchSuccess(BaseModel):
     """Payload from a quota fetch that returned without error.
 
@@ -70,9 +142,13 @@ class FetchSuccess(BaseModel):
     windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
     paid_credits: PaidCredits | None = None
+    openai_platform_credits: OpenAIPlatformCredits | None = None
+    anthropic_platform_credits: AnthropicPlatformCredits | None = None
     # Claude's prepaid monetary balance is a separate endpoint and denomination
     # from Codex paid credits. None means this provider does not report it.
     prepaid_balance: PrepaidBalance | None = None
+    # None means the inventory was unavailable, not that there are no resets.
+    claude_reset_grants: list[ClaudeResetGrant] | None = None
     # Earned Codex rate-limit resets. None means the provider did not publish a
     # count; 0 is an authoritative "none available" response.
     available_reset_credits: int | None = Field(default=None, ge=0)
@@ -90,6 +166,25 @@ class FetchSuccess(BaseModel):
         if len(identities) != len(set(identities)):
             raise ValueError("quota window identities must be unique")
         return sorted(windows, key=lambda window: (window.window_seconds, window.name is not None, window.name or ""))
+
+
+def is_substantive(result: FetchSuccess) -> bool:
+    """Whether a success contains data worth retaining and displaying."""
+    return bool(
+        result.windows
+        or result.claude_reset_grants is not None
+        or result.available_reset_credits is not None
+        or (result.extra_spend is not None and result.extra_spend.used_usd > 0)
+        or result.paid_credits is not None
+        or result.openai_platform_credits is not None
+        or (
+            result.anthropic_platform_credits is not None
+            and any(
+                organization.balance is not None for organization in result.anthropic_platform_credits.organizations
+            )
+        )
+        or result.prepaid_balance is not None
+    )
 
 
 class FetchError(BaseModel):

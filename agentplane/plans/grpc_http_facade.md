@@ -6,22 +6,31 @@ alternatives in [API transports](../docs/runner_delivery_and_harness_design.md#a
 The per-service tracks are in the [task DAG](task_dag.md#service-api-transport-tracks). This plan
 holds what is still open.
 
+Thread command writes already use the generated Dispatcher facade
+([app README](../app/README.md#replica-safe-command-delivery)). The app serves the human frontend;
+agent and service callers use native gRPC at the owning backend.
+
 ## Open
 
-- **History reads.** History has no facade; the app still mirrors `ReadEntityEvidenceResponse`,
-  `ReadNativeFramesResponse` and the observation pages in Pydantic (`app/threads/view/content.py`,
-  `app/threads/events/debug.py`). `HISTORY_READS_FACADE` replaces them. A browser watch could use the implemented
-  [`FollowSession`](../history_service/README.md#read-and-follow-one-session); the browser currently stays on Electric.
-- **Thread checks on History reads.** `thread_observations` answers 404 for a Session no Thread links;
-  a proxied read answers for any Session the History Service holds. All operators are equal here, so
-  this is a behavior to keep or drop on purpose, not a hole.
-- **Dispatcher commands.** They have generated routes, but the browser sends them through the app's
-  typed Thread routes until the checks there (archive, Thread to Sandbox lookup, model-catalog
-  validation before `SubmitInput`) have a home that is not a hand-written route: the app-contract
-  decision. Deferred, not asked: whether the app's own views (Threads, Sandboxes) become protos. No
-  track needs it, and an early answer would be hard to reverse.
-- **Error codes in the browser.** `sandbox_page.tsx` and `connections/management.tsx` (three times)
-  branch on HTTP status; they move to the body's gRPC `code`, which `HttpError` then carries.
+- **Remaining app contracts.** `APP_API_GRPC_FACADE` in the
+  [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
+  covers the remaining app views, mutations and streams. Logical Session creation uses the app-owned
+  generated `AppService` facade, retaining preset composition and Thread metadata creation before
+  Dispatcher `CreateSession` admission. Decide which checks each remaining wrapper needs,
+  at its owning boundary, rather than preserve them as transport requirements.
+- **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
+  (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-creation recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
+- **Typed Session overrides.** Replace `AppService.CreateSession`'s `Struct` spec and
+  `Value` setup script with a typed contract, such as an override message or field mask with an
+  explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
+  strict validation and the caller-minted ID; plan the HTTP, cached-client and rollback migration.
+- **Session-opening browser compatibility.** Consolidate handwritten URL, request and gRPC error
+  decoding with the shared browser facade transport. Remove the legacy Huma status fallback and
+  wire-format workarounds only after old app replicas, cached browser bundles and the supported
+  rollback window are gone; preserve uncertain-outcome reconciliation throughout.
+- **Non-JSON Session-opening errors.** Preserve HTTP status and useful diagnostics when an app
+  proxy or other intermediary returns a non-JSON failure; keep unknown outcomes reconcilable
+  without automatically replaying the opening or setup.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.
 - **Git index.** Its `/search` gets a facade with its Go port, if an agent needs it.
@@ -51,9 +60,10 @@ only the proxy hop and the credential change. A service takes it only once these
   it on purpose, so an operator facade needs a separate route.
 - **Streams end at token expiry.** The browser reopens with a fresh token on `reconnect_required`,
   the frame `WatchSessionSummaries` already carries. Logout no longer ends a stream; expiry does.
-- **What the app supplies today moves or is dropped on purpose:** the Thread checks on History reads,
-  and the Dispatcher's wake budget, keyed on a service account now, which would need the operator's
-  identity to attribute a wake to them. CSRF stops applying, because the credential is not ambient.
+- **Authorization and attribution:** direct History reads need an operator read policy in place of
+  the app service account's authority. The Dispatcher's wake budget, keyed on a service account now,
+  would need the operator's identity to attribute a wake to them. CSRF stops applying, because the
+  credential is not ambient.
 
 Revisit when the proxy hop costs something measurable (a stream held open per tab, per-upstream
 settings), or when per-operator attribution is wanted.

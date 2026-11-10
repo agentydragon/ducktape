@@ -1,5 +1,9 @@
 # Kubernetes VM Platform Options
 
+> Research snapshot: KubeVirt and CDI are now deployed. For the current storage
+> inventory see <topology.md> and <piraeus.md>; this comparison is not a current
+> deployment or migration procedure.
+
 Question: what existing solution should we use if we want to run VMs inside the
 cluster, with some combination of snapshotting, suspend/resume, and not losing
 the VM when a node goes down?
@@ -9,21 +13,15 @@ the VM when a node goes down?
 Use KubeVirt, or a KubeVirt distribution, if the goal is "real VMs managed as
 Kubernetes resources."
 
-For this cluster, the practical path is:
+For this cluster, KubeVirt and CDI are already deployed. Evaluate VM recovery,
+snapshotting and live migration against the selected disk and storage class;
+Piraeus includes both local and replicated classes, but replication alone does not
+establish KubeVirt migration support.
 
-1. Trial upstream KubeVirt on the existing Talos/NixOS cluster with one
-   disposable Linux VM.
-2. Treat storage as the hard part. The current active storage classes are mostly
-   local or region-local; they do not by themselves provide VM HA across node
-   loss.
-3. If VM HA/live migration becomes important, pick or revive a VM-suitable
-   replicated storage layer before putting anything important on it. The likely
-   candidates are Longhorn or Rook/Ceph, not OpenEBS LVM local volumes and not
-   SeaweedFS CSI.
-4. Do not bet on a generic "suspend to disk and resume anywhere" feature in
-   vanilla KubeVirt. KubeVirt has pause/unpause, disk snapshots, live migration,
-   and restart-on-failure semantics, but not a normal end-user hibernate-style
-   save of RAM+CPU state to durable storage for later resume.
+Do not bet on a generic "suspend to disk and resume anywhere" feature in
+vanilla KubeVirt. KubeVirt has pause/unpause, disk snapshots, live migration,
+and restart-on-failure semantics, but not a normal end-user hibernate-style
+save of RAM+CPU state to durable storage for later resume.
 
 The short version: KubeVirt is the right existing add-on. Harvester/SUSE
 Virtualization is the right packaged appliance if we want a separate
@@ -48,31 +46,11 @@ eviction or when the source node is still healthy enough to participate.
 
 ## Current Cluster Fit
 
-The current storage table in `cluster/README.md` says all storage is
-region-local, with:
-
-- `local-path-proxmox`, `local-path-ovh-{hdd,ssd}`, `local-path-home-ssd`:
-  node/region-local host storage.
-- `lvm-proxmox-ssd` and `lvm-proxmox-hdd`: OpenEBS LVM LocalPV on Proxmox
-  nodes.
-- `proxmox-csi-retain`: not installed; Proxmox CSI is not part of the current
-  storage platform.
-- `longhorn`: not installed; any revival would be a fresh storage trial.
-- SeaweedFS is present for object/S3 workloads and experimental CSI/FUSE use,
-  but repo notes already say not to use it for core infra until recovery,
-  upgrades, and node restarts are boring.
-
-Implications:
-
-- A VM on `lvm-proxmox-*` is good for fast local storage, but the VM is tied to
-  the Proxmox node/VG. This does not solve "node died, restart elsewhere."
-- A VM on `local-path-*` is even more node-coupled.
-- There is currently no `VolumeSnapshotClass` in the cluster, based on existing
-  `volsync-backup.yaml` comments and `rg` inspection. KubeVirt snapshots need a
-  snapshot-capable CSI class.
-- If live migration/HA is a requirement, the missing foundation is a real VM
-  storage layer: a newly evaluated Longhorn deployment, Rook/Ceph, or an
-  external NAS/SAN/NFS design with acceptable performance and failure semantics.
+KubeVirt and CDI are already deployed; see <kubevirt_nixos_vm.md>. Current
+Piraeus and SeaweedFS classes are listed in <topology.md>. Piraeus offers local
+and replicated classes; do not infer VM live-migration, snapshot or recovery
+support from replication alone. Validate the chosen VM disk, CSI capabilities
+and failure-domain requirements together.
 
 ## Option 1: Upstream KubeVirt
 
@@ -300,20 +278,20 @@ Verdict: best primitive, but not the existing product we want for this question.
 The storage decision determines whether node-failure recovery and live migration
 are real or mostly aspirational.
 
-| Storage option              | VM fit                               | Notes                                                                                                                                                                                            |
-| --------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Current OpenEBS LVM LocalPV | Good local performance, poor HA      | Node/VG-local. Fine for disposable VMs and experiments. Not enough for node-down recovery.                                                                                                       |
-| Current local-path classes  | Poor for VM HA                       | Host-path storage. Useful for simple workloads, not VM resilience.                                                                                                                               |
-| Current Proxmox CSI         | Maybe for Proxmox-pinned VMs         | Could preserve disks across some Kubernetes node churn, but depends on Proxmox topology/API access and does not satisfy OVH-only resilience goals.                                               |
-| Longhorn                    | Good candidate if revived            | Distributed block storage, snapshots, backups, replica rebuild. Harvester is built around it. We previously retired it for active workloads, so this needs a fresh trial rather than assumption. |
-| Rook/Ceph                   | Strong conventional KubeVirt storage | Most standard serious self-hosted answer. Heavier operational cost and memory/disk overhead. Could provide RBD snapshots and CephFS/RWX paths depending on design.                               |
-| NFS/NAS                     | Simple RWX, mixed reliability/perf   | Easy live-migration substrate if backed by reliable NAS, but one NAS can become the new single point of failure.                                                                                 |
-| SeaweedFS CSI/FUSE          | Not recommended for VM disks         | Existing repo notes already treat it as experimental/POSIX-ish and unsuitable for core infra until more validation.                                                                              |
+| Storage option        | VM fit                               | Notes                                                                                                                                                                                            |
+| --------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OpenEBS LVM LocalPV   | Good local performance, poor HA      | Node/VG-local. Fine for disposable VMs and experiments. Not enough for node-down recovery.                                                                                                       |
+| local-path classes    | Poor for VM HA                       | Host-path storage. Useful for simple workloads, not VM resilience.                                                                                                                               |
+| Proxmox CSI (retired) | Maybe for Proxmox-pinned VMs         | Could preserve disks across some Kubernetes node churn, but depends on Proxmox topology/API access and does not satisfy OVH-only resilience goals.                                               |
+| Longhorn              | Good candidate if revived            | Distributed block storage, snapshots, backups, replica rebuild. Harvester is built around it. We previously retired it for active workloads, so this needs a fresh trial rather than assumption. |
+| Rook/Ceph             | Strong conventional KubeVirt storage | Most standard serious self-hosted answer. Heavier operational cost and memory/disk overhead. Could provide RBD snapshots and CephFS/RWX paths depending on design.                               |
+| NFS/NAS               | Simple RWX, mixed reliability/perf   | Easy live-migration substrate if backed by reliable NAS, but one NAS can become the new single point of failure.                                                                                 |
+| SeaweedFS CSI/FUSE    | Not recommended for VM disks         | FUSE semantics and observed fsync latency warrant workload-specific validation.                                                                                                                  |
 
 ## Recommendation
 
-Adopt upstream KubeVirt first, not Harvester, if the goal is to add VMs to the
-existing cluster.
+The original recommendation was to adopt upstream KubeVirt rather than Harvester.
+KubeVirt is now installed; evaluate remaining VM requirements on that deployment.
 
 Initial scope should be explicit:
 
@@ -337,19 +315,9 @@ orchestrator project.
 
 ## Suggested Next Experiment
 
-Run a bounded KubeVirt spike:
-
-1. Pick one KVM-capable worker node.
-2. Install KubeVirt and CDI with Flux or a temporary manifest.
-3. Create one Fedora/Ubuntu VM with cloud-init and no important data.
-4. Validate: start, stop, console, SSH, reboot, pod cleanup.
-5. Validate storage behavior on `lvm-proxmox-ssd` or another disposable class.
-6. Separately choose a snapshot-capable storage backend before testing
-   `VirtualMachineSnapshot`.
-7. If that works, evaluate one HA storage option: Longhorn revival vs Rook/Ceph.
-
-Stop the spike if KubeVirt needs host-level changes that are awkward on Talos,
-or if storage turns into a bigger project than the VM use case justifies.
+Use an existing KubeVirt deployment with a disposable VM to evaluate the chosen
+Piraeus storage class, snapshot support and recovery or live migration under the
+specific failure scenario. KubeVirt and CDI do not need to be installed again.
 
 ## Sources
 

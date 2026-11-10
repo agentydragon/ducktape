@@ -43,15 +43,3 @@ oci_image(
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
-
-py_library(
-    name = "mcp_client",
-    srcs = ["mcp_client.py"],
-    deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx2",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-        "@pypi//more_itertools",
-    ],
-)

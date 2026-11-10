@@ -8,18 +8,18 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from agentplane.native.claude import wire
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.harness import ClaudeLauncher
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.testing.model import MODEL
-from util.bazel.runfiles import get_required_path
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.mark.parametrize("scenario", ["clean-completed", "crash-completed", "crash-active"])
-async def test_child_resume(tmp_path: Path, scenario: str) -> None:
+async def test_child_resume(runfiles: Runfiles, tmp_path: Path, scenario: str) -> None:
     crash = scenario != "clean-completed"
     active = scenario == "crash-active"
     logs = undeclared_outputs_dir() / f"stdio-{scenario}"
@@ -32,7 +32,7 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
         workspace=tmp_path,
         logs=logs,
         config=config,
-        binary=str(get_required_path("claude_remote_io_cli_linux_x64/claude")),
+        binary=str(runfiles.root() / "claude_remote_io_cli_linux_x64/claude"),
         base_environment={"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "NO_PROXY": "127.0.0.1"},
     )
     async with AnthropicMessages() as model:

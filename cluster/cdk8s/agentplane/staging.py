@@ -5,6 +5,8 @@ Google Calendar MCP action groups.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart, Duration
@@ -24,17 +26,30 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
+from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.app.settings import Settings
+from agentplane.central_sampler.settings import (
+    AnthropicBlockBindingConfig,
+    AnthropicCompactionConfig,
+    AnthropicMessagesConfig,
+    AnthropicPromptCacheConfig,
+    AnthropicThinkingConfig,
+    AuthConfig,
+    ConnectionConfig,
+    ModelConfig,
+    ResponsesConfig,
+)
+from agentplane.env.config import GuestResources, ResourceLimits
+from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
-from agentplane.runner.configuration import GuestResources, ResourceLimits
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
-    cnpg,
     external_creds,
     ha_mcp,
     kubectl_passthrough_mcp,
@@ -44,27 +59,44 @@ from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
     command_sandbox,
+    electric,
+    environment_vm,
+    kubernetes_account_ref,
+    llm_ingress,
     mcp_edge,
     notifications,
     policy_controller,
     policy_controller_rbac,
+    runner_gateway_workload,
     staging_config,
     staging_grants,
+    workload_certificate_admission,
+    workload_tls,
 )
-from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
+from cluster.cdk8s.agentplane.actions_staging_policies import (
+    CLAUDE_AI,
+    HAKU_AGENT,
+    HAKU_CI,
+    HAKU_UI,
+    add_staging_action_policies,
+    caller_role_sets,
+)
+from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.database import DbProps
+from cluster.cdk8s.agentplane.egress import DEFAULT_POLICIES
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
     STAGING_CREDENTIALS_NAMESPACE,
     EgressCredentials,
     credential_external_secret,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import PLAID_PGWEB_CREDENTIAL, add_staging_egress_credentials
+from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
     BearerMcpMount,
+    CentralSamplerProps,
     EgressProps,
     Environment,
     GitHubAppProps,
@@ -72,25 +104,36 @@ from cluster.cdk8s.agentplane.environment import (
     McpEdgeProps,
     OrchestrationProps,
     ReplicaProfile,
+    SessionDelegationProps,
     WebPushProps,
 )
+from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
 from cluster.cdk8s.agentplane.generation import ManifestLayout
-from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.agentplane.runner_sandbox import KeyFile
+from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
+from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
+from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku_ci import egress_gateway, runner
+from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS, model_configs
+from cluster.cdk8s.providers.agentplane.identity import Identity
+from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRoleSet
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
+from model_catalog.catalog import Provider
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -107,6 +150,25 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
+
+
+# Official OpenAI routes use Responses Lite and freeform Code mode.
+# New third-party coding routes use standard Responses with JSON exec.
+_LITE_RESPONSES = ResponsesConfig(dialect="lite")
+_STANDARD_RESPONSES = ResponsesConfig(dialect="standard")
+_ANTHROPIC_MESSAGES = AnthropicMessagesConfig(
+    max_tokens=32_768,
+    thinking=AnthropicThinkingConfig(
+        type="adaptive", block_binding=AnthropicBlockBindingConfig(prefix_mismatch_behavior="error")
+    ),
+    prompt_cache=AnthropicPromptCacheConfig(ttl="5m"),
+    cache_diagnostics=True,
+    per_message_effort=True,
+    strict_tool_input=True,
+    eager_input_streaming=True,
+    compaction=AnthropicCompactionConfig(max_tokens=8_192, auto_compact_tokens=750_000),
+)
+
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
 # The outer service cap leaves 1 GiB for guest services and kernel work.
@@ -164,13 +226,20 @@ _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
+_ANTHROPIC_API_KEY_SECRET = "agentplane-staging-anthropic-api-key"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
 # staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
 # the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
-POD_TEMPLATE = "runner-ducktape"
-_RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner-ducktape"
-# The canonical BuildBuddy key, projected into the runner's workload containers for real `bbr` runs and
+POD_TEMPLATE = "environment-tools"
+_RUNTIME_CATALOG = runtime_catalog(
+    STAGING_APP_MODELS,
+    templates=(POD_TEMPLATE, environment_vm.NAME),
+    workspace_root_enforced_templates=(environment_vm.NAME,),
+    central_sampler_enabled=True,
+)
+_ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
+# The canonical BuildBuddy key, projected into the Environment Runtime workload containers for real `bbr` runs and
 # named there for the harnesses it spawns (agentplane/docs/buildbuddy_remote_auth.md's stopgap). ESO
 # copies the secret below; the egress policy still bounds where the key can travel.
 _BUILDBUDDY_KEY = KeyFile(
@@ -260,7 +329,7 @@ _ACTION_GROUPS = {
             config={"transport": "streamable-http", "url": _GROCY_SF_MCP_URL, "server_id": "grocy_sf", "auth": "oauth"},
         ),
     ),
-    "sandbox": ActionGroup(
+    actions.SANDBOX_GROUP: ActionGroup(
         title="Sandbox",
         description=(
             "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
@@ -275,7 +344,7 @@ _ACTION_GROUPS = {
         ),
         # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
         # auto-approves them for the Connection's claude-ai account.
-        direct_tools=frozenset(SandboxAction),
+        direct_tools=frozenset(action.value for action in Action),
     ),
     "ssh": ActionGroup(
         title="SSH",
@@ -352,13 +421,31 @@ _ACTION_GROUPS = {
 LAYOUT = ManifestLayout(
     flux_description=(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
-        "Actions, app, runner template, and operator RBAC."
+        "Actions, app, environment-tools template, and operator RBAC."
     ),
     output_dir=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}/image-pins",
     delivery_output_dir=f"{GENERATED_ROOT}/{STAGING_NAMESPACE}-delivery",
     extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
 )
+
+
+def _app_config(*, identity_catalog: bool) -> Settings:
+    return staging_config.config(
+        namespace=STAGING_NAMESPACE,
+        sandbox_template=POD_TEMPLATE,
+        models=STAGING_APP_MODELS,
+        runtime=_RUNTIME_CATALOG,
+        central_sampler_enabled=True,
+        action_federation=_ACTION_FEDERATION,
+        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
+        app_origin=f"https://{_HOSTNAME}",
+        oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
+        electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
+        identity_catalog=identity_catalog,
+    )
+
+
 ENV = Environment(
     namespace=STAGING_NAMESPACE,
     description=(
@@ -372,14 +459,63 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    app_config=staging_config.config(
-        namespace=STAGING_NAMESPACE,
-        sandbox_template=POD_TEMPLATE,
-        models=STAGING_APP_MODELS,
-        action_federation=_ACTION_FEDERATION,
-        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
+    app_config=_app_config(identity_catalog=False),
+    runtime_catalog=_RUNTIME_CATALOG,
+    default_policy_sets=frozenset(DEFAULT_POLICIES),
+    # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
+    #   removes the ServiceAccount-subject rendering and this switch.
+    identity_catalog=False,
+    central_sampler=CentralSamplerProps(
+        models={
+            route.id: (
+                ModelConfig(
+                    connection="anthropic-api",
+                    provider_model=route.model.id,
+                    api="anthropic_messages",
+                    anthropic_messages=_ANTHROPIC_MESSAGES,
+                    exec_encoding="json",
+                    reasoning_efforts=set(route.reasoning_efforts),
+                )
+                if route.upstream.provider == Provider.ANTHROPIC_API
+                else ModelConfig(
+                    connection="llm-ingress",
+                    provider_model=route.id,
+                    api="responses",
+                    responses=(_LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES),
+                    exec_encoding="freeform" if route.upstream.provider == Provider.CHATGPT else "json",
+                    reasoning_efforts={"", *route.reasoning_efforts},
+                )
+            )
+            for route in STAGING_APP_MODELS.central_sampler
+        },
+        connections={
+            "llm-ingress": ConnectionConfig(
+                base_url=(
+                    f"https://{llm_ingress.service(STAGING_NAMESPACE).fqdn}:"
+                    f"{llm_ingress.service(STAGING_NAMESPACE).port.number}"
+                ),
+                auth=AuthConfig(type="bearer", credential_file=Path("/var/run/secrets/central-sampler/llm")),
+                tls=workload_tls.client_tls(LLM_INGRESS_URI),
+            ),
+            "anthropic-api": ConnectionConfig(
+                base_url="https://api.anthropic.com",
+                auth=AuthConfig(
+                    type="anthropic_api_key", credential_file=Path("/var/run/secrets/central-sampler-anthropic/api-key")
+                ),
+            ),
+        },
+        connection_credentials={
+            "anthropic-api": SecretRef(namespace=STAGING_NAMESPACE, name=_ANTHROPIC_API_KEY_SECRET).key(
+                ANTHROPIC_API_KEY.key
+            )
+        },
+        max_live_sessions=32,
+        turn_timeout_seconds=3600,
+        rpc_timeout_seconds=30,
+        lease_seconds=60,
     ),
     settle_deltas=True,
+    notifications_debounce=NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     llm_ingress=LlmIngressProps(
@@ -396,6 +532,8 @@ ENV = Environment(
                         AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
                         AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
                         AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
+                        AttributionField(key="agentplane.identity", source=VerifiedClaim.IDENTITY),
+                        AttributionField(key="agentplane.identity_uid", source=VerifiedClaim.IDENTITY_UID),
                     ],
                 )
             ],
@@ -413,6 +551,13 @@ ENV = Environment(
                 AttributionField(
                     key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=VerifiedClaim.POD_UID
                 ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.identity", source=VerifiedClaim.IDENTITY
+                ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.identity_uid",
+                    source=VerifiedClaim.IDENTITY_UID,
+                ),
             ],
         ),
     ),
@@ -429,7 +574,8 @@ ENV = Environment(
         ),
         traffic_distribution="PreferClose",
         zones=node_scheduling.HOME_AND_OVH_ZONES,
-        external_workload_namespaces=(public_coder_egress.NAMESPACE,),
+        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE, runner.NAMESPACE),
+        standing_workload_namespaces=(haku_ui_egress.NAMESPACE, runner.NAMESPACE),
     ),
     app=AppProps(
         origin=f"https://{_HOSTNAME}",
@@ -441,7 +587,9 @@ ENV = Environment(
     actions=ActionsProps(
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
-        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
+        caller_service_account_namespaces=frozenset(
+            {STAGING_NAMESPACE, public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE}
+        ),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,
         mcp_client_metadata=McpClientMetadataSettings(
@@ -497,7 +645,7 @@ ENV = Environment(
             direct_tools=frozenset(
                 {
                     "list_launch_presets",
-                    "open_session",
+                    "create_session",
                     "submit_input",
                     "interrupt_turn",
                     "change_model",
@@ -509,11 +657,16 @@ ENV = Environment(
                 }
             )
         ),
+        session_delegation=SessionDelegationProps(
+            direct_tools_by_group={
+                "environments": frozenset({"list", "get", "resume"}),
+                "sessions": frozenset(
+                    {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
+                ),
+            }
+        ),
     ),
     mcp_edge=McpEdgeProps(
-        replicas=ReplicaProfile(
-            count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None
-        ),
         operator_oidc=_FEDERATION_TARGET,
         caller_service_account_namespaces=frozenset({STAGING_NAMESPACE}),
         mintable_accounts=frozenset({ServiceAccountRef(namespace=STAGING_NAMESPACE, name="claude-ai")}),
@@ -533,8 +686,25 @@ ENV = Environment(
 )
 
 
+def environment(*, identity_catalog: bool) -> Environment:
+    """Staging's environment with its policy catalog in the ServiceAccount or the identity shapes. In
+    the identity catalog every launch also holds the shared diagnostics account's use set, the reach
+    `basic` gave it through the Sandbox's own ServiceAccount; Flux bindings name it only explicitly."""
+    return replace(
+        ENV,
+        identity_catalog=identity_catalog,
+        app_config=_app_config(identity_catalog=identity_catalog),
+        default_policy_sets=(
+            ENV.default_policy_sets | {shared_diagnostics(ENV.namespace).credential_name}
+            if identity_catalog
+            else ENV.default_policy_sets
+        ),
+    )
+
+
 def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
-    """The complete PolicySet grant inventory materialized by staging."""
+    """The assignable sets' Kubernetes grants, by set: PolicySet rules, or in the identity catalog
+    the KubernetesRoleSets of the same names."""
     catalog = staging_grants.catalog(ENV.namespace)
     sets = agent_access_profiles.policy_set_grants(catalog)
     sets[TOOL_CONFIG_GRANT] = (catalog[TOOL_CONFIG_GRANT],)
@@ -545,26 +715,36 @@ def assignable_grants() -> tuple[KubernetesGrant, ...]:
     return tuple(grant for grants in assignable_policy_sets().values() for grant in grants)
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, env: Environment = ENV) -> Chart:
     chart = environment_chart(
         app,
-        ENV,
+        env,
         db=DbProps(
-            instances=2, wal_archive=True, profile=cnpg.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
+            instances=2, wal_archive=True, profile=cluster.OVH_PIRAEUS_SSD, size="16Gi", resize_in_use_volumes=True
         ),
-        runner_name=POD_TEMPLATE,
-        runner_image=_RUNNER_IMAGE,
-        runner_key_files=(_BUILDBUDDY_KEY,),
+        environment_template_name=POD_TEMPLATE,
+        environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
+        environment_runtime_key_files=(_BUILDBUDDY_KEY,),
+    )
+    # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
+    workload_certificate_admission.add_workload_certificate_admission(
+        chart,
+        workload_credential_issuers={ServiceAccountRef(namespace=env.namespace, name=policy_controller.NAME)},
+        service_requester="system:serviceaccount:flux-system:kustomize-controller",
+        cert_manager=ServiceAccountRef(namespace="cert-manager", name="cert-manager"),
     )
     NetworkPolicy(
         chart,
         "networkpolicy-app-to-mcp-edge",
-        metadata=ApiObjectMetadata(name="app-to-mcp-edge", namespace=ENV.namespace),
-        endpoint_selector=app_component.service(ENV.namespace).pods.selector,
+        metadata=ApiObjectMetadata(name="app-to-mcp-edge", namespace=env.namespace),
+        endpoint_selector=app_component.service(env.namespace).pods.selector,
         egress=[_CONNECTION_SERVICE.egress()],
     )
+    haku_ui_egress.add_gateway_resources(chart, namespace=STAGING_NAMESPACE)
+    haku_ui_egress.add_workload_credentials(chart)
+    egress_gateway.add_gateway(chart, env, clients=runner.RUNNER_PODS)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
-    # runner template projects `_BUILDBUDDY_KEY` into its workload containers only.
+    # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
         chart,
         namespace=STAGING_NAMESPACE,
@@ -573,7 +753,7 @@ def chart(app: App) -> Chart:
         key=_BUILDBUDDY_KEY.file_name,
         store=EXTERNAL_CREDS_STORE,
     )
-    notification_service = notifications.service(STAGING_NAMESPACE)
+    notification_service = notifications.webhook_service(STAGING_NAMESPACE)
     https_route(
         chart,
         "notifications-github-webhook-route",
@@ -591,41 +771,64 @@ def chart(app: App) -> Chart:
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
     command_sandbox.CommandSandbox(
-        chart, "command-sandbox", ENV, image_pull_secret_name=SANDBOX_SECRET_NAME
+        chart, "command-sandbox", env, image_pull_secret_name=SANDBOX_SECRET_NAME
     ).add_platform_resources()
     # Compose staging's complete PolicySets from the shared grant definitions and its own egress
     # rules before materializing them. The controller workload and its RBAC are separate constructs.
     assignable_sets = assignable_policy_sets()
-    deployment_rules = {
-        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
-        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
-            credential=PLAID_PGWEB_CREDENTIAL
-        ),
-    }
+    egress_rules = staging_config.assignable_set_egress_rules()
+    role_sets: dict[str, KubernetesRoleSet] = {}
     for name, grants in sorted(assignable_sets.items()):
-        PolicySet(
+        if not env.identity_catalog:
+            PolicySet(
+                chart,
+                f"policy-set-{name}",
+                metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+                rules=[*agent_access_profiles.rules_for_grants(grants), *egress_rules.get(name, ())],
+            )
+            continue
+        role_sets[name] = KubernetesRoleSet(
             chart,
-            f"policy-set-{name}",
-            metadata=ApiObjectMetadata(name=name, namespace=ENV.namespace),
-            rules=[*agent_access_profiles.rules_for_grants(grants), *deployment_rules.get(name, ())],
+            f"kubernetes-role-set-{name}",
+            metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+            rules=agent_access_profiles.role_set_rules_for_grants(grants),
         )
+        if name in egress_rules:
+            PolicySet(
+                chart,
+                f"policy-set-{name}",
+                metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+                rules=egress_rules[name],
+            )
+    if env.identity_catalog:
+        _add_identity_catalog(chart, env, role_sets=role_sets)
     for group in staging_config.INBOX_GROUPS:
         PolicySet(
             chart,
             f"policy-set-{staging_config.send_to(group)}",
-            metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=ENV.namespace),
+            metadata=ApiObjectMetadata(name=staging_config.send_to(group), namespace=env.namespace),
             rules=[Rule.send_message(inbox_tags=[group])],
         )
+    # The issuer serves Sandboxes' own namespace and every namespace holding standing records.
+    workload_namespaces = {env.namespace, *env.egress.standing_workload_namespaces}
     controller = policy_controller.PolicyController(
-        chart, "policy-controller", ENV, placement=node_scheduling.HIL_OVH, registry_secret_name=REGISTRY_SECRET_NAME
+        chart,
+        "policy-controller",
+        env,
+        accounts_namespace=kubernetes_accounts_namespace(env.namespace),
+        workload_namespaces=workload_namespaces,
+        placement=node_scheduling.HIL_OVH,
+        registry_secret_name=REGISTRY_SECRET_NAME,
     )
     controller.add_platform_resources()
     policy_controller_rbac.PolicyControllerRbac(
         chart,
         "policy-controller-rbac",
-        ENV,
+        env,
         account=controller.account,
         assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
+        accounts_namespace=kubernetes_accounts_namespace(env.namespace),
+        workload_namespaces=workload_namespaces,
     )
     reader = ServiceAccount(
         chart,
@@ -653,6 +856,30 @@ def chart(app: App) -> Chart:
             )
         ),
         data=[remote_data(_LITELLM_KEY_SECRET, "api-key")],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+    )
+    ExternalSecret(
+        chart,
+        "anthropic-api-key-external-secret",
+        metadata=ApiObjectMetadata(
+            name=_ANTHROPIC_API_KEY_SECRET,
+            namespace=STAGING_NAMESPACE,
+            annotations={
+                "description": "ESO copy of the canonical Anthropic API key from litellm for the central sampler."
+            },
+        ),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(
+            single_secret_store(
+                chart,
+                "agentplane-staging-anthropic-api-key",
+                reader=reader,
+                source_namespace=ANTHROPIC_API_KEY.secret.namespace,
+                source_secret=ANTHROPIC_API_KEY.secret.name,
+                consumer_namespace=STAGING_NAMESPACE,
+            )
+        ),
+        data=[remote_data(ANTHROPIC_API_KEY.secret.name, ANTHROPIC_API_KEY.key, secret_key=ANTHROPIC_API_KEY.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     ExternalSecret(
@@ -711,14 +938,82 @@ def chart(app: App) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(chart)
+    add_staging_action_policies(chart, identity_catalog=env.identity_catalog)
     EgressCredentials(
-        chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
+        chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
+    )
+    KubernetesAccounts(
+        chart,
+        "kubernetes-accounts",
+        namespace=kubernetes_accounts_namespace(env.namespace),
+        proxy_namespace=env.namespace,
     )
     add_staging_egress_credentials(
-        chart, namespace=ENV.namespace, credentials_namespace=ENV.egress.credentials_namespace
+        chart,
+        namespace=env.namespace,
+        credentials_namespace=env.egress.credentials_namespace,
+        identity_catalog=env.identity_catalog,
     )
     return chart
+
+
+def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]) -> None:
+    """The standing callers' identities and the shared account `basic` acts as."""
+    for caller, description in (
+        (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
+        (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
+        (HAKU_UI, "Haku's operator UI, haku-anki and haku-jupyter, in haku-sandbox."),
+        (HAKU_CI, "haku-ci's builds, through its egress relay."),
+        (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
+    ):
+        Identity(
+            chart,
+            f"identity-{caller.identity}",
+            metadata=ApiObjectMetadata(name=caller.identity, namespace=env.namespace),
+            description=description,
+        )
+    KubernetesAccount(
+        chart,
+        "kubernetes-account-shared-diagnostics",
+        account=shared_diagnostics(env.namespace),
+        policy_namespace=env.namespace,
+        description="Read-only namespace diagnostics every agent may use.",
+        role_sets=[role_sets[agent_access_profiles.SHARED_DIAGNOSTICS_POLICY]],
+    )
+    # One account per preset that grants Kubernetes roles, and per standing caller with roles of its
+    # own (operator, 2026-11-09), so each agent has one kubectl identity.
+    accounts = [
+        *(
+            (preset, f"The '{preset}' preset's Kubernetes identity.", staging_config.preset_role_sets(preset))
+            for preset in agent_access_profiles.MANAGED_GRANTS
+        ),
+        *(
+            (caller.identity, f"The {caller.identity} agent's own Kubernetes identity.", caller_role_sets())
+            for caller in (CLAUDE_AI, HAKU_AGENT)
+        ),
+    ]
+    for name, description, names in accounts:
+        KubernetesAccount(
+            chart,
+            f"kubernetes-account-{name}",
+            account=kubernetes_account_ref.account(env.namespace, name),
+            policy_namespace=env.namespace,
+            description=description,
+            role_sets=[role_sets[role_set] for role_set in names],
+        )
+
+
+def delivery_chart(app: App, env: Environment = ENV) -> Chart:
+    return runner_gateway_workload.serving_chart(
+        app,
+        env=env,
+        operator_callers={
+            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(
+                env.namespace
+            ).pods
+        },
+        extra_delegated_methods=("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",),
+    )
 
 
 def _add_session_secret(scope: Chart) -> None:
@@ -751,6 +1046,7 @@ def agentplane_staging(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
+    monitoring_crds: Kustomization,
     crossplane_keys: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
@@ -788,6 +1084,12 @@ def agentplane_staging(
             KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
+                name=_ANTHROPIC_API_KEY_SECRET,
+                namespace=STAGING_NAMESPACE,
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
                 name=_OIDC_SESSION_SECRET,
                 namespace=STAGING_NAMESPACE,
             ),
@@ -799,6 +1101,12 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(LAYOUT.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno, crossplane_keys
+            agentplane_crds,
+            cert_manager_trust,
+            cnpg,
+            external_secrets_operator,
+            kyverno,
+            monitoring_crds,
+            crossplane_keys,
         ),
     )

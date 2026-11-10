@@ -20,17 +20,18 @@ from fastapi.staticfiles import StaticFiles
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
 from finance.plaid.spend.configuration import load_configuration
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
-from finance.plaid.spend.portfolio import CoinbaseClient
-from finance.plaid.spend.service import SpendService
-from finance.plaid.spend.settings import SpendSettings
-from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
-from util.oidc_login import LoginConfig, current_session_is_valid, install_login
-from util.oidc_principal import (
+from finance.plaid.spend.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
+from finance.plaid.spend.pace_history import PaceHistory
+from finance.plaid.spend.portfolio import CoinbaseClient
+from finance.plaid.spend.service import SpendService
+from finance.plaid.spend.settings import SpendSettings
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
+from util.oidc_login import LoginConfig, current_session_is_valid, install_login
 
 _UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 
@@ -88,6 +89,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
             "/api/v1/events",
             "/api/v1/configuration",
             "/api/v1/transactions",
+            "/api/v1/pace-history",
             "/api/v1/sustainability",
             "/api/v1/sustainability/windows",
         },
@@ -150,6 +152,10 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         _access: SpendAccess, reader: SpendReader, period: TransactionPeriodId = PeriodId.ROLLING_30D
     ) -> SpendTransactionsView:
         return await reader.read_transactions(period)
+
+    @app.get("/api/v1/pace-history", response_model=PaceHistory | None)
+    async def get_pace_history(_access: SpendAccess, reader: SpendReader) -> PaceHistory | None:
+        return await reader.read_pace_history()
 
     @app.get("/api/v1/sustainability", response_model=SustainabilityView)
     async def get_sustainability(

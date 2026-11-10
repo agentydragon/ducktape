@@ -19,6 +19,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":format_lib",
         "//aiquota:models",
         "//aiquota:pace",
         "//aiquota:peak_windows",
@@ -35,7 +36,7 @@ py_library(
         ":format_lib",
         ":view_model_lib",
         "//aiquota:models",
-        "//aiquota:pace",
+        "@pypi//rich",
     ],
 )
 
@@ -45,20 +46,24 @@ py_library(
     imports = ["../.."],
     visibility = ["//aiquota:__pkg__"],
     deps = [
+        ":view_model_lib",
         "//aiquota:models",
-        "//aiquota:pace",
     ],
 )
 
 py_test(
     name = "test_tmux",
     srcs = ["test_tmux.py"],
-    imports = ["../.."],
+    data = ["//aiquota/testing:fixtures"],
     deps = [
         ":tmux_lib",
+        ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
+        "//aiquota/testing:quota_fixtures",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -73,13 +78,14 @@ py_test(
     deps = [
         ":format_lib",
         ":human_lib",
+        ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
         "//aiquota/testing:quota_fixtures",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
+        "@rules_python//python/runfiles",
     ],
 )
 

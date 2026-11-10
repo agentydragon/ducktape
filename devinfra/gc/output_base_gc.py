@@ -1,10 +1,12 @@
 """Find and safely remove orphaned Bazel output bases and bases for `/tmp` workspaces.
 
-Only default, MD5-named output bases directly below one output user root are
-eligible. A base is eligible when its workspace is absent or under `/tmp`. The
-workspace is recovered from whichever of the base's own records (server/cmdline,
-README, DO_NOT_BUILD_HERE) are present — a dead or never-started server does not
-block cleanup — and every present record must agree and hash to the base name.
+Two layouts are eligible: default, MD5-named output bases directly below one output
+user root, and Claude Code's per-session bases (`~/.claude/session-env/<session
+id>/bazel-output-base`, created by `claude-hook`'s session bazelrc). A base is
+eligible when its workspace is absent or under `/tmp`. The workspace is recovered
+from whichever of the base's own records (server/cmdline, README, DO_NOT_BUILD_HERE)
+are present — a dead or never-started server does not block cleanup — and every
+present record must agree (and, for an MD5-named base, hash to the base name).
 Ambiguous state is reported for manual review and is never deleted.
 """
 
@@ -29,12 +31,18 @@ from pathlib import Path
 import humanize
 from tabulate import tabulate
 
-from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressSink
+from devinfra.gc.verdict import Prunable, Retained, Review, verdict_of
 
 logger = logging.getLogger(__name__)
 
 _HASHED_BASE_RE = re.compile(r"[0-9a-f]{32}")
 _QUARANTINE_PREFIX = ".bazel-output-base-gc-"
+# Claude Code sessions build in a per-session output base so a session's server never
+# collides with the user's own; the location is fixed by `claude-hook` (devinfra/claude).
+_SESSION_ENV_BASE_GLOB = ".claude/session-env/*/bazel-output-base"
+_SESSION_ENV_QUARANTINE_GLOB = f".claude/session-env/*/{_QUARANTINE_PREFIX}*"
 _METADATA_LIMIT = 4 * 1024 * 1024
 _TMP_ROOT = Path("/tmp")
 
@@ -48,6 +56,11 @@ class PrunableBaseReason(enum.StrEnum):
     TMP_WORKSPACE = enum.auto()
 
 
+class BaseLayout(enum.StrEnum):
+    HASHED = enum.auto()  # <output user root>/<md5(workspace)>: the name anchors the workspace records
+    SESSION_ENV = enum.auto()  # ~/.claude/session-env/<id>/bazel-output-base: the name says nothing
+
+
 @dataclass(frozen=True, slots=True)
 class FileIdentity:
     device: int
@@ -55,11 +68,12 @@ class FileIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableBase:
+class PrunableBase(Prunable):
     path: Path
     workspace: Path
     identity: FileIdentity
     last_activity_ns: int
+    layout: BaseLayout  # deletion revalidates under the same provenance rules
     reason: PrunableBaseReason = PrunableBaseReason.WORKSPACE_ABSENT
 
 
@@ -81,7 +95,7 @@ class ReviewBaseReason(enum.StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedBase:
+class RetainedBase(Retained):
     path: Path
     workspace: Path | None
     reason: RetainedBaseReason
@@ -90,7 +104,7 @@ class RetainedBase:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewBase:
+class ReviewBase(Review):
     path: Path
     reason: ReviewBaseReason
     last_activity_ns: int | None
@@ -101,33 +115,19 @@ class ReviewBase:
 type Inspection = PrunableBase | RetainedBase | ReviewBase
 
 
-@dataclass(frozen=True, slots=True)
-class DeletedBase:
-    path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedBase:
-    path: Path
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedBase:
-    path: Path
-    quarantine: Path | None
-    error: str
-
-
-type DeletionResult = DeletedBase | SkippedBase | FailedBase
-
-
 def default_output_user_root() -> Path:
     cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     return cache_home / "bazel" / f"_bazel_{pwd.getpwuid(os.getuid()).pw_name}"
 
 
-def _identity(metadata: os.stat_result) -> FileIdentity:
+def session_env_output_bases() -> list[Path]:
+    """Every Claude Code per-session output base on this machine, plus any quarantine a
+    previous GC left beside one (the scan reports those for review like the root's)."""
+    home = Path.home()
+    return sorted([*home.glob(_SESSION_ENV_BASE_GLOB), *home.glob(_SESSION_ENV_QUARANTINE_GLOB)])
+
+
+def file_identity(metadata: os.stat_result) -> FileIdentity:
     return FileIdentity(device=metadata.st_dev, inode=metadata.st_ino)
 
 
@@ -208,14 +208,18 @@ def _workspace_from_marker(base: Path, *, uid: int) -> Path | None:
     return Path(os.fsdecode(contents))
 
 
-def _read_workspace_provenance(base: Path, *, uid: int) -> Path:
+def _read_workspace_provenance(base: Path, *, uid: int, layout: BaseLayout) -> Path:
     """Recover the base's workspace from any of its independent on-disk records.
 
     server/cmdline, README, and DO_NOT_BUILD_HERE each record the workspace path,
-    and the base directory name is that path's MD5 — the anchor that makes any one
-    record authoritative. A dead or never-started server (no server/cmdline) does
-    not block classification: every record that *is* present must agree and hash to
-    the base name, and only all three being absent is genuinely undetermined.
+    and a default base's directory name is that path's MD5 — the anchor that makes
+    any one record authoritative. A dead or never-started server (no server/cmdline)
+    does not block classification: every record that *is* present must agree and
+    hash to the base name, and only all three being absent is genuinely undetermined.
+
+    A session-env base is named `bazel-output-base` whatever its workspace, so the
+    hash anchor cannot apply; only for that layout is it skipped, and agreement of
+    the present records is the whole proof.
     """
     sources = {
         "server/cmdline": _workspace_from_cmdline(base, uid=uid),
@@ -230,9 +234,10 @@ def _read_workspace_provenance(base: Path, *, uid: int) -> Path:
     workspace = next(iter(present.values()))
     if not workspace.is_absolute():
         raise MetadataError(f"workspace is not absolute: {workspace}")
-    workspace_hash = hashlib.md5(os.fsencode(workspace), usedforsecurity=False).hexdigest()
-    if workspace_hash != base.name:
-        raise MetadataError(f"workspace hashes to {workspace_hash}, not {base.name}")
+    if layout is BaseLayout.HASHED:
+        workspace_hash = hashlib.md5(os.fsencode(workspace), usedforsecurity=False).hexdigest()
+        if workspace_hash != base.name:
+            raise MetadataError(f"workspace hashes to {workspace_hash}, not {base.name}")
     return workspace
 
 
@@ -278,8 +283,26 @@ def _read_positive_integer_metadata(path: Path, *, uid: int) -> int:
     return value
 
 
+def _names_base(cmdline: bytes, resolved_base: Path) -> bool:
+    prefix = "--output_base="
+    return any(
+        argument.startswith(prefix) and Path(argument.removeprefix(prefix)).resolve() == resolved_base
+        for argument in (os.fsdecode(raw) for raw in cmdline.split(b"\0") if raw)
+    )
+
+
 def _server_is_live(base: Path, *, uid: int, proc_root: Path) -> bool:
-    """Conservatively treat any extant process with Bazel's recorded PID as live."""
+    """Whether a Bazel server is running on this very base.
+
+    A recorded PID alone proves nothing: a server started inside a sandbox PID namespace
+    records its namespace-local PID (13, 42, …), which on the host names an unrelated
+    process or none, and a host PID is recycled once the server exits. A process is this
+    base's server only if its argv carries `--output_base=<this base>` (the argv Bazel
+    copies to server/cmdline). The recorded PID is checked first; failing that, every
+    visible process is, because a live sandboxed server appears in the host's /proc under
+    its host PID. An unreadable cmdline at the recorded PID is left for review rather
+    than guessed either way.
+    """
     pid_path = base / "server" / "server.pid.txt"
     try:
         pid_path.lstat()
@@ -287,13 +310,24 @@ def _server_is_live(base: Path, *, uid: int, proc_root: Path) -> bool:
         return False
 
     pid = _read_positive_integer_metadata(pid_path, uid=uid)
+    resolved_base = base.resolve(strict=True)
     try:
-        (proc_root / str(pid)).lstat()
+        if _names_base((proc_root / str(pid) / "cmdline").read_bytes(), resolved_base):
+            return True
     except FileNotFoundError:
-        return False
+        pass
     except OSError as error:
         raise MetadataError(f"cannot verify server pid {pid}: {error.strerror}") from error
-    return True
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            cmdline = (process / "cmdline").read_bytes()
+        except OSError:
+            continue  # exited mid-sweep, or another user's process hidden by hidepid; ours is readable
+        if _names_base(cmdline, resolved_base):
+            return True
+    return False
 
 
 def _unescape_mount_path(value: str) -> Path:
@@ -316,11 +350,13 @@ def mount_points(*, mountinfo_path: Path = Path("/proc/self/mountinfo")) -> set[
     return points
 
 
-def _nested_mount(base: Path, points: set[Path]) -> Path | None:
+def nested_mount(base: Path, points: set[Path]) -> Path | None:
     return next((point for point in sorted(points) if point == base or point.is_relative_to(base)), None)
 
 
-def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: Path = Path("/proc")) -> Inspection:
+def inspect_output_base(
+    base: Path, *, uid: int, points: set[Path], layout: BaseLayout, proc_root: Path = Path("/proc")
+) -> Inspection:
     try:
         metadata = base.lstat()
     except OSError as error:
@@ -333,7 +369,7 @@ def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: P
         )
 
     try:
-        workspace = _read_workspace_provenance(base, uid=uid)
+        workspace = _read_workspace_provenance(base, uid=uid, layout=layout)
         last_activity_ns = _last_activity_ns(base)
         lock_stat = (base / "lock").lstat()
         if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != uid:
@@ -344,9 +380,9 @@ def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: P
         return ReviewBase(base, ReviewBaseReason.UNSAFE_METADATA, metadata.st_mtime_ns, detail=str(error))
 
     resolved_base = base.resolve(strict=True)
-    nested_mount = _nested_mount(resolved_base, points)
-    if nested_mount is not None:
-        return ReviewBase(base, ReviewBaseReason.NESTED_MOUNT, last_activity_ns, detail=os.fspath(nested_mount))
+    mount = nested_mount(resolved_base, points)
+    if mount is not None:
+        return ReviewBase(base, ReviewBaseReason.NESTED_MOUNT, last_activity_ns, detail=os.fspath(mount))
 
     try:
         workspace_exists = _workspace_exists(workspace)
@@ -366,42 +402,59 @@ def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: P
             )
         if _workspace_is_under_tmp(workspace):
             return PrunableBase(
-                base, workspace, _identity(metadata), last_activity_ns, reason=PrunableBaseReason.TMP_WORKSPACE
+                base,
+                workspace,
+                file_identity(metadata),
+                last_activity_ns,
+                layout,
+                reason=PrunableBaseReason.TMP_WORKSPACE,
             )
         return RetainedBase(base, workspace, RetainedBaseReason.WORKSPACE_EXISTS, last_activity_ns, False)
 
-    return PrunableBase(base, workspace, _identity(metadata), last_activity_ns)
+    return PrunableBase(base, workspace, file_identity(metadata), last_activity_ns, layout)
+
+
+def list_output_bases(root: Path, *, session_bases: Sequence[Path]) -> list[tuple[Path, BaseLayout]]:
+    """Every base (or leftover GC quarantine) the scan covers: the root's MD5-named entries,
+    then `session_bases` (from `session_env_output_bases`, or whatever the caller chooses)."""
+    root = root.resolve(strict=True)
+    hashed = [
+        (base, BaseLayout.HASHED)
+        for base in sorted(root.iterdir())
+        if _HASHED_BASE_RE.fullmatch(base.name) or base.name.startswith(_QUARANTINE_PREFIX)
+    ]
+    return [*hashed, *((base, BaseLayout.SESSION_ENV) for base in session_bases)]
 
 
 def scan_output_user_root(
     root: Path,
     *,
+    session_bases: Sequence[Path],
     uid: int | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     progress: ProgressSink = NULL_PROGRESS,
 ) -> list[Inspection]:
     uid = os.getuid() if uid is None else uid
-    root = root.resolve(strict=True)
     points = mount_points(mountinfo_path=mountinfo_path)
     inspections: list[Inspection] = []
-    candidates = [
-        base
-        for base in sorted(root.iterdir())
-        if _HASHED_BASE_RE.fullmatch(base.name) or base.name.startswith(_QUARANTINE_PREFIX)
-    ]
-    logger.info("Scanning %d output bases in %s", len(candidates), root)
+    candidates = list_output_bases(root, session_bases=session_bases)
+    logger.info("Scanning %d output bases in %s and %d session-env bases", len(candidates), root, len(session_bases))
     if candidates:
         progress.start_phase("bases", len(candidates))
-    for index, base in enumerate(candidates, start=1):
-        logger.info("Scanning output base %d/%d %s", index, len(candidates), base.name)
-        if _HASHED_BASE_RE.fullmatch(base.name):
-            inspection = inspect_output_base(base, uid=uid, points=points, proc_root=proc_root)
+    for index, (base, layout) in enumerate(candidates, start=1):
+        logger.info("Scanning output base %d/%d %s", index, len(candidates), base)
+        inspection: Inspection
+        if base.name.startswith(_QUARANTINE_PREFIX):
+            try:
+                inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
+            except OSError as error:
+                inspection = ReviewBase(base, ReviewBaseReason.CANNOT_STAT, None, detail=str(error))
         else:
-            inspection = ReviewBase(base, ReviewBaseReason.INCOMPLETE_QUARANTINE, base.lstat().st_mtime_ns)
+            inspection = inspect_output_base(base, uid=uid, points=points, layout=layout, proc_root=proc_root)
         inspections.append(inspection)
-        progress.record("bases", _status(inspection))
-        logger.info("Finished output base %d/%d %s", index, len(candidates), base.name)
+        progress.record("bases", verdict_of(inspection))
+        logger.info("Finished output base %d/%d %s", index, len(candidates), base)
     return inspections
 
 
@@ -424,14 +477,14 @@ def _bazel_lock(base: Path, *, uid: int) -> Iterator[int]:
             raise
         metadata = os.fstat(fd)
         path_metadata = lock_path.lstat()
-        if metadata.st_nlink == 0 or _identity(metadata) != _identity(path_metadata):
+        if metadata.st_nlink == 0 or file_identity(metadata) != file_identity(path_metadata):
             raise MetadataError("lock changed while it was being acquired")
         yield fd
     finally:
         os.close(fd)
 
 
-def _retry_rmtree_after_permission_error(function: Callable[..., object], path: str, error: BaseException) -> None:
+def retry_rmtree_after_permission_error(function: Callable[..., object], path: str, error: BaseException) -> None:
     if not isinstance(error, PermissionError):
         raise error
     if function not in (os.unlink, os.rmdir):
@@ -442,46 +495,62 @@ def _retry_rmtree_after_permission_error(function: Callable[..., object], path: 
     function(path)
 
 
+def delete_prunable_base(
+    candidate: PrunableBase,
+    *,
+    uid: int | None = None,
+    proc_root: Path = Path("/proc"),
+    mountinfo_path: Path = Path("/proc/self/mountinfo"),
+) -> RemovalResult[Path]:
+    """Revalidate `candidate` under its Bazel lock, quarantine it, then remove the quarantine.
+
+    Independent of every other base (each has its own lock file), so callers may run several at
+    once.
+    """
+    uid = os.getuid() if uid is None else uid
+    logger.info("Deleting output base %s", candidate.path)
+    quarantine: Path | None = None
+    try:
+        with _bazel_lock(candidate.path, uid=uid):
+            fresh = inspect_output_base(
+                candidate.path,
+                uid=uid,
+                points=mount_points(mountinfo_path=mountinfo_path),
+                layout=candidate.layout,
+                proc_root=proc_root,
+            )
+            if not isinstance(fresh, PrunableBase):
+                return Skipped(candidate.path, _inspection_reason(fresh))
+            if fresh.identity != candidate.identity or fresh.workspace != candidate.workspace:
+                return Skipped(candidate.path, "output-base identity or workspace changed")
+
+            quarantine = candidate.path.parent / f"{_QUARANTINE_PREFIX}{candidate.path.name}-{uuid.uuid4().hex}"
+            candidate.path.rename(quarantine)
+            (quarantine / "lock").unlink()
+        assert quarantine is not None
+        shutil.rmtree(quarantine, onexc=retry_rmtree_after_permission_error)
+        return Removed(candidate.path)
+    except MetadataError as error:
+        return Skipped(candidate.path, str(error))
+    except RuntimeError as error:
+        if quarantine is None:
+            return Skipped(candidate.path, str(error))
+        return Failed(candidate.path, str(error), quarantine)
+    except OSError as error:
+        return Failed(candidate.path, str(error), quarantine)
+
+
 def delete_prunable_bases(
     candidates: Sequence[PrunableBase],
     *,
     uid: int | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
-) -> list[DeletionResult]:
-    uid = os.getuid() if uid is None else uid
-    results: list[DeletionResult] = []
-    for index, candidate in enumerate(candidates, start=1):
-        logger.info("Deleting output base %d/%d %s", index, len(candidates), candidate.path.name)
-        quarantine: Path | None = None
-        try:
-            with _bazel_lock(candidate.path, uid=uid):
-                fresh = inspect_output_base(
-                    candidate.path, uid=uid, points=mount_points(mountinfo_path=mountinfo_path), proc_root=proc_root
-                )
-                if not isinstance(fresh, PrunableBase):
-                    results.append(SkippedBase(candidate.path, _inspection_reason(fresh)))
-                    continue
-                if fresh.identity != candidate.identity or fresh.workspace != candidate.workspace:
-                    results.append(SkippedBase(candidate.path, "output-base identity or workspace changed"))
-                    continue
-
-                quarantine = candidate.path.parent / f"{_QUARANTINE_PREFIX}{candidate.path.name}-{uuid.uuid4().hex}"
-                candidate.path.rename(quarantine)
-                (quarantine / "lock").unlink()
-            assert quarantine is not None
-            shutil.rmtree(quarantine, onexc=_retry_rmtree_after_permission_error)
-            results.append(DeletedBase(candidate.path))
-        except MetadataError as error:
-            results.append(SkippedBase(candidate.path, str(error)))
-        except RuntimeError as error:
-            if quarantine is None:
-                results.append(SkippedBase(candidate.path, str(error)))
-            else:
-                results.append(FailedBase(candidate.path, quarantine, str(error)))
-        except OSError as error:
-            results.append(FailedBase(candidate.path, quarantine, str(error)))
-    return results
+) -> list[RemovalResult[Path]]:
+    return [
+        delete_prunable_base(candidate, uid=uid, proc_root=proc_root, mountinfo_path=mountinfo_path)
+        for candidate in candidates
+    ]
 
 
 def describe_reason(inspection: RetainedBase | ReviewBase) -> str:
@@ -527,14 +596,6 @@ def _prunable_reason(inspection: PrunableBase) -> str:
     return "workspace is under /tmp"
 
 
-def _status(inspection: Inspection) -> ProgressCategory:
-    if isinstance(inspection, PrunableBase):
-        return "PRUNE"
-    if isinstance(inspection, RetainedBase):
-        return "KEEP"
-    return "REVIEW"
-
-
 def _detail(inspection: Inspection) -> str:
     if isinstance(inspection, PrunableBase):
         return f"{inspection.workspace} ({_prunable_reason(inspection)})"
@@ -542,6 +603,14 @@ def _detail(inspection: Inspection) -> str:
         prefix = f"{inspection.workspace}: " if inspection.workspace is not None else ""
         return prefix + describe_reason(inspection)
     return describe_reason(inspection)
+
+
+def _label(path: Path) -> str:
+    """How a row names its base: the MD5 name says it all under the root; a session-env base
+    is `bazel-output-base` like every other, so only its path tells them apart."""
+    if _HASHED_BASE_RE.fullmatch(path.name):
+        return path.name
+    return os.fspath(path).replace(os.fspath(Path.home()), "~")
 
 
 def _last_activity(inspection: Inspection) -> str:
@@ -575,14 +644,14 @@ def render_report(inspections: Sequence[Inspection], *, include_kept: bool, incl
     sizes: dict[Path, int | None] = {}
     if include_sizes:
         for index, item in enumerate(visible, start=1):
-            logger.info("Measuring output-base size %d/%d %s", index, len(visible), item.path.name)
+            logger.info("Measuring output-base size %d/%d %s", index, len(visible), item.path)
             sizes[item.path] = allocated_bytes(item.path)
     headers = ["STATUS", "LAST ACTIVITY", "BASE", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")
     rows: list[list[str]] = []
     for item in visible:
-        row = [_status(item), _last_activity(item), item.path.name, _detail(item)]
+        row = [verdict_of(item), _last_activity(item), _label(item.path), _detail(item)]
         if include_sizes:
             size = sizes[item.path]
             row.insert(1, humanize.naturalsize(size, binary=True) if size is not None else "?")

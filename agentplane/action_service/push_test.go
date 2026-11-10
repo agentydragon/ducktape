@@ -5,14 +5,12 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/x509"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -65,11 +64,7 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 		databaseURL = c.DatabaseURL
 	})
 
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, databaseURL)
 	browser, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +79,7 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}},
+	if _, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-awaiting", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -102,7 +97,7 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	connection, err := grpc.NewClient(strings.TrimPrefix(service.url, "http://"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,18 +107,5 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 	)
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's GetPushConfig over gRPC: %v", err)
-	}
-	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/operator/push/config", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+readerToken)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusUnauthorized {
-		t.Errorf("a reader's GetPushConfig over HTTP: %d", response.StatusCode)
 	}
 }

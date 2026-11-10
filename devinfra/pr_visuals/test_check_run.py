@@ -9,8 +9,9 @@ from devinfra.pr_visuals import check_run
 
 
 class FakeCheckRun:
-    def __init__(self, external_id: str | None) -> None:
+    def __init__(self, external_id: str | None, *, status: str = "in_progress") -> None:
         self.external_id = external_id
+        self.status = status
         self.edits: list[dict[str, Any]] = []
 
     def edit(self, **kwargs: Any) -> None:
@@ -68,7 +69,7 @@ def test_upsert_creates_in_progress_check(monkeypatch: pytest.MonkeyPatch) -> No
         status="in_progress",
         summary="Bazel CI is running.",
         details_url="https://example.test/ci",
-        external_id="pr-visual-review:123",
+        external_id="pr-visual-review:123:1",
         token="token",
     )
 
@@ -79,13 +80,13 @@ def test_upsert_creates_in_progress_check(monkeypatch: pytest.MonkeyPatch) -> No
             "status": "in_progress",
             "output": {"title": "PR visual review", "summary": "Bazel CI is running."},
             "details_url": "https://example.test/ci",
-            "external_id": "pr-visual-review:123",
+            "external_id": "pr-visual-review:123:1",
         }
     ]
 
 
 def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> None:
-    existing = FakeCheckRun("pr-visual-review:123")
+    existing = FakeCheckRun("pr-visual-review:123:1")
     repo = FakeRepo([FakeCheckRun("different"), existing])
     _install_github(monkeypatch, repo)
 
@@ -95,7 +96,7 @@ def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> Non
         status="completed",
         conclusion="success",
         summary="Published.",
-        external_id="pr-visual-review:123",
+        external_id="pr-visual-review:123:1",
         token="token",
     )
 
@@ -106,9 +107,56 @@ def test_upsert_completes_matching_check(monkeypatch: pytest.MonkeyPatch) -> Non
             "status": "completed",
             "output": {"title": "PR visual review", "summary": "Published."},
             "conclusion": "success",
-            "external_id": "pr-visual-review:123",
+            "external_id": "pr-visual-review:123:1",
         }
     ]
+
+
+def test_upsert_does_not_complete_another_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_attempt = FakeCheckRun("pr-visual-review:123:1")
+    second_attempt = FakeCheckRun("pr-visual-review:123:2")
+    repo = FakeRepo([first_attempt, second_attempt])
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="completed",
+        conclusion="cancelled",
+        summary="First CI attempt was cancelled.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert repo.created == []
+    assert second_attempt.edits == []
+    assert first_attempt.edits == [
+        {
+            "name": "PR visual review",
+            "status": "completed",
+            "output": {"title": "PR visual review", "summary": "First CI attempt was cancelled."},
+            "conclusion": "cancelled",
+            "external_id": "pr-visual-review:123:1",
+        }
+    ]
+
+
+def test_late_announcement_does_not_reopen_completed_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    cancelled = FakeCheckRun("pr-visual-review:123:1", status="completed")
+    repo = FakeRepo([cancelled])
+    _install_github(monkeypatch, repo)
+
+    check_run.upsert_check_run(
+        repository="owner/repo",
+        commit_sha="a" * 40,
+        status="in_progress",
+        summary="Bazel CI is running.",
+        external_id="pr-visual-review:123:1",
+        token="token",
+    )
+
+    assert repo.created == []
+    assert cancelled.edits == []
 
 
 @pytest.mark.parametrize(("status", "conclusion"), [("in_progress", "success"), ("completed", None)])

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from python.runfiles import Runfiles
 
 from finance.augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.server import (
@@ -17,7 +18,6 @@ from finance.augur.api.server import (
     run_app,
 )
 from finance.augur.calibration.default_clients import default_price_clients
-from util.bazel.runfiles import get_required_path
 
 _AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR = "AUGUR_BUNDLE_INDEX_RUNFILE"
 StaticPathResolver = Callable[[str], Path]
@@ -44,7 +44,7 @@ def _static_path_resolver(dist_dir: Path) -> StaticPathResolver:
 
 def _fixture_bundle_static_path() -> StaticPathResolver:
     bundle_index_runfile = os.environ[_AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR]
-    return _static_path_resolver(get_required_path(bundle_index_runfile).parent)
+    return _static_path_resolver(Path(str(Runfiles.CreateOrRaise().root() / bundle_index_runfile)).parent)
 
 
 def _mount_static_bundle(app: FastAPI, static_path: StaticPathResolver) -> None:

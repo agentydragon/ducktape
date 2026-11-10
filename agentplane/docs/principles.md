@@ -92,7 +92,7 @@ happened rather than a summary of it.
 The boundary where this matters most is **harness ↔ runner**. Claude Code and Codex are
 third-party binaries we do not control, so when one misbehaves the exact frames it sent and
 received are the evidence. The runner journals those frames verbatim in both directions, and
-derived events cite the native frames they came from ([runner spec](../runner/SPEC.md)). A weird
+derived events cite the native frames they came from ([Runtime session protocol](../env/runtime/docs/session_protocol.md)). A weird
 bug's frames can then be pulled straight out of the log and turned into a harness ↔ runner
 behavior test ([scripted harness tests](../native/README.md)). Any change that trims or
 reshapes payloads must keep this boundary verbatim.
@@ -163,9 +163,9 @@ can query a subfield, pipe results through `jq`, loop, and write scripts against
 spending a model turn per tool call. This is the Agentplane-level counterpart of harness modes
 that let an agent script MCP tools from code.
 
-- Egress rules, Actions, policies and notification inboxes are HTTP APIs with OpenAPI schemas,
-  reached through the egress proxy with the workload placeholder; the platform instructions point
-  agents at them ([`platform_instructions.j2`](../runner/platform_instructions.j2)).
+- Agents script egress rules, Actions, and policies through the egress proxy using documented schemas.
+  Notification workload operations use the gRPC-backed `agentplane notifications` CLI; the App also
+  exposes its generated browser facade ([`platform_instructions.j2`](../session_instructions/platform_instructions.j2)).
 - Kubernetes access is the agent's own `kubectl`, not a wrapper tool.
 - MCP is an additional surface, not the only one: the Action Service also serves its operations as
   MCP tools over OAuth.

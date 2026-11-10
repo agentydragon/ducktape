@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare the Firecracker guest workspace for the harness user
+RequiresMountsFor=/state /state/workspaces
+Before=agentplane-environment-runtime.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/systemd-tmpfiles --create --prefix=/state/workspaces --prefix=/state/home
+
+[Install]
+WantedBy=multi-user.target

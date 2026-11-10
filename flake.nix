@@ -5,6 +5,11 @@
     # NixOS 26.05 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
+    nix-fast-build = {
+      url = "github:Mic92/nix-fast-build/1.6.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # OpenClaw's Nix packaging. The image output below consumes its pinned
     # gateway derivation and adds the small public-coder runtime toolset.
     nix-openclaw = {
@@ -75,6 +80,7 @@
       nix-colors,
       nixGL,
       nix-openclaw,
+      nix-fast-build,
       claude-plugins-official,
       siderolabs-docs,
       ...
@@ -88,7 +94,7 @@
       # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
       # output definitions with the experiment; the root flake only registers them.
       buildbuddyRemoteRunnerNixosOutputs =
-        import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix
+        import ./devinfra/buildbuddy/images/runner/x/nixos/flake-outputs.nix
           {
             inherit nixpkgs self system;
           };
@@ -109,10 +115,10 @@
       # Python and Bazel toolchains while nixpkgs catches up.
       ruffLatest = pkgs.stdenvNoCC.mkDerivation {
         pname = "ruff";
-        version = "0.16.7";
+        version = "0.17.4";
         src = pkgs.fetchurl {
-          url = "https://github.com/astral-sh/ruff/releases/download/0.16.7/ruff-x86_64-unknown-linux-gnu.tar.gz";
-          hash = "sha256-c4lMe3yaU/1m7XFes6HsZQd/MWMo43cFepi9t/y6AyY=";
+          url = "https://github.com/astral-sh/ruff/releases/download/0.17.4/ruff-x86_64-unknown-linux-gnu.tar.gz";
+          hash = "sha256-OrKzSurNvB6lxSnNvaPgV5JjPVhyKBI/0J87Wg+ssno=";
         };
         nativeBuildInputs = [ pkgs.autoPatchelfHook ];
         buildInputs = [ pkgs.stdenv.cc.cc.lib ];
@@ -400,20 +406,26 @@
         atticTargets;
 
       # Development shell — enter via `nix develop` or direnv (`use flake`).
-      devShells.${system}.default = pkgs.mkShell {
-        # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
-        dontAddPythonPath = "1";
-        packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
-        inherit (systemLibs) buildInputs;
-        LD_LIBRARY_PATH = systemLibs.libraryPath;
+      devShells.${system} = {
+        default = pkgs.mkShell {
+          # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
+          dontAddPythonPath = "1";
+          packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
+          inherit (systemLibs) buildInputs;
+          LD_LIBRARY_PATH = systemLibs.libraryPath;
+        };
+        ai-usage = import ./x/ai_sub_value/shell.nix {
+          inherit pkgs;
+          baseShell = self.devShells.${system}.default;
+        };
       };
 
       # One binding, because `system` is dynamic: Nix merges repeated *static* attribute paths but
       # rejects a repeated dynamic one, so a second `checks.${system}.…` is an eval error.
       checks.${system} = {
-        runner-ducktape-tools = import ./agentplane/runner/ducktape_tools_check.nix {
+        environment-tools = import ./agentplane/env/images/ducktape_tools_check.nix {
           inherit pkgs;
-          tools = self.packages.${system}.runner-ducktape-tools;
+          tools = self.packages.${system}.environment-tools;
         };
 
         claude-code-permissions = import ./nix/home/tests/claude-code-permissions.nix {
@@ -435,6 +447,7 @@
       };
       packages.${system} =
         (import ./nix/flake/packages.nix {
+          nixFastBuild = nix-fast-build;
           inherit
             self
             system
@@ -581,12 +594,28 @@
         };
 
         # NixOS guest used by the KubeVirt Agentplane execution environment.
-        agentplane-runner-vm = mkNixos {
-          hostname = "agentplane-runner-vm";
+        agentplane-environment-vm = mkNixos {
+          hostname = "agentplane-environment-vm";
           username = "runner";
-          hostModule = ./agentplane/runner/vm.nix;
+          hostModule = ./agentplane/env/images/vm.nix;
           # Keep the guest's repository tooling identical to the Pod runner's.
-          extraSpecialArgs = { inherit preCommitPackages; };
+          extraSpecialArgs = {
+            inherit preCommitPackages;
+            firecrackerGuest = false;
+          };
+          enableHomeManager = false;
+        };
+
+        # Firecracker guest shares the environment runtime and tools with KubeVirt, using ordered
+        # virtio-mmio drives and a host thaw handshake for time and per-environment credentials.
+        agentplane-environment-firecracker = mkNixos {
+          hostname = "agentplane-environment-firecracker";
+          username = "runner";
+          hostModule = ./agentplane/env/images/firecracker.nix;
+          extraSpecialArgs = {
+            inherit preCommitPackages;
+            firecrackerGuest = true;
+          };
           enableHomeManager = false;
         };
 

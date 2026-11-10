@@ -1,0 +1,309 @@
+{
+  "scope": "Analysis-only source changes; full nonmanual debundle E2E suite; inner Bazel test clock excludes warm build and outer/GitHub startup",
+  "bazel_version": "9.2.0",
+  "rbe_image": "ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+  "method": "Warm each arm, append a unique unused public source constant to the analysis crate, then test with normal CI lint, remote cache and --nocache_test_results",
+  "run_order": ["control-source-a1", "candidate-source-b1", "control-source-a2"],
+  "arms": [
+    {
+      "arm": "control-source-a1",
+      "source_commit": "1793d427db3184b85fb2b314f8813febcf92e7a0",
+      "warm_invocation_id": "d811f74d-ae16-4ae4-9268-1c9fc2b5fc79",
+      "measured_invocation_id": "1edd1655-2d13-49a6-ad9f-038b2ac0f377",
+      "temporary_source_constant_value": "control-source-a1",
+      "temporary_patch_sha256": "60fab2aa3659f756c3633a4fcf8abe9a3287640f5f0dddd493fcf2c87c817fca",
+      "elapsed_s": 335.651,
+      "critical_path_s": 272.22,
+      "engine_output_sha256": {
+        "Rustc": "88650fafc183981237760ed260a3363ed2e82edb4dd0b519382794e84bae4a14",
+        "RustcMetadata": "3c54a7bb539028ca391de9b96b3c96abfa54391458830bed9cf1eaa044bb075f"
+      },
+      "fresh_cli_and_identity_counts": {
+        "//devinfra/js/debundle:analysis_identity_source": 1,
+        "//devinfra/js/debundle:cli": 1,
+        "//devinfra/js/debundle:debundle_e2e": 1
+      },
+      "fresh_actions": 801,
+      "action_groups": {
+        "all/Clippy": {
+          "count": 191,
+          "process_s": 1743.084,
+          "cpu_s": 460.58,
+          "input_s": 50.825,
+          "queue_s": 10.713
+        },
+        "all/DebundleAnalysisIdentity": {
+          "count": 1,
+          "process_s": 25.412,
+          "cpu_s": 22.17,
+          "input_s": 0.866,
+          "queue_s": 0.063
+        },
+        "all/Rustc": {
+          "count": 219,
+          "process_s": 3205.296,
+          "cpu_s": 2640.552,
+          "input_s": 62.934,
+          "queue_s": 12.467
+        },
+        "all/RustcMetadata": {
+          "count": 24,
+          "process_s": 254.882,
+          "cpu_s": 158.165,
+          "input_s": 4.899,
+          "queue_s": 1.267
+        },
+        "all/TestRunner": {
+          "count": 190,
+          "process_s": 1217.701,
+          "cpu_s": 2387.181,
+          "input_s": 59.615,
+          "queue_s": 10.739
+        },
+        "all/TestXML": {
+          "count": 176,
+          "process_s": 263.146,
+          "cpu_s": 98.32,
+          "input_s": 16.066,
+          "queue_s": 10.079
+        },
+        "drivers/Clippy": {
+          "count": 190,
+          "process_s": 1735.186,
+          "cpu_s": 456.664,
+          "input_s": 50.679,
+          "queue_s": 10.651
+        },
+        "drivers/Rustc": {
+          "count": 190,
+          "process_s": 2809.12,
+          "cpu_s": 2288.029,
+          "input_s": 57.198,
+          "queue_s": 10.791
+        },
+        "drivers/TestRunner": {
+          "count": 190,
+          "process_s": 1217.701,
+          "cpu_s": 2387.181,
+          "input_s": 59.615,
+          "queue_s": 10.739
+        },
+        "drivers/TestXML": {
+          "count": 176,
+          "process_s": 263.146,
+          "cpu_s": 98.32,
+          "input_s": 16.066,
+          "queue_s": 10.079
+        }
+      },
+      "passed_uncached_targets": 190,
+      "attempts_per_target": 1,
+      "test_roster_sha256": "7953a43a6234f95c5beb81aac94e7025db8fe71c9f3d536533ca7d55057f1484"
+    },
+    {
+      "arm": "candidate-source-b1",
+      "source_commit": "35ba3faab463d4b651aa1308bda6421d4ea4c3be",
+      "warm_invocation_id": "961c759e-d0c1-43e9-8074-641f7cac8d26",
+      "measured_invocation_id": "f57c331e-1c05-402d-80fd-a3da8f937245",
+      "temporary_source_constant_value": "candidate-source-b1",
+      "temporary_patch_sha256": "7b8a376f3cc00b42874d2824e444dac64ee65bae26e28baf2eeb00dcf089d7bf",
+      "elapsed_s": 316.916,
+      "critical_path_s": 262.41,
+      "engine_output_sha256": {
+        "Rustc": "f869d620422003825992b50008f7b7662e290f7566dac3ffcddd15013613acf7",
+        "RustcMetadata": "2b595c1573344006e3c591fd665b59a8f04a41be49a08733aed21bf822e0bb02"
+      },
+      "fresh_cli_and_identity_counts": {
+        "//devinfra/js/debundle:analysis_identity_source": 1,
+        "//devinfra/js/debundle:cli": 1,
+        "//devinfra/js/debundle:debundle_e2e": 1
+      },
+      "fresh_actions": 581,
+      "action_groups": {
+        "all/Clippy": {
+          "count": 80,
+          "process_s": 821.962,
+          "cpu_s": 221.942,
+          "input_s": 36.087,
+          "queue_s": 5.473
+        },
+        "all/DebundleAnalysisIdentity": {
+          "count": 1,
+          "process_s": 30.491,
+          "cpu_s": 24.297,
+          "input_s": 0.588,
+          "queue_s": 0.061
+        },
+        "all/Rustc": {
+          "count": 108,
+          "process_s": 1944.123,
+          "cpu_s": 1500.614,
+          "input_s": 41.506,
+          "queue_s": 6.226
+        },
+        "all/RustcMetadata": {
+          "count": 24,
+          "process_s": 290.487,
+          "cpu_s": 165.172,
+          "input_s": 8.887,
+          "queue_s": 1.335
+        },
+        "all/TestRunner": {
+          "count": 190,
+          "process_s": 936.732,
+          "cpu_s": 2303.59,
+          "input_s": 40.065,
+          "queue_s": 10.127
+        },
+        "all/TestXML": {
+          "count": 178,
+          "process_s": 160.074,
+          "cpu_s": 87.151,
+          "input_s": 14.298,
+          "queue_s": 9.154
+        },
+        "drivers/Clippy": {
+          "count": 79,
+          "process_s": 815.586,
+          "cpu_s": 219.455,
+          "input_s": 35.646,
+          "queue_s": 5.344
+        },
+        "drivers/Rustc": {
+          "count": 79,
+          "process_s": 1484.506,
+          "cpu_s": 1131.495,
+          "input_s": 29.898,
+          "queue_s": 4.546
+        },
+        "drivers/TestRunner": {
+          "count": 190,
+          "process_s": 936.732,
+          "cpu_s": 2303.59,
+          "input_s": 40.065,
+          "queue_s": 10.127
+        },
+        "drivers/TestXML": {
+          "count": 178,
+          "process_s": 160.074,
+          "cpu_s": 87.151,
+          "input_s": 14.298,
+          "queue_s": 9.154
+        }
+      },
+      "passed_uncached_targets": 190,
+      "attempts_per_target": 1,
+      "test_roster_sha256": "7953a43a6234f95c5beb81aac94e7025db8fe71c9f3d536533ca7d55057f1484"
+    },
+    {
+      "arm": "control-source-a2",
+      "source_commit": "1793d427db3184b85fb2b314f8813febcf92e7a0",
+      "warm_invocation_id": "323f6147-5146-42c2-8367-5a75ab2882e2",
+      "measured_invocation_id": "e74d0d33-999a-4ef8-9ecf-3eaca0b12f43",
+      "temporary_source_constant_value": "control-source-a2",
+      "temporary_patch_sha256": "21989ff5478208a2f618295ab45d62f03442eb569603451727f8e6943000671a",
+      "elapsed_s": 320.719,
+      "critical_path_s": 240.25,
+      "engine_output_sha256": {
+        "Rustc": "2a74d9c687e13e5fc8e9aeb31ceb8f4aec352adfbaa15bafb0b0b9d485497b6f",
+        "RustcMetadata": "70fb107fbc9c5147fd56a7c453ceda7d3fe657f15f1108d9d1b7948bc762113e"
+      },
+      "fresh_cli_and_identity_counts": {
+        "//devinfra/js/debundle:analysis_identity_source": 1,
+        "//devinfra/js/debundle:cli": 1,
+        "//devinfra/js/debundle:debundle_e2e": 1
+      },
+      "fresh_actions": 798,
+      "action_groups": {
+        "all/Clippy": {
+          "count": 191,
+          "process_s": 1676.676,
+          "cpu_s": 479.176,
+          "input_s": 46.113,
+          "queue_s": 10.88
+        },
+        "all/DebundleAnalysisIdentity": {
+          "count": 1,
+          "process_s": 23.367,
+          "cpu_s": 18.006,
+          "input_s": 0.441,
+          "queue_s": 0.059
+        },
+        "all/Rustc": {
+          "count": 219,
+          "process_s": 3390.937,
+          "cpu_s": 2779.441,
+          "input_s": 53.942,
+          "queue_s": 12.166
+        },
+        "all/RustcMetadata": {
+          "count": 24,
+          "process_s": 229.009,
+          "cpu_s": 142.848,
+          "input_s": 3.936,
+          "queue_s": 1.359
+        },
+        "all/TestRunner": {
+          "count": 190,
+          "process_s": 1110.61,
+          "cpu_s": 2288.79,
+          "input_s": 51.202,
+          "queue_s": 10.469
+        },
+        "all/TestXML": {
+          "count": 173,
+          "process_s": 213.172,
+          "cpu_s": 82.206,
+          "input_s": 13.507,
+          "queue_s": 9.292
+        },
+        "drivers/Clippy": {
+          "count": 190,
+          "process_s": 1668.905,
+          "cpu_s": 475.549,
+          "input_s": 45.963,
+          "queue_s": 10.812
+        },
+        "drivers/Rustc": {
+          "count": 190,
+          "process_s": 3013.701,
+          "cpu_s": 2429.932,
+          "input_s": 48.837,
+          "queue_s": 10.532
+        },
+        "drivers/TestRunner": {
+          "count": 190,
+          "process_s": 1110.61,
+          "cpu_s": 2288.79,
+          "input_s": 51.202,
+          "queue_s": 10.469
+        },
+        "drivers/TestXML": {
+          "count": 173,
+          "process_s": 213.172,
+          "cpu_s": 82.206,
+          "input_s": 13.507,
+          "queue_s": 9.292
+        }
+      },
+      "passed_uncached_targets": 190,
+      "attempts_per_target": 1,
+      "test_roster_sha256": "7953a43a6234f95c5beb81aac94e7025db8fe71c9f3d536533ca7d55057f1484"
+    }
+  ],
+  "comparisons": [
+    {
+      "control_arm": "control-source-a1",
+      "candidate_elapsed_reduction_s": 18.735,
+      "candidate_elapsed_reduction_pct": 5.582,
+      "candidate_driver_compile_lint_cpu_reduction_pct": 50.78
+    },
+    {
+      "control_arm": "control-source-a2",
+      "candidate_elapsed_reduction_s": 3.803,
+      "candidate_elapsed_reduction_pct": 1.186,
+      "candidate_driver_compile_lint_cpu_reduction_pct": 53.503
+    }
+  ],
+  "fleet_pr_feedback_speedup_established": false
+}

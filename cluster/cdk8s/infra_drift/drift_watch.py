@@ -8,6 +8,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGenerator,
     ArtifactGeneratorSpec,
@@ -27,7 +28,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.secret_ref import SecretRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "infra-drift"
 OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
@@ -62,7 +62,7 @@ def chart(app: App) -> Chart:
         # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all then
         # re-include, spelling out each parent: gitignore cannot re-include a path whose
         # parent directory is excluded.
-        ignore=(get_required_path(own_repo_rlocation("cluster/cdk8s/infra_drift/source.gitignore")).read_text()),
+        ignore=(Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/infra_drift/source.gitignore").read_text(),
     )
     # The GitRepository's revision is the commit, so every push to the branch would
     # replan. The ExternalArtifact's is a digest of the filtered tree: a plan runs when

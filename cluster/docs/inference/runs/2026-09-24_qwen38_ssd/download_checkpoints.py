@@ -12,9 +12,9 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
-MANIFEST = "cluster/docs/inference/runs/2026-09-24_qwen38_ssd/checkpoints.json"
+MANIFEST = "ducktape/cluster/docs/inference/runs/2026-09-24_qwen38_ssd/checkpoints.json"
 HEADROOM_BYTES = 200 * 1024**3
 CHUNK_BYTES = 8 * 1024**2
 
@@ -84,7 +84,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True, help="checkpoint storage directory")
     args = parser.parse_args()
 
-    manifest = json.loads(get_required_path(own_repo_rlocation(MANIFEST)).read_text())
+    manifest = json.loads((Runfiles.CreateOrRaise().root() / MANIFEST).read_text())
     if not isinstance(manifest, list):
         raise ValueError("checkpoint manifest must be a list")
 

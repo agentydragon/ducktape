@@ -50,6 +50,8 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
         status=status,
         currency="USD",
         monthly_minor_units=10000,
+        # Deliberately differs from the monthly-derived rate to prove the CLI displays the server field.
+        daily_reference_minor_units=2345,
         activation_at=date(2026, 1, 31),
         available_minor_units=8800 if active else None,
         next_credit_at=datetime(2026, 2, 28, tzinfo=UTC) if active else None,
@@ -99,7 +101,7 @@ def test_formats_active_allowance_and_cards() -> None:
     assert "Provisional leash signal: warning" in output
     assert "7-day recorded flexible pace: USD 12/day" in output
     assert "30-day recorded flexible pace: USD 10/day" in output
-    assert "Provisional leash rate:" in output
+    assert "Provisional leash rate: ~USD 23/day" in output
     assert "7d unmatched: 2 (USD 3)" in output
     assert "Estimated balance before next credit:" in output
     assert "USD 2" in output

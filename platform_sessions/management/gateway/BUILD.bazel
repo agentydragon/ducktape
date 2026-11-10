@@ -1,0 +1,63 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "gateway",
+    srcs = [
+        "documents.go",
+        "grpc.go",
+        "http.go",
+        "http_server.go",
+        "owner.go",
+        "provider.go",
+        "proxy.go",
+        "service.go",
+        "validation.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/platform_sessions/management/gateway",
+    deps = [
+        "//platform_sessions/management/v1:management_go_proto",
+        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "@com_github_coreos_go_oidc_v3//oidc",
+        "@com_github_gorilla_securecookie//:securecookie",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
+
+go_test(
+    name = "gateway_test",
+    srcs = [
+        "documents_test.go",
+        "grpc_test.go",
+        "http_server_test.go",
+        "owner_test.go",
+        "proxy_test.go",
+        "service_test.go",
+    ],
+    embed = [":gateway"],
+    deps = [
+        "//platform_sessions/management/v1:management_go_proto",
+        "//platform_sessions/provider/v1:session_provider_go_proto",
+        "@com_github_coreos_go_oidc_v3//oidc",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)

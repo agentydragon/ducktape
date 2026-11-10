@@ -48,17 +48,13 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
   - `hooks.py` executes hook code in-process, producing “Effects” (`wake`, `messages`, `invoke`) that the worker consumes on the next turn.
 
 - **Hook Manager**
-- **Hook Manager**
   - Provides `loop.enable_hook` / `loop.disable_hook` / per-hook resources (`loop://hooks/{id}`).
   - Hooks run in the container’s Python environment with scoped credentials handed in at registration.
 - **Local MCP Clients & Proxies**
   - All outbound tool calls originate here: resources, seatbelt, OpenAI (via a local proxy for rate limiting / logging).
   - The container speaks MCP directly to the control-plane policy gateway for anything that needs approvals.
-- **Direct Integrations**
-  - Some services (Matrix, Git, custom APIs) may be accessed directly via scoped credentials instead of MCP. The agent can store those tokens in its container DB and talk to the service using native tooling (CLI or SDK). Operators rely on the service account’s permissions plus external auditing (Matrix room history, Git commit history) rather than the policy gateway for oversight.
-- **Direct Credentials / Service Accounts**
-  - Some integrations (e.g., Gitea, internal APIs) may be granted via scoped service accounts instead of MCP tools. The agent can store these secrets in its container DB or environment.
-  - These credentials define the policy boundary (least privilege). Approvals may be bypassed if the scoped account already limits risk; otherwise, the agent can still front them with an MCP proxy if human oversight is desired.
+- **Direct Integrations and Service Accounts**
+  - Matrix, Git, Gitea, and custom APIs may use scoped service-account credentials instead of MCP. Store credentials in the agent DB or environment and use native CLI/SDK tooling; least privilege defines the boundary. Operators rely on the external service's audit history (such as Matrix room or Git commit history), while an MCP proxy remains optional when gateway approval or oversight is needed.
 - **Agent-Scoped Database**
   - Embedded store (SQLite, LiteFS, or functional DB). Holds scratch state, hook metadata, cached resources.
   - Agent (and hooks) have full control; sync to control plane happens only via explicit MCP calls.
@@ -103,7 +99,7 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
 
 ## Container Control Protocol
 
-The agent container exposes a minimal HTTP interface to the host. No timeline or audit data flows over it; those are derived from external systems (Matrix, policy gateway).
+The agent container exposes a minimal HTTP interface to the host. A heartbeat/status stream is proposed for run state, not detailed timeline events. Approvals, denials (`deny_abort`), and sampling audits remain sourced from the policy gateway or proxy outside the container, while chat history comes from its external service.
 
 | Endpoint            | Method | Purpose                  | Notes                                                                                                                                      |
 | ------------------- | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -121,18 +117,6 @@ The agent container exposes a minimal HTTP interface to the host. No timeline or
 - Observe chat via Matrix (or chosen backend) and audit feed via the policy gateway; UI can synthesise `UiState` purely from those external sources.
 - Inspect hooks via `loop://hooks/{id}`; disable suspicious automation.
 - Grant new credentials (DB write scopes, external tool tokens) by injecting them into the agent container (e.g., via MCP tool that writes secrets into the agent DB).
-
-## Summary
-
-This architecture keeps trust boundaries tight—everything that must be guarded (approvals, audit, sensitive tools) stays outside the agent container—while giving the model real leverage inside its sandbox. Deployment looks like this:
-
-- You run the sampling loop, handlers, and automation entirely inside the container.
-- You connect external systems (Matrix, Gitea, OpenAI via proxy, custom APIs) directly to that container, either through MCP mounts (with policy approval) or scoped service accounts.
-- The control plane remains minimal: UI, policy gateway, approval DB, and any privileged bridges you do not want the agent to own.
-
-The container exposes only a very small surface to the host—e.g., a health endpoint and a heartbeat/ status stream. It does **not** publish detailed timeline events; approvals, denials (`deny_abort`, etc.) and sampling audits come from the policy gateway/proxy outside the container.
-
-Within that setup the agent can “perform brain surgery” on itself—modify handlers, install hooks, persist state—yet every action that crosses the boundary is mediated by the policy gateway (when using MCP) or constrained by the credentials you hand it. Humans can still observe, approve, or revoke access at any time.
 
 ### Pilot v0 snapshot
 

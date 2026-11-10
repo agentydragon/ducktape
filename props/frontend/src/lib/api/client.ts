@@ -15,7 +15,7 @@ import type {
   Split,
   ValidationRunRequest,
   paths,
-} from "./schema";
+} from "../schema";
 import { getToken, onAuthFailed } from "$lib/stores/token";
 
 // Create typed API client (types from Bazel: //props/frontend/src/lib:schema).
@@ -213,13 +213,17 @@ export type FileContentsResponse = {
 };
 
 // Fetch snapshot file tree
-export async function fetchSnapshotTree(snapshotSlug: string): Promise<FileTreeResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/tree`);
+export async function fetchSnapshotTree(snapshotSlug: string, signal?: AbortSignal): Promise<FileTreeResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/tree`, { signal });
 }
 
 // Fetch file content from snapshot
-export async function fetchSnapshotFile(snapshotSlug: string, filePath: string): Promise<FileContentResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files/${filePath}`);
+export async function fetchSnapshotFile(
+  snapshotSlug: string,
+  filePath: string,
+  signal?: AbortSignal
+): Promise<FileContentResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files/${filePath}`, { signal });
 }
 
 // Fetch multiple file contents from a snapshot with one backend tar read.
@@ -255,8 +259,8 @@ export async function fetchRunLogs(runId: string, signal?: AbortSignal) {
 }
 
 // --- Clusters ---
-export async function fetchSnapshotClusters(snapshotSlug: string): Promise<ClustersListResponse> {
-  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`);
+export async function fetchSnapshotClusters(snapshotSlug: string, signal?: AbortSignal): Promise<ClustersListResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`, { signal });
 }
 
 // --- Model metadata ---
@@ -268,7 +272,7 @@ export async function fetchModelMetadata() {
 
 // --- Stats: occurrence stats, distributions, coverage ---
 
-export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split) {
+export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split, signal?: AbortSignal) {
   const result = await api.GET("/api/stats/occurrences", {
     params: {
       query: {
@@ -279,6 +283,7 @@ export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split)
         ...(split ? { split } : {}),
       },
     },
+    signal,
   });
   return unwrapApiResult(result, "Failed to fetch occurrence stats");
 }

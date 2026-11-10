@@ -1,95 +1,61 @@
-"""Real app processes with a test-only gate at browser sync delivery.
-
-Process readiness and replay observations travel through a pipe, never filesystem sentinels.
-The replay gate holds actual Electric/reconciliation response bytes without rewriting data.
-"""
+"""Real Go app processes and an external HTTP gate holding browser replay bytes."""
 
 import asyncio
-import logging
-import multiprocessing
+import json
+import os
 import signal
 import socket
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from datetime import UTC, datetime
+import ssl
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, nullcontext
+from dataclasses import dataclass, field
 from enum import StrEnum
-from multiprocessing.connection import Connection
-from multiprocessing.process import BaseProcess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
-from uuid import UUID, uuid4
+from urllib.parse import parse_qs
+from uuid import uuid4
 
 import grpc
 import httpx
 import uvicorn
-from kubernetes_asyncio import client as k8s_client
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+import yaml
+from playwright.async_api import Page
+from python.runfiles import Runfiles
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+from starlette.types import Receive, Scope, Send
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app
-from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, create_database_updates
-from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ElectricProxy
-from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
-from agentplane.app.live import LiveIndex
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
-from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
+from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
-from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
-from agentplane.app.testing.operator_streams import OIDC, with_test_login
-from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
-from agentplane.app.threads.runner_directory import RunnerDirectory
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import Summaries
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import dial
+from agentplane.app.testing.notifications import FakeNotifications
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.kubernetes_watch import Freshness
-from agentplane.notification_service import notifications_operator_pb2_grpc
-from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
-from agentplane.testing.kubernetes_apiserver import kubernetes_api
-from util.kubernetes import CustomObjectsClient
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from agentplane.notification_service import notifications_pb2_grpc
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from util.db_url import render_postgresql_url
+from util.net import Listener, listen_tcp
+from util.testing.asgi import serve_app_in_loop
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//asyncpg
-
-
-@dataclass(frozen=True)
-class Ready:
-    url: str
 
 
 @dataclass(frozen=True)
 class SandboxesAccess:
-    """The API server an app process reads, and the namespace of the Sandboxes it serves."""
-
     kubeconfig: Path
     namespace: str
 
 
 @dataclass(frozen=True)
 class GatewayAccess:
-    """The Runner Gateway an app process reaches."""
-
     target: str
-    # The app's projected token, for the Runner proxy and the Dispatcher gRPC API.
     token_file: Path
+    tls: ClientTLS | None = None
 
 
 @dataclass(frozen=True)
@@ -103,355 +69,414 @@ class ReplayAction(StrEnum):
 
 
 class ReplayGate:
-    def __init__(self, after_cursor: int, connection: Connection) -> None:
+    def __init__(self, after_cursor: int) -> None:
         self.after_cursor = after_cursor
-        self._connection = connection
-        self._release: asyncio.Task[ReplayAction] | None = None
+        self.observations: asyncio.Queue[ReplayHeld] = asyncio.Queue()
+        self.release: asyncio.Future[ReplayAction] | None = None
 
     async def hold(self, cursor: int) -> ReplayAction:
-        if self._release is None:
-            self._release = asyncio.create_task(self._wait_for_release())
-        if not self._release.done():
-            self._connection.send(ReplayHeld(cursor))
-        # Closing the old browser document cancels its response, not the gate shared with the
-        # reloaded document's new sync connection.
-        pending = self._release
+        if self.release is None:
+            self.release = asyncio.get_running_loop().create_future()
+        if not self.release.done():
+            self.observations.put_nowait(ReplayHeld(cursor))
+        pending = self.release
         action = await asyncio.shield(pending)
-        if action is ReplayAction.DISCONNECT and self._release is pending:
-            self._release = None
+        if action is ReplayAction.DISCONNECT and self.release is pending:
+            self.release = None
         return action
 
-    async def _wait_for_release(self) -> ReplayAction:
-        command = await receive(self._connection)
-        assert isinstance(command, ReplayAction), command
-        return command
-
-
-class GatedConversationDelivery:
-    def __init__(self, app: ASGIApp, *, gate: ReplayGate, event_logs: EventLogStore) -> None:
-        self._app = app
-        self._gate = gate
-        self._event_logs = event_logs
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        path = scope.get("path", "")
-        selected = scope["type"] == "http" and path.endswith("/sync/entities")
-        if not selected:
-            await self._app(scope, receive, send)
-            return
-        thread_id = UUID(path.split("/")[2])
-        messages: list[Message] = []
-        streaming = started = interrupted = False
-
-        async def gated_send(message: Message) -> None:
-            nonlocal streaming, started, interrupted
-            if interrupted:
-                return
-            messages.append(message)
-            if message["type"] == "http.response.start":
-                streaming = dict(message["headers"]).get(b"content-type", b"").startswith(b"text/event-stream")
-            # A finite, bounded-interest response is held whole. A live shape's SSE response does
-            # not finish, so each of its chunks is held as it comes. The real backend continues
-            # ingesting and Electric still owns snapshot/offset reconciliation.
-            if message["type"] != "http.response.body" or (message.get("more_body", False) and not streaming):
-                return
-            cursor = await self._event_logs.last_cursor(thread_id)
-            if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
-                interrupted = True
-                if started:
-                    # An SSE response under way ends; the client reconnects from its own offset.
-                    await send({"type": "http.response.body", "body": b"", "more_body": False})
-                    return
-                await send({"type": "http.response.start", "status": 503, "headers": []})
-                await send({"type": "http.response.body", "body": b"test transport interruption"})
-                return
-            started = True
-            for buffered in messages:
-                await send(buffered)
-            messages.clear()
-
-        await self._app(scope, receive, gated_send)
-
-
-class EmptyActionsWatch:
-    """The browser shell's Actions badge has no configured Action Service in this fixture."""
-
-    def __init__(self, app: ASGIApp) -> None:
-        self._app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if (
-            scope["type"] != "http"
-            or scope["method"] != "GET"
-            or scope["path"] != "/upstream/actions/v1/action-requests:watch"
-        ):
-            await self._app(scope, receive, send)
-            return
-
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [(b"content-type", b"application/x-ndjson"), (b"cache-control", b"no-cache")],
-            }
-        )
-        # The app shell subscribes on every route. Keep this unrelated watch healthy and empty instead
-        # of letting the intentionally unconfigured Action Service retry and draw a status spinner.
-        await send(
-            {
-                "type": "http.response.body",
-                "body": (b'{"result":{"snapshot":{"actionRequests":[]}}}\n{"result":{"snapshotComplete":{}}}\n'),
-                "more_body": True,
-            }
-        )
-        while True:
-            if (await receive())["type"] == "http.disconnect":
-                return
-
-
-class ReadyServer(uvicorn.Server):
-    def __init__(self, config: uvicorn.Config, connection: Connection, url: str) -> None:
-        super().__init__(config)
-        self._connection = connection
-        self._url = url
-
-    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
-        await super().startup(sockets)
-        assert self.started
-        self._connection.send(Ready(self._url))
-
-
-def _run(
-    database_url: str,
-    sandboxes: SandboxesAccess,
-    gateway: GatewayAccess | None,
-    history_target: str,
-    history_token_file: Path,
-    connection: Connection,
-    browser_login: bool,
-    replay_after: int | None,
-    electric_url: str | None,
-    electric_log_path: Path | None,
-) -> None:
-    electric_logger = logging.getLogger("agentplane.app.electric")
-    previous_level = electric_logger.level
-    previous_propagate = electric_logger.propagate
-    handler = None
-    if electric_log_path is not None:
-        # Preserve ElectricProxy's existing upstream timings without enabling app-wide INFO logs.
-        handler = logging.FileHandler(electric_log_path, encoding="utf-8")
-        handler.setLevel(logging.INFO)
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        electric_logger.addHandler(handler)
-        electric_logger.setLevel(logging.INFO)
-        electric_logger.propagate = False
-    try:
-        asyncio.run(
-            _serve(
-                database_url,
-                sandboxes,
-                gateway,
-                history_target,
-                history_token_file,
-                connection,
-                browser_login,
-                replay_after,
-                electric_url,
-            )
-        )
-    finally:
-        if handler is not None:
-            electric_logger.removeHandler(handler)
-            handler.close()
-            electric_logger.setLevel(previous_level)
-            electric_logger.propagate = previous_propagate
-
-
-async def _serve(
-    database_url: str,
-    sandboxes: SandboxesAccess,
-    gateway: GatewayAccess | None,
-    history_target: str,
-    history_token_file: Path,
-    connection: Connection,
-    browser_login: bool,
-    replay_after: int | None,
-    electric_url: str | None,
-) -> None:
-    engine = connect(database_url)
-    database_updates = create_database_updates(engine.url)
-    with TemporaryDirectory() as directory:
-        if gateway is None:
-            token_file = Path(directory) / "token"
-            await asyncio.to_thread(token_file.write_text, "test-app-unused-token")
-            target = "test-unused-runner-gateway.invalid:8080"
-        else:
-            token_file, target = gateway.token_file, gateway.target
-        history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
-        summaries = Summaries(history)
-        event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
-        content = ContentStore(engine, history_reader=history)
-        notices = grpc.aio.server()
-        # Open and silent, as an idle inbox's notices are.
-        notifications_operator_pb2_grpc.add_NotificationsOperatorServicer_to_server(
-            FakeNotificationsOperator(), notices
-        )
-        async with (
-            kubernetes_api(sandboxes.kubeconfig) as kubernetes,
-            history,
-            history.new_client() as watch_client,
-            history.new_client() as openings_client,
-            dial("test-unused-decisions.invalid:8081") as decisions_channel,
-            serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
-            dial(f"127.0.0.1:{notices_port}") as notifications_channel,
-            httpx.AsyncClient(
-                base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
-            ) as electric_http,
-            dial(target) as dispatcher_channel,
-        ):
-            namespace = SandboxNamespace(
-                name=sandboxes.namespace,
-                custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(kubernetes.api)),
-                core_v1=k8s_client.CoreV1Api(kubernetes.api),
-                kubeconfig=sandboxes.kubeconfig,
-            )
-            custom, core = namespace.custom_objects, namespace.core_v1
-            # The Sandboxes and Pods the namespace holds, as the app's watch would have listed them.
-            index = LiveIndex(
-                freshness=Freshness(
-                    stale_after_seconds=90, at={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}
-                ),
-                core_v1=core,
-            )
-            index.sandboxes.update(
-                {item["metadata"]["name"]: item for item in await namespace.objects(SANDBOXES_PLURAL)}
-            )
-            index.pods.update({pod.metadata.name: pod for pod in await namespace.pods()})
-            inventory = SandboxAccess(
-                SandboxInventory(namespace=namespace.name, custom_objects=custom, core_v1=core),
-                default_policy_sets=frozenset(),
-                caller=namespace.account("app"),
-            )
-            control = SandboxControlClient(
-                control_target=target, token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
-            )
-            store = ThreadStore(engine, summaries)
-            runners = RunnerDirectory(index, control)
-            dispatcher = SessionDispatcherClient(dispatcher_channel, token_file=token_file, request_timeout_s=10)
-            bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
-            history_watch = HistoryWatch(
-                watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
-            )
-            action_policy = ActionPolicyInventory(namespace=namespace.name, custom_objects=custom)
-            egress = EgressAccess(namespace=namespace.name, custom_objects=custom, action_policy=action_policy)
-            app = create_app(
-                inventory,
-                bridge,
-                store,
-                ModelCatalog(
-                    models=[
-                        ModelOption(
-                            model="test-model-before",
-                            display_name="Test Model Before",
-                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                        ),
-                        ModelOption(
-                            model="test-model-after",
-                            display_name="Test Model After",
-                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                        ),
-                    ],
-                    harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
-                ),
-                egress,
-                DecisionsClient(decisions_channel, token_file=Path(directory) / "egress-token", request_timeout_s=1),
-                index,
-                action_policy,
-                # A browser's app has operator sessions, which the operator-only relays require.
-                OIDC if browser_login else None,
-                electric=(
-                    ElectricProxy(
-                        electric_http,
-                        content,
-                        event_logs=event_logs,
-                        thread_changes=database_updates.changes[Channel.THREADS],
-                    )
-                    if electric_url is not None
-                    else None
-                ),
-                event_logs=event_logs,
-                content=content,
-                database_updates=database_updates,
-                operator_sessions=OperatorSessionStore(engine),
-                notifications=NotificationsOperatorClient(
-                    notifications_channel, token_file=Path(directory) / "notifications-token", request_timeout_s=1
-                ),
-                system_status=answering_system_status(),
-            )
-            # Authentication is tested separately; the production routes, HTTP transport, ingestion,
-            # PostgreSQL notifications, and SSE generator all run here unchanged.
-            app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-            if browser_login:
-                with_test_login(app)
-                app.add_middleware(EmptyActionsWatch)
-            if replay_after is not None:
-                app.add_middleware(
-                    GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
-                )
-            try:
-                async with database_updates.listener.listen():
-                    watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
-                    opening = asyncio.create_task(
-                        SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run(),
-                        name="test-app-session-openings",
-                    )
-                    try:
-                        with socket.socket() as listener:
-                            listener.bind(("127.0.0.1", 0))
-                            url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                            await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
-                                sockets=[listener]
-                            )
-                    finally:
-                        watching.cancel()
-                        opening.cancel()
-                        await asyncio.gather(watching, opening, return_exceptions=True)
-            finally:
-                await engine.dispose()
-
-
-async def receive(connection: Connection) -> object:
-    ready = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    loop.add_reader(connection.fileno(), ready.set)
-    try:
-        await ready.wait()
-        return connection.recv()
-    finally:
-        loop.remove_reader(connection.fileno())
+    def send(self, action: ReplayAction) -> None:
+        assert self.release is not None
+        assert not self.release.done()
+        self.release.set_result(action)
 
 
 @dataclass
 class AppProcess:
     url: str
-    process: BaseProcess
-    observations: Connection
+    process: asyncio.subprocess.Process
+    stderr: Path
+    cookies: httpx.Cookies = field(default_factory=httpx.Cookies)
+    gate: ReplayGate | None = None
+    public_url: str | None = None
+    login_ca: ssl.SSLContext | None = None
+    oidc_issuer: str | None = None
 
     async def replay_held(self) -> ReplayHeld:
-        observation = await receive(self.observations)
-        assert isinstance(observation, ReplayHeld), observation
-        return observation
+        assert self.gate is not None
+        return await self.gate.observations.get()
 
     def release_replay(self) -> None:
-        self.observations.send(ReplayAction.RELEASE)
+        assert self.gate is not None
+        self.gate.send(ReplayAction.RELEASE)
 
     def disconnect_replay(self) -> None:
-        self.observations.send(ReplayAction.DISCONNECT)
+        assert self.gate is not None
+        self.gate.send(ReplayAction.DISCONNECT)
 
     async def kill(self) -> None:
         self.process.kill()
-        await asyncio.to_thread(self.process.join)
-        assert self.process.exitcode == -signal.SIGKILL
+        assert await self.process.wait() == -signal.SIGKILL
+
+    async def authenticate(self) -> None:
+        assert self.public_url is not None
+        assert self.login_ca is not None
+        async with httpx.AsyncClient(verify=self.login_ca, follow_redirects=True) as login:
+            await login.get(self.public_url + "/auth/login")
+            response = await login.get(self.public_url + "/auth/me")
+            response.raise_for_status()
+            assert response.json()["username"] == "test-operator", response.text
+            self.cookies = login.cookies
+
+    async def login(self, page: Page) -> None:
+        """Install the cookie obtained through the real OIDC authorization-code exchange."""
+        await self.authenticate()
+        assert self.public_url is not None
+        for cookie in self.cookies.jar:
+            assert cookie.value is not None
+            await page.context.add_cookies(
+                [
+                    {
+                        "name": cookie.name,
+                        "value": cookie.value,
+                        "url": self.public_url,
+                        "secure": cookie.secure,
+                        "httpOnly": True,
+                        "sameSite": "Lax",
+                    }
+                ]
+            )
+
+
+@dataclass
+class OIDCProviderOptions:
+    """Optional signed mock-provider behavior for app federation integration tests."""
+
+    authentik_compatible: bool = False
+    exchange_token_audience: str | None = None
+    expected_exchange_client_id: str | None = None
+    reject_refresh: bool = False
+    refresh_tokens: list[str] = field(default_factory=list)
+    issued_refresh_tokens: list[str] = field(default_factory=list)
+    client_assertions: list[str] = field(default_factory=list)
+
+
+def fixture_config() -> dict[str, object]:
+    unused = "http://127.0.0.1:1"
+    return {
+        "models": {
+            "models": [
+                {
+                    "model": name,
+                    "display_name": "Test " + name.removeprefix("test-").replace("-", " ").title(),
+                    "reasoning_efforts": list(TEST_REASONING_EFFORTS),
+                }
+                for name in (
+                    "test-model-before",
+                    "test-model-after",
+                    "test-model",
+                    "test-claude-model",
+                    "test-codex-model",
+                )
+            ],
+            "harnesses": {
+                harness: [
+                    "test-model-before",
+                    "test-model-after",
+                    "test-model",
+                    "test-claude-model",
+                    "test-codex-model",
+                ]
+                for harness in ("HARNESS_CLAUDE", "HARNESS_CODEX")
+            },
+        },
+        "runner_gateway_target": "127.0.0.1:1",
+        "runner_gateway_control_target": "127.0.0.1:1",
+        "session_dispatcher_target": "127.0.0.1:1",
+        "history_service_target": "127.0.0.1:1",
+        "notifications_url": unused,
+        "notifications_token_file": "/test-unused-token",
+        "runner_gateway_token_file": "/test-unused-token",
+        "session_dispatcher_token_file": "/test-unused-token",
+        "history_service_token_file": "/test-unused-token",
+        "egress_admin_url": unused,
+        "connection_service_url": unused,
+        "action_federation": {
+            "mode": "direct",
+            "service_url": unused,
+            "login_jwks_uri": unused + "/jwks",
+            "login_token_profile": "dex",
+            "target": {
+                "issuer": unused,
+                "audience": "test-agentplane",
+                "jwks_uri": unused + "/jwks",
+                "token_profile": "dex",
+            },
+            "scope": "test-agentplane",
+        },
+    }
+
+
+@asynccontextmanager
+async def spawn_go_app(
+    config: dict[str, object],
+    *,
+    oidc: OIDCSettings | None = None,
+    oidc_secrets: OIDCSecretInputs | None = None,
+    env: dict[str, str] | None = None,
+    listener: Listener | None = None,
+) -> AsyncIterator[AppProcess]:
+    configured = fixture_config() | config
+    database_url = render_postgresql_url(
+        str(configured.pop("database_url")), "postgresql", query={"sslmode": "disable"}
+    )
+    stderr = undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log"
+    with (
+        nullcontext(listener) if listener is not None else listen_tcp() as endpoint,
+        TemporaryDirectory(prefix="go-app-") as directory,
+    ):
+        url = f"http://{endpoint.host}:{endpoint.port}"
+        listener_fd = endpoint.socket.fileno()
+        configured["listen_address"] = f"fd:{listener_fd}"
+        if oidc is not None:
+            configured.setdefault("oidc", oidc.model_dump(mode="json", exclude_unset=True))
+        config_file = Path(directory) / "config.yaml"
+        config_file.write_text(yaml.safe_dump(configured, sort_keys=False))
+        process_env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTPLANE_")}
+        process_env.update(
+            {
+                "AGENTPLANE_CONFIG_FILE": str(config_file),
+                "AGENTPLANE_DATABASE_URL": database_url,
+                "OTEL_SDK_DISABLED": "true",
+            }
+        )
+        if oidc_secrets is not None:
+            process_env.update(
+                {
+                    "AGENTPLANE_OIDC_CLIENT_ID": oidc_secrets.client_id,
+                    "AGENTPLANE_OIDC_CLIENT_SECRET": oidc_secrets.client_secret,
+                    "AGENTPLANE_OIDC_SESSION_SECRET": oidc_secrets.session_secret,
+                }
+            )
+        process_env.update(env or {})
+        with stderr.open("wb") as log:
+            process = await asyncio.create_subprocess_exec(
+                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/go/agentplane-app_/agentplane-app"),
+                pass_fds=(listener_fd,),
+                env=process_env,
+                stdout=log,
+                stderr=log,
+            )
+        try:
+            async with httpx.AsyncClient(timeout=1) as client:
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_delay(20),
+                    wait=wait_fixed(0.05),
+                    retry=retry_if_exception_type(httpx.HTTPError),
+                    reraise=True,
+                ):
+                    with attempt:
+                        assert process.returncode is None, stderr.read_text()
+                        (await client.get(url + "/readyz")).raise_for_status()
+            yield AppProcess(url, process, stderr)
+        finally:
+            if process.returncode is None:
+                process.terminate()
+                try:
+                    async with asyncio.timeout(10):
+                        await process.wait()
+                except TimeoutError:
+                    process.send_signal(signal.SIGQUIT)
+                    await process.wait()
+                    raise AssertionError(stderr.read_text()) from None
+            assert process.returncode in (0, -signal.SIGKILL), stderr.read_text()
+
+
+class ReadyServer(uvicorn.Server):
+    def __init__(self, config: uvicorn.Config) -> None:
+        super().__init__(config)
+        self.ready = asyncio.Event()
+
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+        await super().startup(sockets)
+        assert self.started
+        self.ready.set()
+
+
+@asynccontextmanager
+async def oidc_provider(
+    directory: Path,
+    *,
+    subject: str = "test-operator",
+    extra_claims: dict[str, object] | None = None,
+    id_failure: str | None = None,
+    reject_token_exchange: bool = False,
+    options: OIDCProviderOptions | None = None,
+) -> AsyncIterator[tuple[str, Path]]:
+    provider_options = options or OIDCProviderOptions()
+    certificate = browser_certificate(directory)
+    certificate.port_reservation.close()
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        issuer_path = "/application/o/agentplane/" if provider_options.authentik_compatible else ""
+        url = f"https://127.0.0.1:{listener.getsockname()[1]}{issuer_path}"
+        private, public = generate_rsa_keypair()
+        claims = {"preferred_username": "test-operator"} | (extra_claims or {})
+        failures: dict[str, tuple[str, object]] = {
+            "issuer": ("iss", "https://wrong-issuer.invalid"),
+            "audience": ("aud", "wrong-client"),
+            "azp": ("azp", "wrong-client"),
+            "expired": ("exp", 1),
+            "subject": ("sub", ""),
+        }
+        if id_failure == "signature":
+            _, public = generate_rsa_keypair()
+        elif id_failure is not None:
+            key, value = failures[id_failure]
+            claims[key] = value
+        app = build_mock_oidc_app(
+            issuer_url=url,
+            private_key=private,
+            public_key=public,
+            subject=subject,
+            extra_id_token_claims=claims,
+            authentik_compatible=provider_options.authentik_compatible,
+            exchange_token_audience=provider_options.exchange_token_audience,
+            expected_exchange_client_id=provider_options.expected_exchange_client_id,
+            on_client_assertion=provider_options.client_assertions.append,
+        )
+        token_path = "/application/o/token/" if provider_options.authentik_compatible else "/token"
+        token_route = next(route for route in app.routes if isinstance(route, Route) and route.path == token_path)
+        issue_token = token_route.endpoint
+
+        async def token(request: Request) -> Response:
+            form = parse_qs((await request.body()).decode())
+            grant_type = form.get("grant_type", ["authorization_code"])[0]
+            if grant_type == "refresh_token":
+                provider_options.refresh_tokens.append(form["refresh_token"][0])
+                if provider_options.reject_refresh:
+                    return JSONResponse({"error": "invalid_grant"}, status_code=400)
+            response = cast(Response, await issue_token(request))
+            if grant_type in {"authorization_code", "refresh_token"} and response.status_code == 200:
+                refresh_token = json.loads(bytes(response.body)).get("refresh_token")
+                if isinstance(refresh_token, str):
+                    provider_options.issued_refresh_tokens.append(refresh_token)
+            return response
+
+        app.routes.remove(token_route)
+        app.routes.insert(0, Route(token_path, token, methods=["POST"]))
+        if reject_token_exchange:
+
+            async def reject(_request: Request) -> Response:
+                return Response(status_code=403)
+
+            app.routes.insert(0, Route("/token", reject, methods=["POST"]))
+        ca = certificate.directory / "certificate.pem"
+        server = ReadyServer(
+            uvicorn.Config(
+                app, log_level="warning", ssl_certfile=str(ca), ssl_keyfile=str(certificate.directory / "key.pem")
+            )
+        )
+        task = asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            async with asyncio.timeout(10):
+                await server.ready.wait()
+            yield url, ca
+        finally:
+            server.should_exit = True
+            await task
+
+
+class BrowserProxy:
+    """Forward real app HTTP bytes; hold selected Electric chunks at the test's delivery fence."""
+
+    def __init__(self, client: httpx.AsyncClient, history: HistoryServiceClient, gate: ReplayGate | None) -> None:
+        self.client, self.history, self.gate = client, history, gate
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        assert scope["type"] == "http"
+        path = scope["path"]
+        if path == "/upstream/actions/v1/action-requests:watch":
+            await send(
+                {"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/x-ndjson")]}
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b'{"result":{"snapshot":{"actionRequests":[]}}}\n{"result":{"snapshotComplete":{}}}\n',
+                    "more_body": True,
+                }
+            )
+            while (await receive())["type"] != "http.disconnect":
+                pass
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            body.extend(message.get("body", b""))
+            if not message.get("more_body", False):
+                break
+        forwarding = asyncio.create_task(self._forward(scope, bytes(body), send))
+        disconnected = asyncio.create_task(_disconnected(receive))
+        try:
+            done, _ = await asyncio.wait((forwarding, disconnected), return_when=asyncio.FIRST_COMPLETED)
+            for finished in done:
+                finished.result()
+        finally:
+            forwarding.cancel()
+            disconnected.cancel()
+            await asyncio.gather(forwarding, disconnected, return_exceptions=True)
+
+    async def _forward(self, scope: Scope, body: bytes, send: Send) -> None:
+        path = scope["path"]
+        headers = [
+            (key, value) for key, value in scope["headers"] if key not in (b"host", b"connection", b"accept-encoding")
+        ]
+        query = scope["query_string"].decode()
+        async with self.client.stream(
+            scope["method"], path + ("?" + query if query else ""), headers=headers, content=bytes(body)
+        ) as response:
+            outgoing = [
+                (key, value)
+                for key, value in response.headers.raw
+                if key.lower() not in (b"transfer-encoding", b"connection")
+            ]
+            streaming = response.headers.get("content-type", "").startswith(
+                ("text/event-stream", "application/x-ndjson")
+            ) or (path.endswith(":watch") and response.is_success)
+            selected = self.gate is not None and path.endswith("/sync/entities")
+            started = False
+            if streaming and not selected:
+                await send({"type": "http.response.start", "status": response.status_code, "headers": outgoing})
+                started = True
+            async for chunk in response.aiter_raw() if streaming else _whole_body(response):
+                if selected:
+                    assert self.gate is not None
+                    summary = await self.history.get_session_summary(path.split("/")[2])
+                    cursor = summary.folded_through
+                    if cursor > self.gate.after_cursor and await self.gate.hold(cursor) is ReplayAction.DISCONNECT:
+                        if not started:
+                            await send({"type": "http.response.start", "status": 503, "headers": []})
+                        await send({"type": "http.response.body", "body": b"", "more_body": False})
+                        return
+                if not started:
+                    await send({"type": "http.response.start", "status": response.status_code, "headers": outgoing})
+                    started = True
+                await send({"type": "http.response.body", "body": chunk, "more_body": True})
+            if not started:
+                await send({"type": "http.response.start", "status": response.status_code, "headers": outgoing})
+            await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+
+async def _disconnected(receive: Receive) -> None:
+    while (await receive())["type"] != "http.disconnect":
+        pass
+
+
+async def _whole_body(response: httpx.Response) -> AsyncIterator[bytes]:
+    yield b"".join([chunk async for chunk in response.aiter_raw()])
 
 
 @asynccontextmanager
@@ -464,38 +489,83 @@ async def app_process(
     browser_login: bool = False,
     replay_after: int | None = None,
     electric_url: str | None = None,
+    config: dict[str, object] | None = None,
+    certificate: BrowserCertificate | None = None,
+    oidc_provider_options: OIDCProviderOptions | None = None,
+    config_for_oidc_issuer: Callable[[str], dict[str, object]] | None = None,
 ) -> AsyncIterator[AppProcess]:
-    context = multiprocessing.get_context("spawn")
-    parent, child = context.Pipe()
-    electric_log_path = (
-        undeclared_outputs_dir() / f"electric-proxy-{uuid4().hex}.log"
-        if browser_login and electric_url is not None
-        else None
-    )
-    process = context.Process(
-        target=_run,
-        args=(
-            database_url,
-            sandboxes,
-            gateway,
-            history.target,
-            history.token_file,
-            child,
-            browser_login,
-            replay_after,
-            electric_url,
-            electric_log_path,
-        ),
-    )
-    process.start()
-    child.close()
-    try:
-        ready = await receive(parent)
-        assert isinstance(ready, Ready), ready
-        yield AppProcess(ready.url, process, parent)
-    finally:
-        if process.is_alive():
-            process.kill()
-        await asyncio.to_thread(process.join)
-        parent.close()
-        process.close()
+    with TemporaryDirectory(prefix="app-oidc-") as directory, listen_tcp() as listener:
+        port = listener.port
+        token = Path(directory) / "unused-token"
+        token.write_text("test-unused-token")
+        notices = grpc.aio.server()
+        notifications_pb2_grpc.add_NotificationsServicer_to_server(FakeNotifications(), notices)
+        async with (
+            oidc_provider(Path(directory) / "tls", options=oidc_provider_options) as (issuer, ca),
+            serving(notices, "127.0.0.1:0", grace_s=0) as notices_port,
+        ):
+            settings: dict[str, object] = {
+                "database_url": database_url,
+                "kubeconfig": str(sandboxes.kubeconfig),
+                "sandbox_namespace": sandboxes.namespace,
+                "history_service_target": history.target,
+                "history_service_token_file": str(history.token_file),
+                "notifications_url": f"http://127.0.0.1:{notices_port}",
+                "notifications_token_file": str(token),
+            }
+            if gateway is not None:
+                settings.update(
+                    {
+                        "runner_gateway_target": gateway.target,
+                        "runner_gateway_control_target": gateway.target,
+                        "session_dispatcher_target": gateway.target,
+                        "runner_gateway_token_file": str(gateway.token_file),
+                        "session_dispatcher_token_file": str(gateway.token_file),
+                    }
+                )
+                if gateway.tls is not None:
+                    settings["runner_gateway_tls"] = gateway.tls.model_dump(mode="json")
+                    settings["session_dispatcher_tls"] = gateway.tls.model_dump(mode="json")
+            if electric_url is not None:
+                settings["electric_url"] = electric_url
+            oidc = OIDCSettings(
+                issuer=issuer,
+                public_base_url=certificate.url if certificate is not None else f"http://127.0.0.1:{port}",
+            )
+            oidc_secrets = OIDCSecretInputs(
+                client_id="test-agentplane", client_secret="test-secret", session_secret="test-session-secret"
+            )
+            settings["oidc"] = oidc.model_dump(mode="json", exclude_unset=True)
+            configured = settings.copy()
+
+            def merge_overrides(overrides: dict[str, object]) -> None:
+                oidc_override = overrides.get("oidc")
+                if isinstance(oidc_override, dict):
+                    configured_oidc = configured.get("oidc", {})
+                    assert isinstance(configured_oidc, dict)
+                    configured["oidc"] = {**configured_oidc, **oidc_override}
+                configured.update({key: value for key, value in overrides.items() if key != "oidc"})
+
+            if config_for_oidc_issuer is not None:
+                merge_overrides(config_for_oidc_issuer(issuer))
+            merge_overrides(config or {})
+            async with spawn_go_app(
+                configured, oidc=oidc, oidc_secrets=oidc_secrets, env={"SSL_CERT_FILE": str(ca)}, listener=listener
+            ) as app:
+                app.public_url = oidc.public_base_url
+                app.login_ca = ssl.create_default_context(cafile=str(ca))
+                app.oidc_issuer = issuer
+                if certificate is None:
+                    await app.authenticate()
+                else:
+                    app.login_ca.load_verify_locations(cafile=str(certificate.directory / "certificate.pem"))
+                app.gate = ReplayGate(replay_after) if replay_after is not None else None
+                if browser_login or app.gate is not None:
+                    async with (
+                        httpx.AsyncClient(base_url=app.url, timeout=65) as upstream,
+                        serve_app_in_loop(BrowserProxy(upstream, history, app.gate)) as proxy,
+                    ):
+                        app.url = proxy
+                        yield app
+                else:
+                    yield app

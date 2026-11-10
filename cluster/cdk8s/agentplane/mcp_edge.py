@@ -1,4 +1,4 @@
-"""The MCP edge serving workload, permissions and schema migration Job."""
+"""The MCP edge serving workload and permissions."""
 
 from __future__ import annotations
 
@@ -9,11 +9,8 @@ from cdk8s_plus_34 import (
     CpuResources,
     EnvValue,
     ImagePullPolicy,
-    Job,
     MemoryResources,
     PathMapping,
-    PodSecurityContextProps,
-    RestartPolicy,
     Role,
     RoleBinding,
     RolePolicyRule,
@@ -24,16 +21,16 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.environment_runtime_transport.config import ACTIONS_URI
 from agentplane.mcp_edge.settings import Settings
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, app as app_component, database
+from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -45,12 +42,18 @@ from util.settings_contract import env_name, validate_settings_fragment
 NAME = "mcp-edge"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge-migrate:unset"
 _SECRET_DIR = "/etc/agentplane-mcp"
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 
 
 def service(namespace: str) -> ServiceRef:
-    return ServiceRef(name=NAME, port=Port(name="http", number=8080), pods=Pods(namespace, tuple(_LABELS.items())))
+    """The gRPC listener: ConnectionService and health."""
+    return ServiceRef(name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace, tuple(_LABELS.items())))
+
+
+def http_service(namespace: str) -> ServiceRef:
+    """The HTTP listener: the facade, /mcp, OAuth and metrics."""
+    return ServiceRef(name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace, tuple(_LABELS.items())))
 
 
 class McpEdge(Construct):
@@ -66,11 +69,12 @@ class McpEdge(Construct):
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.endpoint = service(env.namespace)
+        self.http = http_service(env.namespace)
         props = env.mcp_edge
         if not props.caller_service_account_namespaces:
             raise ValueError("MCP edge needs an explicit caller namespace")
@@ -80,7 +84,9 @@ class McpEdge(Construct):
         content = {
             "host": "0.0.0.0",
             "port": self.endpoint.pod_port,
+            "http_port": self.http.pod_port,
             "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            "actions_tls": workload_tls.client_tls(ACTIONS_URI),
             "operator_oidc": props.operator_oidc,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "mintable_accounts": sorted(f"{account.namespace}/{account.name}" for account in props.mintable_accounts),
@@ -102,7 +108,7 @@ class McpEdge(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[self.endpoint],
+            serves=[self.endpoint, self.http],
             container=NAME,
             image=_IMAGE,
             image_pull_policy=image_pull_policy,
@@ -110,17 +116,18 @@ class McpEdge(Construct):
             env_variables=variables,
             readiness=grpc_probe(port=self.endpoint.pod_port, initial_delay_seconds=3),
             liveness=grpc_probe(port=self.endpoint.pod_port, service="livez", initial_delay_seconds=20),
+            startup=grpc_probe(
+                port=self.endpoint.pod_port,
+                service="livez",
+                initial_delay_seconds=0,
+                period_seconds=5,
+                failure_threshold=60,
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                memory=MemoryResources(request=memory_request, limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(30),
-            migrate=migrate_init_container(
-                _MIGRATE_IMAGE,
-                name="migrate",
-                env_variables={env_name(Settings, "database_url"): database_url},
-                image_pull_policy=migrate_pull_policy,
-            ),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
@@ -144,6 +151,7 @@ class McpEdge(Construct):
             )
             workload.container.mount(_SECRET_DIR, oauth_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
+        workload_tls.mount_trust_bundle(self, workload.container)
         self._add_rbac(workload.account)
 
     def _add_rbac(self, account: ServiceAccount) -> None:
@@ -178,16 +186,40 @@ class McpEdge(Construct):
         endpoint = self.endpoint
         hostname = self.env.mcp_edge.hostname
         if hostname is not None:
-            add_public_route(self, endpoint=endpoint, hostname=hostname)
+            add_public_route(self, endpoint=self.http, hostname=hostname)
+        action_hostname = self.env.actions.hostname
+        client_metadata = self.env.actions.mcp_client_metadata
+        if action_hostname is not None:
+            if client_metadata is None:
+                raise ValueError("Action Service hostname needs client metadata")
+            metadata_url = client_metadata.url
+            if metadata_url.host != action_hostname or metadata_url.port != 443:
+                raise ValueError("mcp_client_metadata.url must use this Action Service's HTTPS hostname")
+            assert metadata_url.path is not None
+            https_route(
+                self,
+                "action-client-metadata-route",
+                metadata=ApiObjectMetadata(name=f"{actions.NAME}-mcp", namespace=namespace),
+                hostnames=[action_hostname],
+                backend=self.http,
+                paths=(metadata_url.path,),
+                timeout="3600s",
+            )
+        elif client_metadata is not None:
+            raise ValueError("mcp_client_metadata needs an Action Service hostname to publish it")
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
-                *([IngressRule.from_gateway(endpoint.pod_port)] if hostname is not None else []),
+                *(
+                    [IngressRule.from_gateway(self.http.pod_port)]
+                    if hostname is not None or action_hostname is not None
+                    else []
+                ),
                 app_component.service(namespace).pods.admit(endpoint.pod_port),
-                cilium.SCRAPERS.admit(endpoint.pod_port),
+                cilium.SCRAPERS.admit(self.http.pod_port),
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
@@ -202,49 +234,5 @@ class McpEdge(Construct):
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             selector=ServiceMonitorSpecSelector(match_labels=endpoint.labels),
-            endpoints=[Endpoint.plain(port=endpoint.port.name)],
-        )
-
-
-class SchemaMigration(Construct):
-    """Initialize the edge schema before transferring data or starting its serving workload."""
-
-    def __init__(self, scope: Construct, id: str, env: Environment, *, database_url: EnvValue) -> None:
-        super().__init__(scope, id)
-        name = "mcp-edge-schema-migrate"
-        labels = {"app.kubernetes.io/name": name}
-        account = ServiceAccount(
-            self, "account", metadata=ApiObjectMetadata(name=name, namespace=env.namespace), automount_token=False
-        )
-        job = Job(
-            self,
-            "job",
-            metadata=ApiObjectMetadata(
-                name=name, namespace=env.namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
-            ),
-            pod_metadata=ApiObjectMetadata(labels=labels),
-            select=False,
-            backoff_limit=3,
-            active_deadline=Duration.minutes(10),
-            restart_policy=RestartPolicy.NEVER,
-            service_account=account,
-            automount_service_account_token=False,
-            enable_service_links=False,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
-            containers=[
-                migrate_init_container(
-                    _MIGRATE_IMAGE, name="migrate", env_variables={env_name(Settings, "database_url"): database_url}
-                )
-            ],
-        )
-        pod_policy.place(job, node_scheduling.HIL_OVH)
-        pod_policy.harden(job)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-            endpoint_selector=labels,
-            ingress=[],
-            egress=[cilium.dns_egress(), database.egress(env.namespace)],
+            endpoints=[Endpoint.plain(port=self.http.port.name)],
         )

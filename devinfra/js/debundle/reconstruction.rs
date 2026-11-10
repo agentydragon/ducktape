@@ -4,14 +4,19 @@
 //! order, and vendor replacements. The syntax in this plan includes those
 //! decisions. Final validation inspects that exact syntax; accepted plans expose
 //! no mutation path, so emission cannot change the program after validation.
+//! A gate-rejected program is frozen as a [`RejectedPlan`] instead, which only
+//! the marked reading-only tree writer consumes.
 
+use source_identity::ChunkId;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail, ensure};
+use artifact::EmissionFiles;
 use artifact::reports::write_json;
-use artifact::{ChunkId, EmissionFiles};
-use serde::Serialize;
+use gate::{ChunkGateRejection, UnmatchedSpecClaim};
+use lowering::FinalizedCandidateEmissionDraft;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     VendorResolutionPlan, VendorSwapsReport, validate_partial_swap_consumers,
@@ -42,23 +47,11 @@ impl VendorManifestOutput {
     }
 }
 
-/// A `define_logical_module` member whose `binding.name` did not
-/// resolve to a top-level declaration in the chunk. Collected across chunks
-/// and rejected at final validation before accepted output is written.
-#[derive(Debug, Clone, Serialize)]
-pub struct UnmatchedSpecClaim {
-    pub chunk_id: String,
-    /// Claiming module, by canonical [`spec::ModulePath`].
-    pub module_path: spec::ModulePath,
-    pub binding_name: String,
-    pub export_name: String,
-}
-
 /// Ready-to-validate output syntax and replacement decisions for one program.
 /// Diagnostic reports are separate from the accepted output tree.
 pub struct ReconstructionPlan {
     files: EmissionFiles,
-    vendor: VendorResolutionPlan,
+    vendor: Arc<VendorResolutionPlan>,
     vendor_manifest: Option<VendorManifestOutput>,
     unresolved_claims: Vec<UnmatchedSpecClaim>,
     browser_harness: Option<BrowserHarnessPlan>,
@@ -66,15 +59,30 @@ pub struct ReconstructionPlan {
 
 impl ReconstructionPlan {
     pub fn new(
-        files: EmissionFiles,
-        vendor: VendorResolutionPlan,
+        candidate: FinalizedCandidateEmissionDraft,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
         vendor_manifest: Option<VendorManifestOutput>,
     ) -> Result<Self> {
+        let (files, vendor) = candidate.into_files_and_vendor_plan();
         let browser_harness = browser_options
             .map(|options| {
-                BrowserHarnessPlan::prepare(files.files(), &vendor.full_swap_chunk_ids(), options)
+                BrowserHarnessPlan::prepare(
+                    files.files(),
+                    &vendor.full_swap_chunk_ids(),
+                    &vendor
+                        .full_swap_resolutions()
+                        .values()
+                        .filter_map(|resolution| {
+                            files
+                                .files()
+                                .chunk_table
+                                .get(&resolution.chunk_id)
+                                .map(|id| (id, resolution.package.clone()))
+                        })
+                        .collect(),
+                    options,
+                )
             })
             .transpose()?;
         Ok(Self {
@@ -108,7 +116,7 @@ impl ReconstructionPlan {
 /// Only `ReconstructionPlan::validate` can construct this capability.
 pub struct ValidatedPlan {
     files: EmissionFiles,
-    vendor: VendorResolutionPlan,
+    vendor: Arc<VendorResolutionPlan>,
     vendor_manifest: Option<VendorManifestOutput>,
     excluded_chunk_ids: BTreeSet<ChunkId>,
     browser_harness: Option<BrowserHarnessPlan>,
@@ -134,6 +142,85 @@ impl ValidatedPlan {
             write_json(&manifest.path, &manifest.report)?;
         }
         Ok(())
+    }
+}
+
+/// A program the realizability gate rejected, frozen for the reading-only tree
+/// `debundle run --emit-on-rejection` writes. It never reaches final program
+/// validation and exposes no browser harness or vendor replacement outputs:
+/// those describe a runnable bundle. The tree writer marks the output.
+pub struct RejectedPlan {
+    files: EmissionFiles,
+    excluded_chunk_ids: BTreeSet<ChunkId>,
+    rejections: Vec<ChunkGateRejection>,
+}
+
+impl RejectedPlan {
+    /// Fails, naming the gate's diagnostic too, on unresolved spec claims: a
+    /// reading-only tree carries the gate's rejection and no other failure.
+    pub fn new(
+        candidate: FinalizedCandidateEmissionDraft,
+        rejections: Vec<ChunkGateRejection>,
+        unresolved_claims: &[UnmatchedSpecClaim],
+    ) -> Result<Self> {
+        let (files, vendor) = candidate.into_files_and_vendor_plan();
+        ensure!(
+            !rejections.is_empty(),
+            "a rejected plan needs at least one gate rejection"
+        );
+        let plan = Self {
+            files,
+            excluded_chunk_ids: vendor.full_swap_chunk_ids(),
+            rejections,
+        };
+        reject_unresolved_claims(unresolved_claims).with_context(|| plan.diagnostic())?;
+        Ok(plan)
+    }
+
+    pub fn files(&self) -> &EmissionFiles {
+        &self.files
+    }
+
+    pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {
+        &self.excluded_chunk_ids
+    }
+
+    pub fn rejections(&self) -> &[ChunkGateRejection] {
+        &self.rejections
+    }
+
+    /// Every chunk's rendered rejection, in chunk order: the error the run
+    /// fails with after writing the marked tree.
+    pub fn diagnostic(&self) -> String {
+        self.rejections
+            .iter()
+            .map(|rejection| rejection.diagnostic.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+/// What the tree writer may materialize. A rejected plan is written only with
+/// the gate-rejected marker and never with the browser harness or vendor assets.
+#[derive(Clone, Copy)]
+pub enum EmittablePlan<'a> {
+    Accepted(&'a ValidatedPlan),
+    Rejected(&'a RejectedPlan),
+}
+
+impl EmittablePlan<'_> {
+    pub fn files(&self) -> &EmissionFiles {
+        match self {
+            Self::Accepted(plan) => plan.files(),
+            Self::Rejected(plan) => plan.files(),
+        }
+    }
+
+    pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {
+        match self {
+            Self::Accepted(plan) => plan.excluded_chunk_ids(),
+            Self::Rejected(plan) => plan.excluded_chunk_ids(),
+        }
     }
 }
 

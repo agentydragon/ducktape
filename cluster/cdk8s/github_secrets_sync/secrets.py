@@ -78,6 +78,13 @@ def chart(app: App) -> Chart:
     _external_secret(
         chart, "buildbuddy-api-key", name="buildbuddy-api-key", secret_key="api-key", source="buildbuddy-api-key"
     )
+    _external_secret(
+        chart,
+        "gaffer-repo-fetch-pat",
+        name="gaffer-repo-fetch-pat",
+        secret_key="github_token",
+        source="gaffer-repo-fetch-pat",
+    )
     return chart
 
 
@@ -105,6 +112,12 @@ def github_secrets_sync_secrets(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
                 name="buildbuddy-api-key",
+                namespace=_NAMESPACE,
+            ),
+            KustomizationSpecHealthChecks(
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name="gaffer-repo-fetch-pat",
                 namespace=_NAMESPACE,
             ),
         ],

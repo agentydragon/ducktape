@@ -1,8 +1,9 @@
 # Throughput smoke benchmark against cluster Ollama.
 # Apply with: ./run.sh   (creates the bench.py ConfigMap and the Job, tails logs).
-# The ConfigMap `ollama-bench-initial` is rendered from bench.py at apply time
-# (see run.sh) — it is NOT in this manifest because checking in a giant inline
-# Python blob is uglier than just sourcing the file.
+# The ConfigMap `ollama-bench-initial` is rendered from bench.py and
+# ../ollama_bench_helpers.py at apply time (see run.sh); it is NOT in this
+# manifest because checking in a giant inline Python blob is uglier than
+# sourcing the files.
 ---
 apiVersion: batch/v1
 kind: Job
@@ -54,3 +55,5 @@ spec:
             items:
               - key: bench.py
                 path: bench.py
+              - key: ollama_bench_helpers.py
+                path: ollama_bench_helpers.py

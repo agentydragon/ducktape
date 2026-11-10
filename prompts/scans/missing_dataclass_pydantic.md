@@ -51,7 +51,7 @@ class LocalAgentRuntime:
         self,
         running: RunningInfrastructure,
         model: str,
-        client_factory: Callable[[str], OpenAIModelProto],
+        client_factory: Callable[[str], Model],
         system_override: str | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
@@ -87,7 +87,7 @@ class LocalAgentRuntime:
     """Runtime for local agent execution."""
     running: RunningInfrastructure
     model: str
-    client_factory: Callable[[str], OpenAIModelProto]
+    client_factory: Callable[[str], Model]
     system_override: str | None = None
     reasoning_effort: ReasoningEffort | None = None
     reasoning_summary: ReasoningSummary | None = None

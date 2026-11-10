@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
+use relative_path::RelativePath;
 
 pub const APP_DIR: &str = "app";
 pub const REPORTS_DIR: &str = "reports";
@@ -14,14 +15,37 @@ pub const SOURCE_ASSETS_REPORT: &str = "source_assets.json";
 pub const PROVENANCE_REPORT: &str = "provenance.json";
 pub const RENAME_QUEUE_REPORT: &str = "rename_queue.json";
 pub const VENDOR_SWAPS_REPORT: &str = "vendor_swaps.json";
+/// Written at the output root by `debundle run --emit-on-rejection` when the
+/// realizability gate rejected the spec: the tree beside it is not runnable.
+pub const GATE_REJECTED_MARKER: &str = "GATE_REJECTED";
 
 pub const CHUNK_REPORT: &str = "chunk.json";
 pub const MODULES_REPORT: &str = "modules.json";
-pub const DEPENDENCY_GRAPH_REPORT: &str = "dependency_graph.json";
+pub const GRAPH_SUMMARY_REPORT: &str = "graph_summary.json";
+pub const DEPENDENCY_GRAPH_REPORT: &str = "dependency_graph.json.gz";
+/// Program-wide graph sections, written once at the report root and
+/// referenced by every chunk's `dependency_graph.json.gz`.
+pub const PROGRAM_GRAPH_REPORT: &str = "program_graph.json.gz";
 pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_GROUP_CONFLICTS_REPORT: &str = "atomic_group_conflicts.json";
 pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";
+/// Written beside `selector_diagnostics.json` when the graph build diagnoses
+/// `commuting_statements` entries: the contradiction that failed the chunk,
+/// or one warning per unused entry.
+pub const COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT: &str = "commuting_statements_diagnostics.json";
+/// Written per chunk whenever a report directory is: the chunk's
+/// `reports::spec_lint::LintFinding`s, read back by `spec lint`.
+pub const SPEC_LINT_REPORT: &str = "spec_lint.json";
 pub const EXPORT_REENTRY_REPORT: &str = "export_reentry.json";
+pub const EXPORT_REENTRY_FULL_REPORT: &str = "export_reentry.full.json";
+/// Translation validation beside the gate's verdict; report only.
+pub const EFFECT_CONFLICTS_JSONL: &str = "effect_conflicts.jsonl";
+pub const EFFECT_TRANSLATION_VALIDATION_REPORT: &str = "effect_translation_validation.json";
+pub const CANDIDATE_RELOCATION_ASSESSMENT_REPORT: &str = "candidate_relocation_assessment.json";
+/// Program-wide, written once at the report root of an accepted run.
+pub const GLOBAL_RESOLUTION_REPORT: &str = "global_resolution.json";
+pub const TRANSLATION_VALIDATION_REPORT: &str = "translation_validation.json";
+pub const TRANSLATION_VALIDATION_FULL_REPORT: &str = "translation_validation.full.jsonl";
 pub const INDEX_REPORT: &str = "index.json";
 
 #[derive(Debug, Clone)]
@@ -94,7 +118,7 @@ impl DebundleOutputLayout {
 
 pub fn report_path_for_file(tree_root: &Path, app_relative_path: &str) -> PathBuf {
     tree_root
-        .join(app_relative_path.split('/').collect::<PathBuf>())
+        .join(RelativePath::new(app_relative_path).to_path(""))
         .with_file_name(format!(
             "{}.json",
             Path::new(app_relative_path)
@@ -109,7 +133,7 @@ pub fn report_path_for_directory(tree_root: &Path, directory: &str) -> PathBuf {
         tree_root.join(INDEX_REPORT)
     } else {
         tree_root
-            .join(directory.split('/').collect::<PathBuf>())
+            .join(RelativePath::new(directory).to_path(""))
             .join(INDEX_REPORT)
     }
 }

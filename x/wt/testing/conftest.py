@@ -13,6 +13,7 @@ from unittest.mock import Mock
 
 import pygit2
 import pytest
+from python.runfiles import Runfiles
 from typer.testing import CliRunner
 
 from x.wt.server import github_client
@@ -53,11 +54,7 @@ def wt_test_mode():
 
 @pytest.fixture
 def write_pr_fixtures():
-    """Write typed PR fixtures to $WT_DIR/pr_fixtures.json.
-
-    Example:
-        write_pr_fixtures(config, {"feature-x": PRFixtureEntry(number=123, ...)})
-    """
+    """Write typed PR fixtures to $WT_DIR/pr_fixtures.json."""
 
     return write_pr_fixtures_file
 
@@ -85,18 +82,7 @@ def repo_factory(tmp_path: Path):
 
 @pytest.fixture
 def pygit2_repo(real_temp_repo) -> pygit2.Repository:
-    """Provide a pygit2.Repository instance for the test's real_temp_repo.
-
-    Use this fixture when you need to perform multiple pygit2 operations
-    on the same repository, avoiding repeated Repository instantiation.
-
-    Example:
-        def test_something(pygit2_repo, real_temp_repo):
-            # Use pygit2_repo for git operations
-            branch = pygit2_repo.head.shorthand
-            # Use real_temp_repo for path operations
-            (real_temp_repo / "file.txt").write_text("content")
-    """
+    """Return the pygit2.Repository for this test's real_temp_repo."""
     return pygit2.Repository(real_temp_repo)
 
 
@@ -129,11 +115,7 @@ def daemon_config_factory(tmp_path: Path):
 
 @pytest.fixture
 def cli_test_env(repo_factory, config_factory):
-    """Create test environment for CLI integration tests.
-
-    Returns the WT_DIR path that can be used with patch.dict for environment setup.
-    CLI tests use this to set up proper configuration without external dependencies.
-    """
+    """Return the configured .wt path for CLI integration tests."""
     # Create repo and config using factories
     repo_path = repo_factory.create_repo()
     factory = config_factory(repo_path)
@@ -145,10 +127,7 @@ def cli_test_env(repo_factory, config_factory):
 
 @pytest.fixture
 def wt_env(cli_test_env, monkeypatch):
-    """Set WT_DIR to the per-test cli_test_env path and return it.
-
-    Use in CLI tests to avoid repeating monkeypatch code.
-    """
+    """Set WT_DIR to cli_test_env and return that path."""
     monkeypatch.setenv("WT_DIR", str(cli_test_env))
     return cli_test_env
 
@@ -464,19 +443,33 @@ def _generate_wt_function_for_binary(binary_path: str) -> str:
     return tpl.replace("__PY__ -m x.wt.cli sh", quoted_path + " sh")
 
 
+@pytest.fixture(scope="session", params=["bash", "zsh"])
+def shell_command(request, tmp_path_factory):
+    if request.param == "bash":
+        return ["/bin/bash", "--noprofile", "--norc"]
+    root = tmp_path_factory.mktemp("zsh")
+    subprocess.run(
+        ["tar", "-xf", (Runfiles.CreateOrRaise().root() / os.environ["ZSH_CLOSURE"]), "-C", root], check=True
+    )
+    libdir = root / "usr/lib/x86_64-linux-gnu"
+    return [str(libdir / "ld-linux-x86-64.so.2"), "--library-path", str(libdir), str(root / "usr/bin/zsh"), "-f"]
+
+
 @pytest.fixture
-def shell_runner(tmp_path: Path):
+def shell_runner(tmp_path: Path, shell_command):
     """Factory for running shell commands via the installed wt shell function."""
 
     class ShellRunner:
-        def run_script(self, script_content: str, *, cwd: Path, env: dict[str, str] | None = None):
+        def run_script(
+            self, script_content: str, *, cwd: Path, env: dict[str, str] | None = None, cli_path: Path | None = None
+        ):
             # Ensure wt is importable (package installed) before attempting shell integration
             assert importlib.util.find_spec("x.wt"), "wt package not installed - required for shell integration tests"
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 
             # Find the Bazel-built wt_cli binary - tests require it for proper environment setup
-            wt_cli_path = _find_wt_cli_binary()
+            wt_cli_path = str(cli_path) if cli_path is not None else _find_wt_cli_binary()
             if not wt_cli_path:
                 raise RuntimeError(
                     "wt_cli binary not found in runfiles. Ensure //x/wt:wt_cli is in the test's data dependencies."
@@ -494,7 +487,7 @@ def shell_runner(tmp_path: Path):
             script_path.write_text(full_script, encoding="utf-8")
             script_path.chmod(0o755)
             return subprocess.run(
-                ["/bin/bash", str(script_path)], capture_output=True, text=True, cwd=str(cwd), env=env, check=False
+                [*shell_command, str(script_path)], capture_output=True, text=True, cwd=str(cwd), env=env, check=False
             )
 
         def run_argv(self, *, cwd: Path, argv: list[str], env: dict[str, str] | None = None):

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
+from python.runfiles import Runfiles
 
 from finance.plaid.spend.allowance import (
     AllOf,
@@ -38,7 +39,7 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.configuration import SpendConfiguration, load_configuration
 from finance.plaid.spend.models import AllowanceConfigurationView, SpendConfigurationView
 from finance.plaid.spend.reconciliation_views import allowance_view
-from util.bazel.runfiles import get_required_path
+from finance.plaid.spend.testing.transaction import make_transaction
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
 START_DATE = date(2026, 1, 31)
@@ -74,7 +75,7 @@ def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None)
 
 def row(
     day: str,
-    amount: int,
+    amount: int | Decimal,
     *,
     pending: bool = False,
     transaction_id: str | None = None,
@@ -82,16 +83,14 @@ def row(
     pfc_primary: str | None = "SHOPPING",
     pfc_detailed: str | None = "SHOPPING_GENERAL_MERCHANDISE",
 ) -> Transaction:
-    return Transaction(
+    return make_transaction(
         account_id="card-1",
         transaction_id=transaction_id or f"tx-{day}-{amount}",
         date=date.fromisoformat(day),
         amount=Decimal(amount),
         pending=pending,
         pending_transaction_id=pending_transaction_id,
-        currency="USD",
         name="EXAMPLE SHOP",
-        merchant_name=None,
         pfc_primary=pfc_primary,
         pfc_detailed=pfc_detailed,
     )
@@ -391,6 +390,26 @@ def test_monthly_observed_pace_warns_when_selected_without_weekly_forecast_or_op
     )
     assert monthly.forecast.basis_period.id == PeriodId.ROLLING_30D
     assert monthly.spending_signal == PaceAlert.WARNING
+
+
+def test_daily_reference_is_rounded_for_wire_but_unrounded_rate_drives_signal():
+    now = datetime(2026, 1, 31, tzinfo=UTC)
+    result = allowance_view(
+        calculate(
+            policy(activation_at=date(2025, 12, 1)),
+            [row("2026-01-30", Decimal("23.03"))],
+            time_zone=ZoneInfo("UTC"),
+            now=now,
+            last_synced_at=now,
+        )
+    )
+
+    # 10,000 * 12 / 365.2425 is about 328.55 minor units. The wire value rounds to 329,
+    # while an observed pace of 329 still exceeds the unrounded business rate.
+    assert result.daily_reference_minor_units == 329
+    assert pace(result, PeriodId.ROLLING_7D) == 329
+    assert result.forecast.alert_state == PaceAlert.NORMAL
+    assert result.spending_signal == PaceAlert.WARNING
 
 
 def test_no_pace_until_history_or_a_full_week_of_zero_spend():
@@ -839,11 +858,15 @@ def test_one_off_scope_is_validated_from_its_condition():
         AllowancePolicy.model_validate(unconfigured)
 
 
-def test_configuration_preserves_financial_yaml_decimal_tokens(tmp_path: Path) -> None:
-    example = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
+@pytest.fixture(scope="module")
+def one_off_configuration(runfiles: Runfiles) -> Path:
+    return runfiles.root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
+
+
+def test_configuration_preserves_financial_yaml_decimal_tokens(one_off_configuration: Path, tmp_path: Path) -> None:
     policy = tmp_path / "policy.yaml"
     policy.write_text(
-        example.read_text()
+        one_off_configuration.read_text()
         + """
 sustainability:
   portfolio:
@@ -868,15 +891,14 @@ sustainability:
     assert correction.value_multiplier == Decimal("1.00000000000000000000000000001")
 
 
-def test_one_off_yaml_round_trip_and_configuration_view():
-    path = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
-    loaded = load_configuration(path)
+def test_one_off_yaml_round_trip_and_configuration_view(one_off_configuration: Path):
+    loaded = load_configuration(one_off_configuration)
     parsed = loaded.allowance
     assert parsed is not None
     assert [rule.id for rule in parsed.rules] == ["example-hotel-2026-06-04", None]
     assert [rule.scope for rule in parsed.rules] == [RuleScope.ONE_OFF, RuleScope.PATTERN]
     assert SpendConfiguration.model_validate(loaded.model_dump(mode="json")) == loaded
-    assert load_configuration(path) == loaded
+    assert load_configuration(one_off_configuration) == loaded
     view = SpendConfigurationView(
         time_zone=loaded.time_zone.key,
         cards=[],

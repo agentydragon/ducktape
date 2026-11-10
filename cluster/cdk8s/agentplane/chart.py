@@ -3,8 +3,10 @@ adds its environment-only objects to what it returns; that is what generate_mani
 disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
-(`runner_name`, `runner_image`), plus any Secret a runner workload reads as a file
-(`runner_key_files`); the chart itself takes a side in none of that.
+(`environment_template_name`, `environment_tools_image`), plus any Secret a runner workload reads as a file
+(`environment_runtime_key_files`). The chart provisions the Gateway certificate from the
+Agentplane workload CA (`cluster_ca.WORKLOAD_ISSUER`); the Sandbox Controller provisions a unique leaf Certificate
+for each workload incarnation from the same CA.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
@@ -19,9 +22,11 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    central_sampler_workload,
     database,
     egress,
     electric,
+    environment_sandbox,
     frontend,
     history_service,
     llm_ingress,
@@ -29,17 +34,23 @@ from cluster.cdk8s.agentplane import (
     notifications,
     runner_gateway,
     runner_gateway_workload,
-    runner_sandbox,
     sandbox_controller,
     sandbox_pod,
     session_dispatcher,
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
+
+RUNNER_GATEWAY_CERTIFICATE = "agentplane-runner-gateway"
+RUNNER_GATEWAY_SECRET = runner_gateway.GATEWAY_TLS_SECRET
+RUNNER_TRUST_BUNDLE = cluster_ca.BUNDLE
+RUNNER_TRUST_BUNDLE_KEY = cluster_ca.BUNDLE_KEY
 
 
 class Namespace(Construct):
@@ -60,19 +71,36 @@ class Namespace(Construct):
         )
 
 
+def add_runner_certificates(scope: Construct, env: Environment) -> None:
+    """Provision the Gateway leaf."""
+    Certificate(
+        scope,
+        "runner-gateway-certificate",
+        metadata=ApiObjectMetadata(name=RUNNER_GATEWAY_CERTIFICATE, namespace=env.namespace),
+        secret_name=RUNNER_GATEWAY_SECRET,
+        uris=["spiffe://agentplane/runner-gateway"],
+        duration="24h",
+        renew_before="8h",
+        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+        usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.CLIENT_AUTH],
+        issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+    )
+
+
 def environment_chart(
     app: App,
     env: Environment,
     *,
     db: database.DbProps,
-    runner_name: str,
-    runner_image: str,
-    runner_key_files: Sequence[runner_sandbox.KeyFile] = (),
+    environment_template_name: str,
+    environment_tools_image: str,
+    environment_runtime_key_files: Sequence[environment_sandbox.KeyFile] = (),
 ) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    add_runner_certificates(chart, env)
     NetworkPolicy(
         chart,
         "otel-egress",
@@ -114,10 +142,17 @@ def environment_chart(
         "egress",
         env,
         database_url=egress_database_url,
-        runners=runner_sandbox.pods(env.namespace),
+        runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
+        tls_passthrough_services=[
+            history_service.service(env.namespace),
+            llm_ingress.service(env.namespace),
+            notifications.service(env.namespace),
+            runner_gateway.service(env.namespace),
+            actions.service(env.namespace),
+        ],
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}
@@ -130,12 +165,34 @@ def environment_chart(
         "history-service",
         env,
         database_url=history_database_url,
-        # The app reads Threads; the Notification Service reads command receipts; the orchestration_v1
-        # group reads the Sessions it drives.
-        callers=app_caller | notifications_caller | actions.orchestration_callers(env),
+        # The app reads Threads; the Notification Service reads command receipts; orchestration_v1
+        # and session_delegation use the explicitly configured Action delegation actor.
+        callers=app_caller
+        | notifications_caller
+        | actions.orchestration_callers(env)
+        | actions.session_delegation_callers(env),
+        delegation_actor=(
+            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
+            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
+            else None
+        ),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
+    if env.central_sampler is not None:
+        sampler_database_url = (
+            SecretRef(namespace=env.namespace, name="postgres-central-sampler")
+            .key("uri")
+            .env_value(chart, "central-sampler-database-url")
+        )
+        central_sampler_workload.CentralSampler(
+            chart,
+            "central-sampler",
+            env,
+            database_url=sampler_database_url,
+            placement=node_scheduling.HIL_OVH,
+            registry_secret_name=REGISTRY_SECRET_NAME,
+        ).add_platform_resources()
     app_component.App(
         chart,
         "app",
@@ -144,19 +201,16 @@ def environment_chart(
         database_url=app_database_url,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
-        runner_control_target=runner_gateway.control_target(env.namespace),
     ).add_platform_resources()
     frontend.Frontend(chart, "frontend", env).add_platform_resources()
-    runner_sandbox.RunnerSandbox(
+    environment_sandbox.EnvironmentSandbox(
         chart,
         "runner-sandbox",
         env,
-        name=runner_name,
-        image=runner_image,
-        key_files=runner_key_files,
+        name=environment_template_name,
+        image=environment_tools_image,
+        key_files=environment_runtime_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
-        control_service=runner_gateway.runner_control(env.namespace),
-        egress_api_service=egress.agent_api(env.namespace),
     ).add_platform_resources()
     sandbox_controller.SandboxController(
         chart,
@@ -194,7 +248,7 @@ def environment_chart(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-        callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
+        callers=[app_component.service(env.namespace).pods],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

@@ -1,0 +1,9 @@
+[Unit]
+Description=Forward guest ACPI power-button events to systemd
+
+[Service]
+ExecStart=/usr/bin/busybox acpid -f -d
+Environment=PATH=/usr/sbin:/usr/bin
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0

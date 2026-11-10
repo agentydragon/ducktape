@@ -23,18 +23,9 @@ class GitRepoFactory:
         with_worktrees: bool | list[str] = False,
         initial_files: dict[str, str] | None = None,
     ) -> Path:
-        """Create a git repository with specified configuration.
+        """Create a test repository with the requested branches and files.
 
-        Args:
-            name: Repository directory name
-            branches: List of branch names to create (default: just main)
-            commits_per_branch: Number of commits to make on each branch
-            with_worktrees: If True, create worktrees for non-main branches.
-                          If list, create worktrees with those names.
-            initial_files: Dict of filename -> content for initial commit
-
-        Returns:
-            Path to the created repository
+        ``with_worktrees=True`` uses non-main branches; an explicit list may add missing branches.
         """
         repo_path = self.base_path / name
         repo_path.mkdir(exist_ok=True)

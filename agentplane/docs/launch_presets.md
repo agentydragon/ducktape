@@ -72,35 +72,38 @@ fields remain available when no preset is selected.
 ## Update rules
 
 Preset configuration is live: a bound Sandbox is resolved against the currently configured presets
-at every session open.
+for each Session creation.
 
 - New Thread defaults update automatically.
 - Existing Threads do not change.
 - Mutable egress/runtime settings update only through existing supported runtime operations.
 - A binding naming a SandboxPreset or ThreadPreset that is no longer configured makes
   `POST /sandboxes/{name}/sessions` answer 422 (`UnknownPresetError`); the Sandbox is neither
-  deleted nor mutated. `POST /sandboxes` answers 422 for an unknown preset at creation.
+  deleted nor mutated. The browser selects creation presets from the app's configured catalog;
+  EnvironmentService stores the submitted preset label, which is resolved at Session creation.
 - A changed bootstrap script is refused on a live Sandbox (below).
 
 ## Bootstrap
 
-Bootstrap belongs to the SandboxPreset as inline script content. Before every session open on a
+Bootstrap belongs to the SandboxPreset as inline script content. Before every Session creation on a
 bound Sandbox, the app sends that content to the runner (`bridge.initialize`); the app never
 executes shell. The runner pins the SHA-256 of the first script it is given under its state
 directory, runs it once with `/bin/sh -eu`, and keeps a replayable log of output and result: the
 same script re-sent replays that one attempt, failed or interrupted included, while a different
 script is refused (`FAILED_PRECONDITION`), so bootstrap never reruns on a live Sandbox and a fresh
-one needs a new Sandbox. A refused, interrupted or non-zero-exit bootstrap fails the session open
-with 409. Arbitrary user-provided shell,
+one needs a new Sandbox. A refused, interrupted or non-zero-exit bootstrap prevents logical Session
+creation with 409. Arbitrary user-provided shell,
 automatic reruns after source changes, and a script registry are out of scope.
 
-Thread setup is separate from Sandbox bootstrap. The app passes the selected Thread setup source
-with the runner's `OpenSession`; the runner returns `Attached` promptly and records setup output and
-its result as typed events in the Thread's durable history. It creates the resolved `SessionSpec.cwd`
-and invokes `/bin/sh -eu` there. A successful exit starts the harness in that same directory. A
-failed or interrupted setup leaves a readable Thread and workspace, but cannot be retried in that
-Thread; the operator starts a new Thread. Haku and Finance presets use this mechanism to create
-independent repository checkouts per Thread. The platform mechanism has no Git-specific fields.
+Thread setup is separate from Sandbox bootstrap. The app includes the selected Thread setup source
+in logical `CreateSession`; the Dispatcher returns the Session resource and its current materialization
+status while the placement owner handles setup. Setup output and its result become typed events in the
+Thread's durable history. The owner creates the resolved `SessionSpec.cwd` and invokes `/bin/sh -eu`
+there. A successful exit starts the harness in that same directory. Owner acceptance does not mean
+setup has finished. A failed or interrupted setup leaves a readable Thread and workspace, but cannot
+be retried in that Thread; the operator starts a new Thread. Haku and Finance presets use this
+mechanism to create independent repository checkouts per Thread. The platform mechanism has no
+Git-specific fields.
 
 ## UX
 

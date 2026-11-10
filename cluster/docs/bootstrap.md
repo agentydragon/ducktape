@@ -23,7 +23,8 @@ live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = 
 Nebula node identities are durable inputs: public certificates and SOPS-encrypted
 private keys in `secrets/nebula/`, read by tofu via the `sops` provider rather
 than generated during an apply.
-Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
+Talos machine secrets are persistent across cluster lifecycles; the SOPS export
+is their durable recovery source.
 See <bootstrap_dependencies.md> for the full dependency graph.
 
 ## Cold-Start Deployment
@@ -59,7 +60,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
   reads public GitHub anonymously, then Flux decrypts GitHub App auth for
   private/write paths
 - Core Services → cert-manager, Cilium Gateway API
-- Storage → local-path/SeaweedFS/OpenEBS/Proxmox CSI
+- Storage → Piraeus and SeaweedFS
 - Platform → ESO, Authentik
 
 ### Verification
@@ -88,17 +89,7 @@ Flipping the toggle re-issues all certificates. The trust bundle follows via the
 
 ## External Connectivity
 
-### DNS Delegation
-
-1. Route 53 is authoritative for `allegedly.works`. ExternalDNS manages public records; Terraform manages domain registration and nameserver delegation.
-2. cert-manager uses Route 53 DNS-01 solver for ACME challenges
-
-### Ingress (Gateway API)
-
-- Cilium Gateway API with Envoy DaemonSet (hostNetwork on OVH nodes)
-- OVH public IPs receive HTTPS traffic directly on ports 80/443
-- Gateway terminates TLS using wildcard cert (`*.allegedly.works`)
-- HTTPRoutes in each application namespace route to backend services
+DNS delegation and record ownership are described in the [cluster overview](../README.md#infrastructure) and [DNS automation guide](dns_automation.md). The Cilium Gateway receives traffic on OVH public IPs at ports `80/443`, terminates TLS with the `*.allegedly.works` wildcard certificate, and routes namespaced HTTPRoutes to backend services.
 
 ### Cluster Endpoint
 

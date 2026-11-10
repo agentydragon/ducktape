@@ -264,9 +264,11 @@ def load_augur_config(path: Path) -> Config:
     directory — useful for ConfigMap mounts where the yaml and adjacent data live
     side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
     config = Config.model_validate(yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader))
-    config = _anchor_property_source_paths(config, base_dir=path.parent)
-    config = _anchor_model_paths(config, base_dir=path.parent)
-    return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
+    # Anchor deployment paths to the resolved config file, including when it is a Bazel runfile.
+    base_dir = Path(str(path)).parent
+    config = _anchor_property_source_paths(config, base_dir=base_dir)
+    config = _anchor_model_paths(config, base_dir=base_dir)
+    return _anchor_calibration_catalog_paths(config, base_dir=base_dir)
 
 
 def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
@@ -340,13 +342,3 @@ def resolve_augur_config_path() -> Path:
     if env := os.environ.get(AUGUR_CONFIG_PATH_ENV_VAR):
         return Path(env)
     return DEFAULT_AUGUR_CONFIG_PATH
-
-
-def dump_augur_config_yaml(config: Config) -> str:
-    """Serialize a Config to a stable YAML string for ConfigMap mounts.
-
-    Uses Pydantic's JSON-mode dump (so Path/Enum fields serialize cleanly) then
-    re-emits as YAML with sorted keys and block style for diff stability."""
-    return yaml.safe_dump(
-        config.model_dump(mode="json", exclude_computed_fields=True), sort_keys=True, default_flow_style=False
-    )

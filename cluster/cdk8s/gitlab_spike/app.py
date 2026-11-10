@@ -17,7 +17,8 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -31,7 +32,7 @@ HOSTNAME = "gitlab-spike.allegedly.works"
 REGISTRY_HOSTNAME = "registry-gitlab-spike.allegedly.works"
 CHART_VERSION = "10.5.1"  # GitLab 19.5.1, published 2026-10-21 in charts.gitlab.io.
 
-GITLAB_DB = cnpg.PostgresRef.generated(name="gitlab-db", namespace=NAMESPACE)
+GITLAB_DB = cluster.PostgresRef.generated(name="gitlab-db", namespace=NAMESPACE)
 PRAEFECT_PASSWORD = SecretRef(namespace=NAMESPACE, name="praefect-db-credentials")
 GITLAB_DATABASE = "gitlabhq_production"
 PRAEFECT_DATABASE = "praefect"

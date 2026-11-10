@@ -1,0 +1,43 @@
+// Durable COSI resource specs owned by the Environment Runtime and Runtime.
+syntax = "proto3";
+
+package agentplane.env.runtime.cosistate;
+
+import "agentplane/proto/session.proto";
+import "agentplane/proto/identity.proto";
+
+message BootstrapSelectionSpec {
+  // The selected script is compared and executed byte for byte.
+  bytes script = 1;
+}
+
+message BootstrapEventSpec {
+  // One ordered output or terminal observation from the Sandbox's single bootstrap attempt.
+  .agentplane.proto.InitializationEvent event = 1;
+}
+
+message SessionRecordSpec {
+  reserved 1;
+  reserved "harness";
+  string cwd = 2;
+  // Configuration at admission. Confirmed changes belong to the Session journal.
+  string initial_model = 3;
+  optional int64 total_context_budget_tokens = 4;
+  string initial_reasoning_effort = 5;
+  string instructions = 6;
+  bytes setup_script = 7;
+  string event_source_id = 8;
+  optional string native_session_id = 9;
+  .agentplane.proto.ServiceAccountIdentity execution_principal = 10;
+  .agentplane.proto.EnvironmentHostedPlacement placement = 11;
+  .agentplane.proto.Identity execution_identity = 12;
+}
+
+message IngressAckSpec {
+  uint64 cursor = 1;
+  bool sealed = 2;
+}
+
+message EnvironmentSealSpec {
+  string incarnation_uid = 1;
+}

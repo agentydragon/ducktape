@@ -8,8 +8,7 @@ non-default image.
 ``start_postgres_container`` is the underlying preload+start helper for packages that
 need to wrap the shared container lifecycle.
 
-Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
-push on a warm worker by itself — this module no longer checks.
+``load_oci_image`` checks the image digest and skips loading on a warm worker.
 
 The shared ``postgres_admin_url`` uses the sync psycopg driver. Tests that need asyncpg
 should change the driver explicitly on their per-test database URL. Suites that need a
@@ -26,11 +25,13 @@ from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry import trace
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncEngine
+from testcontainers.core import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 
+from devinfra.oci.oci import load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from third_party.containers import postgres_18, ryuk
 from util.db_migrations import MigrationRunner
-from util.oci import OciImage, load_oci_image
 from util.testing.postgres import (
     DatabaseClones,
     DatabaseNames,
@@ -39,7 +40,6 @@ from util.testing.postgres import (
     migrated_database_template,
 )
 from util.testing.sqlalchemy_engines import postgres_async_engine
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg
@@ -50,7 +50,7 @@ tracer = trace.get_tracer(__name__)
 
 @contextlib.contextmanager
 def _onto_disk() -> Iterator[None]:
-    """Mirror this module's and `util.oci`'s progress into an undeclared output, as it happens.
+    """Mirror this module's and `devinfra.oci.oci`'s progress into an undeclared output, as it happens.
 
     `logger.info` on its own does not survive the one case these lines exist for. pytest buffers
     captured output and a Bazel timeout kills the process, so the account of where the time went
@@ -60,7 +60,7 @@ def _onto_disk() -> Iterator[None]:
     """
     handler = logging.FileHandler(undeclared_outputs_dir() / "container_setup.log")
     handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
-    watched = [logging.getLogger("util.oci"), logger]
+    watched = [logging.getLogger("devinfra.oci.oci"), logger]
     levels = [each.level for each in watched]
     for each in watched:
         each.addHandler(handler)
@@ -74,7 +74,7 @@ def _onto_disk() -> Iterator[None]:
         handler.close()
 
 
-def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresContainer:
+def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> PostgresContainer:
     """Preload Ryuk + the Postgres image (skipping any the daemon already has), then start it.
 
     `image` selects a different Postgres build — e.g. `PGVECTOR_PG18` for packages whose schema
@@ -82,29 +82,29 @@ def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresCon
 
     **Every step says how long it took.** This runs in session fixture setup, before pytest has
     emitted a line, so when it wedges the whole test log is silence — which is how a five-minute
-    hang came to be read as a slow test (<../../devinfra/debug/2026_08_14_docker_test_timeouts.md>). The
+    hang came to be read as a slow test (<../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>). The
     load itself is serialised per tag inside `load_oci_image`; what is left unbounded is the
     daemon's own container start, so the least this can do is name where the time went.
     """
     with _onto_disk():
-        for preloaded in (ryuk.IMAGE, image):
-            load_oci_image(preloaded)
-        container = PostgresContainer(image=image.tag, username="postgres", password="postgres", dbname="postgres")
+        load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+        image_ref = load_oci_image(image)
+        container = PostgresContainer(image=image_ref, username="postgres", password="postgres", dbname="postgres")
         started = time.monotonic()
-        logger.info("Starting %s", image.tag)
+        logger.info("Starting %s", image_ref)
         container.start()
         logger.info("Postgres ready in %.1fs", time.monotonic() - started)
         return container
 
 
 @pytest.fixture(scope="session")
-def postgres_image() -> OciImage:
+def postgres_image() -> str:
     """Default PostgreSQL image; suites can override this fixture for extensions or settings."""
-    return postgres_18.IMAGE
+    return postgres_18.LAYOUT_RLOCATION
 
 
 @pytest.fixture(scope="session")
-def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
+def postgres_container(postgres_image: str) -> Generator[PostgresContainer]:
     with tracer.start_as_current_span("postgres_container fixture"):
         container = start_postgres_container(postgres_image)
     try:

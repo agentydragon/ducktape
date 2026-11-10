@@ -1,6 +1,7 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
-use debundle_e2e_support::{GraphFixture, TreeFixture, debundler_path, run_tree_fixture};
+use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::{TreeFixture, debundler_path, read_gzip_json, run_tree_graph_fixture};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
@@ -52,8 +53,7 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
     let alpha = source_unit_for_binding(&fixture, "alpha");
     let beta = source_unit_for_binding(&fixture, "beta");
     let gamma = source_unit_for_binding(&fixture, "gamma");
-    let graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&fixture.graph).unwrap()).unwrap();
+    let graph: serde_json::Value = read_gzip_json(&fixture.graph);
     let log = graph["nodes"]
         .as_array()
         .unwrap()
@@ -146,6 +146,44 @@ fn moves_member_source_match_group_and_anonymous_claim_with_metadata() {
 }
 
 #[test]
+fn rejects_yaml_filenames_as_module_refine_destinations() {
+    let fixture = GraphFixture::new(
+        "const alpha = 1;\nconsole.log(alpha);\n",
+        &[
+            (
+                "home.yaml",
+                "members: [{selector: {binding: {name: alpha}}}]\n",
+            ),
+            ("existing.yaml", "members: []\n"),
+        ],
+    );
+    let unit_id = source_unit_for_binding(&fixture, "alpha");
+
+    for module in ["existing.yaml", "new.yaml", "new.yml"] {
+        let batch = write_batch(json!([{
+            "unit_id": unit_id.clone(),
+            "module": module,
+        }]));
+        let alternative = module
+            .strip_suffix(".yaml")
+            .or_else(|| module.strip_suffix(".yml"))
+            .unwrap();
+        let diagnostic = format!(
+            "module destination {module:?} looks like a YAML filename; use extensionless logical module ID {alternative:?}"
+        );
+        fixture.assert_rejected_unchanged(
+            &[
+                "modules",
+                "refine",
+                "--batch",
+                batch.path().join("refine.json").to_str().unwrap(),
+            ],
+            &[&diagnostic],
+        );
+    }
+}
+
+#[test]
 fn rejects_atom_split_without_changing_any_module_yaml() {
     let fixture = GraphFixture::atomic_pair();
     let batch = write_batch(json!([{
@@ -213,7 +251,7 @@ fn moves_one_claim_from_gapped_source_match_group() {
 
 #[test]
 fn refines_only_the_selected_chunk_under_tree_config() {
-    let run = run_tree_fixture(
+    let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[
                 (
@@ -247,10 +285,9 @@ fn refines_only_the_selected_chunk_under_tree_config() {
     let helper_home = modules.join("chunks/helper/home.yaml");
     let helper_before = fs::read(&helper_home).unwrap();
     let destination_before = fs::read(&existing_destination).unwrap();
-    let graph = run.report_root.join("main/dependency_graph.json");
+    let graph = run.report_root.join("main/dependency_graph.json.gz");
     let batch = run.root().join("refine.json");
-    let graph_report: serde_json::Value =
-        serde_json::from_slice(&fs::read(&graph).unwrap()).unwrap();
+    let graph_report: serde_json::Value = read_gzip_json(&graph);
     let source_unit = graph_report["nodes"]
         .as_array()
         .unwrap()
@@ -328,8 +365,7 @@ fn rejects_unclaimed_scaffolding_and_duplicate_source_unit_rows() {
     );
 
     let exported = GraphFixture::new("const alpha = 1;\nexport { alpha };\n", &[]);
-    let graph: serde_json::Value =
-        serde_json::from_slice(&fs::read(&exported.graph).unwrap()).unwrap();
+    let graph: serde_json::Value = read_gzip_json(&exported.graph);
     let export_source_unit = graph["nodes"]
         .as_array()
         .unwrap()

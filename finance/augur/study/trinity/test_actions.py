@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.model.historical_windows import HistoricalWindowsModel
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
@@ -33,7 +34,6 @@ from finance.augur.study.trinity.replay import (
     sleeve_targets,
 )
 from finance.augur.study.trinity.synthetic import synthetic_history
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 def control(
@@ -183,11 +183,11 @@ def test_raising_withdrawals_never_improves_a_synthetic_window() -> None:
 
 
 @pytest.mark.parametrize("share", [0.0, 0.5, 1.0])
-def test_offline_cli_replays_selected_original_windows(tmp_path: Path, share: float) -> None:
+def test_offline_cli_replays_selected_original_windows(runfiles: Runfiles, tmp_path: Path, share: float) -> None:
     output = tmp_path / "study"
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/study/trinity/replay_bin")),
+            (runfiles.root() / "ducktape/finance/augur/study/trinity/replay_bin"),
             "--synthetic",
             "--equity-share",
             str(share),

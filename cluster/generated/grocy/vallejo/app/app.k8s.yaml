@@ -199,7 +199,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: grocy-config-ovh-backup
+  name: grocy-config-piraeus-backup
   namespace: grocy-vallejo
 spec:
   accessModes:
@@ -207,17 +207,17 @@ spec:
   resources:
     requests:
       storage: 2Gi
-  storageClassName: seaweedfs-ovh
+  storageClassName: piraeus-ssd-2-autodiskful
 ---
 apiVersion: volsync.backube/v1alpha1
 kind: ReplicationDestination
 metadata:
-  name: grocy-config-ovh-backup
+  name: grocy-config-piraeus-backup
   namespace: grocy-vallejo
 spec:
   rsyncTLS:
     copyMethod: Direct
-    destinationPVC: grocy-config-ovh-backup
+    destinationPVC: grocy-config-piraeus-backup
     moverAffinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -238,13 +238,13 @@ spec:
 apiVersion: volsync.backube/v1alpha1
 kind: ReplicationSource
 metadata:
-  name: grocy-config-ovh-backup
+  name: grocy-config-piraeus-backup
   namespace: grocy-vallejo
 spec:
   rsyncTLS:
-    address: volsync-rsync-tls-dst-grocy-config-ovh-backup.grocy-vallejo.svc
+    address: volsync-rsync-tls-dst-grocy-config-piraeus-backup.grocy-vallejo.svc
     copyMethod: Direct
-    keySecret: volsync-rsync-tls-grocy-config-ovh-backup
+    keySecret: volsync-rsync-tls-grocy-config-piraeus-backup
     moverSecurityContext:
       fsGroup: 1000
       runAsGroup: 1000

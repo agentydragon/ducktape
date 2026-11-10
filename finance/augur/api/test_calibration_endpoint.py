@@ -9,7 +9,7 @@ so the run stays hermetic (no network). `/api/calibration` surfaces the catalog 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from datetime import date
 from pathlib import Path
 
@@ -20,10 +20,12 @@ from fastapi.testclient import TestClient
 
 from finance.augur.api.config import Config
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
+from finance.augur.calibration import macro_anchors
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
-from finance.augur.model.series import SP500_SYMBOL, IssuerId, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, LevelSeriesKey, SecurityKey
 from finance.augur.x.models.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
+from finance.evidence.loading import MonthlyLevel
 from finance.evidence.markets import Platform
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -35,17 +37,8 @@ def _client_for(config: Config) -> TestClient:
     # Every market (and every bucket of every categorical family) resolves to the same fixed YES
     # probability so the run is hermetic.
     by_platform: defaultdict[Platform, dict[str, float]] = defaultdict(dict)
-    for market in catalog.markets:
-        by_platform[market.platform][market.market_id] = 0.5
-    for bucket_family in catalog.bucket_families:
-        for bucket_member in bucket_family.buckets:
-            by_platform[bucket_family.platform][bucket_member.market_id] = 0.5
-    for ladder_family in catalog.threshold_ladder_families:
-        for ladder_member in ladder_family.thresholds:
-            by_platform[ladder_family.platform][ladder_member.market_id] = 0.5
-    for date_family in catalog.date_ladder_families:
-        for date_member in date_family.dates:
-            by_platform[date_family.platform][date_member.market_id] = 0.5
+    for platform, market_id in catalog.referenced_markets():
+        by_platform[platform][market_id] = 0.5
     return TestClient(
         create_app_from_augur_config(config, price_clients=static_price_clients(mock_price_clients(dict(by_platform))))
     )
@@ -55,6 +48,26 @@ def _client_for(config: Config) -> TestClient:
 def client(augur_config: Config) -> Iterator[TestClient]:
     with _client_for(augur_config) as test_client:
         yield test_client
+
+
+def test_invalid_scenario_validator_returns_serializable_422(client: TestClient) -> None:
+    response = client.post(
+        "/api/product/projections/rollout",
+        json={
+            "scenario": {
+                "model_id": "current_model",
+                "horizon_months": 3,
+                "monthly_spend": 1000,
+                "spend_index": "none",
+                "currency_code": "",
+            },
+            "seed": 7,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+    assert "currency_code must not be empty" in response.json()["detail"][0]["msg"]
 
 
 def test_calibration_info_endpoint(client: TestClient, augur_config: Config) -> None:
@@ -87,7 +100,7 @@ def test_run_calibration(client: TestClient, synthetic_evidence_dir: Path) -> No
     clean_row = result["clean"][0]
     # Every market's p_market is the injected live stub price.
     assert clean_row["p_market"] == 0.5
-    # Snake_case on the wire (the frontend camelizes). p_model/kl_bits are optional (dropped when
+    # Snake_case on the wire (the frontend uses it directly). p_model/kl_bits are optional (dropped when
     # None — e.g. no rollout resolved within the horizon), so we only require the always-present
     # fields here.
     assert {"market_id", "question", "url", "platform", "p_market", "ci95", "n_resolved", "unresolved"} <= set(
@@ -126,6 +139,30 @@ def test_run_calibration_defaults_to_shared_preset(client: TestClient, synthetic
     response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text
     assert response.json()["preset_id"] == "openai_pe"
+
+
+def test_run_calibration_leaves_missing_real_cpi_month_unresolved(
+    augur_config: Config, synthetic_evidence_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_loader = macro_anchors.load_absolute_monthly_levels
+
+    def without_july_cpi(keys: Collection[LevelSeriesKey]) -> dict[LevelSeriesKey, list[MonthlyLevel]]:
+        levels = original_loader(keys)
+        if InflationKey() in levels:
+            levels[InflationKey()] = [obs for obs in levels[InflationKey()] if obs.month != date(2025, 7, 1)]
+        return levels
+
+    monkeypatch.setattr(macro_anchors, "load_absolute_monthly_levels", without_july_cpi)
+    with _client_for(augur_config) as api_client:
+        response = api_client.post(
+            "/api/calibration/run", json={"preset_id": "openai_pe", "horizon_months": 24, "rollouts": 16, "seed": 1701}
+        )
+
+    assert response.status_code == 200, response.text
+    cpi = next(row for row in response.json()["result"]["clean"] if row["market_id"] == "KXCPIYOY-26JUL-T3.0")
+    assert cpi["n_resolved"] == 0
+    assert cpi["unresolved"] == 16
+    assert cpi.get("p_model") is None
 
 
 def test_run_unknown_preset_is_400(client: TestClient) -> None:

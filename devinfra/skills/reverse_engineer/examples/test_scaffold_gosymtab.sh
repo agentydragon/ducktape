@@ -11,9 +11,10 @@
 set -euo pipefail
 
 mkdir -p "$TEST_TMPDIR/bin"
-ln -s "$TEST_SRCDIR/$GO" "$TEST_TMPDIR/bin/go_bin_runner"
+ln -s "$(rlocation "$GO")" "$TEST_TMPDIR/bin/go_bin_runner"
 export GOROOT
-GOROOT=$(cd "$TEST_SRCDIR/_main" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
+workspace_root="$(dirname "$(dirname "$(rlocation "$GO_MOD")")")"
+GOROOT=$(cd "$workspace_root" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
 ln -s "$GOROOT/bin/go" "$TEST_TMPDIR/bin/go"
 export PATH="$TEST_TMPDIR/bin:$PATH"
 # The sandbox gives the test no HOME, and `go tool` refuses to run without a
@@ -22,7 +23,7 @@ export HOME="$TEST_TMPDIR/home"
 export GOCACHE="$TEST_TMPDIR/gocache"
 mkdir -p "$HOME" "$GOCACHE"
 
-cp "$TEST_SRCDIR/$V2_GARBLED" "$TEST_TMPDIR/garbled"
+cp "$(rlocation "$V2_GARBLED")" "$TEST_TMPDIR/garbled"
 chmod +w "$TEST_TMPDIR/garbled"
 cd "$TEST_TMPDIR"
 
@@ -39,7 +40,7 @@ grep -q "no symbol section" baseline.err || {
 echo "ok: rejected with 'no symbol section'"
 
 echo "== repair =="
-"$TEST_SRCDIR/$GOSYMTAB" garbled garbled.sym
+"$(rlocation "$GOSYMTAB")" garbled garbled.sym
 
 echo "== the repaired binary must be a valid ELF with symbols =="
 go tool nm garbled.sym >nm.out

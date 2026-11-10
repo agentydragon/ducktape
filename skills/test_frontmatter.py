@@ -35,22 +35,13 @@ def test_frontmatter_rejects_missing_required_string(key: str) -> None:
 
 
 @pytest.mark.parametrize("key", ["name", "description"])
-def test_frontmatter_rejects_empty_required_string(key: str) -> None:
+@pytest.mark.parametrize(("value", "reason"), [('"   "', "must not be empty"), ("false", "must be a string")])
+def test_frontmatter_rejects_invalid_required_string(key: str, value: str, reason: str) -> None:
     frontmatter = {"name": "example", "description": "Example skill."}
-    frontmatter[key] = '"   "'
+    frontmatter[key] = value
     text = _frontmatter_text(*(f"{k}: {v}" for k, v in frontmatter.items()))
 
-    with pytest.raises(ValueError, match=f"frontmatter.{key} must not be empty"):
-        validate_skill_frontmatter_text(text, source="regression/SKILL.md")
-
-
-@pytest.mark.parametrize("key", ["name", "description"])
-def test_frontmatter_rejects_non_string_required_value(key: str) -> None:
-    frontmatter = {"name": "example", "description": "Example skill."}
-    frontmatter[key] = "false"
-    text = _frontmatter_text(*(f"{k}: {v}" for k, v in frontmatter.items()))
-
-    with pytest.raises(ValueError, match=f"frontmatter.{key} must be a string"):
+    with pytest.raises(ValueError, match=f"frontmatter.{key} {reason}"):
         validate_skill_frontmatter_text(text, source="regression/SKILL.md")
 
 

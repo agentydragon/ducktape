@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/settledcursors"
+	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -25,6 +25,9 @@ func (r *Reader) ReadEntityEvidence(ctx context.Context, request *historypb.Read
 	}
 	var response *historypb.ReadEntityEvidenceResponse
 	err = snapshot(ctx, r.DB, func(tx *sql.Tx) error {
+		if err := r.requireSession(ctx, tx, sessionID); err != nil {
+			return err
+		}
 		entityCursor, _, err := findEntity(ctx, tx, sessionID, request.GetProjectionEpoch(), request.GetEntity())
 		if err != nil {
 			return err
@@ -74,6 +77,9 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 	var sequences []uint64
 	var sourceID string
 	err = snapshot(ctx, r.DB, func(tx *sql.Tx) error {
+		if err := r.requireSession(ctx, tx, sessionID); err != nil {
+			return err
+		}
 		var entityCursor uint64
 		var err error
 		if entityCursor, sourceID, err = findEntity(ctx, tx, sessionID, request.GetProjectionEpoch(), request.GetEntity()); err != nil {
@@ -118,29 +124,22 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 	if len(sequences) == 0 {
 		return response, nil
 	}
-	retained, err := r.History.ReadPage(ctx, sessionID, 0, 1)
+	retained, err := r.History.ReadSequences(ctx, sessionID, sequences, r.NativeFrameReadBatchSize)
 	if err != nil {
 		return nil, err
 	}
-	for _, sequence := range sequences {
+	for _, read := range retained.Reads {
+		sequence := read.Sequence
 		frame := &historypb.NativeFrame{SourceSequence: sequence}
 		response.Frames = append(response.Frames, frame)
 		// A link can name a sequence beyond the retained prefix; that frame is unavailable.
-		if sequence > retained.GetLastCursor() {
+		if sequence > retained.LastCursor || read.Unstored {
 			continue
 		}
-		page, err := r.History.ReadPage(ctx, sessionID, sequence-1, 1)
-		if err != nil {
-			return nil, err
-		}
-		// Settlement may remove a linked delta frame before the fold forgets the link.
-		if settledcursors.NextStored(sequence-1, settledcursors.Unstored(page)) != sequence {
+		if read.NextEntry == nil {
 			continue
 		}
-		if len(page.GetEntries()) == 0 {
-			continue
-		}
-		entry := page.GetEntries()[0]
+		entry := read.NextEntry
 		if entry.GetCursor() != sequence || entry.GetOrigin().GetSourceId() != sourceID {
 			return nil, fmt.Errorf("retained history of Session %s does not match the folded native link at %d", sessionID, sequence)
 		}
@@ -153,6 +152,10 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 
 // findEntity returns the entity's cursor and the Session's runner source, in the caller's still-current epoch.
 func findEntity(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, projectionEpoch string, key *historypb.EntityKey) (uint64, string, error) {
+	kind, err := threadfold.StoredEntityKind(key.GetEntityKind())
+	if err != nil {
+		return 0, "", invalid("entity kind")
+	}
 	current, err := readCheckpoint(ctx, tx, sessionID)
 	if err != nil {
 		return 0, "", err
@@ -166,7 +169,7 @@ func findEntity(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, projection
 	var cursor uint64
 	err = tx.QueryRowContext(ctx, `SELECT cursor FROM thread_entity
 		WHERE thread_id = $1 AND projection_epoch = $2 AND entity_kind = $3 AND entity_id = $4`,
-		sessionID, projectionEpoch, key.GetEntityKind(), key.GetEntityId()).Scan(&cursor)
+		sessionID, projectionEpoch, string(kind), key.GetEntityId()).Scan(&cursor)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !current.sourceID.Valid {
 		return 0, "", fmt.Errorf("%w: %s", ErrEvidenceNotFound, sessionID)
 	}

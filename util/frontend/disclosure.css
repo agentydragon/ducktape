@@ -1,0 +1,169 @@
+/* Design policy lives here. A section computes its own inset once; headers and terminal bodies
+   consume it. Nested panels stay full-width and never subtract a parent's padding. */
+:root {
+  --ui-disclosure-gutter: var(--mantine-spacing-xs);
+  --ui-disclosure-indent-step: calc(var(--mantine-spacing-xs) * 0.5);
+  --ui-disclosure-body-spacing: var(--mantine-spacing-xs);
+  --ui-disclosure-row-height: 2.75rem;
+  --ui-disclosure-collapsed-height: var(--ui-disclosure-row-height);
+  --ui-disclosure-compact-height: 1.5rem;
+  --ui-disclosure-action-gap: var(--mantine-spacing-xs);
+  --ui-disclosure-chevron-size: 1rem;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --ui-disclosure-row-height: 1.75rem;
+  }
+}
+
+.ui-disclosure,
+.ui-disclosure-static {
+  --ui-disclosure-inset: calc(
+    var(--ui-disclosure-gutter) + var(--ui-disclosure-depth, 0) * var(--ui-disclosure-indent-step)
+  );
+  min-width: 0;
+}
+
+.ui-disclosure-item {
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.ui-collapsible-card {
+  position: relative;
+  padding: 0;
+  border-radius: var(--ui-disclosure-edge-radius);
+}
+
+/* Frame variants are chosen by the card, rather than undone by descendant selectors. */
+.ui-collapsible-card[data-nested="false"] {
+  --ui-disclosure-edge-radius: var(--paper-radius, var(--mantine-radius-default));
+  border: 1px solid transparent;
+}
+
+.ui-collapsible-card[data-nested="false"][data-open="true"] {
+  border-color: var(--mantine-color-default-border);
+}
+
+.ui-collapsible-card[data-nested="true"] {
+  --ui-disclosure-edge-radius: 0px;
+}
+
+/* The button spans every column, including the gutters. Its label/chevron use the same tracks
+   as the separate action, so dynamic action widths need neither measurement nor compensation. */
+.ui-disclosure-header {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr) max-content var(--ui-disclosure-action-gap)
+    var(--ui-disclosure-chevron-size) var(--ui-disclosure-gutter);
+  min-width: 0;
+  align-items: center;
+}
+
+.ui-disclosure-heading {
+  position: sticky;
+  background: var(--mantine-color-body);
+  border-start-start-radius: var(--ui-disclosure-edge-radius, 0px);
+  border-start-end-radius: var(--ui-disclosure-edge-radius, 0px);
+}
+
+.ui-disclosure-heading[hidden] {
+  display: none;
+}
+
+.ui-disclosure-heading[data-expanded="false"] {
+  border-radius: var(--mantine-radius-sm);
+}
+
+.ui-disclosure-summary,
+.ui-disclosure-static {
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
+}
+
+.ui-disclosure-summary {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--ui-disclosure-row-height);
+  padding: 0;
+  border-radius: inherit;
+}
+
+.ui-disclosure-heading[data-expanded="false"] > .ui-disclosure-summary,
+.ui-disclosure-static {
+  min-height: var(--ui-disclosure-collapsed-height);
+}
+
+.ui-disclosure-summary-content,
+.ui-disclosure-static-content {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  margin-inline-start: var(--ui-disclosure-inset);
+}
+
+.ui-disclosure-chevron {
+  grid-column: 4;
+  grid-row: 1;
+  width: var(--ui-disclosure-chevron-size);
+  height: var(--ui-disclosure-chevron-size);
+  margin: 0;
+}
+
+.ui-disclosure-aside {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  padding-inline-start: var(--ui-disclosure-action-gap);
+  white-space: nowrap;
+}
+
+.ui-disclosure-heading[data-expanded="true"][data-depth="0"] {
+  box-shadow: 0 1px var(--mantine-color-default-border);
+}
+
+.ui-disclosure-panel,
+.ui-disclosure-content {
+  min-width: 0;
+  overflow: visible;
+}
+
+.ui-disclosure-panel {
+  --ui-disclosure-edge-radius: 0px;
+}
+
+.ui-disclosure-content {
+  padding: 0;
+}
+
+.ui-disclosure-body {
+  min-width: 0;
+  padding-block: var(--ui-disclosure-body-spacing);
+  padding-inline-start: var(--ui-disclosure-inset, var(--ui-disclosure-gutter));
+  padding-inline-end: var(--ui-disclosure-gutter);
+}
+
+.ui-disclosure-static {
+  position: relative;
+}
+
+.ui-clamped-collapse {
+  display: block;
+  margin-inline-start: auto;
+  padding: var(--ui-disclosure-body-spacing) var(--ui-disclosure-gutter);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+}

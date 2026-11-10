@@ -6,8 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,34 +15,28 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/actions"
 
 // requiredFile is a deployment's settings file with every setting that has no default.
-const requiredFile = `token_audience: test-actions
+const requiredFile = `rpc:
+  listen_address: "0.0.0.0:8080"
+  auth:
+    - mode: kubernetes_bearer
+      audiences: [test-actions]
 policy_namespace: test-agentplane
 caller_service_account_namespaces: [test-agentplane]
 `
 
 func loadTestConfig(t *testing.T, file string, environ ...string) (config, error) {
 	t.Helper()
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, settingPrefix) {
-			t.Setenv(name, "")
-		}
-	}
-	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range append([]string{settingPrefix + "CONFIG_FILE=" + path, databaseURLEnv}, environ...) {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
-	return loadConfig()
+	return configtest.Load(t, settingPrefix, loadConfig, append([]string{
+		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, file),
+		databaseURLEnv,
+	}, environ...))
 }
 
 func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
@@ -52,19 +44,18 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.Host != "0.0.0.0" || c.Port != 8080 || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
-		c.PolicyResyncSeconds != 300 || c.IntegratedConnectionService ||
+	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "https://api.github.com", CacheTTLSeconds: 86400}) {
 		t.Errorf("settings: %+v", c)
 	}
 }
 
 func TestAnEnvironmentVariableOverridesTheFile(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+"host: 127.0.0.1\nport: 9000\n", settingPrefix+"PORT=9001")
+	c, err := loadTestConfig(t, requiredFile, settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != "127.0.0.1" || c.Port != 9001 {
+	if c.RPC.ListenAddress != "127.0.0.1:9001" {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 }
@@ -141,10 +132,11 @@ operator_oidc:
 }
 
 func TestThePolicySettingsAreRead(t *testing.T) {
-	c, err := loadTestConfig(t, `token_audience: test-actions
+	c, err := loadTestConfig(t, `rpc:
+  listen_address: "0.0.0.0:8080"
+  auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]
 policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
-policy_resync_seconds: 60
 github_visibility:
   api_base_url: http://github.test.invalid/api
 `, settingPrefix+"GITHUB_VISIBILITY__CACHE_TTL_SECONDS=0.5")
@@ -152,7 +144,6 @@ github_visibility:
 		t.Fatal(err)
 	}
 	if c.PolicyNamespace != "test-policies" || !slices.Equal(c.CallerServiceAccountNamespaces, []string{"test-callers", "test-more-callers"}) ||
-		c.PolicyResyncSeconds != 60 ||
 		c.GitHubVisibility != (gitHubVisibility{APIBaseURL: "http://github.test.invalid/api", CacheTTLSeconds: 0.5}) {
 		t.Errorf("settings: %+v", c)
 	}
@@ -236,13 +227,11 @@ mcp_servers:
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":             requiredFile + "test_unknown_setting: never-print-this\n",
-		"port of a word":          requiredFile + "port: never-print-this\n",
-		"port out of range":       requiredFile + "port: 70000\n",
-		"empty host":              requiredFile + "host: \"\"\n",
-		"no audience":             strings.Replace(requiredFile, "token_audience: test-actions\n", "", 1),
+		"unknown listener key":    strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
+		"missing listener":        strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
+		"no audience":             strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
 		"no caller namespaces":    strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":     strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
-		"policy resync too short": requiredFile + "policy_resync_seconds: 1\n",
 		"negative visibility TTL": requiredFile + "github_visibility: {cache_ttl_seconds: -1}\n",
 		"unknown visibility key":  requiredFile + "github_visibility: {token: never-print-this}\n",
 		"reader of a word":        requiredFile + "reader_accounts: [never-print-this]\n",
@@ -262,7 +251,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
   token_profile: never-print-this
 `,
 		"action group":                       requiredFile + strings.Replace(testActionGroups, "server_id: test-group", "server_id: never-print-this", 1),
-		"action groups key":                  requiredFile + strings.Replace(testActionGroups, "X-Test-Header: test", "1: never-print-this", 1),
 		"action group field of another type": requiredFile + strings.Replace(testActionGroups, "available: yes", "available: never-print-this", 1),
 		"unknown action group field":         requiredFile + strings.Replace(testActionGroups, "available: yes", "health: never-print-this", 1),
 		"executor kind":                      requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: never-print-this", 1),
@@ -306,24 +294,11 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 }
 
-func TestRetiredIntegratedConnectionSettingCannotEnableServing(t *testing.T) {
-	for _, file := range []string{"", "integrated_connection_service: false\n"} {
-		c, err := loadTestConfig(t, requiredFile+file)
-		if err != nil || c.IntegratedConnectionService {
-			t.Fatalf("disabled legacy setting: config=%+v err=%v", c, err)
-		}
-	}
-	if _, err := loadTestConfig(t, requiredFile+"integrated_connection_service: true\n"); err == nil || !strings.Contains(err.Error(), "retired") {
-		t.Fatalf("accepted legacy setting enabled: %v", err)
-	}
-}
-
-func TestInvalidMCPWaitsAreRefused(t *testing.T) {
+func TestInvalidDirectWaitsAreRefused(t *testing.T) {
 	for _, file := range []string{
-		"max_wait_seconds: -1\n",
-		"max_wait_seconds: 181\n",
+		"direct_wait_seconds: -1\n",
 		"direct_wait_seconds: .inf\n",
-		"max_wait_seconds: .nan\n",
+		"direct_wait_seconds: .nan\n",
 	} {
 		if _, err := loadTestConfig(t, requiredFile+file); err == nil {
 			t.Fatalf("accepted %s", file)
@@ -386,5 +361,56 @@ func TestTheOrchestrationPeersAreSetExactlyWhenAnOrchestrationGroupCallsThem(t *
 				t.Error("accepted")
 			}
 		})
+	}
+}
+
+func TestSessionDelegationPeersAreSetExactlyWhenADelegationGroupCallsThem(t *testing.T) {
+	const group = `action_groups:
+  environments:
+    title: Environments
+    description: same-principal environments
+    executor: {kind: session_delegation, description: forwards the caller}
+`
+	const dispatcher = `session_delegation_dispatcher:
+  target: test-dispatcher:8080
+  token_file: /test/delegated-dispatcher-token
+  request_timeout_s: 40
+`
+	const history = `session_delegation_history:
+  target: test-history:8080
+  token_file: /test/delegated-history-token
+  request_timeout_s: 40
+`
+	c, err := loadTestConfig(t, requiredFile+group+dispatcher+history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SessionDelegationDispatcher == nil || c.SessionDelegationDispatcher.Target != "test-dispatcher:8080" ||
+		c.SessionDelegationHistory == nil || c.SessionDelegationHistory.Target != "test-history:8080" {
+		t.Fatalf("delegation peers: dispatcher=%+v history=%+v", c.SessionDelegationDispatcher, c.SessionDelegationHistory)
+	}
+	for name, file := range map[string]string{
+		"delegation group missing the shared dispatcher peer": group + history,
+		"delegation group missing History":                    group + dispatcher,
+		"delegation peers without a delegation group":         dispatcher + history,
+		"delegate peer without a token file":                  group + strings.Replace(dispatcher, "  token_file: /test/delegated-dispatcher-token\n", "", 1) + history,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, requiredFile+file); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}
+
+func TestListenerRequiresExplicitAddressAndAuthentication(t *testing.T) {
+	for _, fragment := range []string{
+		"rpc: {auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]}\n",
+		"rpc: {listen_address: ':8080'}\n",
+		"rpc: {listen_address: ':8080', auth: [{mode: spiffe, ca_file: /trust/ca.crt}]}\n",
+	} {
+		if _, err := loadTestConfig(t, strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", fragment, 1)); err == nil {
+			t.Fatalf("accepted invalid RPC listener: %s", fragment)
+		}
 	}
 }

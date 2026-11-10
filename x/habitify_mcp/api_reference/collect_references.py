@@ -46,15 +46,7 @@ class ApiReferenceCollector:
         return httpx.Client(base_url=self.base_url, headers=self.headers, timeout=10.0)
 
     def _filter_headers(self, headers: dict[str, str]) -> dict[str, str]:
-        """
-        Filter HTTP headers to only keep useful ones.
-
-        Args:
-            headers: Original HTTP headers
-
-        Returns:
-            Filtered headers containing only useful information
-        """
+        """Omit noisy transport and cache headers from saved references."""
         headers_to_exclude = [
             "accept-ranges",
             "access-control-allow-origin",
@@ -79,15 +71,7 @@ class ApiReferenceCollector:
         return {name: value for name, value in headers.items() if name.lower() not in headers_to_exclude}
 
     def _mask_name(self, name: str) -> str:
-        """
-        Mask a habit name for logging and display.
-
-        Args:
-            name: The habit name to mask
-
-        Returns:
-            Masked name with first and last characters visible
-        """
+        """Keep names of length <=2; mask longer names except the first character and, for length >4, the last."""
         if not name or len(name) <= 2:
             return name
 

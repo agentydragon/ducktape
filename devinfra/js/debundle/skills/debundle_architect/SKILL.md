@@ -1,6 +1,6 @@
 ---
 name: debundle_architect
-description: Audit a debundle spec's named modules for idiomatic JavaScript structure, infer project conventions from source behavior, and maintain current-state architecture notes and reorganization recommendations. Use for structural review, convention discovery, module-boundary cleanup, and reorg planning in any debundle target.
+description: Audit debundled modules for idiomatic JavaScript structure and infer conventions from behavior. Use for architecture notes, module-boundary cleanup, and reorganization that distinguishes semantic ownership from atomic groups and gate constraints. Route separability probes to planning; this role does not edit the spec or run gates.
 ---
 
 # Debundle Architect
@@ -22,3 +22,9 @@ notes plus worker-ready proposals, and route pure symbol naming to the
 [naming task guide](references/docs/naming.md). Use [module-shape guidance](references/skills/shared/module_shape.md)
 for seam and layer criteria and the [shared workflow](references/skills/shared/workflow.md)
 when coordinating a round.
+
+Use planning's
+[atomic decomposition and coarsening reports](references/docs/cli.md#refining-existing-modules-modules-decompose)
+to understand which proposed seams the current gate accepts. Small generated
+fragments need not be good modules; large atomic or coarsened groups may reflect
+conservative analysis. Ground semantic homes in source behavior and callers.

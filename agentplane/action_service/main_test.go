@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,29 +17,35 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/util/testing/nettest"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -79,10 +82,8 @@ type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
 	operators operator_action_servicepb.OperatorActionServiceClient
-	// connections targets the retired service to assert that it is no longer registered.
-	connections connection_servicepb.ConnectionServiceClient
-	// url is the base URL of the service's HTTP routes.
-	url string
+	linkages  linkage_servicepb.LinkageServiceClient
+	address   string
 	// store is the service's database, and updates is signalled on every Event committed to it.
 	store   *store.Store
 	updates <-chan struct{}
@@ -103,18 +104,16 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c := defaultConfig()
 	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
-	c.TokenAudience = testAudience
+	c.RPC = listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
+	}
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.ReaderAccounts = []auth.Account{readerAccount}
 	c.PolicyNamespace = policyNamespace
-	c.PolicyResyncSeconds = int(reader.MinWatchPeriod / time.Second)
 	cluster := deps{Reviews: kube.TokenReviews(), Kube: kubeConfig}
 	configure(&c, &cluster)
-	db, err := sql.Open("postgres", c.DatabaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, c.DatabaseURL)
 	hub, err := wakeups.Listen(t.Context(), c.DatabaseURL, store.UpdatesChannel)
 	if err != nil {
 		t.Fatal(err)
@@ -125,13 +124,13 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	t.Cleanup(unsubscribe)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	rpcListener, err := net.Listen("tcp", c.RPC.ListenAddress)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, cluster, listener) }()
+	go func() { served <- serve(ctx, c, cluster, rpcListener) }()
 	var result error
 	var stopped sync.Once
 	stop := func() error {
@@ -146,16 +145,33 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		return result
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clientCredentials := insecure.NewCredentials()
+	if c.RPC.TLS != nil {
+		if !c.RPC.Has(listener.SPIFFE) {
+			t.Fatal("test TLS listener must supply SPIFFE roots for its client")
+		}
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				clientCredentials, err = (&environment_runtime_transport.ClientTLS{
+					CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.ActionsURI,
+				}).Credentials()
+				if err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+		}
+	}
+	connection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(clientCredentials))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
-		operators:   operator_action_servicepb.NewOperatorActionServiceClient(connection),
-		connections: connection_servicepb.NewConnectionServiceClient(connection),
-		url:         "http://" + listener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
+		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
+		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
+		address:   rpcListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
 }
 
@@ -178,7 +194,7 @@ func waitReady(t *testing.T, service running) {
 	}
 }
 
-func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testing.T) {
+func TestTheServiceAnswersHealthAndStopsWhenTold(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	waitReady(t, service)
 	if got, err := checkHealth(t, service.health, probes.LivenessService); err != nil || got != healthpb.HealthCheckResponse_SERVING {
@@ -187,23 +203,20 @@ func TestTheServiceAnswersHealthAndMetricsOnOneListenerAndStopsWhenTold(t *testi
 	if _, err := checkHealth(t, service.health, "test-unknown-service"); status.Code(err) != codes.NotFound {
 		t.Errorf("health of an unknown service: %v", err)
 	}
-
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, service.url+"/metrics", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Prometheus scrapes the exposition format, in which the Go runtime collector reports its goroutines.
-	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "\ngo_goroutines ") {
-		t.Errorf("metrics: %d %q", response.StatusCode, body)
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, path := range []string{"/llms.txt", "/openapi.json", "/metrics", "/v1/action-groups", "/oauth/client-metadata.json"} {
+		response, err := client.Get("http://" + service.address + path)
+		if err != nil {
+			var timeout net.Error
+			if errors.As(err, &timeout) && timeout.Timeout() {
+				t.Errorf("HTTP request to %s timed out: %v", path, err)
+			}
+			continue // A gRPC listener may reject the HTTP/1 preface outright.
+		}
+		response.Body.Close()
+		if response.StatusCode == http.StatusOK {
+			t.Errorf("HTTP request to %s unexpectedly succeeded", path)
+		}
 	}
 
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
@@ -237,7 +250,7 @@ var testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example"
 // allow submits action as caller and allows it.
 func (r running) allow(t *testing.T, caller store.ServiceAccount, action store.ActionIdentity, arguments string) uuid.UUID {
 	t.Helper()
-	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller}, store.ActionRequestInput{
+	pending, err := r.store.Submit(t.Context(), store.CallerPrincipal{Account: caller, ServiceAccountUID: "test-caller-uid"}, store.ActionRequestInput{
 		IdempotencyKey: "test-dispatched", Action: action, Arguments: json.RawMessage(arguments), Title: "test title",
 	}, store.Admission{RequestID: uuid.New()})
 	if err != nil {
@@ -281,10 +294,9 @@ func TestTheServiceFailsAnActionNoExecutorRuns(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	request := service.run(t, store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		store.ActionIdentity{Group: "test-group", Name: "test-action"}, `{}`)
-	var failure struct{ Kind string }
-	if err := json.Unmarshal(request.Execution.Error, &failure); err != nil || request.State != action_servicepb.ActionState_ACTION_STATE_FAILED ||
-		failure.Kind != "*worker.UnsupportedActionError" {
-		t.Errorf("the request is %s with execution error %s, %v", request.State, request.Execution.Error, err)
+	if request.State != action_servicepb.ActionState_ACTION_STATE_FAILED ||
+		request.Execution.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL {
+		t.Errorf("the request is %s with execution error %v", request.State, request.Execution.Error)
 	}
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the cancellation that stopped it", err)
@@ -296,8 +308,19 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	namespace := sandboxNamespace(t, kube, true)
 	service := start(t, kube.Config, sandboxGroups(t, namespace, "null"))
 	caller := store.ServiceAccount{Namespace: namespace, Name: "test-caller"}
-	request := service.run(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
+	id := service.allow(t, caller, store.ActionIdentity{Group: "test-sandbox", Name: "create"},
 		`{"name": "test-box", "template": "test-template"}`)
+	// The box waits for its credential, which the Policy Controller and cert-manager would issue.
+	issuance := workloadidentitytesting.Issuance{Objects: workloadCredentials(t), CA: transporttesting.NewCA(t), Namespace: namespace}
+	var request store.ActionRequest
+	if err := wait.PollUntilContextTimeout(t.Context(), 50*time.Millisecond, callDeadline, true, func(ctx context.Context) (bool, error) {
+		issuance.Settle(t)
+		var err error
+		request, err = service.store.Get(ctx, id, testOperator)
+		return request.State == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED || request.State == action_servicepb.ActionState_ACTION_STATE_FAILED, err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if request.State != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 		t.Fatalf("the request is %s with execution error %s", request.State, request.Execution.Error)
 	}
@@ -305,6 +328,22 @@ func TestTheServiceRunsASandboxGroupsActions(t *testing.T) {
 	if err != nil || len(pods.Items) != 1 || pods.Items[0].Spec.ServiceAccountName != caller.Name {
 		t.Errorf("the namespace holds %v, %v; want one box running as the caller", pods, err)
 	}
+}
+
+// workloadCredentials reads and writes WorkloadCredentials and their Secrets on the test API server.
+func workloadCredentials(t *testing.T) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	objects, err := client.New(kube.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return objects
 }
 
 // awaitMCPHealth waits until the health of the MCP group key satisfies condition.
@@ -383,26 +422,6 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 }
 
 // fetch is the answer to a GET of address.
-func fetch(t *testing.T, address string) (int, []byte) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return response.StatusCode, body
-}
-
 // The service finishes a link at its callback, and a group the linkage authorizes follows it: a change another replica
 // commits reaches the group at once, not at its next refresh minutes later. The service also serves the shared Client
 // ID Metadata Document.
@@ -423,11 +442,7 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	awaitMCPHealth(t, groups, "test-linked", unlinked)
 
 	// The replica the operator started the flow on.
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, databaseURL)
 	replica, err := linkage.New(db, servers, metadata)
 	if err != nil {
 		t.Fatal(err)
@@ -436,13 +451,18 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, body := fetch(t, service.url+linkage.CallbackPath+"?"+url.Values{
-		"state": {oauthprovider.State(t, started.GetAuthorizationUrl())}, "code": {"test-code"},
-	}.Encode())
-	linked := &operator_action_servicepb.McpServerLinkage{}
-	if code != http.StatusOK || protojson.Unmarshal(body, linked) != nil ||
-		linked.GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
-		t.Fatalf("the callback answered %d %s", code, body)
+	request := &linkage_servicepb.CompleteCallbackRequest{
+		State: oauthprovider.State(t, started.GetAuthorizationUrl()), Code: "test-code",
+	}
+	result, err := service.linkages.CompleteCallback(t.Context(), request)
+	if err != nil || result.GetLinkage().GetStatus() != operator_action_servicepb.McpLinkageStatus_MCP_LINKAGE_STATUS_LINKED {
+		t.Fatalf("the gRPC callback answered %v, %v", result, err)
+	}
+	if _, err := service.linkages.CompleteCallback(t.Context(), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("replaying the callback returned %v", err)
+	}
+	if _, err := service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("an incomplete callback returned %v", err)
 	}
 	awaitMCPHealth(t, groups, "test-linked", func(h *action_servicepb.McpHealth) bool {
 		return h.GetState() == action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE
@@ -451,19 +471,39 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitMCPHealth(t, groups, "test-linked", unlinked)
+	started, err = replica.Start(t.Context(), "test-linked", nil, testOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.linkages.CompleteCallback(t.Context(), &linkage_servicepb.CompleteCallbackRequest{
+		State: oauthprovider.State(t, started.GetAuthorizationUrl()), Code: oauthprovider.RefusedCode,
+	})
+	failureStatus := status.Convert(err)
+	details := status.Convert(err).Details()
+	if status.Code(err) != codes.Unavailable || len(details) != 1 {
+		t.Fatalf("a refused exchange returned %v", err)
+	}
+	if got := failureStatus.Message(); got != "MCP authorization code exchange failed" ||
+		strings.Contains(got, oauthprovider.RefusedError) || strings.Contains(got, oauthprovider.RefusedErrorDescription) {
+		t.Fatalf("a refused exchange exposed provider error text in its status message: %q", got)
+	}
+	info, ok := details[0].(*errdetails.ErrorInfo)
+	if !ok || info.GetReason() != "MCP_TOKEN_EXCHANGE_FAILED" || info.GetDomain() != "agentplane.actions" {
+		t.Fatalf("a refused exchange returned details %v", details)
+	}
 
-	code, body = fetch(t, service.url+linkage.ClientMetadataPath)
+	metadataResponse, err := service.linkages.GetClientMetadata(t.Context(), &linkage_servicepb.GetClientMetadataRequest{})
 	var document struct {
 		ClientID string `json:"client_id"`
 	}
-	if code != http.StatusOK || json.Unmarshal(body, &document) != nil || document.ClientID != metadata.URL {
-		t.Errorf("the Client ID Metadata Document answered %d %s", code, body)
+	if err != nil || json.Unmarshal(metadataResponse.GetJsonDocument(), &document) != nil || document.ClientID != metadata.URL {
+		t.Fatalf("the gRPC metadata document answered %q, %v", metadataResponse.GetJsonDocument(), err)
 	}
 }
 
-func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
+func TestTheServiceAnswersAReadersReadsOverGRPC(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-agentplane", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-read", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -481,30 +521,11 @@ func TestTheServiceAnswersAReadersReadsOverGRPCAndHTTP(t *testing.T) {
 	if err != nil || got.GetActionRequest().GetId() != submitted.ID.String() {
 		t.Errorf("gRPC receipt: %v, %v", got, err)
 	}
-
-	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-requests/"+submitted.ID.String(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+readerToken)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	receipt := &action_servicepb.GetActionRequestResponse{}
-	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, receipt) != nil || !proto.Equal(receipt, got) {
-		t.Errorf("HTTP receipt: %d %s", response.StatusCode, body)
-	}
 }
 
 // No operator is configured here, so the operator services refuse every bearer; refusing one shows a service is
-// served and gated, where a service that is not served would answer UNIMPLEMENTED, and a route that is not, 404.
-func TestTheServiceGatesTheOperatorServicesOverGRPCAndHTTP(t *testing.T) {
+// served and gated, where a service that is not served would answer UNIMPLEMENTED.
+func TestTheServiceGatesTheOperatorServicesOverGRPC(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
@@ -514,54 +535,6 @@ func TestTheServiceGatesTheOperatorServicesOverGRPCAndHTTP(t *testing.T) {
 	}
 	if _, err := service.operators.DecideActionRequest(asReader, decision); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's Decision over gRPC: %v", err)
-	}
-	for _, route := range []struct{ method, path, body string }{
-		{
-			http.MethodPost, "/v1/operator/action-requests/" + decision.GetRequestId() + "/decision",
-			`{"verdict": "VERDICT_ALLOW", "expected_version": 1, "idempotency_key": "test-decision"}`,
-		},
-	} {
-		call, err := http.NewRequestWithContext(ctx, route.method, service.url+route.path, strings.NewReader(route.body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		call.Header.Set("Authorization", "Bearer "+readerToken)
-		response, err := http.DefaultClient.Do(call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != http.StatusUnauthorized {
-			t.Errorf("a reader's %s %s over HTTP: %d", route.method, route.path, response.StatusCode)
-		}
-	}
-}
-
-func TestLegacyIntegratedConnectionEndpointsAreAbsentByDefault(t *testing.T) {
-	service := start(t, kube.Config, &catalog.Catalog{})
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
-	if _, err := service.connections.ListConnections(ctx, &connection_servicepb.ListConnectionsRequest{}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("legacy ConnectionService over gRPC: %v", err)
-	}
-	for _, path := range []string{
-		"/v1/operator/connections",
-		"/mcp",
-		"/.well-known/oauth-authorization-server",
-		"/.well-known/oauth-protected-resource/mcp",
-	} {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+path, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != http.StatusNotFound {
-			t.Errorf("retired endpoint %s returned HTTP %d", path, response.StatusCode)
-		}
 	}
 }
 
@@ -596,35 +569,6 @@ func listOverGRPC(t *testing.T, service running, bearer string, code codes.Code)
 	return listed
 }
 
-// listOverHTTP lists the requests the bearer's account may read through the HTTP facade, and answers the status code
-// with the list it carries.
-func listOverHTTP(t *testing.T, service running, bearer string) (int, *action_servicepb.ListActionRequestsResponse) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
-	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-requests", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+bearer)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	listed := &action_servicepb.ListActionRequestsResponse{}
-	if response.StatusCode == http.StatusOK {
-		if err := protojson.Unmarshal(body, listed); err != nil {
-			t.Fatalf("HTTP list %s: %v", body, err)
-		}
-	}
-	return response.StatusCode, listed
-}
-
 func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-labeled-caller"}
@@ -633,7 +577,7 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}},
+	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, ServiceAccountUID: "test-caller-uid"},
 		store.ActionRequestInput{
 			IdempotencyKey: "test-own", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 			Arguments: json.RawMessage(`{}`), Title: "test title",
@@ -651,9 +595,6 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 			&action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
 			t.Errorf("%s, over gRPC: %v, want UNAUTHENTICATED", when, err)
 		}
-		if code, _ := listOverHTTP(t, service, token); code != http.StatusUnauthorized {
-			t.Errorf("%s, over HTTP: %d, want 401", when, code)
-		}
 	}
 	refused("unlabeled")
 
@@ -665,35 +606,10 @@ func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t 
 		}
 	}
 	ownOnly("gRPC", listOverGRPC(t, service, token, codes.OK))
-	code, listed := listOverHTTP(t, service, token)
-	if code != http.StatusOK {
-		t.Errorf("labeled, over HTTP: %d, want 200", code)
-	}
-	ownOnly("HTTP", listed)
 
 	setCallerLabel(t, caller, false)
 	listOverGRPC(t, service, token, codes.Unauthenticated)
 	refused("unlabeled again")
-}
-
-// submitOverHTTP submits test_echo of the group through the HTTP facade under the key, and answers the status code.
-func submitOverHTTP(t *testing.T, service running, bearer, group, key string) int {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
-	body := `{"idempotency_key": "` + key + `", "action": {"group": "` + group + `", "name": "test_echo"}, "arguments": {},
-		"title": "test title"}`
-	call, err := http.NewRequestWithContext(ctx, http.MethodPost, service.url+"/v1/action-requests", strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+bearer)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	return response.StatusCode
 }
 
 // A submission is admitted against the configured catalog and the groups' Executors, behind the Gate's policy index.
@@ -736,21 +652,12 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	if stored, err := service.store.Get(t.Context(), id, testOperator); err != nil || stored.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
 		t.Errorf("the submission is stored as %s, %v; want awaiting a decision", stored.State, err)
 	}
-	if got := submitOverHTTP(t, service, token, "test-mcp", "test-http"); got != http.StatusOK {
-		t.Errorf("test-mcp over HTTP: %d, want 200", got)
-	}
-	for group, want := range map[string]struct {
-		code   codes.Code
-		status int
-	}{
-		"test-offline": {codes.Unavailable, http.StatusServiceUnavailable},
-		"test-unknown": {codes.InvalidArgument, http.StatusBadRequest},
+	for group, want := range map[string]codes.Code{
+		"test-offline": codes.Unavailable,
+		"test-unknown": codes.InvalidArgument,
 	} {
-		if _, err := submit(service, group, "test-refused"); status.Code(err) != want.code {
-			t.Errorf("%s over gRPC: %v, want %v", group, err, want.code)
-		}
-		if got := submitOverHTTP(t, service, token, group, "test-refused"); got != want.status {
-			t.Errorf("%s over HTTP: %d, want %d", group, got, want.status)
+		if _, err := submit(service, group, "test-refused"); status.Code(err) != want {
+			t.Errorf("%s over gRPC: %v, want %v", group, err, want)
 		}
 	}
 
@@ -759,12 +666,9 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	if _, err := submit(unindexed, "test-mcp", "test-unindexed"); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("without the policy index, over gRPC: %v, want UNAUTHENTICATED", err)
 	}
-	if got := submitOverHTTP(t, unindexed, token, "test-mcp", "test-unindexed"); got != http.StatusUnauthorized {
-		t.Errorf("without the policy index, over HTTP: %d, want 401", got)
-	}
 }
 
-func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPCAndHTTP(t *testing.T) {
+func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
 	caller := auth.Account{Namespace: policyNamespace, Name: "test-policy-caller"}
@@ -791,7 +695,7 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPCAndHTTP(t *testi
 		&policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-policy-binding"},
 			Spec: policyapi.PolicyBindingSpec{
-				Subject:    policyapi.ServiceAccountRef{Namespace: caller.Namespace, Name: caller.Name},
+				Subject:    policyapi.Subject{Namespace: caller.Namespace, Name: caller.Name},
 				PolicySets: []string{"test-policy-set"},
 			},
 		},
@@ -813,30 +717,11 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPCAndHTTP(t *testi
 	if err != nil {
 		t.Fatalf("the caller's policy: %v, %v", got, err)
 	}
-
-	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-policy", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+token)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	answered := &action_servicepb.GetActionPolicyResponse{}
-	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, answered) != nil || !proto.Equal(answered, got) {
-		t.Errorf("HTTP policy: %d %s, want %v", response.StatusCode, body, got)
-	}
 }
 
 // A sandbox group's Actions are declared, so its view holds still between the reads, where an MCP group's health moves
 // with its server.
-func TestTheServiceAnswersItsCatalogOverGRPCAndHTTP(t *testing.T) {
+func TestTheServiceAnswersItsCatalogOverGRPC(t *testing.T) {
 	namespace := sandboxNamespace(t, kube, true)
 	service := start(t, kube.Config, newCatalog(t, `{"test-sandbox": {"title": "t", "description": "d",
 		"executor": {"kind": "pod", "description": "e", "namespace": "`+namespace+`",
@@ -852,24 +737,5 @@ func TestTheServiceAnswersItsCatalogOverGRPCAndHTTP(t *testing.T) {
 	got, err := service.actions.GetAction(ctx, &action_servicepb.GetActionRequest{GroupKey: "test-sandbox", ActionKey: action.GetName()})
 	if err != nil || !proto.Equal(got.GetAction(), action) {
 		t.Errorf("gRPC Action: %v, %v", got, err)
-	}
-
-	call, err := http.NewRequestWithContext(ctx, http.MethodGet, service.url+"/v1/action-groups", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	call.Header.Set("Authorization", "Bearer "+readerToken)
-	response, err := http.DefaultClient.Do(call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	catalogRead := &action_servicepb.ListActionGroupsResponse{}
-	if response.StatusCode != http.StatusOK || protojson.Unmarshal(body, catalogRead) != nil || !proto.Equal(catalogRead, listed) {
-		t.Errorf("HTTP catalog: %d %s", response.StatusCode, body)
 	}
 }

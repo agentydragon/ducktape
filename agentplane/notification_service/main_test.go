@@ -21,25 +21,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -72,20 +78,26 @@ func serveGRPC(t *testing.T, register func(*grpc.Server)) string {
 
 // listingRunner is a Sandbox's runner, as the control Service reaches it.
 type listingRunner struct {
-	runnerservicepb.UnimplementedRunnerServer
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 }
 
-func (listingRunner) ListSessions(context.Context, *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
-	return &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{SessionId: testSession}}}, nil
+func (listingRunner) ListSessions(context.Context, *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: testSession}}}, nil
 }
 
 type testActionService struct {
 	actionpb.UnimplementedActionServiceServer
 }
 
-func (testActionService) GetActionRequest(context.Context, *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+func (testActionService) GetActionRequest(ctx context.Context, _ *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName})
+	if err != nil {
+		return nil, err
+	}
+	uid := string(account.UID)
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		Caller: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
+		CallerUid: &uid,
+		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
 	}}, nil
 }
 
@@ -97,9 +109,10 @@ func (testActionService) ListActionRequestEvents(context.Context, *actionpb.List
 type running struct {
 	notifications notificationspb.NotificationsClient
 	health        healthpb.HealthClient
-	// url is the base URL of the service's HTTP routes.
-	url string
-	db  *sql.DB
+	// url is the service's HTTP listener base URL, used for the signed GitHub webhook.
+	url        string
+	rpcAddress string
+	db         *sql.DB
 	// actionsToken is the Action Service token file.
 	actionsToken string
 	// wait returns what serve returned, once it has; stop asks it to stop first.
@@ -108,11 +121,7 @@ type running struct {
 
 func testDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	return db
 }
 
@@ -139,17 +148,18 @@ func restart(t *testing.T, tune func(*config)) running {
 		return path
 	}
 	actionAddress := serveGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
-	runnerAddress := serveGRPC(t, func(s *grpc.Server) { runnerservicepb.RegisterRunnerServer(s, listingRunner{}) })
+	runnerAddress := serveGRPC(t, func(s *grpc.Server) { environmentruntimepb.RegisterEnvironmentRuntimeServer(s, listingRunner{}) })
 	historyAddress := serveGRPC(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
 	})
 	dispatcherAddress := serveGRPC(t, func(s *grpc.Server) {
-		dispatcherpb.RegisterSessionDispatcherServer(s, dispatcherpb.UnimplementedSessionDispatcherServer{})
+		dispatcherpb.RegisterSessionDispatcherServer(s, openingDispatcher{})
 	})
 
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
 	c.Namespace, c.TokenAudience = testNamespace, testAudience
+	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}
 	c.Actions = actionPeer{URL: "http://" + actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
 	c.RunnerGateway = runnerGateway{ControlTarget: runnerAddress, TokenFile: tokenFile("gateway"), RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
@@ -168,13 +178,23 @@ func restart(t *testing.T, tune func(*config)) running {
 		).Build(),
 		Policies: apiConfig,
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RPC.Has(listener.SPIFFE) {
+		deps.Sandboxes, err = client.New(apiConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, deps, listener) }()
+	go func() { served <- serve(ctx, c, deps, grpcListener, httpListener) }()
 	var result error
 	var received sync.Once
 	wait := func() error {
@@ -192,14 +212,25 @@ func restart(t *testing.T, tune func(*config)) running {
 		return wait()
 	}
 	t.Cleanup(func() { _ = stop() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	security, err := (*environment_runtime_transport.ClientTLS)(nil).Credentials()
+	if c.RPC.TLS != nil {
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				security, err = (&environment_runtime_transport.ClientTLS{CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.NotificationsURI}).Credentials()
+			}
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(security))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		notifications: notificationspb.NewNotificationsClient(connection), health: healthpb.NewHealthClient(connection),
-		url: "http://" + listener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
+		url: "http://" + httpListener.Addr().String(), rpcAddress: grpcListener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
 	}
 }
 
@@ -250,8 +281,7 @@ func TestTheServiceAnswersHealthChecksAndCallsAndStopsWhenTold(t *testing.T) {
 func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
 	service := start(t, nil)
 	_, err := service.notifications.CreateSubscription(bearing(t, sandboxToken), &notificationspb.CreateSubscriptionRequest{
-		DestinationRef: &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName, Uid: sandboxUID},
-		SessionId:      testSession, IdempotencyKey: "test-key",
+		SessionId: testSession, IdempotencyKey: "test-key",
 		Source: &notificationspb.Source{Provider: &notificationspb.Source_Actions{
 			Actions: &notificationspb.ActionsSource{RequestId: uuid.NewString()},
 		}},
@@ -325,7 +355,7 @@ func postWebhook(t *testing.T, service running, signature string) int {
 	return response.StatusCode
 }
 
-func TestTheWebhookIsServedBesideGRPCOnlyWhenGitHubIsConfigured(t *testing.T) {
+func TestOnlyConfiguredGitHubServesTheSignedWebhookBesideGRPC(t *testing.T) {
 	service := webhookServer(t)
 	if got := postWebhook(t, service, ""); got != http.StatusAccepted {
 		t.Errorf("a signed ping = %d, want 202", got)
@@ -335,6 +365,16 @@ func TestTheWebhookIsServedBesideGRPCOnlyWhenGitHubIsConfigured(t *testing.T) {
 	}
 	if got, err := checkHealth(t, service.health, ""); err != nil || got != healthpb.HealthCheckResponse_SERVING {
 		t.Errorf("gRPC beside the webhook: %v, %v", got, err)
+	}
+	for _, path := range []string{"/v1/subscriptions", "/openapi.json", "/llms.txt"} {
+		response, err := http.Get(service.url + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, response.StatusCode)
+		}
 	}
 	if got := postWebhook(t, start(t, nil), ""); got != http.StatusNotFound {
 		t.Errorf("a ping without GitHub configured = %d, want 404", got)

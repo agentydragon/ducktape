@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package agentplane.policy.v1;
+option go_package = "github.com/agentydragon/ducktape/agentplane/policy/v1;policypb";
+
+import "agentplane/policy/api/v1alpha1/policy_types.proto";
+import "agentplane/proto/identity.proto";
+import "agentplane/proto/kubernetes.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// PolicyService exposes observed PolicyBindings and PolicySets. A watch starts with a snapshot,
+// then reports resource changes; reconnecting starts a new snapshot.
+service PolicyService {
+  // Creates an operator grant for one exact live Sandbox incarnation. The controller owns the
+  // binding and verifies that the Sandbox still runs as its controller-owned ServiceAccount.
+  rpc GrantSandboxPolicyBinding(GrantSandboxPolicyBindingRequest) returns (GrantSandboxPolicyBindingResponse) {
+    option (google.api.http) = {
+      post: "/v1/sandboxes/{sandbox_namespace}/{sandbox_name}/policy-bindings"
+      body: "*"
+    };
+  }
+  // Deletes one operator grant after rechecking its binding and Sandbox identities.
+  rpc RevokeSandboxPolicyBinding(RevokeSandboxPolicyBindingRequest) returns (RevokeSandboxPolicyBindingResponse) {
+    option (google.api.http) = {
+      delete: "/v1/sandboxes/{sandbox_namespace}/{sandbox_name}/policy-bindings/{binding_name}"
+    };
+  }
+  rpc WatchPolicyBindings(WatchPolicyBindingsRequest) returns (stream WatchPolicyBindingsResponse) {
+    option (google.api.http) = {get: "/v1/policy-bindings:watch"};
+  }
+  rpc WatchPolicySets(WatchPolicySetsRequest) returns (stream WatchPolicySetsResponse) {
+    option (google.api.http) = {get: "/v1/policy-sets:watch"};
+  }
+  rpc ListPolicySetNames(ListPolicySetNamesRequest) returns (ListPolicySetNamesResponse) {
+    option (google.api.http) = {get: "/v1/policy-set-names"};
+  }
+  // Every Identity in the policy namespace. Broad readers only.
+  rpc WatchIdentities(WatchIdentitiesRequest) returns (stream WatchIdentitiesResponse) {
+    option (google.api.http) = {get: "/v1/identities:watch"};
+  }
+  // Deletes one Identity incarnation, and with it, by garbage collection, everything it owns. Refused
+  // for an Identity Flux manages, which Flux would recreate, and while a PolicyBinding the Identity
+  // does not own names it: such a binding would grant a later Identity of the same name. The check
+  // is advisory: a binding created concurrently is not fenced.
+  rpc DeleteIdentity(DeleteIdentityRequest) returns (DeleteIdentityResponse) {
+    option (google.api.http) = {delete: "/v1/identities/{namespace}/{name}"};
+  }
+}
+
+message GrantSandboxPolicyBindingRequest {
+  string sandbox_namespace = 1;
+  string sandbox_name = 2;
+  string sandbox_uid = 3;
+  repeated string policy_sets = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+message RevokeSandboxPolicyBindingRequest {
+  string sandbox_namespace = 1;
+  string sandbox_name = 2;
+  string binding_name = 3;
+  string sandbox_uid = 4;
+  string binding_uid = 5;
+}
+message GrantSandboxPolicyBindingResponse { PolicyBinding binding = 1; }
+message RevokeSandboxPolicyBindingResponse {}
+
+message WatchPolicyBindingsRequest {
+  // Absent selects the authenticated caller's ServiceAccount.
+  oneof selector {
+    // The bindings naming this ServiceAccount. Broad readers may select one other than their own.
+    agentplane.proto.ServiceAccount subject = 1;
+    // The bindings whose subject is the Identity of this name in the policy namespace, of whichever
+    // incarnation. Broad readers only.
+    string identity = 2;
+    // Every binding whose subject is an Identity; only true is valid. Broad readers only.
+    bool every_identity = 3;
+  }
+}
+message WatchPolicySetsRequest {}
+message ListPolicySetNamesRequest {}
+message ListPolicySetNamesResponse { repeated string names = 1; }
+
+message PolicyResourceIdentity {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+message PolicyBinding {
+  PolicyResourceIdentity identity = 1;
+  int64 generation = 2;
+  map<string, string> labels = 3;
+  repeated agentplane.proto.OwnerReference owner_references = 4;
+  agentplane.policy.resource.v1.PolicyBindingSpec spec = 5;
+  agentplane.policy.resource.v1.Status status = 6;
+}
+message PolicySet {
+  PolicyResourceIdentity identity = 1;
+  int64 generation = 2;
+  agentplane.policy.resource.v1.PolicySetSpec spec = 3;
+}
+// An Identity's labels carry its provenance, such as Flux's.
+message Identity {
+  PolicyResourceIdentity identity = 1;
+  int64 generation = 2;
+  map<string, string> labels = 3;
+  agentplane.policy.resource.v1.IdentitySpec spec = 4;
+}
+message WatchIdentitiesRequest {}
+message IdentityChunk { repeated Identity identities = 1; }
+message WatchIdentitiesResponse {
+  oneof frame {
+    IdentityChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    Identity upsert = 3;
+    PolicyResourceIdentity removed = 4;
+  }
+}
+message DeleteIdentityRequest {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+message DeleteIdentityResponse {}
+
+message PolicyBindingChunk { repeated PolicyBinding bindings = 1; }
+message PolicySetChunk { repeated PolicySet policy_sets = 1; }
+message WatchPolicyBindingsResponse {
+  oneof frame {
+    PolicyBindingChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    PolicyBinding upsert = 3;
+    PolicyResourceIdentity removed = 4;
+  }
+}
+message WatchPolicySetsResponse {
+  oneof frame {
+    PolicySetChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    PolicySet upsert = 3;
+    PolicyResourceIdentity removed = 4;
+  }
+}

@@ -202,6 +202,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "frontend_openapi_json",
+    outs = ["frontend_openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//study_casino/frontend/lib:__pkg__"],
+)
+
 py_binary(
     name = "server",
     data = ["//study_casino/frontend:bundle"],
@@ -345,11 +353,11 @@ py_test(
         ":conftest",
         "//:conftest",
         "//util:playwright",
-        "//util/bazel:runfiles",
         "//util/testing:asgi",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -369,17 +377,17 @@ py_test(
         ":config",
         ":conftest",
         "//:conftest",
+        "//devinfra/testing:output_writer",
         "//util:playwright",
-        "//util/bazel:runfiles",
         "//util/testing:asgi",
-        "//util/testing:frontend_visual",
         "//util/testing:postgres",
-        "//util/testing:undeclared_outputs",
-        "//util/testing:visual_capture",
-        "//util/testing:visual_fixtures",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:context",
+        "//util/testing/frontend_visual:fixtures",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -1,38 +1,7 @@
 """Shared utility libraries."""
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-
-py_library(
-    name = "data_uri",
-    srcs = ["data_uri.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "kubernetes",
-    srcs = ["kubernetes.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//kubernetes_asyncio"],
-)
-
-py_library(
-    name = "kubernetes_watch",
-    srcs = ["kubernetes_watch.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//kubernetes_asyncio",
-        "@pypi//tenacity",
-    ],
-)
-
-# Turns a binary asset into a TS data-URI constant; see //devinfra/js:data_uri.bzl's macro.
-py_binary(
-    name = "data_uri_bin",
-    main_module = "util.data_uri",
-    visibility = ["//visibility:public"],
-    deps = [":data_uri"],
-)
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "otel",
@@ -42,30 +11,10 @@ py_library(
 )
 
 py_library(
-    name = "visual_review",
-    srcs = ["visual_review.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "visual_diff",
-    srcs = ["visual_diff.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pillow"],
-)
-
-py_library(
     name = "net",
     srcs = ["net.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//tenacity"],
-)
-
-py_library(
-    name = "env",
-    srcs = ["env.py"],
-    visibility = ["//visibility:public"],
 )
 
 py_library(
@@ -85,88 +34,10 @@ py_library(
 )
 
 py_library(
-    name = "enum_vocab",
-    srcs = ["enum_vocab.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_test(
-    name = "test_enum_vocab",
-    srcs = ["test_enum_vocab.py"],
-    deps = [
-        ":enum_vocab",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "sqlalchemy_types",
     srcs = ["sqlalchemy_types.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":enum_vocab",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_sqlalchemy_types",
-    srcs = ["test_sqlalchemy_types.py"],
-    deps = [
-        ":enum_vocab",
-        ":sqlalchemy_types",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "fmt",
-    srcs = ["fmt.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "oci",
-    srcs = ["oci.py"],
-    data = ["@crane"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":crane",
-        "//util/bazel:runfiles",
-        "@pypi//opentelemetry_api",
-    ],
-)
-
-# No deps and no runfiles on purpose: the CI publish planners import this as bare
-# `python3 -m` on a GitHub Actions runner, where Bazel and pypi do not exist. The
-# Bazel-facing half (resolving @crane, pushing a Bazel-built layout) is in :oci.
-py_library(
-    name = "crane",
-    srcs = ["crane.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_test(
-    name = "test_crane",
-    srcs = ["test_crane.py"],
-    deps = [
-        ":crane",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "json_schema",
-    testonly = True,
-    srcs = ["json_schema.py"],
-    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
 )
 
 py_library(
@@ -191,7 +62,7 @@ py_library(
     srcs = ["playwright.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//util/testing:frontend_visual",
+        "//util/testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
     ],
@@ -200,29 +71,17 @@ py_library(
 py_package(
     name = "util_pkg",
     packages = [
+        "devinfra.bazel",
         "util",
-        "util.bazel",
         "util.exec",
     ],
-    # `util.bazel.runfiles` is intentionally not shipped: it calls into
-    # `rules_python.runfiles`, which fails when imported from a path that
-    # isn't under a Bazel-built binary's runfiles tree. Shipping it in a
-    # Nix-installed wheel just shadows the Bazel-runfiles version with a
-    # broken copy — `Rlocation()` calls `CurrentRepository(frame=...)` on
-    # the caller, sees the /nix/store path, and raises "does not lie under
-    # the runfiles root". `util.bazel.{subprocess,workspace}` work fine
-    # outside Bazel and are needed by Nix-shipped wheels (Claude statusline,
-    # ducktape-git-hooks).
     deps = [
-        ":agent_sandbox",
-        ":env",
-        ":fmt",
         ":net",
         ":otel",
         ":typer",
         ":urls",
-        "//util/bazel:subprocess",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:subprocess",
+        "//devinfra/bazel:workspace",
         "//util/exec:models",
         "//util/exec:subprocess",
     ],
@@ -299,12 +158,6 @@ py_test(
 )
 
 py_library(
-    name = "agent_sandbox",
-    srcs = ["agent_sandbox.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "oidc_login",
     srcs = ["oidc_login.py"],
     visibility = ["//visibility:public"],
@@ -336,28 +189,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_visual_review",
-    srcs = ["test_visual_review.py"],
-    deps = [
-        ":visual_review",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_visual_diff",
-    srcs = ["test_visual_diff.py"],
-    deps = [
-        ":visual_diff",
-        "//:conftest",
-        "@pypi//pillow",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "urls",
     srcs = ["urls.py"],
@@ -374,58 +205,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "oidc_principal",
-    srcs = ["oidc_principal.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":urls",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pyjwt",
-    ],
-)
-
-py_test(
-    name = "test_oidc_principal",
-    srcs = ["test_oidc_principal.py"],
-    deps = [
-        ":oidc_principal",
-        "//:conftest",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pyjwt",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
-    name = "sqlalchemy_protobuf",
-    srcs = ["sqlalchemy_protobuf.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_sqlalchemy_protobuf",
-    srcs = ["test_sqlalchemy_protobuf.py"],
-    deps = [
-        ":sqlalchemy_protobuf",
-        "//:conftest",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 

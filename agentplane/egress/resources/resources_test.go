@@ -12,7 +12,7 @@ import (
 
 func credential(source egressapi.CredentialSource, targets ...egressapi.Target) *egressapi.EgressCredential {
 	return &egressapi.EgressCredential{
-		ObjectMeta: metav1.ObjectMeta{Name: "github-pat"},
+		ObjectMeta: metav1.ObjectMeta{Name: "github-pat", UID: "uid-github"},
 		Spec:       egressapi.EgressCredentialSpec{Description: "d", Source: source, Targets: targets},
 	}
 }
@@ -20,19 +20,25 @@ func credential(source egressapi.CredentialSource, targets ...egressapi.Target) 
 var (
 	bearer       = egressapi.Target{Method: egressapi.SchemeToken, Header: "Authorization", Scheme: "Bearer"}
 	secretSource = egressapi.CredentialSource{SecretRef: &egressapi.SecretKeyRef{Name: "pat", Key: "token"}}
-	workload     = egressapi.CredentialSource{AuthenticatedWorkloadToken: &egressapi.AuthenticatedWorkloadTokenSource{}}
+	projected    = egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{Audience: "https://k8s.test"}}
 )
+
+func accountSource(namespace, name string) egressapi.CredentialSource {
+	return egressapi.CredentialSource{KubernetesServiceAccount: &egressapi.KubernetesServiceAccountSource{
+		Namespace: namespace, Name: name,
+	}}
+}
 
 func TestCredentialFromAPISources(t *testing.T) {
 	for name, tc := range map[string]struct {
 		source egressapi.CredentialSource
 		want   Source
 	}{
-		"secret":   {secretSource, SecretKey{Name: "pat", Key: "token"}},
-		"workload": {workload, AuthenticatedWorkloadToken{}},
-		"projected": {
-			egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{Audience: "https://k8s.test"}},
-			ProjectedWorkloadToken{Audience: "https://k8s.test"},
+		"secret":    {secretSource, SecretKey{Name: "pat", Key: "token"}},
+		"projected": {projected, ProjectedWorkloadToken{Audience: "https://k8s.test"}},
+		"account": {
+			accountSource("accounts", "shared.diagnostics"),
+			KubernetesServiceAccount{Namespace: "accounts", Name: "shared.diagnostics"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -40,7 +46,7 @@ func TestCredentialFromAPISources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Source != tc.want || got.Placeholder() != "agentplane-credential-github-pat" {
+			if got.Source != tc.want || got.UID != "uid-github" || got.Placeholder() != "agentplane-credential-github-pat" {
 				t.Fatalf("got %#v", got)
 			}
 		})
@@ -60,7 +66,7 @@ func TestCredentialFromAPITargets(t *testing.T) {
 		"json field":     {egressapi.Target{Method: egressapi.JSONField, Field: "password"}, JSONField{Field: "password"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := CredentialFromAPI(credential(workload, tc.target))
+			got, err := CredentialFromAPI(credential(projected, tc.target))
 			if err != nil || got.Targets[0] != tc.want {
 				t.Fatalf("got %#v, %v", got.Targets, err)
 			}
@@ -72,34 +78,50 @@ func TestCredentialFromAPITargets(t *testing.T) {
 }
 
 func TestCredentialFromAPIRefusesWhatItDoesNotUnderstand(t *testing.T) {
-	noDescription := credential(workload, bearer)
+	noDescription := credential(projected, bearer)
 	noDescription.Spec.Description = ""
-	noName := credential(workload, bearer)
+	noName := credential(projected, bearer)
 	noName.Name = ""
 	for name, credential := range map[string]*egressapi.EgressCredential{
 		"no name":                    noName,
 		"no description":             noDescription,
 		"no source":                  credential(egressapi.CredentialSource{}, bearer),
-		"two sources":                credential(egressapi.CredentialSource{SecretRef: secretSource.SecretRef, AuthenticatedWorkloadToken: workload.AuthenticatedWorkloadToken}, bearer),
+		"two sources":                credential(egressapi.CredentialSource{SecretRef: secretSource.SecretRef, ProjectedWorkloadToken: projected.ProjectedWorkloadToken}, bearer),
 		"projected without audience": credential(egressapi.CredentialSource{ProjectedWorkloadToken: &egressapi.ProjectedWorkloadTokenSource{}}, bearer),
-		"no targets":                 credential(workload),
-		"scheme token without scheme": credential(workload,
+		"no targets":                 credential(projected),
+		"scheme token without scheme": credential(projected,
 			egressapi.Target{Method: egressapi.SchemeToken, Header: "Authorization"}),
-		"scheme on a basic target": credential(workload,
+		"scheme on a basic target": credential(projected,
 			egressapi.Target{Method: egressapi.BasicWhole, Header: "Authorization", Scheme: "Bearer"}),
-		"header on a json target": credential(workload,
+		"header on a json target": credential(projected,
 			egressapi.Target{Method: egressapi.JSONField, Header: "X", Field: "password"}),
-		"field on a header target": credential(workload,
+		"field on a header target": credential(projected,
 			egressapi.Target{Method: egressapi.WholeValue, Header: "X", Field: "password"}),
-		"json target without a field": credential(workload, egressapi.Target{Method: egressapi.JSONField}),
-		"unknown method":              credential(workload, egressapi.Target{Method: "bearer", Header: "X"}),
-		"no header":                   credential(workload, egressapi.Target{Method: egressapi.WholeValue}),
+		"json target without a field":     credential(projected, egressapi.Target{Method: egressapi.JSONField}),
+		"unknown method":                  credential(projected, egressapi.Target{Method: "bearer", Header: "X"}),
+		"no header":                       credential(projected, egressapi.Target{Method: egressapi.WholeValue}),
+		"account in an invalid namespace": credential(accountSource("Accounts", "diagnostics"), bearer),
+		"account name with a colon":       credential(accountSource("accounts", "a:b"), bearer),
+		"account in a json field": credential(accountSource("accounts", "diagnostics"),
+			egressapi.Target{Method: egressapi.JSONField, Field: "token"}),
+		"account in another header": credential(accountSource("accounts", "diagnostics"),
+			egressapi.Target{Method: egressapi.SchemeToken, Header: "X-Token", Scheme: "Bearer"}),
+		"account in two targets": credential(accountSource("accounts", "diagnostics"), bearer,
+			egressapi.Target{Method: egressapi.BasicPassword, Header: "Authorization"}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := CredentialFromAPI(credential); err == nil {
 				t.Fatal("converted")
 			}
 		})
+	}
+}
+
+// The API server fixes this form: it is what `impersonate` on `serviceaccounts` authorizes.
+func TestKubernetesServiceAccountUsernameIsTheAPIServersServiceAccountForm(t *testing.T) {
+	account := KubernetesServiceAccount{Namespace: "accounts", Name: "diagnostics"}
+	if got := account.Username(); got != "system:serviceaccount:accounts:diagnostics" {
+		t.Errorf("Username() = %q", got)
 	}
 }
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Opt-in delayed systemd cgroup controller pilot
+ConditionKernelCommandLine=agentplane.cgroup-pilot=1
+
+[Timer]
+OnBootSec=30s
+AccuracySec=1s
+Unit=agentplane-cgroup-pilot-probe.service
+
+[Install]
+WantedBy=timers.target

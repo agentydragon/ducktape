@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture
@@ -47,9 +47,6 @@ def agent_cli_environment() -> dict[str, str]:
     return {
         "AGENTPLANE_ACTIONS_URL": "http://actions.test:8080",
         "AGENTPLANE_ACTIONS_CREDENTIAL": "test-actions-bearer",
-        "AGENTPLANE_NOTIFICATIONS_URL": "http://notifications.test:8080",
-        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": "test-notifications-bearer",
-        "AGENTPLANE_EGRESS_URL": "http://egress.test",
-        "AGENTPLANE_EGRESS_CREDENTIAL": "test-egress-bearer",
-        "AGENTPLANE_DESTINATION": '{"destination_ref": {"kind": "test"}, "session_id": "test-session"}',
+        "AGENTPLANE_EGRESS_GRPC_URL": "http://127.0.0.1:3130",
+        "AGENTPLANE_SESSION_ID": "test-session",
     }

@@ -2,6 +2,9 @@
 // the test's request fence answers the real iframe request with a striped Haku UI document.
 import "./mock_api";
 
+import { QueryClientProvider } from "@tanstack/react-query";
+
+import { createConsoleQueryClient } from "../query";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { useEffect } from "react";
@@ -90,9 +93,10 @@ if (!fixture) throw new Error("Missing Haku fixture");
 const colorScheme = (window as unknown as { __COLOR_SCHEME__?: "light" | "dark" }).__COLOR_SCHEME__ ?? "light";
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
+const client = createConsoleQueryClient();
 createRoot(container).render(
   <MantineProvider forceColorScheme={colorScheme} theme={hakuTheme}>
     <Notifications position="top-right" />
-    {fixtureElement(fixture)}
+    <QueryClientProvider client={client}>{fixtureElement(fixture)}</QueryClientProvider>
   </MantineProvider>
 );

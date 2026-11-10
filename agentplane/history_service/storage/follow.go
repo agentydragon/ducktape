@@ -57,7 +57,7 @@ func (s *Store) ResolveFollowStart(ctx context.Context, sessionID uuid.UUID, req
 	}
 	var after uint64
 	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
-		last, err := followLastCursor(ctx, tx, sessionID)
+		last, err := s.followLastCursor(ctx, tx, sessionID)
 		if err != nil {
 			return err
 		}
@@ -88,9 +88,11 @@ func (s *Store) ResolveFollowStart(ctx context.Context, sessionID uuid.UUID, req
 	return after, err
 }
 
-func followLastCursor(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (uint64, error) {
+func (s *Store) followLastCursor(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (uint64, error) {
 	var last uint64
-	err := tx.QueryRowContext(ctx, "SELECT last_cursor FROM session_history WHERE id = $1", sessionID).Scan(&last)
+	predicate, scopeArgs := s.sessionPredicate("h", 2)
+	args := append([]any{sessionID}, scopeArgs...)
+	err := tx.QueryRowContext(ctx, "SELECT h.last_cursor FROM session_history h WHERE h.id = $1 AND "+predicate, args...).Scan(&last)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("%w: %s", ErrNotFound, sessionID)
 	}
@@ -130,7 +132,7 @@ func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, afte
 	var page FollowPage
 	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		var err error
-		if page.LastCursor, err = followLastCursor(ctx, tx, sessionID); err != nil {
+		if page.LastCursor, err = s.followLastCursor(ctx, tx, sessionID); err != nil {
 			return err
 		}
 		if after > page.LastCursor {
@@ -233,9 +235,13 @@ func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, afte
 // ReadFollowRemoved returns every removal intersecting the covered window in one query. Cleanup can
 // remove a range behind the stream's cursor at any time, so each catch-up checks the full window.
 func (s *Store) ReadFollowRemoved(ctx context.Context, sessionID uuid.UUID, coveredAfter, through uint64) ([]*historypb.CursorRange, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT first_cursor, last_cursor FROM session_event_removed_range
-		WHERE session_id = $1 AND first_cursor <= $3 AND last_cursor > $2
-		ORDER BY first_cursor`, sessionID, coveredAfter, through)
+	predicate, scopeArgs := s.sessionPredicate("h", 4)
+	args := []any{sessionID, coveredAfter, through}
+	args = append(args, scopeArgs...)
+	rows, err := s.db.QueryContext(ctx, `SELECT removed.first_cursor, removed.last_cursor FROM session_event_removed_range removed
+		WHERE removed.session_id = $1 AND removed.first_cursor <= $3 AND removed.last_cursor > $2
+		AND EXISTS (SELECT FROM session_history h WHERE h.id = removed.session_id AND `+predicate+`)
+		ORDER BY removed.first_cursor`, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -2,17 +2,19 @@ package reads
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
-var reply = &historypb.EntityKey{EntityKind: "item", EntityId: "test-reply"}
+var reply = &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-reply"}
 
 const (
 	firstFrame  = `{"test": "first native frame"}`
@@ -118,7 +120,7 @@ func TestAFrameSettledBeforeTheFoldForgetsItsLinkIsUnavailable(t *testing.T) {
 
 	frames := nativeFrames(t, f, &historypb.ReadNativeFramesRequest{
 		SessionId: sessionID.String(), ProjectionEpoch: testEpoch,
-		Entity:            &historypb.EntityKey{EntityKind: "item", EntityId: "msg_test#0"},
+		Entity:            &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "msg_test#0"},
 		ObservationCursor: 4, Limit: 10,
 	})
 
@@ -142,6 +144,22 @@ func TestANativeFrameBeyondTheRetainedHistoryIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestANativeFrameWithAnUnsettledMissingEntryIsNotServed(t *testing.T) {
+	f := newFixture(t)
+	sessionID := f.session(t, f.history, sandboxName("missing-frame-"), native(1, firstFrame), native(2, secondFrame), replyStarted(3, 2))
+	f.fold(t, sessionID)
+	if _, err := f.db.Exec("DELETE FROM session_event WHERE session_id = $1 AND cursor = 2", sessionID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := f.reader.ReadNativeFrames(t.Context(), &historypb.ReadNativeFramesRequest{
+		SessionId: sessionID.String(), ProjectionEpoch: testEpoch, Entity: reply, ObservationCursor: 3, Limit: 10,
+	})
+	if err == nil {
+		t.Fatal("native frame with an unexplained gap was served")
+	}
+}
+
 func TestEvidenceNamesOnlyWhatTheFoldHolds(t *testing.T) {
 	f := newFixture(t)
 	sessionID := foldedFrames(t, f)
@@ -155,7 +173,7 @@ func TestEvidenceNamesOnlyWhatTheFoldHolds(t *testing.T) {
 	}{
 		{"stale epoch", sessionID, "v1", reply, ErrScopeReset},
 		{"Session not folded", unfolded, testEpoch, reply, ErrEvidenceNotFound},
-		{"entity the fold never made", sessionID, testEpoch, &historypb.EntityKey{EntityKind: "item", EntityId: "test-never-made"}, ErrEvidenceNotFound},
+		{"entity the fold never made", sessionID, testEpoch, &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-never-made"}, ErrEvidenceNotFound},
 	} {
 		_, evidenceErr := f.reader.ReadEntityEvidence(t.Context(), &historypb.ReadEntityEvidenceRequest{
 			SessionId: test.sessionID.String(), ProjectionEpoch: test.epoch, Entity: test.entity, Limit: 10,
@@ -186,17 +204,17 @@ func TestFramesOfAnObservationTheEntityWasNotFoldedFromAreNotFound(t *testing.T)
 func TestAFoldFromAnAttachmentAloneHasNoSourceToServeEvidenceFrom(t *testing.T) {
 	f := newFixture(t)
 	sessionID := f.session(t, f.history, sandboxName("attached-"))
-	feed := &historypb.SessionFeedState{Attached: &runnerpb.Attached{SessionId: sessionID.String()}}
+	feed := &historypb.SessionFeedState{Attached: &sessionpb.Attached{SessionId: sessionID.String()}}
 	if err := f.history.RecordFeedState(t.Context(), sessionID, feed); err != nil {
 		t.Fatal(err)
 	}
 	f.fold(t, sessionID)
 	window := readEntities(t, f, &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: entityRange(0, 10)})
-	view := views(t, window)[0]
+	view := window.Entities[0]
 
 	_, err := f.reader.ReadEntityEvidence(t.Context(), &historypb.ReadEntityEvidenceRequest{
 		SessionId: sessionID.String(), ProjectionEpoch: testEpoch, Limit: 10,
-		Entity: &historypb.EntityKey{EntityKind: view["entity_kind"].(string), EntityId: view["entity_id"].(string)},
+		Entity: &historypb.EntityKey{EntityKind: entityKind(t, view), EntityId: view.EntityId},
 	})
 
 	if !errors.Is(err, ErrEvidenceNotFound) {
@@ -217,6 +235,43 @@ func TestEvidencePagesAreBounded(t *testing.T) {
 		if !errors.Is(evidenceErr, storage.ErrInvalidArgument) || !errors.Is(framesErr, storage.ErrInvalidArgument) {
 			t.Errorf("limit %d: evidence %v, frames %v; want ErrInvalidArgument", limit, evidenceErr, framesErr)
 		}
+	}
+}
+
+func TestNativeFramePaginationKeepsItsLimitAcrossSmallStorageBatches(t *testing.T) {
+	f := newFixture(t)
+	f.reader.NativeFrameReadBatchSize = 3
+	sequences := make([]uint64, maxEvidencePage+1)
+	entries := make([]*eventlogpb.EventEntry, 0, len(sequences)+1)
+	for i := range sequences {
+		sequence := uint64(i + 1)
+		sequences[i] = sequence
+		entries = append(entries, native(sequence, fmt.Sprintf("native frame %d", sequence)))
+	}
+	entries = append(entries, replyStarted(uint64(len(entries)+1), sequences...))
+	sessionID := f.session(t, f.history, sandboxName("maximum-evidence-page-"), entries...)
+	f.fold(t, sessionID)
+
+	request := &historypb.ReadNativeFramesRequest{
+		SessionId: sessionID.String(), ProjectionEpoch: testEpoch,
+		Entity: reply, ObservationCursor: uint64(len(entries)), Limit: maxEvidencePage,
+	}
+	first := nativeFrames(t, f, request)
+	if len(first.Frames) != maxEvidencePage || first.NextAfterSequence == nil || *first.NextAfterSequence != maxEvidencePage {
+		t.Fatalf("first page has %d frames and next sequence %v, want %d frames and %d",
+			len(first.Frames), first.NextAfterSequence, maxEvidencePage, maxEvidencePage)
+	}
+	for i, frame := range first.Frames {
+		want := uint64(i + 1)
+		if frame.GetSourceSequence() != want || frame.GetEntry().GetEvent().GetNative().GetLine() != fmt.Sprintf("native frame %d", want) {
+			t.Fatalf("frame %d = %v, want native sequence %d", i, frame, want)
+		}
+	}
+
+	request.AfterSequence = *first.NextAfterSequence
+	last := nativeFrames(t, f, request)
+	if len(last.Frames) != 1 || last.Frames[0].GetSourceSequence() != uint64(maxEvidencePage+1) || last.NextAfterSequence != nil {
+		t.Fatalf("last page = %v, want only sequence 201 without a continuation", last)
 	}
 }
 

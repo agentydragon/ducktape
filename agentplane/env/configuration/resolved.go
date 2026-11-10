@@ -1,0 +1,109 @@
+package configuration
+
+import (
+	"bytes"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/session_instructions"
+)
+
+type SandboxIdentity struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	UID       string `json:"uid"`
+}
+
+type SandboxLaunch struct {
+	Sandbox              SandboxIdentity `json:"sandbox"`
+	Bootstrap            *string         `json:"bootstrap"`
+	PlatformInstructions string          `json:"-"`
+}
+
+func (l SandboxLaunch) Instructions(sessionID, additionalInstructions string) string {
+	return sessioninstructions.Compose(l.PlatformInstructions, sessionID, additionalInstructions)
+}
+
+type Endpoint struct {
+	Target string        `json:"target"`
+	Bearer string        `json:"bearer,omitempty"`
+	SVID   *SVIDEndpoint `json:"svid,omitempty"`
+}
+
+// SVIDEndpoint reuses Runtime's control certificate for an end-to-end service
+// connection carried by the local egress sidecar.
+type SVIDEndpoint struct {
+	ServerURI    string `json:"server_uri"`
+	ProxyAddress string `json:"proxy_address"`
+}
+
+// EnvironmentRuntimeControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
+type EnvironmentRuntimeControlConfiguration struct {
+	ListenAddress string                               `json:"listen_address"`
+	Security      environmentruntimetransport.Security `json:"security"`
+}
+
+type Resolved struct {
+	Control                          EnvironmentRuntimeControlConfiguration
+	ModelConfigTarget                *string
+	StateDir                         string
+	SessionReconcileConcurrency      int
+	Launch                           SandboxLaunch
+	HarnessEnvironment               map[string]string
+	Claude, Codex                    *harness.LaunchConfig
+	VMProcessLauncher                *supervision.SystemdLauncher
+	PodPID1                          bool
+	Supervision                      string
+	CodexExecServer                  *codexexecserver.Config
+	CodexAppServerReadiness          codexappserver.Readiness
+	WorkspaceRoot, InitializationCwd string
+	DebugCheckpoint                  *session.DebugCheckpointConfig
+}
+
+func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, sandbox SandboxIdentity) error {
+	if err := control.Security.Validate(); err != nil {
+		return fmt.Errorf("Runner control security: %w", err)
+	}
+	if control.Security.Mode == environmentruntimetransport.Insecure {
+		return nil
+	}
+	if control.Security.TLS.WorkloadAPISocket != "" {
+		// Runtime owns the bounded Workload API source and validates the local
+		// identity after opening that shared source during composition.
+		return nil
+	}
+	identity, err := control.Security.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
+	if err != nil {
+		return fmt.Errorf("Runner control certificate: %w", err)
+	}
+	workload, err := environmentruntimetransport.ParseWorkloadURI(identity)
+	if err != nil {
+		return fmt.Errorf("Runner control certificate: %w", err)
+	}
+	// The Sandbox's WorkloadCredential takes its name; the credential ID tells incarnations apart.
+	if workload.Namespace != sandbox.Namespace || workload.Name != sandbox.Name {
+		return errors.New("Runner control certificate does not name the configured Sandbox namespace and name")
+	}
+	return nil
+}
+
+func decodeStrict(data []byte, value any) error {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if err := d.Decode(value); err != nil {
+		return err
+	}
+	if err := d.Decode(new(any)); err != io.EOF {
+		return errors.New("unexpected trailing JSON data")
+	}
+	return nil
+}

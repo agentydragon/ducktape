@@ -5,7 +5,11 @@ Inspect AI port of the manually-scored Agent Framework eval at
 `garble`-obfuscated binary; an LLM judge grades it against
 `../tasks/go_crypto_server/RUBRIC.yaml` in a separate grader container.
 
-For the architecture and design rationale see <PLAN.md>.
+The grader runs in a separate container with read-only mounts for the
+recovered source, reference source, specimen spec, and rubric. The agent
+container never receives the reference, spec, or rubric. The empty-work
+and reference-work validation targets check the judge's floor and ceiling
+before trusting eval scores.
 
 ## Files
 
@@ -55,7 +59,7 @@ env -u PYTHONPATH uvx --from inspect-ai inspect view start --log-dir eval_logs
 ```
 
 `uvx` resolves Inspect into a one-shot venv. The `env -u PYTHONPATH`
-prefix is the same NixOS dodge `cluster/docs/inference/runs/.../run_aime.py`
+prefix is the same NixOS dodge the shared <cluster/docs/inference/runs/aime/run_aime.py>
 uses — without it the Nix-store `pydantic` leaks into the uv venv and
 clashes with the venv's `pydantic_core`. If `inspect-ai` is installed
 globally (`uv tool install inspect-ai`), `inspect view start --log-dir …`
@@ -75,22 +79,15 @@ self-contained; serve them with `uvx` instead.
   docker container; reads recovered/reference/spec/rubric over `bash`,
   emits a schema-validated `submit_grade` tool call. Per-item grades +
   justifications land in `Score.metadata['per_item']`.
-- **Floor/ceiling validation**: empty → 0.000 (high confidence);
-  reference `*.go` → 0.940 (high confidence). Both verified, both have
-  Bazel targets.
-- **Rubric**: 11 items, weights sum to 94. The original
+- **Floor/ceiling validation**: the previous 11-item, 94-weight rubric
+  yielded empty → 0.000 and reference `*.go` → 0.940 (both high confidence).
+  These historical scores do not validate the current 13-item rubric; both
+  validation targets remain available.
+- **Rubric**: 13 items, weights sum to 108. The original
   `mac_security_analysis` item (which asked whether the agent reasoned
   about a length-extension vulnerability) was removed — the rubric is
   now scoped to source reconstruction only.
 
 ## Followups
 
-Tracked in <PLAN.md>:
-
-- Anthropic strict tool mode (provider doesn't yet emit
-  `strict: true` on custom tools — would need a `_StrictAnthropicClient`
-  subclass mirroring `skills/eval_infra/af_chat_client.py`).
-- Stage 3 differential verification — compile recovered Go in the
-  grader, run `test_smoke.py` against the agent's binary.
-- Multi-specimen support.
-- Judge determinism check.
+See <../TODO.md> for open eval work.

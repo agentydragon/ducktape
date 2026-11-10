@@ -1,38 +1,8 @@
-"""Agent registry - unified orchestration layer for agent runs.
+"""Orchestrate agent containers through a runtime-specific executor.
 
-AgentRegistry is THE entry point for running agents. It owns shared resources
-(container executor, database config).
-
-In-container architecture:
-- Container runs its own agent loop (CMD entrypoint)
-- Container talks to LLM proxy (OPENAI_BASE_URL env var)
-- Container connects to backend REST API for eval operations (PROPS_BACKEND_URL env var)
-- Critic-dev containers push/pull agent images via registry proxy (PROPS_REGISTRY_URL env var)
-- Container exits 0 on success, non-zero on failure
-- Host scaffold: creates temp DB user, starts container, waits for exit
-
-Usage:
-    from props.orchestration.docker_executor import DockerExecutor
-
-    executor = DockerExecutor(docker_client, network_name="props-agents")
-    registry = AgentRegistry(
-        executor=executor,
-        db=db,
-        backend_url="http://props-backend:8000",
-        agent_base_env=config.agent_env,
-        registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
-        agent_registry_url="http://props-registry-proxy:8000",
-    )
-    async with registry:
-        image = await registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
-        critic_run_id = await registry.run_critic(
-            image=image,
-            example=example,
-            model="gpt-4o",
-            timeout_seconds=3600,
-            parent_run_id=None,
-            budget_usd=5.0,
-        )
+Containers run their own agent loops. The registry supplies per-agent DB roles,
+`OPENAI_BASE_URL` for the LLM proxy, `PROPS_BACKEND_URL` for eval operations, and
+`PROPS_REGISTRY_URL` for agent images. It owns the executor and exit collectors.
 """
 
 from __future__ import annotations
@@ -81,9 +51,6 @@ LABEL_SNAPSHOT = "adgn.snapshot"  # sanitized slug (label-safe); for kubectl fil
 ANNOTATION_SNAPSHOT_SLUG = "adgn.snapshot_slug"
 
 
-# --- Exceptions ---
-
-
 class BudgetExceededError(Exception):
     """Raised when a child agent's requested budget exceeds parent's remaining budget."""
 
@@ -93,39 +60,21 @@ class ImageResolutionError(Exception):
 
 
 def _slug_to_container_segment(slug: str) -> str:
-    """Normalize a snapshot slug for use in a container/pod name segment.
+    """Normalize to a lowercase RFC 1123 pod-name segment, also valid for Docker.
 
-    Kubernetes pod names are stricter than Docker container names: they must be
-    lowercase RFC 1123 names, so underscores and any other punctuation need to
-    collapse to dashes. Truncate after normalization and trim trailing dashes so
-    the segment remains valid when followed by ``-{run_id_prefix}``.
-
-    Example: 'ducktape/2025-09-03-00' → 'ducktape-2025-09-03-00'
+    Truncate and trim trailing dashes so the `-{run_id_prefix}` suffix stays valid.
     """
     segment = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
     segment = segment[:28].rstrip("-")
     return segment or "snapshot"
 
 
-# --- Agent Run Handle ---
-
-
 class AgentRunHandle:
-    """Handle to a running agent managed by the registry.
+    """Await for final status; use as an async context manager to kill/delete on exit.
 
-    Awaiting the handle blocks until the agent run completes and returns the
-    final AgentRunStatus. The registry owns the background task that captures
-    container logs and updates DB status on exit.
-
-    Use as an async context manager to ensure kill_and_delete() is always called:
-
-        async with await registry.start_snapshot_grader(...) as handle:
-            await asyncio.wait_for(done_event.wait(), timeout=90)
-        # kill_and_delete() called automatically on exit
-
-    Call kill_and_delete() directly to stop the agent early without a context manager.
-    Call detach() when this backend is shutting down: it stops the local collector
-    without changing the run row or deleting the external runtime object.
+    The registry owns the collector that logs output and updates DB status.
+    `kill_and_delete()` stops early; `detach()` stops only this process's collector,
+    preserving the runtime object and run row for a later registry to adopt.
     """
 
     def __init__(
@@ -163,9 +112,6 @@ class AgentRunHandle:
             await self._task
 
 
-# --- Resolved Image ---
-
-
 @dataclass(frozen=True)
 class ResolvedImage:
     """Pre-resolved OCI image reference. Use resolve_image() to create."""
@@ -199,9 +145,6 @@ class GraderPodInfo:
     phase: PodPhase
 
 
-# --- Agent Run View ---
-
-
 @dataclass
 class AgentRunView:
     """Unified view of an agent run from DB."""
@@ -224,10 +167,10 @@ class AgentRunView:
 
 
 class AgentRegistry:
-    """Unified orchestration layer for agent runs using in-container architecture.
+    """Own the executor and collectors; containers own their agent loops.
 
-    Owns shared resources and provides the single entry point for execution.
-    Container lifecycle is delegated to a ContainerExecutor (Docker, Kubernetes, etc.).
+    `run_*` methods wait for exit. Background `start_*` methods return a run ID
+    to poll at `/api/runs/{id}`; `start_snapshot_grader` returns an `AgentRunHandle`.
     """
 
     def __init__(
@@ -270,14 +213,11 @@ class AgentRegistry:
     ) -> None:
         await self.close()
 
-    # --- Model Parallelism ---
-
     @contextlib.asynccontextmanager
     async def _model_slot(self, model: str) -> AsyncIterator[None]:
-        """Acquire a parallelism slot for the given model, if a limit is configured.
+        """Hold a configured model's parallelism slot for the container's whole run.
 
-        Blocks until a slot is available. No-op when no limit is configured for the model.
-        Held for the entire duration of the agent container run to bound concurrent usage.
+        Wait for capacity; unconfigured models have no limit.
         """
         sem = self._model_semaphores.get(model)
         if sem is None:
@@ -288,26 +228,17 @@ class AgentRegistry:
             async with sem:
                 yield
 
-    # --- Image Resolution ---
-
     async def _pull_image(self, oci_ref: str) -> str:
-        """Ensure image is available to the executor, returning a runtime-specific image ID.
+        """Return the runtime image ID for a fully qualified authority/repository@digest.
 
-        oci_ref must be a fully-qualified OCI reference (authority/repository@digest),
-        as returned by build_oci_reference().
+        `oci_ref` is produced by `build_oci_reference()`.
         """
         return await self._executor.ensure_image(oci_ref)
 
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
-        """Resolve image reference to digest via registry proxy.
+        """Resolve a tag via the registry proxy using DB credentials for HTTP basic auth.
 
-        Uses self._db_config credentials for HTTP basic auth to the proxy.
-
-        Returns:
-            Digest (sha256:...) - either the provided digest or resolved from tag
-
-        Raises:
-            ImageResolutionError: If tag doesn't exist or proxy returns error
+        Digests pass through; missing tags and proxy errors raise `ImageResolutionError`.
         """
         if is_digest(ref):
             logger.debug(f"Reference {ref} is already a digest, returning as-is")
@@ -346,11 +277,7 @@ class AgentRegistry:
         return str(digest)
 
     async def resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage:
-        """Resolve image tag/digest to a ResolvedImage.
-
-        Raises:
-            ImageResolutionError: If the image cannot be resolved.
-        """
+        """Resolve a tag/digest, raising `ImageResolutionError` on resolution failure."""
         digest = await self._resolve_image_ref(agent_type, ref)
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return ResolvedImage(digest=digest, oci_ref=oci_ref)
@@ -432,10 +359,9 @@ class AgentRegistry:
     def _persist_run_result(
         self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
     ) -> None:
-        """Write an agent run's terminal status + exit code to the DB.
+        """Persist terminal status and exit code, not logs.
 
-        Container logs are not persisted here — they live in Loki and are served
-        by GET /api/runs/{id}/logs.
+        Logs live in Loki and are served by `GET /api/runs/{id}/logs`.
         """
         with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
@@ -460,12 +386,7 @@ class AgentRegistry:
         extra_labels: dict[str, str] | None = None,
         annotations: dict[str, str] | None = None,
     ) -> AgentRunHandle:
-        """Create and start agent container, returning a handle that manages its lifecycle.
-
-        The registry owns a background task that waits for exit, captures logs,
-        and updates DB status. Await the returned handle to block until completion;
-        call kill_and_delete() to stop early.
-        """
+        """Start a container and its registry-owned exit collector; return a lifecycle handle."""
         try:
             handle = await self._create_container(
                 agent_run_id, image=image, name=name, extra_labels=extra_labels, annotations=annotations
@@ -483,12 +404,10 @@ class AgentRegistry:
         task = asyncio.create_task(self._collect_run(agent_run_id, handle, timeout_seconds, detached))
         return AgentRunHandle(task, handle.name, agent_run_id, detached)
 
-    # --- Execution Methods ---
-
     def _validate_spawn_budget(self, parent_run_id: UUID, child_budget_usd: float) -> None:
-        """Validate that spawning a child with the given budget doesn't exceed parent's remaining budget.
+        """Check the parent's remaining budget, including recursive descendant costs.
 
-        Uses the agent_run_budget_status view which recursively sums descendant costs.
+        Reads `agent_run_budget_status`; rejects an oversized child budget.
         """
         # TODO: This only checks the immediate parent's remaining budget. It should also:
         # 1. Subtract the budgets of still-running child agents from remaining, not just
@@ -642,11 +561,7 @@ class AgentRegistry:
         parent_run_id: UUID | None,
         budget_usd: float,
     ) -> UUID:
-        """Start a critic agent in the background. Returns agent_run_id immediately.
-
-        The container runs asynchronously. Poll /api/runs/{agent_run_id} or query the
-        DB directly for status updates. Use wait_until_graded() after the run exits.
-        """
+        """Start in the background; use `wait_until_graded()` after the run exits."""
         prepared = self._prepare_critic_run(
             image=image, example=example, model=model, parent_run_id=parent_run_id, budget_usd=budget_usd
         )
@@ -655,11 +570,9 @@ class AgentRegistry:
         return prepared.agent_run_id
 
     def _spawn_background_run(self, prepared: PreparedAgentRun, *, timeout_seconds: int) -> None:
-        """Start an already-created agent run in a background task and return immediately.
+        """Start a pre-created run, holding its model slot for the whole run.
 
-        The task holds a model parallelism slot for the run's whole duration. The run row must already exist (via
-        _create_run). Lets HTTP handlers return the agent_run_id without blocking until the
-        container exits. The task is stashed in _running_agents to prevent GC.
+        Keep the task in `_running_agents` until completion to prevent GC.
         """
 
         async def _run() -> None:
@@ -700,7 +613,7 @@ class AgentRegistry:
         target_metric: TargetMetric,
         timeout_seconds: int,
     ) -> UUID:
-        """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
+        """Wait for optimizer exit and return its run ID."""
         prepared = self._prepare_critic_dev_optimize_run(
             image=image,
             budget_usd=budget,
@@ -724,10 +637,7 @@ class AgentRegistry:
         critic_model: str,
         timeout_seconds: int,
     ) -> UUID:
-        """Run a critic-dev improve agent that creates definitions to beat baselines on allowed examples.
-
-        Returns the agent run ID. Query the DB for final status.
-        """
+        """Wait for the improve agent to create definitions against allowed-example baselines."""
         prepared = await self._prepare_critic_dev_improve_run(
             image=image,
             examples=examples,
@@ -751,11 +661,7 @@ class AgentRegistry:
         target_metric: TargetMetric,
         timeout_seconds: int,
     ) -> UUID:
-        """Start a critic-dev optimizer in the background and return its run ID immediately.
-
-        Poll /api/runs/{agent_run_id} for status. The optimizer holds an optimizer-model parallelism slot
-        for its whole run.
-        """
+        """Start in the background, holding an optimizer-model slot for the whole run."""
         prepared = self._prepare_critic_dev_optimize_run(
             image=image,
             budget_usd=budget,
@@ -778,10 +684,7 @@ class AgentRegistry:
         critic_model: str,
         timeout_seconds: int,
     ) -> UUID:
-        """Start a critic-dev improve agent in the background and return its run ID immediately.
-
-        Poll /api/runs/{agent_run_id} for status.
-        """
+        """Start in the background and return the run ID."""
         prepared = await self._prepare_critic_dev_improve_run(
             image=image,
             examples=examples,
@@ -794,8 +697,6 @@ class AgentRegistry:
         self._spawn_background_run(prepared, timeout_seconds=timeout_seconds)
         return prepared.agent_run_id
 
-    # --- State Tracking ---
-
     def get(self, run_id: UUID) -> AgentRunView | None:
         with self._db.session() as session:
             db_run = session.get(AgentRun, run_id)
@@ -806,12 +707,7 @@ class AgentRegistry:
     async def start_snapshot_grader(
         self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
     ) -> AgentRunHandle:
-        """Start a snapshot grader. Returns a handle that owns the run lifecycle.
-
-        Await the handle to block until the grader exits. Call kill_and_delete()
-        to stop it early. The registry's background task captures logs and updates
-        DB status on exit regardless of how the grader is stopped.
-        """
+        """Return a lifecycle-owning handle for a new snapshot grader."""
         agent_run_id = uuid4()
         slug_seg = _slug_to_container_segment(snapshot_slug)
         container_name = f"grader-{slug_seg}-{str(agent_run_id)[:8]}"
@@ -830,14 +726,8 @@ class AgentRegistry:
             annotations={ANNOTATION_SNAPSHOT_SLUG: str(snapshot_slug)},
         )
 
-    # --- Grader pod reconciliation (used by GraderSupervisor) ---
-
     async def list_grader_pods(self) -> list[GraderPodInfo]:
-        """List grader pods currently known to the runtime, by label.
-
-        This is the supervisor's source of truth for actual state — it reflects
-        graders started by any backend instance, not just this process.
-        """
+        """List graders by runtime labels, including those started by other backend instances."""
         pods = await self._executor.list_pods({LABEL_PROJECT: "props", LABEL_AGENT_TYPE: str(AgentType.GRADER)})
         graders: list[GraderPodInfo] = []
         for p in pods:

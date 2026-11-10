@@ -8,31 +8,34 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
-	"github.com/agentydragon/ducktape/agentplane/egress/docs"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	historymigrations "github.com/agentydragon/ducktape/agentplane/egress/history_migrations"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/informer"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/util/netlistener"
+	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -42,11 +45,19 @@ const (
 	// decisionFlushTimeout bounds how long shutdown waits for queued decisions to be written.
 	decisionFlushTimeout = 5 * time.Second
 	// changesHeartbeat is how often an idle decision change stream proves it is alive.
-	changesHeartbeat  = 15 * time.Second
-	readHeaderTimeout = 30 * time.Second
+	changesHeartbeat = 15 * time.Second
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_EGRESS_DATABASE_URL", historymigrations.Up); handled {
+		if err != nil {
+			slog.Error("Egress migration failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
@@ -58,8 +69,6 @@ func main() {
 		os.Exit(2)
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "egress-proxy")
 	if err != nil {
 		slog.Error("egress-proxy tracing setup failed", "error", err)
@@ -89,17 +98,10 @@ func logLevel(name string) (slog.Level, error) {
 }
 
 func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
-	var base *rest.Config
-	var err error
-	if kubeconfig != "" {
-		base, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
-		base, err = rest.InClusterConfig()
-	}
+	base, err := kubeclient.Config(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("load Kubernetes client configuration: %w", err)
 	}
-	base.WrapTransport = observability.WrapHTTPTransport(base.WrapTransport)
 	base.ContentType, base.AcceptContentTypes = "application/json", "application/json"
 	// Every proxied request is a TokenReview; client-go's default of 5 requests per second (burst 10)
 	// would queue admissions client-side. API Priority and Fairness bounds the load on the server.
@@ -107,20 +109,28 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	return base, nil
 }
 
-// workloadIdentity reviews the hop bearer for the proxy's own audience and each projected token for
-// its audience, accepting only ServiceAccounts of the allowed namespaces.
+// workloadIdentity reviews projected destination tokens.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
-	hop, err := auth.NewResolver(reviews, c.TokenAudience, c.AllowedServiceAccountNamespaces)
-	if err != nil {
-		return nil, err
-	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
 	for _, audience := range c.ProjectedTokenAudiences {
-		if projected[audience], err = auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces); err != nil {
+		resolver, err := auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces)
+		if err != nil {
 			return nil, err
 		}
+		projected[audience] = resolver
 	}
-	return identity.NewVerifier(hop, projected), nil
+	return identity.NewVerifier(projected), nil
+}
+
+// tokenFile reads a kubelet-rotated token file each time it is called.
+func tokenFile(path string) func() (string, error) {
+	return func() (string, error) {
+		token, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("local_api_server.token_file: %w", err)
+		}
+		return strings.TrimSpace(string(token)), nil
+	}
 }
 
 // upstreamRoots is the bundle destinations are verified against: the file when given, else the
@@ -151,32 +161,37 @@ func openListener(name, address string) (net.Listener, error) {
 
 // serving treats a server shut down on purpose as done and anything else as the failure it is.
 func serving(name string, err error) error {
-	if errors.Is(err, http.ErrServerClosed) {
+	if err == nil || errors.Is(err, http.ErrServerClosed) || errors.Is(err, grpc.ErrServerStopped) {
 		return nil
 	}
 	return fmt.Errorf("%s listener: %w", name, err)
 }
 
 func run(ctx context.Context, c config) error {
-	proxyListener, err := openListener("proxy", c.ListenAddress)
+	if err := migrate.Run(ctx, c.DatabaseURL, historymigrations.Up); err != nil {
+		return err
+	}
+	proxyListener, err := openListener("proxy", c.Forward.ListenAddress)
 	if err != nil {
 		return err
 	}
 	defer proxyListener.Close()
-	agentAPIListener, err := openListener("agent API", c.AgentAPIListenAddress)
+	proxyTLS, err := c.Forward.TLSConfig(environment_runtime_transport.EgressProxyURI)
 	if err != nil {
-		return err
+		return fmt.Errorf("proxy listener TLS configuration: %w", err)
 	}
-	defer agentAPIListener.Close()
+	if proxyTLS != nil {
+		proxyListener = tls.NewListener(proxyListener, proxyTLS)
+	}
 	adminListener, err := openListener("admin", c.AdminListenAddress)
 	if err != nil {
 		return err
 	}
 	defer adminListener.Close()
-	return serve(ctx, c, proxyListener, agentAPIListener, adminListener)
+	return serve(ctx, c, proxyListener, adminListener)
 }
 
-func serve(ctx context.Context, c config, proxyListener, agentAPIListener, adminListener net.Listener) error {
+func serve(ctx context.Context, c config, proxyListener, adminListener net.Listener) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -189,6 +204,10 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	if err != nil {
 		return err
 	}
+	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, &resolver.Identities{PolicyNamespace: c.RulesNamespace})
+	if err != nil {
+		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
+	}
 	ca, err := tls.LoadX509KeyPair(c.CACert, c.CAKey)
 	if err != nil {
 		return fmt.Errorf("interception CA: %w", err)
@@ -198,11 +217,12 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 		return err
 	}
 
-	watchPeriod := time.Duration(c.ResyncSeconds) * time.Second
-	index := policy.NewIndex(reader.StaleAfterCycles * watchPeriod)
+	index := policy.NewIndex()
+	if server := c.LocalAPIServer; server != nil {
+		index.LocalAPIServer = &policy.APIServer{Host: server.Host, Port: server.Port, Token: tokenFile(server.TokenFile)}
+	}
 	watcher, err := informer.New(base, informer.Config{
 		Index: index, RulesNamespace: c.RulesNamespace, CredentialsNamespace: c.CredentialsNamespace,
-		WatchPeriod: watchPeriod,
 	})
 	if err != nil {
 		return err
@@ -229,29 +249,21 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 		return err
 	}
 
+	authentication, err := identity.NewAuthenticator(c.Forward, verifier, records)
+	if err != nil {
+		return err
+	}
 	egress, err := proxy.New(proxy.Options{
-		CA: ca, UpstreamRoots: roots, Identity: verifier, Policy: index,
+		CA: ca, UpstreamRoots: roots, Authentication: authentication, Policy: index,
 		Upstream: upstream.NewResolver(c.ExemptNetworks), Record: decisions.Record,
+		TLSPassthroughTargets: c.TLSPassthroughTargets,
 	})
 	if err != nil {
 		return err
 	}
-	agentDocs, err := fs.Sub(docs.Agents, "agents")
-	if err != nil {
-		return err
-	}
-
-	// The facade outlives the termination signal so that reads admitted before it finish while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	agentAPIServer, err := newAgentAPI(facadeContext, agentAPIListener.Addr().String(), verifier, index, agentDocs, docs.OpenAPI)
-	if err != nil {
-		return err
-	}
-	adminServer := &http.Server{Handler: http.NotFoundHandler(), ReadHeaderTimeout: readHeaderTimeout}
-	adminShutdown, err := mountAdminGRPC(adminServer, c, reviews.TokenReviews(), admin.ServiceOptions{
-		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Freshness, Clock: time.Now,
-	})
+	adminServer, err := newAdminServer(c, reviews.TokenReviews(), admin.ServiceOptions{
+		Decisions: store, Changes: changes, HistoryHealth: decisions, Index: index.Health, Credentials: index,
+	}, authentication, index)
 	if err != nil {
 		return err
 	}
@@ -259,31 +271,25 @@ func serve(ctx context.Context, c config, proxyListener, agentAPIListener, admin
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
 	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
-	group.Go(func() error { return serving("agent API", agentAPIServer.Serve(agentAPIListener)) })
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
 	// it starts accepting last: the readiness check answering means the listeners above are serving.
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()
-		return drain(egress, index, agentAPIServer, adminShutdown)
+		return drain(egress, index, adminServer)
 	})
 	return group.Wait()
 }
 
-// shutdowner is a server that stops accepting and lets admitted requests finish until ctx ends.
-type shutdowner interface {
-	Shutdown(ctx context.Context) error
-}
-
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
-func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer shutdowner) error {
+func drain(egress *proxy.Proxy, index *policy.Index, adminServer *adminServer) error {
 	slog.Info("draining")
-	index.Freshness.MarkDraining()
+	index.Health.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
 	if err := egress.Drain(ctx); err != nil {
 		slog.Warn("drain deadline reached; closing remaining connections", "error", err)
 	}
-	return errors.Join(agentAPIServer.Shutdown(ctx), adminServer.Shutdown(ctx))
+	return adminServer.Shutdown(ctx)
 }

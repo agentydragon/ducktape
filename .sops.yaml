@@ -37,6 +37,17 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # AirSense BLE application credentials, portable between user workstations.
+  - path_regex: secrets/cpap-ble\.sops\.json$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # LiteLLM's instance master key and encryption salt are Flux-only Secrets.
   # The master key is mirrored into selected runtime namespaces after Flux
   # decrypts it; neither consumer needs the age private key.
@@ -121,6 +132,16 @@ creation_rules:
           - *codex-cloud-agent
           - *agent-box-codex-user
           - *haku
+
+  # Gaffer's private-repository fetch PAT is read only by Flux and the
+  # github-secrets-sync Workspace; the GitHub Actions consumer receives it from
+  # OpenTofu instead of decrypting the source file.
+  - path_regex: cluster/k8s/external-creds/gaffer-repo-fetch-pat\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
 
   # BuildBuddy org-admin API key for managing encrypted BuildBuddy secrets.
   # Flux applies it only for the litellm-keys Terraform runner; admin and
@@ -329,17 +350,10 @@ creation_rules:
           - *ci
 
   # ducktape-automation GitHub App private key (RSA PEM, SOPS binary).
-  # Decryptable by admin, in-cluster Flux, and CI. CI here covers both
-  # ducktape and gaffer-private GHA — they share the same age key today
-  # (synced by tf/gitops/github-secrets-sync). TODO: consider splitting
-  # &ci into separate &ducktape-ci and &gaffer-ci recipients. Concretely,
-  # the existing CI rule above (`secrets/ci/.*\.sops\.yaml$`) currently
-  # encrypts BOTH `secrets/ci/attic-main-writer.sops.yaml` (ducktape CI's
-  # cache:rw) and `secrets/ci/attic-gaffer-writer.sops.yaml` (gaffer CI's
-  # cache:rw) to the shared `&ci` recipient — so a compromise of either
-  # repo's age key grants access to both writer tokens. Splitting would
-  # mean the gaffer-ci token is only decryptable by gaffer's age key,
-  # and vice versa.
+  # Decryptable by admin, in-cluster Flux, and CI. Ducktape and gaffer-private
+  # currently share the CI age key, so either repository can decrypt the
+  # App key. TODO: retire the shared CI recipient after all remaining
+  # CI decryption consumers have migrated.
   - path_regex: secrets/ducktape-automation\..*\.private-key\.sops\.pem$
     store_type: binary
     key_groups:
@@ -685,6 +699,7 @@ creation_rules:
     key_groups:
       - age:
           - *admin
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *iguana-agentydragon

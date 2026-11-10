@@ -2,13 +2,7 @@
 
 Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors. IAQI ranges from 0-100, where 100 is excellent air and 0 is severely polluted.
 
-## Features
-
-- **Overall IAQI calculation**: Combines multiple air quality sensors into a single 0-100 index
-- **Individual component tracking**: Exposes IAQI value for each pollutant separately
-- **Bottleneck identification**: Identifies which pollutants are causing poor air quality
-- **Human-readable descriptions**: Easy-to-understand descriptions of air quality issues
-- **Raw value tracking**: Stores raw sensor values for context
+Uses the [Atmotube IAQI method](https://atmotube.com/atmocube-support/indoor-air-quality-index-iaqi): each pollutant is linearly interpolated between local breakpoints, and the aggregate is the lowest subindex. The local pollutant keys, units, and breakpoints are defined in [`sensor.py`](custom_components/indoor_aqi/sensor.py).
 
 ## Installation
 
@@ -37,53 +31,7 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
 
 3. Restart Home Assistant.
 
-`dashboard_examples.yaml` has examples of how to display IAQI in dashboards.
-
-### Configuration
-
-| Option       | Description                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------- |
-| `monitors`   | List of monitor configurations - each "monitor" is 1 set of sensors aggregated into an IAQI |
-| `name`       | Display name for the aggregated IAQI sensor                                                 |
-| `unique_id`  | Unique identifier for the aggregated IAQI sensor (optional but recommended)                 |
-| `sensors`    | Map of pollutant type to entity_id of sensors that are aggregated into IAQI                 |
-| `stale_time` | How long before sensor readings are considered stale (optional, default: 3600s)             |
-
-### Supported Pollutant Types
-
-|------|-------------|
-| `co2` | Carbon Dioxide |
-| `voc` | Volatile Organic Compounds |
-| `pm1` | Particulate Matter 1μm |
-| `pm10` | Particulate Matter 10μm |
-| `pm25` | Particulate Matter 2.5μm |
-| `nox` | Nitrogen Oxides |
-| `co` | Carbon Monoxide |
-| `o3` | Ozone |
-| `ch2o` | Formaldehyde |
-
-## How it Works
-
-IAQI is calculated using the approach described by [Atmotube](https://atmotube.com/atmocube-support/indoor-air-quality-index-iaqi):
-
-For each pollutant, calculate a sub-index from 0-100 by linear interpolation between defined breakpoints
-Overall IAQI is the minimum (worst) of all sub-indices.
-Highlighted "bottleneck" pollutants are those with IAQI component values close to the minimum.
-
-## Attributes
-
-The sensor exposes the following attributes:
-
-| Attribute           | Description                                                               |
-| ------------------- | ------------------------------------------------------------------------- |
-| `level`             | Text description of air quality level                                     |
-| `color`             | Color representing the quality level (green, yellow, orange, red, purple) |
-| `bottlenecks`       | List of pollutants causing poor air quality (worst first)                 |
-| `bottleneck_string` | Human-readable description of bottlenecks with values and units           |
-| `iaqi_[pollutant]`  | Individual IAQI value for each pollutant                                  |
-| `raw_[pollutant]`   | Raw sensor value for each pollutant                                       |
-| `subindex_count`    | Number of valid pollutant readings                                        |
-| `sensor_errors`     | List of any sensor errors encountered                                     |
+[`configuration_snippet.yaml`](configuration_snippet.yaml) has the current local example. [`dashboard_examples.yaml`](dashboard_examples.yaml) shows dashboard use, including `bottleneck_string` (components within 5 points of the minimum, with values and units) and per-pollutant `iaqi_*` attributes; [`sensor.py`](custom_components/indoor_aqi/sensor.py) owns the complete emitted attribute set.
 
 ## Development & Testing
 

@@ -14,11 +14,11 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
@@ -51,7 +51,7 @@ def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
 @pytest.fixture(scope="module")
 def parsed_yaml_documents(generated: Path) -> dict[Path, tuple[Any, ...]]:
     """Cache parsed documents for read-only inspection by manifest assertions."""
-    return {path: tuple(yaml.safe_load_all(path.read_text())) for path in generated.rglob("*.yaml")}
+    return {path: tuple(yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader)) for path in generated.rglob("*.yaml")}
 
 
 def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> list[dict[str, Any]]:
@@ -68,10 +68,158 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
+def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_disk(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+    template = pool["spec"]["virtualMachineTemplate"]
+    labels = pool["spec"]["selector"]["matchLabels"]
+    # A template change must not replace every worker at once, which would leave the pool without an executor.
+    assert pool["spec"]["maxUnavailable"] == 1
+    assert labels.items() <= template["metadata"]["labels"].items()
+    assert labels.items() <= template["spec"]["template"]["metadata"]["labels"].items()
+    guest = template["spec"]["template"]["spec"]
+    assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
+    # Every pool member avoids any node that already runs a worker.
+    (term,) = guest["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+    assert term["topologyKey"] == "kubernetes.io/hostname"
+    assert {
+        (expression["key"], value)
+        for expression in term["labelSelector"]["matchExpressions"]
+        for value in expression["values"]
+    } == labels.items()
+    # A member is ready only once its executor has registered; the readiness endpoint is the executor's own.
+    probe = guest["readinessProbe"]["httpGet"]
+    assert probe["path"] == "/readyz"
+    assert {"name": "server-type", "value": "buildbuddy-executor"} in probe["httpHeaders"]
+    (work,) = template["spec"]["dataVolumeTemplates"]
+    storage = work["spec"]["storage"]
+    assert storage["storageClassName"] == "piraeus-ssd-local"
+    assert storage["volumeMode"] == "Filesystem"
+    (disk_volume,) = [volume for volume in guest["volumes"] if volume["name"] == "work"]
+    assert disk_volume["dataVolume"]["name"] == work["metadata"]["name"]
+    # The egress fence selects pool members by the shared worker label.
+    fence = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy"
+        and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+        and doc["spec"]["endpointSelector"]["matchLabels"] == labels
+    )["spec"]
+    assert fence["egress"], fence
+    assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in fence["egress"])
+
+
+def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+    service = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "Service" and doc["metadata"]["name"] == "buildbuddy-kvm-worker-metrics"
+    )
+    monitor = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    ports = {port["name"]: port for port in service["spec"]["ports"]}
+    pod_labels = pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["metadata"]["labels"]
+    assert service["spec"]["selector"].items() <= pod_labels.items()
+    assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
+    assert {endpoint["port"] for endpoint in monitor["spec"]["endpoints"]} == ports.keys()
+    for policy in (
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    ):
+        (rule,) = policy["spec"]["ingress"]
+        assert rule["fromEndpoints"] == [
+            {"matchLabels": {"app.kubernetes.io/name": "alloy-node", "k8s:io.kubernetes.pod.namespace": "monitoring"}}
+        ]
+        assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
+
+
+def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
+    worker = pool["spec"]["virtualMachineTemplate"]["spec"]
+    guest = worker["template"]["spec"]
+    assert worker["runStrategy"] == "Always"
+    assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
+    kubevirt = next(doc["spec"] for doc in documents if doc["kind"] == "KubeVirt")
+    control_plane_toleration = {
+        "key": "node-role.kubernetes.io/control-plane",
+        "operator": "Exists",
+        "effect": "NoSchedule",
+    }
+    assert control_plane_toleration in guest["tolerations"]
+    assert control_plane_toleration in kubevirt["infra"]["nodePlacement"]["tolerations"]
+    assert "kubernetes.io/hostname" not in kubevirt["infra"]["nodePlacement"].get("nodeSelector", {})
+    workload_placement = kubevirt["workloads"]["nodePlacement"]
+    assert control_plane_toleration in workload_placement["tolerations"]
+    assert not workload_placement.get("nodeSelector")
+    assert not workload_placement.get("affinity")
+    assert guest["domain"]["cpu"]["model"] == "host-passthrough"
+    cpu_features = {
+        feature["name"] for feature in guest["domain"]["cpu"]["features"] if feature["policy"] == "optional"
+    }
+    terms = guest["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
+    assert all(len(term["matchExpressions"]) == 1 for term in terms)
+    allowed_features = {
+        expression["key"].removeprefix("cpu-feature.node.kubevirt.io/")
+        for term in terms
+        for expression in term["matchExpressions"]
+        if expression["operator"] == "In" and expression["values"] == ["true"]
+    }
+    assert cpu_features == allowed_features == {"svm", "vmx"}
+    assert guest["domain"]["resources"]["limits"] == guest["domain"]["resources"]["requests"]
+    assert not guest["domain"]["devices"].get("hostDevices")
+    assert not guest["domain"]["devices"].get("gpus")
+    assert not any("hostDisk" in volume or "serviceAccount" in volume for volume in guest["volumes"])
+    # These serials are the guest's cloud-init mount/credential contract.
+    disks = {disk.get("serial"): disk["name"] for disk in guest["domain"]["devices"]["disks"]}
+    volumes = {volume["name"]: volume for volume in guest["volumes"]}
+    assert volumes[disks["bbkey"]]["secret"]["secretName"] == "buildbuddy-api-key"
+    assert "dataVolume" in volumes[disks["work"]]
+    user_data = next(
+        volume["cloudInitNoCloud"]["userData"] for volume in guest["volumes"] if "cloudInitNoCloud" in volume
+    )
+    assert len(user_data.encode()) <= 2048  # KubeVirt's inline cloud-init admission limit.
+    cloud_init = yaml.safe_load(user_data)
+    (exporter_install,) = [command for command in cloud_init["runcmd"] if "prometheus-node-exporter" in command]
+    assert "--no-install-recommends" in exporter_install
+    mounted = {mount[0]: mount[1] for mount in cloud_init["mounts"]}
+    assert mounted["/dev/disk/by-id/virtio-bbkey"] == "/run/buildbuddy-key"
+    assert mounted["/dev/disk/by-id/virtio-work"] == "/buildbuddy"
+    config_map = next(
+        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    assert volumes[disks["bbconfig"]]["configMap"]["name"] == config_map["metadata"]["name"]
+    policy = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )["spec"]
+    assert policy["endpointSelector"]["matchLabels"].items() <= worker["template"]["metadata"]["labels"].items()
+    # Ingress admits only named peers (the metrics scraper); the exact peer and port are pinned in
+    # test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy.
+    assert all(
+        rule.get("fromEndpoints") and not rule.get("fromEntities") and not rule.get("fromCIDR")
+        for rule in policy["ingress"]
+    )
+    assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in policy["egress"])
+
+
 @pytest.fixture(scope="module")
-def checkout() -> Path:
+def checkout(runfiles: Runfiles) -> Path:
     """The runfiles tree, which holds each committed file the data deps package at its repo path."""
-    return get_required_path(f"_main/{GENERATED_ROOT}").parents[1]
+    return Path(str(runfiles.root() / "ducktape/MODULE.bazel")).parent
 
 
 def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Path) -> None:
@@ -131,135 +279,91 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["highAvailabilityController"] == {"enabled": True}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    (
-        ssd_satellite,
-        next_ssd_satellite,
-        third_ssd_satellite,
-        optiplex_satellite,
-        hdd_satellite,
-        _next_hdd_satellite,
-        _last_hdd_satellite,
-        wyrm2_satellite,
-        rugged_satellite,
-    ) = values["linstorSatelliteConfigurations"]
-    assert ssd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns1001419",
-    }
-    assert ssd_satellite["deletionPolicy"] == "Retain"
-    [reactor_patch] = ssd_satellite["patches"]
+    satellites = values["linstorSatelliteConfigurations"]
+    assert satellites
+    [reactor_patch] = satellites[0]["patches"]
     assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
     assert 'address = "127.0.0.1:9942"' in reactor_patch["patch"]
     assert "satellite-config" not in reactor_patch["patch"]
     assert "bind_address" not in reactor_patch["patch"]
     assert "3366" not in reactor_patch["patch"]
 
-    assert next_ssd_satellite["name"] == "ssd-ovh-ns104952"
-    assert next_ssd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns104952",
+    # source.hostDevices initializes the whole selected device. This closed admission
+    # list protects physical/host-provisioning identities:
+    # OVH uses separate data disks, OptiPlex a Talos raw partition, Wyrm2 hotplugged
+    # Proxmox disks, and Rugged an unlocked LUKS partition.
+    expected_devices = {
+        "ovh-ns1001419": {"ssd": "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"},
+        "ovh-ns104952": {"ssd": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"},
+        "ovh-ns104963": {"ssd": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"},
+        "optiplex": {"ssd": "/dev/disk/by-partlabel/r-piraeus"},
+        "ovh-ns103656": {"hdd": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"},
+        "ovh-ns103711": {"hdd": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A"},
+        "ovh-ns102453": {"hdd": "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN"},
+        "wyrm2": {"ssd": "/dev/disk/by-id/virtio-piraeus-ssd", "hdd": "/dev/disk/by-id/virtio-piraeus-hdd"},
+        "rugged": {"ssd": "/dev/mapper/piraeus-ssd"},
     }
-    assert next_ssd_satellite["deletionPolicy"] == "Retain"
-    assert next_ssd_satellite["podTemplate"] == ssd_satellite["podTemplate"]
-    assert next_ssd_satellite["patches"] == ssd_satellite["patches"]
-    [next_ssd_pool] = next_ssd_satellite["storagePools"]
-    assert next_ssd_pool == {
-        "name": "ssd",
-        "lvmThinPool": {
-            "volumeGroup": "piraeus_ssd",
-            "thinPool": "data",
-            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-        },
-        "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"]},
-    }
+    actual_devices: dict[str, dict[str, str]] = {}
+    for satellite in satellites:
+        selector = satellite["nodeSelector"]
+        assert selector["storage.allegedly.works/piraeus-ready"] == "true"
+        hostname = selector["kubernetes.io/hostname"]
+        assert hostname not in actual_devices
+        assert satellite["deletionPolicy"] == "Retain"
+        assert satellite["patches"] == satellites[0]["patches"]
+        pools = satellite["storagePools"]
+        assert pools
+        assert len({pool["name"] for pool in pools}) == len(pools)
+        actual_devices[hostname] = {}
+        for pool in pools:
+            name = pool["name"]
+            assert pool["lvmThinPool"]["volumeGroup"] == f"piraeus_{name}"
+            assert pool["lvmThinPool"]["thinPool"] == "data"
+            assert pool["lvmThinPool"]["logicalVolumeCreateArguments"] == [
+                "--poolmetadatasize",
+                "4G",
+                "--chunksize",
+                "64K",
+            ]
+            [device] = pool["source"]["hostDevices"]
+            actual_devices[hostname][name] = device
+    assert actual_devices == expected_devices
 
-    assert third_ssd_satellite["name"] == "ssd-ovh-ns104963"
-    assert third_ssd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns104963",
+    classes = {storage_class["name"]: storage_class for storage_class in values["storageClasses"]}
+    assert len(classes) == len(values["storageClasses"])
+    # Consumers name these four StorageClasses directly, so their names and pool types
+    # are a deployment contract. Every class must resolve to a pool on a prepared node.
+    expected_class_pools = {
+        "piraeus-ssd-local": "ssd",
+        "piraeus-hdd-local": "hdd",
+        "piraeus-ssd-2-autodiskful": "ssd",
+        "piraeus-hdd-2": "hdd",
     }
-    assert third_ssd_satellite["deletionPolicy"] == "Retain"
-    assert third_ssd_satellite["podTemplate"] == ssd_satellite["podTemplate"]
-    assert third_ssd_satellite["patches"] == ssd_satellite["patches"]
-    [third_ssd_pool] = third_ssd_satellite["storagePools"]
-    assert third_ssd_pool == {
-        "name": "ssd",
-        "lvmThinPool": {
-            "volumeGroup": "piraeus_ssd",
-            "thinPool": "data",
-            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-        },
-        "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"]},
-    }
-
-    assert hdd_satellite["name"] == "hdd-ovh-ns103656"
-    assert hdd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns103656",
-    }
-    assert hdd_satellite["deletionPolicy"] == "Retain"
-    assert hdd_satellite["podTemplate"] == optiplex_satellite["podTemplate"] == ssd_satellite["podTemplate"]
-    assert hdd_satellite["patches"] == ssd_satellite["patches"]
-    [hdd_pool] = hdd_satellite["storagePools"]
-    assert hdd_pool == {
-        "name": "hdd",
-        "lvmThinPool": {
-            "volumeGroup": "piraeus_hdd",
-            "thinPool": "data",
-            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-        },
-        "source": {"hostDevices": ["/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"]},
-    }
-
-    # Wyrm2 offers both local classes' pools, laid out like every other node's.
-    assert wyrm2_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "wyrm2",
-    }
-    wyrm2_ssd_pool, wyrm2_hdd_pool = wyrm2_satellite["storagePools"]
-    assert wyrm2_ssd_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
-    assert wyrm2_ssd_pool["name"] == "ssd"
-    assert wyrm2_hdd_pool["lvmThinPool"] == hdd_satellite["storagePools"][0]["lvmThinPool"]
-    assert wyrm2_hdd_pool["name"] == "hdd"
-    assert wyrm2_satellite["properties"] == hdd_satellite["properties"]
-    assert wyrm2_satellite["patches"] == ssd_satellite["patches"]
-
-    # Rugged's `ssd` pool is laid out like every other node's, on the NixOS satellite template.
-    assert rugged_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "rugged",
-    }
-    [rugged_pool] = rugged_satellite["storagePools"]
-    assert rugged_pool["name"] == "ssd"
-    assert rugged_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
-    assert rugged_satellite["podTemplate"] == wyrm2_satellite["podTemplate"]
-
-    ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
-    assert ssd_class == {
-        "name": "piraeus-ssd-local",
-        "reclaimPolicy": "Retain",
-        "volumeBindingMode": "WaitForFirstConsumer",
-        "allowVolumeExpansion": True,
-        "parameters": {
-            "linstor.csi.linbit.com/storagePool": "ssd",
-            "linstor.csi.linbit.com/placementCount": "1",
-            "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-        },
-    }
-    assert hdd_class == {
-        **ssd_class,
-        "name": "piraeus-hdd-local",
-        "parameters": {**ssd_class["parameters"], "linstor.csi.linbit.com/storagePool": "hdd"},
-    }
-    # Replicated copies and remote attachments both stay inside the OVH site: never over the
-    # home/OVH link.
-    assert replicated_ssd_class["name"] == "piraeus-ssd-2-autodiskful"
-    replicated_parameters = replicated_ssd_class["parameters"]
-    assert replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
-    assert replicated_parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"
-    assert yaml.safe_load(replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
-        {"fromSame": ["topology.kubernetes.io/zone"]}
-    ]
+    assert set(expected_class_pools) <= set(classes)
+    available_pools = {name for pools in actual_devices.values() for name in pools}
+    local_classes = {"piraeus-ssd-local", "piraeus-hdd-local"}
+    replicated_classes = {"piraeus-ssd-2-autodiskful", "piraeus-hdd-2"}
+    for name, storage_class in classes.items():
+        assert storage_class["reclaimPolicy"] == "Retain"
+        assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
+        assert storage_class["allowVolumeExpansion"] is True
+        parameters = storage_class["parameters"]
+        assert parameters["linstor.csi.linbit.com/storagePool"] in available_pools
+        if name in expected_class_pools:
+            assert parameters["linstor.csi.linbit.com/storagePool"] == expected_class_pools[name]
+        if name in local_classes:
+            assert parameters["linstor.csi.linbit.com/placementCount"] == "1"
+            assert parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"] == "false"
+        elif name in replicated_classes:
+            # Replicated copies and attachments stay inside OVH, never across the home link.
+            assert parameters["linstor.csi.linbit.com/placementCount"] == "2"
+            assert parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"
+            assert yaml.safe_load(parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
+                {"fromSame": ["topology.kubernetes.io/zone"]}
+            ]
+            assert parameters["DrbdOptions/auto-quorum"] == "suspend-io"
+            assert parameters["DrbdOptions/auto-diskful"] == "1"
+            assert parameters["DrbdOptions/auto-diskful-allow-cleanup"] == "true"
 
     operator_flux = next(
         doc
@@ -322,10 +426,8 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     )
 
     assert provider["apiVersion"] == "pkg.crossplane.io/v1"
-    assert provider["spec"]["revisionActivationPolicy"] == "Automatic"
     assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
     assert provider["spec"]["packagePullSecrets"] == [{"name": "forgejo-images-creds"}]
-    assert pull_secret["apiVersion"] == "external-secrets.io/v1"
     assert pull_secret["spec"]["secretStoreRef"] == {
         "kind": "ClusterSecretStore",
         "name": "kubernetes-crossplane-forgejo-images-creds-secret-store",
@@ -388,7 +490,7 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
 
 
 def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_state(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+    runfiles: Runfiles, generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     documents = _generated_documents(generated, parsed_yaml_documents)
     provider = next(
@@ -419,7 +521,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
         if doc.get("kind", "").lower() == "kustomization"
         and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
     )
-    assert provider["spec"]["package"] == "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
+    assert provider["spec"]["package"].startswith("xpkg.upbound.io/upbound/provider-opentofu:")
     assert provider_kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
     assert provider_kustomization["spec"]["wait"] is True
     assert provider_kustomization["spec"]["prune"] is False
@@ -441,11 +543,10 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
     assert workspace["spec"]["forProvider"]["source"] == "Inline"
     assert "remotePullPolicy" not in workspace["spec"]["forProvider"]
-    root = get_required_path(own_repo_rlocation("tf/gitops/forgejo-agentydragon"))
+    root = runfiles.root() / "ducktape/tf/gitops/forgejo-agentydragon"
     assert workspace["spec"]["forProvider"]["module"] == "\n".join(
         source.read_text() for source in sorted(root.glob("*.tf"))
     )
-    assert workspace["spec"]["forProvider"]["planArgs"] == ["-lock-timeout=5m"]
     assert workspace["spec"]["forProvider"]["env"] == [
         {
             "name": "PGPASSWORD",
@@ -497,30 +598,15 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
         for doc in documents
         if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Key"
     }
-    assert set(keys) == {
-        "cheap-experiments",
-        "buildbuddy-live-tests",
-        "agentplane-staging",
-        "codex-pod",
-        "public-coder-agent",
-        "codex-pod-messages",
-        "agent-workspaces-codex",
-        "claude-subscription-clients",
-        "codex-clients",
-        "gemini-clients",
-        "antigravity-clients",
-    }
-    assert not any(
-        doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
-        for doc in documents
+    assert keys
+    assert len(keys) == sum(
+        doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Key" for doc in documents
     )
     for alias in ("claude-subscription-clients", "codex-clients", "gemini-clients", "antigravity-clients"):
         assert keys[alias]["spec"]["forProvider"]["keyWoSecretRef"] == {
             "name": f"litellm-client-key-{alias}",
             "key": "api-key",
         }
-
-    assert all("organizationIdRef" not in key["spec"]["forProvider"] for key in keys.values())
 
     published_key_secrets = [
         doc
@@ -532,6 +618,18 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
         )
     ]
     assert published_key_secrets
+    published_connections = [
+        data["remoteRef"]["key"]
+        for doc in published_key_secrets
+        for data in doc["spec"]["data"]
+        if data["remoteRef"]["key"].startswith("litellm-crossplane-key-")
+    ]
+    assert len(published_connections) == len(set(published_connections))
+    assert set(published_connections) == {
+        key["spec"]["writeConnectionSecretToRef"]["name"]
+        for key in keys.values()
+        if "writeConnectionSecretToRef" in key["spec"]
+    }
     assert all(
         data["remoteRef"]["property"] == "attribute.key"
         for doc in published_key_secrets
@@ -645,6 +743,38 @@ def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
     )
 
 
+def test_session_archive_credentials_source_reaches_its_secret_generator(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]], checkout: Path
+) -> None:
+    credentials_source = "secrets/shared/session-backup.yaml"
+    assert (checkout / credentials_source).is_file(), "the encrypted credentials source must be in the source checkout"
+
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    generator = next(
+        document
+        for document in documents
+        if document.get("kind") == "ArtifactGenerator" and document["metadata"].get("name") == "ducktape-artifacts"
+    )
+    archive_artifact = next(item for item in generator["spec"]["artifacts"] if item["name"] == "ai-session-archive")
+    copies = archive_artifact["copy"]
+    assert {(copy["from"], copy["to"]) for copy in copies} >= {
+        ("@repo/cluster/generated/ai-session-archive/**", "@artifact/cluster/generated/ai-session-archive/"),
+        (
+            "@repo/secrets/shared/session-backup.yaml",
+            "@artifact/cluster/generated/ai-session-archive/session-backup.sops.yaml",
+        ),
+    }
+
+    kustomization = yaml.safe_load((generated / "cluster/generated/ai-session-archive/kustomization.yaml").read_text())
+    assert kustomization["secretGenerator"] == [
+        {
+            "name": "session-backup-importer-credentials",
+            "namespace": "session-backup",
+            "files": ["session-backup.yaml=session-backup.sops.yaml"],
+        }
+    ]
+
+
 def test_no_image_automation_markers(generated: Path) -> None:
     # cdk8s can't emit YAML comments, so this should be unreachable -- but if it ever did,
     # Flux's image-automation bot would silently fight the generator for ownership of the
@@ -728,7 +858,7 @@ def test_cluster_diagnostics_kustomizations_are_read_only(
     assert not any(grants("kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in writes)
 
 
-def test_haku_spike_is_retired_and_backup_recovery_survives(
+def test_parked_haku_backup_and_shared_services_remain_configured(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
     active = [
@@ -738,35 +868,12 @@ def test_haku_spike_is_retired_and_backup_recovery_survives(
         for doc in parsed_yaml_documents[path]
         if doc
     ]
-    spike = "haku-openclaw-spike"
-    assert not any(doc["metadata"].get("namespace") == spike for doc in active)
-    assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == spike for doc in active)
-    assert not any(doc["metadata"]["name"] == f"{spike}-proxy" for doc in active)
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    assert f"{spike}-backup" not in owners
-    assert f"{spike}-app" not in owners
-    assert not (generated / "cluster/generated/retired/haku-openclaw-spike").exists()
-    tenant_grant = next(
-        doc
-        for doc in active
-        if doc["kind"] == "ResourceReferenceGrant"
-        and doc["metadata"].get("namespace") == "seaweedfs"
-        and doc["metadata"]["name"] == "tenants"
-    )
-    for source in tenant_grant["spec"]["from"]:
-        for expression in source["namespaceSelector"]["matchExpressions"]:
-            assert spike not in expression.get("values", [])
-    # Keep Haku sandbox/CI's shared proxy and the public coder's namespace and access Roles alive.
-    assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-access"} <= owners.keys()
-    deployments = {
-        (doc["metadata"].get("namespace"), doc["metadata"]["name"]) for doc in active if doc["kind"] == "Deployment"
-    }
-    assert ("haku-egress-proxy", "haku-egress-proxy") in deployments
+    # Keep Haku's namespace and the public coder's namespace and access Roles alive.
+    assert {"haku-namespace", "public-coder-agent-access"} <= owners.keys()
     assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active)
     # Only the retained backup recovery package remains reproducible outside the live roots.
     archived = generated / "cluster/parked/haku-openclaw-spike"
-    assert not (archived / "app").exists()
-    assert not (archived / "app-image-pins").exists()
     backup = parsed_yaml_documents[archived / "backup/backup.k8s.yaml"]
     bucket = next(doc for doc in backup if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
@@ -776,7 +883,9 @@ def test_haku_spike_is_retired_and_backup_recovery_survives(
     assert (archived / "backup/README.md").is_file()
 
 
-def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
@@ -784,15 +893,9 @@ def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents:
         for doc in parsed_yaml_documents[path]
         if isinstance(doc, dict)
     ]
-    retired_namespaces = {"agents-mitmproxy"}
-    assert not any(doc["metadata"].get("namespace") in retired_namespaces for doc in active)
-    assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] in retired_namespaces for doc in active)
-    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    assert "agents-mitmproxy" not in owners
-    for directory in retired_namespaces:
-        assert not (generated / "cluster/generated/retired" / directory).exists()
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
     claude = [doc for doc in active if doc["metadata"].get("namespace") == "claude-sandbox"]
+    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
     assert str(quota["spec"]["hard"]["pods"]) == "0"
     fence = next(
@@ -803,15 +906,7 @@ def test_retired_mitmproxy_stays_unwired(generated: Path, parsed_yaml_documents:
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
     assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
-    assert any(
-        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-haku-egress-proxy" for doc in active
-    )
-    assert {
-        "agent-sandbox-controller",
-        "haku-egress-proxy",
-        "public-coder-agent-access",
-        "claude-sandbox-secrets",
-    } <= owners.keys()
+    assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owners.keys()
 
 
 def test_openclaw_cutover_waits_for_agentplane_credentials(

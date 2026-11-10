@@ -27,6 +27,23 @@ from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+# gazelle:include_dep //props/testing/fixtures:scopes
+# gazelle:include_dep //mcp_infra/testing:fixtures
+# gazelle:include_dep //props/testing/fixtures:e2e_infra
+# gazelle:include_dep //props/testing/fixtures:e2e_container
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.runs",
+    "props.testing.fixtures.scopes",
+    "mcp_infra.testing.fixtures",
+    "props.testing.fixtures.e2e_infra",
+    "props.testing.fixtures.e2e_container",
+)
+
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 120
 

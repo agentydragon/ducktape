@@ -9,14 +9,14 @@ leaves room for that replacement. Why it is built this way: the
 
 An Action group that lets a caller launch Session Sandboxes and drive their Sessions: an MCP client
 such as claude.ai through the MCP edge, or an in-cluster agent with `agentplane actions`. Its
-Actions are `list_launch_presets`, `launch_sandbox`, `open_session`, `submit_input`,
+Actions are `list_launch_presets`, `launch_sandbox`, `create_session`, `submit_input`,
 `interrupt_turn`, `change_model`, `change_reasoning_effort`, `get_session`, `list_sessions`, `read_turns` and `wait_for_turn`.
 
 ## The contract
 
-**The Decision is the authority.** The executor acts with the Action Service's own account: it
-creates Sandboxes, PolicySets and PolicyBindings, and the Session Dispatcher and the History Service
-trust it as a caller, as they trust the app acting for its operator. A request reaches that only
+**The Decision is the authority.** The executor calls EnvironmentService with the Action Service's
+own account to create Sandboxes, and creates PolicySets and PolicyBindings itself. The Session
+Dispatcher and the History Service trust it as a caller, as they trust the app acting for its operator. A request reaches that only
 once it is decided, by the operator or by an `action_auto_approve` rule the operator wrote, so each
 Action is an act the operator delegates. No backend checks the caller itself yet.
 
@@ -29,8 +29,9 @@ it. Approving a launch approves its grants, and a launch that names none gets no
 
 **One incarnation.** Every Action on a Sandbox names it by name and UID, and a grant matches only
 that UID. Before each command and Session read, the executor rereads the Sandbox and refuses
-another incarnation, since `OpenSession` takes the Sandbox by name alone. `get_session`, `read_turns` and `wait_for_turn` answer only
-for a Session that its opening or its history ties to that UID and neither ties to another;
+another incarnation. Session creation and commands pass that expected UID to the Dispatcher, which checks
+the current Sandbox UID before accepting them. `get_session`, `read_turns` and `wait_for_turn` answer only
+for a Session that its Dispatcher record or History summary ties to that UID and neither ties to another;
 `list_sessions` finds Sessions by the UID alone, so it still lists them once the Sandbox is deleted.
 
 **Concrete fields.** A launch names its template, PolicySets, inbox tags and bootstrap, never a
@@ -40,8 +41,21 @@ come from, for a caller to copy.
 
 **Retries.** A repeated launch by the same caller with the same arguments adopts its Sandbox and
 completes its grants, so a launch whose attempt ended without an outcome can be submitted again;
-any other launch of a taken name is refused. `open_session` and each command carry a caller-minted
+any other launch of a taken name is refused. `create_session` and each command carry a caller-minted
 `session_id` or `command_id`, which the Dispatcher deduplicates.
+
+`create_session` returns the minimal Dispatcher `Session` projection. Its
+`SESSION_MATERIALIZATION_ACCEPTED` state means the owner durably admitted the logical Session; it
+does not claim that the harness is ready or that History has projected a Thread. Reconcile an
+uncertain create by reading the same Session ID; do not replay an uncertain native effect.
+
+`create_session` accepts `HARNESS_CENTRAL_SAMPLER`. The Dispatcher selects its sampler service
+from deployment configuration; Actions and launch presets do not accept routing fields. This
+tool-facing harness choice and the exact `sandbox` identity compile to the current
+shared `SessionPlacement` message in `SessionSpec.placement`: central sampler selects
+`central_sampler_v1` with that Sandbox as its
+fixed executor environment. This action does not create optional attachments or an
+environment-independent central Session.
 
 A launched Sandbox's own account is bound to this deployment's default PolicySets and the ones the
 launch names. A launch may not name a launcher grant's PolicySet, which would hand another
@@ -95,19 +109,21 @@ a bare stream EOF or backend failure fails the Action. Tokens encode progress, c
 and do not bypass the incarnation check.
 
 Both Actions are launcher-grantable. A launcher grant names the Sandbox incarnation; the executor
-also ties the Session's opening/history to that UID before calling `FollowSession`.
+also ties the Session's Dispatcher record and History summary to that UID before calling `FollowSession`.
 
 ## Deployment
 
 An environment offers the group with `ActionsProps.orchestration_v1`
 (`cluster/cdk8s/agentplane/environment.py`). Its Action Service then:
 
-- has the group in its settings, with the app's presets and default PolicySets, and the
-  `session_dispatcher` and `history_service` it calls with projected tokens of their audiences;
+- has the group in its settings, with the app's presets, and the `session_dispatcher` and
+  `history_service` it calls with projected tokens of their audiences; EnvironmentService applies
+  the Gateway's default PolicySets;
 - is a caller and waker of the Session Dispatcher and a reader of the History Service;
-- may get and create Sandboxes, PolicySets and PolicyBindings in its namespace;
-- creates those only in the executor's shape, which a ValidatingAdmissionPolicy enforces: a
-  Sandbox bound to no launcher grant, and a grant owned by one Sandbox, named for it, whose rules
+- has an EnvironmentService launcher grant to create on behalf of an Action caller; may read
+  Sandboxes and get and create PolicySets and PolicyBindings in its namespace;
+- creates grants only in the executor's shape, which a ValidatingAdmissionPolicy enforces: a
+  grant owned by one Sandbox, named for it, whose rules
   name only that incarnation and only this group's Actions. The policy cannot see who called the
   launch, so it bounds what a grant reaches, not who holds it.
 

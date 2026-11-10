@@ -1,12 +1,5 @@
 # Props TODO
 
-## Snapshot Graders
-
-Low priority improvements (not blocking):
-
-- [ ] Resume existing IN_PROGRESS runs on startup (currently starts fresh)
-- [ ] Handle new snapshots added after startup (currently requires restart)
-
 ## Ground Truth Write API
 
 Low priority - CLI + YAML workflow is sufficient for now.

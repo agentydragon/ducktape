@@ -1,35 +1,10 @@
-"""Rotate Authentik client_credentials JWTs into SOPS-encrypted files.
+"""Rotate Authentik `client_credentials` JWTs into SOPS-encrypted files.
 
-One run processes every rotation listed in the YAML config. For each rotation it:
-
-  1. Reads the unencrypted-by-suffix `expires_unencrypted` field of the existing
-     `sops_file` (no SOPS decryption, no in-cluster age key) and skips when
-     remaining validity exceeds `rotate_below_hours`. A real mint therefore
-     happens only every ~44 days (45d validity - 1d threshold), but a failed
-     rotation self-heals on the next hourly run.
-  2. Mints a fresh JWT via `client_credentials`, verifies its issuer, an
-     optional group claim, an optional set of expected audiences, and optional
-     expected claims (e.g. email) on the final token, and — for proxy-fronted
-     consumers — exchanges it into a proxy-provider-scoped token (the
-     JWT-bearer two-hop pattern the Authentik outposts in this repo require).
-  3. Writes `expires_unencrypted` (from the final token's own `exp` claim, so
-     the freshness check is authoritative), an `audiences_unencrypted` stamp
-     when audiences are expected and a `claims_unencrypted` stamp when claims
-     are expected (so the next run can force a re-mint if either expectation
-     changes — e.g. an Authentik service account's email gets fixed), plus the
-     token, then `sops encrypt`s in place.
-
-Rotations with a `probe` additionally verify on every run that the token
-*published in-cluster* (the `k8s_secret` output, read back via the Kubernetes
-API) is actually accepted by its real endpoint; a 401/403 bypasses the
-freshness gate exactly like an audience/claim mismatch. Stamps only prove the
-token should still be valid — the probe catches provider-side revocation and
-publish-pipeline bugs (a seed placeholder never overwritten, a manifest
-written under the wrong stringData key).
-
-Everything that actually rotated this cycle lands in a single combined commit.
-The whole run operates from the clone root so SOPS creation rules (matched on
-repo-relative paths) resolve.
+Validate final-token issuer and configured group, audience, and claim expectations.
+Proxy-fronted rotations use a JWT-bearer exchange for a provider-scoped token.
+Configured probes check the published Kubernetes token independently of expiry stamps.
+Keep Git at the clone root so repo-relative SOPS creation rules resolve.
+See `README.md` for the full rotation and deployment contract.
 """
 
 import base64
@@ -46,6 +21,7 @@ import typer
 import yaml
 
 from cluster.rotators.authentik_jwt_rotation.config import AUTH_BASE, Config, K8sSecretOutput, Probe, Rotation
+from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
@@ -63,27 +39,6 @@ def jwt_payload(token: str) -> dict[str, Any]:
     padded = segment + "=" * (-len(segment) % 4)
     payload: dict[str, Any] = json.loads(base64.urlsafe_b64decode(padded))
     return payload
-
-
-def unencrypted_stamps(sops_file: Path) -> dict[str, Any]:
-    """The plaintext `*_unencrypted` stamps from a sops file, parsed as YAML.
-
-    A sops-encrypted YAML file is still valid YAML, and the `*_unencrypted`-suffixed
-    keys keep their plaintext values (SOPS leaves them in clear), so the freshness
-    and audience stamps load straight out without the in-cluster age key. Returns
-    `{}` when the file is absent or empty.
-    """
-    if not sops_file.exists():
-        return {}
-    return yaml.safe_load(sops_file.read_text()) or {}
-
-
-def remaining_hours(sops_file: Path) -> float | None:
-    """Hours until the existing token expires, or None if absent/unstamped."""
-    expires = unencrypted_stamps(sops_file).get("expires_unencrypted")
-    if expires is None:
-        return None
-    return (datetime.fromisoformat(expires) - datetime.now(UTC)).total_seconds() / 3600
 
 
 def token_audiences(payload: dict[str, Any]) -> list[str]:

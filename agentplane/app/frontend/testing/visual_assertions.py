@@ -6,26 +6,25 @@ from textwrap import dedent
 
 from playwright.async_api import FloatRect, Locator, Page, expect
 
-from util.testing.page_capture import wait_for_stable
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.page_capture import wait_for_stable
 
 _SCROLL = "[data-disclosure-demo-scroll]"
 
 
-_HEADING = ".agentplane-disclosure-heading"
+_HEADING = ".ui-disclosure-heading"
 
 
-_MAIN = f".demo-main .agentplane-disclosure-item > {_HEADING}"
+_MAIN = f".demo-main .ui-disclosure-item > {_HEADING}"
 
 
-_OUTER = f".demo-outer > .agentplane-disclosure-item > {_HEADING}"
+_OUTER = f".demo-outer > .ui-disclosure-item > {_HEADING}"
 
 
-_INNER = f".demo-inner > .agentplane-disclosure-item > {_HEADING}"
+_INNER = f".demo-inner > .ui-disclosure-item > {_HEADING}"
 
 
-_OUTPUT = f".demo-output > .agentplane-disclosure-item > {_HEADING}"
+_OUTPUT = f".demo-output > .ui-disclosure-item > {_HEADING}"
 
 
 async def _in_viewport(target: Locator) -> None:
@@ -37,6 +36,25 @@ async def _focus(page: Page, target: Locator) -> None:
     await target.evaluate("element => element.scrollIntoView({ block: 'center', inline: 'nearest' })")
     await wait_for_stable(page)
     await _in_viewport(target)
+
+
+async def _mount_code_blocks(page: Page) -> None:
+    """Mount every lazy `CodeBlock` once, so the layout no longer depends on the scroll path taken.
+
+    A `CodeBlock` mounts its editor only once it nears the viewport; until then a line-count
+    placeholder stands in at a different height. Which placeholders an IntersectionObserver saw
+    while earlier clicks scrolled the page is timing, so the height above a focused target varied
+    between runs. A `releaseWhenFar` block keeps its measured height when it unmounts again, so once
+    every block has mounted the layout is fixed.
+    """
+    for placeholder in await page.locator(".ui-code-block-placeholder").element_handles():
+        await placeholder.evaluate("element => element.scrollIntoView({ block: 'center' })")
+        await page.wait_for_function(
+            "element => !element.isConnected || !element.classList.contains('ui-code-block-placeholder')",
+            arg=placeholder,
+        )
+        # The editor's first measurement can precede its settled height, which a far block keeps.
+        await wait_for_stable(page)
 
 
 async def _open_raw_switches(page: Page) -> None:
@@ -55,6 +73,17 @@ async def _open_phone_navigation(page: Page) -> None:
         await page.get_by_role("button", name="Toggle navigation").click()
 
 
+async def _expect_notice_badges(page: Page, *, stale: bool) -> None:
+    """The fixture's unprocessed-count and failed-delivery badges in the sidebar, all
+    painted, and faded exactly when the notice stream is down."""
+    badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
+    for state, count in [("pending", 4), ("error", 2)]:
+        await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
+    for badge in await badges.all():
+        await expect(badge).to_be_visible()
+        await expect(badge).to_have_css("opacity", "0.5" if stale else "1")
+
+
 async def _open_settings(page: Page) -> None:
     await _open_phone_navigation(page)
     await page.get_by_role("button", name="Settings").click()
@@ -69,12 +98,12 @@ async def _select_reconnect(page: Page) -> None:
 
 async def _open_run(page: Page) -> None:
     run = (
-        page.locator(".agentplane-disclosure-summary[aria-expanded='false']")
+        page.locator(".ui-disclosure-summary[aria-expanded='false']")
         .filter(has_text=re.compile("tool call", re.IGNORECASE))
         .first
     )
     await run.click()
-    await expect(page.locator(".agentplane-step-details").first).to_be_visible()
+    await expect(page.locator(".transcript-step-details").first).to_be_visible()
 
 
 async def _rollout_start(view: VisualPage) -> None:
@@ -90,10 +119,10 @@ async def _rollout_run(view: VisualPage, position: str) -> None:
     page = view.page
     await _rollout_start(view)
     await _open_run(page)
-    steps = page.locator(".agentplane-run-steps").first
+    steps = page.locator(".transcript-steps").first
     if position == "start":
-        static_title = await steps.locator(".agentplane-step-static .agentplane-step-title").first.bounding_box()
-        disclosure_title = await steps.locator(".agentplane-step-details .agentplane-step-title").first.bounding_box()
+        static_title = await steps.locator(".transcript-step-static .transcript-step-title").first.bounding_box()
+        disclosure_title = await steps.locator(".transcript-step-details .transcript-step-title").first.bounding_box()
         assert static_title is not None
         assert disclosure_title is not None
         assert abs(static_title["x"] - disclosure_title["x"]) <= 1, "plain and expandable steps must align"
@@ -105,7 +134,6 @@ async def _rollout_run(view: VisualPage, position: str) -> None:
 
 async def _rollout_geometry(view: VisualPage, state: str) -> None:
     page = view.page
-    assert view.capture_name is not None, "rollout diagnostics need a test case identity"
     geometry = await page.evaluate(
         dedent("""() => {
       const box = element => {
@@ -123,7 +151,9 @@ async def _rollout_geometry(view: VisualPage, state: str) -> None:
       };
     }""")
     )
-    (undeclared_outputs_dir() / f"{view.capture_name}-{state}-geometry.json").write_text(json.dumps(geometry, indent=2))
+    view.outputs.publish(
+        checkpoint=f"geometry-{state}", role="diagnostics", data=json.dumps(geometry, ensure_ascii=False), suffix="json"
+    )
 
 
 async def _box(page: Page, selector: str) -> FloatRect:
@@ -210,7 +240,7 @@ async def _open_tool_run(page: Page) -> None:
 
 
 async def _expand_tool_steps(page: Page) -> None:
-    steps = page.locator(".agentplane-step-details")
+    steps = page.locator(".transcript-step-details")
     await expect(steps.first).to_be_visible()
     # Wait for the opened run's payloads to render before counting its tool lines. A count sampled
     # while an OptionalPayload is loading can miss a later call and photograph a folded output.
@@ -221,10 +251,10 @@ async def _expand_tool_steps(page: Page) -> None:
     count = await tool_steps.count()
     assert count > 0, "tool run contained no call lines"
     for index in range(count):
-        control = tool_steps.nth(index).locator(".agentplane-disclosure-summary").first
+        control = tool_steps.nth(index).locator(".ui-disclosure-summary").first
         if await control.get_attribute("aria-expanded") == "false":
             await control.click()
-    await expect(page.locator(".agentplane-step-details .agentplane-code-block .cm-content").first).to_be_attached()
+    await expect(page.locator(".transcript-step-details .ui-code-block .cm-content").first).to_be_attached()
     await wait_for_stable(page)
 
 
@@ -250,16 +280,16 @@ async def _open_select(
 
 def _tool_steps(page: Page) -> Locator:
     """The step lines of tool calls, not reasoning."""
-    return page.locator(".agentplane-step-details").filter(
-        has_not=page.locator(".agentplane-step-title:text-is('Reasoning')")
+    return page.locator(".transcript-step-details").filter(
+        has_not=page.locator(".transcript-step-title:text-is('Reasoning')")
     )
 
 
 async def _open_standalone_reasoning(page: Page) -> Locator:
     """Open the reasoning step at thread anchor 20 and wait for its body to render."""
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
-    summary = reasoning.locator(".agentplane-disclosure-summary").first
+    reasoning = page.locator('[data-thread-anchor="20"] .transcript-step-details')
+    summary = reasoning.locator(".ui-disclosure-summary").first
     await summary.click()
     await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    await expect(reasoning.locator(".ui-disclosure-panel .ui-markdown")).to_be_visible()
     return reasoning

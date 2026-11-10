@@ -1,7 +1,7 @@
 import { Button, Group, Paper, Table, Text, Title } from "@mantine/core";
 import type { JSX } from "react";
 
-import type { DefinitionDetailResponse, ExampleKind, Split } from "../lib/api/schema";
+import type { DefinitionDetailResponse, ExampleKind, Split } from "../lib/schema";
 import { recallColorClass } from "../lib/colors";
 import { formatAge, formatStatsWithCI } from "../lib/formatters";
 import { useRunModal } from "../lib/runModalContext";

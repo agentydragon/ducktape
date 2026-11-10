@@ -2,11 +2,11 @@
 
 Provides per-test `playwright`, `browser` and `page` fixtures on
 `playwright.async_api`. Uses the hermetic @chrome_headless_shell that
-`//util/testing:frontend_visual` carries in runfiles, falling back to Playwright's default
+`//util/testing/browser:launcher` carries in runfiles, falling back to Playwright's default
 browser resolution outside Bazel. The browser launches with the shared container-safe flags
 (needed on RBE, where there is no user namespace and /dev/shm is tiny); visual
 tests that need deterministic rendering build their own context with
-`util.testing.frontend_visual.deterministic_browser_context`, which also seeds
+`util.testing.frontend_visual.context.deterministic_browser_context`, which also seeds
 Chromium's generic-font profile preferences.
 
 Every fixture is function-scoped: pytest-asyncio runs an async fixture on the
@@ -21,7 +21,7 @@ from collections.abc import AsyncIterator
 import pytest
 from playwright.async_api import Browser, Page, Playwright, async_playwright
 
-from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from util.testing.browser.launcher import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 
 
 @pytest.fixture

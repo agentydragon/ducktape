@@ -1,27 +1,46 @@
 # Agentplane integration app
 
-The human-facing frontend over Agentplane's services: a FastAPI service that manages Sandboxes
-through the Kubernetes API as the requesting operator, opens Sessions and submits commands through
-the Session Dispatcher, and uses the Runner Gateway for UID-fenced live checks and read-only runner
-status diagnostics. It reads archived Session history and Threads (each Session's conversation projection) from
-the History Service and synchronizes selected rows and content to the browser through authenticated
-Electric endpoints. It also presents Actions, operator decisions and Connection consent.
-The staging instance lives in `cluster/k8s/agentplane-staging/`.
+The human-facing API is a Go service built from `//agentplane/app/go:agentplane-app` and packaged as
+`//agentplane/app:image`. It proxies Sandbox management through the Runner Gateway's
+`EnvironmentService` with its Pod-bound service token, creates Sessions and submits commands through
+the Session Dispatcher, and uses the Runner
+Gateway for UID-fenced live checks and read-only runner status diagnostics. It reads archived Session
+history and Threads (each Session's conversation projection) from the History Service and synchronizes
+selected rows and content to the browser through authenticated Electric endpoints. It also presents
+Actions, operator decisions and Connection consent. The staging instance lives in
+`cluster/k8s/agentplane-staging/`.
+
+The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
+test fixtures, and HTTP test clients; app integration tests start the real Go executable.
+The Go app runs its embedded Goose migrations before opening the HTTP listener or starting
+workers. The baseline adopts the existing app schema without dropping operator sessions or Thread
+metadata; the next migration removes the retired `alembic_version_app` marker. Replicas serialize
+migrations with the app's stable advisory lock while older replicas may still serve.
 
 The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
 serves the SPA and service worker on the same public origin through Gateway path routing; API,
 authentication and streaming requests reach this service directly.
 
-Set `AGENTPLANE_ELECTRIC_URL` to enable the authenticated thread-sync API and Electric health probe.
-Omitting it leaves REST and SSE available without Electric; backend lifecycle and model-smoke
-fixtures use this composition. Electric configuration does not control static-file serving.
+The mounted `app-config` YAML's optional `electric_url` enables the authenticated thread-sync API
+and Electric health probe. Omitting it leaves REST and SSE available without Electric; backend
+lifecycle and model-smoke fixtures use this composition. Electric configuration does not control
+static-file serving. `AGENTPLANE_CONFIG_FILE` is the only environment setting that selects the
+static configuration file; database and OIDC credentials are separate Secret inputs. Deploy the image
+and `app-config` together; during a brief image/config mismatch the new binary fails startup until
+both converge.
+
+The retained-event SSE API follows History's `FollowSession` RPC, resuming upstream renewals from
+its covered cursor. The app adds attachment and terminal feed frames from History summaries;
+protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decimal strings.
 
 ## Sandbox lifecycle ownership
 
-The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to
-Kubernetes as the requesting operator. The Sandbox Controller reconciles the requested `spec` and
-owns `status`. Required `default_policy_sets` come from the app ConfigMap, including when the set is
-empty. The former Sandbox Service Deployment, API and server source are retired.
+The Runner Gateway's `EnvironmentService` owns Sandbox creation, templates, suspend, delete, wake
+policy and idle suspend policy. The app authenticates the operator and forwards the generated HTTP
+facade with its projected Pod-bound service token. The service applies configured default policy
+sets and fences mutations on Sandbox UID and resourceVersion. The app still reads Sandbox inventory
+through its existing read routes and watch. The Sandbox Controller reconciles the requested `spec`
+and owns `status`.
 
 ## Dependency boundary
 
@@ -31,12 +50,16 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
-it directly as the requesting operator. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
-owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
+app endpoint. EnvironmentService in Runner Gateway owns inventory reads, watches and management;
+the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
+owns logical Session records and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
-The app is a client of each service for its distinct operation.
+The app is a client of each service for its distinct operation. The browser's pure History reads
+use the generated ProtoJSON HTTP surface under `/upstream/history/v1/`; the app forwards them to
+History over gRPC with its projected service token, which stays server-side.
+These reads do not require an app Thread row: History applies the app service account's read policy
+to the requested Session. The app's Thread metadata and Electric routes have their own checks.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with the name and archive
 state an operator sets; like any state the app holds, these are candidates to move into a dedicated
@@ -53,104 +76,48 @@ bbr test //agentplane/app/...
 
 ### While the History Service is down or rolling
 
-Thread lists, Thread views, the retained-event SSE API and Thread commands fail with the History
-Service's error: each typed command route first looks for its admission in the archive and checks
-the Thread's feed state (`api.py`, `threads/bridge.py`), so even a command the runner would accept is refused. Resume
-reads the feed state the same way. Sandbox lifecycle and Action review keep working.
-`HistoryWatch` reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
+Thread lists, Thread views, and retained-event reads fail with the History Service error.
+The generated Dispatcher command facade remains available: it validates the Session and current Sandbox
+UID independently of History. The browser retains submitted commands until History can reconcile
+their admission. Resume still reads the History feed state. Sandbox lifecycle and Action review
+keep working. The app’s History watch reconnects on its own, and Sessions recorded meanwhile
+get their Threads once it does.
 
-## Layout
+## Implementation and testing
 
-- `main.py`: the entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
-  variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
-  `runner_gateway_target` is only for the health check; app live reads use the per-Sandbox
-  `runner_gateway_control_target` and projected `runner_gateway_token_file`.
-- `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
-  resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
-  fields.
-- Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
-  operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
-  reads current-incarnation checks and runner status through the per-Sandbox Runner Proxy, carrying
-  the live Sandbox name, UID and owner. Runner status is informational and never wakes a Sandbox.
-  The app reads Kubernetes projections for UI updates and has no Gateway Session API client.
-- `egress_access.py`: PolicyBinding projections for the UI, and the operator's grants and
-  revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
-  desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
-  are refused ([composition](../docs/egress_composition.md)).
-  The egress decision stream is in `live.py`; an unreachable proxy leaves the binding views readable.
-- `action_policy.py`: Action Service's auto-approval list for a ServiceAccount, read over gRPC with the operator federation.
-  App-level `default_policy_sets` are combined with the selected preset's policy sets by the shared
-  Sandbox inventory; Policy Controller materializes the resulting grants.
-- `threads/`: Threads over the History Service. The app's database holds each Thread's identity,
-  the name and archive state an operator sets (`Thread`, `models.py`). Everything folded from a
-  Session's events (summaries, entities, payload chunks, evidence) is the History Service's, read
-  over its gRPC API (`summaries.py`, `view/`) or replicated by Electric from its database.
-  `history_watch.py` follows the History Service's watch: `HistoryWatch` turns its fold commits
-  into `Channel.THREADS` wake-ups, and `SessionOpenings` opens a Thread for each Session it records,
-  whoever started it. `store.py` (`ThreadStore`) composes the app database and the History Service;
-  runners push their events to the History Service.
-- `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/runner_directory.py` resolves a Thread's Sandbox through the Runner Gateway and creates
-  UID-fenced clients for operations that need live runner state. The Sandbox page's retained Session
-  inventory comes from History Thread summaries, not a runner inventory RPC.
-- `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
-  generated client.
-- `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`
-  (`EventLogStore`: the Thread mapping, the archive's events and the feed state), `stream.py` (a
-  thread's archived events as SSE, so any replica serves it without a runner) and `debug.py` (the
-  typed, paginated observation and evidence reads).
-- `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
-  response models and the runner protocol's `Event` messages.
-- `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
-  (`../kubernetes_watch.py`), the action policy kinds watched only as a trigger to re-ask the Action
-  Service, and the SSE streams that push a snapshot of it to every open tab.
-- `changes.py`: the payload-free wake-up a reader of the cluster index or the thread store waits
-  on; a burst of changes coalesces into one re-read.
-- `database_updates.py`: the replica's one PostgreSQL `LISTEN` connection, turning each channel's
-  committed notifications (thread writes, deleted operator sessions) into that channel's
-  `changes.py` wake-up, and waking every channel after a reconnect.
-- `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
-  `auth_routes.py` are the browser's half of that (see below).
-- `threads/view/content.py`: `ContentStore`, reads of what the History Service's fold assembled
-  (`ThreadEntityView`, `../history_service/fold/views.py`).
-- `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
-  The private Electric service reads PostgreSQL logical replication; app replicas do not retain
-  per-listener thread copies. The scope read is a long poll held until the thread's first fold.
-- `system_status.py`: the System page's checks. `GET /system/status` probes, concurrently and each
-  within a 5-second budget, the gRPC health service of the Runner Gateway, History Service, Action Service,
-  Connection Service, Notification Service and egress proxy admin port,
-  plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
-  reason, never an error response. The Kubernetes API is not probed either; the freshness of the live
-  views shows it.
-- `action_federation.py`: request-bound operator federation into the canonical Action Service.
-- `grpc_stream.py`: shared gRPC deadlines and bearer handling for the generated operator-facing service
-  stubs, and the bounded opening/cleanup lifecycle for browser-relayed watches.
-- `frontend/connections/connection_service_client.ts`: generated ConnectionService ProtoJSON/NDJSON
-  message adapters for the consent page and OAuth-client settings; the app's BFF owns the browser HTTP
-  routes while the service owns Connections and consent.
-- `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
-- `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
-  `main.py` builds the pool and hands it to each store and to the database update listener.
-- `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
-  `operator_sessions.py` and `threads/models.py`. Migrations run separately through
-  `:migrate`, which fails when the migrated schema differs from the models; the server itself
-  never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI targets.
-- `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
-  scenarios under `frontend/harness/`.
+- `go/`: configuration, Huma REST routes, raw HTTP streams and the service lifecycle. The generated
+  frontend API comes from `//agentplane/app/go:export_schema_bin`.
+- `go/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
+  History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
+- `go/policyaccess/`: Kubernetes policy projections.
+  The Action Service independently streams its effective policy through its generated facade.
+- `go/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
+  Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
+- `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
+  exchange. Logout, expiry and replica notifications end browser streams.
+- `go/migrations/` and `runtime.go`: embedded Goose schema and service startup. `runtime.go` uses
+  the shared `agentplane/postgres/migrate` lifecycle before opening the API.
+- `settings.py`, `presets.py`, `action_federation_settings.py`, `oidc.py` and
+  `sandbox_models.py`: deployment configuration schema used by cdk8s.
+- `agentplane/sandboxes/runtimeconfig`: shared deployment-published model and harness offers read by
+  the app and existing-environment discovery.
+- `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs checked against Go's
+  OpenAPI schema. Browser and Electric tests use Chromium, PostgreSQL, History and Electric with
+  the Go API process. k3s tests deploy the packaged Go image.
+- `frontend/`: React SPA and visual scenarios on the repository's TypeScript/esbuild toolchain.
 
 ## Live views
 
 ### Replica-safe command delivery
 
-Any app replica accepts typed `submit-input`, `change-model`, `change-reasoning-effort`, and
-`interrupt-turn` requests under `/threads/{id}/`, each with a stable
-command id. The required `session_dispatcher_target` calls the matching generated Session Dispatcher
-RPC. Durable operations return their stored `Dispatch`; `InterruptTurn` returns its immediate
-result without a queue row. A Dispatcher
-failure is returned to the caller; the app has no direct Runner Gateway command path. An exact retry
-already present in the History archive returns its `CommandAdmitted` entry without another service
-call. Otherwise the browser keeps Retry and never Cancel after an unconfirmed result, because the
-Dispatcher may have stored the command despite a lost reply.
+The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `InterruptTurn` through
+the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
+stable command ID and the immutable Sandbox name and UID captured with the retained local command.
+The Dispatcher checks the current Sandbox UID and Session authority. Each command returns its stored
+`Dispatch`, including an exact-turn interrupt. A lost response
+leaves admission unconfirmed, so the browser keeps the command for exact-ID retry and History
+reconciliation. Legacy retained commands without a stored destination remain visible for History
+reconciliation but cannot be resent to a newly resolved Sandbox.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
@@ -164,17 +131,20 @@ remains the authority for command outcomes. The browser retains the command loca
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 
-The `/upstream/dispatcher/…` BFF routes expose Dispatcher reads to an operator session and call typed
-gRPC methods with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the
-watch keeps a bounded initial read before starting its streaming response and then relays frames until
-the operator session ends, the app drains or the browser goes. Reads carry no Thread check, so an
-operator can read the Dispatches of any Session id. Commands stay on the typed Thread routes, whose
-checks the Dispatcher does not make.
+The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
+operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.
+The BFF routes call generated gRPC methods
+with the app's rotating projected Dispatcher token. Unary routes return ProtoJSON; the watch keeps a
+bounded initial read before starting its streaming response and then relays frames until the operator
+session ends, the app drains or the browser goes. Reads carry no Thread check, so an operator can read
+the Dispatches of any Session id. Command writes do not check the app's History feed state or model
+catalog before reaching the Dispatcher. The frontend model picker remains catalog-backed; the backend
+and executor report command failures after submission.
 
 The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
 runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
-values and the Sandbox's own state, and reads as unconfirmed whenever the stream, the watch or the
-Thread-update listener (`updates_connected` in the frame) is not current. The Status tab shows the
+values and the Sandbox's own state, and reads as unconfirmed whenever the Thread watches, the Sandbox inventory watch or the
+Thread-update listener (`updates_connected` in the Thread snapshot) is not current. The Status tab shows the
 Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
 does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
 `GET /sandboxes/{name}/runner-status` for current runner process and Session diagnostics; it does not
@@ -183,16 +153,56 @@ shown as unavailable, while suspended Sandboxes show that diagnostics are unavai
 Idle Sessions can be archived while their harness process remains live. The UI disables archive for
 observable active turns, setup, or a pending local launch; the server checks whether Session work is
 unfinished before accepting the archive request.
-Every new Session opening is submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
-delivering, runner-admitted, or failed state, and
-`GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
-History Service has projected a Thread yet.
+The app's protobuf-defined `AppService` serves generated HTTP routes at
+`POST /sandboxes/{name}/sessions`, `GET /sandboxes/{name}/runner-status`, and
+`GET /upstream/app/v1/system/status`. The Runner status route returns the existing
+`EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC. System status
+returns a `components` list using the generated component-state enum, optional error detail, and
+ProtoJSON `checkedAt` timestamp. It uses the same authenticated caller boundary and refreshes every
+15 seconds in the browser.
+It is an interface for the app's human frontend, not an API for in-cluster services. Backend callers
+use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly with a complete
+`SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's
+configured preset, applies the caller's overrides, validates the current Sandbox UID, expands the
+Session ID in `cwd`, and creates app-owned Thread metadata before submitting the resolved spec to
+the Dispatcher with `CreateSession`. Dispatcher owns the durable logical Session, delivery and
+materialization status. Session reads use `GET /upstream/dispatcher/v1/sessions/{session_id}`, which
+the app exposes only to an authenticated operator browser session and forwards with the app's
+Dispatcher service-account token.
+The partial `spec` is a `Struct` validated as strict `SessionSpec` ProtoJSON: absent keys retain
+preset defaults, while explicit empty, zero and null values clear them. An omitted `setup_script`
+uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
+response codecs are generated from the proto; the nested override map intentionally preserves JSON
+presence rather than duplicating the `SessionSpec` scalar schema.
+The resolved preset carries the placement: native presets use `environment_hosted` with the exact
+current Sandbox identity and harness, while the central-sampler offer uses `central_sampler_v1`
+with that same fixed executor environment. Dispatcher validates the placement against the selected
+Sandbox UID; this app flow does not create optional central attachments or environment-free central
+Sessions.
+The generated unary gateway runs the app-owned service in process after cookie-or-reviewed-workload-token
+admission and cookie CSRF checks. Token admission also supports explicitly authorized callers and
+integration tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.
+
+The returned minimal `Session` contains its ID, placement, timestamps and nested `SessionStatus`; it
+does not expose the immutable spec or instructions. Its materialization state is placement-owner
+progress, not harness state ([Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#session-resource)).
+The browser retains only its caller-minted Session ID after an uncertain response and
+reconciles with `GetSession`, without replaying creation or setup. The app's `CreateSession` response
+returns `session` directly with POST 201.
+
+The catalog's `HARNESS_CENTRAL_SAMPLER` model list adds **Central sampler** to the launch form alongside the
+native harness offerings. The Dispatcher selects the sampler service from deployment configuration;
+the app catalog and session-creation requests contain no service name or URL. Setup scripts run once on the bound Sandbox executor before sampling begins. For an existing
+central Session, a suspended or unready execution Sandbox leaves conversation history and central
+controls available while the bound Sandbox object remains in the current inventory.
 
 Thread names are set, changed, or cleared explicitly by operators in the thread view.
 
-The app ConfigMap groups browser-safe links under one optional `frontend_config` key.
-`GET /frontend-config` returns that same typed object directly, with only the explicitly whitelisted
-settings below; when the deployment does not supply the object, both fields are null.
+The app ConfigMap groups browser-safe links under one optional `frontend_config` key. The generated
+`GET /upstream/app-config/v1/frontend-config` response contains only the explicitly whitelisted
+settings below under `frontendConfig`; when the deployment does not supply either setting,
+ProtoJSON returns both nested message fields as `null`, which the browser adapter maps to `null`
+view-model fields.
 
 `frontend_config.trace_search` is null unless the app configures a Grafana base URL, Tempo datasource
 UID, and deployment environment. When configured, Sandbox, Session, and active Thread ellipsis menus
@@ -203,11 +213,12 @@ after deletion can match traces from both Sandbox instances.
 
 `frontend_config.langfuse_search` is null unless the app configures a Langfuse base URL, project ID,
 and metadata keys for the Sandbox namespace and ServiceAccount. When configured, Sandbox and active
-Thread ellipsis menus link to the project's last-24-hour traces filtered by those two metadata values.
-The Thread menu link is explicitly Sandbox-scoped because current Langfuse attribution has no Session
-ID; these links do not isolate individual Sessions. The configured metadata keys must match the
-LiteLLM attribution settings; traces appear after that producer-side attribution is deployed. A
-same-name Sandbox replacement can match older traces.
+Thread ellipsis menus link to the project's last-24-hour traces. Native Thread and Sandbox links
+filter by those two metadata values; they can include other Sessions and older same-name Sandbox
+instances. Central Thread links instead filter by the public Session ID, using `session_metadata_key`
+(default `attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id`). That attribution
+requires an explicitly trusted sampler, LLM ingress and LiteLLM metadata promotion. The configured
+keys must match the producer's exported attributes; links alone do not create trace attribution.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases
@@ -234,11 +245,13 @@ their badges even while collapsed, and interrupted items do not become streaming
 a later turn starts.
 
 The retained-event SSE API reads archived events through the History Service on whichever replica
-receives its request. The History Service's fold-commit notices (`HistoryWatch`) and the app's
+receives its request. The History Service's fold-commit notices and the app's
 transactional `NOTIFY` wake Thread and inventory readers; both are hints, and the History Service's
 cursor remains authoritative.
 
-`/#/threads/{id}` loads metadata and the thread's tail independently of runner discovery. The
+`/#/threads/{id}` combines app-owned Thread metadata from `/upstream/app/v1/threads/{id}` with the
+History Service's generated `/upstream/history/v1/sessions/{id}/summary`, using generated protobuf
+TypeScript schemas, and loads the thread's tail independently of runner discovery. The
 browser follows one Electric shape over the thread's rows and one per payload field it shows, each
 pinned by `/threads/{id}/sync/*` to the thread and its projection epoch, and loads its window as
 subset snapshots of them: the latest 30 positions, the page before the oldest row it holds whenever
@@ -279,32 +292,27 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 
 ### Inventory snapshots
 
-`/live/sandboxes` and `/live/sandboxes/{name}` are SSE, authenticated like every other route. Each
-carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
-the quiet in between. What is pushed: the sandbox rows, one sandbox's bindings with each reader's verdict,
-its Action policy list, and its threads, the last of these from the store rather than a watch, since the app is the
-only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
+The shared Sandbox inventory uses the generated EnvironmentService watch through
+`/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
+when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. The
+Action Service watch separately streams the execution account's effective Action policy.
+The Sandbox page reads UID-filtered app Thread metadata pages, joins History summaries, and uses them as its retained
 Session inventory; its harness and turn fields are last observed History values. Suspending or
 removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
-are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
+are still running. Archived Threads stay hidden unless the operator chooses **Show archived**. The archived count and page tokens follow the same Sandbox UID.
 
-The Egress log tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
-app follows the proxy's authenticated `EgressAdmin.WatchDecisions` gRPC stream for the sandbox's
-ServiceAccount. Each message replaces the retained decisions; the app renews the stream when its
-authorization lease ends and reports outages in the browser stream. Its Egress system-status probe
-also uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
+The Egress log watches `/upstream/egress/v1/decisions:watch` through the generated Egress facade.
+The browser follows the exact Environment target and selects its execution ServiceAccount, clearing
+the displayed window when either observation becomes stale. An initial Egress snapshot and subsequent
+additions and removals maintain the recent window for that account, which can include older Sandbox
+incarnations. The app's Egress system-status
+probe uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
 whether the page can open a new one; it does not determine whether a retained History Thread appears
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
-A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
-`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
-one failure to handle honestly -- a watch that has wedged looks exactly like a cluster where
-nothing is happening -- so every frame carries how long ago each kind last completed a cycle,
-against the same three-cycle bound the egress proxy's readiness uses, and a page whose data has
-stopped moving says so rather than showing it as live: the browser's connection and that verdict
-both feed the one connection indicator in the topbar, a spinner whose tooltip names each stream
-that is not current and why. Every stream, and the server's watch behind it, retries by itself.
+A reconnect starts with a fresh snapshot instead of a replay cursor. The browser reports a watch
+as unavailable while it reconnects rather than treating its old data as current.
 
 ## Authentication and authorization
 
@@ -312,15 +320,20 @@ Every API route needs a caller; only `/healthz`, `/readyz` and the `/auth/*` end
 one. The separate frontend serves public static files, including `/sw.js`. There are two credentials,
 and both are cryptographic:
 
-- **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
-  Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
+- **An operator's OIDC session.** The mounted `app-config` YAML's `oidc` section supplies the issuer,
+  public base URL, and session timing; the Deployment supplies the client ID, client secret, and
+  session signing secret through explicit Secret-backed inputs. `/auth/login` starts an
+  authorization-code flow with PKCE and stores the
   `iss`, stable `sub`, and display `preferred_username` in PostgreSQL behind an opaque signed `__Host-` cookie. Unsafe methods additionally have to be
   same-origin, which is the CSRF defence `SameSite=lax` leaves open. The deployed app requires these
   settings; an app the tests build without them has no login at all.
+  The Go app uses its own cookie encoding and typed pending-login records; neither needs Authlib
+  session compatibility. Switching between the Python and Go images requires signing in again.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
-  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here,
-  and the username has to be one `--token-subjects` names, or the app answers 403. The audience
+  (`token_audience` in the mounted YAML, `agentplane` by default), so a token minted for anything
+  else cannot be replayed here, and the username has to appear in the YAML `token_subjects` list,
+  or the app answers 403. The audience
   would not be a gate on its own: RBAC decides which ServiceAccount a principal may mint a token
   for, never which audience it asks for, so an unnamed subject is refused however it minted. Empty
   -- the default -- accepts no token caller at all. On staging the list holds one entry, and an
@@ -340,19 +353,22 @@ since its response writer implements no `Flush()`.
 
 ## Sidebar inventory updates
 
-The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and a
-window of the Thread list, newest first. The window holds a page of Threads and grows a page at a
-time on request; a search (name, Sandbox, or the start of the ID) and the archived switch narrow it
-on the server, and the Thread a page has open rides along wherever it falls, so every Thread on
-screen stays current without the browser holding the whole list. `GET /threads` pages the same list
-under opaque tokens bound to their filters. Kubernetes watch invalidations and
-the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
-rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
-is no sidebar polling loop or new notification service.
+The browser builds the Thread window from the generated app metadata list and History summary reads. It pages app-owned
+metadata until it has enough visible rows, joins summaries in batches, applies name/Sandbox/ID-prefix search, and pins
+the open Thread if it is outside the visible page. The app list response also carries the archived count. Two generated
+HTTP streams invalidate that view: History reports summary changes, and the app reports Thread metadata changes plus
+whether its PostgreSQL listener is connected. The browser re-reads the list after either signal and reconnects each
+watch independently; a listener reconnect signals a re-read, including writes whose notifications were missed while
+disconnected. There is no sidebar polling loop or new notification service.
+
+The browser reads the shared Sandbox inventory from its one EnvironmentService watch, which the whole shell shares (sidebar, landing
+page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot disagree. Kubernetes
+inventory source loss closes that watch and marks it stale while it reconnects; the Thread list's connection status comes from its History and app watches and
+the PostgreSQL listener state.
 
 The landing route (`/`) is the same Thread list as a whole page, with each Thread's harness, model
 and last activity, so a phone opens on its Sandboxes and Threads rather than behind the drawer. The
-sidebar and the landing page share the one `/live/threads` stream and its search.
+sidebar and the landing page share one browser listing and its search.
 
 The retained snapshot stays navigable during an outage, and the browser connection, stale
 Kubernetes watch, and disconnected database listener all show in the topbar's one connection
@@ -404,17 +420,17 @@ existing heartbeat, Lease and Sandbox watches; browser countdown ticks send no r
 
 ## Shutdown
 
-SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a
-liveness check), every other new request is refused, and every open SSE stream -- the live views,
-a session's events, the Actions stream -- ends where it is waiting rather than at its next frame.
-Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then cancels it. Only after
-that do Session openings stop and the store close its connections, which is what
-the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
+SIGTERM or SIGINT begins the Go server's drain. `/readyz` answers 503 while `/healthz` remains a
+liveness check. The server stops accepting new connections; long-lived SSE and upstream stream
+handlers that watch the drain signal end promptly. `http.Server.Shutdown` waits up to
+`shutdown_timeout` seconds from the mounted YAML (5 by default) for active requests. When that wait ends, the runtime
+cancels the app context and waits for background workers before closing the database and clients.
+The Deployment keeps its 60-second termination grace period for this sequence; no preStop delay
+consumes that budget.
 
-An unexpected Session openings worker failure starts the same drain, then exits the process with
-the worker's error so Kubernetes restarts the replica. Connection, timeout, and database failures
-handled by the worker's retry loop keep retrying. The restarted worker replays Session openings;
-opening an existing Thread is idempotent.
+An unexpected background worker failure starts the same drain, then exits with that error so
+Kubernetes restarts the replica. Failures handled by a worker's retry loop keep retrying. The
+restarted History Session-recording worker replays recorded Sessions; creating an existing Thread is idempotent.
 
 ## Shape
 
@@ -427,7 +443,7 @@ Sandbox -> Pod, PVC               v
                     Session Dispatcher
                          | runner proxy
                          Runner Gateway
-                            |  RunnerControl stream
+                            |  mTLS Runner gRPC
                     runner process, state dir on the PVC
                     claude / codex child per session
                     model traffic to LiteLLM through the egress proxy, which holds the key
@@ -440,7 +456,7 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 
 ## External-client consent
 
-The Action Service's OAuth adapter sends a validated authorization request to
+The [MCP edge](../mcp_edge/README.md#authority)'s OAuth server sends a validated authorization request to
 `/#/connection-enrollments/{handle}`. The hash route survives the app's existing operator
 login. The page shows the client-supplied name, client ID, and validated redirect as text,
 asks for a new Connection name or existing Connection and a labeled caller ServiceAccount, and
@@ -462,13 +478,12 @@ exchange's version-checked reservation does, before replacement activation. Fail
 not restore old grants or rewrite Action provenance; deliberate operator Connection rebinding
 (below) is separate from consent and can change the account an existing credential acts as.
 
-The frontend parses generated protobuf JSON and adapts its field names and enum values to the
-existing page model. Preview combines the enrollment metadata with the service-account and
-Connection lists; the server-held continuation is not returned to the browser.
+The frontend keeps the generated enrollment response, caller ServiceAccounts and Connections
+together as a consent-page projection; the server-held continuation is not returned to the browser.
 
-Authorize resumes only the server-held continuation returned by the authenticated Actions
-authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
-terminal page. Completing consent alone does not activate a grant: the OAuth adapter still
+Authorize follows only the server-held continuation returned by the authenticated Connection
+Service; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
+terminal page. Completing consent alone does not activate a grant: the MCP edge's OAuth server still
 verifies the same upstream operator and completes issuance. Operator credentials never
 reach the external client. An external-client Action is auto-approved only by an
 PolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
@@ -489,10 +504,11 @@ whether a Pod or a Connection acting as it submitted it.
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
-Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
-Git-owned `agentplane-action-federation` ConfigMap (built from the `action_federation`/
-`operator_oidc` dicts in `cluster/cdk8s/generate_manifests.py`), and the app's network
-policy admits Authentik by TLS SNI and the Action Service on 8080. The app composes a request-bound
+Staging configures federation in the same mounted `app-config` YAML as the rest of the app's
+non-secret settings. The `action_federation` section is generated by
+`cluster/cdk8s/agentplane/staging_config.py`, and the app's network
+policies admit Authentik by TLS SNI, the Action Service on 8080, and the MCP edge's Connection
+Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
 bearer or workload-token promotion is used. Missing configuration is specifically
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
@@ -509,9 +525,9 @@ has no dedicated route of its own. The one exception is `/#/mcp-servers`, the MC
 callback's redirect target (see below): landing there opens the modal pre-selected to that tab
 instead of showing the Threads landing view as if the linkage completed silently.
 
-The OAuth clients tab lists the Action Service's runtime named Connections, each row showing its
-most recent grant's OAuth client ID and its current bound ServiceAccount; superseded grants stay
-in the Action Service's own history but are not listed here. The operator can select an eligible
+The OAuth clients tab lists the MCP edge's Connections, each row showing its most recent grant's
+OAuth client ID and its current bound ServiceAccount; superseded grants stay in the MCP edge's
+history but are not listed here. The operator can select an eligible
 ServiceAccount and explicitly confirm rebinding: the existing client token remains usable, but
 future Actions act as the new account. The version-checked update never silently retries a stale
 choice. Unlink instead revokes active/pending authority without deleting history or stopping
@@ -520,28 +536,27 @@ lifecycle status. A Connection's name is edited in place, like a Thread's name: 
 away commits, Escape restores, and a blank name keeps the stored one.
 
 Each current account has a **View grants** disclosure, reusing the Sandbox bindings list and Action-policy
-renderer. The operator-only `GET /caller-grants/{namespace}/{name}` composes existing account-scoped
-CR views and the Action Service's effective-policy answer; no Sandbox, Connection record or active
-caller-admission label is required for that read. The UI is a manually refreshable snapshot, not a
-watch. Missing references, expiry and unsynced/unavailable Action policy stay visible; an unavailable
-Action Service does not hide bindings. The disclosure is read-only and does not calculate
-arbitrary Kubernetes RBAC. Existing Sandbox grant editing and live updates are unchanged.
+renderer. It watches PolicyBindings for the account and PolicySets through the app's generated
+PolicyService facade. The disclosure is read-only and does not calculate arbitrary Kubernetes RBAC.
+Egress credential descriptions and target methods come from the EgressAdmin credential watch through
+the generated app facade. The watch exposes presentation metadata, never credential sources or values.
 
 The browser reads and updates Connections through the app's authenticated BFF under
 `/upstream/connections/v1/operator/`: list, watch, rename, rebind, unbind, caller accounts, and consent.
 The app calls the generated Connection Service gRPC API and serializes its responses as ProtoJSON;
 `WatchConnections` streams NDJSON, replacing the snapshot after reconnect and applying
-upserts by Connection ID. Protobuf int64 versions stay decimal strings in the UI adapter and are
-sent back as `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
+upserts by Connection ID. Generated protobuf messages stay in browser state, with int64 versions as
+`bigint` and ProtoJSON decimal strings on `expectedVersion`; an `ABORTED` response refreshes the inventory and asks for review,
 never automatically retrying a destructive operation. The app owns no Connection state. Reconnect
 requires fresh OAuth authorization from the external client; the management rebind is a separate
 operator-authorized retarget of an existing token. Policy editing and deployment are outside this
 surface.
 
 The app connects to the Connection Service through the separately configured `connection_service_url`
-and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP OAuth
-callback remains a narrow HTTP call to the Action Service. Staging and testing currently configure
-both service endpoints to Actions. Each service has its own gRPC health probe.
+and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP-linkage
+OAuth callback terminates at the app and calls `LinkageService.CompleteCallback` over gRPC. Staging points
+`connection_service_url` at the MCP edge and `action_federation.service_url` at the Action Service.
+Each service has its own gRPC health probe.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
 disconnects each one. It follows independent gRPC `WatchMcpServers` and `WatchActionGroups` streams
@@ -551,17 +566,27 @@ joins their latest states by group key/server ID without coupling their change r
 disconnect use the app's `POST /upstream/actions/v1/operator/mcp-servers/{id}/linkage/start` and
 `.../linkage/disconnect` routes, which call the Operator Action Service with the request-bound
 operator bearer. The provider's
-registered redirect remains the public `GET /mcp-linkage/callback`; the app forwards its state and
-code to the Action Service's public callback and returns the browser to `/#/mcp-servers`. The Go callback's
-ProtoJSON response is not part of the browser contract. What a link authorizes and when a linked
+registered redirect remains the app's public `GET /mcp-linkage/callback`; the app forwards the
+one-shot state capability and authorization code to Action Service and returns the browser to
+`/#/mcp-servers`. No operator bearer is sent with this callback. What a link authorizes and when a linked
 group becomes available is the Action Service's contract
 ([its README](../action_service/README.md#action-catalog)).
 
+`listen_address` selects the HTTP listener: a TCP address such as `127.0.0.1:8080`, or
+`fd:N` to consume an inherited, already-listening TCP socket. It follows the shared
+[`agentplane/net/listener`](../net/listener/README.md) contract. App subprocess fixtures hold
+`util.net.listen_tcp()` across startup and put `fd:N` in configuration, including while
+constructing OIDC callback URLs, so there is no released-port allocation window.
+
 ## Launch presets
 
-`GET /presets` publishes configured Sandbox presets and their Thread launch defaults. `POST
-/sandboxes` stores the selected preset label alongside the concrete Sandbox choices; it does not
-store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
+The browser reads configured models, Sandbox presets and browser-safe search settings through the
+generated `AppService` ProtoJSON routes `/upstream/app-config/v1/models`,
+`/upstream/app-config/v1/presets` and `/upstream/app-config/v1/frontend-config`. These in-process
+handlers share the app's caller authentication boundary; the service and HTTP mapping are defined in
+`app_service.proto`. `POST /upstream/environments/v1/environments` stores the selected preset
+label alongside the concrete Sandbox choices; it does not
+store per-Sandbox Session defaults. When creating a new Thread, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
 the Thread. `policy_sets` are the Sandbox's grants beside the deployment's defaults, and a set name
 the namespace does not hold is refused with 422 before the Sandbox exists.
@@ -570,41 +595,46 @@ to.
 
 A Sandbox takes `policy_sets` alone. The shared inventory validates the app's configured default sets
 with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
-`GET /sandboxes/form` lists the namespace's `PolicySet`s, which the form offers; a preset names
-`PolicySet`s only. It also serves the app-level `new_sandbox_defaults`, the wake-on-message and
-idle-suspend values the form starts with whatever the preset; `POST /sandboxes` stores only what the
-caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and `POST /sandboxes` writes the submitted
+`AppService.GetSandboxForm` returns a sorted snapshot of the PolicySet names visible to the app and
+the app-level `new_sandbox_defaults`; it does not expose policy rules. A preset names `PolicySet`s
+only. The wake-on-message and idle-suspend values are the form's initial values regardless of the
+preset; the EnvironmentService create request stores only what the caller sends, so an API caller
+that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and the create request writes the submitted
 ones as the Sandbox's initial `spec.inboxTags`: editing a preset changes only later launches.
 
-Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
+Before creating a Session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
-persistent state volume; a failure refuses the session open. The selected Sandbox preset determines
+persistent state volume; a failure prevents logical Session creation. The selected Sandbox preset
+determines
 the complete default `SessionSpec` even though the Sandbox stores only its preset label. An explicit
 request can override those defaults, including with empty strings. The app composes the Session's preset and task instructions. The Runner composes those with the
 deployment-wide platform instructions before starting the harness, including for direct
-`SessionSpec` API launches ([Runner specification](../runner/SPEC.md)). The shared block teaches agents
+`SessionSpec` API launches ([Runtime session protocol](../env/runtime/docs/session_protocol.md)). The shared block teaches agents
 the platform's egress and Actions Service protocol and how to query their effective Kubernetes
 permissions; a preset and the per-turn task remain the place for workload-specific constraints and
 the requested outcome.
 
-Thread defaults may also include a one-time setup script. A new Thread sends its resolved cwd and
-setup source on the runner's first `Open`; the runner records setup stdout, stderr, and completion in
-the Thread event stream and starts the harness only after setup succeeds. A failure leaves a
-readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
+Thread defaults may also include a one-time setup script. The app includes the resolved cwd and
+setup source in `CreateSession`; the placement owner records setup stdout, stderr and completion in
+the Thread event stream, then starts the harness only after setup succeeds. A setup failure is
+recorded against the Session and setup cannot be replayed under the same Session ID. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 
-A new Thread's id is the public Session ID the browser mints and the opening API preserves;
+A new Thread's id is the public Session ID the browser mints and the `CreateSession` API preserves;
 `{session_id}` in a cwd resolves server-side. The browser sends a fresh Session ID with the original
-overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script, so it
-cannot retry the create. After a lost reply or a reload it never re-sends Open. **Check Open status**
-reads the Dispatcher opening and checks `GET /threads/{id}` for the projected Thread. A queued or
-runner-admitted opening is not presented as an existing Thread until History records it; the page
-keeps the status and reason visible while the projection catches up.
+overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script. An uncertain
+result is reconciled by `GetSession` with the same ID; creation and setup are not replayed. **Check
+Session status** reads the minimal Dispatcher `Session` resource by its globally unique Session ID
+through the operator-authenticated facade, then checks app metadata and the independent History
+summary for the projected Thread. `Session.status.materialization` distinguishes waiting, in-progress,
+accepted, failed and unknown owner materialization; accepted does not prove native-harness readiness
+or History projection. The page keeps status and reason visible while the Thread projection catches
+up.
 
 ## Policy bindings
 
 The Sandbox page's Policies tab, carried in the live snapshot frame, lists every `PolicyBinding` naming
-the ServiceAccount the Sandbox runs as, from the objects the app's own watch holds (`egress_views.py`).
+the ServiceAccount the Sandbox runs as, from the generated PolicyService watch.
 A row is the binding's provenance (git; the Sandbox's own, which its controller keeps equal to the
 Sandbox's policy sets; or an operator's grant), its expiry, and the sets it names, a missing or refused
 one in red. Its icon sums up the verdicts each reader wrote to the binding's status (`KubernetesReady`,
@@ -614,46 +644,43 @@ missing or refused. The reasons are the icon's hover text. Expanding a row shows
 every type in the set's order: an egress rule as its hosts, methods, paths and credential, any other as
 the set states it. A binding is the grant, so nothing here depends on the Action Service being asked.
 
-Revoke deletes an operator's grant; a binding from git or the Sandbox's own refuses, since each would be
-applied again. **Grant policy sets** adds a binding naming the Sandbox and is, with revocation and the
-launch pick (drawn from `GET /sandboxes/form`, the namespace's PolicySet names), the only write the tab makes.
+Revoke requests deletion of an operator's grant; the Policy Controller refuses bindings from git or
+the Sandbox's own, since each would be applied again. **Grant policy sets** requests a binding naming
+the exact Sandbox UID and is, with revocation and the launch pick (drawn from `AppService.GetSandboxForm`,
+the namespace's PolicySet names), the only write the tab makes. The app sends those mutations through
+the operator-authenticated generated PolicyService facade; the Policy Controller validates ownership
+and performs the Kubernetes writes.
 
-Below the bindings, **Auto-approve if** is the Action Service's own answer for that account, read through
-the app's authenticated BFF (`/upstream/actions/v1/action-policy?subject.namespace=...&subject.name=...`, so an
-operator session is required as for the Actions page): the `action_auto_approve` policies in the order the service
-walks them, each entry naming the binding, set and index a Decision's evidence names, and `synced`, false
-while the service's watch has not synced and nothing auto-decides. It is the resolution an admission would
-use now, from the service that would use it, and says nothing about past Decisions; the Actions page holds
-those. The app's own watch of the two kinds is a trigger: an event on either re-asks the service for the
-next frame, and a binding lapsing while nothing changes leaves the page at the next frame. The two watches
-are independent, so a frame can briefly precede the service's informer seeing the same event and show the
-answer from just before it. Where the service cannot be asked -- no federation configured, a session to log
-in again, a failed exchange or request -- the frame says so in place of the list rather than showing an empty
-one. Which lists the service enforces is its contract
-([SPEC § Action policies](../action_service/SPEC.md#action-policies)).
+Below the bindings, **Auto-approve if** follows the Action Service's generated
+`/upstream/actions/v1/action-policy:watch` facade for the execution ServiceAccount. Each protobuf snapshot is
+Action Service's own effective policy, including whether its index is synced. The watch is independent of the
+binding inventory; a failure is shown rather than presented as an empty policy. Reconnection starts with a fresh
+snapshot, and changing the Environment incarnation or account discards the prior result.
 
 ## Decisions
 
-- **Connection direction:** the runner dials out, to the Runner Gateway's
-  [control stream](../docs/runner_control.md) and to its Event ingress; runner Pods admit no
-  connections, so Pod replacement changes nothing a caller holds.
+- **Connection direction:** the Runner Gateway dials the runner's private mTLS gRPC server
+  ([runner control](../docs/runner_control.md)); the runner pushes journals to Event ingress.
+  Callers use the per-Sandbox control Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
   Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
-  key or workload token: a harness sends the inert placeholder the `agentplane-workload`
-  EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
-  and the authenticated LLM ingress replaces it with its one server-held key after resolving the
-  `WorkloadPrincipal` the token proves. The model endpoint remains governed by the credentialless egress design
-  in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than excepted from it.
+  key: the sidecar strips caller Authorization on the exact-origin SVID route, the central proxy
+  authorizes CONNECT for the Sandbox's ServiceAccount, and the LLM ingress verifies the current
+  Sandbox certificate before it uses its one server-held key. The model endpoint remains governed
+  by the credentialless egress design in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather
+  than excepted from it.
 - **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
   shared through proto-JSON and generated types instead.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **Resume during a suspend is retryable:** the Sandbox page's explicit resume requests Sandbox
-  lifecycle state through `POST /sandboxes/{name}/resume`; while the controller seals an incarnation,
-  the app returns HTTP 503. Retry after the Sandbox reaches Suspended. This remains available when
-  `wake_on_send` is off; that setting controls whether queued work may wake the Sandbox.
+- **Resume is owned by the Runner Gateway:** the browser calls the generated
+  `EnvironmentService.ResumeEnvironment` HTTP facade with the current Sandbox UID; the app
+  forwards it with its Pod-bound service token. The
+  Gateway rechecks target state and operator authority before changing desired state; the app does
+  not patch `running` or `wakeGeneration`. A response confirms acceptance only, not readiness.
+  `wake_on_send` remains a separate setting for automatic wake caused by queued work.
 - **Raw is additive:** both modes use the same chronological thread blocks and disclosure
   state. Compact Event summaries sit between those blocks; expanded details retain the full generated
   envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.
@@ -702,46 +729,36 @@ service-worker tests do not establish that production experience.
 
 ### Lazy thread evidence
 
-`GET /threads/{thread_id}/evidence` lists observations associated with
-one `entity_kind`/`entity_id`, scoped by the exact `source_id` and `projection_epoch`.
-It returns observation cursors and whether native links exist, without reading frame bodies.
-`after_cursor` is exclusive; `next_after_cursor` is null at the end of the page sequence.
+The browser reads History evidence through the generated HTTP facade at
+`POST /upstream/history/v1/sessions/{session_id}/entity-evidence`. The request carries the exact
+`projection_epoch` and entity key; the response returns observation cursors and whether native
+links exist, without reading frame bodies. `after_cursor` is exclusive; the optional
+`next_after_cursor` is absent on the last page.
 
-`GET /threads/{thread_id}/evidence/{observation_cursor}/frames` expands
-one association under the same scope and entity. It pages native links by exclusive
-`after_sequence`, returning whole raw entries. Missing captured frames are explicitly
-`unavailable`; an association with no native links returns an empty page. All returned
-cursors/sequences are decimal strings. Both reads default to 30 records and allow up to
-200, reject stale source/epoch references with 410, and require the normal app identity.
+`POST /upstream/history/v1/sessions/{session_id}/native-frames` expands one association under the
+same scope and entity. It pages native links by exclusive `after_sequence`, returning whole raw
+entries. Missing captured frames have no retained entry; an association with no native links
+returns an empty page. All returned cursors/sequences are decimal strings. Both reads default to
+30 records and allow up to 200; the History Service reports stale projection references.
 
-`GET /threads/{thread_id}/observations` reads the original archive,
-including semantic observations, unlinked native frames, stderr, and debug checkpoints.
-With no cursor it selects the latest 30 records. Supply either exclusive `before_cursor`
-or `after_cursor` to page older or newer; responses remain in chronological order and
-provide both continuation cursors. The limit is a record count (1–200), with no body
-truncation. Reads seek through the archive primary key and retain only the selected page.
-Raw source/sequence identities do not depend on the current projection epoch. This read
-requires the same app identity and is intended for explicit debug inspection.
+`GET /upstream/history/v1/sessions/{session_id}/observations` reads the original archive,
+including semantic observations, unlinked native frames, stderr, and debug checkpoints. The
+generated response includes the History watermark and settled ranges, so the browser can page in
+either direction while preserving 64-bit cursors. The limit is a record count (1–200), with no
+body truncation. Reads seek through the archive primary key and retain only the selected page.
+Raw source/sequence identities do not depend on the current projection epoch. This read is
+intended for explicit debug inspection.
 
 Command evidence stays attached to the stable admission position when a later observation
 settles it, including shared input confirmations and lifecycle effects.
 
 ## Notification diagnostics
 
-An operator can open the read-only Notifications drawer from a Thread (filtered to its runner
-session) or a Sandbox (all its sessions). The app's authenticated BFF resolves the live Sandbox
-incarnation and follows the Notification Service's UID-pinned, bounded-summary `NotificationsOperator`
-watch ([`notifications_operator.proto`](../notification_service/notifications_operator.proto)) over gRPC with its
-own rotating audience-scoped service token, relaying each snapshot to the browser as an SSE `snapshot` event in
-the proto3 JSON form. It shows the first 100 retained entries after
-acknowledgement (provider, cursor, time, and curated lifecycle/event summary), with a truncation
-indicator. It never sends that token or raw provider payloads to the browser, and requires a
-browser operator login, not merely a workload bearer admitted elsewhere in the app. No inspection acknowledges an entry or changes a subscription. The drawer refreshes
-only while open and labels an unavailable backend or retained snapshot explicitly.
+The Notifications drawer follows the Notification Service's generated Session-addressed inbox,
+entry-summary and subscription watches for the loaded Threads. The app authenticates the browser
+operator and proxies each generated gRPC/HTTP route with its rotating service-account token. The
+browser consumes generated protobuf types. Summaries include the first 100 retained unacknowledged
+entry identities and safe lifecycle fields, never provider payloads; inspection changes nothing.
 
-Each listed thread whose live inboxes hold entries the agent has not acknowledged gets a badge
-counting them, whether they still wait for a notice or a notice delivered them (the tooltip tells
-which, with the debounce's estimated due time). The badge is muted gray, soft red while delivery
-fails; an empty inbox shows none. `/threads/notices/stream` relays the Notification Service's `WatchSessionNotices` for the listed thread IDs
-(a Thread's ID is its Session's) under the same operator-login and service-token rules; a disconnected stream dims the last badges. Following it
-acknowledges nothing.
+Thread badges follow each listed Session's inbox watch and distinguish entries awaiting a notice
+from those delivered but not acknowledged. A disconnected watch dims the last known badge.

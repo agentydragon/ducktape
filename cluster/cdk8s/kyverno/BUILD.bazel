@@ -33,7 +33,6 @@ py_library(
     srcs = ["policies.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":proxy_injection",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
@@ -45,24 +44,13 @@ py_library(
 )
 
 py_library(
-    name = "proxy_injection",
-    srcs = ["proxy_injection.py"],
-    visibility = ["//cluster/cdk8s/kyverno:__pkg__"],
-    deps = [
-        "//cluster/cdk8s/providers/kyverno:cluster_policy",
-        "//cluster/cdk8s/providers/kyverno:clusterpolicy",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_library(
     name = "apply",
     testonly = True,
     srcs = ["apply.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -73,10 +61,9 @@ py_library(
     deps = [
         ":apply",
         ":policies",
-        ":proxy_injection",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -91,7 +78,9 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:namespaces",
+        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -109,6 +98,8 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -128,6 +119,8 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -144,23 +137,8 @@ py_test(
     deps = [
         ":apply",
         ":test_support",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_proxy_injection",
-    srcs = ["test_proxy_injection.py"],
-    data = [
-        "testdata/pod_self_wired_egress_proxy.yaml",
-        "@multitool//tools/kyverno",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":apply",
-        ":test_support",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

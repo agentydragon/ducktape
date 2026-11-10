@@ -13,6 +13,7 @@ def nix_cache(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
+    piraeus_cluster: Kustomization,
 ) -> Kustomization:
     name = "nix-cache"
     return flux_kustomization(
@@ -20,5 +21,7 @@ def nix_cache(
         name,
         directory,
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, seaweedfs_operator),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg, external_secrets_operator, seaweedfs_operator, piraeus_cluster
+        ),
     )

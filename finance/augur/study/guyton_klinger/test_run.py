@@ -8,13 +8,14 @@ arithmetic, taxes included; proxy rounding is bounded, never folded into the exp
 import json
 import subprocess
 import textwrap
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.results import Finished, Rollout
@@ -22,7 +23,6 @@ from finance.augur.study.guyton_klinger.panel import Sleeve, load_panel
 from finance.augur.study.guyton_klinger.paths import ADAPTATION_TARGET_PERCENT, CURRENCY, AnnualWindows, annual_windows
 from finance.augur.study.guyton_klinger.policy import Cell, Guardrail, Inflation, Stage
 from finance.augur.study.guyton_klinger.run import Records, YearAmounts, YearRecordView, run
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 HEADER = "year,cash_income,bonds_income,bonds_price,equity_income,equity_price,inflation"
 # Window 2001: every sleeve +10% then 0%. Window 2003: cash +5% then 0%, the other sleeves
@@ -117,18 +117,22 @@ def test_selected_replay_returns_the_original_paths(windows: AnnualWindows) -> N
         assert (row.summary, row.stop) == (population[row.rollout_id].summary, population[row.rollout_id].stop)
 
 
-def cli(output: Path, *args: str | Path) -> None:
-    subprocess.run(
-        [
-            get_required_path(own_repo_rlocation("finance/augur/study/guyton_klinger/run_bin")),
-            *args,
-            *("--output-dir", output),
-        ],
-        check=True,
-    )
+@pytest.fixture(scope="module")
+def cli_binary(runfiles: Runfiles) -> Path:
+    return runfiles.root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"
 
 
-def test_cli_replays_reordered_start_years_from_a_panel_file(tmp_path: Path, panel_path: Path) -> None:
+@pytest.fixture
+def cli(cli_binary: Path) -> Callable[..., None]:
+    def run(output: Path, *args: str | Path) -> None:
+        subprocess.run([cli_binary, *args, "--output-dir", output], check=True)
+
+    return run
+
+
+def test_cli_replays_reordered_start_years_from_a_panel_file(
+    cli: Callable[..., None], tmp_path: Path, panel_path: Path
+) -> None:
     output = tmp_path / "study"
     cli(
         output,
@@ -171,7 +175,7 @@ def untaxed(withdrawal: int) -> YearAmounts:
     return YearAmounts(withdrawal=withdrawal, federal_tax=0, california_tax=0, tax=0, spendable=withdrawal)
 
 
-def test_cli_records_a_freeze_and_a_prosperity_raise(tmp_path: Path) -> None:
+def test_cli_records_a_freeze_and_a_prosperity_raise(cli: Callable[..., None], tmp_path: Path) -> None:
     panel = tmp_path / "guardrails.csv"
     panel.write_text(GUARDRAILS)
     output = tmp_path / "study"
@@ -224,7 +228,7 @@ def test_cli_records_a_freeze_and_a_prosperity_raise(tmp_path: Path) -> None:
     assert wealth(rollout, 36) == dollars("1495")
 
 
-def test_cli_runs_the_generated_placeholder_panel(tmp_path: Path) -> None:
+def test_cli_runs_the_generated_placeholder_panel(cli: Callable[..., None], tmp_path: Path) -> None:
     output = tmp_path / "study"
     cli(
         output,
@@ -257,7 +261,9 @@ TAXED = textwrap.dedent(
 )
 
 
-def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(tmp_path: Path) -> None:
+def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(
+    cli: Callable[..., None], tmp_path: Path
+) -> None:
     panel = tmp_path / "taxed.csv"
     panel.write_text(TAXED)
     common = ("--panel", panel, "--years", "2", "--initial-wealth", "1000000", "--initial-rate", "0.05")
@@ -345,7 +351,7 @@ INDEXED = textwrap.dedent(
     ],
 )
 def test_cpi_indexed_tables_carry_the_law_years_brackets_to_each_windows_price_level(
-    tmp_path: Path, tax_law: str, federal_tax: list[str]
+    cli: Callable[..., None], tmp_path: Path, tax_law: str, federal_tax: list[str]
 ) -> None:
     panel = tmp_path / "indexed.csv"
     panel.write_text(INDEXED)
@@ -367,11 +373,13 @@ def test_cpi_indexed_tables_carry_the_law_years_brackets_to_each_windows_price_l
         pytest.param(("--taxes", "none", "--tax-law", "cpi-indexed"), id="untaxed-with"),
     ],
 )
-def test_cli_requires_a_tax_law_exactly_when_taxed(tmp_path: Path, panel_path: Path, taxes: tuple[str, ...]) -> None:
+def test_cli_requires_a_tax_law_exactly_when_taxed(
+    cli_binary: Path, tmp_path: Path, panel_path: Path, taxes: tuple[str, ...]
+) -> None:
     with pytest.raises(subprocess.CalledProcessError) as failure:
         subprocess.run(
             [
-                get_required_path(own_repo_rlocation("finance/augur/study/guyton_klinger/run_bin")),
+                cli_binary,
                 *("--panel", panel_path, "--years", "2", "--initial-wealth", "100", "--initial-rate", "0.1"),
                 *("--output-dir", tmp_path / "unwritten"),
                 *taxes,
@@ -397,7 +405,9 @@ DEFLATED = textwrap.dedent(
 )
 
 
-def test_initial_wealth_in_one_years_dollars_deflates_to_each_windows_start(tmp_path: Path) -> None:
+def test_initial_wealth_in_one_years_dollars_deflates_to_each_windows_start(
+    cli: Callable[..., None], tmp_path: Path
+) -> None:
     panel = tmp_path / "deflated.csv"
     panel.write_text(DEFLATED)
     output = tmp_path / "study"

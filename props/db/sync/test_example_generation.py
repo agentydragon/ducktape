@@ -14,6 +14,10 @@ from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import FileSet, FileSetMember
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 def test_recall_denominator_counts_at_occurrence_level(synced_db: Database):
     """Regression: recall_denominator must count at the occurrence level, not TP level.

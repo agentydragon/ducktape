@@ -24,6 +24,10 @@ from finance.plaid.spend.reconciliation import (
 )
 
 
+class _AllowanceModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class Kind(StrEnum):
     FLEXIBLE = "flexible"
     FIXED = "fixed"
@@ -75,10 +79,8 @@ type TransactionPeriodId = Literal[PeriodId.CREDIT_CYCLE, PeriodId.ROLLING_7D, P
 type EstimatePeriodId = Literal[PeriodId.ROLLING_7D, PeriodId.ROLLING_30D]
 
 
-class Period(BaseModel):
+class Period(_AllowanceModel):
     """Inclusive calendar dates for a spend, pace, or forecast report."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: PeriodId
     start: date_type
@@ -89,35 +91,27 @@ class Period(BaseModel):
         return cls(id=period_id, start=period_id.start(today, cycle_start), end=today)
 
 
-class UnmatchedCharges(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class UnmatchedCharges(_AllowanceModel):
     count: int
     amount_minor_units: int
 
 
-class AllowanceSpendPeriod(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+class AllowanceSpendPeriod(_AllowanceModel):
     period: Period
     counted_from: date_type = Field(description="Allowance spend starts no earlier than activation.")
     spend_minor_units: int
 
 
-class RecordedPacePeriod(BaseModel):
+class RecordedPacePeriod(_AllowanceModel):
     """Positive recorded purchases can include history before allowance activation."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     period: Period
     observed_daily_minor_units: int | None
     unmatched_charges: UnmatchedCharges | None = None
 
 
-class ForecastView(BaseModel):
+class ForecastView(_AllowanceModel):
     """Burst-adjusted estimate with the period that supplied its purchase history."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     basis_period: Period
     daily_pace_minor_units: int | None
@@ -126,43 +120,37 @@ class ForecastView(BaseModel):
     alert_state: PaceAlert
 
 
-class NamePrefix(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class NamePrefix(_AllowanceModel):
     type: Literal["name_prefix"] = "name_prefix"
     field: Literal["name", "merchant_name"]
     prefix: str = Field(min_length=2)
 
 
-class NameContains(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class NameContains(_AllowanceModel):
     type: Literal["name_contains"] = "name_contains"
     field: Literal["name", "merchant_name"]
     substring: str = Field(min_length=2)
 
 
-class CategoryExact(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class CategoryExact(_AllowanceModel):
     type: Literal["category_exact"] = "category_exact"
     field: Literal["pfc_primary", "pfc_detailed"]
     value: str = Field(min_length=2)
 
 
-class AmountExact(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class AmountExact(_AllowanceModel):
     type: Literal["amount_exact"] = "amount_exact"
     value: str = Field(pattern=r"^-?\d+(\.\d{1,4})?$")
 
 
-class AmountSign(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class AmountSign(_AllowanceModel):
     type: Literal["amount_sign"] = "amount_sign"
     sign: Literal["negative", "zero", "positive"]
 
 
-class DateRange(BaseModel):
+class DateRange(_AllowanceModel):
     """Inclusive Plaid transaction-date bounds for a historical or one-off match."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["date_range"] = "date_range"
     start: date_type | None = Field(default=None, description="Inclusive first Plaid transaction date to match.")
     end: date_type | None = Field(default=None, description="Inclusive last Plaid transaction date to match.")
@@ -176,15 +164,13 @@ class DateRange(BaseModel):
         return self
 
 
-class FieldExact(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class FieldExact(_AllowanceModel):
     type: Literal["field_exact"] = "field_exact"
     field: Literal["name", "merchant_name", "account_type", "merchant_category_code"]
     value: str | bool
 
 
-class CounterpartyExact(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class CounterpartyExact(_AllowanceModel):
     type: Literal["counterparty_exact"] = "counterparty_exact"
     counterparty_type: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -228,14 +214,12 @@ type SimpleCondition = (
 )
 
 
-class AnyOf(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class AnyOf(_AllowanceModel):
     type: Literal["any_of"] = "any_of"
     conditions: list[Annotated[SimpleCondition, Field(discriminator="type")]] = Field(min_length=2)
 
 
-class AllOf(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class AllOf(_AllowanceModel):
     type: Literal["all_of"] = "all_of"
     conditions: list[Annotated[SimpleCondition | AnyOf, Field(discriminator="type")]] = Field(min_length=2)
 
@@ -272,7 +256,7 @@ class RuleScope(StrEnum):
     ONE_OFF = "one_off"
 
 
-class Rule(BaseModel):
+class Rule(_AllowanceModel):
     """One classification decision: a condition and the kind it assigns.
 
     Every decision is the same object, and precedence is its position in `AllowancePolicy.rules`: the first
@@ -282,8 +266,6 @@ class Rule(BaseModel):
     accounting -- and a one-off addresses a transaction by a bounded match rather than by Plaid transaction
     id, because relinking an account rewrites those ids and silently dangles any id-addressed correction.
     """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     condition: Annotated[Condition, Field(discriminator="type")]
     kind: Kind
@@ -320,10 +302,8 @@ class Rule(BaseModel):
         return self
 
 
-class ReversalPair(BaseModel):
+class ReversalPair(_AllowanceModel):
     """An asserted full reversal, addressed by two bounded, uniquely matching selectors."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str = Field(min_length=3, max_length=60, pattern=r"^[a-z0-9][a-z0-9._/-]*$")
     description: str = Field(min_length=1, max_length=240)
@@ -354,8 +334,7 @@ class AnalysisCategory(BaseModel):
         return value
 
 
-class AllowancePolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class AllowancePolicy(_AllowanceModel):
     monthly_minor_units: int = Field(gt=0)
     activation_at: date_type
     spending_account_ids: set[str] = Field(min_length=1)
@@ -488,11 +467,11 @@ class TransactionDecision:
         return self.rule.kind if self.rule is not None else None
 
 
-class AllowanceView(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+class AllowanceView(_AllowanceModel):
     status: Status
     currency: str
     monthly_minor_units: int
+    daily_reference_minor_units: int
     activation_at: date_type
     time_zone: str
     available_minor_units: int | None
@@ -515,6 +494,11 @@ class AllowanceView(BaseModel):
 class AllowanceCalculation:
     view: AllowanceView
     reconciliation: ReconciliationReport
+
+
+def daily_reference(monthly_minor_units: int) -> Decimal:
+    """Return the unrounded monthly-credit-equivalent daily rate in minor units."""
+    return Decimal(monthly_minor_units) * 12 / Decimal("365.2425")
 
 
 def month_anniversary(start: datetime, months: int) -> datetime:
@@ -982,7 +966,7 @@ def calculate(
         if projected_end < 0
         else PaceAlert.NORMAL
     )
-    reference_rate = Decimal(policy.monthly_minor_units) * 12 / Decimal("365.2425")
+    reference_rate = daily_reference(policy.monthly_minor_units)
     basis_observed = next(
         period.observed_daily_minor_units for period in recorded_pace_periods if period.period.id == forecast_basis
     )
@@ -1003,6 +987,7 @@ def calculate(
         status=Status.ACTIVE,
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
+        daily_reference_minor_units=round_minor_units(reference_rate, precision=0),
         activation_at=policy.activation_at,
         time_zone=zone.key,
         available_minor_units=available,

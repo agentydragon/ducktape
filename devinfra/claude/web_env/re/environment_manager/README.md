@@ -12,13 +12,14 @@ Go-based orchestration service that manages Claude Code web container sessions.
 
 ## Target Binary
 
-The reconstructed source under `src/` reflects the binary described in this
-table (`0b86a2a0`, `release-1186d93b9-ext`). A newer live build,
-`release-ba76006550-ext`, was captured to `reference/environment-manager.gz`
-on 2026-09-12 and is **not yet reconciled** — see `../TODO.md`. That build
-ships with **no ELF Build ID note at all** (`readelf -n` finds nothing),
-where every prior build had one; the table below stays pinned to `0b86a2a0`
-until the reconstruction pass runs against the new build.
+This README records evidence for binary `0b86a2a0` (`release-1186d93b9-ext`). The checked-in `src/`
+corpus is a reconstruction based on the `a6f96673` DWARF extraction carried forward to `495ea204`,
+with selected `RE(0b86a2a0)` annotations; it is not a verified source mirror of the pinned binary.
+
+A newer live build, `release-ba76006550-ext`, was captured to `reference/environment-manager.gz` on
+2026-09-12 and is **not yet reconciled** — see `../TODO.md`. That build ships with **no ELF Build ID
+note at all** (`readelf -n` finds nothing), where every prior build had one; the table below stays
+pinned to `0b86a2a0` until the reconstruction pass runs against the new build.
 
 | Property           | Value                                                                                                                      |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -71,147 +72,15 @@ is `environment-runner`. All CLI examples in strings use `environment-runner`.
 
 ## Source Tree
 
-The original Go module lives at
-`github.com/anthropics/anthropic/api-go/environment-manager`.
+The original Go module lives at `github.com/anthropics/anthropic/api-go/environment-manager`.
 
-The file layout below came from DWARF debug info in a much older build that
-shipped with symbols; current binaries have none, and garble randomizes
-filenames per function so the real layout is no longer recoverable (see
-<degarble*map.md>). Treat the \_file names* as historical and the _package
-structure_ as current — package boundaries and their contents are re-verified
-against each binary via the recovered symbol table. Entries marked `REMOVED`
-are confirmed absent from the current binary.
-
-```
-main.go                                         # Entry point: Cobra root command + Version
-cmd/
-  cmd_code_sign.go                              # Code-sign subcommand
-  cmd_orchestrator.go                           # Full session lifecycle orchestrator
-  cmd_poll.go                                   # Work polling loop
-  cmd_print_sandbox_settings.go                 # Print sandbox config as JSON
-  cmd_setup.go                                  # Environment setup (install deps)
-  cmd_task_run.go                               # Execute a single task
-  utils.go                                      # Shared CLI helpers
-internal/
-  api/
-    ccr_backend.go                              # CCR v2 backend (RegisterWorker, WorkerEpoch)
-    client.go                                   # HTTP client with auth
-    get_session_context.go                      # Fetch session context from API
-    noop_backend.go                             # No-op backend for setup-only mode
-    retry.go                                    # Retry logic with backoff
-    session_ingress_backend.go                  # Session ingress backend
-    session_ingress_client.go                   # Session event ingress client
-    session_ingress_types.go                    # Ingress event types
-    work_client.go                              # Work poll/acknowledge client
-  auth/
-    context.go                                  # Auth context (API token, OAuth, session ID)
-    github_source_provider.go                   # GitHub App auth for source repos
-  claude/
-    claude_code_executor.go                     # Execute Claude Code CLI
-    config_helpers.go                           # Claude config file manipulation
-    init.go                                     # Claude Code init (first run)
-    install.go                                  # Install/upgrade Claude Code via npm
-    outcomes.go                                 # Parse Claude Code outcomes
-    session_urls.go                             # Session URL builder
-  config/
-    config.go                                   # Session/source/environment config types
-    session_mode.go                             # Session mode enum
-  envtype/
-    envtype.go                                  # Environment type interface
-    anthropic/
-      anthropic.go                              # Anthropic-managed environment type
-      config.go                                 # Anthropic env config
-      install_scripts/
-        scripts.go                              # Embedded language install scripts
-    byoc/
-      byoc.go                                   # BYOC (Bring Your Own Cloud) environment
-    shared/                                     # Shared embedded content (settings, hooks)
-  gitproxy/
-    handler.go                                  # Git HTTP handler (smart protocol)
-    manager.go                                  # Git proxy lifecycle manager
-    server.go                                   # Git proxy HTTP server
-  input/
-    parser.go                                   # Input parser interface
-    secret.go                                   # Work secret decoding
-    v0_parser.go                                # V0 input format parser
-    v1_parser.go                                # V1 input format parser
-  logger/
-    file_logger.go                              # File-based slog handler
-    log_writer.go                               # io.Writer to slog bridge
-    multi_handler.go                            # Fan-out slog handler
-  manager/
-    manager.go                                  # Top-level session manager
-    mcp.go                                      # MCP server management
-    skill_extraction.go                         # Skill extraction from repos
-    tunnel_register.go                          # Tunnel registration
-  mcp/
-    registry.go                                 # MCP server registry
-    server.go                                   # Base MCP server
-    servers/codesign/
-      registration.go                           # Code-sign MCP registration
-      server.go                                 # Code-sign MCP server
-      sign_operations.go                        # Signing operations
-      types.go                                  # Code-sign type definitions
-    servers/supabase/                           # REMOVED
-      client.go                                 # REMOVED - Supabase REST client
-      functions.go                              # REMOVED - Function deploy
-      registration.go                           # REMOVED - MCP registration
-      server.go                                 # REMOVED - MCP server
-  o11y/
-    discard_o11y_service.go                     # No-op observability
-    metric_types.go                             # Metric type definitions
-    metrics.go                                  # Metric recording helpers
-    o11y_service.go                             # Observability service interface
-    otel_logging.go                             # OTel log exporter init
-    otel_metrics.go                             # OTel metric exporter init
-    util.go                                     # O11y utilities
-    diag/
-      cc_log_collector.go                       # Claude Code log collector
-      diag_logs.go                              # Diagnostic log service
-  orchestrator/
-    hooks.go                                    # Orchestrator lifecycle hooks
-    orchestrator.go                             # Main orchestrator loop
-    poll_hook.go                                # Polling hook implementation
-    poller.go                                   # Work poller
-    whoami.go                                   # /v1/environments/whoami client
-  podmonitor/
-    lease_manager.go                            # Container lease heartbeat manager
-  process/
-    process.go                                  # Process execution via process_api WS
-    script.go                                   # Script execution helpers
-  sandbox/
-    config.go                                   # Sandbox config validation
-    install.go                                  # Sandbox runtime installation
-    runtime.go                                  # Sandbox runtime wrapper
-  session/
-    session_activity_recorder.go                # Session activity recording
-    noop_activity_recorder.go                   # No-op activity recorder
-  sources/
-    git.go                                      # Git source handler (clone/fetch)
-    sources.go                                  # Source handler manager
-  tunnel/
-    client.go                                   # Tunnel WebSocket/gRPC client
-    handler.go                                  # HTTP tunnel handler
-    ws_handler.go                               # WebSocket tunnel handler
-    actions/
-      registry.go                               # Tunnel action registry
-      deploy/
-        action.go                               # Deploy action (filestore-based)
-        antspace.go                             # REMOVED
-        vercel.go                               # REMOVED
-      snapshot/
-        action.go                               # Snapshot action
-      status/
-        action.go                               # Status action
-  util/
-    git.go                                      # Git helper utilities
-    lockfile.go                                 # File-based advisory locking
-    net.go                                      # Network utilities
-    periodic_invoker.go                         # Periodic task runner
-    retry.go                                    # Retry with backoff
-    stream.go                                   # Stream utilities
-    tailer.go                                   # File tailer
-```
+Garble randomizes application filenames per function, so DWARF names from older builds cannot
+recover current source-file boundaries
+([method](degarble_map.md#what-does-not-work-recovering-file-boundaries)). Use the [Build-ID
+`0b86a2a0` package map](degarble_map.md#application-packages) for binary package attribution; it
+does not cover the unreconciled newer capture. `src/` is the reconstruction described above, not a
+recovered source tree or proof of runtime parity. The `495ea204` removals/additions remain
+summarized in [Reconstruction Status](#reconstruction-status) and `BINDIFF_RESULTS.md`.
 
 ## CLI Commands
 
@@ -331,183 +200,67 @@ Generates shell completion scripts (bash, zsh, fish, PowerShell).
 
 ## Architecture
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    environment-manager                          │
-│                                                                │
-│  ┌─────────────────────────┐   ┌────────────────────────────┐  │
-│  │     Cobra CLI           │   │     Orchestrator           │  │
-│  │  setup | orchestrator   │──►│  lease mgmt, setup,        │  │
-│  │  task-run | poll        │   │  session loop, shutdown    │  │
-│  │  print-... | completion │   └────────────┬───────────────┘  │
-│  └─────────────────────────┘                │                  │
-│                                             ▼                  │
-│  ┌──────────────┐  ┌───────────┐  ┌─────────────────────┐     │
-│  │  Manager     │  │  Sources  │  │  Claude Code        │     │
-│  │  session     │  │  git      │  │  install/upgrade    │     │
-│  │  lifecycle   │  │  clone    │  │  execute via        │     │
-│  │              │  │  fetch    │  │  process_api WS     │     │
-│  └──────┬───────┘  └─────┬────┘  └──────────┬──────────┘     │
-│         │                │                   │                 │
-│  ┌──────▼───────┐  ┌─────▼────┐  ┌──────────▼──────────┐     │
-│  │  Sandbox     │  │ Git      │  │  process_api        │     │
-│  │  Runtime     │  │ Proxy    │  │  WebSocket client   │     │
-│  │  wrapper     │  │ HTTP     │  │  (port 2024)        │     │
-│  └──────────────┘  └──────────┘  └─────────────────────┘     │
-│                                                                │
-│  ┌──────────────┐  ┌───────────┐  ┌─────────────────────┐     │
-│  │  Tunnel      │  │  MCP      │  │  Observability     │     │
-│  │  WS + HTTP   │  │  servers  │  │  OTel + DataDog    │     │
-│  │  gRPC proto  │  │  codesign │  │  diag logs         │     │
-│  └──────────────┘  └───────────┘  └─────────────────────┘     │
-│                                                                │
-│  ┌──────────────┐  ┌───────────┐  ┌─────────────────────┐     │
-│  │  Auth        │  │  Config   │  │  Pod Monitor       │     │
-│  │  API token   │  │  session  │  │  lease heartbeat   │     │
-│  │  OAuth       │  │  sources  │  │  health file       │     │
-│  │  GitHub App  │  │  env type │  │                    │     │
-│  └──────────────┘  └───────────┘  └─────────────────────┘     │
-└────────────────────────────────────────────────────────────────┘
-```
+For the `0b86a2a0` package map, see [`degarble_map.md`](degarble_map.md#application-packages); for
+the companion process service, see [process_api RE](../process_api/README.md).
 
 ## Package Analysis
 
-### Core Lifecycle (`cmd/`, `internal/manager/`, `internal/orchestrator/`)
+The source links below navigate the reconstruction only; they do not establish exact parity with
+Build ID `0b86a2a0`. For binary package attribution and per-build names, use
+[`degarble_map.md`](degarble_map.md#application-packages).
 
-The orchestrator is the central loop:
-
-1. **Setup phase**: Install Claude Code + Sandbox Runtime, configure languages
-2. **Lease acquisition**: Obtain container lease via API, start heartbeat
-3. **Session loop**: Wait for work → process session → report results → repeat
-4. **Shutdown**: Graceful on SIGTERM/SIGINT, kill processes, release lease
-
-The `manager` package ties together environment type, sources, Claude execution,
-MCP servers, and tunnel registration.
-
-### Process Execution (`internal/process/`)
-
-Communicates with `process_api` over WebSocket (port 2024) to spawn and manage
-child processes. Uses the same protocol documented in
-<../process_api/README.md>.
-
-Key functions:
-
-- `Execute()` — spawn a process via `CreateProcess`, stream I/O
-- `ExecuteScript()` — run a shell script
-- `streamPipe()` — bidirectional stdin/stdout/stderr forwarding
-
-### Claude Code Management (`internal/claude/`)
-
-- **Installation**: `npm install -g @anthropic-ai/claude-code@<version>`
-- **Upgrade**: `claude update` CLI or reinstall via npm
-- **Initialization**: `claude init` for first-run setup
-- **Execution**: Invoke Claude Code with session context, capture outcomes
-- **Token injection**: Pass API token via file descriptor (not env var)
-- **Version checking**: Compare installed vs requested version
-
-### Source Management (`internal/sources/`, `internal/gitproxy/`)
-
-- **Git handler**: Clone repositories, fetch updates, checkout branches
-- **Git proxy**: HTTP server implementing Git smart protocol, with JWT auth
-  from GitHub App tokens. Validates git paths, sanitizes errors.
-- **Source processing**: Iterate over session sources, clone/fetch each
-
-### Sandbox (`internal/sandbox/`)
-
-- **Config validation**: Validate sandbox settings (allowed domains, network rules)
-- **Installation**: `npm install -g @anthropic-ai/sandbox-runtime@<version>`
-- **Runtime wrapper**: Wrap Claude Code execution in sandbox
-- **Domain matching**: Check if domains match allow patterns
-
-### Tunnel System (`internal/tunnel/`)
-
-Bidirectional HTTP/WebSocket tunneling using gRPC + protobuf
-(`anthropic.sessions.tunnel.v1alpha`):
-
-- **Client**: WebSocket + gRPC tunnel client
-- **HTTP handler**: Forward HTTP requests from tunnel to local services
-- **WS handler**: Forward WebSocket connections through tunnel
-- **Deploy action**: Deployment through tunnel using filestore-based mechanism
-  (`filestore_url`, `filesystem_id` fields). **Note:** Vercel and Antspace
-  backends were removed.
-- **Snapshot action**: Project state snapshot (file listings, git status)
-- **Status action**: Health check (port validation, "ok" response)
-
-Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
-`HTTPTunnelResponseHeaders`, `WSTunnelOpen`, `WSTunnelClose`,
-`WSTunnelMessage`, `WSTunnelOpened`, `WSTunnelError`.
-
-### MCP Servers (`internal/mcp/`)
-
-- **Registry**: Register/unregister MCP servers with Claude Code
-- **Base server**: Common MCP server infrastructure (using `mcp-go` v0.37.0)
-- **Code-sign server**: GPG/SSH code signing via MCP tool calls
-- **Supabase server**: REMOVED in 495ea204 (was: database provisioning,
-  migrations, function deploy, type generation)
-
-### Authentication (`internal/auth/`)
-
-- `AuthContext`: Holds API token (Anthropic), OAuth token, session ID,
-  session ingress token. **Note:** Vercel deploy token, Antspace control plane
-  URL + auth token, and Supabase credentials were removed.
-- `GitHubSourceAuthProvider`: GitHub App authentication for source repos
-
-### Environment Types (`internal/envtype/`)
-
-Two environment types:
-
-- **`anthropic`**: Anthropic-managed infrastructure. Copies install scripts
-  from embedded filesystem, manages language installations.
-- **`byoc`**: Bring Your Own Cloud. Customer-managed infrastructure with
-  custom auth round-tripper (`containProvideAuthRoundTripper`).
-
-### Observability (`internal/o11y/`)
-
-Dual exporter: OpenTelemetry (OTLP HTTP) + DataDog StatsD.
-
-Metrics include: `env_manager.claude_install`, `env_manager.language_setup`,
-`env_manager.env_init`, `claude_code_start`, `claude_code_end`,
-`orchestrator.timeout.count`, `tunnel_connect_start`,
-`tunnel_connect_retry_wait`, `heartbeat_successful`.
-
-### Pod Monitor (`internal/podmonitor/`)
-
-Lease-based container lifecycle:
-
-- **Heartbeat**: Periodic POST to session endpoint to extend lease
-- **Health file**: Write health status to `/tmp` for external monitoring
-- **Stop API**: Call environment stop endpoint on shutdown
+- **Lifecycle** — [`manager.go`](src/internal/manager/manager.go) composes environment type,
+  sources, Claude, MCP and tunnel registration;
+  [`orchestrator.go`](src/internal/orchestrator/orchestrator.go) runs setup, lease/heartbeat,
+  work/session loop and signal shutdown, including process cleanup and lease release.
+- **Process** — [`process.go`](src/internal/process/process.go),
+  [`script.go`](src/internal/process/script.go): `Execute`, `ExecuteScript` and
+  stream forwarding use the `process_api` WebSocket on port 2024; protocol details: [process_api
+  RE](../process_api/README.md).
+- **Claude** — [`claude_code_executor.go`](src/internal/claude/claude_code_executor.go):
+  install/upgrade, first-run init, version check and outcome capture; session ingress token passes
+  by file descriptor, not argv or environment. Install with
+  `npm install -g @anthropic-ai/claude-code@<version>`, upgrade with `claude update` or npm
+  reinstall, and initialize with `claude init`.
+- **Sources and Git proxy** — [`git.go`](src/internal/sources/git.go),
+  [`handler.go`](src/internal/gitproxy/handler.go): clone/fetch/checkout; proxy JWT or direct GitHub token authentication via
+  [`GitHubSourceAuthProvider`](src/internal/auth/github_source_provider.go); Git protocol path
+  validation and auth-token redaction in errors.
+- **Sandbox** — [`runtime.go`](src/internal/sandbox/runtime.go),
+  [`config.go`](src/internal/sandbox/config.go): sandbox-runtime wrapper and
+  allowed-domain/network-rule validation; installation uses
+  `npm install -g @anthropic-ai/sandbox-runtime@<version>`.
+- **Tunnel** — [`tunnel.proto`](src/internal/tunnel/tunnelpb/tunnel.proto),
+  [`deploy/action.go`](src/internal/tunnel/actions/deploy/action.go): HTTP/WebSocket tunnel,
+  snapshot/status actions and `anthropic.sessions.tunnel.v1alpha`; deploy uses `filestore_url` and
+  `filesystem_id`. Recorded protocol names: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
+  `HTTPTunnelResponseHeaders`, `WSTunnelOpen`, `WSTunnelClose`, `WSTunnelMessage`,
+  `WSTunnelOpened`, `WSTunnelError`. The reconstruction uses shorter response/WebSocket variant
+  names; its naming does not establish the pinned binary's names.
+- **MCP and auth** — [`internal/mcp/README.md`](src/internal/mcp/README.md),
+  [`context.go`](src/internal/auth/context.go): `AuthContext` holds API/OAuth tokens, Session ID,
+  session-ingress token and JWT; MCP tools provide GPG/SSH code signing.
+  Supabase/Vercel/Antspace removals and related credential removals are listed below.
+- **Environment types** — [`anthropic.go`](src/internal/envtype/anthropic/anthropic.go),
+  [`byoc.go`](src/internal/envtype/byoc/byoc.go): Anthropic-managed install scripts versus BYOC and
+  its `containProvideAuthRoundTripper`.
+- **Observability** — [`metrics.go`](src/internal/o11y/metrics.go),
+  [`otel_metrics.go`](src/internal/o11y/otel_metrics.go): OTLP HTTP and DataDog StatsD. Recorded
+  metric names: `env_manager.claude_install`, `env_manager.language_setup`, `env_manager.env_init`,
+  `claude_code_start`, `claude_code_end`, `orchestrator.timeout.count`, `tunnel_connect_start`,
+  `tunnel_connect_retry_wait`, `heartbeat_successful`.
+- **Pod monitor** — [`lease_manager.go`](src/internal/podmonitor/lease_manager.go): periodic lease
+  heartbeat, `/tmp` health status and environment stop API on shutdown.
 
 ## Embedded Content
 
-### Language Install Scripts
-
-Three bash scripts embedded via Go `embed.FS` in
-`internal/envtype/anthropic/install_scripts/`:
-
-| Script                       | Purpose                                    |
-| ---------------------------- | ------------------------------------------ |
-| `install_python.sh` (2.4 KB) | Set up Python version symlinks             |
-| `install_node.sh` (3.3 KB)   | Set up Node.js version symlinks            |
-| `install_go.sh` (6.8 KB)     | Set up Go version symlinks and environment |
-
-These scripts configure language runtimes that are pre-installed in the
-container image (under `/opt/nodeNN/`, `/usr/local/goX.Y.Z/`, etc.) by
-creating appropriate symlinks.
-
-### Claude Code Hook Templates
-
-The binary contains embedded templates for session-start and stop hooks
-(the "session-start hook skill"), including:
-
-- `stop-hook-baku.sh` — checks for Vite dev server errors and uncommitted changes
-- `stop-hook-git-check.sh` — checks for uncommitted/unpushed changes
-- `session-start.sh` — dependency installation hook template
-
-### Cobra Shell Completions
-
-Full shell completion scripts for bash, zsh, fish, and PowerShell are embedded
-via Cobra's built-in completion generation.
+- Language scripts (sizes are from the binary inventory): `install_python.sh` (2.4 KB),
+  `install_node.sh` (3.3 KB), `install_go.sh` (6.8 KB); they symlink to runtimes pre-installed in
+  the image (`/opt/nodeNN/`, `/usr/local/goX.Y.Z/`).
+- Hook templates: `stop-hook-baku.sh` checks Vite errors and uncommitted changes;
+  `stop-hook-git-check.sh` checks uncommitted/unpushed changes; `session-start.sh` is the
+  dependency-install hook template.
+- Cobra completion scripts are embedded for bash, zsh, fish and PowerShell.
 
 ## Dependencies
 
@@ -586,15 +339,15 @@ strings devinfra/claude/web_env/reference/environment-manager | sort -u
 
 ## Key Differences from process_api RE
 
-| Aspect       | process_api           | environment-manager                       |
-| ------------ | --------------------- | ----------------------------------------- |
-| Language     | Rust                  | Go                                        |
-| Debug info   | Stripped              | garble-obfuscated (no DWARF, no syms)     |
-| Functions    | ~30 application       | Unknown (symbols randomized)              |
-| Source files | 10 files (decompiled) | 78 files (from previous DWARF version)    |
-| Complexity   | ~4,600 LoC            | ~17,800 LoC (reconstructed from a6f96673) |
-| RE approach  | Ghidra decompilation  | Runtime behavior + string analysis        |
-| Build system | Bazel rust_binary     | Bazel go_binary                           |
+| Aspect            | process_api               | environment-manager                                                                              |
+| ----------------- | ------------------------- | ------------------------------------------------------------------------------------------------ |
+| Language          | Rust                      | Go                                                                                               |
+| Debug info        | Stripped                  | garble-obfuscated (no DWARF, no syms)                                                            |
+| Function evidence | ~30 application functions | 46,573 total functions recovered for 0b86a2a0 (includes runtime/vendor; not directly comparable) |
+| Source files      | 10 decompiled files       | 78 files in the historical DWARF tree; current garble file grouping is not recoverable           |
+| Complexity        | ~4,600 LoC                | ~17,800 LoC (reconstructed from a6f96673)                                                        |
+| RE approach       | Ghidra decompilation      | Rebuilt symbol table + Go disassembly and runtime memory evidence; not string-only               |
+| Build system      | Bazel rust_binary         | Bazel go_binary                                                                                  |
 
 ## Reconstruction Status
 
@@ -617,5 +370,7 @@ changes — the source contains dead code that must be removed:
 
 **Unchanged:** V0/V1 session context structs, CLI flags, sandbox settings, API endpoints.
 
-See `BINDIFF_RESULTS.md` for full analysis and `PLAN.md` for
-detailed status.
+`BINDIFF_RESULTS.md` records the historical binary comparison. Current
+unresolved work across the environment-manager and `process_api`
+reconstructions is tracked in <../TODO.md>; build-specific caveats remain in
+the source tree's `TODO(re):` markers.

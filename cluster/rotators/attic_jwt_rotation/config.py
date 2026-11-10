@@ -1,13 +1,52 @@
 """Shared schema for the generated Attic JWT roster and its runtime rotator."""
 
 from pathlib import Path
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class KubernetesSecretDestination(BaseModel):
+    namespace: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+
+
+class WorkspaceNotification(BaseModel):
+    workspace: str = Field(min_length=1)
+    annotation_key: str = Field(min_length=1)
+
+
+class KubernetesPublication(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secret: KubernetesSecretDestination
+    notification: WorkspaceNotification
+
+
+class SopsDestination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    storage: Literal["sops"] = "sops"
+    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
+
+
+class KubernetesDestination(KubernetesPublication):
+    storage: Literal["kubernetes"] = "kubernetes"
+
+
+class MirroredDestination(KubernetesPublication):
+    storage: Literal["mirrored"] = "mirrored"
+    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
+
+
+Destination = Annotated[SopsDestination | KubernetesDestination | MirroredDestination, Field(discriminator="storage")]
 
 
 class Token(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(description="Human-readable name for logs and the commit message")
-    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
     sub: str = Field(description="JWT subject claim passed to atticadm --sub")
     validity: str = Field(description="Token lifetime passed to atticadm --validity (e.g. '1 year')")
     pull: list[str] = Field(description="Caches the token may pull from (atticadm --pull, repeated)")
@@ -15,6 +54,7 @@ class Token(BaseModel):
         default_factory=list,
         description="Caches the token may push to (atticadm --push, repeated); empty for read-only tokens",
     )
+    destination: Destination
 
 
 class Config(BaseModel):
@@ -22,7 +62,7 @@ class Config(BaseModel):
     attic_namespace: str = Field(
         default="nix-cache", description="Namespace of the attic deployment exec'd for minting"
     )
-    attic_deployment: str = Field(default="deploy/attic", description="Deployment exec'd for minting")
+    attic_deployment: str = Field(default="deploy/attic-next", description="Deployment exec'd for minting")
     server_config: str = Field(
         default="/config/server.toml",
         description="Attic server config path (inside the attic pod) passed to atticadm -f",

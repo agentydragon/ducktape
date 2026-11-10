@@ -4,7 +4,7 @@ import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "reac
 import { Link, useLocation } from "react-router";
 
 import { JsonBlock } from "../text_block";
-import { ResizeHandle, usePaneSize } from "../resize_handle";
+import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
@@ -13,7 +13,8 @@ import {
   renderPaneOpened,
   shouldRenderPaneRequestTitle,
 } from "./rendering/index";
-import type { ActionRequestView } from "./client";
+import { ActionState, type ActionRequest } from "../../../action_service/action_service_pb";
+import { actionArguments, actionIdentity } from "./presentation";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
@@ -40,10 +41,10 @@ function writeManuallyClosedRequests(requestIds: readonly string[]): void {
   }
 }
 
-function usePendingRequests(): ActionRequestView[] {
+function usePendingRequests(): ActionRequest[] {
   const actions = useContext(ActionRequestsContext);
   return useMemo(
-    () => actions?.requests.filter((request) => request.state === "decision_pending") ?? [],
+    () => actions?.requests.filter((request) => request.state === ActionState.DECISION_PENDING) ?? [],
     [actions?.requests]
   );
 }
@@ -54,7 +55,7 @@ function PendingActionList({
   pending,
   onNavigate,
 }: {
-  pending: readonly ActionRequestView[];
+  pending: readonly ActionRequest[];
   onNavigate?: () => void;
 }): JSX.Element | null {
   const actions = useContext(ActionRequestsContext);
@@ -64,15 +65,17 @@ function PendingActionList({
   return (
     <>
       {pending.map((request) => {
-        const expands = actionCompactCardExpands(request.action, request.arguments);
+        const action = actionIdentity(request);
+        const args = actionArguments(request);
+        const expands = actionCompactCardExpands(action, args);
         const expanded = expands && expandedId === request.id;
         // A card without an expanded version shows all it has at once.
         const unclamped = expanded || !expands;
-        const actionLabel = renderActionLabel(request.action, request.arguments);
-        const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
-        const openedPreview = renderPaneOpened(request.action, request.arguments);
-        const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
-        const decision = actionOffersCardDecisionButtons(request.action, request.arguments) ? (
+        const actionLabel = renderActionLabel(action, args);
+        const collapsedPreview = renderPaneCollapsed(action, args);
+        const openedPreview = renderPaneOpened(action, args);
+        const showRequestTitle = shouldRenderPaneRequestTitle(action, args, request.title);
+        const decision = actionOffersCardDecisionButtons(action, args) ? (
           <ActionDecisionButtons
             size="xs"
             deciding={actions.deciding === request.id}
@@ -94,7 +97,7 @@ function PendingActionList({
             className={`agentplane-actions-sidebar-request-label${unclamped ? " is-unclamped" : ""}${decision === null ? "" : " offers-card-decision"}`}
           >
             <div className="agentplane-actions-sidebar-name">
-              {actionLabel === undefined ? `${request.action.group} / ${request.action.name}` : actionLabel}
+              {actionLabel === undefined ? `${action.group} / ${action.name}` : actionLabel}
             </div>
             {showRequestTitle && (
               <Text size="xs" lineClamp={unclamped ? undefined : 1} title={request.title}>
@@ -143,7 +146,7 @@ function PendingActionList({
                     <Text size="xs" c="dimmed">
                       Details shown as recorded data
                     </Text>
-                    <JsonBlock value={request.arguments} clamp={false} />
+                    <JsonBlock value={args} clamp={false} />
                   </>
                 ) : (
                   openedPreview

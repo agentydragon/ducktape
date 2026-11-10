@@ -4,7 +4,7 @@ The shared generated messages are `Command`, `Event`, and `EventEntry`.
 The runner and app reuse them for command delivery and retained Event replay.
 
 The runner is the shared seam over Claude Code and Codex. Exact wire fields, replay,
-and journal recovery are in [the runner specification](../runner/SPEC.md). The
+and journal recovery are in the [Runtime session protocol](../env/runtime/docs/session_protocol.md). The
 cross-layer identity, command, projection, and UI contract is
 [Thread, runner, and harness layering](thread_layering.md). That document is the
 authoritative design for Thread identity, Dispatcher-owned sender queueing, durability boundaries,
@@ -14,14 +14,16 @@ separate facts; the app does not own a server-side command queue.
 ## What the runner seam owns
 
 - Session lifecycle requests and idempotent command delivery over the
-  [runner control stream](runner_control.md) the runner dials, plus replayable sequenced Events
+  [runner gRPC API](runner_control.md) the Gateway dials, plus replayable sequenced Events
   pushed to its ingress.
 - Durable command-journal admission represented by `CommandAdmitted`, before causal effect/outcome
   Events afterwards. It does not call an unsupported native operation successful.
 - Native harness frames delivered verbatim as Native Events, with derived Events citing
   their source sequences.
 - Only common behavior proved by the scripted Claude/Codex harness tests. A caller
-  selects a harness through SessionSpec.harness, not with adapter-specific operations.
+  selects a native harness in `SessionSpec.placement.environment_hosted.harness`; the same placement
+  carries the exact required environment. Central sampler V1 uses the separate
+  `central_sampler_v1` placement and fixed executor environment, not a native harness operation.
 
 The commands are `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn`. `SubmitInput` joins a running turn; it is not a common steer or
 queue abstraction. The runner reconciles uncompleted commands after restart. Native

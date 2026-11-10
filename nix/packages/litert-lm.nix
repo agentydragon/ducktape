@@ -9,7 +9,7 @@
 let
   litert-lm-api = python314Packages.buildPythonPackage rec {
     pname = "litert-lm-api";
-    version = "0.17.0";
+    version = "0.19.1";
     format = "wheel";
 
     src = fetchPypi {
@@ -19,7 +19,7 @@ let
       python = "py3";
       abi = "none";
       platform = "manylinux_2_27_x86_64";
-      hash = "sha256-ZU7+fdaHAzWzz6vlfevJ7xO+7OFuSYGnHJZNOiEvtyQ=";
+      hash = "sha256-k9tDCFQBsgiBWmNhUK6HV2u36Crbranwg+wWEU3/iJg=";
     };
 
     nativeBuildInputs = [ autoPatchelfHook ];
@@ -40,7 +40,7 @@ let
 
   litert-lm-builder = python314Packages.buildPythonPackage rec {
     pname = "litert-lm-builder";
-    version = "0.17.0";
+    version = "0.19.1";
     format = "wheel";
 
     src = fetchPypi {
@@ -50,7 +50,7 @@ let
       python = "py3";
       abi = "none";
       platform = "any";
-      hash = "sha256-iFqAcZ1OPV6WPRZXxRDct+m6zsT9FyNlSaXuEu6ROwM=";
+      hash = "sha256-hp5++wJsljlgftF8K8eBsphwMv6u3sWa+PIMVXTRwUc=";
     };
 
     propagatedBuildInputs = with python314Packages; [
@@ -71,7 +71,7 @@ let
 in
 python314Packages.buildPythonApplication rec {
   pname = "litert-lm";
-  version = "0.17.0";
+  version = "0.19.1";
   format = "wheel";
 
   src = fetchPypi {
@@ -81,7 +81,7 @@ python314Packages.buildPythonApplication rec {
     python = "py3";
     abi = "none";
     platform = "any";
-    hash = "sha256-AVvUzIs3SCET3cYt6nbM0SAJQtl9UlFKBwvfn9TZVNg=";
+    hash = "sha256-xTULrPVjOe2qSZdG6DMUOvYM8rlwT7V3EjK/xpXHbe4=";
   };
 
   postInstall = ''
@@ -102,7 +102,19 @@ python314Packages.buildPythonApplication rec {
       litert-lm-builder
     ];
 
-  pythonImportsCheck = [ "litert_lm_cli.main" ];
+  pythonImportsCheck = [
+    "litert_lm_cli.main"
+    "litert_lm_cli.commands.serve.module"
+    "litert_lm_cli.commands.serve.util"
+  ];
+
+  doInstallCheck = true;
+  installCheckPhase = ''
+    runHook preInstallCheck
+    PYTHONPATH="$out/${python314Packages.python.sitePackages}:$PYTHONPATH" \
+      ${python314Packages.python.interpreter} ${./litert-lm-serve-check.py}
+    runHook postInstallCheck
+  '';
 
   # Dawn opens Vulkan with dlopen, which autoPatchelfHook cannot discover.
   makeWrapperArgs = [

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"reflect"
 	"slices"
@@ -13,14 +14,18 @@ import (
 	"testing"
 	"time"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -37,12 +42,12 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 
 func matchingSandbox() sandboxreader.View {
-	return sandboxreader.View{Identity: sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID}}
+	return sandboxreader.View{Identity: &sandboxreader.Identity{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}}
 }
 
 // fakeSandboxes serves the one Sandbox the destinations name, until a test makes it fail or replaces it.
@@ -153,6 +158,10 @@ func (h *fakeHistory) readRequests() []*historypb.ReadSessionEventsRequest {
 
 // fakeDispatcher records what is submitted to it, and says the command is queued unless a test says otherwise.
 type fakeDispatcher struct {
+	// accountUID is the ServiceAccount the Session is recorded as executing as; empty records none.
+	accountUID string
+	// identity is the Identity the Session is recorded as executing as, if any.
+	identity *identitypb.Identity
 	mu       sync.Mutex
 	requests []*dispatcherpb.SubmitInputRequest
 	respond  func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
@@ -237,14 +246,20 @@ type harness struct {
 // newHarness starts from a database without the other tests' inboxes: the worker claims whichever inbox is due.
 func newHarness(t *testing.T, settings Settings) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", database.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	return newHarnessWithDatabaseURL(t, database.URL, settings)
+}
+
+func newIsolatedHarness(t *testing.T, settings Settings) *harness {
+	t.Helper()
+	return newHarnessWithDatabaseURL(t, database.Clone(t), settings)
+}
+
+func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settings) *harness {
+	t.Helper()
+	db := postgres.Open(t, databaseURL)
 	h := &harness{
 		db: db, settings: settings, sandboxes: &fakeSandboxes{view: matchingSandbox()},
-		history: &fakeHistory{}, dispatcher: &fakeDispatcher{}, actions: newFakeProvider(),
+		history: &fakeHistory{}, dispatcher: &fakeDispatcher{accountUID: "test-account-uid"}, actions: newFakeProvider(),
 	}
 	h.exec(t, `TRUNCATE inbox CASCADE`)
 	h.restart()
@@ -288,7 +303,7 @@ func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store
 	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
 		Source: model.ActionsSource{RequestID: request}, LifetimeDays: 7,
-	}, nil)
+	}, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,8 +334,9 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 		if _, err := tx.ExecContext(t.Context(), `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID); err != nil {
 			t.Fatal(err)
 		}
+		payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
 		if err := h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-			model.ActionsEvent{RequestID: request, Sequence: sequence}, json.RawMessage(`{}`)); err != nil {
+			model.ActionsEvent{RequestID: request, Sequence: sequence}, payload); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(); err != nil {
@@ -530,4 +546,18 @@ func unrelatedEntry(cursor uint64) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{Cursor: cursor, Event: &eventpb.Event{Observation: &eventpb.Event_HarnessLost{
 		HarnessLost: &eventpb.HarnessLost{},
 	}}}
+}
+
+func (d *fakeDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	session := &dispatcherpb.Session{
+		SessionId: request.GetSessionId(),
+		Identity:  d.identity,
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}},
+	}
+	if d.accountUID != "" {
+		session.ExecutionIdentity = &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: d.accountUID}
+	}
+	return &dispatcherpb.GetSessionResponse{Session: session}, nil
 }

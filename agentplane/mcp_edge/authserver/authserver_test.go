@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth" // its name, auth, is go-sdk's
+	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
 
 // connect connects go-sdk's MCP client to /mcp, which authorizes it through the handler.
@@ -57,7 +58,7 @@ func TestAnMCPClientAuthorizesByItsMetadataDocumentAndCallsAsTheBoundAccount(t *
 	c := h.only(t)
 	if _, err := h.connections.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
 		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(),
-		ServiceAccount: &sandboxes.ServiceAccount{Namespace: otherAccount.Namespace, Name: otherAccount.Name},
+		ServiceAccount: &identitypb.ServiceAccount{Namespace: otherAccount.Namespace, Name: otherAccount.Name},
 	}); err != nil {
 		t.Fatal(err)
 	}

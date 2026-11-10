@@ -13,9 +13,9 @@ import aiodocker
 import pytest
 from fastmcp.mcp_config import StdioMCPServer
 
+from devinfra.bazel.subprocess import python_env
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
-from util.bazel.subprocess import python_env
 
 # The stdio transport fixture launches `-m mcp_infra.testing.stdio_app`; the module
 # is referenced only as a string, so gazelle cannot see the dependency.
@@ -23,7 +23,6 @@ from util.bazel.subprocess import python_env
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace")) -> ContainerExecServerConfig:
-    """Create standard ContainerExecServerConfig for tests."""
     return ContainerExecServerConfig(
         image=image,
         working_dir=working_dir,
@@ -35,7 +34,6 @@ def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace
 
 @pytest.fixture
 async def async_docker_client():
-    """Async Docker client for container tests."""
     client = aiodocker.Docker()
     try:
         yield client
@@ -45,7 +43,6 @@ async def async_docker_client():
 
 @pytest.fixture
 def make_simple_mcp():
-    """Lightweight FastMCP backend with simple tools for tests."""
     return _make_simple_mcp()
 
 

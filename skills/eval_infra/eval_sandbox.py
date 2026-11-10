@@ -29,10 +29,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from agent_framework import MCPStdioTool
+from python.runfiles import Runfiles
 
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from skills.eval_infra.skill_staging import StagedSkill
-from util.bazel.runfiles import get_required_path
 
 # In-container path conventions. Hardcoded — standardizing across rollouts is
 # the whole point of `eval_infra`. See module docstring for the layout.
@@ -40,7 +40,7 @@ SKILL_PATH = Path("/skill")
 WORK_PATH = Path("/work")
 INPUT_PATH = Path("/input")
 
-_LAUNCHER_RLOCATION = "_main/mcp_infra/exec/docker_launcher"
+_LAUNCHER_RLOCATION = "ducktape/mcp_infra/exec/docker_launcher"
 
 
 def _proxy_env() -> dict[str, str]:
@@ -90,6 +90,6 @@ async def eval_sandbox(
         cwd_policy=AlwaysSetTo(value=WORK_PATH),
         binds=binds,
     )
-    launcher = get_required_path(_LAUNCHER_RLOCATION)
+    launcher = Runfiles.CreateOrRaise().root() / _LAUNCHER_RLOCATION
     async with MCPStdioTool(name=name, command=str(launcher), args=["--config", config.model_dump_json()]) as tool:
         yield tool

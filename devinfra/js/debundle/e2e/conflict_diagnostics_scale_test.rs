@@ -1,7 +1,7 @@
 //! Independent atomic conflicts must not each scan every unrelated graph edge.
 
 use debundle_e2e_support::*;
-use spec::{BindingSelector, Member as SpecMember, MemberSelector};
+use spec::{BindingSelector, Member as SpecMember, RawMemberSelector};
 use std::fmt::Write as _;
 
 #[test]
@@ -19,7 +19,7 @@ fn many_independent_conflicts_keep_their_diagnostics() {
             let name = format!("{prefix}{index}");
             module.1.members.push(SpecMember {
                 name: Some(name.clone()),
-                selector: MemberSelector {
+                selector: RawMemberSelector {
                     binding: Some(BindingSelector { name, kind: None }),
                     ..Default::default()
                 },

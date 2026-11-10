@@ -19,6 +19,7 @@ type History interface {
 
 // Dispatcher stores a command for the Session Dispatcher to deliver to a Sandbox's runner.
 type Dispatcher interface {
+	GetSession(context.Context, *dispatcherpb.GetSessionRequest, ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error)
 	SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, opts ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error)
 }
 
@@ -133,8 +134,8 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 	}
 	// Its admission and confirmation are copied by a later claim, once the History Service has them.
 	response, err := w.Dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		Sandbox: sandbox, SandboxUid: claim.DestinationRef.UID,
-		SessionId: claim.SessionID, CommandId: current.CommandID.String(), Text: current.Text,
+		ExpectedSandboxUid: claim.DestinationRef.UID,
+		SessionId:          claim.SessionID, CommandId: current.CommandID.String(), Text: current.Text,
 	})
 	if err != nil {
 		return unavailable(err)

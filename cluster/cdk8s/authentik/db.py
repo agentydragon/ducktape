@@ -7,7 +7,8 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
@@ -18,7 +19,7 @@ _NAMESPACE = "authentik"
 # same OVH zone to stay beside all database members.
 PLACEMENT = node_scheduling.HIL_OVH
 DATABASE = "authentik"
-POSTGRES = cnpg.PostgresRef(
+POSTGRES = cluster.PostgresRef(
     name="authentik-db-ovh",
     namespace=_NAMESPACE,
     # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
@@ -29,11 +30,11 @@ POSTGRES = cnpg.PostgresRef(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=POSTGRES,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="8Gi",
         resize_in_use_volumes=False,
         # The cluster was created by pg_basebackup from the retired authentik-db, so this
@@ -41,7 +42,7 @@ def chart(app: App) -> Chart:
         # CNPG uses: the metrics exporter runs its default queries against the database,
         # and CNPG keeps the role's password in sync with the Secret Authentik also
         # authenticates with. Without it CNPG defaults to `app`, which does not exist here.
-        initdb=cnpg.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
+        initdb=cluster.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
         # The plugin sidecar archives WAL continuously and provides physical base
         # backups to the Authentik-specific SeaweedFS ObjectStore (authentik/db-backups).
         wal_archive=True,

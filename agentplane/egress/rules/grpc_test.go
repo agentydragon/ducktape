@@ -6,13 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,9 +27,13 @@ import (
 // reviews, and returns a client for it.
 func serveGRPC(t *testing.T, reviews auth.TokenReviews, index *policy.Index) egressrulespb.EgressRulesClient {
 	t.Helper()
-	service := serviceOver(t, reviews, index)
+	resolver, err := auth.NewResolver(reviews, hopAudience, []string{namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(index)
 	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer()
+	server := grpc.NewServer(auth.Methods{egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnySubject(resolver)}.ServerOptions(0)...)
 	egressrulespb.RegisterEgressRulesServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -58,7 +63,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	}
 
 	want := &egressrulespb.GetRulesResponse{
-		Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: "sb"},
+		Caller: &egressrulespb.GetRulesResponse_Subject{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "sb"}},
 		Policies: []*egressrulespb.Policy{{Name: "github", Rules: []*egressrulespb.Rule{
 			{
 				Hosts:   []string{"api.github.com"},
@@ -86,11 +91,11 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 }
 
 func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
-	index := policy.NewIndex(0)
+	index := policy.NewIndex()
 	index.Rules.PutPolicySet(policySet("all-targets", githubRule))
 	index.Rules.PutBinding(binding("sb", "b", "all-targets"))
 	index.PutCredential(resources.Credential{
-		Name: "github-pat", Description: description, Source: resources.AuthenticatedWorkloadToken{},
+		Name: "github-pat", Description: description, Source: resources.SecretKey{Name: "github", Key: "token"},
 		Targets: []resources.Target{
 			resources.WholeValue{Header: "X-Key"},
 			resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"},
@@ -127,7 +132,7 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 }
 
 func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
-	index := policy.NewIndex(0)
+	index := policy.NewIndex()
 	index.Rules.PutPolicySet(policySet("none", policyapi.Rule{
 		Type: resources.EgressRuleType, Hosts: []string{"a.example.com"}, Methods: []string{}, Paths: []string{},
 	}))
@@ -153,7 +158,7 @@ func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := &egressrulespb.GetRulesResponse{Subject: &sandboxespb.ServiceAccount{Namespace: namespace, Name: "nobody"}}
+	want := &egressrulespb.GetRulesResponse{Caller: &egressrulespb.GetRulesResponse_Subject{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "nobody"}}}
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}

@@ -3,11 +3,11 @@
 //! canonical ESM linker/source-import orderings derived from it.
 //!
 //! Submodules:
-//! - [`edge`] — edge types ([`EdgeRole`], [`EdgeReason`], [`DepKind`],
+//! - [`edge`] — edge types ([`EdgeRole`], [`EdgeReason`],
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
-//! - [`dependency_graph`] — the [`DependencyGraph`] IR ([`SourceUnitId`],
-//!   [`SourceUnit`]), JSON recovery ([`DependencyGraph::from_report`],
-//!   [`UnresolvedDependencyEdgeEndpoint`]).
+//! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
+//!   their dense IDs are `source_identity::SourceUnitId`. It also provides JSON
+//!   recovery ([`DependencyGraph::from_report`], [`UnresolvedDependencyEdgeEndpoint`]).
 //! - [`build`] — dependency-graph construction ([`build_dependency_graph_with`],
 //!   at-init call promotion, the S-chain).
 //! - [`quotient`] — module-level projection ([`ModuleQuotient`],
@@ -18,8 +18,10 @@
 //!   and its linker / source-import orderings.
 
 mod build;
+mod commutation_order;
 mod dependency_graph;
 mod edge;
+mod input;
 mod linker_order;
 mod quotient;
 
@@ -27,12 +29,20 @@ mod quotient;
 mod tests;
 
 pub use build::{
-    DependencyGraphOptions, DuplicateTopLevelDeclaration, build_dependency_graph_with,
+    CommutingStatementsDiagnostic, CommutingStatementsUnused, DependencyGraphBuildError,
+    DuplicateTopLevelDeclaration, GraphOptions, KnownConflict, PremiseVerdict,
+    UnusedCommutingEndpoint, UnusedPremiseReason, build_dependency_graph_with,
 };
+pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
 pub use dependency_graph::{
-    DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,
+    AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass,
+    UnresolvedDependencyEdgeEndpoint,
 };
-pub use edge::{DepKind, DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
+pub use edge::{
+    BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
+    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+};
+pub use input::DependencyGraphInput;
 pub use linker_order::{
     ChunkConstrainingEdgeSet, chunk_constraining_module_edges, chunk_linker_order_from_pairs,
     chunk_source_import_order_from_adjacency, position_lookup,

@@ -26,7 +26,8 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRules, HttpRouteSpecRulesBackendRefs
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -41,7 +42,7 @@ SYNAPSE = "matrix-synapse"
 HOSTNAME = "matrix.allegedly.works"
 ELEMENT_HOSTNAME = "chat.allegedly.works"
 _NAME = "matrix"
-DATABASE = cnpg.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="matrix-db", namespace=NAMESPACE)
 _MEDIA_CLAIM = "matrix-synapse-media"
 _HELM_REPOSITORY = "ananace-charts"
 # The chart's main Service: its selector is the chart name, the release and the component.
@@ -100,7 +101,7 @@ def _namespace(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         scope,
         "database",
         ref=DATABASE,
@@ -109,13 +110,13 @@ def _database(scope: Construct) -> None:
         # shape this had before the namespace was parked: Synapse's media store is on
         # an OVH-only Piraeus class, so the app runs there and R5 requires the database
         # to follow it.
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="10Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
+        initdb=cluster.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _media_claim(scope: Construct) -> None:

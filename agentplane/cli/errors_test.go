@@ -256,25 +256,14 @@ func TestCredentialIsSentAsBearerAndNeverPrinted(t *testing.T) {
 	}
 }
 
-func TestRedirectIsNotFollowedForTheHTTPClients(t *testing.T) {
-	elsewhere := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) { reply(w, 200, `{"subject":{},"policies":[]}`) })
-	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ seen) {
-		http.Redirect(w, r, elsewhere.URL, http.StatusFound)
-	})
-	code, _, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if code != exitRefused || elsewhere.count() != 0 {
-		t.Errorf("exit %d, %d requests followed the redirect; want exit 1 and none", code, elsewhere.count())
-	}
-}
-
 func TestEachGroupNeedsItsOwnConfiguration(t *testing.T) {
 	cases := []struct {
 		args    []string
 		missing string
 	}{
 		{[]string{"actions", "groups"}, "AGENTPLANE_ACTIONS_URL"},
-		{[]string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_URL"},
-		{[]string{"egress", "rules"}, "AGENTPLANE_EGRESS_URL"},
+		{[]string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_GRPC_URL"},
+		{[]string{"egress", "rules"}, "AGENTPLANE_EGRESS_GRPC_URL"},
 	}
 	for _, tc := range cases {
 		code, stdout, stderr := invoke(nil, append(tc.args, "--json")...)

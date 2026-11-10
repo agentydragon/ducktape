@@ -17,11 +17,13 @@ from aiquota.api import (
     QuotaAPIService,
     SnapshotFeed,
     _CapturingClientFactory,
+    _next_view_transition,
     create_app,
 )
 from aiquota.config import Config
 from aiquota.models import (
     AllQuotas,
+    ClaudeResetGrant,
     FetchError,
     FetchSuccess,
     ProviderFetch,
@@ -30,7 +32,9 @@ from aiquota.models import (
     QuotaWindow,
     RawUpstreamResponse,
 )
+from aiquota.providers.claude import USAGE_URL
 from aiquota.render.view_model import AllQuotasView
+from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
 from util.testing.asgi import serve_app_in_loop
 
@@ -76,12 +80,36 @@ class FakeFetcher:
         return self.snapshot
 
 
+def test_reset_grant_expiry_schedules_view_refresh() -> None:
+    now = datetime.now(UTC)
+    expiry = now + timedelta(minutes=1)
+    result = FetchSuccess(
+        claude_reset_grants=[ClaudeResetGrant(label="Fable resets", remaining=1, original=1, expires_at=expiry)]
+    )
+    quotas = AllQuotas(
+        fetched_at=now,
+        providers=[ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=now, result=result))],
+    )
+    assert _next_view_transition(QuotaSnapshot(quotas=quotas, raw_responses={})) == expiry
+
+
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[httpx.AsyncClient]:
     app = create_app(bearer_token="test-bearer", fetcher=FakeFetcher())
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as result:
         yield result
+
+
+async def test_declared_frontend_bundle_is_served() -> None:
+    app = create_app(bearer_token="test-bearer", fetcher=FakeFetcher(), frontend_dir=_frontend_dir())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as browser:
+        page = await browser.get("/")
+        script = await browser.get("/main.js")
+    assert page.status_code == 200
+    assert 'src="/main.js"' in page.text
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
 
 
 def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -204,7 +232,13 @@ async def test_prepaid_balance_raw_capture_does_not_replace_claude_usage_raw(cli
 async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(monkeypatch: pytest.MonkeyPatch) -> None:
     org_uuid = "123e4567-e89b-12d3-a456-426614174000"
     balance_url = f"https://api.anthropic.com/api/oauth/organizations/{org_uuid}/prepaid/credits"
-    usage_body = {"five_hour": {"utilization": 10}}
+    usage_body = {
+        "five_hour": {"utilization": 10},
+        "cedar_ember": {
+            "eligible": True,
+            "grants": [{"resets_left": 2, "resets_total": 2, "clears": [], "gives_back_weekly": True}],
+        },
+    }
     profile_body = {"organization": {"uuid": org_uuid}}
     balance_body = {
         "currency": "USD",
@@ -218,7 +252,7 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(mo
     async def handler(request: httpx.Request) -> httpx.Response:
         requested_urls.append(str(request.url))
         bodies = {
-            "https://api.anthropic.com/api/oauth/usage": usage_body,
+            USAGE_URL: usage_body,
             "https://api.anthropic.com/api/oauth/profile": profile_body,
             balance_url: balance_body,
         }
@@ -242,16 +276,15 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(mo
 
     snapshot = await service.fetch(force_refresh=True)
 
-    assert set(requested_urls) == {
-        "https://api.anthropic.com/api/oauth/usage",
-        "https://api.anthropic.com/api/oauth/profile",
-        balance_url,
-    }
+    assert set(requested_urls) == {USAGE_URL, "https://api.anthropic.com/api/oauth/profile", balance_url}
     assert set(snapshot.raw_responses) == {"claude", "claude_prepaid_balance"}
     assert snapshot.raw_responses["claude"].body == usage_body
     assert snapshot.raw_responses["claude_prepaid_balance"].body == balance_body
     output = snapshot.quotas.providers[0].last_output.result
     assert isinstance(output, FetchSuccess)
+    assert output.claude_reset_grants is not None
+    assert output.claude_reset_grants[0].remaining == 2
+    assert output.claude_reset_grants[0].label == "Fable resets"
     assert output.prepaid_balance is not None
     assert output.prepaid_balance.model_dump() == {
         "kind": "available",
@@ -406,11 +439,11 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         assert initial_result.windows[0].used_percent == 45.0
         quotas_response = await client.get("/v1/quotas", headers=auth)
         assert quotas_response.status_code == 200
-        assert initial.model_dump(mode="json") == quotas_response.json()
+        assert initial.providers[0].display == AllQuotasView.model_validate(quotas_response.json()).providers[0].display
 
         second_lines = second.aiter_lines().__aiter__()
         second_view = await _read_view(second_lines)
-        assert second_view == initial
+        assert second_view.providers[0].display == initial.providers[0].display
         assert provider.fetches == 1  # The second client used the service's fresh cache.
 
         service._cache_ttl = timedelta(0)
@@ -422,14 +455,17 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         first_update_result = first_update.providers[0].last_output.result
         assert isinstance(first_update_result, FetchSuccess)
         assert first_update_result.windows[0].used_percent == 52.0
-        assert second_update == first_update
+        assert second_update.providers[0].display == first_update.providers[0].display
         assert provider.fetches == 2  # One refresh reached both clients.
 
         provider.fail = True
         stale_response = await client.get("/v1/quotas", headers=auth)
         assert stale_response.status_code == 200
         stale_update = await _read_view(first_lines)
-        assert stale_update.model_dump(mode="json") == stale_response.json()
+        assert (
+            stale_update.providers[0].display
+            == AllQuotasView.model_validate(stale_response.json()).providers[0].display
+        )
         stale_provider = stale_update.providers[0]
         assert isinstance(stale_provider.last_output.result, FetchError)
         assert stale_provider.last_success is not None
@@ -593,9 +629,12 @@ async def test_old_peak_timer_cannot_replace_a_newer_snapshot() -> None:
     await feed.close_subscription(subscription.token)
 
 
-async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(api, "_SSE_HEARTBEAT_SECONDS", 0.01)
+async def test_event_stream_updates_without_polling_and_disconnect_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api, "_VIEW_UPDATE_SECONDS", 0.01)
     fetcher = FakeFetcher()
+    result = fetcher.snapshot.quotas.providers[0].last_output.result
+    assert isinstance(result, FetchSuccess)
+    result.windows[0].reset_at = datetime.now(UTC) + timedelta(hours=2)
     app = create_app(bearer_token="test-bearer", fetcher=fetcher)
     feed: SnapshotFeed = app.state.snapshot_feed
     async with (
@@ -604,9 +643,9 @@ async def test_event_stream_heartbeats_and_disconnect_cleans_up(monkeypatch: pyt
         client.stream("GET", "/v1/events", headers={"Authorization": "Bearer test-bearer"}) as response,
     ):
         lines = response.aiter_lines().__aiter__()
-        assert (await _read_view(lines)).providers
-        assert await anext(lines) == ": heartbeat"
-        assert await anext(lines) == ""
-        assert fetcher.calls == 1  # Heartbeats do not poll providers per client.
+        first = (await _read_view(lines)).providers[0].display_windows[0]
+        second = (await _read_view(lines)).providers[0].display_windows[0]
+        assert second.elapsed > first.elapsed
+        assert fetcher.calls == 1  # Presentation updates do not poll providers per client.
     async with asyncio.timeout(1):
         await feed.wait_for_subscribers(0)

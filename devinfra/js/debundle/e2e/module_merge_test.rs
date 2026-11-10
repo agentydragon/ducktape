@@ -1,8 +1,9 @@
 //! Real JS/spec → merge CLI → rewritten spec → emitted Node behavior.
 
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::{GraphFixture, write_text_file};
+use debundle_e2e_support::write_text_file;
 use serde_yaml::Value;
 
 #[test]
@@ -40,7 +41,7 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
         .collect();
     let mut preview = args.to_vec();
     preview.push("--dry-run");
-    assert_eq!(fixture.json(&preview)["gate"], "passed");
+    assert_eq!(fixture.json(&preview)["gate"], "claims_checked");
     for (path, bytes) in paths.iter().zip(before) {
         assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
     }
@@ -176,6 +177,29 @@ fn merge_batch_allows_case_only_relocation() {
     assert!(fixture.modules.join("A.yaml").exists());
     assert!(!fixture.modules.join("a.yaml").exists());
     fixture.assert_runs("2\n");
+}
+
+#[test]
+fn single_merge_rejects_untouched_symlink_aliases_without_writes() {
+    for (alias, target, destination) in [
+        ("alias.yaml", "target.yaml", "target"),
+        ("alias-dir", "nested", "nested/target"),
+    ] {
+        let fixture = GraphFixture::acyclic_pair();
+        write_text_file(&fixture.modules.join("target.yaml"), "members: []");
+        write_text_file(&fixture.modules.join("nested/target.yaml"), "members: []");
+        std::os::unix::fs::symlink(target, fixture.modules.join(alias)).unwrap();
+        fixture.refresh_graph();
+        fixture.assert_rejected_unchanged(
+            &["modules", "merge", "--target", destination, "a"],
+            &["does not support symlink entries"],
+        );
+        assert_eq!(
+            fs::read_link(fixture.modules.join(alias)).unwrap(),
+            std::path::PathBuf::from(target)
+        );
+        fixture.assert_runs("2\n");
+    }
 }
 
 #[test]

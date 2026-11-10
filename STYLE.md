@@ -44,6 +44,7 @@ Deep reference goes in `docs/` behind links. A nested AGENTS.md states only what
   - Not control flow: check foreseeable states first instead of catching and parsing the fault.
 - **Concise code:** inline single-use subexpressions and variables; no no-op short-circuits.
 - **Strict data mapping:** invalid enum/typed input raises early, never `continue`. **Deviation:** where the writer may be a newer release of this system (our own stored data, payloads between replicas in a rolling deploy), decode unknown values to a **named** unknown variant every consumer dispatches on (never `None`, a nearby member, or a skip), and a writer of a new value waits a release unless ignoring it is correct. See <haku/console/README.md> § Vocabularies across a roll.
+- **Parallel change (expand–migrate–contract)** stages incompatible interface or data changes: add support for old and new forms, move callers/writers and migrate existing data, then remove old support when no live caller, stored row, or supported rollback needs it. Haku's required-field case constrains old writers; see <haku/console/README.md> § Vocabularies across a roll.
 - **Invalid states unrepresentable:** a union of variant types, not flag+optional combos; dispatch with `isinstance`, not discriminator strings (except in Mako/Jinja templates).
 - **Naming:** functions are verbs (`record_admission`) unless convention says otherwise (properties, framework hooks); classes are the singular noun an instance is (`SessionStore`).
 - **Owned resources are context managers**, scoped with `with`/`async with`/`ExitStack`, never `finally: x.close()`. Keep a public `close()` only where callers end the lifetime early.
@@ -90,14 +91,15 @@ One library per job. An unlisted job reuses what other Go services import before
 | Logging    | `log/slog` JSON on stderr; controller-runtime via `ctrl.SetLogger(logr.FromSlogHandler(...))`. Agentplane runner uses `zap` directly because COSI requires it. |
 | Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys.                                                            |
 | HTTP       | Stdlib `net/http`; no router.                                                                                                                                  |
+| OpenAPI    | `danielgtaylor/huma/v2` with the `humago` adapter over `net/http.ServeMux` for typed app routes.                                                               |
 | Tests      | Stdlib `testing`.                                                                                                                                              |
 | PostgreSQL | `lib/pq`, `goose` migrations.                                                                                                                                  |
 | UUIDs      | `google/uuid`.                                                                                                                                                 |
 | YAML       | `gopkg.in/yaml.v3`.                                                                                                                                            |
 | Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                                                                    |
-| Cgroups    | `containerd/cgroups/v3/cgroup2`.                                                                                                                               |
+| D-Bus      | `coreos/go-systemd/v22/dbus` for systemd; `godbus/dbus/v5` for generic D-Bus.                                                                                  |
 | GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).                                                                 |
-| Schemas    | `santhosh-tekuri/jsonschema/v6`, with a loader of your own: the default one reads local files.                                                                 |
+| Schemas    | `invopop/jsonschema` for Go type reflection; `santhosh-tekuri/jsonschema/v6` for validation, with an explicit loader (the default reads local files).          |
 | TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.                                                                 |
 | Sets       | `apimachinery/pkg/util/sets`.                                                                                                                                  |
 | Casefold   | `x/text/cases.Fold`.                                                                                                                                           |
@@ -109,17 +111,7 @@ One library per job. An unlisted job reuses what other Go services import before
 Gazelle owns Python `py_library`/`py_test` rules (<devinfra/docs/gazelle.md>).
 
 - One `py_library` per `.py` file, named its module stem; rules cover only own-package files.
-- `py_binary` is hand-written, named `<stem>_bin` (`<stem>_image_bin` if an aspect image twin holds `_bin`), with `main_module` and no `srcs`; the library holds all deps:
-
-  ```python
-  py_binary(
-      name = "session_start_bin",
-      main_module = "devinfra.claude.session_start",
-      imports = ["../.."],
-      deps = [":session_start"],
-  )
-  ```
-
+- `py_binary` is hand-written, named `<stem>_bin` (`<stem>_image_bin` if an aspect image twin holds `_bin`), with `main_module` and no `srcs`; the library holds all deps.
 - Test-only is per package: a test-support umbrella (`testing/`, `e2e/`, `agentplane/system_tests/`) uses `package(default_testonly = True)`; other packages hold production code plus `test_*.py`/`*_test.py` targets. Shared test libraries go in `conftest.py` or an umbrella.
 - `testing/` holds fakes, builders, fixtures, matchers — never tests of production code (those sit beside the code, or in `e2e/`/`system_tests/`). `testing/test_x.py` tests only `testing/x.py`.
 - `test_*.py`/`*_test.py` names are for test targets only; a non-test file whose name is an external contract gets `# gazelle:exclude`.
@@ -129,16 +121,7 @@ Gazelle owns Python `py_library`/`py_test` rules (<devinfra/docs/gazelle.md>).
 
 ### TypeScript
 
-Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per module, `tsconfig` naming the package tree's shared `ts_config`:
-
-```python
-ts_library(
-    name = "client",
-    srcs = ["client.ts"],
-    tsconfig = TSCONFIG,  # package-level constant
-    deps = [":operator_login", ":schema", "//:node_modules/openapi-fetch"],
-)
-```
+Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per module, `tsconfig` naming the package tree's shared `ts_config`.
 
 - Bundlers take emitted `.js` (entry `main.js`). Every spec is a `vitest_test` (`//devinfra/js:vitest.bzl`; per-frontend wrapper `<frontend>/vitest.bzl`) run alone like any test. One `vitest_config` per package generates the config — never hand-write `vitest.config.*`; end the BUILD with `check_vitest_specs()`.
 - Never `js_library` for `.ts`/`.tsx` and never a whole-project `tsc_test` (files slip through unchecked). `js_library` is for `.js`/`.mjs` and generated declarations.
@@ -147,7 +130,9 @@ ts_library(
 
 ### Runfiles
 
-`_main` is the root module of the build, not necessarily this repo. Tests and repo-only tools may use `get_required_path("_main/...")`; library code a dependent repo imports (where this repo is `ducktape+`) uses `own_repo_rlocation` (<util/bazel/runfiles.py>).
+For Python runfiles, use `rules_python`'s `Runfiles` API directly. For this repository's own data, resolve `ducktape/<repository-relative-path>` in the caller's context; `_main` names the root module of the build, which can be a different repository. Pass Bazel-generated `$(rlocationpath ...)` values unchanged to the resolver. Pass runfiles paths directly to APIs that accept path-like objects, including `subprocess`. Convert a runfiles path with `Path(str(path))` before using the resolved file's parent or performing ordinary filesystem-relative path operations: `Runfiles.root()` returns a runfiles-aware path, and `Path(path)` alone retains its unresolved logical path.
+
+Reuse a `Runfiles` instance for related lookups within an operation: `CreateOrRaise()` creates a new instance and can reread the runfiles manifest. Introduce shared caching only when evidence warrants it. In pytest suites with repeated lookups, use the session-scoped `runfiles` fixture from `//:conftest` and call `.root()` in the consuming test module.
 
 ### System CA certificates in distroless images
 
@@ -163,7 +148,7 @@ ts_library(
 - **Use the real platform** in the test runner; mock only test-specific behavior or genuine external boundaries.
 - **Test behavior, not structure:** assert observable behavior, public contracts, schemas, invariants. Never inspect source text, pin method identity, or test style/structure (decorators, imports, signatures, "flaw stays fixed") — prevent flaws via design, lint, or a comment. Exceptions: structure that is itself a contract (published schema, public API), the only way to hold a security boundary, an analyzer test, or a rare "importing `x` doesn't import heavy `y`".
 - **Assert structured results, not wording** (prompt text, UI copy, errors, logs): assert the type/code/enum/state/field. Lint-required `match=` stays. Text is asserted only when a program parses it, an external protocol fixes it, it's legal/safety text, a model verifies the prompt end to end, the test is that a log was emitted, or a UI test checks a narrow user-visible snippet. Delete tests that only show a prompt says X; document intent at the template.
-- **No change detectors:** each expectation encodes a durable rule. Copying a file's values/roster into assertions (or a fixture) is not coverage. Relations within or across files (a path names a mounted file; a Service targets a declared port), schemas and runtime behavior are. Don't pin an API to an exact route list unless a security boundary requires a closed world. Generated-output snapshots run the generator and compare (`//cluster/cdk8s:test_generate_manifests`); no second test reads the committed file. Exact wire pins only for a named external contract/consumer. Never compute expected values with the code under test or a copy.
+- **No change detectors:** each expectation encodes a durable rule. Copying a file's values/roster into assertions (or a fixture) is not coverage. Relations within or across files (a path names a mounted file; a Service targets a declared port), schemas and runtime behavior are. A **contract pin** is an exact test assertion deliberately protecting an external contract or security boundary, rather than detecting source edits. Exact wire pins are only for a named external contract or consumer; other security-boundary pins need no external consumer. Don't pin an API to an exact route list unless a security boundary requires a closed world. Generated-output snapshots run the generator and compare (`//cluster/cdk8s:test_generate_manifests`); no second test reads the committed file. Never compute expected values with the code under test or a copy.
 - **What must break for this to fail?** Delete tests of library basics (pydantic parsing, StrEnum equality, yaml round-trip), tests restating declarations or what mypy guarantees, and assertions that can't fail. Keep our own logic (validators, clamps), published schemas, and smoke tests of otherwise unexercised paths (saying so). Bulk is the cost multiplier; a cheap one-liner may stay.
   - Parametrize over representative inputs instead of a case per input on the same path; drop assertions implied by stronger ones and tests duplicated at the same level. Distinct boundaries, branches and error paths stay, as do positive anchors that keep negatives non-vacuous.
   - **Library spikes** pinning a non-obvious working usage stay, labelled as such unless local context (README, `x/`) says so.
@@ -171,7 +156,7 @@ ts_library(
   - A change detector guarding a constraint that can only break at one declaration → replace with a comment at the declaration. A relation to a second live artifact stays a test.
   - **Multi-site agreement:** prefer one generator for all sites (no test), then an integration test, then a test parsing both sites, then sync comments at every site.
   - **Pin defaults where they act:** assert resulting behavior or the boundary artifact's literal values, not `default == same constant`.
-  - **Removed stays removed:** delete a feature's tests with it; no "stays removed" tests (use a tombstone), except for auth/authz/approval boundaries.
+  - **Removed stays removed:** delete a feature's tests with it; don't retain tests whose only assertion is absence of a deleted route, schema entry, field, or config option. Use a tombstone when future action is still needed. Keep negative tests for current auth/authz/approval boundaries, supported 404/error behavior, data/no-secret invariants, and negative outcome behavior.
   - **Regression tests** fail on pre-fix code (PR says so) or aren't called regression tests; delete one that passes pre-fix or whose premise is gone.
 - No lint ignores or per-line silencing without approval.
 - `pre-commit run --all-files` over individual tools.
@@ -186,7 +171,7 @@ ts_library(
 
 ### Waiting
 
-**Never sleep a fixed duration; wait for the condition** (Playwright `wait_for_selector`/`wait_for_function`/`wait_for_load_state("networkidle")`; `wait_for_stable` from <util/testing/page_capture.py> for finished rendering). If an app-internal condition has nothing to wait on, expose a flag/attribute/event. In tests, assert ordering, not elapsed time.
+**Never sleep a fixed duration; wait for the condition** (Playwright `wait_for_selector`/`wait_for_function`/`wait_for_load_state("networkidle")`; `wait_for_stable` from <util/testing/frontend_visual/page_capture.py> for finished rendering). If an app-internal condition has nothing to wait on, expose a flag/attribute/event. In tests, assert ordering, not elapsed time.
 
 **Gotcha:** never await `document.getAnimations()` in visual tests — `DISABLE_ANIMATIONS_CSS` pauses animations, so `finished` never settles.
 

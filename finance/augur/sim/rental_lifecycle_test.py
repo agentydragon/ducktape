@@ -799,9 +799,21 @@ class TestRentalIncomeTaxation:
             ordinary_income, abs=1e-6
         )
 
-    def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self) -> None:
-        """Letting the property from month 12 accrues depreciation only from month 12 onward:
-        24-month horizon, $400k building basis, year 0 depreciation 0, year 1 $400k / 27.5."""
+    @pytest.mark.parametrize(
+        ("rental_months", "initial_fraction", "new_fraction", "expected_yearends"),
+        [
+            pytest.param((12, 23), 0, 1, ((0, 1e-6), (45_454.55, 0.05)), id="start-renting"),
+            pytest.param((0, 11), 1, 0, ((45_454.55, 0.05), (0, 1e-6)), id="stop-renting"),
+        ],
+    )
+    def test_rental_transition_limits_depreciation_to_rented_year(
+        self,
+        rental_months: tuple[int, int],
+        initial_fraction: int,
+        new_fraction: int,
+        expected_yearends: tuple[tuple[float, float], tuple[float, float]],
+    ) -> None:
+        """Only the rented year has $60k rent minus $400k / 27.5 building depreciation."""
 
         situation = Situation(
             horizon_months=24,
@@ -810,11 +822,10 @@ class TestRentalIncomeTaxation:
             accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
             recurring_transfers=(
-                # Rental income only fires from month 12 — matching the month it is let.
                 recurring_transfer(
                     "rental_income:p1",
-                    start_month=12,
-                    end_month=23,
+                    start_month=rental_months[0],
+                    end_month=rental_months[1],
                     payer=TENANT,
                     payee=OWNER,
                     amount=indexed(5_000),
@@ -822,21 +833,19 @@ class TestRentalIncomeTaxation:
                 ),
             ),
             housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=0),),
+                purchases=(purchase(PropertyId("p1"), rented_fraction=initial_fraction),),
                 rented_fraction_events=(
-                    RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(1)),
+                    RentedFraction(
+                        month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(new_fraction)
+                    ),
                 ),
             ),
         )
         [rollout] = run(situation)
-        # Year 0: not rented all year, no rental income, no depreciation → ordinary income $0.
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            0, abs=1e-6
-        )
-        # Year 1: 12 months rent ($60k) minus 12 months depreciation ($14.5k) ≈ $45,454.55.
-        assert breakdown(rollout, month=23, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            45_454.55, abs=0.05
-        )
+        for month, (ordinary_income, tolerance) in zip((11, 23), expected_yearends, strict=True):
+            assert breakdown(rollout, month=month, jurisdiction=FEDERAL)[
+                "ordinary_income_quanta"
+            ] / 100 == pytest.approx(ordinary_income, abs=tolerance)
 
     def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(self) -> None:
         """At start-of-rental MID drops for the now-rented portion of mortgage interest and
@@ -890,44 +899,6 @@ class TestRentalIncomeTaxation:
         )
         [rollout] = run(situation)
         return breakdown(rollout, month=11, jurisdiction=FEDERAL)
-
-    def test_lifecycle_stop_renting_halts_depreciation(self) -> None:
-        """Ceasing to let at month 12 accrues depreciation over months 0-11 only.
-        Year 0 ordinary: $60k rent - $14.5k depreciation = $45.5k. Year 1: no rent, no
-        depreciation → $0.
-        """
-
-        situation = Situation(
-            horizon_months=24,
-            rollout_count=1,
-            series=level_series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
-            accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
-            tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "rental_income:p1",
-                    start_month=0,
-                    end_month=11,  # rental income only in year 0
-                    payer=TENANT,
-                    payee=OWNER,
-                    amount=indexed(5_000),
-                    income=ORDINARY_INCOME,
-                ),
-            ),
-            housing=Housing(
-                purchases=(purchase(PropertyId("p1"), rented_fraction=1),),
-                rented_fraction_events=(
-                    RentedFraction(month=12, property_id=PropertyId("p1"), rented_fraction_ppb=rate_to_ppb(0)),
-                ),
-            ),
-        )
-        [rollout] = run(situation)
-        assert breakdown(rollout, month=11, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            45_454.55, abs=0.05
-        )
-        assert breakdown(rollout, month=23, jurisdiction=FEDERAL)["ordinary_income_quanta"] / 100 == pytest.approx(
-            0, abs=1e-6
-        )
 
     def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self) -> None:
         """A $100k capital improvement at month 6 lifts the building basis to $500k, so

@@ -167,10 +167,10 @@ py_library(
         "//finance/augur/model:schemas",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
-        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -185,12 +185,14 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:conditioning",
         "//finance/augur/model:exogenous",
-        "//util/bazel:runfiles",
+        "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -256,17 +258,17 @@ py_test(
     data = ["private-equity-training-fixture.yaml"],
     deps = [
         ":conftest",
+        ":jsonl",
         ":private_equity_fit",
         ":trained_private_equity",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
-        "//util/bazel:runfiles",
-        "//util/testing:jsonl",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -278,12 +280,18 @@ py_test(
         ":conftest",
         ":provider_config",
         ":state_space",
+        ":state_space_fit",
         ":train",
         ":vecm",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/fit:data",
+        "//finance/augur/fit:evidence_data",
+        "//finance/augur/fit:metrics",
+        "//finance/augur/model:conditioning",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
+        "//finance/evidence:sources",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -405,6 +413,7 @@ py_library(
     srcs = ["equity_fit.py"],
     deps = [
         ":structural_macro",
+        "//finance:calendar_months",
         "//finance/evidence:loading",
         "@pypi//numpy",
     ],
@@ -425,6 +434,7 @@ py_library(
     srcs = ["macro_var.py"],
     deps = [
         ":structural_macro",
+        "//finance:calendar_months",
         "//finance/evidence:loading",
         "@pypi//numpy",
     ],
@@ -441,8 +451,7 @@ py_library(
         "//finance/augur/fit:data",
         "//finance/augur/fit:metrics",
         "//finance/augur/fit:model",
-        "//finance/augur/model/path_models:scenarios",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -528,6 +537,25 @@ py_library(
         "//finance/augur/model:historical_windows",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "structural_macro_fit_test",
+    srcs = ["structural_macro_fit_test.py"],
+    deps = [
+        ":conftest",
+        ":macro_var",
+        ":structural_macro_fit",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:historical_windows",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -551,6 +579,7 @@ py_library(
         ":structural_macro_fit",
         ":vecm",
         "//finance/augur/fit:data",
+        "//finance/augur/fit:evidence_data",
         "//finance/evidence:loading",
         "@pypi//pyyaml",
     ],
@@ -561,7 +590,6 @@ py_library(
     srcs = ["vecm.py"],
     deps = [
         "//finance/augur/model:conditioning",
-        "//finance/augur/model:evidence",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:float64",
         "//finance/augur/model:provenance",
@@ -712,6 +740,7 @@ py_test(
         "//finance/augur/model:conditioning",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -788,6 +817,7 @@ py_library(
         "//finance/augur/model:product_paths",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
+        "//finance/evidence:loading",
         "@pypi//numpy",
     ],
 )
@@ -799,6 +829,7 @@ py_test(
         ":conftest",
         ":stationary_bootstrap",
         "//:conftest",
+        "//finance:calendar_months",
         "//finance/augur:conftest",
         "//finance/augur/model:bond_fund",
         "//finance/augur/model:equity",
@@ -810,4 +841,26 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_test(
+    name = "state_space_fit_test",
+    srcs = ["state_space_fit_test.py"],
+    deps = [
+        ":conftest",
+        ":state_space_fit",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "jsonl",
+    testonly = True,
+    srcs = ["jsonl.py"],
 )

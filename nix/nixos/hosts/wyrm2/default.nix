@@ -49,7 +49,6 @@ in
     ../../modules/home-wifi.nix
     ../../modules/k8s-workstation.nix
     ../../modules/gpu-monitor.nix
-    ../../modules/github-api-recorder.nix
     ../../modules/attic-substituter.nix
     ../../modules/piraeus-host.nix
   ];
@@ -64,6 +63,13 @@ in
 
   zramSwap.enable = true;
   systemd.oomd.enableUserSlices = true;
+  # Swap-based kills require both RAM and swap use to exceed this limit.
+  systemd.oomd.settings.OOM.SwapUsedLimit = "75%";
+  systemd.slices.user.sliceConfig.ManagedOOMSwap = "kill";
+  # Apply oomd.conf changes on a switch instead of waiting for a restart.
+  systemd.services.systemd-oomd.reloadTriggers = [
+    config.environment.etc."systemd/oomd.conf".source
+  ];
 
   # Idle Bazel servers on this shared box stack up: Bazel's 3h default kept 10 of them,
   # ~22 GiB RSS, on 2026-10-24. Measured 2026-10-24 on devel 7976adcd, cold server and
@@ -71,7 +77,7 @@ in
   # 187 s / 109 s / 85 s wall and peaked at 9.0-12.2 GiB server RSS. 15 min idle keeps
   # an active session's server while costing at most ~3 min to rebuild a dropped one.
   # Startup lines only reach direct bazel/bazelisk; local `bb` drops them
-  # (devinfra/docs/bb_bazelrc_startup.md). A user's ~/.bazelrc overrides this.
+  # (devinfra/buildbuddy/docs/bazelrc_startup.md). A user's ~/.bazelrc overrides this.
   ducktape.bazel.extraSystemBazelrc = ''
     startup --max_idle_secs=900
   '';
@@ -137,9 +143,6 @@ in
   # GPU health monitoring — periodic telemetry + dmesg error watcher.
   # See debug/atlas/gpu_lockup_20260417/README.md for context.
   ducktape.gpuMonitor.enable = true;
-
-  # Attribution for the GitHub GraphQL quota drain; see the module header.
-  ducktape.githubApiRecorder.enable = true;
 
   # MT7921 USB WiFi stick firmware (for CPAP ez Share sync)
   hardware.firmware = [ pkgs.linux-firmware ];
@@ -535,14 +538,20 @@ in
   # fail closed rather than writing pod state back onto the root filesystem.
   systemd.services.kubelet.unitConfig.RequiresMountsFor = "/var/lib/kubelet /var/log/pods";
 
+  # Replaces systemd's stock tmp.conf (`q /tmp ... 10d`, `q /var/tmp ... 30d`) so /tmp has a
+  # single rule. Keep the /var/tmp line: nothing else cleans it.
+  environment.etc."tmpfiles.d/tmp.conf".text = ''
+    # Keep the dedicated scratch filesystem bounded without disrupting active files.
+    q /tmp 1777 root root 14d
+    q /var/tmp 1777 root root 30d
+  '';
+
   # Directories for Bazel caches under the single SSD cache mount.
   systemd.tmpfiles.rules = [
     "d /home/agentydragon/.cache/bazel 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
-    # Keep the dedicated scratch filesystem bounded without disrupting active files.
-    "q /tmp 1777 root root 14d"
     # Steam library mount (virtio1) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"

@@ -1,8 +1,10 @@
-import httpx
+import json
+import subprocess
+
 import pytest
 import pytest_bazel
 
-from agentplane.egress.rule_client import Credential, Policy, Rule, Rules, StringList, Target, load_rules
+from agentplane.egress.rule_client import Credential, Policy, Rule, Rules, RulesError, StringList, Target, load_rules
 
 
 @pytest.mark.parametrize(
@@ -29,16 +31,14 @@ def test_empty_and_absent_restrictions() -> None:
 
 
 def test_live_wire_contract(monkeypatch: pytest.MonkeyPatch) -> None:
-    # JSON shape from EgressRules.GetRules' grpc-gateway facade.
-    monkeypatch.setenv("AGENTPLANE_EGRESS_URL", "http://egress.example.test")
-    monkeypatch.setenv("AGENTPLANE_EGRESS_CREDENTIAL", "inert-workload-placeholder")
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        assert request.url == "http://egress.example.test/v1/rules"
-        assert request.headers["Authorization"] == "Bearer inert-workload-placeholder"
-        return httpx.Response(
-            200,
-            json={
+    # The CLI emits the protojson response of EgressRules.GetRules.
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert args == ["agentplane", "egress", "rules", "--json"]
+        assert kwargs == {"capture_output": True, "check": True, "text": True, "timeout": 30}
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=json.dumps({
                 "policies": [
                     {
                         "name": "test",
@@ -56,11 +56,11 @@ def test_live_wire_contract(monkeypatch: pytest.MonkeyPatch) -> None:
                         ],
                     }
                 ]
-            },
+            }),
         )
 
-    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
-        rules = load_rules(client=client)
+    monkeypatch.setattr(subprocess, "run", run)
+    rules = load_rules()
     arguments = {"host": "db.example.test", "method": "POST", "path": "/api/query"}
     assert (
         rules.find_credential(**arguments, target_method="METHOD_BASIC_PASSWORD").placeholder
@@ -70,6 +70,26 @@ def test_live_wire_contract(monkeypatch: pytest.MonkeyPatch) -> None:
         rules.find_credential(**arguments, target_method="METHOD_SCHEME_TOKEN", scheme="Bearer")
     with pytest.raises(LookupError):
         Rules().find_credential(**arguments, target_method="METHOD_BASIC_PASSWORD")
+
+
+def test_load_rules_hides_cli_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(1, args, stderr="synthetic-sensitive-output")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(RulesError, match="Unable to load Agentplane egress rules") as error:
+        load_rules()
+    assert "synthetic-sensitive-output" not in str(error.value)
+
+
+def test_load_rules_hides_invalid_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 0, stdout="synthetic-sensitive-output")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(RulesError, match="Unable to load Agentplane egress rules") as error:
+        load_rules()
+    assert "synthetic-sensitive-output" not in str(error.value)
 
 
 def test_credential_ambiguity_and_identity_selection() -> None:

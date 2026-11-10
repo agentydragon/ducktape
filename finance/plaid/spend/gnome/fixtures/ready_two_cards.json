@@ -2,7 +2,7 @@
   "status": "ready",
   "error": "",
   "view": {
-    "generated_at": "2026-10-01T12:00:00Z",
+    "generated_at": "2026-10-15T12:00:00Z",
     "cards": [
       {
         "label": "Everyday",
@@ -17,11 +17,11 @@
         "alert_threshold_percent": 75,
         "spend_percent": "82.3",
         "alert_state": "warning",
-        "last_synced_at": "2026-10-01T11:58:00Z",
+        "last_synced_at": "2026-10-15T11:58:00Z",
         "statement_period": {
           "kind": "statement",
-          "start": "2026-09-17",
-          "through": "2026-10-01"
+          "start": "2026-10-01",
+          "through": "2026-10-15"
         }
       },
       {
@@ -37,11 +37,11 @@
         "alert_threshold_percent": 80,
         "spend_percent": "2.6",
         "alert_state": "normal",
-        "last_synced_at": "2026-10-01T11:59:00Z",
+        "last_synced_at": "2026-10-15T11:59:00Z",
         "statement_period": {
           "kind": "statement",
-          "start": "2026-09-21",
-          "through": "2026-10-01"
+          "start": "2026-10-03",
+          "through": "2026-10-15"
         }
       }
     ]

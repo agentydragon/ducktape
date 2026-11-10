@@ -1,2 +1,53 @@
 # OCI build helpers for this repository.
 # See defs.bzl for the macros.
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Standard-library only: GitHub Actions imports this from bare `python3 -m` commands.
+py_library(
+    name = "crane",
+    srcs = ["crane.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_crane",
+    srcs = ["test_crane.py"],
+    deps = [
+        ":crane",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "oci",
+    srcs = ["oci.py"],
+    data = ["@crane"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":crane",
+        "@pypi//opentelemetry_api",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "oci_load_bin",
+    testonly = True,
+    main_module = "devinfra.oci.oci",
+    visibility = ["//agentplane/testing/postgres:__pkg__"],
+    deps = [":oci"],
+)
+
+py_test(
+    name = "test_oci",
+    srcs = ["test_oci.py"],
+    deps = [
+        ":oci",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

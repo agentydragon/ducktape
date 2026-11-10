@@ -47,7 +47,7 @@ def console_chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # The Haku console's own trusted namespace -- deliberately NOT haku-sandbox.
     # The console is reviewed/released ducktape code, so it sits OUTSIDE Haku's
-    # RBAC (no `haku` RoleBinding here) and OUTSIDE the haku-egress-proxy egress fence
+    # RBAC (no `haku` RoleBinding here) and OUTSIDE haku-sandbox's egress fence
     # (the fence's CiliumClusterwideNetworkPolicy keys on the haku-sandbox
     # namespace; this one gets ordinary egress). That is the confidentiality boundary
     # letting the console hold secrets Haku may not read, e.g. the Claude Code web

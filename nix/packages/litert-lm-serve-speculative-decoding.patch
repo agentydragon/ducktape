@@ -1,48 +1,35 @@
-diff -urN old/litert_lm_cli/commands/openai_handler.py new/litert_lm_cli/commands/openai_handler.py
---- old/litert_lm_cli/commands/openai_handler.py
-+++ new/litert_lm_cli/commands/openai_handler.py
-@@ -1204,0 +1204,3 @@
-+          enable_speculative_decoding=getattr(
-+              self.server, "enable_speculative_decoding", None
-+          ),
-diff -urN old/litert_lm_cli/commands/serve.py new/litert_lm_cli/commands/serve.py
---- old/litert_lm_cli/commands/serve.py
-+++ new/litert_lm_cli/commands/serve.py
-@@ -39,0 +39,1 @@
-+    enable_speculative_decoding: bool | None,
-@@ -48,0 +49,1 @@
+--- a/litert_lm_cli/commands/serve/module.py
++++ b/litert_lm_cli/commands/serve/module.py
+@@ -39,0 +40 @@
++    enable_speculative_decoding: str | None,
+@@ -48,0 +50 @@
 +    enable_speculative_decoding: Whether to force speculative decoding.
-@@ -54,0 +55,1 @@
+@@ -54,0 +57 @@
 +      server.enable_speculative_decoding = enable_speculative_decoding
-@@ -106,0 +106,10 @@
+@@ -106,0 +110,7 @@
 +@click.option(
 +    "--enable-speculative-decoding",
 +    type=click.Choice(["true", "false"], case_sensitive=False),
 +    default="false",
 +    callback=common.parse_speculative_decoding,
-+    help=(
-+        "Force speculative decoding for served engines. Use true for Gemma 4"
-+        " MTP-capable GPU serving."
-+    ),
++    help="Force speculative decoding for served engines (true or false).",
 +)
-@@ -113,0 +127,1 @@
-+    enable_speculative_decoding: bool,
-@@ -122,0 +137,1 @@
+@@ -114,0 +125 @@
++    enable_speculative_decoding: str,
+@@ -123,0 +135 @@
 +    enable_speculative_decoding: Whether to force speculative decoding.
-@@ -137,1 +152,4 @@
+@@ -138 +150,4 @@
 -  run_server(host, port, handler_class, api_name, cors_origin)
 +  run_server(
 +      host, port, handler_class, api_name, cors_origin,
 +      enable_speculative_decoding
 +  )
-diff -urN old/litert_lm_cli/commands/serve_util.py new/litert_lm_cli/commands/serve_util.py
---- old/litert_lm_cli/commands/serve_util.py
-+++ new/litert_lm_cli/commands/serve_util.py
-@@ -105,0 +106,1 @@
-+    enable_speculative_decoding: bool | None = None,
-@@ -122,0 +123,1 @@
-+    enable_speculative_decoding: Whether to force speculative decoding.
-@@ -159,0 +162,3 @@
-+  if enable_speculative_decoding is not None:
-+    speculative_decoding = enable_speculative_decoding
-+
+--- a/litert_lm_cli/commands/serve/util.py
++++ b/litert_lm_cli/commands/serve/util.py
+@@ -83,0 +84 @@
++    self.enable_speculative_decoding: str | None = None
+@@ -190 +191,3 @@
+-      model.resolve_config_option(None, m, "speculative_decoding")
++      model.resolve_config_option(
++          server.enable_speculative_decoding, m, "speculative_decoding"
++      )

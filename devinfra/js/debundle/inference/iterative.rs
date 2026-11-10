@@ -1,0 +1,799 @@
+//! Growing facts over a finite domain. Producers may contribute to the same key;
+//! consumers are revisited whenever its value or proof dependencies grow.
+//!
+//! Only the completed closure is exposed outside an evaluation. Rules must be
+//! monotone in the order defined by `merge`; absence during evaluation is bottom,
+//! not evidence of impossibility. Optimistic or position-sensitive conclusions
+//! require a separate completion boundary before becoming positive certificates.
+
+use super::Judgment;
+use crate::analysis_inputs::ProofDependencies;
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::{BTreeMap, BTreeSet};
+use std::hash::Hash;
+
+/// Typed access to facts during one producer evaluation. A family adapter can
+/// project this interface onto a shared program store without copying facts or
+/// hiding reads from the dependency worklist.
+pub(crate) trait FactContext<Key, Fact> {
+    fn read(&mut self, key: Key) -> Option<&Fact>;
+    fn propose(&mut self, key: Key, contribution: Fact) -> bool;
+    fn assume(&mut self, dependencies: &ProofDependencies);
+
+    /// Read a completed immutable fact that may have multiple consumers. Its
+    /// typed dependencies are retained, but no watcher or live premise key is
+    /// installed: the caller guarantees this version can never change.
+    /// Absence is still missing evidence, never a certificate of absence.
+    fn read_final(&mut self, key: Key) -> Option<&Fact>;
+
+    /// Consume a completed single-consumer transfer, retaining its typed proof
+    /// dependencies. Only acyclic, immutable transfers can use this operation:
+    /// the caller must guarantee no future producer or reader of this key.
+    /// Growing facts and certificates needed by later consumers stay in the
+    /// store. This bounds memory across one-way program-point transitions.
+    fn take_final(&mut self, key: Key) -> Option<Fact>;
+}
+
+/// Positive requirements over the same store used by growing facts.
+/// Requiring an absent fact must never allow a certificate to escape.
+pub(crate) trait CertificateContext<Key, Fact> {
+    fn require(&mut self, key: Key) -> Option<&Fact>;
+    fn assume(&mut self, dependencies: &ProofDependencies);
+}
+
+pub(crate) struct GuardedContext<'a, Context> {
+    inner: &'a mut Context,
+    missing: bool,
+}
+
+impl<'a, Context> GuardedContext<'a, Context> {
+    pub(crate) fn new(inner: &'a mut Context) -> Self {
+        Self {
+            inner,
+            missing: false,
+        }
+    }
+
+    pub(crate) fn finish<Fact>(self, contribution: Option<Fact>) -> Option<Fact> {
+        contribution.filter(|_| !self.missing)
+    }
+}
+
+impl<Key, Fact, Context: FactContext<Key, Fact>> CertificateContext<Key, Fact>
+    for GuardedContext<'_, Context>
+{
+    fn require(&mut self, key: Key) -> Option<&Fact> {
+        let fact = self.inner.read(key);
+        self.missing |= fact.is_none();
+        fact
+    }
+
+    fn assume(&mut self, dependencies: &ProofDependencies) {
+        self.inner.assume(dependencies);
+    }
+}
+
+pub(crate) trait IterativeRules: Sized {
+    type Key: Clone + Ord + Hash;
+    type Fact;
+    type Rule: Clone + Ord + Hash;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>);
+
+    /// Whether the engine records, per rule, the keys that changed after the
+    /// rule read them, and evaluates through `evaluate_changed`.
+    const EVALUATES_CHANGES: bool = false;
+
+    /// Re-evaluate `rule` given `changed`: every key it has read that changed
+    /// after it read it. A rule whose contribution is a
+    /// join over its reads may join only the changed ones: the previous
+    /// contribution is already merged into its target, so the merged fact
+    /// and the change it reports are the same. Called only when
+    /// `EVALUATES_CHANGES` holds, and never for a rule's first evaluation.
+    fn evaluate_changed(
+        &self,
+        rule: &Self::Rule,
+        _changed: &BTreeSet<Self::Key>,
+        context: &mut impl FactContext<Self::Key, Self::Fact>,
+    ) {
+        self.evaluate(rule, context);
+    }
+
+    /// Discover producers for a newly contributed request. Registration is
+    /// idempotent; subsequent changes wake a producer through its normal reads.
+    fn producers_for(&self, _key: &Self::Key, _fact: &Self::Fact) -> Vec<Self::Rule> {
+        Vec::new()
+    }
+
+    /// Join a contribution into a fact, returning whether its value changed.
+    /// The semantic domain must have finite height and an associative,
+    /// commutative, idempotent join. A terminal diagnostic can retain its first
+    /// witness in deterministic producer order without changing that semantic
+    /// result. Proof dependencies are joined separately by the engine.
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool;
+}
+
+pub(crate) struct IterativeInference<R: IterativeRules> {
+    rules: R,
+    facts: FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+}
+
+impl<R: IterativeRules> IterativeInference<R> {
+    pub(crate) fn new(rules: R) -> Self {
+        Self {
+            rules,
+            facts: FxHashMap::default(),
+        }
+    }
+
+    /// Resume a completed source-only closure under a larger monotone rule
+    /// set. Judgments keep their typed dependencies and direct premise keys;
+    /// the new context schedules all of its producers over those facts. The
+    /// caller must guarantee that the completed source-only premises cannot
+    /// be refined by the later rules.
+    pub(crate) fn from_completed(rules: R, completed: IterativeFacts<R::Key, R::Fact>) -> Self {
+        Self {
+            rules,
+            facts: completed.facts,
+        }
+    }
+
+    pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
+        let mut context = IterativeContext::<R>::new(&mut self.facts);
+        context.propose(key, value);
+    }
+
+    /// All producers must be supplied. Source-order rounds preserve clients
+    /// whose conservative approximation depends on the initial source sweep.
+    /// A rule reading its own output runs again in the next round when needed.
+    pub(crate) fn solve(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> IterativeFacts<R::Key, R::Fact> {
+        self.solve_with_premises::<true>(producers)
+    }
+
+    /// Complete the same closure when the caller consumes only values. Keep
+    /// read watchers and typed dependencies, but do not build a direct-premise
+    /// graph that would immediately be discarded by `into_values`.
+    pub(crate) fn solve_values(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> BTreeMap<R::Key, R::Fact> {
+        self.solve_with_premises::<false>(producers).into_values()
+    }
+
+    /// `solve_values` for a closure that a later stratum resumes through
+    /// `from_completed`: judgments keep values and typed dependencies, but
+    /// no explanatory premises.
+    pub(crate) fn solve_values_resumable(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> IterativeFacts<R::Key, R::Fact> {
+        self.solve_with_premises::<false>(producers)
+    }
+
+    fn solve_with_premises<const RETAIN_PREMISES: bool>(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> IterativeFacts<R::Key, R::Fact> {
+        let Self { rules, mut facts } = self;
+        // Only `pending` orders evaluation; the other worklist maps are
+        // looked up per key and rule, never iterated in an order that matters.
+        let mut registered: FxHashSet<_> = producers.into_iter().collect();
+        for (key, fact) in &facts {
+            registered.extend(rules.producers_for(key, fact.value()));
+        }
+        let mut pending: BTreeSet<_> = registered
+            .iter()
+            .cloned()
+            .map(|rule| (0usize, rule))
+            .collect();
+        let mut scheduled: FxHashMap<_, _> = pending
+            .iter()
+            .map(|(round, rule)| (rule.clone(), *round))
+            .collect();
+        let mut watchers: FxHashMap<R::Key, FxHashSet<R::Rule>> = FxHashMap::default();
+        // Each rule's keys in `watchers`. A re-evaluated rule mostly repeats
+        // its reads; checking its own small set first spares a search of the
+        // whole watcher map for every repeated read.
+        let mut watched: FxHashMap<R::Rule, FxHashSet<R::Key>> = FxHashMap::default();
+        // With `EVALUATES_CHANGES`, each evaluated rule's watched keys that
+        // changed after its last evaluation read them.
+        let mut changed_since: FxHashMap<R::Rule, BTreeSet<R::Key>> = FxHashMap::default();
+        #[cfg(test)]
+        let mut evaluations = 0usize;
+        while let Some((round, rule)) = pending.pop_first() {
+            scheduled.remove(&rule);
+            let mut context = IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts);
+            match changed_since.remove(&rule) {
+                Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
+                None => rules.evaluate(&rule, &mut context),
+            }
+            #[cfg(test)]
+            {
+                evaluations += 1;
+            }
+            let known = watched.entry(rule.clone()).or_default();
+            for key in context.reads {
+                if known.insert(key.clone()) {
+                    watchers.entry(key).or_default().insert(rule.clone());
+                }
+            }
+            for key in context.changed {
+                let fact = facts.get(&key).expect("changed fact exists");
+                for producer in rules.producers_for(&key, fact.value()) {
+                    if registered.insert(producer.clone()) {
+                        let next_round = if producer > rule {
+                            round
+                        } else {
+                            round.checked_add(1).expect("inference round overflow")
+                        };
+                        scheduled.insert(producer.clone(), next_round);
+                        pending.insert((next_round, producer));
+                    }
+                }
+                let Some(dependents) = watchers.get(&key) else {
+                    continue;
+                };
+                for dependent in dependents {
+                    if R::EVALUATES_CHANGES {
+                        changed_since
+                            .entry(dependent.clone())
+                            .or_default()
+                            .insert(key.clone());
+                    }
+                    let next_round = if dependent > &rule {
+                        round
+                    } else {
+                        round.checked_add(1).expect("inference round overflow")
+                    };
+                    if scheduled
+                        .get(dependent)
+                        .is_some_and(|scheduled| *scheduled <= next_round)
+                    {
+                        continue;
+                    }
+                    if let Some(previous) = scheduled.insert(dependent.clone(), next_round) {
+                        pending.remove(&(previous, dependent.clone()));
+                    }
+                    pending.insert((next_round, dependent.clone()));
+                }
+            }
+        }
+        IterativeFacts {
+            facts,
+            #[cfg(test)]
+            evaluations,
+        }
+    }
+}
+
+/// Mutable access is scoped to one monotone producer. Both absent and present
+/// reads install watchers, including reads made before a producer exists.
+pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
+    facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>,
+    /// In read order, with repeats: appending is cheaper than a set insert
+    /// for every read, and the solver skips keys the rule already watches.
+    reads: Vec<R::Key>,
+    changed: BTreeSet<R::Key>,
+    dependencies: ProofDependencies,
+}
+
+impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
+    fn new(facts: &'a mut FxHashMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
+        Self {
+            facts,
+            reads: Vec::new(),
+            changed: BTreeSet::new(),
+            dependencies: ProofDependencies::default(),
+        }
+    }
+}
+
+impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact>
+    for IterativeContext<'_, R, RETAIN_PREMISES>
+{
+    fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
+        self.reads.push(key.clone());
+        let fact = self.facts.get(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        Some(fact.value())
+    }
+
+    /// Writes are immediately visible to subsequent reads in this producer.
+    fn propose(&mut self, key: R::Key, contribution: R::Fact) -> bool {
+        use std::collections::hash_map::Entry;
+        let changed = match self.facts.entry(key.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Judgment {
+                    value: contribution,
+                    dependencies: self.dependencies.clone(),
+                    premises: if RETAIN_PREMISES {
+                        self.reads.iter().cloned().collect()
+                    } else {
+                        BTreeSet::new()
+                    },
+                });
+                true
+            }
+            Entry::Occupied(mut entry) => {
+                let fact = entry.get_mut();
+                let changed = R::merge(&key, &mut fact.value, contribution);
+                let dependencies_grew = !self.dependencies.is_empty() && {
+                    let dependencies = fact.dependencies.clone();
+                    fact.dependencies.extend(&self.dependencies);
+                    fact.dependencies != dependencies
+                };
+                if RETAIN_PREMISES {
+                    fact.premises.extend(self.reads.iter().cloned());
+                }
+                changed || dependencies_grew
+            }
+        };
+        if changed {
+            self.changed.insert(key);
+        }
+        changed
+    }
+
+    fn assume(&mut self, dependencies: &ProofDependencies) {
+        self.dependencies.extend(dependencies);
+    }
+
+    fn read_final(&mut self, key: R::Key) -> Option<&R::Fact> {
+        let fact = self.facts.get(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        Some(fact.value())
+    }
+
+    fn take_final(&mut self, key: R::Key) -> Option<R::Fact> {
+        let fact = self.facts.remove(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        self.reads.retain(|read| *read != key);
+        self.changed.remove(&key);
+        Some(fact.value)
+    }
+}
+
+/// Immutable results after every supplied producer and its dependents settle.
+#[derive(Debug, Clone)]
+pub(crate) struct IterativeFacts<Key, Fact> {
+    facts: FxHashMap<Key, Judgment<Key, Fact>>,
+    #[cfg(test)]
+    evaluations: usize,
+}
+
+impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
+    pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
+        self.facts.get(key)
+    }
+
+    /// In no particular order.
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &Key> {
+        self.facts.keys()
+    }
+
+    pub(crate) fn into_values(self) -> BTreeMap<Key, Fact> {
+        self.facts
+            .into_iter()
+            .map(|(key, judgment)| (key, judgment.value))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn evaluations(&self) -> usize {
+        self.evaluations
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis_inputs::ValueInputRef;
+
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum TransferKey {
+        Input,
+        Intermediate,
+        Output,
+    }
+
+    struct TransferRules;
+
+    impl IterativeRules for TransferRules {
+        type Key = TransferKey;
+        type Fact = &'static str;
+        type Rule = ();
+
+        fn evaluate(&self, _: &(), context: &mut impl FactContext<Self::Key, Self::Fact>) {
+            let Some(value) = context.take_final(TransferKey::Input) else {
+                return;
+            };
+            context.assume(&ProofDependencies {
+                value_inputs: BTreeSet::from([ValueInputRef {
+                    defining_chunk: "captured".into(),
+                    input_index: 0,
+                }]),
+                ..Default::default()
+            });
+            context.propose(TransferKey::Intermediate, value);
+            let value = context.take_final(TransferKey::Intermediate).unwrap();
+            context.propose(TransferKey::Output, value);
+        }
+
+        fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            assert_eq!(*current, contribution);
+            false
+        }
+    }
+
+    #[test]
+    fn completed_transfers_retire_payloads_and_preserve_typed_dependencies() {
+        let mut inference = IterativeInference::new(TransferRules);
+        inference.seed(TransferKey::Input, "settled input");
+        let facts = inference.solve([()]);
+        assert!(facts.get(&TransferKey::Input).is_none());
+        assert!(facts.get(&TransferKey::Intermediate).is_none());
+        let output = facts.get(&TransferKey::Output).unwrap();
+        assert_eq!(*output.value(), "settled input");
+        assert_eq!(output.dependencies().value_inputs.len(), 1);
+        assert!(output.dependencies().value_inputs.contains(&ValueInputRef {
+            defining_chunk: "captured".into(),
+            input_index: 0,
+        }));
+    }
+
+    #[test]
+    fn a_missing_transfer_input_cannot_produce_a_result() {
+        let facts = IterativeInference::new(TransferRules).solve([()]);
+        assert!(facts.get(&TransferKey::Output).is_none());
+    }
+
+    #[test]
+    fn completed_shared_reads_preserve_dependencies_without_live_premises() {
+        let dependencies = ProofDependencies {
+            value_inputs: BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0,
+            }]),
+            ..Default::default()
+        };
+        let mut facts = FxHashMap::default();
+        {
+            let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+            context.assume(&dependencies);
+            context.propose(TransferKey::Input, "settled input");
+        }
+        for output in [TransferKey::Intermediate, TransferKey::Output] {
+            let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+            let value = *context.read_final(TransferKey::Input).unwrap();
+            context.propose(output.clone(), value);
+            let result = facts.get(&output).unwrap();
+            assert_eq!(*result.value(), "settled input");
+            assert_eq!(result.dependencies(), &dependencies);
+            assert!(result.premises().is_empty());
+        }
+        assert!(facts.contains_key(&TransferKey::Input));
+        let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+        context.take_final(TransferKey::Input);
+        assert!(context.read_final(TransferKey::Input).is_none());
+    }
+
+    struct RequestedRules;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum RequestedKey {
+        Inputs,
+        Projection,
+        Result,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum RequestedProducer {
+        InitialInputs,
+        ProjectInputs,
+        PublishResult,
+        AdditionalInputs,
+    }
+
+    impl IterativeRules for RequestedRules {
+        type Key = RequestedKey;
+        type Fact = BTreeSet<&'static str>;
+        type Rule = RequestedProducer;
+
+        fn producers_for(&self, key: &RequestedKey, _: &Self::Fact) -> Vec<RequestedProducer> {
+            match key {
+                RequestedKey::Inputs => vec![RequestedProducer::ProjectInputs],
+                RequestedKey::Projection => vec![RequestedProducer::PublishResult],
+                RequestedKey::Result => Vec::new(),
+            }
+        }
+
+        fn evaluate(
+            &self,
+            rule: &RequestedProducer,
+            context: &mut impl FactContext<RequestedKey, Self::Fact>,
+        ) {
+            match rule {
+                RequestedProducer::InitialInputs => {
+                    context.propose(RequestedKey::Inputs, BTreeSet::from(["initial"]));
+                }
+                RequestedProducer::ProjectInputs => {
+                    if let Some(values) = context.read(RequestedKey::Inputs).cloned() {
+                        context.propose(RequestedKey::Projection, values);
+                    }
+                }
+                RequestedProducer::PublishResult => {
+                    if let Some(values) = context.read(RequestedKey::Projection).cloned() {
+                        context.propose(RequestedKey::Result, values);
+                    }
+                }
+                RequestedProducer::AdditionalInputs => {
+                    context.propose(RequestedKey::Inputs, BTreeSet::from(["additional"]));
+                }
+            }
+        }
+
+        fn merge(_: &RequestedKey, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
+        }
+    }
+
+    #[test]
+    fn requested_producers_are_discovered_and_wake_on_later_input_growth() {
+        let facts = IterativeInference::new(RequestedRules).solve([
+            RequestedProducer::InitialInputs,
+            RequestedProducer::AdditionalInputs,
+        ]);
+        assert_eq!(
+            facts.get(&RequestedKey::Result).unwrap().value(),
+            &BTreeSet::from(["initial", "additional"])
+        );
+    }
+
+    #[test]
+    fn seeded_requests_discover_producers_without_an_initial_rule_list() {
+        let mut inference = IterativeInference::new(RequestedRules);
+        inference.seed(RequestedKey::Inputs, BTreeSet::from(["initial"]));
+        let facts = inference.solve([]);
+        assert_eq!(
+            facts.get(&RequestedKey::Result).unwrap().value(),
+            &BTreeSet::from(["initial"])
+        );
+        assert_eq!(facts.evaluations(), 2);
+    }
+
+    struct Rules;
+    impl IterativeRules for Rules {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+            match rule {
+                0 => {
+                    if let Some(values) = context.read(2).cloned() {
+                        context.propose(3, values);
+                    }
+                }
+                1 => {
+                    context.propose(2, BTreeSet::from([10]));
+                }
+                2 => {
+                    context.assume(&ProofDependencies {
+                        value_inputs: BTreeSet::from([ValueInputRef {
+                            defining_chunk: "captured".into(),
+                            input_index: 0,
+                        }]),
+                        ..Default::default()
+                    });
+                    context.propose(2, BTreeSet::from([20]));
+                }
+                3 => {
+                    if let Some(values) = context.read(3).cloned() {
+                        context.propose(2, values);
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
+        }
+    }
+
+    /// Rule 0 joins keys 10, 11 and 12 into key 20; rules 1 and 2 grow 10
+    /// and 11 after rule 0 first read them.
+    struct ChangedJoin {
+        changed: std::rc::Rc<std::cell::RefCell<Vec<Vec<usize>>>>,
+    }
+
+    impl IterativeRules for ChangedJoin {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+        const EVALUATES_CHANGES: bool = true;
+
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+            match rule {
+                0 => {
+                    let joined = [10, 11, 12]
+                        .into_iter()
+                        .filter_map(|key| context.read(key).cloned())
+                        .flatten()
+                        .collect();
+                    context.propose(20, joined);
+                }
+                1 => {
+                    context.propose(10, BTreeSet::from([1]));
+                }
+                2 => {
+                    context.propose(11, BTreeSet::from([2]));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        fn evaluate_changed(
+            &self,
+            rule: &usize,
+            changed: &BTreeSet<usize>,
+            context: &mut impl FactContext<usize, Self::Fact>,
+        ) {
+            assert_eq!(*rule, 0);
+            self.changed
+                .borrow_mut()
+                .push(changed.iter().copied().collect());
+            let joined = changed
+                .iter()
+                .filter_map(|key| context.read(*key).cloned())
+                .flatten()
+                .collect();
+            context.propose(20, joined);
+        }
+
+        fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
+        }
+    }
+
+    #[test]
+    fn a_rule_evaluating_changes_receives_only_the_keys_that_grew_after_its_read() {
+        let changed = std::rc::Rc::default();
+        let mut inference = IterativeInference::new(ChangedJoin {
+            changed: std::rc::Rc::clone(&changed),
+        });
+        inference.seed(12, BTreeSet::from([3]));
+        let facts = inference.solve_values(0..3);
+        assert_eq!(facts[&20], BTreeSet::from([1, 2, 3]));
+        assert_eq!(*changed.borrow(), [vec![10, 11]]);
+    }
+
+    #[test]
+    fn positive_certificates_wait_for_all_required_growing_facts() {
+        struct Certificates;
+        impl IterativeRules for Certificates {
+            type Key = usize;
+            type Fact = BTreeSet<usize>;
+            type Rule = usize;
+            fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+                match rule {
+                    0 => {
+                        let mut guarded = GuardedContext::new(context);
+                        // Even a producer that neglects `?` cannot publish a
+                        // positive certificate with an absent requirement.
+                        guarded.require(1);
+                        if let Some(fact) = guarded.finish(Some(BTreeSet::from([10]))) {
+                            context.propose(2, fact);
+                        }
+                    }
+                    1 => {
+                        context.propose(1, BTreeSet::from([20]));
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            fn merge(_: &usize, into: &mut Self::Fact, from: Self::Fact) -> bool {
+                let before = into.len();
+                into.extend(from);
+                into.len() != before
+            }
+        }
+        let waiting = IterativeInference::new(Certificates).solve([0]);
+        assert!(waiting.get(&2).is_none());
+        let complete = IterativeInference::new(Certificates).solve([0, 1]);
+        assert_eq!(complete.get(&2).unwrap().value(), &BTreeSet::from([10]));
+        assert_eq!(complete.get(&2).unwrap().premises(), &BTreeSet::from([1]));
+    }
+
+    #[test]
+    fn shared_producers_and_cycles_converge_with_provenance() {
+        let facts = IterativeInference::new(Rules).solve(0..4);
+        let result = facts.get(&3).unwrap();
+        assert_eq!(result.value(), &BTreeSet::from([10, 20]));
+        assert_eq!(
+            result.dependencies().value_inputs,
+            BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0
+            }])
+        );
+        assert_eq!(result.premises(), &BTreeSet::from([2]));
+        assert!(facts.evaluations() < 12);
+        let reversed = IterativeInference::new(Rules).solve((0..4).rev());
+        for key in [2, 3] {
+            let first = facts.get(&key).unwrap();
+            let second = reversed.get(&key).unwrap();
+            assert_eq!(first.value(), second.value());
+            assert_eq!(first.dependencies(), second.dependencies());
+            assert_eq!(first.premises(), second.premises());
+        }
+        assert_eq!(facts.into_values(), reversed.into_values());
+    }
+
+    #[test]
+    fn values_only_closure_preserves_requests_cycles_and_dependency_wakeups() {
+        let producers = [
+            RequestedProducer::InitialInputs,
+            RequestedProducer::AdditionalInputs,
+        ];
+        assert_eq!(
+            IterativeInference::new(RequestedRules).solve_values(producers),
+            IterativeInference::new(RequestedRules)
+                .solve(producers)
+                .into_values(),
+        );
+        assert_eq!(
+            IterativeInference::new(Rules).solve_values(0..4),
+            IterativeInference::new(Rules).solve(0..4).into_values(),
+        );
+        let mut inference = IterativeInference::new(Rules);
+        inference.seed(2, BTreeSet::from([20]));
+        // Inspect the private closure here: the public values-only API does
+        // not expose judgments whose explanatory premises were discarded.
+        let facts = inference.solve_with_premises::<false>([0, 2]);
+        let result = facts.get(&3).unwrap();
+        assert_eq!(result.value(), &BTreeSet::from([20]));
+        assert_eq!(
+            result.dependencies().value_inputs,
+            BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0,
+            }]),
+        );
+        assert_eq!(facts.evaluations(), 3);
+    }
+
+    #[test]
+    fn unsupported_cycle_has_no_fact() {
+        let facts = IterativeInference::new(Rules).solve([0, 3]);
+        assert!(facts.get(&2).is_none());
+        assert!(facts.get(&3).is_none());
+        assert_eq!(facts.evaluations(), 2);
+    }
+
+    #[test]
+    fn dependency_growth_wakes_existing_consumers_without_value_growth() {
+        let mut inference = IterativeInference::new(Rules);
+        inference.seed(2, BTreeSet::from([20]));
+        // The consumer runs first. Producer 2 contributes the same value with
+        // a new author premise, which must propagate through the existing fact.
+        let facts = inference.solve([0, 2]);
+        let result = facts.get(&3).unwrap();
+        assert_eq!(result.value(), &BTreeSet::from([20]));
+        assert_eq!(
+            result.dependencies().value_inputs,
+            BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0,
+            }])
+        );
+        assert_eq!(result.premises(), &BTreeSet::from([2]));
+    }
+}

@@ -6,9 +6,10 @@
 import React from "react";
 
 import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format";
-import type { CalibrationRunResponse } from "./client";
+import type { fetchCalibrationRun } from "./client";
 
-type CategoricalFamily = NonNullable<CalibrationRunResponse["result"]["categorical"]>[number];
+type CalibrationRun = Awaited<ReturnType<typeof fetchCalibrationRun>>;
+type CategoricalFamily = NonNullable<CalibrationRun["result"]["categorical"]>[number];
 type CategoricalBucket = CategoricalFamily["buckets"][number];
 
 const MARKET_BAR_CLASS = "fill-blue-500 dark:fill-blue-400";
@@ -26,7 +27,7 @@ function bucketLabel(bucket: CategoricalBucket) {
 }
 
 function bucketTitle(bucket: CategoricalBucket) {
-  return `${bucketLabel(bucket)}\nMarket: ${fmtProb(bucket.pMarket)}\nModel: ${fmtProb(bucket.pModel)}\n${bucket.marketId}`;
+  return `${bucketLabel(bucket)}\nMarket: ${fmtProb(bucket.p_market)}\nModel: ${fmtProb(bucket.p_model)}\n${bucket.market_id}`;
 }
 
 function probabilityY(value: number | null, top: number, chartHeight: number) {
@@ -47,15 +48,15 @@ export function CategoricalMiniChart({ buckets }: { buckets: readonly Categorica
   // probability is individually small) fills the chart instead of hugging the baseline.
   // Market and model share one scale so they stay mutually comparable; absolute
   // probabilities remain available on hover (bucketTitle).
-  const maxP = Math.max(0, ...buckets.flatMap((bucket) => [bucket.pMarket ?? 0, bucket.pModel ?? 0]));
+  const maxP = Math.max(0, ...buckets.flatMap((bucket) => [bucket.p_market ?? 0, bucket.p_model ?? 0]));
   const scaleP = maxP > 0 ? 1 / maxP : 1;
   const xFor = (index: number) => slot * index + slot / 2;
   const marketPoints = buckets.map(
-    (bucket, index) => `${xFor(index)},${probabilityY(bucket.pMarket * scaleP, top, chartHeight)}`
+    (bucket, index) => `${xFor(index)},${probabilityY(bucket.p_market * scaleP, top, chartHeight)}`
   );
   const modelPoints = buckets
     .map((bucket, index) =>
-      bucket.pModel == null ? null : `${xFor(index)},${probabilityY(bucket.pModel * scaleP, top, chartHeight)}`
+      bucket.p_model == null ? null : `${xFor(index)},${probabilityY(bucket.p_model * scaleP, top, chartHeight)}`
     )
     .filter(Boolean);
   const firstLabel = bucketLabel(buckets[0]);
@@ -102,18 +103,18 @@ export function CategoricalMiniChart({ buckets }: { buckets: readonly Categorica
             />
           )}
           {buckets.map((bucket, index) => (
-            <g key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
+            <g key={bucket.market_id} data-calibration-bucket={bucket.market_id}>
               <title>{bucketTitle(bucket)}</title>
               <circle
                 cx={xFor(index)}
-                cy={probabilityY(bucket.pMarket * scaleP, top, chartHeight)}
+                cy={probabilityY(bucket.p_market * scaleP, top, chartHeight)}
                 r="2.2"
                 className={MARKET_BAR_CLASS}
               />
-              {bucket.pModel != null && (
+              {bucket.p_model != null && (
                 <circle
                   cx={xFor(index)}
-                  cy={probabilityY(bucket.pModel * scaleP, top, chartHeight)}
+                  cy={probabilityY(bucket.p_model * scaleP, top, chartHeight)}
                   r="2.2"
                   className={MODEL_BAR_CLASS}
                 />
@@ -124,10 +125,10 @@ export function CategoricalMiniChart({ buckets }: { buckets: readonly Categorica
       ) : (
         buckets.map((bucket, index) => {
           const center = xFor(index);
-          const marketHeight = Math.max(1, bucket.pMarket * scaleP * chartHeight);
-          const modelHeight = bucket.pModel == null ? 0 : Math.max(1, bucket.pModel * scaleP * chartHeight);
+          const marketHeight = Math.max(1, bucket.p_market * scaleP * chartHeight);
+          const modelHeight = bucket.p_model == null ? 0 : Math.max(1, bucket.p_model * scaleP * chartHeight);
           return (
-            <g key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
+            <g key={bucket.market_id} data-calibration-bucket={bucket.market_id}>
               <title>{bucketTitle(bucket)}</title>
               <rect
                 x={center - barWidth - 1}
@@ -137,7 +138,7 @@ export function CategoricalMiniChart({ buckets }: { buckets: readonly Categorica
                 rx="2"
                 className={MARKET_BAR_CLASS}
               />
-              {bucket.pModel == null ? (
+              {bucket.p_model == null ? (
                 <line
                   x1={center + 1}
                   y1={top + chartHeight - 2}
@@ -186,8 +187,8 @@ export function CategoricalPanel({ families }: { families: readonly CategoricalF
       >
         {families.map((family) => (
           <article
-            key={family.familyId}
-            data-calibration-categorical-family={family.familyId}
+            key={family.family_id}
+            data-calibration-categorical-family={family.family_id}
             className="rounded border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
           >
             <div className="flex items-start justify-between gap-3">
@@ -196,12 +197,12 @@ export function CategoricalPanel({ families }: { families: readonly CategoricalF
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold augur-strong">{family.question}</div>
                   <div className="text-[11px] augur-muted">
-                    {family.channel} · {family.atDate}
+                    {family.channel} · {family.at_date}
                   </div>
                 </div>
               </div>
-              <div className={`shrink-0 text-right text-sm ${klTextClass(family.klBits)}`}>
-                {fmtKl(family.klBits, { withUnit: true })}
+              <div className={`shrink-0 text-right text-sm ${klTextClass(family.kl_bits)}`}>
+                {fmtKl(family.kl_bits, { withUnit: true })}
               </div>
             </div>
             <CategoricalMiniChart buckets={family.buckets} />
@@ -214,7 +215,7 @@ export function CategoricalPanel({ families }: { families: readonly CategoricalF
                 <span className="h-2 w-2 rounded-sm bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" />
                 Model
               </span>
-              <span className="ml-auto augur-tabular">{family.nResolved.toLocaleString()} resolved</span>
+              <span className="ml-auto augur-tabular">{family.n_resolved.toLocaleString()} resolved</span>
             </div>
             <div className="mt-1 text-[11px] augur-muted augur-tabular">{family.buckets.length} buckets</div>
           </article>

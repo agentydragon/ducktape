@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from opentelemetry import trace
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
-from util.bazel.subprocess import _merge_pythonpath
+from devinfra.bazel.subprocess import _merge_pythonpath
 from util.testing.otel_tracing import configure_tracing
 
 _CONDA_ENV_REPO = "rules_conda++conda+freecad_conda"
@@ -67,9 +67,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def _find_conda_root() -> Path:
     """Locate the conda env root via Rlocation of an anchor file inside the env."""
-    anchor = get_required_path(_CONDA_FREECADCMD_RLOCATION)
+    anchor = Runfiles.CreateOrRaise().root() / _CONDA_FREECADCMD_RLOCATION
     # anchor is <conda_root>/bin/freecadcmd → parent.parent is the conda root
-    conda_root = anchor.parent.parent
+    conda_root = Path(str(anchor)).parent.parent
     if not conda_root.is_dir():
         raise RuntimeError(f"Conda env not found at {conda_root}")
     return conda_root
@@ -124,11 +124,15 @@ def _freecad_run(
     run_env = {**env, "OUTDIR": str(outdir)}
     if overrides:
         run_env.update(overrides)
-    # Inject _main runfiles paths so FreeCAD scripts can import from the
-    # monorepo. Filter out Bazel's Python 3.14 stdlib/site-packages — they
-    # conflict with FreeCAD's bundled Python 3.14.
+    # Inject this repository's runfiles paths so FreeCAD scripts can import from it.
+    # Bazel's Python site-packages conflict with FreeCAD's bundled Python.
+    repo_root = Path(__file__).absolute().parents[2]
     base_pythonpath = _merge_pythonpath()
-    inject_paths = [p for p in base_pythonpath.split(os.pathsep) if p and "/_main" in p and "site-packages" not in p]
+    inject_paths = [
+        p
+        for p in base_pythonpath.split(os.pathsep)
+        if p and Path(p).is_relative_to(repo_root) and "site-packages" not in Path(p).parts
+    ]
     wrapper = outdir / "_freecad_wrapper.py"
     wrapper.write_text(
         "import sys\n"

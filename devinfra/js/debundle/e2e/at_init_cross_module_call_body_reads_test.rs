@@ -1,6 +1,7 @@
 //! Synchronous body reads preserve the source initialization timeline across modules.
 
-use analysis::DepKind;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const INITIALIZED_SOURCE: &str = r#"const seed = 7;

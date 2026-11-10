@@ -105,9 +105,9 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:results",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Opt-in delayed agentplane slice activation probe
+ConditionKernelCommandLine=agentplane.synthetic-slice-probe=1
+
+[Timer]
+OnBootSec=30s
+AccuracySec=1s
+Unit=agentplane-synthetic-slice-probe.service
+
+[Install]
+WantedBy=timers.target

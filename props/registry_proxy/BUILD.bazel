@@ -7,14 +7,26 @@ load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
 py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/db:async_database",
+        "//props/db:models",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "routes",
     srcs = ["routes.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":auth",
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/core:oci_utils",
-        "//props/db:database",
+        "//props/db:async_database",
         "//props/db:models",
         "//props/db:notifications",
         "@pypi//fastapi",
@@ -30,8 +42,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":routes",
+        "//props/db:async_database",
         "//props/db:config",
-        "//props/db:database",
         "//util:logging",
         "@pypi//fastapi",
     ],
@@ -68,16 +80,25 @@ py_test(
     srcs = ["test_routes.py"],
     requires_docker = True,
     deps = [
+        ":app",
         ":routes",
         "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:oci_utils",
+        "//props/db:async_database",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:credentials",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:runs",
         "//util/testing:asgi",
+        "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
 )

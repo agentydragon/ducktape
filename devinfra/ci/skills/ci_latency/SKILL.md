@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose where recent CI feedback time and compute go across PR types, GitHub runners, BuildBuddy provisioning, Bazel analysis/actions/tests and critical paths; prioritize practical improvements with reproducible evidence.
+description: Diagnose CI latency, executor routing and queueing across GitHub and BuildBuddy, unnecessary build/test invalidation, dependency graphs and environment lifecycles; test improvements with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -12,7 +12,7 @@ check result and diagnostic log become available to agents watching PR updates?
 Where do runner time and remote compute go, what blocks the user-visible critical
 path, and what changes offer the best payoff for the least cost/risk? Use reviewed
 snapshots and their commit history in `latency/` on the canonical
-[`ci-reports` branch](https://github.com/agentydragon/ducktape/tree/ci-reports) as
+[`gh-pages` branch](https://github.com/agentydragon/ducktape/tree/gh-pages) as
 an existing investigation to continue, with historical measurements and conclusions
 checked against current CI. Keep working reports and measurement snapshots out of
 `devel`; publish each reviewed
@@ -21,10 +21,15 @@ release/pin currency and failed CI more broadly. No Mimir metric, Shapley
 calculation, or dashboard is required for a useful report; propose
 instrumentation only when it closes a decision-relevant evidence gap.
 
+Test implementations, execution architecture and infrastructure are part of the
+optimization scope. Treat target boundaries, environment lifetimes, executor
+placement and hardware as design choices unless an actual requirement fixes them.
+Follow measured bottlenecks to useful changes while preserving the tested contract.
+
 ## Start from the previous investigation
 
 Before selecting new cohorts, collecting fresh measurements or choosing experiments,
-fetch the canonical `ci-reports` branch and create a separate worktree at its tip. Read
+fetch the canonical `gh-pages` branch and create a separate worktree at its tip. Read
 the **complete latest report**, including expandable sections, and its manifest.
 Inspect the supporting evidence for its substantive findings and experiments. Read
 in bounded chunks when necessary: headings, search hits, truncated output and the
@@ -47,6 +52,78 @@ changed before repeating an experiment or reviving a rejected recommendation.
 New incidents may change priorities; explicitly defer lower-priority prior work
 with a reason. If historical access is incomplete, state what was read and what is
 missing rather than claiming a complete baseline review.
+
+## Identify the execution services and queues
+
+Use the [executor and queue analysis guide](references/executor_queues.md) when
+investigating feedback time, placement or capacity. Establish which work actually
+runs on GitHub runners, BuildBuddy managed/shared capacity (including the account's
+free tier where applicable), and our self-hosted BuildBuddy pools. Distinguish the
+outer Remote Bazel runner from its inner RBE actions and any fixture admission.
+Compare waiting, preparation and execution by service and eligible pool; a fast
+test or an idle cluster does not establish a fast CI path. Show which queue blocks
+required feedback, why work cannot start, and which concrete routing, capacity,
+resource or workload change could remove that wait. Keep unknown routing and
+unobserved provider limits explicit rather than pooling them into an average.
+
+## Compare execution architectures before narrowing the search
+
+For an optimization investigation, state the workload classes, requested latency
+objective and actual constraints. Evaluate alternatives against the requested
+scale of improvement. Separate hard requirements from current implementation
+choices and resources that could be provisioned. A routine status refresh can
+reuse a still-valid comparison; revisit changed assumptions.
+
+Before committing the investigation to detailed profiling of the current design,
+derive architectural alternatives from the measured work and the system's actual
+degrees of freedom. Use these questions to discover relevant options:
+
+- **Execution structure:** what work must be serial, and what ordering comes from
+  current boundaries or scheduling? Could changing grouping, granularity or
+  placement expose useful parallelism or remove contention? Account for repeated
+  setup, dependencies, stragglers and resources per unit of work. Distinguish
+  concurrency within one execution unit from distribution across workers.
+- **State and lifetime:** which costs repeat, what state must be fresh, and what
+  can safely be retained or shared? Assess alternative ownership and lifetime
+  boundaries, including their initialization, reset and invalidation costs.
+  Preserve fresh-state and lifecycle behavior wherever it is part of the contract.
+- **Resource organization:** which limits follow from necessary capabilities or
+  capacity, and which belong to the current execution service or topology?
+  Consider changes to placement, isolation, resource mix or provisioning where
+  the evidence supports them. Include admission, transfer and queueing at realistic
+  concurrent load, recurring cost and maintenance ownership.
+- **Validation structure:** what guarantee does each costly operation establish?
+  Could equivalent validation require less work through different dependencies,
+  inputs or construction? Explain the assertions and real integration boundaries
+  preserved. Changes to coverage or when it runs require explicit tradeoffs.
+
+These are search dimensions, not prescribed solutions. Justify each concrete
+candidate from the inspected system's evidence and constraints; do not turn an
+example or a successful prior intervention into a default recommendation.
+
+For promising alternatives and combinations, sketch the changed dependency graph
+and estimate end-to-end feedback for representative PR classes. Include removed or
+amortized phases, remaining serial work, duplicated setup, resource/queue costs and
+the next bottleneck. Label measured inputs, assumptions and estimated ranges;
+do not add overlapping savings. Compare absolute latency benefit alongside
+engineering effort, recurring compute/idle cost and reliability. A larger change
+with a credible path to the objective must remain visible beside cheap local fixes.
+
+Choose experiments by which uncertainty can change that decision most. Test the
+weakest assumption of a promising architecture without first requiring a complete
+explanation of every internal delay in the current design. Preserve tested-input
+identity and relevant isolation guarantees. Modeling and bounded experiments do
+not imply authorization to change deployed infrastructure or validation policy.
+
+Keep negative results scoped to the hypothesis, arrangement and conditions
+actually tested. Record the constraint that defeated an option; reject a broader
+family of designs only when the failure mechanism applies to that family. Revisit
+an option when a proposed design changes the relevant constraint.
+
+When the objective remains unmet, report which architectural options were
+evaluated, rejected with evidence, or remain untested, and the next experiment
+with the highest decision value. Small local gains or the current graph's
+headroom alone do not establish that a larger speedup is unavailable.
 
 ## Investigate, don't just run a recipe
 
@@ -131,15 +208,34 @@ finishing, required checks succeeding, GitHub reporting mergeability, auto-merge
 being enabled, and the eventual merge itself. If push timestamps or exact head
 association cannot be recovered, say so and present a labeled proxy instead of
 inventing a precise push-to-green percentile. Use a new output directory outside
-the checkout. `collect.sh` refuses a filtered query with 1,000 or more results: split it into smaller windows instead of accepting
-GitHub's search cap. It pages runs, jobs (all attempts), open PRs and head checks,
-and includes older unfinished runs separately. Each collection is a sweep, not an
-atomic snapshot; preserve its start/end timestamps.
+the checkout. `collect.sh` recursively partitions dense run windows by second,
+checks every page against the API's reported total, and fails if even a one-second
+partition reaches GitHub's 1,000-result cap. It pages jobs with `filter=all` to
+preserve attempts, collects open-PR head checks, and sweeps older unfinished runs
+separately. A collection is not atomic; preserve its start/end timestamps.
 
 ```bash
 bash scripts/collect.sh agentydragon/ducktape "$SINCE" "$UNTIL" "$OUT"
 bash scripts/evidence.sh "$OUT" > "$OUT/evidence.json"
 ```
+
+To compare required-gate feedback for exact PR heads and completed runner occupancy
+in the same snapshot, name the required job contexts explicitly:
+
+```bash
+python3 scripts/snapshot_analysis.py "$OUT/snapshot.json" \
+  --since "$SINCE" --until "$UNTIL" \
+  --gate "Bazel CI" --gate "Pre-commit checks" \
+  --output "$OUT/snapshot-analysis.json"
+```
+
+The feedback clock is a labeled proxy from the first observed PR workflow creation
+to the latest visible successful required-gate completion for that repository and
+head SHA. Each gate retains its own run and job clocks; missing, canceled, fork and
+unknown states are surfaced instead of counted as green. Occupancy includes only
+completed jobs assigned to a runner, clipped to the requested half-open window.
+GitHub job timestamps are used directly; BuildBuddy cached durations are not a
+freshness or occupancy signal.
 
 `evidence.sh` runs the same jq recipes used for the report. `summarize.jq` produces
 queue/runtime percentiles, occupied time and step totals. `contention.jq` attributes
@@ -185,6 +281,28 @@ records are counted rather than assumed zero. A target's summary can retain
 old cached durations and aggregate many shards, so do not rank fresh cost from
 that field alone. Inspect the critical path before promising feedback savings.
 
+For an offline cross-invocation stage and clock summary, save the
+`bbapi invocation list --json` response and each selected
+`bbapi execution <invocation-id> --json` response, then run:
+
+```bash
+python3 scripts/analyze_executions.py \
+  --invocations "$OUT/invocations.json" \
+  --executions "$OUT/execution-details" \
+  --observed-at "$OBSERVED_AT" > "$OUT/execution-summary.json"
+```
+
+`--observed-at` is the explicit UTC snapshot time. The analyzer deduplicates
+execution IDs and summarizes stages by mnemonic. Queue spans use
+`queuedTimestamp` to `workerStartTimestamp`; worker preparation uses
+`workerStartTimestamp` to `executionStartTimestamp`, which includes input-fetch
+time and does not isolate VM allocation. Spans require valid, ordered clocks.
+Partial rows are not aged to the observation time; span totals are action-seconds
+and do not measure worker occupancy or quota capacity.
+This analyzer groups by mnemonic, not executor pool. Join verified routing first
+or partition the inputs before using its distributions to compare pools; it does
+not identify hosted versus self-hosted execution by itself.
+
 Before attributing costs to a landed optimization, verify the effective tested
 source contains it: `git merge-base --is-ancestor "$FIX_SHA" "$TESTED_SHA"`
 (exit 0: present; 1: absent; other: unavailable history). Use child invocation
@@ -199,6 +317,111 @@ shortlist, collect `GetExecution` first and fetch logs/XML only for selected
 labels; enumerating thousands of cached target/artifact pages is unnecessary.
 When testing fewer shards, preserve every case and compare both process/CPU
 totals and the slowest shard; repeated session setup may dominate cheap cases.
+
+## Analyze build, test and process dependency graphs
+
+For long poles, idle gaps (bubbles), parallelism, or change-triggered test fanout, read
+[execution graph and trace analysis](references/execution_graphs.md). Follow the
+dependencies across workflow jobs, Bazel build and test actions, and stages inside
+tests or services, including VM startup and teardown. Inspect persisted OTel traces
+before adding instrumentation; extend them when material phases or waits remain
+unexplained, rerun through the normal test path, and analyze the resulting artifacts.
+An instrumentation patch alone does not complete the latency investigation.
+
+Audit whether representative changes select or invalidate tests whose contracts
+do not depend on them. Trace the actual dependency paths, configured runtime inputs
+and retained-state compatibility keys; distinguish selection, cache misses and cold
+fixture setup. Propose narrower ownership boundaries that preserve coverage, and
+verify that required tests still run. Rank the benefit by PR change class and the
+remaining critical path rather than the number of dependencies removed.
+
+## Identify costly stress tests before optimizing them
+
+During test-cost review, inspect test bodies and fixture helpers for stress/scale
+workloads with fresh execution time above roughly **10 seconds**, including setup
+and teardown. Classify by purpose: generating many equivalent inputs, large graphs,
+high fanout or repeated operations chiefly to throw volume at a subsystem, rather
+than exercise particular inputs or behaviors. A stress case remains such when it
+asserts a runtime budget or guards an asymptotic performance regression.
+Names, tags, loops and input size are discovery hints, not enough to classify a
+test; a large input may be essential to a specific correctness regression.
+
+For these costly stress tests, recommend **removing them from routine PR/push CI**,
+usually by marking the target `manual` and retaining it for explicit scale or
+performance runs. Make this recommendation before spending effort optimizing the
+stress fixture merely to keep it in CI. Cite the target, source/fixture evidence,
+observed fresh runtime and its stress purpose. Use actual execution and phase
+evidence, not a configured timeout, budget constant or cached summary duration.
+
+Identify the focused behavioral tests that remain automated. If a target mixes
+stress and unique behavioral checks, propose splitting out small behavior cases
+and making the volume workload manual; state any coverage/frequency tradeoff.
+Estimate feedback savings against parallel work and the next required gate,
+rather than claiming the entire removed test duration as a CI speedup.
+
+## Explain what long build and test paths are doing
+
+For the major contributors selected from fresh cost and critical-path evidence,
+inspect the implementation, action/fixture dependency graph and runtime behavior. Follow
+expensive or unexplained phases into subprocesses, services and dependencies.
+Do not stop at "this test takes seven minutes" or "setup is expensive," or let
+easy workflow tweaks substitute for investigating the dominant test work.
+
+When a selected workload emits spans, use them as the primary phase evidence before
+adding instrumentation. Consult the component's tracing documentation or producer
+code for artifact formats, clocks and fixture/scenario lifetimes. Use the execution
+system's artifact tooling (`buildbuddy_api` for BuildBuddy) to list the exact
+invocation's outputs before downloading the relevant target and shard/run/attempt.
+Tie the trace to the tested source and a physical execution; do not infer a trace
+from a cached target summary.
+
+Reconstruct parent/child span structure and concurrent intervals; identify a
+critical path only where event dependencies establish it. Never sum nested or
+overlapping spans. Correlate their wall-time intervals with
+the test action, native command evidence, and service/guest logs. A span is not
+CPU time or a native command duration. Account for clock skew across hosts and
+the test time spent exporting spans. For a long wait, identify the queued work,
+the state producer and the observer that notices it. If CPU or off-CPU time is
+still unexplained, use a real profiler; do not add ad hoc timers.
+
+- Reconstruct setup, readiness, scenario execution, assertions, diagnostics and
+  teardown. Use existing phase artifacts, logs, traces and real CPU/off-CPU or
+  sampling profilers as appropriate. Attribute elapsed time as well as CPU:
+  distinguish useful computation, repeated work, I/O, contention and waiting.
+  A Bazel action duration or a CPU profile alone cannot explain blocked time.
+- For material waits, identify the predicate, its producer and wake-up mechanism.
+  Inspect fixed sleeps, polling loops, backoff, debounce and sequential readiness
+  checks. Determine whether the state is already ready while the test sleeps, or
+  whether the producer itself is slow. Evaluate event/watch notifications or
+  predicate-driven synchronization while preserving deadlines, cancellation,
+  missed-event protection and any intentional stability-observation interval.
+  Low CPU or a sleep call alone is not evidence of removable time.
+- Explain what guarantee each costly operation buys. Look for unnecessarily large
+  inputs, repeated serialization/copying/hashing, duplicated end-to-end proofs,
+  excessive process launches and expensive fixtures for narrow assertions.
+  Evaluate equivalent faster algorithms, inputs or fixture construction. Preserve
+  the behavior and failure modes under test; equal test counts or passing results
+  alone do not prove equal coverage. Replacing a real integration boundary with a
+  mock is a coverage tradeoff, not an equivalent speedup.
+- Treat fixture scope/lifetime, setup and teardown, resource reuse, test/target
+  boundaries, target count, parametrization, batching, sharding and in-test
+  concurrency as changeable. Measure repeated setup against the longest shard,
+  invalidation/selectivity and scheduling overhead. Before sharing or overlapping
+  work, establish state isolation, ordering, capacity and cleanup ownership; keep
+  independent instances or cold starts where they are part of the test contract.
+- Try promising changes in bounded same-input experiments. Compare the actual
+  cases/assertions and exercised paths, wall/CPU/resource costs, reliability and
+  required-gate critical path. Control or label cache, worker and ordering effects;
+  faster tests that introduce flakes or merely move work are not established wins.
+
+For each investigated bottleneck, report the operation and source location, why
+it is needed, the measured work/wait mechanism, the proposed equivalent change
+and its experiment or rejection. Mark unexplained time explicitly. Continue
+until the evidence supports an actionable recommendation, a reason to retain the
+work, or a specific visibility/resource boundary with the next discriminating
+observation. Choose depth by whether further evidence can change the decision,
+not a fixed layer count or a requirement to audit every test. "Profile fixtures"
+is an unfinished investigation while the relevant source and runtime are available.
 
 ## Primary outcome: commit-to-actionable feedback
 
@@ -222,10 +445,9 @@ separate/censored observations:
   BuildBuddy invocation/target logs become _accessible_ to the relevant agent,
   not merely when a job ends or a log URL is advertised. Measure the observable
   hop(s) only; webhook creation, delivery, inbox read and harness receipt are
-  distinct clocks. Default PR subscriptions receive `check_run` completions and
-  `status` events, but coverage depends on App installation, subject matching,
-  and delivery health; see `agentplane/notification_service/docs/api.md`. Never
-  infer delivery from GitHub's check timestamp alone.
+  distinct clocks. Discover subscribed event types and routing from the current
+  notification system's configuration; account for installation, subject matching
+  and delivery health. Never infer delivery from a provider's check timestamp alone.
 
 Show a per-head timeline of these milestones and sample-size/p50/p90 for each
 relevant interval where timestamps exist. Declare polling/sampling resolution,
@@ -238,8 +460,15 @@ agent reception time from an inbox acceptance time.
 
 For each representative slow/typical case, construct an annotated timeline from
 PR head/push (if known) to required checks becoming terminal. Use the workflow
-DAG and job attempts. Break time into **observed** mutually exclusive intervals
-where possible; note unknown and overlapping intervals explicitly:
+DAG and job attempts.
+
+Apply the [pool inventory, queue evidence and reporting guidance](references/executor_queues.md)
+to these layers. Attribute a queue to its actual scheduler and eligible capacity,
+not merely to the service hosting the logs. For work routed to the in-cluster
+`kvm-vm` pool, consult its executor dashboard as described in that guidance.
+
+Break time into **observed** mutually exclusive intervals where possible; note
+unknown and overlapping intervals explicitly:
 
 1. **GitHub orchestration and runners:** workflow pending/concurrency gates,
    queued job awaiting a runner, runner start/image setup, checkout/tool/Nix setup,
@@ -253,6 +482,12 @@ where possible; note unknown and overlapping intervals explicitly:
    reasons for a cold start (pool/instance, isolation, concurrency, image changes,
    idle expiration), but do not claim reuse failed without evidence that reuse was
    possible. Avoid confusing a GitHub runner with a BuildBuddy VM or an RBE action.
+   For live diagnosis, compare the sampled BuildBuddy Active view and per-invocation
+   execution/queue timestamps with GitHub job queuing and outer VM preparation.
+   Track workflow/child invocation lineage and deduplicate physical execution IDs.
+   `IN_PROGRESS` can outlive its VM; absent or epoch timestamps are unknown. Infer
+   throttling only from explicit quota rejection or observed queueing with backlog
+   and exhausted capacity.
 3. **Bazel:** inner test/build invocation(s), startup, loading/analysis, execution,
    downloads/uploads, finalization. Inspect `command.profile.gz`, critical-path
    tool log, cache scorecard, target and execution records as needed (see the
@@ -282,18 +517,43 @@ sum parallel step durations and call the result latency; label runner-minutes,
 worker-seconds and wall-clock separately. When GitHub/BuildBuddy data cannot resolve
 an interval, leave it unknown and identify the minimal additional trace needed.
 
-## Recommend changes using 80/20 reasoning
+## Prioritize by impact, cost and confidence
 
 Rank _concrete_ interventions by likely impact on required-check feedback for common
-PRs, engineering effort, operational/security risk and confidence. Prefer low-risk
-quick wins with directly observed recurring waste; distinguish fixes to the long
-tail from fixes to a typical PR. Estimate possible savings as a range, not a
-fabricated point value; test against matched PR classes and preserve required test
-coverage. Examples to evaluate rather than assume: tighter validation selection,
-shorter runner/VM startup or reuse, avoiding repeated Bazel analysis, test/action
-critical-path improvements, and concurrency changes. Say what evidence would
-falsify each recommendation and how to compare before/after. Put instrument-first
-items behind actionable fixes unless missing evidence actually blocks the choice.
+PRs, engineering effort, recurring infrastructure cost, operational/security risk
+and confidence. Pursue cheap demonstrated gains while evaluating architectural
+options against the requested objective; ease of implementation must not define
+the search space. Distinguish fixes to the long tail from fixes to a typical PR.
+Estimate savings as ranges, test against matched PR classes and preserve required
+coverage. Show both individual changes and combinations needed to reach the
+objective, including how the bottleneck moves. State what would falsify each
+proposal and choose instrumentation only when it can change a decision.
+
+### Bound conditional gate headroom
+
+When several measured gates overlap on the same PR head, use
+`python3 scripts/gate_headroom.py reviewed_gate_heads.json gate_headroom.json`
+to estimate how a fixed reduction to one or more gate offsets changes the observed
+maximum. Input `heads` are exact head IDs with the same complete set of gate
+completion offsets, in seconds from one labeled workflow-start proxy per head;
+`scenarios` name proposed per-gate reductions in seconds. Inputs must be finite
+and nonnegative. An empty reduction map is a valid no-change scenario. The script
+clips adjusted offsets at zero, reports each head's gate headroom before another
+gate becomes last, and summarizes per-head savings using nearest-rank p50/p90.
+Tied last gates each count in `last_gate_counts`, so counts can exceed the head
+population; tie-head counts are also reported.
+
+Treat this as a conditional upper-bound sensitivity, not a treatment effect or
+measured improvement. It holds other gate clocks and dependency structure fixed;
+adjusted completion order may change. It uses only the supplied gate completion
+clocks and does not establish actual auto-merge readiness.
+This bounds the modeled change to the supplied graph; it is not a ceiling on
+changes that shorten several paths, decompose targets or change environment setup.
+`total_saved_wall_seconds` sums per-head savings across the sample; it is not one
+elapsed cohort wall clock. Do not add worker seconds or CPU seconds to gate offsets.
+Verify that offsets belong to the same exact PR head and a common labeled start
+proxy before comparing them; if that clock cannot be reconstructed, do not run the
+recipe on mixed clocks.
 
 ## Interpret correctly
 
@@ -337,6 +597,9 @@ report's structure and retain useful explanations, comparisons and evidence navi
 as you revise it. Reorganization must preserve the reader's ability to understand and
 follow up on still-relevant prior work.
 
+Apply the shared [reporting and publication contract](references/reporting.md)
+when authoring or publishing this report.
+
 A prolonged failure caused by an exhausted quota should lead with the incident,
 its impact, the evidence for the cause, and the decision needed to restore service.
 A healthy system with modest optimization opportunities may benefit from a time
@@ -363,18 +626,17 @@ different presentations; do not force either into the other's structure.
 
 ### Preserve the evidence behind the presentation
 
-Make the observation window, source commit, sample/coverage limits, and important
-unknowns easy to find. Include relevant PR-class feedback and agent-availability
-distributions, runner and remote-compute breakdowns, representative critical-path
-timelines, and current required checks where they support the diagnosis. Keep
-supporting measurements in the evidence rather than displaying every available
-metric. Do not invent findings or recommendations to fill a section. Include CodeQL/queued-Bazel overlaps
-only when current evidence supports that diagnosis. Generate `evidence.json` with
-`evidence.sh` as **supporting data**; review the derived evidence and explain its
-significance before publishing the report and evidence together as the latest
-history snapshot. Keep full API payloads, logs and profiles local unless a durable,
-reviewed fixture needs them. Publish small relevant excerpts and direct
-job/invocation URLs in the report.
+Apply the shared [reporting and publication contract](references/reporting.md) for
+provenance, privacy and history continuity. Include relevant PR-class feedback and
+agent-availability distributions, runner and remote-compute breakdowns,
+representative critical-path timelines, and current required checks where they
+support the diagnosis. Keep supporting measurements in the evidence rather than
+displaying every available metric. Do not invent findings or recommendations to
+fill a section. Include CodeQL/queued-Bazel overlaps only when current evidence
+supports that diagnosis. Generate `evidence.json` with `evidence.sh` as
+**supporting data**; review the derived evidence and explain its significance
+before publishing the report and evidence together as the latest history snapshot.
+Publish small relevant excerpts and direct job/invocation URLs in the report.
 
 Before publishing, compare the proposed report against the prior-work inventory.
 Account for each substantive prior finding, experiment and open follow-up: updated
@@ -401,32 +663,24 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 
 ## Durable history and test-cost attribution
 
-`agentydragon/ducktape`'s canonical [`ci-reports` branch](https://github.com/agentydragon/ducktape/tree/ci-reports)
-holds independent latest snapshots under `latency/` and `reliability/`. This skill
-owns `latency/`; the root `README.md` provides durable navigation. The latency
-directory contains `evidence.json`, `manifest.json`, a standalone `index.html`, and
-optionally `attribution.json`. `index.html` is the only published report. Author
-and visually review the standalone HTML according to the reader objectives above;
-do not commit a duplicate `report.md`. Escape
-external strings during authoring and never copy raw logs, payloads or scripts into
-the page blindly. Keep exactly one snapshot at
-the namespace root, with no dated run directories or generated archive index. Git
-commit history preserves earlier snapshots. Each new report replaces only its
-namespace's snapshot files; preserve the root README, sibling namespace, and
-unrelated files. If a new run has no attribution, remove the old `attribution.json`
-in that namespace so it cannot be mistaken for current evidence.
-The `ci-reports` branch is not a mirror of `devel`. Its earlier commits preserve the
+Apply the shared [reporting and publication contract](references/reporting.md).
+This skill owns the `latency/` namespace. Its latest snapshot has a standalone
+`index.html`, `evidence.json`, and `manifest.json`, with `attribution.json` only
+when attribution was measured. `index.html` is the only published report; do not
+commit a duplicate `report.md`.
+
+The `gh-pages` branch is not a mirror of `devel`. Its earlier commits preserve the
 explicitly labeled _historical_ copy of the former maintained report, not a fresh
 cdk8s comparison. Before migration, latency snapshots lived at the branch root;
 earlier commits retain that layout. Read the current `latency/` snapshot as the
 latest report and earlier history as a baseline for **methodology**, not proof of
 current performance.
 
-Use the `ci-reports` worktree and baseline review established at the start of the run.
+Use the `gh-pages` worktree and baseline review established at the start of the run.
 Collect fresh evidence and read the current workflow/path filters and BuildBuddy
 profiles. Pin the actual inspected devel SHA
-(do not use a merge SHA, PR head or the `ci-reports` branch's HEAD). Publish into the
-`ci-reports` worktree root:
+(do not use a merge SHA, PR head or the `gh-pages` branch's HEAD). Publish into the
+`gh-pages` worktree root:
 
 ```bash
 python3 devinfra/ci/reports/publish.py --source "$DEVEL_SHA" --kind latency \
@@ -434,29 +688,6 @@ python3 devinfra/ci/reports/publish.py --source "$DEVEL_SHA" --kind latency \
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
 # Add --attribution "$ATTRIBUTION" only when measured attribution is available.
 ```
-
-Use `--kind reliability` to publish to `reliability/`; each invocation updates
-only its selected namespace. Compare observation windows with prior reports of the
-same kind because latency and reliability runs may cover different periods.
-
-The shared `devinfra/ci/reports/publish.py` (also packaged as `scripts/publish.py`
-in both reporting skills) copies the **already written and reviewed standalone HTML** to
-`latency/index.html` byte for byte; it does not render, sanitize or validate the
-report, investigate CI, rank fixes, or validate conclusions. Review the narrative
-and rendered page before publishing. The publisher replaces only the selected
-namespace's snapshot files, removes any leftover `report.md` there, and leaves the
-root README and sibling namespace intact. Do not mistake successful script
-execution for completion of the skill. Open a PR targeting the canonical
-`ci-reports` branch. Before submitting, fetch the
-branch again and confirm the PR includes its latest tip. If another run landed
-first, compare the observation windows within the same report kind and do not let
-an older run replace a newer snapshot; rebase or rebuild on that tip and republish
-when the new run is later. Never reset, amend, or force-push history. Review the report and diff for
-credentials, identities, raw logs, payloads and personal data before publishing.
-History updates go through a PR to `ci-reports`; changes to this skill or
-its scripts go through a normal source PR. GitHub does not serve branch HTML as a hosted page:
-download/open the artifact locally, or use the raw URL; don't imply Pages is
-deployed.
 
 ### Quantifying who triggered work
 

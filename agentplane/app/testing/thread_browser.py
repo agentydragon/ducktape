@@ -8,8 +8,8 @@ as `electric`'s database, for the package conftest's history fixtures to follow;
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -18,10 +18,12 @@ from urllib.parse import urlsplit
 
 import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+from python.runfiles import Runfiles
 
 from agentplane.app.testing import history_probe, thread_view_marks
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
+from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
+from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.http2_proxy import Ingress, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import (
     SANDBOX,
@@ -30,9 +32,7 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
-from agentplane.app.testing.runner_gateway import RUNNER_AUDIENCE
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
     BrowserPostgres,
@@ -41,23 +41,28 @@ from agentplane.history_service.testing.electric_service import (
     browser_postgres_server,
 )
 from agentplane.history_service.testing.history import History
-from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
-from agentplane.runner_gateway.testing.runner_connection import runner_connection
+from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
+from util.testing.frontend_visual.viewports import DESKTOP, Viewport
 from util.testing.postgres import DatabaseNames
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.viewports import DESKTOP, Viewport
 
 # gazelle:include_dep @pypi//protobuf
 
 
 @pytest.fixture
-def certificate(tmp_path: Path) -> BrowserCertificate:
-    return browser_certificate(tmp_path / "tls")
+def certificate(tmp_path: Path) -> Iterator[BrowserCertificate]:
+    certificate = browser_certificate(tmp_path / "tls")
+    try:
+        yield certificate
+    finally:
+        certificate.port_reservation.close()
 
 
 @pytest.fixture
@@ -87,7 +92,9 @@ async def page(
         await context.add_init_script(path=thread_view_marks.script_path())
         if capture_geometry:
             await context.add_init_script(path=history_probe.script_path())
-        await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
+        await context.add_init_script(
+            path=Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/thread_page.js"
+        )
         await context.tracing.start(screenshots=True, snapshots=True, sources=True)
         opened = await context.new_page()
         await history_probe.throttle_cpu(context, opened)
@@ -121,9 +128,9 @@ async def expect_projected_cursor(page: Page, cursor: int) -> None:
 class ThreadBrowser:
     page: Page
     source: ReplicationSource
-    store: ThreadStore
-    event_logs: SeededEventLogStore
-    content: ContentStore
+    store: ThreadHTTP
+    event_logs: SessionHistory
+    content: SessionHistory
     history: History
     opened: Opened
     app: AppProcess
@@ -151,7 +158,7 @@ async def electric(
 
 @pytest.fixture
 def gateway_access(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(target=gateway_service.target, token_file=app_token_file)
+    return GatewayAccess(target=gateway_service.target, token_file=app_token_file, tls=gateway_service.client_tls)
 
 
 @asynccontextmanager
@@ -160,10 +167,15 @@ async def scripted_runner(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
+    tmp_path: Path,
 ) -> AsyncIterator[None]:
     """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
-    async with runner_connection(
-        gateway_service.target, await sandbox.pod_token(RUNNER_AUDIENCE), partial(add_replication_source, source)
+    async with runner_server(
+        "127.0.0.1:9090",
+        gateway_service.issue_environment_runtime_tls(
+            sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
+        ),
+        partial(add_replication_source, source),
     ):
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield
@@ -196,12 +208,11 @@ def thread_source() -> ReplicationSource:
 
 
 @pytest.fixture
-async def thread_browser(
-    page: Page,
+def thread_browser_session(
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
+    content: SessionHistory,
     thread_source: ReplicationSource,
     history: History,
     history_client: HistoryServiceClient,
@@ -212,31 +223,53 @@ async def thread_browser(
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     gateway_access: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
+    tmp_path: Path,
+) -> Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]:
+    @asynccontextmanager
+    async def open_browser(page: Page) -> AsyncIterator[ThreadBrowser]:
+        thread_id = await event_logs.seed(SANDBOX, SESSION)
+        await store.rename(thread_id, "Browser thread")
+        async with (
+            scripted_runner(thread_source, sandbox, gateway_service, sandbox_control, tmp_path),
+            thread_source.ingesting(history),
+            app_process(
+                db_url,
+                history_client,
+                sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+                gateway=gateway_access,
+                browser_login=True,
+                certificate=certificate,
+                replay_after=replay_after,
+                electric_url=electric.url,
+            ) as app,
+            http2_proxy(app.url, certificate) as ingress,
+        ):
+            exact_spec = session_pb2.SessionSpec()
+            thread_source.attached.spec.placement.environment_hosted.environment.name = SANDBOX
+            thread_source.attached.spec.placement.environment_hosted.environment.uid = sandbox.uid
+            exact_spec.CopyFrom(thread_source.attached.spec)
+            await session_dispatcher.unary(
+                session_dispatcher.stub.CreateSession,
+                session_dispatcher_pb2.CreateSessionRequest(session_id=str(thread_id), spec=exact_spec),
+            )
+            await accepted_session(session_dispatcher, thread_id)
+            # The operator session the app's relay of the Dispatcher's watch requires.
+            await app.login(page)
+            async with asyncio.timeout(30):
+                opened = await thread_source.opened.get()
+                await page.goto(f"{ingress.url}/#/threads/{thread_id}")
+            yield ThreadBrowser(page, thread_source, store, event_logs, content, history, opened, app, ingress)
+
+    return open_browser
+
+
+@pytest.fixture
+async def thread_browser(
+    page: Page, thread_browser_session: Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]
 ) -> AsyncIterator[ThreadBrowser]:
-    source = thread_source
-    thread_id = await event_logs.seed(SANDBOX, SESSION)
-    await store.rename(thread_id, "Browser thread")
-    async with (
-        scripted_runner(source, sandbox, gateway_service, sandbox_control),
-        source.ingesting(history),
-        app_process(
-            db_url,
-            history_client,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            replay_after=replay_after,
-            electric_url=electric.url,
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        # The operator session the app's relay of the Dispatcher's watch requires.
-        login = await page.request.post(f"{ingress.url}/test-login", params={"seconds": 3600})
-        assert login.ok, await login.text()
-        async with asyncio.timeout(30):
-            opened = await source.opened.get()
-            await page.goto(f"{ingress.url}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, event_logs, content, history, opened, app, ingress)
+    async with thread_browser_session(page) as browser:
+        yield browser
 
 
 def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
@@ -263,11 +296,6 @@ def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> 
 
 def message_composer(page: Page) -> Locator:
     return page.get_by_role("textbox", name="Message", exact=True)
-
-
-async def frames(page: Page) -> None:
-    """Waits for the paint after the next layout, and any effect or observer it runs."""
-    await page.evaluate("() => window.__threadPage.frames()")
 
 
 async def capture_reading_anchor(area: Locator) -> dict[str, str | float]:

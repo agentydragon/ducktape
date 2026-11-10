@@ -3,11 +3,11 @@
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEndpointSelector
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "gitlab-spike-runner"
 NAMESPACE = "gitlab-spike-ci"
@@ -21,9 +21,10 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="gitlab-spike-job", namespace=NAMESPACE),
         automount_token=False,
     )
+    # The Helm chart uses this dedicated service account for the manager; jobs use a different one.
     # The manager alone needs the API. Build/helper pods cannot reach it.
     for name, selector, api_access in (
-        ("manager", {"app": NAME}, True),
+        ("manager", {"io.cilium.k8s.policy.serviceaccount": NAME}, True),
         ("jobs", {"app.kubernetes.io/name": "gitlab-spike-job"}, False),
     ):
         NetworkPolicy(
@@ -59,7 +60,9 @@ def chart(app: App) -> Chart:
             "serviceAccount": {"create": True, "name": NAME},
             "runners": {
                 "secret": NAME,
-                "config": get_required_path(own_repo_rlocation("cluster/cdk8s/gitlab_spike/runner.toml")).read_text(),
+                "config": (
+                    Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/runner.toml"
+                ).read_text(),
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"memory": "512Mi"}},

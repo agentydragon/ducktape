@@ -19,10 +19,12 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.action_service.policies.resources import CALLER_LABEL, parse_action_rule
-from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
+from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.crd_group import GROUP
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles as access, external_creds
-from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP
+from cluster.cdk8s.agentplane import kubernetes_account_ref
+from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP, SANDBOX_GROUP
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -39,16 +41,21 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
+    QUEST_READ_POLICY,
+    THRIVE_READ_POLICY,
     grocy_sf_read_egress_rules,
     home_assistant_read_egress_rules,
 )
+from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
-from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
+from cluster.cdk8s.public_coder.egress import OPENCLAW
 
 _NAMESPACE = "agentplane-staging"
 # Exported: launch presets (staging_config.py) bind these by name.
@@ -65,12 +72,27 @@ KUBERNETES_INSPECTION_READS_SET = "kubernetes-inspection-reads"
 _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 MIMIR_READS_POLICY = "mimir-reads"
+# AnkiWeb sync for haku-anki, which runs as the haku-ui account (see the binding below).
+ANKIWEB_SYNC_POLICY = "ankiweb-sync"
+HAKU_CI_BUILD_FETCH_POLICY = "haku-ci-build-fetch"
+# Package and code hosts for haku-jupyter, which runs as the haku-ui account (see the binding below).
+HAKU_NOTEBOOK_FETCH_POLICY = "haku-notebook-fetch"
 
 # Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
 # key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 ORCHESTRATION_PRESETS_SET = "orchestration-presets"
+
+CLAUDE_AI = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="claude-ai"), identity="claude-ai")
+HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-agent"), identity="haku-agent")
+HAKU_UI = StandingCaller(
+    ServiceAccountRef(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
+    identity=haku_ui_egress.SERVICE_ACCOUNT,
+)
+HAKU_CI = StandingCaller(
+    ServiceAccountRef(namespace=runner.NAMESPACE, name=egress_gateway.NAME), identity=egress_gateway.NAME
+)
 
 
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
@@ -89,7 +111,7 @@ GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creati
 # The reviewed Action reads and sandbox use bound to the claude-ai and haku-agent accounts. The
 # binding's existence is the grant: deleting it, or the label on the ServiceAccount, puts every
 # one of these Actions back on the human path.
-_ACCOUNT_READ_SETS = (
+HAKU_SHARED_ACTION_SETS = (
     GITHUB_READS_SET,
     GITHUB_IDENTITY_READS_SET,
     SANDBOX_SELF_SET,
@@ -101,6 +123,40 @@ _ACCOUNT_READ_SETS = (
     SSH_READS_SET,
     KUBERNETES_INSPECTION_READS_SET,
 )
+
+HAKU_SHARED_CORE_POLICIES = (
+    FORGEJO_HAKU_POLICY,
+    PACKAGES_POLICY,
+    GOOGLE_READONLY_POLICY,
+    ACTIVITYWATCH_READ_POLICY,
+    AIQUOTA_READ_POLICY,
+    QUEST_READ_POLICY,
+    THRIVE_READ_POLICY,
+    HAKU_MAILBOX_POLICY,
+)
+
+HAKU_SHARED_GITHUB_POLICIES = (GITHUB_CLONE_POLICY, GITHUB_AGENTYDRAGON_AGENT_POLICY, GITHUB_ACTIONS_LOGS_POLICY)
+
+_HAKU_CLAUDE_BASE_POLICIES = (
+    BASIC_POLICY,
+    INFERENCE_EXPERIMENTS_POLICY,
+    *HAKU_SHARED_CORE_POLICIES,
+    access.COINBASE_POLICY,
+    access.PLAID_DIAGNOSTICS_POLICY,
+    _GITHUB_DOWNLOADS_POLICY,
+    *HAKU_SHARED_GITHUB_POLICIES,
+)
+
+
+def caller_role_sets() -> list[str]:
+    """In the identity catalog, the role sets granted to `claude-ai`'s and `haku-agent`'s own Kubernetes
+    accounts: exactly those their bindings grant today, so the switch widens neither caller."""
+    return [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
+
+
+def _kubernetes_account_use(caller: StandingCaller, *, identity_catalog: bool) -> list[str]:
+    """In the identity catalog, the use set of `caller`'s own Kubernetes account, named after its identity."""
+    return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name] if identity_catalog else []
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
@@ -123,7 +179,9 @@ def _binding(
     PolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets)
 
 
-def _account_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
+def _account_binding(
+    scope: Construct, account: ServiceAccount, *, subject: PolicyBindingSpecSubject, policies: Sequence[str]
+) -> None:
     """What `account`, and every sandbox running as it, may reach and have auto-approved."""
     PolicyBinding(
         scope,
@@ -135,7 +193,7 @@ def _account_binding(scope: Construct, account: ServiceAccount, *, policies: Seq
                 "description": f"What the {account.name} ServiceAccount, and sandboxes running as it, may reach and have auto-approved."
             },
         ),
-        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name=account.name),
+        subject=subject,
         policy_sets=policies,
     )
 
@@ -326,7 +384,7 @@ _GROCY_SF_READS_ACTIONS = [
 _KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pods_top"]
 
 
-def add_staging_action_policies(scope: Construct) -> None:
+def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> None:
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
     # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
     # makes it an Action caller, and removing the label or the object is how it is disabled.
@@ -336,8 +394,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "serviceaccount-claude-ai",
         metadata=ApiObjectMetadata(
-            name="claude-ai",
-            namespace=_NAMESPACE,
+            name=CLAUDE_AI.service_account.name,
+            namespace=CLAUDE_AI.service_account.namespace,
             labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent."
@@ -359,8 +417,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "serviceaccount-haku-agent",
         metadata=ApiObjectMetadata(
-            name="haku-agent",
-            namespace=_NAMESPACE,
+            name=HAKU_AGENT.service_account.name,
+            namespace=HAKU_AGENT.service_account.namespace,
             labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
@@ -693,49 +751,129 @@ def add_staging_action_policies(scope: Construct) -> None:
     _account_binding(
         scope,
         claude_ai,
+        subject=CLAUDE_AI.subject(identity_catalog=identity_catalog),
         policies=[
-            BASIC_POLICY,
-            INFERENCE_EXPERIMENTS_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            access.COINBASE_POLICY,
-            access.PLAID_DIAGNOSTICS_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
+            *_HAKU_CLAUDE_BASE_POLICIES,
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
             # claude-ai is the account that launches orchestration_v1 workers.
             ORCHESTRATION_PRESETS_SET,
-            *_ACCOUNT_READ_SETS,
+            *HAKU_SHARED_ACTION_SETS,
+            *_kubernetes_account_use(CLAUDE_AI, identity_catalog=identity_catalog),
         ],
+    )
+
+    # haku-ui, Haku's operator UI, shares the Home Assistant and Grocy SF read sets with haku-anki.
+    # Its legacy direct Action route is removed; its sidecar presents its standing SVID to the proxy.
+    # haku-anki runs as this account too, for AnkiWeb sync: the one external host it needs (`sync.ankiweb.net`
+    # and the `syncNN` shard hosts it redirects accounts to; `*.` never matches the apex, and these are
+    # subdomains), through its egress sidecar. No credential is
+    # presented: AnkiWeb login sends the account's own username and password in a compressed body that a
+    # placeholder substitution cannot reach, so the real credentials stay in the Pod. haku-sandbox is one trust
+    # domain, so the two workloads share a grant set: the haku-ui Pod can reach AnkiWeb and the haku-anki Pod
+    # can read Home Assistant and Grocy and submit Action requests. This is the one grant claude-ai lacks.
+    # Split the account if either
+    # workload ever holds something the other must not.
+    add_egress_policy(
+        scope,
+        "egresspolicy-ankiweb-sync",
+        metadata=ApiObjectMetadata(name=ANKIWEB_SYNC_POLICY, namespace=_NAMESPACE),
+        rules=[Rule.egress(hosts=["*.ankiweb.net"])],
+    )
+    # haku-jupyter, Haku's notebook server, runs as this account too. It showed no public traffic through
+    # haku-egress-proxy (2026-11-08/09), so these hosts are a starting point the operator widens: the package
+    # indexes and code hosts a notebook plausibly installs or reads from, GET/HEAD only, nothing presented.
+    # The haku-ui and haku-anki Pods gain them too; all are within claude-ai's `github-downloads` and `packages`.
+    add_egress_policy(
+        scope,
+        f"egresspolicy-{HAKU_NOTEBOOK_FETCH_POLICY}",
+        metadata=ApiObjectMetadata(name=HAKU_NOTEBOOK_FETCH_POLICY, namespace=_NAMESPACE),
+        rules=[
+            Rule.egress(
+                hosts=[
+                    # keep-sorted start
+                    "codeload.github.com",
+                    "files.pythonhosted.org",
+                    "github.com",
+                    "objects.githubusercontent.com",
+                    "pypi.org",
+                    "raw.githubusercontent.com",
+                    "registry.npmjs.org",
+                    # keep-sorted end
+                ],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+            )
+        ],
+    )
+    _binding(
+        scope,
+        "policybinding-haku-ui",
+        metadata=ApiObjectMetadata(
+            name=haku_ui_egress.SERVICE_ACCOUNT,
+            namespace=_NAMESPACE,
+            annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
+        ),
+        subject=HAKU_UI.subject(identity_catalog=identity_catalog),
+        policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY],
+    )
+
+    # haku-ci's builds, through its egress relay (haku_ci/egress_gateway.py): exactly the hosts haku-ci
+    # reached through its former mitmproxy (haku-egress-proxy) over 2026-11-08/09 (about 60 CI jobs), each with the methods it
+    # used. Add a host when its `no-rule` decision for subject haku-ci/haku-ci-egress appears. Docker Hub
+    # stays out: dind pulls it through oci-cache, in-cluster.
+    add_egress_policy(
+        scope,
+        "egresspolicy-haku-ci-build-fetch",
+        metadata=ApiObjectMetadata(name=HAKU_CI_BUILD_FETCH_POLICY, namespace=_NAMESPACE),
+        rules=[
+            Rule.egress(
+                hosts=[
+                    # keep-sorted start
+                    # Bazel's registry and its own releases.
+                    "bcr.bazel.build",
+                    # Forgejo Actions job images (dind pulls).
+                    "code.forgejo.org",
+                    "codeload.github.com",
+                    "files.pythonhosted.org",
+                    "github.com",
+                    # rules_oci's gawk source.
+                    "mirrors.kernel.org",
+                    "nodejs.org",
+                    "pypi.org",
+                    "registry.npmjs.org",
+                    "release-assets.githubusercontent.com",
+                    "releases.bazel.build",
+                    # keep-sorted end
+                ],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+            ),
+            # `uses:` actions, which forgejo-runner clones over smart HTTP (`git-upload-pack` is a POST).
+            Rule.egress(
+                hosts=["data.forgejo.org"], methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST]
+            ),
+        ],
+    )
+    _binding(
+        scope,
+        "policybinding-haku-ci-egress",
+        metadata=ApiObjectMetadata(
+            name=egress_gateway.NAME,
+            namespace=_NAMESPACE,
+            annotations={"description": "What haku-ci's builds (haku-ci namespace) may reach."},
+        ),
+        subject=HAKU_CI.subject(identity_catalog=identity_catalog),
+        policy_sets=[HAKU_CI_BUILD_FETCH_POLICY],
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
     _account_binding(
         scope,
         haku_agent,
+        subject=HAKU_AGENT.subject(identity_catalog=identity_catalog),
         policies=[
-            BASIC_POLICY,
-            INFERENCE_EXPERIMENTS_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            access.COINBASE_POLICY,
-            access.PLAID_DIAGNOSTICS_POLICY,
-            _GITHUB_DOWNLOADS_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
-            *_ACCOUNT_READ_SETS,
+            *_HAKU_CLAUDE_BASE_POLICIES,
+            *HAKU_SHARED_ACTION_SETS,
+            *_kubernetes_account_use(HAKU_AGENT, identity_catalog=identity_catalog),
         ],
     )
 
@@ -757,7 +895,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 )
             },
         ),
-        rules=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)})],
+        rules=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(action.value for action in Action)})],
     )
 
     # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the
@@ -894,6 +1032,6 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed common GitHub reads for the OpenClaw ServiceAccount."
             },
         ),
-        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
+        subject=OPENCLAW.subject(identity_catalog=identity_catalog),
         policy_sets=[COMMON_GITHUB_READ_SET],
     )

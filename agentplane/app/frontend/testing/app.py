@@ -21,6 +21,7 @@ BOUND_CONNECTION = "10000000-0000-4000-8000-000000000001"
 class Flag(StrEnum):
     """A switch on the harness's mock services; the value is its name in harness.tsx's `Flag`."""
 
+    CENTRAL_SAMPLER_ENABLED = "centralSamplerEnabled"
     CLAUDE_PAUSED = "claudePaused"
     WATCH_STALE = "watchStale"
     THREAD_DATABASE_DISCONNECTED = "threadDatabaseDisconnected"
@@ -28,7 +29,7 @@ class Flag(StrEnum):
     INVENTORY_STREAM_DROPPED = "inventoryStreamDropped"
     ENTITY_STREAM_DISCONNECTED = "entityStreamDisconnected"
     ENTITY_SEGMENTS_WITHHELD = "entitySegmentsWithheld"
-    SYNC_SCOPE_UNAVAILABLE = "syncScopeUnavailable"
+    THREAD_SCOPE_UNAVAILABLE = "threadScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
     PENDING_ACTIONS = "pendingActions"
     # Two opted-in reads ahead of PENDING_ACTIONS: a queue that overflows the attention strip even
@@ -39,6 +40,7 @@ class Flag(StrEnum):
     PAGED_ACTION_HISTORY = "pagedActionHistory"
     ACTION_GROUPS_UNAVAILABLE = "actionGroupsUnavailable"
     NOTIFICATION_STATUS_UNAVAILABLE = "notificationStatusUnavailable"
+    NOTIFICATION_STREAM_DROPPED = "notificationStreamDropped"
     NOTIFICATION_EXTRA_ENTRY = "notificationExtraEntry"
     PUSH_BROWSER_ADDED = "pushBrowserAdded"
     CONNECTION_RENAMED = "connectionRenamed"
@@ -55,6 +57,7 @@ class Scene(StrEnum):
     HIDDEN_CODEPOINTS = "hiddenCodepoints"
     DORMANT_SESSION = "dormantSession"
     INTERLEAVED_EVENTS = "interleavedEvents"
+    SHORT_THREAD_SWITCH_HISTORY = "shortThreadSwitchHistory"
     LIFECYCLE_GROUP = "lifecycleGroup"
     THREAD_SETUP = "threadSetup"
     THREAD_SETUP_RUNNING = "threadSetupRunning"
@@ -62,6 +65,8 @@ class Scene(StrEnum):
     AUTOSUSPEND_BUSY = "autosuspendBusy"
     AUTOSUSPEND_STARTING = "autosuspendStarting"
     SHELL_CALLS = "shellCalls"
+    COLLAPSIBLE_COMMAND_HISTORY = "collapsibleCommandHistory"
+    MID_THREAD_COMMAND_HISTORY = "midThreadCommandHistory"
     MARKDOWN_CODE_FENCE = "markdownCodeFence"
     STREAMING_INTERLEAVED = "streamingInterleaved"
     UNFINISHED_REASONING = "unfinishedReasoning"
@@ -89,6 +94,11 @@ class AgentplaneFixture:
 
     async def name_thread(self, thread_id: str, name: str) -> None:
         await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])
+
+    async def central_sampler_on_sandbox(self, thread_id: str, sandbox: str) -> None:
+        await self.page.evaluate(
+            "([id, sandbox]) => window.agentplaneVisual.centralSamplerOnSandbox(id, sandbox)", [thread_id, sandbox]
+        )
 
     async def mount_thread(self, thread_id: str) -> None:
         await self.mount_app(f"/threads/{thread_id}")
@@ -178,14 +188,23 @@ class AgentplaneFixture:
             "([flag, suffix]) => window.agentplaneVisual.publish(flag, suffix)", [flag, path_suffix]
         )
 
-    async def queue_open_response(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.queueOpenResponse()")
+    async def queue_create_response(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.queueCreateResponse()")
 
     async def project_queued_session(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.projectQueuedSession()")
 
     async def build(self, scene: Scene) -> None:
         await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)
+
+    async def build_history_profile(self, row_count: int) -> None:
+        await self.page.evaluate("rowCount => window.agentplaneVisual.historyProfile(rowCount)", row_count)
+
+    async def remember_history_row_height(self, thread_id: str, width: int, key: str, height: float) -> None:
+        await self.page.evaluate(
+            "([threadId, width, key, height]) => window.agentplaneVisual.rememberHistoryRowHeight(threadId, width, key, height)",
+            [thread_id, width, key, height],
+        )
 
     async def enable_suspended_sandbox_wake_on_message(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.enableSuspendedSandboxWakeOnMessage()")

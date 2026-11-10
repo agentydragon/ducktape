@@ -17,9 +17,9 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//nltk",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

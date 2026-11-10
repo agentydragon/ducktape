@@ -23,8 +23,8 @@ and how the inference config holds up under it.
 
 Docs hub for LLM inference on the cluster. Notes that should outlive any
 one deployment go here; reusable service scripts live with the workload
-(`cluster/cdk8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
-with their dated run records.
+(`cluster/cdk8s/ollama/`, `x/local_llm/`), shared experiment tools under
+`runs/`, and run-specific evidence with its dated record.
 
 ## What's here
 
@@ -50,8 +50,8 @@ with their dated run records.
   flake, checkpoint gate, run scripts, measurements, and experiment verdict.
 - <qwen3_coder_vram_analysis.md> — full VRAM math, debug logs, profiler
   output. Source data for `vllm_history.md`.
-- <vllm_container_plan.md> — home-manager systemd-user service plan that
-  ran vLLM on wyrm2.
+- <vllm_container_plan.md> — unimplemented Home Manager systemd-user service
+  proposal. The recorded vLLM runs use Kubernetes or the host launcher instead.
 - <kv_cache_quantization.md> — KV cache dtype research (FP16 vs FP8 vs Q8).
 - <model_download_history.md> — model search log and download status.
 - <reasoning_vs_agentic_coding.md> — model selection research for the

@@ -4,8 +4,8 @@ import httpx
 import pytest_bazel
 import respx
 
-from aiquota.models import AllQuotas
 from aiquota.remote import QUOTAS_PATH, QuotaAPIClient
+from aiquota.render.view_model import AllQuotasView
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -19,5 +19,5 @@ async def test_fetches_normalized_quotas_with_bearer_token() -> None:
         route = mock.get(f"https://aiquota.test{QUOTAS_PATH}").mock(return_value=httpx.Response(200, json=body))
         quotas = await QuotaAPIClient("https://aiquota.test", "api-bearer").fetch()
 
-    assert isinstance(quotas, AllQuotas)
+    assert isinstance(quotas, AllQuotasView)
     assert route.calls.last.request.headers["Authorization"] == "Bearer api-bearer"

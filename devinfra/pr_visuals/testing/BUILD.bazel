@@ -1,0 +1,14 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "outputs",
+    srcs = ["outputs.py"],
+    visibility = ["//devinfra/pr_visuals:__pkg__"],
+    deps = [
+        "//devinfra/pr_visuals:artifacts",
+        "//devinfra/pr_visuals:collection",
+        "//devinfra/testing:output_records",
+    ],
+)

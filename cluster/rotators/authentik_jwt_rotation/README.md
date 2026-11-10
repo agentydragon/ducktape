@@ -2,7 +2,7 @@
 
 Hourly CronJob that mints Authentik `client_credentials` JWTs and commits them
 SOPS-encrypted to `secrets/`. Deployed by
-<../../cdk8s/authentik_jwt_rotation.py> (this directory is the rotator's
+<../../cdk8s/authentik/jwt_rotation.py> (this directory is the rotator's
 source). Its `ROTATIONS` roster, typed by <config.py>, is the source of truth
 for rotation names, providers, output files, credential modes, expected groups /
 audiences / claims, and optional in-cluster Secret publication; the generator

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package agentplane.proto;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/proto/kubernetes;kubernetespb";
+
+// A Kubernetes owner reference as exposed by Agentplane resource views.
+// Controller is false when Kubernetes leaves it unset.
+message OwnerReference {
+  string api_version = 1;
+  string kind = 2;
+  string name = 3;
+  string uid = 4;
+  bool controller = 5;
+}

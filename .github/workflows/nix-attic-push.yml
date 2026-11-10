@@ -35,18 +35,29 @@ jobs:
     # earlier 120-min timeouts — and push them. Once cached, later runs
     # substitute them and finish quickly, so this can be lowered again.
     timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Check out code
         uses: actions/checkout@v7
 
+      # nix-images.yml builds the Nix images for this same push, sharing much of this closure
+      # (tools.nix, nix/packages). Let it go first and substitute its uploads instead of building
+      # the same derivations side by side.
+      - name: Wait for this commit's Nix image build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m devinfra.ci.nix_images wait-build --repository "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --max-minutes 90
+
       - uses: ./.github/actions/setup-nix-attic
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          attic_token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Install Attic client + nix-fast-build
         # nix-fast-build (+ nix-eval-jobs) drives the parallel eval/build/push in
         # devinfra/ci/nix_attic_build_and_push.sh.
-        run: nix profile install nixpkgs#attic-client nixpkgs#nix-fast-build nixpkgs#nix-eval-jobs
+        run: nix profile install nixpkgs#attic-client .#nix-fast-build nixpkgs#nix-eval-jobs
 
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"

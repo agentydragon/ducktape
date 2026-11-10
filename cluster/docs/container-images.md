@@ -48,7 +48,12 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
 
    For images not deployed in-cluster, pin the tag in the consuming BUILD.bazel.
 
-4. **GitHub Actions path** (when Bazel isn't viable):
+4. **Nix path** (a flake `dockerTools` image or KubeVirt containerDisk): add it to
+   <../../devinfra/ci/nix_images.json> and its input paths to the triggers of
+   <../../.github/workflows/nix-images.yml>, which builds every changed Nix image on one runner,
+   smoke-tests it on PRs and publishes it from devel.
+
+5. **GitHub Actions path** (when neither Bazel nor Nix is viable):
    - Workflow in `.github/workflows/<name>-image.yml`
    - Use `docker/build-push-action` with `packages: write` permission
 
@@ -67,8 +72,9 @@ Flux image scan are retired.
    `ducktape-ci` Forgejo user (`tf/gitops/forgejo-images`, password from the SOPS
    `forgejo-images-creds` Secret) and reflects that Secret (dockerconfigjson) into
    `flux-system` (Flux scan `secretRef`) and consuming namespaces (kubelet
-   `imagePullSecrets`). CI reads the same creds from
-   `secrets/ci/forgejo-images-registry.sops.yaml` (via `setup-ci-secrets`).
+   `imagePullSecrets`). The `github-secrets-sync` OpenTofu module publishes the same credential as
+   `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` GitHub Actions secrets;
+   publishing steps consume those secrets directly.
 2. **Push** — for Bazel-built images, set `"registry": "forgejo"` on the image's
    entry in <../../devinfra/ci/image_targets.json>; the workflow pushes
    `git.allegedly.works/ducktape-ci/<image>:<tag>` with the same

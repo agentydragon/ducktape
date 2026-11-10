@@ -1,0 +1,308 @@
+"""Deterministic-screenshot primitives for a Playwright page.
+
+Nothing prepares the page here: viewport, colour scheme, reduced motion and the frozen clock are
+context options, set by `context.deterministic_browser_context`. What is here is what a page
+records or waits for, and each recorder is a value the caller holds, so asserting on a page nobody
+instrumented cannot be written.
+
+Loading content and orchestrating shots stay with the test. `capture` combines these
+primitives with deterministic page lifecycles and visual-review publication.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import math
+import re
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import AsyncExitStack, asynccontextmanager
+from types import MappingProxyType
+from typing import Literal
+
+from playwright.async_api import (
+    CDPSession,
+    Error as PlaywrightError,
+    FloatRect,
+    Locator,
+    Page,
+    Request,
+    Route,
+    TimeoutError as PlaywrightTimeoutError,  # the builtin TimeoutError is another type
+)
+
+# The bound every wait in a visual test takes: navigations, the mount wait, a scenario's own
+# condition, the network-settle gate. Measured across a 49-target parallel uncached run: the
+# slowest navigation to network idle took 1.9s and the slowest mount after it 79ms, so this is
+# ~380x the slowest healthy mount seen under the load that produces flakes. It is no larger because
+# a bound only helps while it is what reports the failure: a `small` target (60s) must fail here,
+# naming the selector it waited for, rather than be killed by Bazel.
+WAIT_TIMEOUT_MS = 30_000
+
+# Polled once per frame. Quiet means `pending` stayed empty across a painted frame, so a response
+# whose re-render immediately starts another fetch is drained rather than captured between the two.
+# Three polls: empty, empty a frame later, empty a frame after that. The predicate is synchronous
+# because Playwright does not await a promise a predicate returns, so its memory is a page global.
+_LEDGER_QUIET_JS = """() => {
+    const empty = window.__visualNetworkLedger__.pending.length === 0;
+    window.__visualNetworkQuietPolls__ = empty ? window.__visualNetworkQuietPolls__ + 1 : 0;
+    return window.__visualNetworkQuietPolls__ >= 3;
+}"""
+
+
+# The element's box in document coordinates, which is what a full-page clip is measured in.
+_ELEMENT_BOX_JS = """element => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x: x + window.scrollX, y: y + window.scrollY, width, height };
+}"""
+
+
+class DevtoolsViewport:
+    """A page's viewport, emulated and captured over the DevTools protocol: `Emulation.setDeviceMetricsOverride`, then an unclipped `Page.captureScreenshot`.
+
+    Deviation from the Playwright viewport (a context option, captured by `page.screenshot()`): Playwright
+    emulates the metrics without setting the visible size and clips a viewport screenshot to the layout
+    viewport, and at some device scale factors that rasterizes a few pixels of the capture differently: the
+    partly covered last row and column, and some anti-aliased edges. Measured on one page set: identical at
+    a scale of 1 and 2, different at 1.5, 2.625 and 3. A lane whose published images must not change at such
+    a scale uses this; any other lane has no reason to. Attach before navigating.
+    """
+
+    def __init__(self, session: CDPSession) -> None:
+        self._session = session
+
+    @classmethod
+    async def attach(cls, page: Page, *, width: int, height: int, device_scale_factor: float) -> DevtoolsViewport:
+        session = await page.context.new_cdp_session(page)
+        await session.send(
+            "Emulation.setDeviceMetricsOverride",
+            {"mobile": False, "width": width, "height": height, "deviceScaleFactor": device_scale_factor},
+        )
+        return cls(session)
+
+    async def screenshot(self) -> bytes:
+        """The viewport as drawn, in device pixels."""
+        capture = await self._session.send(
+            "Page.captureScreenshot",
+            {"format": "png", "optimizeForSpeed": False, "fromSurface": True, "captureBeyondViewport": False},
+        )
+        return base64.b64decode(capture["data"])
+
+
+async def wait_for_stable(page: Page, *, timeout_ms: int = WAIT_TIMEOUT_MS) -> None:
+    """Wait for fonts, image decoding and a painted frame within one deadline.
+
+    This is render readiness, not application readiness or animation convergence.
+    Paused harness animations deliberately never finish. Tests still wait for the
+    state they intend to photograph before calling this helper.
+    """
+    stage = "fonts"
+    try:
+        async with asyncio.timeout(timeout_ms / 1000):
+            await page.evaluate("() => document.fonts.ready.then(() => true)")
+            stage = "image decoding"
+            await page.evaluate("""() => Promise.all(
+                Array.from(document.images)
+                    .filter(image => !image.complete)
+                    // Broken images are the page's problem to render, not a reason to hang.
+                    .map(image => image.decode().catch(() => {}))
+            )""")
+            stage = "paint frames"
+            await page.evaluate("""() => new Promise(resolve =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+    except TimeoutError as exc:
+        raise AssertionError(f"render readiness: {stage} did not settle within {timeout_ms}ms") from exc
+
+
+async def repaint(page: Page) -> None:
+    """Repaint the whole page and wait for the painted frame, so every layer is rastered where it is now.
+
+    Chromium's compositor keeps a layer's tiles rastered at the pixel alignment they were rastered for,
+    and re-rasters for a new alignment only when nothing defers it: an active scroll or a pending
+    activation does (cc `PictureLayerImpl::UpdateTilingsForRasterScaleAndTranslation`). A sticky
+    heading is its own layer and changes alignment as it sticks and unsticks, so which frame last
+    rastered it decided whether its text landed a device pixel off. A full paint invalidation makes
+    the compositor raster every layer afresh.
+
+    Enabling the DevTools LayerTree domain is that invalidation: Blink turns on paint debug info and,
+    finding it newly enabled, invalidates the paint of every view (`LocalFrameView::PaintTree`). Debug
+    info changes nothing drawn. Blink drops it again at the first paint after the domain is disabled,
+    so a later call, after a painted frame, invalidates again.
+    """
+    async with AsyncExitStack() as stack:
+        session = await page.context.new_cdp_session(page)
+        stack.push_async_callback(session.detach)
+        await session.send("LayerTree.enable")
+        # TODO: Possible ~40 ms/capture saving (~2-3% of a visual shard, measured on RBE 2026-11-10):
+        # keep the domain enabled through the screenshot and disable it after, so the screenshot's own
+        # frame carries the full repaint and the two-frame wait here goes away. It changes the ordering
+        # this relies on, so it needs the x10 determinism runs that #15287 used before it lands.
+        await wait_for_stable(page)
+        await session.send("LayerTree.disable")
+
+
+# What `page.screenshot()` does by default (`caret="hide"`), for a capture taken over the DevTools
+# protocol instead. A constructed sheet, not a `<style>`, so a page's CSP does not refuse it.
+_HIDE_CARET_JS = """() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync("*, *::before, *::after { caret-color: transparent !important; }");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    window.__visualHiddenCaret__ = sheet;
+}"""
+_SHOW_CARET_JS = """() => {
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(sheet => sheet !== window.__visualHiddenCaret__);
+    delete window.__visualHiddenCaret__;
+}"""
+
+
+@asynccontextmanager
+async def hidden_caret(page: Page) -> AsyncIterator[None]:
+    """Hide the text caret, which blinks on wall-clock time, for a capture `page.screenshot()` does not take.
+
+    Whether a blinking caret is drawn depends on how long the capture took since the focused field last
+    changed, so a slower capture can catch it off.
+    """
+    await page.evaluate(_HIDE_CARET_JS)
+    try:
+        await wait_for_stable(page)
+        yield
+    finally:
+        await page.evaluate(_SHOW_CARET_JS)
+
+
+class PageErrors:
+    """Uncaught errors a page throws, to fail the capture on.
+
+    With no pixel baseline to compare against, this is the primary crash detector: a component that
+    throws out of an effect leaves a partial render that photographs perfectly well, and publishes as
+    a plausible-looking baseline nobody re-reads. Construct it before loading content, so an error
+    thrown during load is caught too.
+    """
+
+    def __init__(self, page: Page) -> None:
+        self._errors: list[str] = []
+        self._thrown = asyncio.Event()
+        page.on("pageerror", self._record)
+
+    def _record(self, error: PlaywrightError) -> None:
+        self._errors.append(error.stack or str(error))
+        self._thrown.set()
+
+    def assert_none(self, *, context: str) -> None:
+        if self._errors:
+            raise AssertionError(f"{context}: uncaught page errors:\n  " + "\n  ".join(self._errors))
+
+    async def wait_for[T](self, waiting: Awaitable[T], *, context: str) -> T:
+        """Await `waiting`, failing with the page's uncaught errors the moment it throws.
+
+        A scene whose page threw usually never reaches the state its selector waits for, so a plain
+        wait runs out `WAIT_TIMEOUT_MS` and reports only the selector, never the error that explains
+        it. An error thrown before the wait began fails it at once. A wait that loses the race is
+        cancelled.
+        """
+        task = asyncio.ensure_future(waiting)
+        thrown = asyncio.ensure_future(self._thrown.wait())
+        try:
+            await asyncio.wait({task, thrown}, return_when=asyncio.FIRST_COMPLETED)
+            if not task.done():
+                self.assert_none(context=context)
+            return task.result()
+        finally:
+            task.cancel()
+            thrown.cancel()
+
+
+class RequestFence:
+    """Abort and record every request the page makes that `allow` does not accept.
+
+    For a page whose content is entirely local (`file://` assets, stubbed fetch), any escaping request
+    is a hole in its hermeticity. In the test sandbox such a request can only fail, and its failure
+    racing the capture is exactly how a transient error state gets published as a plausible-looking
+    baseline: so the fence aborts it at once and the caller fails the scene by asserting on it before
+    capturing. Install it before navigating.
+
+    A request under a key of `served_documents` (a URL prefix) is answered with that HTML: neither
+    allowed nor an escape. It stands in for an origin that does not exist, such as the framed app of a
+    shell that embeds one.
+    """
+
+    def __init__(
+        self, allow: Callable[[Request], bool], *, served_documents: Mapping[str, str] = MappingProxyType({})
+    ) -> None:
+        self._allow = allow
+        self._served_documents = served_documents
+        self._escaped: list[str] = []
+
+    async def install(self, page: Page) -> None:
+        await page.route(re.compile(r".*"), self._handle)
+
+    async def _handle(self, route: Route) -> None:
+        request = route.request
+        for prefix, html in self._served_documents.items():
+            if request.url.startswith(prefix):
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
+                return
+        if self._allow(request):
+            await route.continue_()
+            return
+        self._escaped.append(f"{request.resource_type} {request.url}")
+        await route.abort()
+
+    def assert_none_escaped(self, *, context: str) -> None:
+        if self._escaped:
+            raise AssertionError(f"{context}: requests escaped the harness:\n    " + "\n    ".join(self._escaped))
+
+
+async def assert_network_settled(page: Page, *, context: str, timeout_ms: int = WAIT_TIMEOUT_MS) -> None:
+    """Wait until the harness's stubbed network is quiet, then fail on anything it recorded.
+
+    The in-page half is `window.__visualNetworkLedger__`
+    (haku/console/frontend/tool_rendering/screenshot/visual_network_ledger.ts), maintained by the
+    harness's fetch stub: `pending` holds each stubbed fetch's URL while it is in flight, and
+    `violations` records what must fail the run: an unmatched route, a rejected fetch, an unhandled
+    promise rejection. A timeout names what was still in flight instead of reporting a bare timeout.
+
+    A page with no ledger passes: a harness that stubs no fetch has nothing to settle, and
+    `RequestFence` is what keeps such a page's network empty.
+    """
+    if not await page.evaluate("Boolean(window.__visualNetworkLedger__)"):
+        return
+    await page.evaluate("window.__visualNetworkQuietPolls__ = 0")
+    try:
+        await page.wait_for_function(_LEDGER_QUIET_JS, timeout=timeout_ms)
+    except PlaywrightTimeoutError as timeout:
+        if pending := await page.evaluate("window.__visualNetworkLedger__.pending"):
+            raise AssertionError(
+                f"{context}: requests still in flight after {timeout_ms}ms: {', '.join(pending)}"
+            ) from timeout
+        raise
+    if violations := await page.evaluate("window.__visualNetworkLedger__.violations"):
+        raise AssertionError(f"{context}: network violations:\n  " + "\n  ".join(violations))
+
+
+async def screenshot_locator(
+    page: Page,
+    target: Locator,
+    *,
+    context: str,
+    scale: Literal["css", "device"] = "device",
+    animations: Literal["allow", "disabled"] = "allow",
+) -> bytes:
+    if (count := await target.count()) != 1:
+        raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
+    box = await target.evaluate(_ELEMENT_BOX_JS)
+    x, y = _round_half_up(box["x"]), _round_half_up(box["y"])
+    clip: FloatRect = {
+        "x": x,
+        "y": y,
+        "width": _round_half_up(box["width"] + box["x"] - x),
+        "height": _round_half_up(box["height"] + box["y"] - y),
+    }
+    if clip["width"] == 0 or clip["height"] == 0:
+        raise ValueError(f"{context}: screenshot target has no visible extent: {clip=}")
+    return await page.screenshot(clip=clip, full_page=True, scale=scale, animations=animations)
+
+
+def _round_half_up(value: float) -> int:
+    # Half up, like JavaScript's Math.round; Python's round() goes to the even neighbour.
+    return math.floor(value + 0.5)

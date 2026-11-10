@@ -2,44 +2,30 @@
 import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
+import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
 
-import type { CallerGrantReader, Connection } from "./models";
+import { ConnectionSchema, GrantSchema, GrantStatus, type Connection } from "../../../mcp_edge/connection_service_pb";
+import { ServiceAccountSchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";
 import { sampleConnection } from "./testing/fixture";
 
-const OTHER = { namespace: "agentplane-test", name: "other" };
+vi.mock("./caller_grants", () => ({
+  CallerGrants: ({ account }: { account: { namespace: string; name: string } }) => (
+    <div>
+      Grants for {account.namespace}/{account.name}
+    </div>
+  ),
+}));
+
+const OTHER = create(ServiceAccountSchema, { namespace: "agentplane-test", name: "other" });
 const ROOT = "/upstream/connections/v1/operator";
 const CONNECTIONS = `${ROOT}/connections`;
 const CALLERS = `${ROOT}/caller-service-accounts`;
 const WATCH = `${ROOT}/connections:watch`;
 
-function connectionJson(row: Connection): Record<string, unknown> {
-  const status = {
-    pending: "GRANT_STATUS_PENDING",
-    active: "GRANT_STATUS_ACTIVE",
-    revoked: "GRANT_STATUS_REVOKED",
-  } as const;
-  return {
-    id: row.id,
-    displayName: row.display_name,
-    version: row.version,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    grants: row.grants.map((grant) => ({
-      id: grant.id,
-      connectionId: grant.connection_id,
-      revision: grant.revision,
-      caller: grant.caller,
-      issuer: grant.issuer,
-      clientId: grant.client_id,
-      status: status[grant.status],
-      createdAt: grant.created_at,
-      ...(grant.activated_at === null ? {} : { activatedAt: grant.activated_at }),
-      ...(grant.revoked_at === null ? {} : { revokedAt: grant.revoked_at }),
-    })),
-    ...(row.bound_caller === null ? {} : { boundCaller: row.bound_caller }),
-  };
+function connectionJson(row: Connection): JsonObject {
+  return toJson(ConnectionSchema, row) as JsonObject;
 }
 
 function watch(rows: Connection[], signal?: AbortSignal): Response {
@@ -75,7 +61,9 @@ function serve(
       const current = typeof rows === "function" ? rows() : rows;
       return current instanceof Response ? current : watch(current, request.signal);
     }
-    if (method === "GET" && path === CALLERS) return { serviceAccounts: [OTHER] };
+    if (method === "GET" && path === CALLERS) {
+      return { serviceAccounts: [toJson(ServiceAccountSchema, OTHER)] };
+    }
     if (method === "POST" && path.endsWith("/rebind")) return { connection: connectionJson(sampleConnection()) };
     if (method === "POST" && path.endsWith("/unbind")) {
       const answer = unbound?.();
@@ -93,10 +81,10 @@ const reads = (sent: Sent[]): number => sent.filter(({ path }) => path === CONNE
 const unbinds = (sent: Sent[]): Sent[] => sent.filter(({ path }) => path.endsWith("/unbind"));
 const renames = (sent: Sent[]): Sent[] => sent.filter(({ method }) => method === "PATCH");
 
-async function render(readGrants?: CallerGrantReader): Promise<HTMLDivElement> {
+async function render(): Promise<HTMLDivElement> {
   const container = await mountConnectionService(
     <MemoryRouter>
-      <Connections readGrants={readGrants} />
+      <Connections />
     </MemoryRouter>
   );
   await vi.waitFor(() => expect(container.textContent).not.toContain("Loading OAuth clients"));
@@ -144,18 +132,22 @@ it("renders the Client/Service account table with the immutable client ID and an
 it("shows the most recent grant when a connection has more than one", async () => {
   const row = sampleConnection();
   const superseded = row.grants[0];
-  row.grants = [
-    superseded,
-    {
-      ...superseded,
-      id: "20000000-0000-4000-8000-000000000002",
-      revision: superseded.revision + 1,
-      client_id: "registered-client-456",
-      caller: { namespace: "agentplane-test", name: "other" },
-    },
-  ];
-  row.bound_caller = OTHER;
-  serve([row]);
+  if (!superseded) throw new Error("missing sample grant");
+  const multiple = create(ConnectionSchema, {
+    ...row,
+    grants: [
+      superseded,
+      create(GrantSchema, {
+        ...superseded,
+        id: "20000000-0000-4000-8000-000000000002",
+        revision: superseded.revision + 1,
+        clientId: "registered-client-456",
+        caller: OTHER,
+      }),
+    ],
+    boundCaller: OTHER,
+  });
+  serve([multiple]);
   const container = await render();
   expect(container.textContent).toContain("registered-client-456");
   expect(container.textContent).not.toContain("registered-client-123");
@@ -163,15 +155,15 @@ it("shows the most recent grant when a connection has more than one", async () =
   expect(container.textContent).not.toContain("ServiceAccount not labeled as an Action caller");
 });
 it("requires confirmation, permits cancelling, and preserves the row after unlink", async () => {
-  const row = sampleConnection();
-  row.version = "9007199254740993";
+  const row = create(ConnectionSchema, { ...sampleConnection(), version: 9007199254740993n });
   const sent = serve([row], {
-    unbound: () => ({
-      ...row,
-      version: "3",
-      grants: row.grants.map((grant) => ({ ...grant, status: "revoked" as const })),
-      bound_caller: null,
-    }),
+    unbound: () =>
+      create(ConnectionSchema, {
+        ...row,
+        version: 3n,
+        grants: row.grants.map((grant) => create(GrantSchema, { ...grant, status: GrantStatus.REVOKED })),
+        boundCaller: undefined,
+      }),
   });
   const container = await render();
   await act(async () => button(container, "Unlink").click());
@@ -186,14 +178,14 @@ it("requires confirmation, permits cancelling, and preserves the row after unlin
   await act(async () => button(container, "Confirm unlink").click());
   await vi.waitFor(() => expect(button(container, "Unlink").disabled).toBe(true));
   expect(unbinds(sent)).toMatchObject([
-    { path: `${CONNECTIONS}/${row.id}/unbind`, body: { expectedVersion: row.version } },
+    { path: `${CONNECTIONS}/${row.id}/unbind`, body: { expectedVersion: row.version.toString() } },
   ]);
 });
 it("refreshes stale unlink state without destructive automatic retry", async () => {
   let rows = [sampleConnection()];
   const sent = serve(() => rows, {
     unbound: () => {
-      rows = [{ ...rows[0], display_name: "Changed elsewhere", version: "4" }];
+      rows = [create(ConnectionSchema, { ...rows[0], displayName: "Changed elsewhere", version: 4n })];
       return Response.json({ detail: "stale" }, { status: 409 });
     },
   });
@@ -209,7 +201,7 @@ it("refreshes stale unlink state without destructive automatic retry", async () 
 it("renames with the version it read and keeps the answered row", async () => {
   const row = sampleConnection();
   const sent = serve([row], {
-    renamed: () => ({ ...row, display_name: "Test renamed client", version: "3" }),
+    renamed: () => create(ConnectionSchema, { ...row, displayName: "Test renamed client", version: 3n }),
     unbound: () => row,
   });
   const container = await render();
@@ -219,7 +211,10 @@ it("renames with the version it read and keeps the answered row", async () => {
 
   await vi.waitFor(() => expect(nameField(container).value).toBe("Test renamed client"));
   expect(renames(sent)).toMatchObject([
-    { path: `${CONNECTIONS}/${row.id}`, body: { expectedVersion: row.version, displayName: "Test renamed client" } },
+    {
+      path: `${CONNECTIONS}/${row.id}`,
+      body: { expectedVersion: row.version.toString(), displayName: "Test renamed client" },
+    },
   ]);
   // The next change on the row goes with the version the rename answered, not the one first read.
   await act(async () => button(container, "Unlink").click());
@@ -242,7 +237,7 @@ it("loads the latest state on a rename conflict without retrying", async () => {
   let rows = [sampleConnection()];
   const sent = serve(() => rows, {
     renamed: () => {
-      rows = [{ ...rows[0], display_name: "Test renamed elsewhere", version: "4" }];
+      rows = [create(ConnectionSchema, { ...rows[0], displayName: "Test renamed elsewhere", version: 4n })];
       return Response.json({ detail: "stale" }, { status: 409 });
     },
   });
@@ -266,15 +261,9 @@ it("distinguishes loading failures from an empty inventory", async () => {
 });
 
 it("expands grants for the current caller even when its admission label is missing", async () => {
-  const read = vi.fn<CallerGrantReader>(async () => ({
-    bindings: [],
-    action_policy: { synced: true, auto_approve_if: [] },
-  }));
   serve();
-  const container = await render(read);
-  expect(read).not.toHaveBeenCalled();
+  const container = await render();
   await act(async () => button(container, "View grants").click());
-  expect(read.mock.calls[0][0]).toEqual(sampleConnection().bound_caller);
   expect(container.textContent).toContain("Grants for agentplane-test/personal");
   await act(async () => button(container, "Hide grants").click());
   expect(container.textContent).not.toContain("Grants for agentplane-test/personal");

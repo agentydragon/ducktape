@@ -2,8 +2,9 @@
 
 `//devinfra/pr_visuals:retention_bin` builds a read-only report from S3-compatible
 storage and GitHub. The planner has no write, tagging, lifecycle, or deletion path.
-It preserves every baseline pointer, and groups stored objects under both
-`commits/<sha>/` (legacy) and `reviews/<sha>/` (current) bundle layouts.
+It preserves the current baseline pointers and groups stored objects under
+`reviews-test-outputs/<sha>/`. The hard cutover requires older bundle and pointer
+namespaces to be cleared before planning; their presence blocks the report.
 
 Run the planner with the normal AWS environment variables and a GitHub token that can
 read pull requests and Actions:
@@ -37,7 +38,8 @@ missing provenance-only bundle is reported, since not every commit has visual ou
 Every retained bundle's aggregate and available target metadata are read to retain
 shared assets named by `candidate_sha256`, `baseline_sha256`, or `diff_sha256`.
 
-Unknown root keys stay retained. An unrecognized key under `commits/` or `reviews/`, a
+Unknown root keys stay retained. Any key under the old `commits/` or `reviews/`
+namespaces, an unrecognized key under `reviews-test-outputs/`, a
 broken baseline pointer, missing metadata for a retained bundle, malformed retained
 metadata, or an absent shared image named by retained metadata blocks all candidate
 output. The report's `safe_to_delete_now` and `shared_assets.safe_to_delete_now` fields

@@ -31,23 +31,24 @@ func testStore(t *testing.T, capacity int) *Store {
 }
 
 // uniqueSubject keeps tests that share a database out of each other's reads.
-func uniqueSubject() *decision.Subject {
-	return &decision.Subject{Namespace: "test-" + uuid.NewString(), Name: "test-workload"}
+func uniqueSubject() decision.ServiceAccount {
+	return decision.ServiceAccount{Namespace: "test-" + uuid.NewString(), Name: "test-workload"}
 }
 
 // stored is a record as the database round-trips it: microsecond precision, no monotonic clock.
-func stored(subject *decision.Subject, at time.Time) decision.Record {
+func stored(subject decision.Subject, at time.Time) decision.Record {
 	record := testRecord(at.UTC().Truncate(time.Microsecond))
 	record.Subject = subject
 	return record
 }
 
-func fullyPopulated(subject *decision.Subject, at time.Time) decision.Record {
+func fullyPopulated(subject decision.Subject, at time.Time) decision.Record {
 	record := stored(subject, at)
 	pod, binding, policy, address, rule := "test-pod-uid", "test-binding", "test-policy", "203.0.113.7", 3
 	deny := decision.NoRule
 	record.SourcePodUID, record.Binding, record.Policy, record.Address, record.Rule = &pod, &binding, &policy, &address, &rule
 	record.Outcome, record.Reason, record.Substituted = decision.Deny, &deny, true
+	record.Impersonated = &decision.ServiceAccount{Namespace: "test-accounts", Name: "test-account"}
 	return record
 }
 
@@ -88,18 +89,23 @@ func TestSharedHistorySurvivesReplacementAndSeparatesSubjects(t *testing.T) {
 	}
 
 	replacement := testStore(t, 200)
+	if err := replacement.Readable(ctx); err != nil {
+		t.Fatalf("history health read failed: %v", err)
+	}
 	got, err := replacement.Recent(ctx, subject)
 	if err != nil {
 		t.Fatal(err)
 	}
 	equal(t, got, []decision.Record{a, b})
 	// Every field survives the round trip.
-	if got[0].Subject == nil || *got[0].Subject != *subject || *got[0].Address != "203.0.113.7" || *got[0].Rule != 3 ||
+	if got[0].Subject != subject || *got[0].Address != "203.0.113.7" || *got[0].Rule != 3 ||
 		*got[0].Reason != decision.NoRule || !got[0].Substituted || *got[0].SourcePodUID != "test-pod-uid" ||
-		*got[0].Binding != "test-binding" || *got[0].Policy != "test-policy" || got[1].Reason != nil || got[1].Address != nil {
+		*got[0].Binding != "test-binding" || *got[0].Policy != "test-policy" ||
+		got[0].Impersonated == nil || *got[0].Impersonated != *a.Impersonated ||
+		got[1].Reason != nil || got[1].Address != nil || got[1].Impersonated != nil {
 		t.Fatalf("record did not round-trip: %+v", got[0])
 	}
-	if absent, err := replacement.Recent(ctx, &decision.Subject{Namespace: subject.Namespace, Name: "absent"}); err != nil || len(absent) != 0 {
+	if absent, err := replacement.Recent(ctx, decision.ServiceAccount{Namespace: subject.Namespace, Name: "absent"}); err != nil || len(absent) != 0 {
 		t.Fatalf("absent name: %v, %v", absent, err)
 	}
 	if elsewhere, err := replacement.Recent(ctx, other); err != nil || len(elsewhere) != 0 {
@@ -111,6 +117,142 @@ func TestSharedHistorySurvivesReplacementAndSeparatesSubjects(t *testing.T) {
 	}
 	if i := indexOf(unauthenticated, refusal.EventID); i < 0 || unauthenticated[i].Subject != nil {
 		t.Fatalf("refusal that never authenticated is missing or has a subject: %+v", unauthenticated)
+	}
+}
+
+// An Identity is a subject of its own: not the ServiceAccount of the same name, nor the
+// unauthenticated, and its watchers hear of its decisions alone.
+func TestAnIdentitysDecisionsAreItsOwn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	account := uniqueSubject()
+	identity := decision.Identity{Name: account.Name + "-" + uuid.NewString()}
+	namesake := decision.ServiceAccount{Namespace: account.Namespace, Name: identity.Name}
+	store := testStore(t, 200)
+	changes, err := NewChanges(integrationDatabase.URL, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	following := make(chan struct{})
+	updates := make(chan Change, 4)
+	ended := make(chan error, 1)
+	go func() {
+		ended <- changes.Follow(ctx, identity, func(change Change) error {
+			if _, initial := change.(Initial); initial {
+				close(following)
+			} else {
+				updates <- change
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-following:
+	case <-ctx.Done():
+		t.Fatal("follow did not start")
+	}
+
+	now := time.Now()
+	acted := fullyPopulated(identity, now.Add(-time.Second))
+	if err := store.Append(ctx, []decision.Record{stored(namesake, now.Add(-2*time.Second)), acted, stored(nil, now)}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Recent(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, got, []decision.Record{acted})
+	if got[0].Subject != identity || *got[0].Impersonated != *acted.Impersonated || *got[0].SourcePodUID != "test-pod-uid" {
+		t.Fatalf("record did not round-trip: %+v", got[0])
+	}
+	if same, err := store.Recent(ctx, namesake); err != nil || len(same) != 1 || same[0].Subject != namesake {
+		t.Fatalf("the ServiceAccount of the same name: %+v, %v", same, err)
+	}
+	unauthenticated, err := store.Recent(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if indexOf(unauthenticated, acted.EventID) >= 0 {
+		t.Fatalf("an Identity's decision is listed as unauthenticated: %+v", unauthenticated)
+	}
+	select {
+	case change := <-updates:
+		events, ok := change.(Events)
+		if !ok || len(events.EventIDs) != 1 || events.EventIDs[0] != acted.EventID {
+			t.Fatalf("change = %#v, want only the Identity's event", change)
+		}
+	case err := <-ended:
+		t.Fatalf("feed ended: %v", err)
+	case <-ctx.Done():
+		t.Fatal("the Identity's decision was not notified")
+	}
+}
+
+func TestFollowQueuesCommitThatRacesTheInitialSnapshot(t *testing.T) {
+	changes, err := NewChanges(integrationDatabase.URL, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	subject := uniqueSubject()
+	store := testStore(t, 200)
+	initialDone := make(chan struct{})
+	continueInitial := make(chan struct{})
+	updates := make(chan Change, 1)
+	ended := make(chan error, 1)
+	go func() {
+		ended <- changes.Follow(ctx, subject, func(change Change) error {
+			switch change := change.(type) {
+			case Initial:
+				// This is the same read the admin window performs. A commit after this query is
+				// queued by LISTEN until the callback returns, rather than lost at the cut.
+				records, err := store.Recent(ctx, subject)
+				if err != nil {
+					return err
+				}
+				if len(records) != 0 {
+					return errors.New("unexpected record in initial snapshot")
+				}
+				close(initialDone)
+				select {
+				case <-continueInitial:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			default:
+				updates <- change
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-initialDone:
+	case <-ctx.Done():
+		t.Fatal("initial snapshot did not run")
+	}
+	record := stored(subject, time.Now())
+	if err := store.Append(ctx, []decision.Record{record}); err != nil {
+		t.Fatal(err)
+	}
+	close(continueInitial)
+	select {
+	case change := <-updates:
+		events, ok := change.(Events)
+		if !ok || len(events.EventIDs) != 1 || events.EventIDs[0] != record.EventID {
+			t.Fatalf("change after snapshot = %#v, want committed event ID", change)
+		}
+	case err := <-ended:
+		t.Fatalf("feed ended before queued event: %v", err)
+	case <-ctx.Done():
+		t.Fatal("commit racing initial snapshot was not delivered")
+	}
+	cancel()
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("follower did not end after cancellation")
 	}
 }
 
@@ -194,48 +336,144 @@ func TestRetentionAndRecentLimit(t *testing.T) {
 }
 
 func TestFollowWakesWhenAReplicaCommitsAndEndsWhenItsConnectionIsLost(t *testing.T) {
-	// A heartbeat far past the test: only a commit can be what wakes the second frame.
+	// A heartbeat far past the test: only a commit can wake the subscribed subject.
 	changes, err := NewChanges(integrationDatabase.URL, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	frames, ended := make(chan struct{}, 8), make(chan error, 1)
-	go func() {
-		ended <- changes.Follow(ctx, func() error {
-			frames <- struct{}{}
-			return nil
-		})
-	}()
-	await := func(what string) {
+	subject, unrelated := uniqueSubject(), uniqueSubject()
+	type followResult struct {
+		change Change
+		err    error
+	}
+	start := func() (<-chan followResult, <-chan error) {
+		frames, ended := make(chan followResult, 32), make(chan error, 1)
+		go func() {
+			ended <- changes.Follow(ctx, subject, func(change Change) error {
+				frames <- followResult{change: change}
+				return nil
+			})
+		}()
+		return frames, ended
+	}
+	firstFrames, firstEnded := start()
+	secondFrames, secondEnded := start()
+	await := func(frames <-chan followResult, ended <-chan error, what string) Change {
 		t.Helper()
 		select {
-		case <-frames:
+		case result := <-frames:
+			return result.change
 		case err := <-ended:
 			t.Fatalf("%s: stream ended: %v", what, err)
 		case <-ctx.Done():
 			t.Fatalf("%s: no frame", what)
 		}
+		return nil
 	}
 
-	await("on subscribing")
+	if _, ok := await(firstFrames, firstEnded, "first subscription").(Initial); !ok {
+		t.Fatal("first subscription did not receive Initial")
+	}
+	if _, ok := await(secondFrames, secondEnded, "second subscription").(Initial); !ok {
+		t.Fatal("second subscription did not receive Initial")
+	}
 	store := testStore(t, 200)
-	if err := store.Append(ctx, []decision.Record{stored(uniqueSubject(), time.Now())}); err != nil {
+	var listenerCount int
+	if err := store.db.QueryRowContext(ctx,
+		"SELECT count(*) FROM pg_stat_activity WHERE application_name = 'agentplane-egress-decision-changes'").Scan(&listenerCount); err != nil {
 		t.Fatal(err)
 	}
-	await("after a commit")
+	if listenerCount != 1 {
+		t.Fatalf("two followers opened %d LISTEN connections, want one", listenerCount)
+	}
+	otherRecord := stored(unrelated, time.Now())
+	if err := store.Append(ctx, []decision.Record{otherRecord}); err != nil {
+		t.Fatal(err)
+	}
+	for _, frames := range []<-chan followResult{firstFrames, secondFrames} {
+		select {
+		case update := <-frames:
+			t.Fatalf("unrelated subject produced update %T", update.change)
+		case <-time.After(150 * time.Millisecond):
+		}
+	}
+	record := stored(subject, time.Now())
+	if err := store.Append(ctx, []decision.Record{record}); err != nil {
+		t.Fatal(err)
+	}
+	for i, pair := range []struct {
+		frames <-chan followResult
+		ended  <-chan error
+	}{{firstFrames, firstEnded}, {secondFrames, secondEnded}} {
+		update, ok := await(pair.frames, pair.ended, "after a commit").(Events)
+		if !ok || len(update.EventIDs) != 1 || update.EventIDs[0] != record.EventID {
+			t.Fatalf("follower %d got update %#v, want its committed event ID", i, update)
+		}
+	}
 
 	if _, err := store.db.ExecContext(ctx,
 		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'agentplane-egress-decision-changes'"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-ended:
-		if err == nil || ctx.Err() != nil {
-			t.Fatalf("Follow returned %v after %v", err, ctx.Err())
+	for i, ended := range []<-chan error{firstEnded, secondEnded} {
+		select {
+		case err := <-ended:
+			if err == nil || ctx.Err() != nil {
+				t.Fatalf("follower %d returned %v after %v", i, err, ctx.Err())
+			}
+		case <-ctx.Done():
+			t.Fatal("stream outlived its LISTEN connection")
 		}
+	}
+
+	resumedFrames := make(chan Change, 2)
+	resumedEnded := make(chan error, 1)
+	go func() {
+		resumedEnded <- changes.Follow(ctx, subject, func(change Change) error {
+			if _, ok := change.(Initial); ok {
+				records, err := store.Recent(ctx, subject)
+				if err != nil {
+					return err
+				}
+				if indexOf(records, record.EventID) < 0 {
+					return errors.New("reconnected feed snapshot omitted the committed record")
+				}
+			}
+			resumedFrames <- change
+			return nil
+		})
+	}()
+	select {
+	case change := <-resumedFrames:
+		if _, ok := change.(Initial); !ok {
+			t.Fatalf("reconnected feed began with %T, want Initial", change)
+		}
+	case err := <-resumedEnded:
+		t.Fatalf("reconnected feed ended before its snapshot: %v", err)
 	case <-ctx.Done():
-		t.Fatal("stream outlived its LISTEN connection")
+		t.Fatal("reconnected feed did not produce a new snapshot")
+	}
+	resumedRecord := stored(subject, time.Now())
+	if err := store.Append(ctx, []decision.Record{resumedRecord}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case change := <-resumedFrames:
+		update, ok := change.(Events)
+		if !ok || len(update.EventIDs) != 1 || update.EventIDs[0] != resumedRecord.EventID {
+			t.Fatalf("reconnected feed update = %#v, want new committed event", change)
+		}
+	case err := <-resumedEnded:
+		t.Fatalf("reconnected feed ended before its new commit: %v", err)
+	case <-ctx.Done():
+		t.Fatal("reconnected feed did not receive its new commit")
+	}
+	cancel()
+	select {
+	case <-resumedEnded:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reconnected feed did not end on cancellation")
 	}
 }

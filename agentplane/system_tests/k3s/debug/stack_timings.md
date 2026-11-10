@@ -4,6 +4,10 @@ Measurements behind the stack's setup choices, for the work on k3s system test l
 measurements (Python services, image splits, import profiles before 2026-10-21) are in
 [the README as of `7fd9f16f7d`](https://github.com/agentydragon/ducktape/blob/7fd9f16f7d/agentplane/x/k3s_env/README.md).
 
+This is historical measurement data. Target names and invocation identities below are preserved as
+recorded before scenarios were grouped into suites; current targets are listed in the
+[system tests README](../../README.md).
+
 ## VM stack timings, 2026-10-21
 
 Booting, suspending and resuming one VM Sandbox with those images imported
@@ -183,7 +187,7 @@ still renders the chart in process and rejects them.
 ## Migrators retrying their first connection, 2026-10-21
 
 The Goose and Alembic migrators retry their first PostgreSQL connection in process
-([`migrate`](../../../postgres/go/migrate/migrate.go), [`db_migrations`](../../../../util/db_migrations.py)).
+([`migrate`](../../../postgres/migrate/migrate.go), [`db_migrations`](../../../../util/db_migrations.py)).
 Three fresh lifecycle runs each, on `devel` and with the change, with temporary uncommitted markers
 in `stack.py`:
 
@@ -195,3 +199,93 @@ in `stack.py`:
 
 What is left of that phase is mostly the services' readiness probes: a 3 s initial delay and a
 10 s period, so a service that is not ready at its first probe waits 10 s more.
+
+## Shared suites, 2026-10-30
+
+An uncached run of the original 16 targets at `40834883`
+([`303b29db`](https://app.buildbuddy.io/invocation/303b29db-ab30-4858-88fc-f42bb22ddaa9))
+and an uncached run of the seven shared suites at `340372b6`
+([`520cadd0`](https://app.buildbuddy.io/invocation/520cadd0-f4cb-4000-a8bb-951027d2af8e))
+passed every target. Durations come from Bazel `TestResult` events, including fixture setup and teardown.
+These are single samples, with no test-result cache hits; they do not measure full CI wall time.
+
+| Metric                         | Original targets | Shared suites | Change |
+| ------------------------------ | ---------------: | ------------: | -----: |
+| Sum of test execution, seconds |         3503.193 |      2977.788 | −15.0% |
+| Longest test, seconds          |          520.977 |       670.706 | +28.7% |
+| Bazel elapsed, seconds         |          621.070 |       678.909 |  +9.3% |
+
+Sharing reduced aggregate execution but increased the longest target. The candidate's longest target
+was `test_pod`; its messaging cases took 239 s for Claude and 90 s for Codex, including the target's
+first stack setup. `test_mcp` took 584 s, with its first case including 280 s of stack setup. Further
+latency work should measure these cases and suite balance separately from aggregate setup savings.
+
+## Four shared stacks and ordinary VM supervision, 2026-10-30
+
+The Pod sampler shares MCP's stack; the VM sampler shares the credential group's stack and runs
+alongside its two guests. Private supervisor checks run during the existing Claude guest's boot,
+while both harnesses check workspace ownership, credentials, resource limits and descendant cleanup
+through ordinary Session setup. This leaves four k3s stacks and six independent VM boots, with at
+most three VMs running at once.
+
+Passing full CI invocations before ([`0e2a2d5f`](https://app.buildbuddy.io/invocation/0e2a2d5f-5370-5abb-b42f-2629caa2bb47),
+`c70cebc9`) and after ([`0a0a3a5b`](https://app.buildbuddy.io/invocation/0a0a3a5b-11c3-58e9-b983-01dbf08d10dc),
+PR head `7ba1d438`) recorded these Bazel `TestResult` durations. All listed suites executed without
+test-result cache hits; other tests in these CI invocations could use the cache.
+
+| Metric                          | Seven stacks | Four stacks | Change |
+| ------------------------------- | -----------: | ----------: | -----: |
+| Sum of suite execution, seconds |     2968.011 |    2093.900 | −29.5% |
+| VM suite, seconds               |      618.727 |     510.875 | −17.4% |
+| Longest suite (Pod), seconds    |      726.915 |     751.619 |  +3.4% |
+| Bazel test invocation, seconds  |      780.287 |     798.831 |  +2.4% |
+
+The new VM suite also includes the sampler and supervisor checks that previously had separate
+targets. Its action took 8.5 minutes; MCP took 10.8 minutes, Pod 12.5 minutes and Dispatcher 3.0
+minutes. The Pod suite remains the longest target. Consolidation reduced aggregate execution in
+these samples; it did not reduce full CI latency.
+
+A separate uncached focused comparison also passed every suite:
+[`83882cff`](https://app.buildbuddy.io/invocation/83882cff-d0ff-4f78-ab39-b316bc5b194e)
+versus [`a2a03f15`](https://app.buildbuddy.io/invocation/a2a03f15-d398-4a0f-947c-68a4b730d8a3).
+Aggregate execution fell from 3084.474 to 2087.000 seconds (−32.3%); the longest target fell from
+803.810 seconds (VM) to 736.298 seconds (Pod). The final VM suite took 509.579 seconds. Pytest's
+first VM case took 281.848 seconds including shared stack startup, and its sandbox/OOM case took
+197.677 seconds including both harnesses' Session setup checks and the private supervisor checks.
+
+These are single samples with uncontrolled worker/cache state, and the candidate was rebased onto
+`e2d26f48`, which also changed model routing. They establish passing coverage and observed execution
+costs, not an isolated causal estimate or a reliable CI latency improvement.
+
+## Concurrent Pod and MCP harness pairs, 2026-10-30
+
+Two uncached runs per suite compared sequential harness cases at `ba7d657f` with seven Pod pairs
+and four MCP pairs using TaskGroups. The baseline is
+[`ff06ed1e`](https://app.buildbuddy.io/invocation/ff06ed1e-5845-44a5-9e65-b143d0deccc2).
+The passing Pod candidate at `8c026141` is
+[`14bf838e`](https://app.buildbuddy.io/invocation/14bf838e-7721-4b37-8e36-edb3e37a3cef);
+the passing MCP candidate at `96cbd44e` is
+[`6b324d31`](https://app.buildbuddy.io/invocation/6b324d31-8ac7-4d51-b7d2-5b05708c2612).
+The latter invocation's Pod runs failed on deployment-wide command-ID collisions; the final
+candidate gives independent thread-stream commands unique IDs while retaining intentional retries.
+
+| Suite | Baseline action seconds | Candidate action seconds | Mean change |
+| ----- | ----------------------: | -----------------------: | ----------: |
+| Pod   |            526.6, 599.9 |             485.0, 592.7 |       −4.3% |
+| MCP   |            498.8, 525.5 |             372.6, 377.0 |      −26.8% |
+
+These are Bazel test-action durations, including startup and teardown. The MCP stack-ready mean
+fell from 199.9 to 69.9 seconds, accounting for most of its apparent improvement. Pod stack-ready
+time increased from 93.3 to 118.4 seconds on average. Unchanged storage cases also varied widely.
+
+Summing the affected pytest cases, and deducting shared stack-ready time from the first Pod case,
+gives 290.4 → 265.2 seconds for Pod (−8.7%) and 220.6 → 209.1 seconds for MCP (−5.2%). These figures
+still include per-case setup and cleanup. For example, the launcher pair took about 114 seconds
+concurrently versus 110 seconds summed across sequential harnesses. The measurements support modest
+observed savings in the changed scenarios, not a twofold improvement from parallel execution.
+
+Each candidate suite passed twice without test-result caching. The helper's overlap and peer
+cancellation tests also passed twice in `6b324d31`. Worker/snapshot state was uncontrolled, and the
+candidate base includes intervening devel changes, including kvm-clock restoration work. These
+samples do not isolate a causal CI latency improvement. Alternative runner compatibility results
+are recorded in [the framework evaluation](../../debug/concurrent_runners.md).

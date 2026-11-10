@@ -89,7 +89,19 @@ func TestTheGroupReadsTheToolsAgainEveryRefresh(t *testing.T) {
 	awaitGroup(t, groups, offering("test_second"))
 }
 
-func TestAToolListTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing.T) {
+func TestAToolTheCatalogCannotHoldIsLeftOutAndTheOthersAreOffered(t *testing.T) {
+	mixed := newServer()
+	mixed.AddTool(&mcp.Tool{Name: "test_good", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
+	mixed.AddTool(&mcp.Tool{
+		Name: "test_invalid", InputSchema: json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`),
+	}, answering(&calls{}, textResult("unused")))
+	u := newUpstream(t, mixed, &mcp.StreamableHTTPOptions{Stateless: true})
+	groups := mcpGroup(t, httpConfig(u.url()))
+	supervise(t, groups, nil, executorTiming())
+	awaitGroup(t, groups, offering("test_good"))
+}
+
+func TestAToolListOfOnlyToolsTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing.T) {
 	invalid := newServer()
 	invalid.AddTool(&mcp.Tool{
 		Name: "test_invalid", InputSchema: json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`),
@@ -97,7 +109,7 @@ func TestAToolListTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing
 	u := newUpstream(t, invalid, &mcp.StreamableHTTPOptions{Stateless: true})
 	groups := mcpGroup(t, httpConfig(u.url()))
 	supervise(t, groups, nil, executorTiming())
-	g := awaitGroup(t, groups, unavailableFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_INVALID_CATALOG,
+	g := awaitGroup(t, groups, unavailableAndRetryingFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_INVALID_CATALOG,
 		func(detail string) bool { return strings.Contains(detail, "test_invalid") }))
 	if len(g.Actions) != 0 || g.Health.RetryAt == nil || g.Health.Failures == 0 {
 		t.Errorf("the withdrawn group offers %v with health %v", g.Actions, g.Health)
@@ -116,7 +128,7 @@ func TestAServerThatIsDownLeavesItsGroupUnavailableUntilItIsBack(t *testing.T) {
 	u.down.Store(true)
 	groups := mcpGroup(t, httpConfig(u.url()))
 	supervise(t, groups, nil, executorTiming())
-	g := awaitGroup(t, groups, unavailableFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_CONNECT_FAILED, anyDetail))
+	g := awaitGroup(t, groups, unavailableAndRetryingFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_CONNECT_FAILED, anyDetail))
 	if g.Health.State != action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED || g.Health.Failures == 0 ||
 		g.Health.RetryAt == nil {
 		t.Errorf("health %v", g.Health)

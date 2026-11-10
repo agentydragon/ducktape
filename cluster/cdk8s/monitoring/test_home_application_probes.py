@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import cast
@@ -13,10 +14,10 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.monitoring import blackbox_exporter, home_application_probes
+from devinfra.oci.oci import load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from third_party.containers import blackbox_exporter as blackbox_exporter_image
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _PORT = 9115
 
@@ -48,8 +49,9 @@ def _probe_success(metrics: str) -> int:
 
 
 def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
-    assert blackbox_exporter.IMAGE.startswith(f"{blackbox_exporter_image.IMAGE.tag}@sha256:")
-    load_oci_image(blackbox_exporter_image.IMAGE)
+    image_name, _, image_digest = blackbox_exporter.IMAGE.partition("@")
+    assert f"{image_name.rsplit(':', 1)[0]}@{image_digest}" == os.environ["BLACKBOX_EXPORTER_PIN"]
+    image_ref = load_oci_image(blackbox_exporter_image.LAYOUT_RLOCATION)
     config_path = tmp_path / "blackbox.yml"
     config_path.write_text(yaml.safe_dump(home_application_probes.CONFIG))
     out_dir = undeclared_outputs_dir() / "home-application-probes"
@@ -57,7 +59,7 @@ def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
 
     with (
         LoggedContainer(
-            blackbox_exporter_image.IMAGE.tag,
+            image_ref,
             test_name="home-application-probes",
             command=[f"--config.file=/etc/blackbox_exporter/{config_path.name}"],
         )

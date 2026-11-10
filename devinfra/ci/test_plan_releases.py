@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import subprocess
 from pathlib import Path
@@ -5,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import Output
+from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import (
     Release,
     content_hash,
@@ -130,6 +131,12 @@ def test_unpublished_release_is_kept() -> None:
     assert [row["pkg"] for row in matrix_include(decided)] == ["pkg"]
 
 
+def test_a_release_whose_tests_push_ci_already_failed_gets_no_job() -> None:
+    release = dataclasses.replace(make_release(), tests="//:a_test")
+    decided = plan([release], by_label_a(), lambda _: False, workers=2)
+    assert matrix_include(decided, blocked_tests={"//:a_test"}) == []
+
+
 def test_the_tag_looked_up_is_the_content_tag() -> None:
     seen: list[str] = []
 
@@ -196,6 +203,16 @@ def test_skip_ci_releases_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_no_invocation_releases_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`release` runs under always(), so a skipped or failed bazel-ci must publish
     everything rather than silently publish nothing."""
+    artifact_targets = json.loads(ARTIFACT_TARGETS.read_text())
+    skills = json.loads(SKILLS_REGISTRY.read_text())["skills"]
+    targets_by_release: dict[str, list[str]] = {}
+    for pin in artifact_targets["pins"].values():
+        targets_by_release.setdefault(pin["release"], []).append(pin["target"])
+    expected_targets_by_pkg = {
+        pkg: " ".join(targets_by_release[pkg]) for pkg in artifact_targets["releases"] if pkg in targets_by_release
+    }
+    expected_targets_by_pkg.update({skill["pkg"]: skill["target"] for skill in skills})
+
     output_file = tmp_path / "gh_output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
     main(
@@ -212,7 +229,9 @@ def test_no_invocation_releases_everything(tmp_path: Path, monkeypatch: pytest.M
     )
     written = output_file.read_text()
     rows = json.loads(written.split("matrix=", 1)[1].splitlines()[0])["include"]
-    assert len(rows) == len(load_releases(ARTIFACT_TARGETS, SKILLS_REGISTRY))
+    actual_targets_by_pkg = {row["pkg"]: row["targets"] for row in rows}
+    assert len(actual_targets_by_pkg) == len(rows), "a release package appears more than once"
+    assert actual_targets_by_pkg == expected_targets_by_pkg
 
 
 def test_every_pin_and_skill_reaches_exactly_one_row() -> None:

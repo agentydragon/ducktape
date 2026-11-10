@@ -60,6 +60,11 @@ agentplane/crds/manifests/crd-sandboxtemplates.yaml
 agentplane/crds/manifests/crd-egresscredentials.yaml
 agentplane/crds/manifests/crd-policysets.yaml
 agentplane/crds/manifests/crd-policybindings.yaml
+agentplane/crds/manifests/crd-identities.yaml
+agentplane/crds/manifests/crd-kubernetesrolesets.yaml
+agentplane/crds/manifests/crd-serviceaccountgrants.yaml
+agentplane/crds/manifests/crd-managedserviceaccounts.yaml
+agentplane/crds/manifests/crd-workloadcredentials.yaml
 
 # kubeconform schemas dumped from the Agentplane CRDs by `bb run //agentplane/crds:generate_bin`
 cluster/schemas/**

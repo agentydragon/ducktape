@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -16,18 +17,6 @@ import (
 // Unverified positives keep polling with bounded backoff. Negative results have no parent proof;
 // recheck them three times before returning to the ordinary source freshness deadline.
 var mergeabilityRetries = [...]time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second, time.Minute}
-
-type mergeabilityPayload struct {
-	Repository           string                     `json:"repository"`
-	PullRequestNumber    int64                      `json:"pullRequestNumber"`
-	BaseRef              string                     `json:"baseRef"`
-	HeadSHA              string                     `json:"headSha"`
-	BaseSHA              string                     `json:"baseSha"`
-	PreviousMergeability model.GitHubMergeableState `json:"previousMergeability"`
-	Mergeability         model.GitHubMergeableState `json:"mergeability"`
-	ObservedAt           time.Time                  `json:"observedAt"`
-	MergeCommit          *model.GitHubMergeCommit   `json:"mergeCommit,omitempty"`
-}
 
 // observePullRequest runs under the subject lease and access fences checked by CompleteSubject. Its event and
 // observation commit together; inbox fan-out can retry independently without losing a transition.
@@ -172,7 +161,7 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	if err := tx.QueryRowContext(ctx, `SELECT full_name FROM github_repository WHERE repository_id = $1`, subject.RepositoryID).Scan(&repository); err != nil {
 		return err
 	}
-	payload, err := json.Marshal(mergeabilityPayload{
+	payload, err := json.Marshal(storagecodec.MergeabilityPayload{
 		Repository: repository, PullRequestNumber: number, BaseRef: observation.BaseRef,
 		HeadSHA: observation.HeadSHA, BaseSHA: observation.BaseSHA, PreviousMergeability: previous,
 		Mergeability: settled, ObservedAt: at, MergeCommit: observation.MergeCommit,
@@ -241,15 +230,19 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 	if recording.Subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
-	var creation []byte
+	var creationProto sql.Null[[]byte]
+	var sourceProvider sql.NullString
+	var idempotencyKey string
 	var after int64
 	var initialized bool
-	if err := tx.QueryRowContext(ctx, `SELECT creation, github_mergeability_after_sequence, github_mergeability_initialized
-		FROM subscription WHERE id = $1`, recording.SubscriptionID).Scan(&creation, &after, &initialized); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key,
+		github_mergeability_after_sequence, github_mergeability_initialized
+		FROM subscription WHERE id = $1`, recording.SubscriptionID).
+		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after, &initialized); err != nil {
 		return 0, false, err
 	}
-	var body model.Subscribe
-	if err := decode(creation, &body); err != nil {
+	body, err := storagecodec.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
+	if err != nil {
 		return 0, false, err
 	}
 	source, ok := body.Source.(model.GitHubSource)
@@ -271,7 +264,7 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 	}
 	var version int64
 	var state model.GitHubPullRequestState
-	var snapshot mergeabilityPayload
+	var snapshot storagecodec.MergeabilityPayload
 	snapshot.PullRequestNumber = number
 	snapshot.PreviousMergeability = model.GitHubMergeabilityUnknown
 	err = tx.QueryRowContext(ctx, `SELECT p.snapshot_version, p.state, p.mergeability,

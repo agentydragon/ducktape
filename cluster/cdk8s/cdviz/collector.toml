@@ -1,0 +1,117 @@
+# CDviz Collector 0.53.1. Secret *_file keys are expanded by the pinned
+# file-provider adapter before TOML deserialization; no shell interpolation is used.
+[state]
+kind = "fs"
+
+[state.parameters]
+root = "/var/lib/cdviz/state"
+
+[http]
+host = "0.0.0.0"
+port = 8080
+
+[pipeline]
+queue_capacity = 1000
+
+# A separate name avoids the bundled sinks.database.url overriding url_file.
+[sinks.postgres]
+enabled = true
+type = "db"
+url_file = "/var/run/secrets/database/DATABASE_URL"
+pool_connections_min = 0
+pool_connections_max = 2
+batch_max_size = 10
+batch_max_wait = "1s"
+batch_spool_dir = "/var/lib/cdviz/spool"
+
+[sources.github_webhook]
+enabled = true
+transformer_refs = ["github_events"]
+
+[sources.github_webhook.extractor]
+type = "webhook"
+id = "github"
+headers_to_keep = ["X-GitHub-Event"]
+
+[sources.github_webhook.extractor.headers]
+"X-Hub-Signature-256" = { type = "signature", token_file = "/var/run/secrets/webhook/token", signature_prefix = "sha256=", signature_on = "body", signature_encoding = "hex" }
+
+[sources.github_poll]
+enabled = true
+transformer_refs = ["github_workflow_runs"]
+
+[sources.github_poll.extractor]
+type = "http_polling"
+polling_interval = "15m"
+total_duration_of_retries = "30s"
+request_timeout = "20s"
+max_requests = 12
+max_depth = 12
+max_concurrency = 1
+parser = "json"
+on_status = { "403" = "hold", "429" = "hold", "5xx" = "hold" }
+driver_vrl = '''
+if .response == null {
+  .state = {"cutoff": to_unix_timestamp(now()) - 3600}
+  .requests = [{
+    "url": "https://api.github.com/repos/agentydragon/ducktape/actions/runs",
+    "query": {"per_page": "100"},
+    "parser": "json",
+    "route": "both"
+  }]
+} else {
+  .requests = []
+  runs = array!(.response.body.workflow_runs)
+  if length(runs) > 0 {
+    oldest = parse_timestamp!(string!(runs[-1].created_at), format: "%+")
+    if to_unix_timestamp(oldest) >= to_int!(.state.cutoff) {
+      link = string(.response.headers.link) ?? ""
+      matched = parse_regex(link, r'<(?P<next>[^>]+)>;\s*rel="next"') ?? {}
+      if exists(matched.next) {
+        .requests = [{"url": matched.next, "parser": "json", "route": "both"}]
+      }
+    }
+  }
+}
+'''
+
+# The rules endpoint returns the currently active branch rules in one response.
+# It is public, so this poll shares the unauthenticated API budget with the
+# workflow-run poll and deliberately makes one request every 15 minutes.
+[sources.github_policy_poll]
+enabled = true
+transformer_refs = ["github_policy"]
+
+[sources.github_policy_poll.extractor]
+type = "http_polling"
+polling_interval = "15m"
+total_duration_of_retries = "30s"
+request_timeout = "20s"
+max_requests = 1
+max_depth = 1
+max_concurrency = 1
+parser = "json"
+on_status = { "401" = "hold", "403" = "hold", "404" = "hold", "429" = "hold", "5xx" = "hold" }
+driver_vrl = '''
+if .response == null {
+  .requests = [{
+    "url": "https://api.github.com/repos/agentydragon/ducktape/rules/branches/devel",
+    "parser": "json",
+    "route": "pipeline"
+  }]
+} else {
+  .requests = []
+}
+'''
+
+[transformers.github_events]
+type = "vrl"
+template_file = "/etc/cdviz/github_webhook.vrl"
+
+[transformers.github_workflow_runs]
+type = "vrl"
+template_file = "/etc/cdviz/github_workflow_runs.vrl"
+
+[transformers.github_policy]
+type = "vrl"
+template_file = "/etc/cdviz/github_policy.vrl"

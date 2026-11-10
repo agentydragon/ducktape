@@ -62,7 +62,7 @@ func (a *app) execute(args []string) int {
 	case err == nil:
 		return 0
 	case errors.Is(err, errInterrupted):
-		fmt.Fprintln(a.stderr, "interrupted; nothing was cancelled")
+		fmt.Fprintln(a.stderr, "interrupted; request outcome may be unknown")
 		return 128 + int(received.Load())
 	case errors.As(err, &done):
 		return int(done)
@@ -124,10 +124,13 @@ func (s *seconds) String() string { return s.d.String() }
 
 func (s *seconds) Type() string { return "seconds" }
 
-const rootHelp = `agentplane calls the Action Service's generated gRPC API and the HTTP APIs a Sandbox already reaches
-through the egress proxy: the Notification Service (notifications) and the Egress rules API (egress). It adds no
-authority and keeps no state. Each group reads AGENTPLANE_<GROUP>_URL and AGENTPLANE_<GROUP>_CREDENTIAL
-(the placeholder bearer) and fails alone with exit 2 when they are missing.
+const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
+and observe-input. Notifications and egress rules use gRPC through local sidecar routes.
+The environments group reads the co-hosted Runner Gateway discovery API. It adds no authority and
+keeps no state. The 'agentplane actions guide' command prints Action workflow guides bundled in this
+image without a service call. Each live group reads its AGENTPLANE_*_URL; when a
+AGENTPLANE_*_CREDENTIAL is configured, the CLI sends it as bearer metadata. A group fails alone with
+exit 2 when its URL is missing; environments uses AGENTPLANE_SESSIONS_URL and an optional bearer.
 
 With --json stdout is the service's own JSON, unmodified: one value, or one per line for a list. Text
 is for reading, not parsing. stdout is the answer and stderr the diagnostics; after exit 1-5 or 15
@@ -139,7 +142,7 @@ its result says (a script's exit code, an MCP isError).
   0       success
   1       refused or invalid, or an unclassified error: report, do not retry unchanged
   2       usage or configuration error, found before any request
-  3       transient (unreachable, deadline, rate limit, draining): retry a read; see submit for a write
+  3       transient (unreachable, deadline, rate limit, draining): retry a read; reconcile a write by its ID
   4       conflict: repeated idempotency key, stale subscription version, cancelled key
   5       not found, or not owned by this account
   10      --timeout elapsed before the condition held; the current receipt is on stdout
@@ -149,12 +152,12 @@ its result says (a script's exit code, an MCP isError).
           "actions get --key KEY" later, never resubmit
   16      cancel: too_late, dispatch was already claimed
   17      cancel: already_finished
-  128+N   ended by signal N; nothing was cancelled`
+  128+N   ended by signal N; request outcome may be unknown`
 
 func (a *app) root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "agentplane",
-		Short:         "Call the Action, Notification and Egress rules APIs from a Sandbox",
+		Short:         "Call Agentplane APIs and discover existing environments from a Sandbox",
 		Long:          rootHelp,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -166,7 +169,7 @@ func (a *app) root() *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.asJSON, "json", false, "print the service's JSON unmodified; lists as JSON Lines")
 	root.PersistentFlags().Var(&a.timeout, "timeout", "deadline of the whole call in seconds; 0 sets none and waiting commands read once")
-	root.AddCommand(a.actionsCommand(), a.notificationsCommand(), a.egressCommand())
+	root.AddCommand(a.actionsCommand(), a.sessionsCommand(), a.notificationsCommand(), a.egressCommand(), a.environmentsCommand())
 	return root
 }
 
@@ -180,21 +183,4 @@ func group(use, short, long string, children ...*cobra.Command) *cobra.Command {
 	command := &cobra.Command{Use: use, Short: short, Long: long, Args: cobra.NoArgs, RunE: requireSubcommand}
 	command.AddCommand(children...)
 	return command
-}
-
-// call is the body of a command: the connected service and the positional arguments, under the
-// call's deadline.
-type call func(ctx context.Context, svc *service, args []string) error
-
-// command connects the group, applies --timeout and runs fn.
-func (a *app) command(groupName string, fn call) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		svc, err := a.connect(groupName)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := a.deadline()
-		defer cancel()
-		return fn(ctx, svc, args)
-	}
 }

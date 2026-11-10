@@ -10,7 +10,7 @@ import type {
   RunSortDirection,
   RunSortKey,
   Split,
-} from "../lib/api/schema";
+} from "../lib/schema";
 import { AGENT_RUN_STATUS_VALUES, AGENT_TYPE_VALUES, fetchRuns, type RunsFilters } from "../lib/api/client";
 import { formatAge } from "../lib/formatters";
 import { formatStatus } from "../lib/status";

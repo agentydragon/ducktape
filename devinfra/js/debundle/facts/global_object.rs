@@ -1,4 +1,5 @@
 use super::*;
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 /// Identifier names that, when not shadowed by a chunk-top-level
 /// declaration or import, evaluate to the global object in the
@@ -14,6 +15,14 @@ const GLOBAL_OBJECT_ALIASES: [&str; 5] = ["globalThis", "window", "self", "frame
 /// edges), which is sound.
 pub(crate) fn unshadowed_global_object_aliases(
     body: &[TopLevelItemView<'_>],
+) -> BTreeSet<&'static str> {
+    unshadowed_global_names(body, &GLOBAL_OBJECT_ALIASES)
+}
+
+/// The subset of `names` no chunk-top-level declaration or import shadows.
+pub(crate) fn unshadowed_global_names(
+    body: &[TopLevelItemView<'_>],
+    names: &[&'static str],
 ) -> BTreeSet<&'static str> {
     let mut declared: BTreeSet<String> = BTreeSet::new();
     for item in body {
@@ -32,7 +41,7 @@ pub(crate) fn unshadowed_global_object_aliases(
             }
         }
     }
-    GLOBAL_OBJECT_ALIASES
+    names
         .iter()
         .copied()
         .filter(|alias| !declared.contains(*alias))
@@ -52,58 +61,69 @@ pub(crate) fn unshadowed_global_object_aliases(
 ///    suspects.
 /// 3. Any statement reading a suspect is tainted (fixpoint).
 ///
-/// Tainted statements get `dataflow_summarizable = false` — the
+/// Tainted statements get the `GlobalObjectAliasEscape` havoc — the
 /// dataflow-aware S-chain falls back to the strict adjacent-impure
-/// edge for them.
+/// edge for them — until [`resolve_global_alias_escape`] resolves it
+/// against the values synchronous execution settles.
 pub(crate) fn apply_global_escape_taint(
     body: &[TopLevelItemView<'_>],
     global_object_names: &BTreeSet<&'static str>,
     per_statement: &mut [StructuralStatementFacts],
 ) {
-    let mut tainted: Vec<bool> = body
-        .iter()
-        .map(|item| {
-            let mut finder = GlobalObjectEscapeFinder {
-                names: global_object_names,
-                escaped: false,
-            };
-            item.as_module_item().visit_with(&mut finder);
-            finder.escaped
-        })
-        .collect();
-    let mut suspects: BTreeSet<Id> = BTreeSet::new();
-    loop {
-        let mut changed = false;
-        for (idx, facts) in per_statement.iter().enumerate() {
-            if !tainted[idx]
-                && facts
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    enum Key {
+        Statement(usize),
+        Binding(Id),
+    }
+    struct EscapeRules<'a>(&'a [StructuralStatementFacts]);
+    impl IterativeRules for EscapeRules<'_> {
+        type Key = Key;
+        type Fact = ();
+        type Rule = usize;
+
+        fn evaluate(&self, index: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+            let facts = &self.0[*index];
+            let escaped = context.read(Key::Statement(*index)).is_some()
+                || facts
                     .reads
                     .eager
                     .iter()
-                    .chain(facts.reads.lazy.iter())
-                    .any(|id| suspects.contains(id))
-            {
-                tainted[idx] = true;
-                changed = true;
-            }
-            if tainted[idx] {
+                    .chain(&facts.reads.lazy)
+                    .any(|id| context.read(Key::Binding(id.clone())).is_some());
+            if escaped {
+                context.propose(Key::Statement(*index), ());
                 for id in facts
                     .declared
                     .iter()
-                    .chain(facts.rebinds.eager.iter())
-                    .chain(facts.rebinds.lazy.iter())
+                    .chain(&facts.rebinds.eager)
+                    .chain(&facts.rebinds.lazy)
                 {
-                    changed |= suspects.insert(id.clone());
+                    context.propose(Key::Binding(id.clone()), ());
                 }
             }
         }
-        if !changed {
-            break;
+
+        fn merge(_: &Key, _: &mut (), _: ()) -> bool {
+            false
         }
     }
-    for (idx, facts) in per_statement.iter_mut().enumerate() {
-        if tainted[idx] {
-            facts.dataflow_summarizable = false;
+    let mut inference = IterativeInference::new(EscapeRules(per_statement));
+    for (index, item) in body.iter().enumerate() {
+        let mut finder = GlobalObjectEscapeFinder {
+            names: global_object_names,
+            escaped: false,
+        };
+        item.as_module_item().visit_with(&mut finder);
+        if finder.escaped {
+            inference.seed(Key::Statement(index), ());
+        }
+    }
+    let closure = inference.solve(0..per_statement.len());
+    for (index, facts) in per_statement.iter_mut().enumerate() {
+        if closure.get(&Key::Statement(index)).is_some() {
+            facts
+                .havoc
+                .insert(DataflowOpacityCause::GlobalObjectAliasEscape);
         }
     }
 }
@@ -131,5 +151,165 @@ impl Visit for GlobalObjectEscapeFinder<'_> {
             other => other.visit_with(self),
         }
         node.prop.visit_with(self);
+    }
+}
+
+/// Resolve a statement's `GlobalObjectAliasEscape` against the bindings that
+/// may hold the global object where it starts (`aliases`, settled by
+/// synchronous execution). When every at-init use of an alias is the base of
+/// a static-key member read, those reads are `GlobalProp` cells and the
+/// statement's summary is complete for them; any other use (a value position,
+/// a write, a dynamic key) keeps the havoc. Bodies that run later reach the
+/// global object through their own callers' opaque-call havoc.
+pub(crate) fn resolve_global_alias_escape(
+    item: &ModuleItem,
+    global_object_names: &BTreeSet<&'static str>,
+    aliases: &BTreeSet<Id>,
+    fact: &mut StatementFacts,
+) {
+    let mut uses = GlobalAliasUses {
+        global_object_names,
+        aliases,
+        reads: BTreeSet::new(),
+        escaped: false,
+        lazy_depth: 0,
+        past_await: false,
+    };
+    item.visit_with(&mut uses);
+    if !uses.escaped {
+        fact.havoc
+            .remove(&DataflowOpacityCause::GlobalObjectAliasEscape);
+        fact.global_reads.extend(uses.reads);
+    }
+}
+
+/// `global_object_names` are the unshadowed global-object names, whose member
+/// accesses the collector already records as cells; `aliases` are bindings
+/// that may hold the global object.
+struct GlobalAliasUses<'a> {
+    global_object_names: &'a BTreeSet<&'static str>,
+    aliases: &'a BTreeSet<Id>,
+    reads: BTreeSet<String>,
+    escaped: bool,
+    lazy_depth: u32,
+    past_await: bool,
+}
+
+impl LazyBoundary for GlobalAliasUses<'_> {
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
+    }
+
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
+    }
+}
+
+impl GlobalAliasUses<'_> {
+    fn is_alias(&self, expr: &Expr) -> bool {
+        matches!(binding_targets::transparent_target_expr(expr), Expr::Ident(ident)
+            if self.aliases.contains(&ident.to_id()))
+    }
+
+    fn is_global_name(&self, expr: &Expr) -> bool {
+        matches!(binding_targets::transparent_target_expr(expr), Expr::Ident(ident)
+            if self.global_object_names.contains(ident.sym.as_ref()))
+    }
+}
+
+impl Visit for GlobalAliasUses<'_> {
+    fn visit_ident(&mut self, ident: &Ident) {
+        if self.lazy_depth == 0
+            && (self.aliases.contains(&ident.to_id())
+                || self.global_object_names.contains(ident.sym.as_ref()))
+        {
+            self.escaped = true;
+        }
+    }
+
+    fn visit_member_expr(&mut self, member: &MemberExpr) {
+        if self.lazy_depth == 0 && self.is_global_name(&member.obj) {
+            if let MemberProp::Computed(key) = &member.prop {
+                key.visit_with(self);
+            }
+            return;
+        }
+        if self.lazy_depth == 0 && self.is_alias(&member.obj) {
+            match &member.prop {
+                MemberProp::Ident(key) => {
+                    self.reads.insert(key.sym.to_string());
+                }
+                MemberProp::Computed(ComputedPropName { expr, .. }) => match expr.unwrap_parens() {
+                    Expr::Lit(Lit::Str(key)) => {
+                        self.reads.insert(key.value.to_string_lossy().into_owned());
+                    }
+                    other => {
+                        self.escaped = true;
+                        other.visit_with(self);
+                    }
+                },
+                MemberProp::PrivateName(_) => self.escaped = true,
+            }
+            return;
+        }
+        member.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, assign: &AssignExpr) {
+        // A write through an alias stays opaque.
+        if self.lazy_depth == 0
+            && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+                binding_targets::simple_write_target(&assign.left)
+            && self.is_alias(&member.obj)
+        {
+            self.escaped = true;
+        }
+        assign.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        if self.lazy_depth == 0
+            && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
+                binding_targets::simple_update_target(&update.arg)
+            && self.is_alias(&member.obj)
+        {
+            self.escaped = true;
+        }
+        update.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
+        if self.lazy_depth == 0
+            && unary.op == UnaryOp::Delete
+            && let Expr::Member(member) = unary.arg.unwrap_parens()
+            && self.is_alias(&member.obj)
+        {
+            self.escaped = true;
+        }
+        unary.visit_children_with(self);
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        lazy_visit_function(self, node);
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        lazy_visit_arrow_expr(self, node);
+    }
+
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        lazy_visit_method_prop(self, node);
+    }
+
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        lazy_visit_getter_prop(self, node);
+    }
+
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        lazy_visit_setter_prop(self, node);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        lazy_visit_class_member(self, member);
     }
 }

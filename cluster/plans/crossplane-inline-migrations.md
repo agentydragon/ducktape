@@ -2,28 +2,6 @@
 
 Umbrella tracker: [#5943](https://github.com/agentydragon/ducktape/issues/5943).
 
-## Deployed baseline
-
-The completed migrations preserve each root's PostgreSQL schema, OpenTofu `default`
-workspace, resource addresses and credentials. The last live checks during the migration
-batches found these Inline Workspaces `Ready=True` and `Synced=True` for their current
-generations:
-
-| Area          | Workspaces                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------------------------ |
-| Access / SSO  | `agent-machine-access`, `gatus-sso`, `sso-providers`                                                   |
-| Applications  | `alloy-otlp-bearer-token`, `budget-ledger`, `cpap-data`, `finance-agent`                               |
-| Forgejo       | `forgejo-agentydragon`, `forgejo-agentydragon-repos`, `forgejo-claude`, `forgejo-images`, `haku-state` |
-| GitHub / Flux | `github-branch-protection`, `github-secrets-sync`, `flux-webhook-token`                                |
-| DNS           | `route53-domain-delegation`                                                                            |
-
-LiteLLM keys and teams use native Crossplane resources; the legacy `litellm-keys`
-Terraform object is retired. These are separate from the OpenTofu Workspaces.
-
-cdk8s embeds native root HCL into Inline Workspaces. Changes to the root's rendered
-configuration update the Workspace spec and trigger reconciliation without fetching the
-monorepo in the provider. Periodic drift planning remains enabled.
-
 ## Remaining tofu-controller roots
 
 | Root                      | Required work                                                                                                                                                                     | Scheduling                                                          |

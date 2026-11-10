@@ -15,11 +15,16 @@ py_test(
     ],
 )
 
+py_library(
+    name = "session_backup",
+    srcs = ["session_backup.py"],
+)
+
 py_test(
     name = "session_backup_test",
     srcs = ["session_backup_test.py"],
     data = [
-        "session_backup.sh",
+        "session_backup.py",
         "snapshot_sqlite.py",
         "//third_party/restic",
     ],
@@ -29,8 +34,8 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

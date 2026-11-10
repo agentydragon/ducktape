@@ -9,7 +9,7 @@ import respx
 
 from homeassistant.proxy.config import AccessRule, EntityInfo, HomeAssistantSettings, Policy, Settings, TokenConfig
 from homeassistant.proxy.policy import PolicyEnforcer
-from homeassistant.proxy.proxy import create_app
+from homeassistant.proxy.proxy import create_app, get_authenticated_token, get_http_client
 
 _HA_URL = "http://ha.test:8123"
 
@@ -67,14 +67,53 @@ async def test_health(client: httpx.AsyncClient):
     assert resp.json() == {"status": "ok"}
 
 
-async def test_unauthorized_no_token(client: httpx.AsyncClient):
-    resp = await client.get("/api/states")
-    assert resp.status_code == 401
-
-
 async def test_unauthorized_wrong_token(client: httpx.AsyncClient):
     resp = await client.get("/api/states", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/"),
+        ("GET", "/api/config"),
+        ("GET", "/api/services"),
+        ("GET", "/api/states"),
+        ("GET", "/api/states/light.kitchen"),
+        ("POST", "/api/services/light/turn_on"),
+        ("GET", "/api/events"),
+    ],
+)
+async def test_proxy_routes_require_authentication(client: httpx.AsyncClient, method: str, path: str):
+    resp = await client.request(method, path)
+    assert resp.status_code == 401
+
+
+async def test_dependencies_can_be_overridden():
+    def respond_to_upstream(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/config"
+        return httpx.Response(200, json={"message": "API running."})
+
+    app = create_app(_SETTINGS)
+    upstream_client = httpx.AsyncClient(base_url=_HA_URL, transport=httpx.MockTransport(respond_to_upstream))
+
+    async def test_token() -> TokenConfig:
+        return _SETTINGS.tokens["agent"]
+
+    async def test_http_client() -> httpx.AsyncClient:
+        return upstream_client
+
+    app.dependency_overrides[get_authenticated_token] = test_token
+    app.dependency_overrides[get_http_client] = test_http_client
+
+    async with (
+        upstream_client,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        resp = await client.get("/api/config")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"message": "API running."}
 
 
 @respx.mock

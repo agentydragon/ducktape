@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
 )
 
@@ -43,12 +44,21 @@ type githubFixture struct {
 
 func newGitHubFixture(t *testing.T) githubFixture {
 	t.Helper()
-	f := newFixture(t, defaultQuotas())
+	return newGitHubFixtureWithStoreFixture(t, newFixture(t, defaultQuotas()))
+}
+
+func newIsolatedGitHubFixture(t *testing.T) githubFixture {
+	t.Helper()
+	return newGitHubFixtureWithStoreFixture(t, newIsolatedFixture(t, defaultQuotas()))
+}
+
+func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
+	t.Helper()
 	base := 1<<41 + rand.Int64N(1<<40)
 	ref := model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
-		inbox: f.insertInbox(t, model.DestinationKey(ref, "test-session"), ref, "test-session"),
+		inbox: f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
 		state: NewGitHubState(f.Store, testFreshness),
 	}
 }
@@ -165,24 +175,32 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 	}
 	access := g.access()
 	subscription, err := g.Subscribe(t.Context(), g.owner, model.Subscribe{
-		DestinationRef: destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
-	}, &access)
+		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key, Source: source, LifetimeDays: 7,
+	}, &access, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return githubSubscription{ID: subscription.ID, InboxID: subscription.InboxID, Source: source, Subject: subject}
 }
 
+// sessionForDestination uses a distinct Session identity for each destination.
+func (g githubFixture) sessionForDestination(destination model.DestinationRef) string {
+	if destination == g.destination {
+		return g.sessionID
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(g.sessionID+"/"+destination.Namespace+"/"+destination.Name+"/"+destination.UID)).String()
+}
+
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.
 func (g githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
 	t.Helper()
-	lease := uuid.New()
-	g.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, inboxID, lease)
+	holder := uuid.New()
+	g.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, inboxID, holder)
 	inbox, err := scanInbox(g.db.QueryRowContext(t.Context(), `SELECT `+inboxColumns+` FROM inbox WHERE id = $1`, inboxID))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Claim{Inbox: inbox, lease: lease}
+	return Claim{Inbox: inbox, held: lease.Lease{Key: []any{inboxID}, Holder: holder}}
 }
 
 // validate refreshes the grant as a successful call to GitHub would, unless it is fresh, and returns its fence.

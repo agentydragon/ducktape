@@ -17,7 +17,7 @@ py_library(
         # SkillSpec read by stage_skill().
         "//skills/eval_infra:skill_staging",
         "//devinfra/skills/reverse_engineer:reverse_engineer_skill_spec",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
         "@pypi//inspect_ai",
         "@pypi//pydantic",
         "@pypi//pyyaml",

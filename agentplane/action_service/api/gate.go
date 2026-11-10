@@ -3,21 +3,30 @@ package api
 import (
 	"context"
 	"errors"
-	"strings"
+	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// Callers says whether a ServiceAccount may call as a workload: whether it carries the
+// Callers says whether a workload may call: a ServiceAccount whether it carries the
 // `agentplane.allegedly.works/use-action-service` label, in a view of the ServiceAccounts the service can vouch
-// for. An implementation logs its refusals.
+// for; an Identity incarnation whether a live PolicyBinding names it. An implementation logs its refusals.
 type Callers interface {
 	Admits(account auth.Account) bool
+	AdmitsIdentity(identity auth.Identity) bool
 }
 
 // errDraining is a call that reaches a service that no longer accepts work.
@@ -27,49 +36,75 @@ var errDraining = errors.New("Action Service is draining")
 // does not learn from the difference whether an account exists or carries the label.
 var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
 
-// The method prefixes of the services the Gate admits callers to; it lets every other call, such as the health
-// service's, through. The Connection service is served by the standalone MCP edge but uses this shared verifier.
-const (
-	actionService     = "/agentplane.action_service.ActionService/"
-	operatorService   = "/agentplane.action_service.OperatorActionService/"
-	webPushService    = "/agentplane.action_service.WebPushService/"
-	connectionService = "/agentplane.mcp_edge.ConnectionService/"
-)
-
 // GateOptions are whom a Gate admits.
 type GateOptions struct {
 	// Workloads reviews a workload's bearer; it admits only the namespaces whose ServiceAccounts may call.
 	Workloads *auth.Resolver
-	Callers   Callers
+	// SVID resolves verified workload certificates on the shared TLS listener; operator tokens still use OIDC.
+	SVID    *auth.SVIDResolver
+	Callers Callers
 	// ReaderAccounts read every account's requests, labeled or not, and change none.
 	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
 	Operators *OperatorVerifier
+	// AdditionalOperatorMethods names methods owned by another service that this Gate serves.
+	AdditionalOperatorMethods []string
 }
 
-// Gate admits the calls of the Action Service's own services. It refuses every call while the service drains,
-// resolves the bearer to the principal the call acts as, and answers a failed call with the status code that
-// names its failure.
+// Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
+// bearer to the principal the call acts as, and answers a failed call with the status code that names its failure.
 type Gate struct {
 	workloads *auth.Resolver
+	svid      *auth.SVIDResolver
 	callers   Callers
-	readers   map[auth.Account]struct{}
+	readers   sets.Set[auth.Account]
 	operators *OperatorVerifier
+	methods   map[string]func(context.Context) (admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
 	draining context.Context
 	drain    context.CancelFunc
 }
 
 func NewGate(options GateOptions) *Gate {
-	readers := make(map[auth.Account]struct{}, len(options.ReaderAccounts))
-	for _, account := range options.ReaderAccounts {
-		readers[account] = struct{}{}
-	}
 	draining, drain := context.WithCancel(context.Background())
-	return &Gate{
-		workloads: options.Workloads, callers: options.Callers, readers: readers, operators: options.Operators,
+	g := &Gate{
+		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: sets.New(options.ReaderAccounts...), operators: options.Operators,
 		draining: draining, drain: drain,
 	}
+	g.methods = map[string]func(context.Context) (admission, error){
+		action_servicepb.ActionService_SubmitActionRequest_FullMethodName:                    g.authenticate,
+		action_servicepb.ActionService_ListActionRequests_FullMethodName:                     g.authenticate,
+		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName:               g.authenticate,
+		action_servicepb.ActionService_GetActionRequest_FullMethodName:                       g.authenticate,
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName:                     g.authenticate,
+		action_servicepb.ActionService_WatchActionRequests_FullMethodName:                    g.authenticate,
+		action_servicepb.ActionService_CancelActionRequest_FullMethodName:                    g.authenticate,
+		action_servicepb.ActionService_ListActionRequestEvents_FullMethodName:                g.authenticate,
+		action_servicepb.ActionService_ListActionGroups_FullMethodName:                       g.authenticate,
+		action_servicepb.ActionService_WatchActionGroups_FullMethodName:                      g.authenticate,
+		action_servicepb.ActionService_GetAction_FullMethodName:                              g.authenticate,
+		action_servicepb.ActionService_GetActionPolicy_FullMethodName:                        g.authenticate,
+		action_servicepb.ActionService_WatchActionPolicy_FullMethodName:                      g.authenticate,
+		operator_action_servicepb.OperatorActionService_DecideActionRequest_FullMethodName:   g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_WatchMcpServers_FullMethodName:       g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_StartMcpServerLinkage_FullMethodName: g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_DisconnectMcpServer_FullMethodName:   g.authenticateOperator,
+		web_push_servicepb.WebPushService_GetPushConfig_FullMethodName:                       g.authenticateOperator,
+		web_push_servicepb.WebPushService_ListPushSubscriptions_FullMethodName:               g.authenticateOperator,
+		web_push_servicepb.WebPushService_WatchPushSubscriptions_FullMethodName:              g.authenticateOperator,
+		web_push_servicepb.WebPushService_CreatePushSubscription_FullMethodName:              g.authenticateOperator,
+		web_push_servicepb.WebPushService_DeletePushSubscription_FullMethodName:              g.authenticateOperator,
+		// The OAuth callback proves its own single-use state; the metadata document is public.
+		linkage_servicepb.LinkageService_CompleteCallback_FullMethodName:  nil,
+		linkage_servicepb.LinkageService_GetClientMetadata_FullMethodName: nil,
+		healthpb.Health_Check_FullMethodName:                              nil,
+		healthpb.Health_List_FullMethodName:                               nil,
+		healthpb.Health_Watch_FullMethodName:                              nil,
+	}
+	for _, method := range options.AdditionalOperatorMethods {
+		g.methods[method] = g.authenticateOperator
+	}
+	return g
 }
 
 // Drain refuses every call from now on and ends the open watches.
@@ -99,6 +134,24 @@ func bearer(ctx context.Context) (string, error) {
 // operator's, and only its issuer may accept it; any other token is a workload's, which the API server reviews.
 // Each path verifies the token in full, so the claim only picks the verifier.
 func (g *Gate) authenticate(ctx context.Context) (admission, error) {
+	if hasSVIDPeer(ctx) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 || g.svid == nil {
+			return admission{}, unauthenticated
+		}
+		subject, err := g.svid.ResolveSubject(ctx)
+		if err != nil {
+			return admission{}, err
+		}
+		switch subject := subject.(type) {
+		case auth.Principal:
+			return g.workloadAccount(subject.Account, subject.ServiceAccountUID)
+		case auth.IdentityPrincipal:
+			return g.workloadIdentity(subject.Identity)
+		default:
+			panic(fmt.Sprintf("unknown workload subject %T", subject))
+		}
+	}
 	token, err := bearer(ctx)
 	if err != nil {
 		return admission{}, err
@@ -113,14 +166,35 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	case err != nil:
 		return admission{}, failure(ctx, err)
 	}
-	account := store.ServiceAccount{Namespace: workload.Account.Namespace, Name: workload.Account.Name}
-	if _, reader := g.readers[workload.Account]; reader {
-		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
-	}
-	if !g.callers.Admits(workload.Account) {
+	identityAccount := workload.GetAccount()
+	if identityAccount == nil || identityAccount.GetNamespace() == "" || identityAccount.GetName() == "" || workload.GetUid() == "" {
 		return admission{}, unauthenticated
 	}
-	return admission{principal: store.CallerPrincipal{Account: account}}, nil
+	return g.workloadAccount(auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}, workload.GetUid())
+}
+
+// workloadAccount retains the existing caller-label and reader authorization for
+// both authentication boundaries, including canonical ServiceAccount ownership.
+func (g *Gate) workloadAccount(accountRef auth.Account, uid string) (admission, error) {
+	account := store.ServiceAccount{Namespace: accountRef.Namespace, Name: accountRef.Name}
+	if g.readers.Has(accountRef) {
+		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
+	}
+	if !g.callers.Admits(accountRef) {
+		return admission{}, unauthenticated
+	}
+	return admission{principal: store.CallerPrincipal{
+		Account: account, ServiceAccountUID: uid,
+	}}, nil
+}
+
+// workloadIdentity admits an Identity incarnation a live PolicyBinding names, as itself. No Identity is a service
+// reader: the reader allowlist names ServiceAccounts.
+func (g *Gate) workloadIdentity(identity auth.Identity) (admission, error) {
+	if !g.callers.AdmitsIdentity(identity) {
+		return admission{}, unauthenticated
+	}
+	return admission{principal: store.IdentityPrincipal{Identity: store.Identity{Name: identity.Name, UID: identity.UID}}}, nil
 }
 
 // Operator is the issuer and subject of the operator the Gate admitted a call of an operator-only service as.
@@ -129,8 +203,8 @@ func (g *Gate) Operator(ctx context.Context) (issuer, subject string) {
 	return operator.Issuer, operator.Subject
 }
 
-// Draining is closed once the service drains.
-func (g *Gate) Draining() <-chan struct{} { return g.draining.Done() }
+// DrainingContext is cancelled once the service drains.
+func (g *Gate) DrainingContext() context.Context { return g.draining }
 
 // Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
 // longer accepted as the principal the call was admitted as.
@@ -148,6 +222,10 @@ func (g *Gate) Recheck(ctx context.Context) error {
 // authenticateOperator resolves the bearer of a call only an operator may make: a workload's token is not
 // reviewed.
 func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if hasSVIDPeer(ctx) || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+		return admission{}, unauthenticated
+	}
 	token, err := bearer(ctx)
 	if err != nil {
 		return admission{}, err
@@ -158,6 +236,28 @@ func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
 	return g.operator(ctx, token)
 }
 
+func hasSVIDPeer(ctx context.Context) bool {
+	remote, ok := peer.FromContext(ctx)
+	if !ok {
+		return false
+	}
+	info, ok := remote.AuthInfo.(credentials.TLSInfo)
+	return ok && len(info.State.PeerCertificates) > 0
+}
+
+// rejectMixedCredentials applies to public and protected methods alike: a client certificate cannot be paired with
+// a bearer or delegated actor to select a different authorization path.
+func rejectMixedCredentials(ctx context.Context) error {
+	if !hasSVIDPeer(ctx) {
+		return nil
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+		return unauthenticated
+	}
+	return nil
+}
+
 func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
 	operator, err := g.operators.Verify(ctx, token)
 	if err != nil {
@@ -166,17 +266,10 @@ func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
 	return admission{principal: operator}, nil
 }
 
-// authenticator is how the Gate resolves the bearer of a call to the method, or nil for a call it lets through.
-func (g *Gate) authenticator(method string) func(context.Context) (admission, error) {
-	switch {
-	case strings.HasPrefix(method, actionService):
-		return g.authenticate
-	case strings.HasPrefix(method, operatorService), strings.HasPrefix(method, webPushService),
-		strings.HasPrefix(method, connectionService):
-		return g.authenticateOperator
-	default:
-		return nil
-	}
+// authenticator resolves the method's bearer policy and reports whether the method is admitted at all.
+func (g *Gate) authenticator(method string) (func(context.Context) (admission, error), bool) {
+	authenticate, ok := g.methods[method]
+	return authenticate, ok
 }
 
 // admit is the Gate's work before a gated call runs: the context it runs in, which carries its principal.
@@ -193,7 +286,13 @@ func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (ad
 
 // UnaryInterceptor admits a unary call and answers its failure.
 func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	authenticate := g.authenticator(info.FullMethod)
+	if err := rejectMixedCredentials(ctx); err != nil {
+		return nil, err
+	}
+	authenticate, ok := g.authenticator(info.FullMethod)
+	if !ok {
+		return nil, status.Error(codes.PermissionDenied, "method not allowed")
+	}
 	if authenticate == nil {
 		return handler(ctx, request)
 	}
@@ -210,7 +309,13 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 
 // StreamInterceptor admits a streaming call and answers its failure.
 func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	authenticate := g.authenticator(info.FullMethod)
+	if err := rejectMixedCredentials(stream.Context()); err != nil {
+		return err
+	}
+	authenticate, ok := g.authenticator(info.FullMethod)
+	if !ok {
+		return status.Error(codes.PermissionDenied, "method not allowed")
+	}
 	if authenticate == nil {
 		return handler(server, stream)
 	}

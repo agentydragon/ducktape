@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,7 +23,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 const testRequestID = "00000000-0000-0000-0000-0000000000a1"
@@ -34,7 +35,7 @@ func testRequest(state pb.ActionState) *pb.ActionRequest {
 		Action:         &pb.ActionIdentity{Group: "test-mcp", Name: "alpha"},
 		Arguments:      &structpb.Struct{},
 		Title:          "test title",
-		Caller:         &sandboxes.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
+		Caller:         &identitypb.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"},
 		State:          state,
 		Version:        1,
 		CreatedAt:      at,
@@ -398,6 +399,44 @@ func answeredRequest(t *testing.T) *pb.ActionRequest {
 		CreatedAt: succeeded.GetCreatedAt(),
 	}
 	return succeeded
+}
+
+func TestSessionDelegationResultIsReturnedAsStructuredContent(t *testing.T) {
+	stored, err := structpb.NewValue(map[string]any{
+		"dispatch": map[string]any{
+			"command_id": "22222222-2222-4222-8222-222222222222",
+			"state":      "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := succeededResult(stored, pb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StructuredContent == nil || len(result.Content) != 1 {
+		t.Fatalf("result = %+v, want structuredContent plus one text representation", result)
+	}
+	structured, ok := result.StructuredContent.(json.RawMessage)
+	if !ok {
+		t.Fatalf("structured content type = %T", result.StructuredContent)
+	}
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || textContent.Text != string(structured) {
+		t.Fatalf("text fallback = %T %+v, want the same JSON as structured content", result.Content[0], result.Content[0])
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(structured, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	dispatch, ok := decoded["dispatch"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured dispatch = %v", decoded["dispatch"])
+	}
+	if dispatch["command_id"] != "22222222-2222-4222-8222-222222222222" || dispatch["state"] != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
+		t.Fatalf("structured result = %v", decoded)
+	}
 }
 
 func TestRequestActionWaitsForTheResultItsToolAnswered(t *testing.T) {

@@ -164,6 +164,9 @@ spec:
         delete_request_store: s3
         retention_delete_delay: 2h
         retention_enabled: true
+      ingester:
+        wal:
+          replay_memory_ceiling: 1GB
       limits_config:
         ingestion_burst_size_mb: 20
         ingestion_rate_mb: 10
@@ -247,7 +250,10 @@ spec:
                     operator: DoesNotExist
               weight: 100
       annotations:
-        goldilocks.fairwinds.com/enabled: "false"
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"loki","controlledValues":"RequestsOnly","minAllowed":{"memory":"1Gi"},"maxAllowed":{"memory":"2Gi"}}]}'
+      extraEnv:
+        - name: GOMEMLIMIT
+          value: 1536MiB
       extraEnvFrom:
         - secretRef:
             name: loki-seaweedfs-credentials
@@ -260,10 +266,10 @@ spec:
       resources:
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 2Gi
         requests:
           cpu: 100m
-          memory: 256Mi
+          memory: 1Gi
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

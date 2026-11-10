@@ -224,9 +224,9 @@ py_test(
         ":conftest",
         ":worktree_service",
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

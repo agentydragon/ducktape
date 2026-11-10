@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"slices"
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
@@ -136,13 +137,5 @@ func webhookPRLifecycle(body object, action *string) (*model.GitHubPRLifecycleOb
 }
 
 func webhookActionIs(action *string, allowed ...string) bool {
-	if action == nil {
-		return false
-	}
-	for _, candidate := range allowed {
-		if *action == candidate {
-			return true
-		}
-	}
-	return false
+	return action != nil && slices.Contains(allowed, *action)
 }

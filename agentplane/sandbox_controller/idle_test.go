@@ -26,7 +26,7 @@ var runnerIdleSince = testNow.Add(-time.Hour)
 func publishIdleSince(t *testing.T, c client.Client, at *time.Time) {
 	t.Helper()
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	if at == nil {
@@ -60,7 +60,7 @@ func idleRunner(t *testing.T, after *time.Duration) (r *Reconciler, c client.Cli
 	r.Now = func() time.Time { return *now }
 	// A connection that outlasts the test, so its lapse schedules no recheck of its own.
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Spec.LeaseDurationSeconds = new(int32)
@@ -129,8 +129,8 @@ func TestARunnerIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 		suspended.Status.SuspendedAtWakeGeneration == nil || *suspended.Status.SuspendedAtWakeGeneration != suspended.Spec.WakeGeneration {
 		t.Fatalf("suspendedBy = %v at generation %v, want Idle at generation %d", suspended.Status.SuspendedBy, suspended.Status.SuspendedAtWakeGeneration, suspended.Spec.WakeGeneration)
 	}
-	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || runningReason(t, c) != "Quiescing" || getPod(t, c) == nil {
-		t.Fatalf("mode = %s, Running reason = %s, Pod present = %v; want Suspended while the Pod waits for the seal", suspended.Status.OperatingMode, runningReason(t, c), getPod(t, c) != nil)
+	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing || getPod(t, c) == nil {
+		t.Fatalf("mode = %s, stopStage = %q, Pod present = %v; want Suspended while the Pod waits for the seal", suspended.Status.OperatingMode, getSandbox(t, c).Status.StopStage, getPod(t, c) != nil)
 	}
 	if suspended.Status.IdleSuspendAt != nil {
 		t.Fatalf("idleSuspendAt = %v after suspension began, want absent", suspended.Status.IdleSuspendAt)
@@ -208,7 +208,7 @@ func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
 	*now = now.Add(3 * time.Minute)
 	restarted := &Reconciler{
 		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
-		Quiescer: r.Quiescer, Leases: r.Leases, Now: r.Now,
+		Quiescer: r.Quiescer, Leases: r.Leases, Credentials: r.Credentials, Now: r.Now,
 	}
 	reconcileOnce(t, restarted)
 	got := getSandbox(t, c).Status.IdleSuspendAt
@@ -362,8 +362,8 @@ func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 
 	publishQuiesceStage(t, c, "draining")
 	reconcileOnce(t, r)
-	if runningReason(t, c) != "Quiescing" || getPod(t, c) == nil {
-		t.Fatalf("a runner in lameduck was not sealed before it was replaced: Running reason = %s", runningReason(t, c))
+	if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing || getPod(t, c) == nil {
+		t.Fatalf("a runner in lameduck was not sealed before it was replaced: stopStage = %q", getSandbox(t, c).Status.StopStage)
 	}
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)

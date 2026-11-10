@@ -41,7 +41,6 @@ class WorktreeService:
         self.github = github
 
     def list_worktrees(self, config: Configuration) -> list[tuple[str, Path, bool]]:
-        """List all managed worktrees with their existence status."""
         worktree_infos = self.git_manager.list_worktrees()
         return [
             (info.path.name, info.path, info.exists)
@@ -50,7 +49,6 @@ class WorktreeService:
         ]
 
     def _is_managed_worktree(self, path: Path, config: Configuration) -> bool:
-        """Check if this worktree should be managed by our tool."""
         # Skip the main repo
         if path.resolve() == config.main_repo.resolve():
             return False
@@ -71,7 +69,6 @@ class WorktreeService:
     def create_worktree(
         self, config: Configuration, name: str, source_worktree: Path | None = None, source_branch: str | None = None
     ) -> Path:
-        """Create a new worktree."""
         validate_worktree_name(name)
         self._require_post_creation_script_valid(config)
         worktree_path: Path = config.worktrees_dir / name
@@ -108,7 +105,6 @@ class WorktreeService:
             return worktree_path
 
     def get_worktree_path(self, config: Configuration, name: str) -> Path:
-        """Get path for a worktree by name."""
         return config.worktrees_dir / name
 
     async def remove_worktree(self, config: Configuration, name: str, *, force: bool = False) -> None:
@@ -122,7 +118,6 @@ class WorktreeService:
             shutil.rmtree(worktree_path, ignore_errors=True)
 
     def require_worktree_exists(self, config: Configuration, name: str) -> Path:
-        """Require that a worktree exists and return its path."""
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
             raise RuntimeError(f"Worktree '{name}' does not exist")

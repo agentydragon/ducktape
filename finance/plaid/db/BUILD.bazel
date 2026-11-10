@@ -1,5 +1,6 @@
 # gazelle:exclude migrations
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "products",
@@ -11,6 +12,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     visibility = [
+        "//cluster/cdk8s/plaid_mcp:__pkg__",
         "//finance/augur:__subpackages__",
         "//finance/beancount_export:__pkg__",
         "//finance/budget:__pkg__",
@@ -72,12 +74,6 @@ py_library(
     ],
 )
 
-filegroup(
-    name = "migrations",
-    srcs = glob(["migrations/**"]),
-    visibility = ["//finance/budget:__pkg__"],
-)
-
 py_library(
     name = "testing",
     testonly = True,
@@ -101,6 +97,7 @@ py_test(
     name = "test_link_store",
     size = "medium",
     srcs = ["test_link_store.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -118,6 +115,7 @@ py_test(
     name = "test_read_model",
     size = "medium",
     srcs = ["test_read_model.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -238,6 +236,7 @@ py_test(
     name = "test_capture_migration",
     size = "medium",
     srcs = ["test_capture_migration.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -245,8 +244,6 @@ py_test(
         "//:conftest",
         "//util:db_url",
         "//util/testing:postgres",
-        "@pypi//alembic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

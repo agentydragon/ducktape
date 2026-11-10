@@ -40,19 +40,6 @@ class _NoStreamingClient:
         yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
 
-@pytest.fixture
-def isolated_litellm_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Snapshot litellm's global provider registries for one test.
-
-    Tests that register the Tana custom provider reassign or extend module-level
-    litellm state; copy it here so monkeypatch restores the originals on teardown.
-    """
-    monkeypatch.setattr(litellm, "custom_provider_map", list(litellm.custom_provider_map))
-    monkeypatch.setattr(litellm, "provider_list", list(litellm.provider_list))
-    monkeypatch.setattr(litellm, "_custom_providers", list(litellm._custom_providers))
-    monkeypatch.setattr(litellm, "model_list_set", set(litellm.model_list_set))
-
-
 class _TanaLiteLLMWithTestClient(TanaLiteLLM):
     def __init__(self, client: Any) -> None:
         super().__init__()
@@ -759,46 +746,28 @@ def test_reads_refresh_token_from_kubernetes_secret_json() -> None:
     assert read_refresh_token_from_config(TanaProxyConfig(), runner=runner) == "refresh-token"
 
 
-async def test_client_rereads_external_refresh_token_source_after_id_token_expires() -> None:
-    refresh_tokens_seen: list[str] = []
-    reader_tokens = iter(["refresh-from-secret-1", "refresh-from-secret-2"])
-    now = [1000.0]
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            form = parse_qs(request.content.decode("utf-8"))
-            refresh_token = form["refresh_token"][0]
-            refresh_tokens_seen.append(refresh_token)
-            token_number = len(refresh_tokens_seen)
-            return httpx.Response(
-                200,
-                json={
-                    "id_token": f"id-token-{token_number}",
-                    "refresh_token": f"rotated-refresh-{token_number}",
-                    "expires_in": "120",
-                },
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxy"
-        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
-
-    def refresh_token_reader(_cfg: TanaProxyConfig) -> str:
-        return next(reader_tokens)
-
-    async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(
-                TanaProxyConfig(), http_client=http, refresh_token_reader=refresh_token_reader, now=lambda: now[0]
-            )
-            await client.chat_completion("claude-test", [{"role": "user", "content": "first"}])
-            now[0] = 1061.0
-            await client.chat_completion("claude-test", [{"role": "user", "content": "second"}])
-
-    await run()
-
-    assert refresh_tokens_seen == ["refresh-from-secret-1", "refresh-from-secret-2"]
-
-
-async def test_client_does_not_adopt_rotated_refresh_token_from_firebase() -> None:
+@pytest.mark.parametrize(
+    ("configured_refresh_token", "external_refresh_tokens", "expected_refresh_tokens"),
+    [
+        pytest.param(
+            None,
+            ("refresh-from-secret-1", "refresh-from-secret-2"),
+            ["refresh-from-secret-1", "refresh-from-secret-2"],
+            id="external-source-is-reread",
+        ),
+        pytest.param(
+            "configured-refresh-token",
+            None,
+            ["configured-refresh-token", "configured-refresh-token"],
+            id="configured-token-is-reused",
+        ),
+    ],
+)
+async def test_client_refreshes_id_token_from_original_refresh_token_source(
+    configured_refresh_token: str | None,
+    external_refresh_tokens: tuple[str, str] | None,
+    expected_refresh_tokens: list[str],
+) -> None:
     refresh_tokens_seen: list[str] = []
     now = [1000.0]
 
@@ -819,10 +788,22 @@ async def test_client_does_not_adopt_rotated_refresh_token_from_firebase() -> No
         assert request.url == "https://app.tana.inc/functions/llmProxy"
         return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
 
+    refresh_token_reader: Callable[[TanaProxyConfig], str] = read_refresh_token_from_config
+    if external_refresh_tokens is not None:
+        reader_tokens = iter(external_refresh_tokens)
+
+        def read_external_refresh_token(_cfg: TanaProxyConfig) -> str:
+            return next(reader_tokens)
+
+        refresh_token_reader = read_external_refresh_token
+
     async def run() -> None:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
             client = TanaProxyClient(
-                TanaProxyConfig(refresh_token="configured-refresh-token"), http_client=http, now=lambda: now[0]
+                TanaProxyConfig(refresh_token=configured_refresh_token),
+                http_client=http,
+                refresh_token_reader=refresh_token_reader,
+                now=lambda: now[0],
             )
             await client.chat_completion("claude-test", [{"role": "user", "content": "first"}])
             now[0] = 1061.0
@@ -830,7 +811,7 @@ async def test_client_does_not_adopt_rotated_refresh_token_from_firebase() -> No
 
     await run()
 
-    assert refresh_tokens_seen == ["configured-refresh-token", "configured-refresh-token"]
+    assert refresh_tokens_seen == expected_refresh_tokens
 
 
 async def test_litellm_handler_returns_model_response() -> None:

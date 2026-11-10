@@ -4,7 +4,7 @@ py_binary(
     name = "download_checkpoints",
     srcs = ["download_checkpoints.py"],
     data = ["checkpoints.json"],
-    deps = ["//util/bazel:runfiles"],
+    deps = ["@rules_python//python/runfiles"],
 )
 
 py_binary(
@@ -15,5 +15,5 @@ py_binary(
         "dense_tool_roundtrip.json",
         "long_context_sources.json",
     ],
-    deps = ["//util/bazel:runfiles"],
+    deps = ["@rules_python//python/runfiles"],
 )

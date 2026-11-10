@@ -1,0 +1,46 @@
+#!/usr/bin/busybox sh
+# Observe PID 1 independently of its event loop until final shutdown kills remaining processes.
+set -u
+export PATH=/usr/sbin:/usr/bin
+# Stay idle until ACPI asks for observations, without depending on a manager RPC.
+# Keep the reader open so repeated power-button notifications can write without blocking.
+exec 3</run/agentplane-shutdown-watchdog/request
+read -r request <&3
+# This experimental worker is independent of the sampling loop, which itself can
+# block. It is enabled only for the disposable direct-VMI diagnostic.
+case " $(/usr/bin/busybox cat /proc/cmdline) " in
+*" agentplane.shutdown-sysrq=1 "*)
+	if /usr/bin/busybox mkdir /run/agentplane-shutdown-sysrq; then
+		/usr/sbin/agentplane-shutdown-sysrq /run/agentplane-shutdown-sysrq/proof /proc/sysrq-trigger 18 &
+	else
+		echo "AGENTPLANE_SYSRQ_UNAVAILABLE reason=arm_directory"
+	fi
+	;;
+esac
+child_snapshot_tick=0
+while :; do
+	echo "AGENTPLANE_SHUTDOWN_SNAPSHOT_BEGIN"
+	/usr/bin/busybox cat /proc/uptime
+	echo "AGENTPLANE_SHUTDOWN_PID1_stat"
+	/usr/bin/busybox cat /proc/1/stat
+	for field in wchan syscall stack; do
+		echo "AGENTPLANE_SHUTDOWN_PID1_$field"
+		/usr/bin/busybox cat "/proc/1/$field"
+		echo
+	done
+	echo "AGENTPLANE_SHUTDOWN_PID1_descriptors"
+	/usr/bin/busybox ls -l /proc/1/fd
+	echo "AGENTPLANE_SHUTDOWN_PROCESSES"
+	/usr/bin/busybox ps -o pid,ppid,stat,comm
+	# PID 1 can be idle in epoll_wait while a tracked stop job's child is stuck.
+	if [ "$child_snapshot_tick" -eq 0 ]; then
+		/usr/sbin/agentplane-shutdown-watchdog-children
+	else
+		echo "AGENTPLANE_SHUTDOWN_PID1_CHILDREN_SKIPPED interval_seconds=10"
+	fi
+	child_snapshot_tick=$(((child_snapshot_tick + 1) % 10))
+	/usr/bin/busybox timeout 1 /usr/bin/systemctl list-jobs --full --no-pager || echo "PID 1 did not report its pending jobs"
+	echo "AGENTPLANE_SHUTDOWN_SNAPSHOT_END"
+	# Periodic diagnostic sampling; this does not gate the poweroff request.
+	/usr/bin/busybox sleep 1
+done

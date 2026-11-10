@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var kube *kubeapiserver.Server
@@ -80,16 +81,28 @@ func TestAStartupCheckRefusesASandboxGroup(t *testing.T) {
 		return errors.As(err, &refusal)
 	}
 	for _, test := range []struct {
-		name        string
-		sidecar     bool
-		directTools string
-		refused     func(error) bool
+		name           string
+		automountToken bool
+		directTools    string
+		refused        func(error) bool
 	}{
-		{"whose template lets a box escape the egress path", false, "null", unsafe},
-		{"whose direct tools name an Action it does not offer", true, `["create", "test-unoffered"]`, func(err error) bool { return err != nil }},
+		{"whose template exposes a ServiceAccount token", true, "null", unsafe},
+		{"whose direct tools name an Action it does not offer", false, `["create", "test-unoffered"]`, func(err error) bool { return err != nil }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			groups := sandboxGroups(t, sandboxNamespace(t, kube, test.sidecar), test.directTools)
+			namespace := sandboxNamespace(t, kube, false)
+			if test.automountToken {
+				templates := kube.Clientset.CoreV1().PodTemplates(namespace)
+				template, err := templates.Get(t.Context(), "test-template", metav1.GetOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				template.Template.Spec.AutomountServiceAccountToken = &test.automountToken
+				if _, err := templates.Update(t.Context(), template, metav1.UpdateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			groups := sandboxGroups(t, namespace, test.directTools)
 			if byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config); !test.refused(err) {
 				t.Errorf("sandboxExecutors() = %v, %v; want it refused", byGroup, err)
 			}
@@ -104,12 +117,12 @@ func TestAnOrchestrationGroupOffersItsActionsAndRunsThem(t *testing.T) {
 		"test-unknown-tool": {"title": "t", "description": "d", "direct_tools": ["test-unoffered"],
 			"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}}
 	}`)
-	if _, err := orchestrationExecutors(groups, kube.Config, nil, nil, 30*time.Second); err == nil {
+	if _, err := orchestrationExecutors(groups, kube.Config, nil, nil, nil, 30*time.Second); err == nil {
 		t.Error("a group whose direct tools name an Action it does not offer was accepted")
 	}
 	groups = newCatalog(t, `{"test-orchestration": {"title": "t", "description": "d", "direct_tools": ["launch_sandbox"],
 		"executor": {"kind": "orchestration_v1", "description": "e", "namespace": "test-agentplane"}}}`)
-	byGroup, err := orchestrationExecutors(groups, kube.Config, nil, nil, 30*time.Second)
+	byGroup, err := orchestrationExecutors(groups, kube.Config, nil, nil, nil, 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

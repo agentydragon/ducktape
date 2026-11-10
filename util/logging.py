@@ -101,12 +101,7 @@ def configure_logging(log_output: str | None = None, log_level: str | LogLevel |
 
 
 def make_logging_callback(default_level: LogLevel = LogLevel.INFO):
-    """Create a Typer callback for logging configuration.
-
-    Usage:
-        app = typer.Typer()
-        app.callback()(make_logging_callback(default_level=LogLevel.INFO))
-    """
+    """Create a Typer callback that configures logging."""
 
     def _callback(
         log_output: Annotated[

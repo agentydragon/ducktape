@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,12 +36,6 @@ class Props(BaseModel):
     banner_for: NodeId | None = Field(alias="_bannerFor", default=None)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @property
-    def created_dt(self) -> datetime | None:
-        if self.created is None:
-            return None
-        return datetime.fromtimestamp(self.created / 1_000, tz=UTC)
 
     @property
     def is_trash(self) -> bool:

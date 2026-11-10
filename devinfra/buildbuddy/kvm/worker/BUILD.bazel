@@ -1,0 +1,17 @@
+filegroup(
+    name = "config",
+    srcs = [
+        "bootstrap.sh",
+        "containerd.toml",
+        "containerd-mounts.conf",
+        "daemon.json",
+        "docker-seccomp.json",
+        "executor.service",
+        "executor.yaml",
+        "modprobe.conf",
+        "modules-load.conf",
+        "run-executor.sh",
+        "sysctl.conf",
+    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)

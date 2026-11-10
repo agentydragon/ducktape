@@ -1,5 +1,5 @@
 //! Per-chunk materialization: take an `DependencyGraphAndAtomicGroups` + spec plan, run the
-//! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
+//! chunk through candidate preparation/emission, and emit a `MaterializedLogicalChunk` whose
 //! files/applied/report stay separate from the source bundle until the
 //! finalized emit-stage file set is constructed.
 
@@ -7,90 +7,86 @@ mod apply;
 mod outcome_sink;
 mod plan_builder;
 
-use std::io::Write;
-
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
+use frontend_elaboration::ResolvedMemberSite;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
+use source_identity::{ChunkId, StatementId};
+use staged_analysis::chunk_facts::{
+    ChunkFacts, ChunkFactsContext, LogicalChunkFacts, compute_logical_chunk_facts,
+};
+use staged_analysis::progress::emit_debundle_progress;
 
-use super::io::write_chunk_report_json;
+use super::commuting_statements::resolve_chunk_commuting_statements;
+use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
-use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
+use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
     LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
-    LoweredChunk, lower_chunk,
+    LoweredChunk, prepare_candidate_emission_plan,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
+use crate::ownership_subset::{OwnershipSubset, SelectedModule};
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
-use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
-    ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
-    ReportEmission, RequestedLogicalModule,
+    AtomicGroupOwnerCompletionReport, BindingSourceUnitAssociation, ChunkModulesCounts,
+    ChunkModulesReport, ExportReentryReport, FinalModuleContent, GateRejectionPolicy,
+    GraphReportSelection, ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::{ExportReentryPolicy, StructuralChunkAnalysis};
+use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis::reports::source_unit_key;
+use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{
-    AnalysisAssumptions, AnalysisInputs, BindingId, DependencyGraphAndAtomicGroups,
-    DependencyGraphOptions, EntryDestination, LocalEffectPolicy, ModuleId, ModuleRole,
-    PlannedModule, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
+    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
-use anyhow::{Context, Result, bail};
-use artifact::paths::{join_module_path, normalize_module_path};
+use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
+use anyhow::{Context, Result, bail, ensure};
+use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chunk_entry_path};
-use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
+use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile};
+use chunk_analysis::build_chunk_graph;
+use frontend_elaboration::chunk_ast::{ChunkAstAnalysis, SourceExportIdentity};
+use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
 use gate::{
-    AssignmentAnalysis, ValidatedAssignment, render_atomic_group_conflict_summary,
-    render_cycle_summary,
+    AssignmentAnalysis, ChunkGateRejection, GateVerdict, RejectedAssignment, SccRejection,
+    ValidatedAssignment, render_atomic_group_conflict_summary, render_cycle_summary,
 };
-use js_ast::{ParsedJsModule, source_unit_ordinal_for_statement};
+use graph_provenance::GraphProvenance;
+use js_ast::{ParsedJsModule, format_comment_block_lines};
 use output_layout::{
-    ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT,
-    SELECTOR_DIAGNOSTICS_REPORT,
+    ATOMIC_GROUP_CONFLICTS_REPORT, CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
+    COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT,
+    EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
+    SELECTOR_DIAGNOSTICS_REPORT, SPEC_LINT_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
-use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
-use spec_resolution::{
-    LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
-    logical_requests_for_chunk, project_chunk,
-};
+use spec::{ChunkRenames, UnassignedMode};
+use spec_resolution::LogicalRequest;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use swc_common::Mark;
 use swc_ecma_ast::*;
-
-const DEBUNDLE_PROGRESS_ENV: &str = "DUCKTAPE_DEBUNDLE_PROGRESS";
-
-fn debundle_progress_enabled() -> bool {
-    std::env::var(DEBUNDLE_PROGRESS_ENV)
-        .ok()
-        .is_some_and(|raw| {
-            !matches!(
-                raw.to_ascii_lowercase().as_str(),
-                "" | "0" | "false" | "off" | "no"
-            )
-        })
-}
-
-fn emit_debundle_progress(chunk_id: &str, phase: &str, state: &str) {
-    if !debundle_progress_enabled() {
-        return;
-    }
-    eprintln!("[debundle progress] chunk={chunk_id} phase={phase} state={state}");
-    let _ = std::io::stderr().flush();
-}
 
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
 pub(super) struct ChunkContext<'a> {
+    pub(super) ownership_subset: Option<&'a OwnershipSubset>,
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
     pub(super) chunk_id: &'a str,
-    pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
-    pub(super) graph_provenance: Option<&'a graph_provenance::GraphProvenance>,
+    pub(super) graph_reports: GraphReportSelection,
+    pub(super) effect_conflicts_jsonl: bool,
+    pub(super) effect_conflicts_chunks: &'a BTreeSet<String>,
+    pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
+    pub(super) full_report_chunks: &'a BTreeSet<String>,
+    pub(super) gate_rejection: GateRejectionPolicy,
+    pub(super) assessment_only: bool,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
@@ -99,14 +95,13 @@ pub(super) struct ChunkContext<'a> {
     pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
 }
 
-/// Spec-derived per-chunk inputs: logical-module layout, chunk
-/// renames, unassigned-mode, and analysis-options. Bundled into
+/// Spec-derived per-chunk planning inputs: logical-module layout, chunk
+/// renames and unassigned-mode. Analysis reads the spec through
+/// `AnalysisProjection` instead. Bundled into
 /// `MaterializeLogicalChunkInputs::spec`.
 pub(super) struct ChunkSpec<'a> {
-    pub(super) logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
-    pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
 }
 
 pub(super) struct MaterializeLogicalChunkInputs<'a> {
@@ -135,6 +130,17 @@ pub(super) struct MaterializedLogicalChunk {
     /// these up across every chunk and fails the pipeline at the
     /// end with the full list.
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+    /// The gate rejected this chunk and [`GateRejectionPolicy::LowerUnrunnable`]
+    /// lowered it anyway; its entry file carries the banner.
+    pub(super) gate_rejection: Option<ChunkGateRejection>,
+}
+
+pub(super) enum FinishedLogicalChunk {
+    Lowered(Box<MaterializedLogicalChunk>),
+    Assessed {
+        chunk_id: String,
+        assessment: Box<gate::CandidateRelocationAssessmentReport>,
+    },
 }
 
 /// Lowering state prepared before the shared spec-resolution service projects
@@ -151,8 +157,12 @@ pub(super) struct PreparedLogicalChunk<'a> {
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
+    resolution: selector_resolve::Resolution,
+    resolved_members: Vec<Vec<usize>>,
+    member_claims: MemberClaimProjection,
+    structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
+    source_only_initializer_bindings: BTreeSet<String>,
     builder: ChunkPlanBuilder,
-    declared_assumptions: AnalysisAssumptions,
 }
 
 /// A prepared chunk after exact selector resolution has claimed its selected
@@ -160,20 +170,22 @@ pub(super) struct PreparedLogicalChunk<'a> {
 /// hint-sensitive analysis that follows claim application.
 pub(super) struct ClaimedLogicalChunk<'a> {
     prepared: PreparedLogicalChunk<'a>,
-    structural_analysis: StructuralChunkAnalysis<'a>,
+    structural_analysis: StructuralChunkSourceFacts<'a>,
+    /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
+    source_only_initializer_bindings: BTreeSet<String>,
 }
 
-/// Prepare one chunk's lowering state and project its eligible selector
-/// requests through the shared spec-resolution service.
-pub(super) fn prepare_logical_chunk(
-    inputs: MaterializeLogicalChunkInputs<'_>,
-) -> Result<(PreparedLogicalChunk<'_>, ProjectedChunk<'_>)> {
+/// Construct output-plan state from source-level facts and the exact shared
+/// frontend resolution. This phase does not project or solve selectors.
+pub(super) fn prepare_logical_chunk<'a>(
+    inputs: MaterializeLogicalChunkInputs<'a>,
+    frontend: FrontendChunk<'a>,
+) -> Result<PreparedLogicalChunk<'a>> {
     let MaterializeLogicalChunkInputs { context, spec } = inputs;
     let ChunkContext {
         artifact,
         artifact_indexes,
         chunk_id,
-        file,
         target_dir,
         keep_going,
         list_template_identifiers,
@@ -190,45 +202,32 @@ pub(super) fn prepare_logical_chunk(
         .with_context(|| {
             format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
         })?;
-    let chunk_id_interned = artifact
-        .chunk_table
-        .get(chunk_id)
-        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
-    let target_file = file
-        .map(normalize_module_path)
-        .transpose()?
-        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
-        .with_context(|| {
-            format!(
-                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-            )
-        })?;
-    let runtime_file = artifact
-        .js_chunk(chunk_id_interned)?
-        .get_file(&target_file)
-        .with_context(|| {
-            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
-        })?;
-    let runtime_ast = runtime_file.ast().with_context(|| {
-        format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
-    })?;
-    // Chunk-wide `top_level_mark` for resolving spec-derived String
-    // binding names to hygiene-aware `Id`s via `top_level_id`.
-    let chunk_top_level_mark = runtime_ast.top_level_mark;
-    let source_path = runtime_file.metadata.source_path.clone();
-    let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
-    let requests = logical_requests_for_chunk(
-        spec.logical_modules.get(chunk_id),
+    let FrontendChunk {
+        chunk_id: frontend_chunk_id,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        explicit_requests,
+        structural_analysis,
+        resolution,
+        resolved_members,
+        member_claims,
+        source_only_initializer_bindings,
+        ..
+    } = frontend;
+    ensure!(frontend_chunk_id == chunk_id, "frontend chunk id mismatch");
+    validate_partial_atomic_group_completion_owners(
         &chunk_unassigned_mode,
+        &explicit_requests,
         chunk_id,
     )?;
-    let mut explicit_requests = requests
-        .iter()
-        .filter(|request| !request.residual)
-        .cloned()
-        .collect::<Vec<_>>();
-    let residual_request = requests.iter().find(|request| request.residual).cloned();
+    let chunk_top_level_mark = runtime_ast.top_level_mark;
+    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
+    let mut explicit_requests = explicit_requests;
 
     let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
     let mut imported_binding_resolver =
@@ -253,115 +252,118 @@ pub(super) fn prepare_logical_chunk(
         )?;
     }
     builder.drop_explicit_request_scratch();
-    builder.pull_destructure_siblings(&ast_analysis.destructure_siblings, chunk_top_level_mark)?;
-    builder.add_residual_sweep(
-        residual_request.as_ref(),
-        chunk_unassigned_mode.catchall_file_target(),
-        &ast_analysis.declarations,
-        target_dir,
-    )?;
+    builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
 
-    // The structural half is hint-free. Selector resolution runs over this
-    // source-level fact layer so semantic annotations can be projected to
-    // concrete bindings before the final, hint-sensitive dependency graph is built.
-    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "start");
-    let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::analyze_chunk_structural(
-        &runtime_ast.module,
-        Some(&source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
-    );
-    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
-    // `add_explicit_request` left deferred selector members unclaimed; the
-    // resolve every chunk shares assigns them and the anonymous statements
-    // over the hint-free structural facts.
-    let selectors =
-        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
-    let resolved_members = builder.selector_member_indices(
-        &explicit_requests,
-        chunk_top_level_mark,
-        &ast_analysis.declaration_by_name,
-    );
-    emit_debundle_progress(chunk_id, "project_selectors", "start");
-    let projected = project_chunk(selectors, &explicit_requests, resolved_members)?;
-    emit_debundle_progress(chunk_id, "project_selectors", "end");
-    Ok((
-        PreparedLogicalChunk {
-            context,
-            spec,
-            chunk_unassigned_mode,
-            chunk_id_interned,
-            target_file,
-            runtime_ast,
-            header_lines: runtime_file.header_lines.clone(),
-            source_path,
-            ast_analysis,
-            requests,
-            explicit_requests,
-            builder,
-            declared_assumptions: AnalysisAssumptions::default(),
-        },
-        projected,
-    ))
+    Ok(PreparedLogicalChunk {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        explicit_requests,
+        resolution,
+        resolved_members,
+        member_claims,
+        structural_analysis: Some(structural_analysis),
+        source_only_initializer_bindings,
+        builder,
+    })
 }
 
+/// Validate the coarse-mode owner opt-in against the complete authored request
+/// list, before ownership-subset filtering can remove a requested module.
+fn validate_partial_atomic_group_completion_owners(
+    unassigned_mode: &UnassignedMode,
+    authored_requests: &[LogicalRequest],
+    chunk_id: &str,
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for owner_path in unassigned_mode.partial_atomic_group_completion_owners() {
+        ensure!(
+            seen.insert(owner_path),
+            "unassigned_mode for chunk {chunk_id} repeats complete_partial_atomic_groups_for module {owner_path:?}"
+        );
+        ensure!(
+            authored_requests
+                .iter()
+                .any(|request| request.target_path == *owner_path),
+            "unassigned_mode for chunk {chunk_id} names {owner_path:?} in complete_partial_atomic_groups_for, but that path is not an authored logical_modules request"
+        );
+    }
+    Ok(())
+}
+
+/// The file a chunk's modules are cut from (`materialize_logical_modules.file`,
+/// else the chunk's entry) and its retained AST.
 /// Resolve source-selected bindings before the cross-chunk purity oracle runs.
 /// The same resolved hints are later used by this chunk's source unit analysis.
 pub(super) fn claim_prepared_chunk<'a>(
     mut prepared: PreparedLogicalChunk<'a>,
-    resolved: ResolvedChunk<'a>,
 ) -> Result<ClaimedLogicalChunk<'a>> {
-    let ResolvedChunk {
-        resolution,
-        resolved_members,
-        structural_analysis,
-    } = resolved;
     let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
     prepared.builder.claim_resolution(
         &prepared.explicit_requests,
-        resolution,
-        resolved_members,
+        std::mem::take(&mut prepared.resolution),
+        std::mem::take(&mut prepared.resolved_members),
+        &prepared.member_claims,
         chunk_top_level_mark,
         prepared.context.chunk_id,
         &prepared.runtime_ast.module.body,
         &prepared.ast_analysis.declaration_by_name,
     )?;
-    prepared.builder.pull_destructure_siblings(
-        &prepared.ast_analysis.destructure_siblings,
-        chunk_top_level_mark,
-    )?;
+    prepared
+        .builder
+        .apply_destructuring_group_placement(&prepared.ast_analysis.destructuring_groups);
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    prepared.declared_assumptions = collect_analysis_assumptions(
-        &prepared.explicit_requests,
-        &prepared.builder,
-        prepared.spec.chunk_renames.get(prepared.context.chunk_id),
-        &prepared.runtime_ast.module,
-    )?;
+    let source_only_initializer_bindings =
+        std::mem::take(&mut prepared.source_only_initializer_bindings);
+    let structural_analysis = prepared
+        .structural_analysis
+        .take()
+        .expect("prepared frontend structure is present");
     Ok(ClaimedLogicalChunk {
         prepared,
         structural_analysis,
+        source_only_initializer_bindings,
     })
 }
 
 impl ClaimedLogicalChunk<'_> {
-    pub(super) fn declared_pure_new(&self) -> (&str, &BTreeSet<String>) {
-        (
-            self.prepared.context.chunk_id,
-            &self.prepared.declared_assumptions.declared_pure_new,
-        )
+    pub(super) fn chunk_id(&self) -> &str {
+        self.prepared.context.chunk_id
     }
+}
+
+/// What resolving a chunk's `commuting_statements` reads besides the chunk:
+/// the spec path its evidence names and the resolved logical-module members a
+/// `resolved_member` endpoint may name.
+pub(super) struct GraphConstructionContext<'a> {
+    pub(super) chunk_inputs: &'a BTreeMap<String, ChunkGraphInputs>,
+    pub(super) graph_provenance: Option<&'a GraphProvenance>,
+    pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
-    cross_module_purities: &super::cross_module::CrossModulePurities,
-) -> Result<MaterializedLogicalChunk> {
+    projection: &AnalysisProjection<'_>,
+    program_summary: &super::program_summary::ProgramSummary,
+    loaded_facts: Option<ChunkFactAnalysis>,
+    program_graph: &ProgramGraphOutput<'_>,
+    graph_context: GraphConstructionContext<'_>,
+) -> Result<FinishedLogicalChunk> {
     let ClaimedLogicalChunk {
         prepared,
         structural_analysis,
+        source_only_initializer_bindings,
+        ..
     } = claimed;
     let PreparedLogicalChunk {
         context,
@@ -375,7 +377,6 @@ pub(super) fn finish_logical_chunk(
         ast_analysis,
         requests,
         mut builder,
-        declared_assumptions,
         ..
     } = prepared;
     let ChunkContext {
@@ -383,298 +384,419 @@ pub(super) fn finish_logical_chunk(
         artifact_indexes,
         chunk_id,
         target_dir,
+        ownership_subset,
         report_emission,
-        graph_provenance,
+        graph_reports,
+        effect_conflicts_jsonl,
+        effect_conflicts_chunks,
+        full_reports,
+        full_report_chunks,
+        gate_rejection: gate_rejection_policy,
+        assessment_only,
         vendor_import_oracle,
         export_reentry_policies,
         export_reentry_reports,
         ..
     } = context;
-    let ChunkSpec {
-        chunk_renames,
-        chunk_analysis_options,
-        ..
-    } = spec;
+    let ChunkSpec { chunk_renames, .. } = spec;
     let ChunkAstAnalysis {
         runtime_import_facts,
         declarations,
         declaration_by_name,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
+        source_public_export_identities_by_statement,
         ..
     } = ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    // Fetched before hints assembly: `local_property_effects` selects
-    // the facts pass's local-effect policy, which travels in the hints.
-    let dependency_graph_options = chunk_analysis_options
+    let graph_inputs = graph_context
+        .chunk_inputs
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
-    let line_index = runtime_ast.line_index();
-    // A3 admission resolver: where does a dynamic-import specifier in
-    // this chunk's entry land? Same artifact resolution the specifier
-    // rewriter uses; `SameChunk` marks a debundled internal module.
-    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
-        .resolve_runtime_import_reference(
-            specifier,
-            chunk_id_interned,
-            &target_file,
-            &artifact.chunk_table,
-        ) {
-        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
-            DynamicImportTarget::SameChunk
-        }
-        Some(_) => DynamicImportTarget::OtherChunk,
-        None => DynamicImportTarget::External,
-    };
-    let analysis_inputs: AnalysisInputs = {
-        let mut inputs = AnalysisInputs {
-            assumptions: declared_assumptions,
-            ..AnalysisInputs::default()
-        };
-        inputs.imported_purities = cross_module_purities
-            .bindings
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        inputs.imported_primitives = cross_module_purities
-            .primitives
-            .get(chunk_id)
-            .cloned()
-            .unwrap_or_default();
-        // Definition-side `pure_members` assertions projected onto this
-        // chunk's local import bindings; merged (not overwritten) so spec
-        // member annotations and cross-module assertions coexist.
-        if let Some(member_sets) = cross_module_purities.members.get(chunk_id) {
-            for (binding, members) in member_sets {
-                inputs
-                    .assumptions
-                    .declared_pure_members
-                    .entry(binding.clone())
-                    .or_default()
-                    .extend(members.iter().cloned());
-            }
-        }
-        // Definition-side `fluent_exports` assertions projected onto this
-        // chunk's local import bindings (deep-purity chain roots).
-        if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
-            inputs
-                .assumptions
-                .fluent_bindings
-                .extend(fluent.iter().cloned());
-        }
-        if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
-            inputs
-                .assumptions
-                .declared_pure_new
-                .extend(constructors.iter().cloned());
-        }
-        if let Some(callables) = cross_module_purities.imported_callables.get(chunk_id) {
-            inputs.merge_imported_callables(callables.clone());
-        }
-        if let Some(factories) = cross_module_purities
-            .retained_callback_factories
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .retained_callback_factories
-                .extend(factories.clone());
-        }
-        if let Some(callbacks) = cross_module_purities
-            .no_reentry_callback_exports
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .no_reentry_callback_exports
-                .extend(callbacks.clone());
-        }
-        if let Some(constructors) = cross_module_purities
-            .retained_callback_constructors
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .retained_callback_constructors
-                .extend(constructors.clone());
-        }
-        if let Some(members) = cross_module_purities
-            .retained_callback_factory_members
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .retained_callback_factory_members
-                .extend(members.clone());
-        }
-        if let Some(factories) = cross_module_purities
-            .inline_callback_factories
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .inline_callback_factories
-                .extend(factories.iter().cloned());
-        }
-        if let Some(members) = cross_module_purities
-            .namespace_independent_members
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .namespace_independent_members
-                .extend(members.clone());
-        }
-        if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
-            inputs
-                .assumptions
-                .callback_factory_members
-                .extend(members.clone());
-        }
-        if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
-            inputs
-                .assumptions
-                .no_reentry_members
-                .extend(members.clone());
-        }
-        if let Some(members) = cross_module_purities
-            .no_reentry_record_members
-            .get(chunk_id)
-        {
-            inputs
-                .assumptions
-                .no_reentry_record_members
-                .extend(members.clone());
-        }
-        if let Some(bindings) = cross_module_purities.no_reentry_exports.get(chunk_id) {
-            inputs
-                .assumptions
-                .no_reentry_exports
-                .extend(bindings.iter().cloned());
-        }
-        if dependency_graph_options.local_property_effects {
-            inputs.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
-        }
-        inputs.assumptions.trusted_dataflow_summaries =
-            dependency_graph_options.trusted_dataflow_summaries;
-        inputs.assumptions.deferred_global_publications = dependency_graph_options
-            .deferred_global_publications
-            .clone();
-        inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
-            .non_reentrant_global_membership
-            .clone();
-        inputs
-    };
-    // Chunk analysis: hint-sensitive facts, dependency graph, and structural
-    // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let chunk_analysis = compute_chunk_analysis(
+    let graph_options = graph_inputs.options;
+    let commuting_statements = resolve_chunk_commuting_statements(
         chunk_id,
-        &runtime_ast.module,
-        structural_analysis,
-        &analysis_inputs,
-        Some(&source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
-        dependency_graph_options,
-        export_reentry_policies
-            .get(&chunk_id_interned)
-            .copied()
-            .unwrap_or_default(),
-        &resolve_dynamic_import,
+        &runtime_ast.module.body,
+        &graph_inputs.commuting_statements,
+        graph_context.graph_provenance,
+        graph_context.resolved_member_sites,
     )?;
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
-    let ChunkAnalysisOutput {
-        fact_analysis: analysis,
-        dependency_graph_and_atomic_groups: precomputed,
-    } = chunk_analysis;
-    apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
-    if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
-        builder.synthesize_per_atomic_group(&precomputed, &runtime_ast.module.body, target_dir)?;
+    // Chunk analysis: hint-sensitive facts, then the dependency graph and
+    // structural atomic groups. See `chunk_analysis/mod.rs`.
+    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    let LogicalChunkFacts {
+        facts: mut analysis,
+        imported_callables,
+        redundant_admission_overrides,
+    } = compute_logical_chunk_facts(
+        ChunkFactsContext {
+            artifact,
+            artifact_indexes,
+            chunk_id,
+            chunk_id_interned,
+            target_file: &target_file,
+            runtime_ast,
+            source_path: &source_path,
+            export_reentry_policy: export_reentry_policies
+                .get(&chunk_id_interned)
+                .unwrap_or(&ExportReentryPolicy::Conservative),
+        },
+        match loaded_facts {
+            Some(facts) => ChunkFacts::Loaded(facts),
+            None => ChunkFacts::Compute(structural_analysis),
+        },
+        projection,
+        program_summary,
+    )?;
+    analysis.apply_initializer_binding_effects(&source_only_initializer_bindings);
+    analysis
+        .validate_initializer_binding_effects(&source_only_initializer_bindings)
+        .with_context(|| format!("validating initializer binding effects in chunk `{chunk_id}`"))?;
+    let precomputed =
+        match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
+            Ok(precomputed) => precomputed,
+            Err(error) => {
+                // A contradicted `commuting_statements` entry is an
+                // author-premise diagnostic, not a pipeline fault: record it,
+                // with the selector outcomes gathered so far, where `spec
+                // validate` collects the chunk's reports; the chunk still fails.
+                if let Some(contradiction) = error
+                    .downcast_ref::<analysis::DependencyGraphBuildError>()
+                    .and_then(
+                        analysis::DependencyGraphBuildError::commuting_statements_contradiction,
+                    )
+                    && let Some(report_out_dir) = report_emission.rejection_dir()
+                {
+                    write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
+                    write_chunk_report_json(
+                        report_out_dir,
+                        chunk_id,
+                        COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+                        &[CommutingStatementsDiagnostic::Contradicted(
+                            contradiction.clone(),
+                        )],
+                    )?;
+                }
+                return Err(error);
+            }
+        };
+    // An unused entry is a warning: the graph is exactly the graph without it.
+    for unused in &precomputed.unused_commuting_statements {
+        eprintln!("warning: chunk {chunk_id}: {unused}");
     }
-    builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
-    if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
-        builder.route_unclaimed_anonymous_to_catchall(&precomputed, &runtime_ast.module.body);
-    }
-    if let Some(report) = builder.selector_outcome_report()
+    if !precomputed.unused_commuting_statements.is_empty()
         && let Some(report_out_dir) = report_emission.rejection_dir()
     {
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
-            SELECTOR_DIAGNOSTICS_REPORT,
-            &report,
+            COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+            &precomputed
+                .unused_commuting_statements
+                .iter()
+                .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
+                .collect::<Vec<_>>(),
         )?;
+    }
+    if let Some(report_out_dir) = report_emission.rejection_dir() {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            SPEC_LINT_REPORT,
+            &ChunkSpecLint {
+                findings: spec_lint_findings(
+                    chunk_id,
+                    &precomputed.unused_commuting_statements,
+                    &redundant_admission_overrides,
+                    &analysis.redundant_purity_hints,
+                    &analysis.unconsulted_purity_hints,
+                    graph_context.resolved_member_sites,
+                )
+                .into_iter()
+                .chain(
+                    projection
+                        .chunk_analysis_inputs
+                        .get(chunk_id)
+                        .is_some_and(|inputs| inputs.trusted_dataflow_summaries)
+                        .then(|| {
+                            LintFinding::trusted_dataflow_summaries(
+                                chunk_id,
+                                analysis.consumed_trusted_dataflow_summaries(),
+                            )
+                        }),
+                )
+                .collect(),
+                consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
+                loader_key_uses: export_reentry_reports
+                    .values()
+                    .map(|report| loader_key_uses(&report.loader))
+                    .fold(LoaderKeyUses::default(), LoaderKeyUses::join),
+            },
+        )?;
+    }
+    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    let source_unit_layout = SourceUnitLayout::checked(
+        &precomputed.dependency_graph,
+        &ast_analysis.source_unit_syntax_locations,
+        runtime_ast.module.body.len(),
+    );
+    let single_authored_owner_groups = match &chunk_unassigned_mode {
+        UnassignedMode::CoarseAtomicGroups { .. } => builder.single_authored_owner_atomic_groups(
+            &precomputed,
+            &source_unit_layout,
+            chunk_unassigned_mode.partial_atomic_group_completion_owners(),
+        )?,
+        _ => BTreeMap::new(),
+    };
+    // Selector outcomes, resolved-member anchors, and analysis assumptions
+    // have already been collected from the complete authored ownership.
+    let ownership_subset = ownership_subset.map(|subset| subset.modules_for_chunk(chunk_id));
+    if let Some(selected) = &ownership_subset {
+        builder.retain_modules(selected)?;
+        // Recreate only the derived owners required by retained claims.
+        builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
+        builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
+    }
+    let catchall_request = chunk_unassigned_mode
+        .catchall_file_target()
+        .map(|target| {
+            requests
+                .iter()
+                .find(|request| request.target_path == target)
+                .with_context(|| format!("missing catchall request for {chunk_id}::{target}"))
+        })
+        .transpose()?;
+    builder.add_residual_sweep(catchall_request, &declarations, target_dir)?;
+    if matches!(&chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
+        builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
+    }
+    if let UnassignedMode::CoarseAtomicGroups { .. } = &chunk_unassigned_mode {
+        builder.route_partial_atomic_groups_to_named_owners(
+            &precomputed,
+            &source_unit_layout,
+            chunk_unassigned_mode.partial_atomic_group_completion_owners(),
+            &single_authored_owner_groups,
+        )?;
+        builder.synthesize_coarse_atomic_groups(
+            &precomputed,
+            &source_unit_layout,
+            &source_public_export_identities_by_statement,
+            target_dir,
+        )?;
+    }
+    builder.route_nested_var_statements(&ast_analysis.nested_var_statements);
+    if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
+        builder.route_unclaimed_anonymous_to_catchall(&precomputed, &source_unit_layout)?;
+    }
+    if let Some(report_out_dir) = report_emission.rejection_dir() {
+        write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
     }
     // Plan construction is finished — consume the builder and use
     // owned state from here on.
     let ChunkPlan {
-        module_plans,
+        mut module_plans,
         bindings_catalogue,
-        whole_statement_assignment,
+        mut whole_statement_assignment,
+        mut generated_residual_plans,
+        atomic_group_owner_completions,
         unmatched_spec_claims,
     } = builder.finalize(chunk_id_interned)?;
-    // Plan structure is final — collect the explicit rename contributors
-    // into the chunk's rename ledger and seal it. Seal hard-errors when
-    // same-priority intents disagree on one binding's target; the sealed
-    // output feeds the same application sites the pre-ledger maps fed
-    // (Chunk scope → `chunk_renames_map` below, Module scope → the
-    // per-plan naturalize pass in `lower_chunk`). No occupancy facts are
-    // passed: the post-split bodies these renames must not collide with
-    // don't exist yet, so target occupancy is validated downstream — the
-    // entry ledger in `lower_chunk` re-collects the Chunk-scope intents
-    // and the per-module naturalize ledgers re-collect the Module-scope
-    // ones, each sealing against its body's occupancy.
-    let sealed_renames = {
-        let mut ledger = RenameLedger::default();
-        if let Some(renames) = chunk_renames.get(chunk_id) {
-            collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
-        }
-        collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
-        ledger.seal(&SealValidation::default())
-    }?;
-    let chunk_renames_map = sealed_renames.chunk_renames_by_name();
-    let (planned_modules, entry_destination) = project_planned_modules(
-        &module_plans,
-        &runtime_ast.module.body,
-        chunk_top_level_mark,
+    let coarse_residual_mode = matches!(
+        &chunk_unassigned_mode,
+        UnassignedMode::CoarseAtomicGroups { .. }
     );
-    let redundant_purity_hints = analysis.redundant_purity_hints;
-    let assignment_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
-        .iter()
-        .map(|(local, exported)| {
+    let initial_generated_residual_count = generated_residual_plans.len();
+    let maximum_coarsening_rounds = initial_generated_residual_count.saturating_sub(1);
+    let refine_coarse_residuals = coarse_residual_mode && initial_generated_residual_count > 0;
+    let mut graph_for_assignment = Some(precomputed);
+    let mut catalogue_for_assignment = Some(bindings_catalogue);
+    let mut coarsening_rounds = 0usize;
+    // Each pass uses the real assignment/gate result for the current complete
+    // layout. Only a whole typed Pass 1 SCC made entirely from plans created by
+    // coarse synthesis can be contracted; cuts, rendered reports and the
+    // diagnostic-only Pass 2 summary are not inputs here.
+    let (sealed_renames, chunk_renames_map, assignment_analysis) = loop {
+        let sealed_renames = {
+            let mut ledger = RenameLedger::default();
+            if let Some(renames) = chunk_renames.get(chunk_id) {
+                collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
+            }
+            collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
+            ledger.seal(&SealValidation::default())
+        }?;
+        let chunk_renames_map = sealed_renames.chunk_renames_by_name();
+        let (planned_modules, entry_destination) =
+            project_planned_modules(&module_plans, &source_unit_layout, chunk_top_level_mark)?;
+        let assignment_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
+            .iter()
+            .map(|(local, exported)| {
+                (
+                    top_level_id(local, chunk_top_level_mark),
+                    exported.as_str().into(),
+                )
+            })
+            .collect();
+        let (precomputed_for_assignment, bindings_for_assignment) = if refine_coarse_residuals {
             (
-                top_level_id(local, chunk_top_level_mark),
-                exported.as_str().into(),
+                graph_for_assignment
+                    .as_ref()
+                    .expect("coarse assignment graph is retained for rebuilds")
+                    .clone(),
+                catalogue_for_assignment
+                    .as_ref()
+                    .expect("coarse binding catalogue is retained for rebuilds")
+                    .clone(),
             )
-        })
-        .collect();
-    let assignment_analysis = AssignmentAnalysis::build_with(
-        chunk_id.to_string(),
-        chunk_id_interned,
-        precomputed,
-        bindings_catalogue,
-        planned_modules,
-        assignment_chunk_renames,
-        entry_destination,
-    )?;
-    let validated_assignment = validate_and_emit_reports(
+        } else {
+            (
+                graph_for_assignment
+                    .take()
+                    .expect("non-coarse assignment graph is consumed once"),
+                catalogue_for_assignment
+                    .take()
+                    .expect("non-coarse binding catalogue is consumed once"),
+            )
+        };
+        let assignment_analysis = AssignmentAnalysis::build_with(
+            chunk_id.to_string(),
+            chunk_id_interned,
+            precomputed_for_assignment,
+            bindings_for_assignment,
+            planned_modules,
+            assignment_chunk_renames,
+            entry_destination,
+        )?;
+        if !refine_coarse_residuals {
+            break (sealed_renames, chunk_renames_map, assignment_analysis);
+        }
+        let verdict = assignment_analysis.realizability_verdict();
+        let residual_sccs = generated_residual_mutual_sccs(
+            &verdict.unrealizable_sccs,
+            &generated_residual_plans,
+            module_plans.len(),
+            &module_plans,
+            &source_public_export_identities_by_statement,
+            chunk_top_level_mark,
+        );
+        if residual_sccs.is_empty() {
+            drop(graph_for_assignment.take());
+            drop(catalogue_for_assignment.take());
+            break (sealed_renames, chunk_renames_map, assignment_analysis);
+        }
+
+        ensure!(
+            coarsening_rounds < maximum_coarsening_rounds,
+            "coarse residual SCC contraction exceeded its finite plan-count bound"
+        );
+        let old_plan_count = module_plans.len();
+        let old_generated_count = generated_residual_plans.len();
+        contract_generated_residual_sccs(
+            &mut module_plans,
+            catalogue_for_assignment
+                .as_mut()
+                .expect("coarse binding catalogue is retained for contractions"),
+            &mut whole_statement_assignment,
+            &mut generated_residual_plans,
+            &residual_sccs,
+        )?;
+        ensure!(
+            module_plans.len() < old_plan_count
+                && generated_residual_plans.len() < old_generated_count,
+            "coarse residual SCC contraction must reduce generated plan count"
+        );
+        coarsening_rounds += 1;
+    };
+    let redundant_purity_hints = analysis.redundant_purity_hints;
+    let stable_set_intervals = program_summary
+        .stable_set_spreads
+        .get(chunk_id)
+        .map(|intervals| intervals.values().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let assignment = assignment_analysis.assignment();
+    let graph = assignment_analysis.inputs().dependency_graph();
+    let local_bindings = assignment_analysis
+        .inputs()
+        .local_bindings(chunk_id_interned)?;
+    let placement_projection = analysis::project_placement(PlacementProjectionInput {
+        graph,
+        assignment,
+        local_bindings,
+        body: &runtime_ast.module.body,
+        layout: &source_unit_layout,
+        whole_statements: &whole_statement_assignment,
+        module_count: module_plans.len(),
+        destructuring_groups: &ast_analysis.destructuring_groups,
+        nested_var_statements: &ast_analysis.nested_var_statements,
+        stable_set_intervals: &stable_set_intervals,
+    });
+    if assessment_only {
+        let no_reports = ReportEmission::None;
+        let report_context = ChunkReportContext {
+            ownership_subset: ownership_subset.as_ref(),
+            chunk_id,
+            report_emission: &no_reports,
+            graph_reports: GraphReportSelection::None,
+            policy: gate_rejection_policy,
+            effect_conflicts_jsonl: false,
+            full_translation_validation: false,
+            full_export_reentry: false,
+        };
+        let (evaluation, _) = evaluate_chunk_candidate(
+            report_context,
+            gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
+            &analysis.facts,
+        )?;
+        let assessment = evaluation.candidate_assessment().report();
+        return Ok(FinishedLogicalChunk::Assessed {
+            chunk_id: chunk_id.to_string(),
+            assessment: Box::new(assessment),
+        });
+    }
+    // Select only full-detail sinks. Facts, graph construction, emitted order
+    // and every chunk's bounded summary use the unchanged full input.
+    let effect_conflicts_jsonl = effect_conflicts_jsonl
+        && (effect_conflicts_chunks.is_empty() || effect_conflicts_chunks.contains(chunk_id));
+    let report_context = ChunkReportContext {
+        ownership_subset: ownership_subset.as_ref(),
         chunk_id,
         report_emission,
-        graph_provenance,
-        &assignment_analysis,
+        graph_reports,
+        policy: gate_rejection_policy,
+        effect_conflicts_jsonl,
+        full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        full_translation_validation: full_reports
+            .contains(&super::FullReportKind::TranslationValidation)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+    };
+    let (evaluation, report_out_dir) = evaluate_chunk_candidate(
+        report_context,
+        gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
+        &analysis.facts,
+    )?;
+    let gate_outcome = emit_reports_and_resolve_gate(
+        report_context,
+        program_graph,
+        evaluation,
+        report_out_dir,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
-    let placement = EmissionPlacement::from_validated(
-        &validated_assignment,
-        chunk_id_interned,
-        &runtime_ast.module.body,
-        module_plans.len(),
-        &whole_statement_assignment,
-    )?;
+    let (linker_order, gate_rejection) = match &gate_outcome {
+        GateOutcome::Accepted(validated) => (validated.report().linker_order.clone(), None),
+        GateOutcome::Rejected {
+            assignment,
+            rejection,
+        } => (
+            assignment.report().linker_order.clone(),
+            Some(rejection.clone()),
+        ),
+    };
+    let placement =
+        EmissionPlacement::from_projection(&assignment_analysis, &placement_projection)?;
 
-    let lowered = lower_chunk(LowerChunkInputs {
+    let mut prepared_emission = prepare_candidate_emission_plan(LowerChunkInputs {
         context: LowerChunkContext {
             artifact,
             artifact_indexes,
@@ -703,12 +825,17 @@ pub(super) fn finish_logical_chunk(
             pre_existing_public_export_names: &pre_existing_public_export_names,
         },
     })?;
+    if let Some(rejection) = &gate_rejection {
+        // The banner leads the entry file so a reader (or a loader) meets
+        // it before any code; the chunk's own header follows.
+        prepared_emission.prepend_entry_header_lines(gate_rejected_banner_lines(rejection));
+    }
     let LoweredChunk {
         files,
         file_records,
         applied,
         vendor_reference_rewrites,
-    } = lowered;
+    } = prepared_emission.emit();
 
     let final_modules = build_final_module_report(
         &module_plans,
@@ -726,16 +853,32 @@ pub(super) fn finish_logical_chunk(
         &entry_destination_report_target_file,
         &assignment_analysis,
     );
-    let validation = ChunkValidationSummary {
-        linker_order: validated_assignment.report().linker_order.clone(),
-    };
+    let validation = ChunkValidationSummary { linker_order };
     let report = ChunkModulesReport {
+        ownership_subset,
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
             applied: applied.len(),
             selected_bindings: placement.bindings().len(),
         },
         final_module_contents: final_modules,
+        atomic_group_owner_completions: atomic_group_owner_completions
+            .into_iter()
+            .map(|completion| AtomicGroupOwnerCompletionReport {
+                owner_path: spec::ModulePath::parse(&completion.owner_path, "")
+                    .expect("owner path was validated against authored requests"),
+                atomic_group_source_unit_ids: completion
+                    .atomic_group_source_unit_ids
+                    .into_iter()
+                    .map(source_unit_key)
+                    .collect(),
+                adopted_source_unit_ids: completion
+                    .adopted_source_unit_ids
+                    .into_iter()
+                    .map(source_unit_key)
+                    .collect(),
+            })
+            .collect(),
         requested_logical_modules: requests
             .iter()
             .map(|request| RequestedLogicalModule {
@@ -744,48 +887,41 @@ pub(super) fn finish_logical_chunk(
                 residual: request.residual,
             })
             .collect(),
-        imported_callables: analysis_inputs.imported_callables.clone(),
+        imported_callables,
         redundant_purity_hints,
     };
-    Ok(MaterializedLogicalChunk {
-        chunk_id: chunk_id_interned,
-        unmatched_spec_claims,
-        target_file,
-        source_path,
-        files,
-        file_records,
-        applied,
-        directory_dependency_facts,
-        validation,
-        report,
-        vendor_reference_rewrites,
-    })
+    Ok(FinishedLogicalChunk::Lowered(Box::new(
+        MaterializedLogicalChunk {
+            chunk_id: chunk_id_interned,
+            unmatched_spec_claims,
+            target_file,
+            source_path,
+            files,
+            file_records,
+            applied,
+            directory_dependency_facts,
+            validation,
+            report,
+            vendor_reference_rewrites,
+            gate_rejection,
+        },
+    )))
 }
 
-/// Rebind-fold composer: fold rebind-only atomic groups into their
-/// explicit destination. Bridges the pure
-/// `compute_rebind_folds` decision in `lowering/rebind_fold.rs` over the chunk's
-/// post-seed assignment (managed by `ChunkPlanBuilder`) into the
-/// builder's plan-list/catalogue state.
-///
-/// This runs after the seed phases of assignment construction
-/// (explicit requests, destructure pull, residual sweep) and before
-/// `synthesize_per_atomic_group`. The decision step is spec-independent —
-/// it only inspects the chunk-analysis dependency graph + atomic groups, the
-/// builder's binding→plan assignment, and the residual landing-site
-/// index — so it lives in the `analysis` crate; this thin composer
-/// owns the application of those decisions to the builder's
-/// `ModulePlan` list.
-fn apply_rebind_folds_from_chunk_analysis(
-    builder: &mut ChunkPlanBuilder,
-    precomputed: &DependencyGraphAndAtomicGroups,
-) {
-    let folds = compute_rebind_folds(
-        precomputed,
-        &builder.owned_binding_destinations(),
-        builder.residual_plan_index(),
-    );
-    builder.apply_rebind_folds(folds);
+/// `// …` lines announcing a gate-rejected chunk at the top of its entry file.
+fn gate_rejected_banner_lines(rejection: &ChunkGateRejection) -> Vec<String> {
+    format_comment_block_lines(&format!(
+        "{GATE_REJECTED_MARKER}: NOT RUNNABLE. The realizability gate rejected chunk \
+         `{chunk}` ({verdict}); `debundle run --emit-on-rejection` wrote this tree for \
+         reading only.\n{evidence}\nSee the {GATE_REJECTED_MARKER} marker at the output root.",
+        chunk = rejection.chunk_id,
+        verdict = rejection.verdict,
+        evidence = match &rejection.evidence_report {
+            Some(path) => format!("Evidence: {}", path.display()),
+            None => "No report directory was configured; the rejection is on the run's stderr."
+                .to_string(),
+        },
+    ))
 }
 
 /// Project the materializer's real output plans into the analysis view. The
@@ -793,12 +929,26 @@ fn apply_rebind_folds_from_chunk_analysis(
 /// `PlannedModule`; its wire label is chosen only when constructing reports.
 fn project_planned_modules(
     module_plans: &[ModulePlan],
-    body: &[ModuleItem],
+    source_unit_layout: &SourceUnitLayout,
     chunk_top_level_mark: swc_common::Mark,
-) -> (Vec<PlannedModule>, EntryDestination) {
-    let planned_modules: Vec<PlannedModule> = module_plans
-        .iter()
-        .map(|plan| PlannedModule {
+) -> Result<(Vec<PlannedModule>, EntryDestination)> {
+    let mut planned_modules = Vec::with_capacity(module_plans.len());
+    for plan in module_plans {
+        let mut anonymous_source_unit_ordinals = Vec::new();
+        for statement in &plan.anonymous_statements {
+            let locations = source_unit_layout.for_statement(*statement);
+            if locations.is_empty() {
+                bail!(
+                    "source statement at body index {statement} has no checked source-unit layout"
+                );
+            }
+            // Preserve the existing assignment-assembly contract: one
+            // anonymous request points at the raw statement's first ordinal.
+            // The shared projection checks every source unit for that body
+            // item before emission and reports any split as a blocker.
+            anonymous_source_unit_ordinals.push(locations[0].ordinal);
+        }
+        planned_modules.push(PlannedModule {
             id: plan.id.clone(),
             target_file: plan.target_file.clone(),
             role: plan.role,
@@ -818,311 +968,601 @@ fn project_planned_modules(
             // the corresponding source unit. Anonymous body items are single
             // post-split positions, but earlier comma-list declarations shift
             // the source-unit ordinal.
-            anonymous_source_unit_ordinals: plan
-                .anonymous_statements
-                .iter()
-                .map(|body_idx| source_unit_ordinal_for_statement(body, *body_idx))
-                .collect(),
-        })
-        .collect();
+            anonymous_source_unit_ordinals,
+        });
+    }
     let entry_destination = EntryDestination::after_planned_modules(planned_modules.len());
-    (planned_modules, entry_destination)
+    Ok((planned_modules, entry_destination))
 }
 
-/// Collect `AnalysisAssumptions` from binding annotations. These are semantic
-/// trust assertions, not ownership claims.
-fn collect_analysis_assumptions(
-    explicit_requests: &[LogicalRequest],
-    builder: &ChunkPlanBuilder,
-    chunk_renames: Option<&ChunkRenames>,
-    module: &Module,
-) -> Result<AnalysisAssumptions> {
-    let mut assumptions = AnalysisAssumptions::default();
-    for (request_index, req) in explicit_requests.iter().enumerate() {
-        for m in &req.members {
-            collect_member_analysis_assumptions(
-                request_index,
-                req,
-                m,
-                builder,
-                module,
-                &mut assumptions,
-            )?;
-        }
-    }
-    collect_chunk_rename_analysis_assumptions(chunk_renames, module, &mut assumptions)?;
-    Ok(assumptions)
-}
-
-fn collect_chunk_rename_analysis_assumptions(
-    chunk_renames: Option<&ChunkRenames>,
-    module: &Module,
-    assumptions: &mut AnalysisAssumptions,
-) -> Result<()> {
-    let Some(chunk_renames) = chunk_renames else {
-        return Ok(());
-    };
-    let mut by_export_name = BTreeMap::<String, Vec<String>>::new();
-    for member in &chunk_renames.members {
-        let binding = &member.selector.binding.name;
-        let export_name = member.name.as_deref().unwrap_or(binding);
-        by_export_name
-            .entry(export_name.to_string())
-            .or_default()
-            .push(binding.clone());
-    }
-
-    for (export_name, annotation) in &chunk_renames.annotations {
-        let Some(bindings) = by_export_name.get(export_name) else {
-            bail!(
-                "chunk_renames.annotations key `{export_name}` does not match any \
-                 chunk_renames member name"
-            );
-        };
-        if bindings.len() != 1 {
-            bail!(
-                "chunk_renames.annotations key `{export_name}` is ambiguous because that \
-                 readable binding name is claimed {} times",
-                bindings.len()
-            );
-        }
-        collect_binding_annotation_hints(assumptions, &bindings[0], annotation, module)?;
-    }
-    Ok(())
-}
-
-fn collect_binding_annotation_hints(
-    assumptions: &mut AnalysisAssumptions,
-    binding: &str,
-    annotation: &spec::BindingAnnotation,
-    module: &Module,
-) -> Result<()> {
-    if annotation.initializer_purity == InitializerPurity::Pure {
-        validate_initializer_purity_target(module, binding)?;
-        assumptions
-            .declared_pure_initializers
-            .insert(binding.to_string());
-    }
-    if annotation.purity == MemberPurity::Pure {
-        assumptions.declared_pure.insert(binding.to_string());
-    }
-    if annotation.purity == MemberPurity::PureNew {
-        assumptions.declared_pure_new.insert(binding.to_string());
-    }
-    if !annotation.pure_members.is_empty() {
-        assumptions
-            .declared_pure_members
-            .entry(binding.to_string())
-            .or_default()
-            .extend(annotation.pure_members.iter().cloned());
-    }
-    if !annotation.no_sync_callback_members.is_empty() {
-        assumptions
-            .no_sync_callback_members
-            .entry(binding.to_string())
-            .or_default()
-            .extend(annotation.no_sync_callback_members.iter().cloned());
-    }
-    if let Some(effect) = known_effect_from_member_effect(annotation.effect) {
-        assumptions
-            .known_effects
-            .insert(binding.to_string(), effect);
-    }
-    Ok(())
-}
-
-fn collect_member_analysis_assumptions(
-    request_index: usize,
-    request: &LogicalRequest,
-    member: &MemberRequest,
-    builder: &ChunkPlanBuilder,
-    module: &Module,
-    assumptions: &mut AnalysisAssumptions,
-) -> Result<()> {
-    if !member.has_analysis_assumptions() {
-        return Ok(());
-    }
-    if let Some(binding) = builder.resolved_binding_for_member(request_index, member) {
-        if member.initializer_purity == InitializerPurity::Pure {
-            validate_initializer_purity_target(module, &binding)?;
-        }
-        member.collect_assumptions_for_binding(assumptions, &binding);
-        return Ok(());
-    }
-    if !builder.fail_fast() {
-        return Ok(());
-    }
-    bail!(
-        "logical_module {}: semantic annotations on selector member `{}` could not be applied \
-         because selector resolution did not produce a concrete binding",
-        request.id,
-        member.export_name,
-    )
-}
-
-fn validate_initializer_purity_target(module: &Module, binding: &str) -> Result<()> {
-    let mut initialized_sites = 0usize;
-    let mut unsupported_sites = 0usize;
-    let mut bare_var_sites = 0usize;
-
-    for item in &module.body {
-        let var = match item {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var.as_ref()),
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-                Decl::Var(var) => Some(var.as_ref()),
-                _ => None,
-            },
-            _ => None,
-        };
-        if let Some(var) = var {
-            for declarator in &var.decls {
-                if !pattern_binds_name(&declarator.name, binding) {
-                    continue;
-                }
-                match &declarator.name {
-                    Pat::Ident(ident) if ident.id.sym.as_ref() == binding => {
-                        if declarator.init.is_some() {
-                            initialized_sites += 1;
-                        } else if var.kind == VarDeclKind::Var {
-                            bare_var_sites += 1;
-                        } else {
-                            unsupported_sites += 1;
-                        }
-                    }
-                    _ => unsupported_sites += 1,
-                }
+/// Return only complete Pass 1 SCCs whose module IDs have explicit provenance
+/// as coarse-generated residual plans. This consumes the gate's typed in-memory
+/// diagnosis; the rendered cycle report and its cut are intentionally ignored.
+fn generated_residual_mutual_sccs(
+    diagnoses: &[gate::SccDiagnosis],
+    generated_residual_plans: &BTreeSet<usize>,
+    module_count: usize,
+    module_plans: &[ModulePlan],
+    source_exports_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
+    chunk_top_level_mark: Mark,
+) -> Vec<Vec<usize>> {
+    diagnoses
+        .iter()
+        .filter(|diagnosis| diagnosis.rejection == SccRejection::MutualConstrainingCycle)
+        .filter_map(|diagnosis| {
+            let modules = &diagnosis.core.modules;
+            if modules.len() < 2
+                || modules.iter().any(|module| {
+                    module.0 >= module_count || !generated_residual_plans.contains(&module.0)
+                })
+            {
+                return None;
             }
-            continue;
-        }
-
-        let is_import_of_binding = match item {
-            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
-                .specifiers
-                .iter()
-                .any(|specifier| specifier.local().sym.as_ref() == binding),
-            _ => false,
-        };
-        if is_import_of_binding || item_declares_nonvariable_name(item, binding) {
-            unsupported_sites += 1;
-        }
-    }
-
-    if initialized_sites == 1 && unsupported_sites == 0 {
-        return Ok(());
-    }
-    let detail = if initialized_sites > 1 {
-        "multiple initialized declarations"
-    } else if unsupported_sites > 0 {
-        "a non-simple, imported, or non-variable declaration"
-    } else if bare_var_sites > 0 && initialized_sites == 0 {
-        "no initialized declaration"
-    } else {
-        "no simple initialized variable declaration"
-    };
-    bail!(
-        "initializer_purity for binding `{binding}` requires exactly one direct top-level simple variable initializer; found {detail}"
-    )
+            let mut merged_surface = PublicExportSurface::default();
+            for module in modules {
+                let plan = &module_plans[module.0];
+                let mut plan_surface = PublicExportSurface::default();
+                for (local, public) in &plan.bindings {
+                    // `top_level_id` reconstructs the chunk-level Id used by
+                    // the resolved AST and dependency graph. Source export
+                    // aliases therefore compare against the same identity as
+                    // generated residual exports.
+                    plan_surface
+                        .add_binding(public.clone(), top_level_id(local, chunk_top_level_mark));
+                }
+                for statement in &plan.anonymous_statements {
+                    if let Some(exports) = source_exports_by_statement.get(statement) {
+                        plan_surface.add_source_identities(exports);
+                    }
+                }
+                if !merged_surface.is_compatible_with(&plan_surface) {
+                    // Keep this SCC separate; the original gate diagnosis
+                    // remains blocking and is handled by the ordinary path.
+                    return None;
+                }
+                merged_surface.merge(&plan_surface);
+            }
+            Some(modules.iter().map(|module| module.0).collect())
+        })
+        .collect()
 }
 
-fn item_declares_nonvariable_name(item: &ModuleItem, binding: &str) -> bool {
-    let declaration_matches = |declaration: &Decl| match declaration {
-        Decl::Fn(function) => function.ident.sym.as_ref() == binding,
-        Decl::Class(class) => class.ident.sym.as_ref() == binding,
-        _ => false,
-    };
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(declaration)) => declaration_matches(declaration),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => declaration_matches(&export.decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => match &export.decl {
-            DefaultDecl::Fn(function) => function
-                .ident
-                .as_ref()
-                .is_some_and(|ident| ident.sym.as_ref() == binding),
-            DefaultDecl::Class(class) => class
-                .ident
-                .as_ref()
-                .is_some_and(|ident| ident.sym.as_ref() == binding),
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
-fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
-    match pattern {
-        Pat::Ident(ident) => ident.id.sym.as_ref() == binding,
-        Pat::Array(array) => array
-            .elems
+/// Contract disjoint, complete SCCs of generated residual plans and reproject
+/// every positional owner. Authored plans, source-unit identities, and module
+/// contents survive; the survivor is the earliest plan in original plan order.
+fn contract_generated_residual_sccs(
+    module_plans: &mut Vec<ModulePlan>,
+    bindings_catalogue: &mut BindingCatalogue,
+    whole_statement_assignment: &mut BTreeMap<source_identity::StatementId, usize>,
+    generated_residual_plans: &mut BTreeSet<usize>,
+    sccs: &[Vec<usize>],
+) -> Result<()> {
+    let old_plan_count = module_plans.len();
+    ensure!(
+        generated_residual_plans
             .iter()
-            .flatten()
-            .any(|element| pattern_binds_name(element, binding)),
-        Pat::Rest(rest) => pattern_binds_name(&rest.arg, binding),
-        Pat::Object(object) => object.props.iter().any(|property| match property {
-            ObjectPatProp::KeyValue(property) => pattern_binds_name(&property.value, binding),
-            ObjectPatProp::Assign(property) => property.key.id.sym.as_ref() == binding,
-            ObjectPatProp::Rest(property) => pattern_binds_name(&property.arg, binding),
-        }),
-        Pat::Assign(assign) => pattern_binds_name(&assign.left, binding),
-        Pat::Expr(_) | Pat::Invalid(_) => false,
+            .all(|module| *module < old_plan_count),
+        "generated residual provenance contains an invalid module ID"
+    );
+    let mut absorbed_by = vec![None; old_plan_count];
+    let mut seen_members = BTreeSet::new();
+
+    for scc in sccs {
+        let mut members = scc.clone();
+        members.sort_unstable();
+        members.dedup();
+        ensure!(members.len() >= 2, "cannot contract a singleton SCC");
+        let survivor = members[0];
+        ensure!(
+            survivor < old_plan_count,
+            "SCC contains an invalid module ID"
+        );
+        ensure!(
+            members.iter().all(|member| {
+                *member < old_plan_count && generated_residual_plans.contains(member)
+            }),
+            "SCC contraction received a module without generated-residual provenance"
+        );
+        for member in &members {
+            ensure!(
+                seen_members.insert(*member),
+                "SCC module appears more than once"
+            );
+        }
+
+        let mut merged = module_plans[survivor].clone();
+        for member in members.iter().copied().skip(1) {
+            merge_generated_residual_plan(&mut merged, &module_plans[member])?;
+            absorbed_by[member] = Some(survivor);
+        }
+        module_plans[survivor] = merged;
     }
+
+    let mut old_to_new = vec![ModuleId(usize::MAX); old_plan_count + 1];
+    let mut compacted_plans = Vec::with_capacity(old_plan_count - seen_members.len() + sccs.len());
+    for (old_id, plan) in std::mem::take(module_plans).into_iter().enumerate() {
+        if let Some(survivor) = absorbed_by[old_id] {
+            ensure!(
+                survivor < old_id,
+                "SCC survivor must preserve original order"
+            );
+            old_to_new[old_id] = old_to_new[survivor];
+        } else {
+            old_to_new[old_id] = ModuleId(compacted_plans.len());
+            compacted_plans.push(plan);
+        }
+    }
+    old_to_new[old_plan_count] = ModuleId(compacted_plans.len());
+
+    let chunk_id = bindings_catalogue.chunk_id();
+    let mut remapped_bindings = bindings_catalogue.local_view(chunk_id)?.as_map().clone();
+    for binding in remapped_bindings.values_mut() {
+        match binding {
+            BindingKind::Owned { module } => {
+                *module = remap_planned_or_entry_module(*module, &old_to_new, old_plan_count)?;
+            }
+            BindingKind::Imported { re_exporter, .. } => {
+                *re_exporter =
+                    remap_planned_or_entry_module(*re_exporter, &old_to_new, old_plan_count)?;
+            }
+        }
+    }
+    *bindings_catalogue = BindingCatalogue::new(chunk_id, remapped_bindings);
+
+    for module in whole_statement_assignment.values_mut() {
+        ensure!(
+            *module < old_plan_count,
+            "anonymous statement has invalid module ID"
+        );
+        *module = old_to_new[*module].0;
+    }
+    *generated_residual_plans = generated_residual_plans
+        .iter()
+        .map(|module| old_to_new[*module].0)
+        .collect();
+    *module_plans = compacted_plans;
+    Ok(())
+}
+
+fn remap_planned_or_entry_module(
+    module: ModuleId,
+    old_to_new: &[ModuleId],
+    old_plan_count: usize,
+) -> Result<ModuleId> {
+    ensure!(
+        module.0 <= old_plan_count,
+        "binding catalogue has invalid module ID"
+    );
+    Ok(old_to_new[module.0])
+}
+
+fn merge_generated_residual_plan(target: &mut ModulePlan, source: &ModulePlan) -> Result<()> {
+    ensure!(
+        target.role == ModuleRole::Unassigned && source.role == ModuleRole::Unassigned,
+        "generated residual plans must retain their unassigned role"
+    );
+    for (name, export) in &source.bindings {
+        if let Some(existing) = target.bindings.get(name) {
+            ensure!(
+                existing == export,
+                "generated residual plans disagree on export for {name:?}"
+            );
+        } else {
+            target.bindings.insert(name.clone(), export.clone());
+        }
+    }
+    target
+        .spec_named_bindings
+        .extend(source.spec_named_bindings.iter().cloned());
+    target
+        .anonymous_statements
+        .extend(source.anonymous_statements.iter().copied());
+    target.anonymous_statements.sort_unstable();
+    target.anonymous_statements.dedup();
+    merge_equal_keyed_values(
+        &mut target.anonymous_statement_comments,
+        &source.anonymous_statement_comments,
+    )?;
+    merge_equal_keyed_values(&mut target.binding_comments, &source.binding_comments)?;
+    merge_equal_keyed_values(
+        &mut target.binding_claim_origins,
+        &source.binding_claim_origins,
+    )?;
+    match (&target.comment, &source.comment) {
+        (Some(target), Some(source)) => ensure!(target == source, "residual comments disagree"),
+        (None, Some(source)) => target.comment = Some(source.clone()),
+        _ => {}
+    }
+    Ok(())
+}
+
+fn merge_equal_keyed_values<K, V>(
+    target: &mut BTreeMap<K, V>,
+    source: &BTreeMap<K, V>,
+) -> Result<()>
+where
+    K: Ord + Clone + std::fmt::Debug,
+    V: Clone + PartialEq,
+{
+    for (key, value) in source {
+        if let Some(existing) = target.get(key) {
+            ensure!(
+                existing == value,
+                "merged residual metadata conflicts at {key:?}"
+            );
+        } else {
+            target.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(())
+}
+
+/// The gate's judgement of one chunk's assignment, with the evidence reports
+/// already written.
+enum GateOutcome<'a> {
+    Accepted(ValidatedAssignment<'a>),
+    /// Only under [`GateRejectionPolicy::LowerUnrunnable`]; `Refuse` fails
+    /// with the rendered diagnostic instead.
+    Rejected {
+        assignment: RejectedAssignment<'a>,
+        rejection: ChunkGateRejection,
+    },
 }
 
 /// Write per-chunk validation reports (dependency graph, atomic-group
-/// conflicts, cycles) and bail with a human-readable summary when
-/// the spec is unrealizable.
+/// conflicts, cycles) and, when the spec is unrealizable, either bail with a
+/// human-readable summary or hand the rejected assignment back for the
+/// reading-only lowering of `debundle run --emit-on-rejection`.
 ///
 /// Under [`ReportEmission::OnRejection`] (the `debundle run
 /// --dry-run` mode) the accept path writes nothing, but a rejection
-/// still writes `dependency_graph.json` plus the rejection evidence so
+/// still writes rejection evidence (and explicitly selected full graphs) so
 /// the documented `debundle gate list/describe` follow-up works.
-fn validate_and_emit_reports<'a>(
+/// The chunk's `spec lint` findings whose signal the run computes anyway:
+/// unused `commuting_statements` entries, admission overrides that suppress
+/// nothing, `purity: pure` hints no statement reads by name, and those the
+/// classifier infers without the hint.
+fn spec_lint_findings(
     chunk_id: &str,
-    report_emission: &ReportEmission,
-    graph_provenance: Option<&graph_provenance::GraphProvenance>,
-    assignment_analysis: &'a AssignmentAnalysis,
-    export_reentry_report: &ExportReentryReport,
-) -> Result<ValidatedAssignment<'a>> {
-    let validation = assignment_analysis.validate_for_emission();
-    let assignment_report = match &validation {
-        Ok(assignment) => assignment.report(),
-        Err(report) => report,
+    unused_commuting_statements: &[analysis::CommutingStatementsUnused],
+    redundant_admission_overrides: &[spec::AdmissionCheck],
+    redundant_purity_hints: &[analysis::RedundantPurityHint],
+    unconsulted_purity_hints: &BTreeSet<String>,
+    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+) -> Vec<LintFinding> {
+    let purity_owner = |binding: &str| {
+        resolved_member_sites
+            .values()
+            .flatten()
+            .find(|site| {
+                site.provider_chunk == chunk_id
+                    && site
+                        .declaration
+                        .as_ref()
+                        .is_some_and(|declaration| declaration.binding == binding)
+            })
+            .map_or_else(
+                || PurityHintOwner::InputBinding {
+                    binding: binding.to_owned(),
+                },
+                |site| {
+                    PurityHintOwner::LogicalMember(spec::ResolvedMemberSelector {
+                        module: site.module.clone(),
+                        name: site.name.clone(),
+                    })
+                },
+            )
     };
-    let rejected = !assignment_report.atomic_group_conflicts.is_empty()
-        || !assignment_report.cycles.is_empty();
-    // Full mode writes the dependency graph unconditionally; OnRejection
-    // writes it only alongside rejection evidence (`gate describe`
-    // recomputes per-edge blame from it).
-    let report_out_dir = if rejected {
+    unused_commuting_statements
+        .iter()
+        .map(|unused| LintFinding::unused_commuting_statements(chunk_id, unused))
+        .chain(
+            redundant_admission_overrides
+                .iter()
+                .map(|check| LintFinding::redundant_admission_override(chunk_id, *check)),
+        )
+        .chain(
+            unconsulted_purity_hints.iter().map(|binding| {
+                LintFinding::unconsulted_purity_hint(chunk_id, purity_owner(binding))
+            }),
+        )
+        .chain(
+            redundant_purity_hints
+                .iter()
+                .filter(|hint| !unconsulted_purity_hints.contains(&hint.binding_name))
+                .map(|hint| {
+                    LintFinding::redundant_purity_hint(
+                        chunk_id,
+                        hint,
+                        purity_owner(&hint.binding_name),
+                    )
+                }),
+        )
+        .collect()
+}
+
+/// The loader keys one target's loader closure consumed. A closure whose only
+/// failure is reach-back still sets a `reentry_through` policy, but records
+/// nothing (it assumes its dependencies only when closed).
+fn loader_key_uses(
+    loader: &staged_analysis::loader_surface::ExportReentryLoaderDerivation,
+) -> LoaderKeyUses {
+    use staged_analysis::loader_surface::ExportReentryLoaderDerivation;
+    match loader {
+        ExportReentryLoaderDerivation::LoaderClosure {
+            reentry_through: Some(_),
+            ..
+        } => LoaderKeyUses::Unattributed,
+        ExportReentryLoaderDerivation::LoaderClosure {
+            host_keys,
+            premise_keys,
+            ..
+        } => LoaderKeyUses::Recorded {
+            host_keys: host_keys.clone(),
+            premise_keys: premise_keys.clone(),
+        },
+        ExportReentryLoaderDerivation::NoSynchronousLoader
+        | ExportReentryLoaderDerivation::NoHostLoaderSites => LoaderKeyUses::default(),
+    }
+}
+
+/// The chunk's `selector_diagnostics.json`, where `spec validate` collects
+/// per-chunk reports; nothing to write while no outcome was recorded.
+fn write_selector_diagnostics(
+    builder: &ChunkPlanBuilder,
+    report_out_dir: &std::path::Path,
+    chunk_id: &str,
+) -> Result<()> {
+    if let Some(report) = builder.selector_outcome_report() {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            SELECTOR_DIAGNOSTICS_REPORT,
+            &report,
+        )?;
+    }
+    Ok(())
+}
+
+/// The selected chunk's output policy, independent of its analysis facts.
+#[derive(Clone, Copy)]
+struct ChunkReportContext<'a> {
+    ownership_subset: Option<&'a BTreeSet<SelectedModule>>,
+    chunk_id: &'a str,
+    report_emission: &'a ReportEmission,
+    graph_reports: GraphReportSelection,
+    policy: GateRejectionPolicy,
+    effect_conflicts_jsonl: bool,
+    full_translation_validation: bool,
+    full_export_reentry: bool,
+}
+
+/// Exact counts over the canonical in-memory graph, with no node/edge table.
+#[derive(serde::Serialize)]
+struct GraphSummary<'a> {
+    chunk_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ownership_subset: Option<&'a BTreeSet<SelectedModule>>,
+    source_units: usize,
+    edges: usize,
+    edge_kinds: std::collections::BTreeMap<analysis_model::DepKind, usize>,
+    atomic_groups: usize,
+    atomic_group_conflicts: usize,
+    cycles: usize,
+    gate_accepts: bool,
+    translation_validation_accepts: bool,
+    full_graphs: bool,
+}
+
+/// Evaluate both diagnostic projections for one prepared candidate whose
+/// gate verdict the preflight already carries. Report policy selects only
+/// output locations and full-detail evidence sinks.
+fn evaluate_chunk_candidate<'a, 'b>(
+    context: ChunkReportContext<'b>,
+    preflight: gate::CandidatePreflight<'a>,
+    facts: &[analysis::facts::StatementFacts],
+) -> Result<(gate::CandidateEvaluation<'a>, Option<&'b std::path::Path>)> {
+    let ChunkReportContext {
+        chunk_id,
+        report_emission,
+        full_translation_validation,
+        effect_conflicts_jsonl,
+        graph_reports,
+        full_export_reentry,
+        ..
+    } = context;
+    let report_out_dir = if preflight.is_rejected() {
         report_emission.rejection_dir()
     } else {
         report_emission.full_dir()
     };
+    ensure!(
+        !effect_conflicts_jsonl || report_out_dir.is_some(),
+        "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+    ensure!(
+        !graph_reports.enabled() || report_out_dir.is_some(),
+        "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+    ensure!(
+        !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
+        "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+
+    let mut full_tv = if full_translation_validation {
+        Some(JsonlReport::create(chunk_report_path(
+            report_out_dir.expect("full-report output was checked"),
+            chunk_id,
+            output_layout::TRANSLATION_VALIDATION_FULL_REPORT,
+        ))?)
+    } else {
+        None
+    };
+    let mut jsonl = if effect_conflicts_jsonl {
+        Some(JsonlReport::create(chunk_report_path(
+            report_out_dir.expect("effect-conflict output was checked"),
+            chunk_id,
+            output_layout::EFFECT_CONFLICTS_JSONL,
+        ))?)
+    } else {
+        None
+    };
+    let evaluation = {
+        let mut write_tv = |row: &gate::TranslationValidationEvidenceReport| -> Result<()> {
+            full_tv
+                .as_mut()
+                .expect("active full-report sink")
+                .write(row)
+        };
+        let mut write_effect = |row: &gate::EffectConflictDiagnosticRow<'_>| -> Result<()> {
+            jsonl
+                .as_mut()
+                .expect("active effect-conflict sink")
+                .write(row)
+        };
+        preflight.evaluate(
+            facts,
+            full_translation_validation.then_some(&mut write_tv),
+            effect_conflicts_jsonl.then_some(&mut write_effect),
+        )?
+    };
+    if let Some(writer) = full_tv {
+        writer.finish()?;
+    }
+    if let Some(writer) = jsonl {
+        writer.finish()?;
+    }
+    Ok((evaluation, report_out_dir))
+}
+
+fn graph_export_guidance(
+    dir: &std::path::Path,
+    chunk_id: &str,
+    selection: GraphReportSelection,
+    ownership_subset: bool,
+) -> String {
+    if ownership_subset {
+        return " Bounded reports describe this ownership subset; full graph export for subsets is unsupported.".to_string();
+    }
+    if selection.enabled() {
+        format!(
+            " Dependency graph at {}.",
+            chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display()
+        )
+    } else {
+        " Full graph queries require rerunning with --graphs or building the dependency_graphs Bazel output group.".to_string()
+    }
+}
+
+fn emit_reports_and_resolve_gate<'a>(
+    context: ChunkReportContext<'_>,
+    program_graph: &ProgramGraphOutput<'_>,
+    evaluation: gate::CandidateEvaluation<'a>,
+    report_out_dir: Option<&std::path::Path>,
+    export_reentry_report: &ExportReentryReport,
+) -> Result<GateOutcome<'a>> {
+    let ChunkReportContext {
+        chunk_id,
+        ownership_subset,
+        graph_reports,
+        policy,
+        full_export_reentry,
+        ..
+    } = context;
+    let assignment_analysis = evaluation.assignment_analysis();
+    let assignment_report = evaluation.report();
+    let rejected = evaluation.is_rejected();
+    let translation_validation = evaluation.translation_validation();
+    // Report timing and full graph serialization are separate output choices.
+    // Gate, translation checks and candidate assessment are complete,
+    // independently of whether this caller writes their diagnostic reports.
     if let Some(report_out_dir) = report_out_dir {
-        let mut dependency_graph_report = assignment_analysis.dependency_graph_report();
-        dependency_graph_report.provenance = graph_provenance.cloned();
+        let graph = assignment_analysis.inputs().dependency_graph();
+        let mut edge_kinds = std::collections::BTreeMap::new();
+        for edge in graph.iter_edges() {
+            *edge_kinds.entry(edge.reason.kind()).or_insert(0usize) += 1;
+        }
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
-            DEPENDENCY_GRAPH_REPORT,
-            &dependency_graph_report,
+            output_layout::GRAPH_SUMMARY_REPORT,
+            &GraphSummary {
+                chunk_id,
+                ownership_subset,
+                source_units: graph.num_nodes(),
+                edges: graph.num_edges(),
+                edge_kinds,
+                atomic_groups: assignment_analysis.atomic_groups().len(),
+                atomic_group_conflicts: assignment_report.atomic_group_conflicts.len(),
+                cycles: assignment_report.cycles.len(),
+                gate_accepts: !rejected,
+                translation_validation_accepts: translation_validation.report.accepts,
+                full_graphs: graph_reports.enabled(),
+            },
         )?;
+        let candidate_assessment = evaluation.candidate_assessment();
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            EFFECT_TRANSLATION_VALIDATION_REPORT,
+            &candidate_assessment.effect.report,
+        )?;
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
+            &candidate_assessment.report(),
+        )?;
+        if graph_reports.enabled() {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                DEPENDENCY_GRAPH_REPORT,
+                &assignment_analysis.dependency_graph_report(
+                    program_graph.reference_for(report_out_dir, chunk_id)?,
+                    program_graph.author_inputs(),
+                ),
+            )?;
+        }
+        if full_export_reentry {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                output_layout::EXPORT_REENTRY_FULL_REPORT,
+                export_reentry_report,
+            )?;
+        }
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             EXPORT_REENTRY_REPORT,
-            export_reentry_report,
+            &super::reentry_report::ExportReentrySummary::from(export_reentry_report),
+        )?;
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            TRANSLATION_VALIDATION_REPORT,
+            &translation_validation.report,
         )?;
     }
-    if !assignment_report.atomic_group_conflicts.is_empty() {
+    // Atomic-group conflicts take precedence over cycles: a split atom
+    // already forces the cycle, so its evidence remains the primary
+    // diagnostic. Keep any independently computed cycle report beside it.
+    let verdict = if !assignment_report.atomic_group_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Project onto the wire shape: source units as `"unit:N"`,
             // modules as canonical `ModulePath` — the same entity
-            // keys `dependency_graph.json` uses, so the file joins
+            // keys `dependency_graph.json.gz` uses, so the file joins
             // against the dependency graph without string surgery.
             let wire = ::analysis::AtomicGroupConflictReport::from_conflicts(
                 &assignment_report.atomic_group_conflicts,
                 &|id| assignment_analysis.module_path(id),
                 assignment_analysis.inputs().dependency_graph(),
+                &|id| {
+                    ::analysis::DependencyEdgeReport::from_edge(
+                        assignment_analysis.inputs().dependency_graph().edge(id),
+                    )
+                },
             );
             write_chunk_report_json(
                 report_out_dir,
@@ -1130,6 +1570,10 @@ fn validate_and_emit_reports<'a>(
                 ATOMIC_GROUP_CONFLICTS_REPORT,
                 &wire,
             )?;
+            if !assignment_report.cycles.is_empty() {
+                let wire = ::gate::BlockingSccEntry::from_cycle_reports(&assignment_report.cycles);
+                write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)?;
+            }
         }
         let summary = render_atomic_group_conflict_summary(
             &assignment_report.atomic_group_conflicts,
@@ -1139,23 +1583,26 @@ fn validate_and_emit_reports<'a>(
         let causes = render_atomic_group_cause_guidance(&assignment_report.atomic_group_conflicts);
         let evidence = report_out_dir.map_or_else(String::new, |dir| {
             format!(
-                " Full evidence written to {}; dependency graph written to {}.",
-                dir.join(chunk_id)
-                    .join(ATOMIC_GROUP_CONFLICTS_REPORT)
-                    .display(),
-                dir.join(chunk_id).join(DEPENDENCY_GRAPH_REPORT).display(),
+                " Full evidence written to {}.{}",
+                chunk_report_path(dir, chunk_id, ATOMIC_GROUP_CONFLICTS_REPORT).display(),
+                graph_export_guidance(dir, chunk_id, graph_reports, ownership_subset.is_some()),
             )
         });
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the dependency graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination.{evidence} Summary:\n{summary}",
-            n = assignment_report.atomic_group_conflicts.len(),
-        );
-    }
-    if !assignment_report.cycles.is_empty() {
+        Some((
+            GateVerdict::AtomicGroupConflicts {
+                count: assignment_report.atomic_group_conflicts.len(),
+            },
+            ATOMIC_GROUP_CONFLICTS_REPORT,
+            format!(
+                "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the dependency graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination.{evidence} Summary:\n{summary}",
+                n = assignment_report.atomic_group_conflicts.len(),
+            ),
+        ))
+    } else if !assignment_report.cycles.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Trim the wire shape before writing: keep `id` (array
-            // index), `modules`, `cut`. Per-edge evidence is
-            // recomputable from `dependency_graph.json` + this entry's
+            // index), `modules`, `cut`, and the bounded Pass-1 walk. Other per-edge evidence is
+            // recomputable from `dependency_graph.json.gz` + this entry's
             // `modules` set via `debundle gate describe <id>`. See
             // `validation.rs` `BlockingSccEntry` for the schema and
             // `docs/cli.md` § "Gate queries" for the CLI surface.
@@ -1165,35 +1612,60 @@ fn validate_and_emit_reports<'a>(
         let summary = render_cycle_summary(&assignment_report.cycles);
         let evidence = report_out_dir.map_or_else(String::new, |dir| {
             format!(
-                " Full per-cycle evidence at {}; dependency graph at {}.",
-                dir.join(chunk_id).join(CYCLES_REPORT).display(),
-                dir.join(chunk_id).join(DEPENDENCY_GRAPH_REPORT).display(),
+                " Full per-cycle evidence at {}.{}",
+                chunk_report_path(dir, chunk_id, CYCLES_REPORT).display(),
+                graph_export_guidance(dir, chunk_id, graph_reports, ownership_subset.is_some()),
             )
         });
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge.{evidence} Summary:\n{summary}",
-            n = assignment_report.cycles.len(),
-        );
+        Some((
+            GateVerdict::UnrealizableCycles {
+                count: assignment_report.cycles.len(),
+            },
+            CYCLES_REPORT,
+            format!(
+                "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge.{evidence} Summary:\n{summary}",
+                n = assignment_report.cycles.len(),
+            ),
+        ))
+    } else {
+        None
+    };
+    if let Some((verdict, evidence_report, diagnostic)) = verdict {
+        return match (policy, evaluation.into_validation()) {
+            (GateRejectionPolicy::LowerUnrunnable, Err(assignment)) => Ok(GateOutcome::Rejected {
+                assignment,
+                rejection: ChunkGateRejection {
+                    chunk_id: chunk_id.to_string(),
+                    verdict,
+                    evidence_report: report_out_dir
+                        .map(|dir| chunk_report_path(dir, chunk_id, evidence_report)),
+                    dependency_graph_report: report_out_dir
+                        .filter(|_| graph_reports.enabled())
+                        .map(|dir| chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT)),
+                    diagnostic,
+                },
+            }),
+            _ => Err(anyhow::anyhow!(diagnostic)),
+        };
     }
-    // Defense-in-depth on the accept path: a cross-destination
-    // rebinding write (clause 2) always co-locates with its target in
-    // one atomic factor group, so a spec splitting them must have
-    // produced an `atomic_group_conflicts` bail above. Reaching this
-    // point with a non-empty clause-2 verdict means the atomic-group
-    // glue and the realizability gate disagree — refuse to emit
-    // rather than materialize a bundle that reassigns an ESM import.
-    if !assignment_report.cross_rebinds.is_empty() {
-        bail!(
+    match evaluation.into_validation() {
+        // Defense-in-depth on the accept path: a cross-destination
+        // rebinding write (clause 2) always co-locates with its target in
+        // one atomic factor group, so a spec splitting them must have
+        // produced an `atomic_group_conflicts` rejection above. Reaching this
+        // point with a non-empty clause-2 verdict means the atomic-group
+        // glue and the realizability gate disagree — refuse to emit
+        // rather than materialize a bundle that reassigns an ESM import.
+        Ok(validated) if !validated.cross_destination_rebinds().is_empty() => bail!(
             "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
-            n = assignment_report.cross_rebinds.len(),
-            rebinds = assignment_report.cross_rebinds.join("\n  "),
-        );
+            n = validated.cross_destination_rebinds().len(),
+            rebinds = validated.report().cross_rebinds.join("\n  "),
+        ),
+        Ok(validated) => Ok(GateOutcome::Accepted(validated)),
+        Err(_) => {
+            bail!("chunk {chunk_id}: assignment validation rejected without a rendered diagnostic")
+        }
     }
-    validation.map_err(|_| {
-        anyhow::anyhow!(
-            "chunk {chunk_id}: assignment validation rejected without a rendered diagnostic"
-        )
-    })
 }
 
 /// Build the per-plan `FinalModuleContent` rows for `ChunkModulesReport`.
@@ -1222,8 +1694,30 @@ fn build_final_module_report(
                 .inputs()
                 .source_unit_report_ids_for_bindings(binding_ids.iter())
                 .expect("module report bindings belong to the analysis chunk");
+            let binding_source_units = sorted
+                .iter()
+                .map(|(binding_name, _)| {
+                    let binding_id = BindingId::new(
+                        chunk_identity,
+                        top_level_id(binding_name, chunk_top_level_mark),
+                    );
+                    let source_unit_ids = assignment_analysis
+                        .inputs()
+                        .source_unit_ids_for_binding(&binding_id)
+                        .expect("module report bindings belong to the analysis chunk")
+                        .iter()
+                        .copied()
+                        .map(source_unit_key)
+                        .collect();
+                    BindingSourceUnitAssociation {
+                        binding_name: (*binding_name).clone(),
+                        source_unit_ids,
+                    }
+                })
+                .collect();
             FinalModuleContent {
                 binding_names,
+                binding_source_units,
                 file: plan.target_file.clone(),
                 member_names,
                 path: spec::ModulePath::parse(&plan.target_path, "")

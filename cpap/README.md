@@ -4,6 +4,8 @@ Nightly sync of ResMed CPAP data from the ez Share WiFi SD card into the
 private Forgejo repo `cpap-data/cpap-data`, plus the `cpap` analysis skill
 (`skill/`).
 
+For direct AirSense 11 Bluetooth access from wyrm2, see [Bluetooth pairing](bluetooth.md).
+
 ## Status
 
 The CronJob runs on the always-on `optiplex` Talos worker. KubeVirt runs a small
@@ -22,6 +24,15 @@ wedged-adapter states `no-wifi-device` and `radio-deaf` (a scan finds no network
 all). The card bridge listens only while `connected`, so a sync against an absent
 card is refused at once. In a wedged state the timer alternately reloads `mt7921u`
 and re-authorizes the USB adapter every five minutes.
+
+If the card's known WiFi MAC appears as the factory-default `ez Share` network,
+the health check reports `card-reset` and temporarily associates with that BSSID.
+It verifies the card's HTTP-reported identity before restoring the configured
+SSID and the WiFi/administrator passwords from the secret disk, preserves the
+card's channel, and reconnects normally. The bridge stays stopped during recovery;
+failed attempts retry every five checks. A different card advertising `ez Share`
+does not trigger recovery. MAC checks prevent accidental recovery of another
+card; they cannot authenticate hardware against deliberate MAC spoofing.
 
 On the first run after this migration, the fresh repo is re-seeded with the card's
 full history (~17+ min over the card's WiFi; the old PVC-era data was discarded).

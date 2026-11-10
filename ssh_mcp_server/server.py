@@ -95,20 +95,13 @@ def _error(kind: str, message: str) -> ToolError:
 
 
 def _target_status(settings: SshSettings, target: TargetConfig) -> TargetStatus:
+    error: dict[str, str] | None = None
     if not settings.known_hosts_file.is_file():
-        return TargetStatus(
-            host=target.host,
-            user=target.user,
-            available=False,
-            error={"kind": "known_hosts_unavailable", "message": "configured SSH host-key file is unavailable"},
-        )
-    if not target.identity_file.is_file() or not os.access(target.identity_file, os.R_OK):
-        return TargetStatus(
-            host=target.host,
-            user=target.user,
-            available=False,
-            error={"kind": "identity_file_unavailable", "message": "configured SSH identity is unavailable"},
-        )
+        error = {"kind": "known_hosts_unavailable", "message": "configured SSH host-key file is unavailable"}
+    elif not target.identity_file.is_file() or not os.access(target.identity_file, os.R_OK):
+        error = {"kind": "identity_file_unavailable", "message": "configured SSH identity is unavailable"}
+    if error is not None:
+        return TargetStatus(host=target.host, user=target.user, available=False, error=error)
     return TargetStatus(host=target.host, user=target.user, available=True)
 
 

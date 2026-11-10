@@ -51,11 +51,10 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend:agent_names",
         "//haku/console/frontend:tool_call_card",
         "//haku/console/frontend:tool_call_record",
         "//haku/console/frontend:tool_call_state",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -70,7 +69,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react-dom",
         "//haku/console/frontend:theme",
-        "//haku/console/frontend/tool_rendering:variant",
+        "//haku/console/frontend/tool_rendering:vocabulary",
     ],
 )
 
@@ -79,13 +78,13 @@ py_library(
     testonly = True,
     srcs = ["preview_visual.py"],
     deps = [
-        "//util/bazel:runfiles",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
-        "//util/testing:visual_fixtures",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:fixtures",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

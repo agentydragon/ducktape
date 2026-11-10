@@ -37,23 +37,41 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use rustc_hash::FxHashMap;
 
-use analysis::SourceUnitId;
 use analysis::graph::{
     ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
+use source_identity::SourceUnitId;
 
 mod condensation_order;
 #[cfg(test)]
 mod condensation_order_proptest;
+mod effect_translation_validation;
 mod esm_simulator;
 mod incremental_quotient;
+mod translation_validation;
 
-use esm_simulator::EsmEvaluationSimulator;
+use crate::esm_import_order::EsmImportOrder;
+pub use effect_translation_validation::{
+    EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
+    EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
+    EffectRelocationAssessment, EffectRelocationConflict, EffectRelocationDecision,
+    EffectTranslationValidationReport, EffectTranslationValidationResult,
+    LegacyEdgeComparisonCounts,
+};
+pub(crate) use effect_translation_validation::{
+    EffectTranslationValidationInputs, effect_translation_assess,
+};
+use esm_simulator::{EsmEvaluationSimulator, simulate_esm_post_order};
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
+pub(crate) use translation_validation::CandidateEmittedOrder;
+pub use translation_validation::{
+    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
+    translation_validate,
+};
 
 /// Canonical in-memory diagnosis of one offending module-quotient
 /// SCC. The presence of any such diagnosis on a
@@ -87,7 +105,8 @@ pub struct SccDiagnosis {
 /// How the realizability gate decided an SCC is unrealizable. See
 /// docs/design.md "Lemma 2: entry-side import ordering" for the
 /// two-pass gating rule.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SccRejection {
     /// Pass 1: the SCC is cyclic in the constraining-edge subgraph
     /// alone — a mutual-eager cycle no source import order can
@@ -99,13 +118,17 @@ pub enum SccRejection {
     /// constraining edge's target evaluates at or after its source
     /// under the materializer's actual import-order choices. This also includes
     /// the implicit entry-to-module edge: entry always evaluates last.
+    ///
+    /// Pass 2 runs only when Pass 1 finds no cycle. A cyclic constraining
+    /// subgraph has no linker order, so the materializer has no import
+    /// order for the simulator to check; every path skips Pass 2 then.
     EsmEvaluationTdz,
 }
 
 /// Cross-destination rebinding write. ESM imports are read-only in the
 /// importing module, so any such edge violates clause 2. One entry per
 /// dependency edge.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize)]
 pub struct CrossRebindEdge {
     pub from: ModuleId,
     pub to: ModuleId,
@@ -124,17 +147,6 @@ pub struct RealizabilityVerdict {
 impl RealizabilityVerdict {
     pub fn is_realizable(&self) -> bool {
         self.unrealizable_sccs.is_empty() && self.cross_rebinds.is_empty()
-    }
-
-    /// Modules participating in any unrealizable SCC.
-    pub fn modules_in_unrealizable_sccs(&self) -> BTreeSet<ModuleId> {
-        let mut out = BTreeSet::new();
-        for scc in &self.unrealizable_sccs {
-            for &m in &scc.core.modules {
-                out.insert(m);
-            }
-        }
-        out
     }
 }
 
@@ -317,7 +329,9 @@ fn verdict_from_canonical(
         })
         .collect();
 
-    if !candidate_sccs.is_empty() {
+    // Pass 2 needs the linker order, which exists only when Pass 1 found
+    // no constraining cycle.
+    if reported.is_empty() && !candidate_sccs.is_empty() {
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
         let simulation = EsmEvaluationSimulator::build(
             &canonical.i_successors,
@@ -388,24 +402,37 @@ pub fn check_realizability_touching(
     }
 }
 
-/// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for a
-/// assignment's emitted module tree: lower index = body evaluates
-/// earlier; modules unreachable from entry are absent. Exposed for
+/// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for an
+/// assignment's emitted module tree: lower index = body evaluates earlier.
+/// Derives the emitted module universe from assigned destinations plus entry,
+/// then applies the same source-order preference as the materializer before
+/// simulating entry fanout and intra-module imports. This predicts actual
+/// emission order; `check_realizability` retains its separate base-order
+/// simulator for the legacy constraint gate. Used by coarse residual planning and
 /// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
 pub fn simulated_evaluation_post_order(
+    canonical: &ChunkConstrainingEdgeSet,
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> BTreeMap<ModuleId, usize> {
-    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-    let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-    EsmEvaluationSimulator::build(
+    let entry = assignment.entry_destination().module_id();
+    let mut emitted_modules: BTreeSet<ModuleId> =
+        assignment.iter().map(|(_, module)| module).collect();
+    emitted_modules.insert(entry);
+    let import_order = EsmImportOrder::build_for_assignment(
+        canonical,
+        dependency_graph,
+        assignment,
+        &emitted_modules,
+    );
+    simulate_esm_post_order(
+        entry,
         &canonical.i_successors,
-        &constraining_pairs,
-        assignment.entry_destination().module_id(),
+        &emitted_modules,
+        &import_order,
     )
-    .post_order
 }
 
 /// Mutable index over a working assignment: the incremental form of the
@@ -575,18 +602,6 @@ impl RealizabilityIndex {
             );
         }
         decision
-    }
-
-    /// Boolean form of
-    /// [`Self::ladder_decision_after_moving_source_units_touching`].
-    pub fn would_remain_realizable_after_moving_source_units_touching(
-        &self,
-        dependency_graph: &DependencyGraph,
-        source_units: &[SourceUnitId],
-        to: ModuleId,
-    ) -> bool {
-        self.ladder_decision_after_moving_source_units_touching(dependency_graph, source_units, to)
-            .accepts()
     }
 
     /// `O(α)` DSU probe against the tier-1 condensation order: are

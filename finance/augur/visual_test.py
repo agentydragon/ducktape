@@ -2,7 +2,7 @@
 
 Each case boots the real dev server (hermetic prices), drives the page through
 its DOM/geometry assertions (the real regression net), and fails on
-any uncaught page error. The rendered PNGs plus a `visual-review.json` manifest
+any uncaught page error. The rendered PNGs and their structured output records
 go to undeclared outputs, where trusted CI (`devinfra/pr_visuals/publisher.py`)
 publishes them for review.
 
@@ -22,25 +22,25 @@ from urllib.parse import urlencode
 import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright, ViewportSize
+from python.runfiles import Runfiles
 
+from devinfra.testing.output_writer import BoundTestOutputs
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
-from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context
-from util.testing.page_capture import wait_for_stable
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage, open_visual_page
+from util.testing.frontend_visual.context import deterministic_browser_context
+from util.testing.frontend_visual.page_capture import wait_for_stable
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing:visual_fixtures
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
 
-pytest_plugins = ("util.playwright", "util.testing.visual_fixtures")
+pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
 
 
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
@@ -53,7 +53,7 @@ async def _wait_for_product_chart_geometry(page: Page) -> None:
     await page.wait_for_function(
         """
         () => {
-          const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
+          const chart = document.querySelector("[data-product-fan-chart='net_worth_quanta'] svg[role='img']");
           if (!chart) return false;
           // Horizon is now driven by the wheel/`?h=`, not an input. Use the chart's own rightmost
           // "N yr" tick as the final-year marker whose geometry must have settled within bounds.
@@ -125,13 +125,13 @@ async def _click_terminal_distribution_percentile(page: Page, *, percentile: flo
 async def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     await page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     await page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
     await page.wait_for_function(
         """
         () => {
-          const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
+          const chart = document.querySelector("[data-product-fan-chart='net_worth_quanta'] svg[role='img']");
           if (!chart) return false;
           const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
             const points = (polygon.getAttribute("points") || "")
@@ -217,7 +217,7 @@ async def _wait_for_property_panel(page: Page) -> None:
 async def _wait_for_distribution_failures(page: Page) -> None:
     """Inspect a stopped book without placing it in the terminal-wealth distribution."""
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     await _wait_for_terminal_distribution_density(page, min_series=1)
     stopped_selector = page.get_by_label("Inspect stopped rollout", exact=True)
     await stopped_selector.wait_for(state="visible", timeout=30_000)
@@ -325,7 +325,7 @@ async def _wait_for_scenario_comparison(page: Page) -> None:
     and the per-scenario comparison table."""
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
-    await page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
+    await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
     await page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
     # The editor spreadsheet shows Base + the two variants as columns (rows = knobs), including the
@@ -390,7 +390,9 @@ def hermetic_prices() -> dict[Platform, dict[str, float]]:
     server needs a probability for each market to resolve the run with no network. The exact
     values only need to be plausible and deterministic; a gentle spread keeps the scored table
     and surfaced list visually populated."""
-    catalog = MarketCatalog.from_yaml(get_required_path("_main/finance/augur/calibration/example_openai_catalog.yaml"))
+    catalog = MarketCatalog.from_yaml(
+        Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/calibration/example_openai_catalog.yaml"
+    )
     by_platform: defaultdict[Platform, dict[str, float]] = defaultdict(dict)
     for index, market in enumerate(catalog.markets):
         by_platform[market.platform][market.market_id] = 0.3 + 0.4 * (index % 3) / 2
@@ -416,22 +418,12 @@ def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str,
 
 
 @pytest.fixture
-async def page(playwright: Playwright) -> AsyncIterator[Page]:
-    async with deterministic_browser_context(
-        playwright, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS
-    ) as context:
-        page = await context.new_page()
-
-        yield page
-
-
-@pytest.fixture
-async def view(page: Page, capture_name: str) -> AsyncIterator[VisualPage]:
-    view = VisualPage(page, output_dir=undeclared_outputs_dir(), title="Augur pages", capture_name=capture_name)
-    try:
+async def view(playwright: Playwright, test_outputs: BoundTestOutputs) -> AsyncIterator[VisualPage]:
+    async with (
+        deterministic_browser_context(playwright, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS) as context,
+        open_visual_page(context, test_outputs, title="Augur pages") as view,
+    ):
         yield view
-    finally:
-        view.errors.assert_none(context=capture_name)
 
 
 @pytest.fixture

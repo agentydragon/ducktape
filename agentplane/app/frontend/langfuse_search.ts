@@ -1,4 +1,4 @@
-import type { LangfuseSearchSettings } from "./api/schema";
+import type { LangfuseSearchSettings } from "../app_service_pb";
 
 export type LangfuseSandbox = { namespace: string; serviceAccount: string };
 
@@ -10,16 +10,25 @@ function metadataFilter(key: string, value: string): string {
 
 /** Build a Langfuse v4 trace-list URL filtered to the Sandbox's attributed namespace and account. */
 export function langfuseSandboxTraceUrl(settings: LangfuseSearchSettings, sandbox: LangfuseSandbox): string {
-  const base = settings.base_url.endsWith("/") ? settings.base_url : `${settings.base_url}/`;
-  const url = new URL(`project/${encodeURIComponent(settings.project_id)}/traces`, base);
+  const base = settings.baseUrl.endsWith("/") ? settings.baseUrl : `${settings.baseUrl}/`;
+  const url = new URL(`project/${encodeURIComponent(settings.projectId)}/traces`, base);
   // Langfuse v4.67.0's TIME_RANGES.last1Day abbreviation is `1d`.
   url.searchParams.set("dateRange", "1d");
   url.searchParams.set(
     "filter",
     [
-      metadataFilter(settings.sandbox_namespace_metadata_key, sandbox.namespace),
-      metadataFilter(settings.sandbox_service_account_metadata_key, sandbox.serviceAccount),
+      metadataFilter(settings.sandboxNamespaceMetadataKey, sandbox.namespace),
+      metadataFilter(settings.sandboxServiceAccountMetadataKey, sandbox.serviceAccount),
     ].join(",")
   );
+  return url.toString();
+}
+
+/** Central sampling belongs to the conversation even when its executor changes or disappears. */
+export function langfuseSessionTraceUrl(settings: LangfuseSearchSettings, sessionId: string): string {
+  const base = settings.baseUrl.endsWith("/") ? settings.baseUrl : `${settings.baseUrl}/`;
+  const url = new URL(`project/${encodeURIComponent(settings.projectId)}/traces`, base);
+  url.searchParams.set("dateRange", "1d");
+  url.searchParams.set("filter", metadataFilter(settings.sessionMetadataKey, sessionId));
   return url.toString();
 }

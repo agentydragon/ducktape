@@ -5,7 +5,7 @@ py_library(
     srcs = ["grid_generator.py"],
     deps = [
         "//laser/lightburn:lbrn2_writer",
-        "//laser/ruida:rd_writer",
+        "//laser/ruida:rd_format",
         "@pypi//pydantic",
     ],
 )
@@ -27,8 +27,8 @@ py_test(
         ":grid_generator",
         "//:conftest",
         "//laser/lightburn:lbrn2_writer",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

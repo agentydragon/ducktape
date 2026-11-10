@@ -1,7 +1,6 @@
 # Subscribe, wait, and clean up
 
-Commands are `agentplane notifications …`; routes and request bodies are in
-[OpenAPI](/openapi.json).
+Use `agentplane notifications …` for these operations. The App browser facade is separate from the workload CLI.
 
 ## Follow an Action
 
@@ -9,20 +8,18 @@ Keep the Action's actual request ID and original submission idempotency key. If 
 uncertain, recover through the Actions API first; do not invent a request ID or submit another
 Action. For an already-finished Action, read its result directly.
 
-The command does not create Action subscriptions yet: create one with `POST /v1/subscriptions` and an
-`actions` source ([request schema](/openapi.json)):
+Create an Action subscription with `agentplane notifications subscribe create --request-file FILE`.
+The file contains a protobuf JSON `CreateSubscriptionRequest` with an `actions` source:
 
 ```json
 {
-  "destinationRef": { "namespace": "YOUR_NAMESPACE", "name": "YOUR_SANDBOX", "uid": "YOUR_SANDBOX_UID" },
   "sessionId": "YOUR_SESSION_ID",
   "idempotencyKey": "follow-YOUR_ACTION_REQUEST_ID",
   "source": { "actions": { "requestId": "YOUR_ACTION_REQUEST_ID", "afterSequence": 0 } }
 }
 ```
 
-Replace the destination and Session values with the exact supplied values (`AGENTPLANE_DESTINATION`
-holds them as `destination_ref` and `session_id`) and the Action ID with the real returned ID. Start
+Use the supplied Session ID (`AGENTPLANE_SESSION_ID`) and the real returned Action ID. Start
 `afterSequence` at zero or the last Action event sequence you actually recorded; it is not an inbox
 cursor. Action history replay covers approval/completion between submission and subscription creation.
 
@@ -55,7 +52,7 @@ use a bounded status check or explain the limitation; do not claim monitoring is
 A notice to a suspended Sandbox waits until the Sandbox runs again unless the Sandbox has wake on message turned on.
 
 Subscriptions expire unless renewed: `agentplane notifications renew ID --lifetime-days N`
-(OpenAPI has the limits). Exit `4` means the subscription was cancelled or changed since `renew` read
+(the API contract documents the limits). Exit `4` means the subscription was cancelled or changed since `renew` read
 it: read it again. Cancel with `agentplane notifications cancel ID` when the purpose is
 complete. This does not cancel an Action or erase accepted notifications. Do not retire the entire
 Session inbox to clean up one task.

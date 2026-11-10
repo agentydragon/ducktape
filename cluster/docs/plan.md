@@ -28,16 +28,18 @@ editing a route.
 ## Next Actions
 
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
-      SeaweedFS-backed PVC holding non-regeneratable state). Currently
-      only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the
-      Forgejo loss above was survivable only because nothing had been
-      pushed yet, not because we had a backup. Destination choice is
-      non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh` doesn't protect against
+      SeaweedFS-backed PVC holding non-regeneratable state). The named
+      `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
+      Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
+      That does not cover Forgejo's shared storage. The Forgejo loss above was
+      survivable only because nothing had been pushed yet, not because we had a
+      backup. Destination choice is non-trivial: copying between PVCs on the same
+      SeaweedFS cluster doesn't protect against
       the failure mode we just hit (defeats the grocy/tana pattern when
-      the primary is already on SeaweedFS), and `local-path-proxmox` is
-      currently unavailable because Proxmox is down. Likely needs real
-      off-cluster object storage (B2 / R2 / OVH Object Storage) — overlaps
-      with the observability-backend decision below.
+      the primary is already on SeaweedFS). `local-path-proxmox` was unavailable
+      during that incident; reassess it against the current Piraeus storage
+      design. Off-cluster object storage (B2 / R2 / OVH Object Storage) remains
+      an option and overlaps with the observability-backend decision below.
 - [ ] **Convert PVC backups to snapshot/retention, not Direct rsync.**
       Current `grocy-{sf,vallejo}` and `tana-mcp` volsync configs use
       `copyMethod: Direct` rsync into a single destination PVC. When the
@@ -105,20 +107,19 @@ editing a route.
       (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with
       wyrm2/Proxmox down and only wrote to a `local-path-proxmox` PVC (same failure
       domain as the DB, not actually offsite). `tofu-state-db-ovh` now has barman-cloud
-      backups in SeaweedFS (`cdk8s/cnpg_backup.py`), which share the OVH failure domain;
+      backups in SeaweedFS (`cdk8s/cnpg/backup.py`), which share the OVH failure domain;
       the off-site copy is the CNPG Backup Strategy item below.
 - [ ] Repoint Talos containerd mirrors (`machine.registries.mirrors` in
       `terraform/main/infrastructure.tf`) at `oci-cache`; machine-config changes reboot nodes,
       so use the maintenance procedure in <../k8s/oci-cache/README.md> § Node-level pull-through.
 
-- [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
-      biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
-      `secrets/claude-web-k8s-jwt.yaml` is stale until the next scheduled run. Need a
-      mechanism to rotate immediately on reprovision — e.g., trigger the job from
-      bootstrap, or add a post-bootstrap hook. Also consider whether the bootstrap script
-      itself should decrypt the new token and inject it into the local environment so
-      Claude Code sessions work immediately without waiting for the git push + re-source
-      cycle.
+- [ ] **Token availability after cluster reprovision**: `authentik-jwt-rotation` checks
+      hourly but normally mints only when the stored token has 24 hours or less remaining
+      (about every 44 days). The current phases in <../bootstrap.py> do not invoke the
+      rotator; decide whether reprovision needs an immediate mint and, if so, trigger one
+      after the rotator is available. Separately decide whether bootstrap or session
+      startup should make the newly minted token available before the rotator's Git
+      commit/push and local re-source cycle.
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
@@ -158,12 +159,8 @@ editing a route.
       Optional DCGM experimental-XID and per-GPU PCIe AER work are tracked in
       `cluster/k8s/TODO.md` (see `debug/atlas/gpu_lockup_20260718_followups.md` #4).
 - [ ] **Roaming node DaemonSet problem** (high priority; recurs for any DaemonSet):
-      Offline roaming nodes (iguana/rugged) leave DaemonSet pods Pending, which
-      makes Helm `--wait` time out and blocks Flux reconciliation. Current
-      workaround: `disableWait: true` on the affected HelmReleases (monitoring-stack,
-      promtail) — unsatisfying because it suppresses all readiness checking. Full
-      options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
-      <plans/offline_node_daemonset_health.md>.
+      Automatic cleanup of stale NotReady roaming nodes remains open; options and
+      evidence are in <plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
       `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
       decide placement before moving it.
@@ -218,7 +215,6 @@ editing a route.
       `trusted-proxy` auth and an `agentydragon` user allowlist.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
-- [ ] Verify ntfy.sh notifications
 - [ ] ActivityWatch: replace the static egress-substituted read bearer with a
       rotator-issued short-lived token. Keep the current static bearer until the
       rotator handoff is designed.
@@ -313,7 +309,7 @@ Proxmox-only gap.)
       OVH-hosted PVC or object storage. No such CronJob exists today — the one
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
-- [ ] Extend barman-cloud backups (`cdk8s/cnpg_backup.py`) to the clusters still
+- [ ] Extend barman-cloud backups (`cdk8s/cnpg/backup.py`) to the clusters still
       without them. `seaweedfs-filer-db-ssd` cannot back up into
       the SeaweedFS it is the filer of, so it waits for an off-site store.
 - [ ] Off-site copy of the CNPG backups: every `CnpgBackup` writes to SeaweedFS on the
@@ -421,10 +417,6 @@ on all namespaces/deployments that use `updateMode: auto`. Without a policy:
 
 CPU limits policy for cold-start-heavy workloads:
 <decisions.md> § "CPU limits policy (VPA)".
-
-### Alertmanager -> ntfy Bridge
-
-Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy).
 
 ### SLO Definitions
 

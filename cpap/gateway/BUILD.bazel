@@ -2,11 +2,28 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "restore",
+    srcs = ["restore.py"],
+)
+
+py_library(
     name = "health",
     srcs = ["health.py"],
     deps = [
+        ":restore",
         "@pypi//dbus_fast",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_restore",
+    srcs = ["test_restore.py"],
+    deps = [
+        ":restore",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -15,7 +32,9 @@ py_test(
     srcs = ["test_health.py"],
     deps = [
         ":health",
+        ":restore",
         "//:conftest",
+        "@pypi//dbus_fast",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

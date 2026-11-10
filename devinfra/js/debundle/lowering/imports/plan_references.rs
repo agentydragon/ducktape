@@ -3,13 +3,19 @@
 //! walks binding uses that retain both the source and emitted Id.
 
 use crate::body_facts::NaturalizedBodyFacts;
-use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
-use analysis::{BindingId, BindingKind, ChunkId, ModuleId};
+use analysis::{BindingId, BindingKind, ModuleId};
 use anyhow::{Context, Result};
+use artifact::runtime_resources::{
+    RuntimeResourceDestination, RuntimeResourceDestinations, RuntimeResourceKind,
+    UnresolvedResourceReason, local_resource_path,
+};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
+use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo};
 use gate::AssignmentAnalysis;
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 use swc_ecma_ast::*;
 
 #[derive(Debug)]
@@ -60,6 +66,7 @@ pub(crate) struct ArtifactSourceImportResolutionCache<'a> {
     indexes: &'a ArtifactIndexes,
     resolutions: BTreeMap<SourceImportResolutionKey, SourceImportResolution>,
     resolver: Option<ArtifactSourceImportResolver<'a>>,
+    resource_destinations: BTreeMap<SourceImportResolutionKey, Arc<RuntimeResourceDestinations>>,
 }
 
 impl<'a> ArtifactSourceImportResolutionCache<'a> {
@@ -69,7 +76,82 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
             indexes,
             resolutions: BTreeMap::new(),
             resolver: None,
+            resource_destinations: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn runtime_resource_destinations(
+        &mut self,
+        caller_chunk: &str,
+        caller_file: &str,
+        source_path: &str,
+    ) -> Result<Arc<RuntimeResourceDestinations>> {
+        let key = (
+            source_path.to_string(),
+            caller_chunk.to_string(),
+            caller_file.to_string(),
+        );
+        if let Some(destinations) = self.resource_destinations.get(&key) {
+            return Ok(Arc::clone(destinations));
+        }
+        let id = self
+            .artifact
+            .chunk_table
+            .get(caller_chunk)
+            .with_context(|| format!("unknown caller chunk: {caller_chunk}"))?;
+        let resources = self
+            .artifact
+            .chunk(id)?
+            .analysis
+            .runtime_facts
+            .resources
+            .clone();
+        let destinations = resources
+            .into_iter()
+            .filter_map(|resource| {
+                resource
+                    .specifier
+                    .map(|specifier| (resource.kind, specifier))
+            })
+            .map(|(kind, source)| {
+                let destination = if kind == RuntimeResourceKind::Worker && !source.starts_with('.')
+                {
+                    RuntimeResourceDestination::External {
+                        url: source.clone(),
+                    }
+                } else if kind == RuntimeResourceKind::Worker {
+                    // Preserve the existing bare-Worker transform. Its browser
+                    // document base is outside this module-URL proof.
+                    match local_resource_path(
+                        &artifact::paths::join_module_path(&[caller_chunk, caller_file]),
+                        &source,
+                        kind,
+                    ) {
+                        Some(path) => RuntimeResourceDestination::Unresolved {
+                            reason: UnresolvedResourceReason::UnverifiedPath { path },
+                        },
+                        None => RuntimeResourceDestination::External {
+                            url: source.clone(),
+                        },
+                    }
+                } else if let Some(target) = self.resolve(&source, caller_chunk, caller_file)? {
+                    RuntimeResourceDestination::Emitted { path: target.path }
+                } else if let Some(path) = local_resource_path(source_path, &source, kind) {
+                    RuntimeResourceDestination::Unresolved {
+                        reason: UnresolvedResourceReason::UnverifiedPath { path },
+                    }
+                } else {
+                    RuntimeResourceDestination::External {
+                        url: source.clone(),
+                    }
+                };
+                Ok(((kind, source), destination))
+            })
+            .collect::<Result<RuntimeResourceDestinations>>()?;
+        let destinations = Arc::new(destinations);
+        self.resource_destinations
+            .insert(key, Arc::clone(&destinations));
+        Ok(destinations)
     }
 
     pub(crate) fn resolve(

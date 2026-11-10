@@ -1,0 +1,90 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "control",
+    srcs = ["server.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/control",
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/grpc/streaming",
+        "//agentplane/observability",
+        "//agentplane/proto:environment_runtime_state_go_proto",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "control_test",
+    srcs = ["server_test.go"],
+    embed = [":control"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/proto:environment_runtime_state_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+proto_library(
+    name = "environment_runtime_proto",
+    srcs = ["environment_runtime.proto"],
+    deps = [
+        "//agentplane/proto:environment_runtime_state_proto",
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:identity_proto",
+        "//agentplane/proto:session_proto",
+        "@protobuf//:empty_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "environment_runtime_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":environment_runtime_proto"],
+)
+
+py_grpc_service_library(
+    name = "environment_runtime_pb2_grpc",
+    proto = ":environment_runtime_proto",
+    py_proto = ":environment_runtime_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+go_proto_library(
+    name = "environment_runtime_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb",
+    proto = ":environment_runtime_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/proto:environment_runtime_state_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

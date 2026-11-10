@@ -1,10 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+package(default_visibility = ["//x/inop:__subpackages__"])
+
 py_library(
     name = "models",
     testonly = True,
     srcs = ["models.py"],
-    visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
@@ -12,7 +13,6 @@ py_library(
     name = "transcript_handler",
     testonly = True,
     srcs = ["transcript_handler.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:events",
         "//agent_core:handler",
@@ -25,7 +25,6 @@ py_library(
     name = "optimizer",
     testonly = True,
     srcs = ["optimizer.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":models",
         ":runner_factory",
@@ -54,7 +53,6 @@ py_library(
     name = "runner_factory",
     testonly = True,
     srcs = ["runner_factory.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":models",
         "//x/inop/runners:base",

@@ -1,0 +1,92 @@
+/* The run chooses a compact folded-row policy; the shared header owns its geometry. */
+.transcript-steps {
+  --ui-disclosure-collapsed-height: var(--ui-disclosure-compact-height);
+}
+
+/* A run packs its one-line steps together, but an opened one is a card, and keeps the room between
+   cards when another step follows it. Below the card, so opening it does not move its top edge. */
+.transcript-steps > [data-open="true"]:not(:last-child) {
+  margin-block-end: var(--mantine-spacing-xs);
+}
+
+/* Shared one-line step presentation; callers own packing and inter-step spacing. */
+.transcript-step-row {
+  font-size: var(--mantine-font-size-sm);
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+  line-height: var(--mantine-line-height-sm);
+}
+
+.transcript-step-details,
+.transcript-step-static {
+  min-width: 0;
+  flex: 1;
+}
+
+.transcript-step-summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+  white-space: nowrap;
+}
+
+.transcript-step-title {
+  flex: none;
+  font-size: inherit;
+}
+
+.transcript-step-preview {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transcript-step-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.transcript-step-title--streaming {
+  animation: transcript-step-breathe 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transcript-step-title--streaming {
+    animation: none;
+  }
+}
+
+@keyframes transcript-step-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.transcript-step-trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs);
+}
+
+.transcript-step-preview .ui-markdown--single-line {
+  white-space: inherit;
+}
+
+.transcript-step-inspect {
+  display: inline-flex;
+}

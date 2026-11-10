@@ -6,6 +6,7 @@
   ducktapePkgs,
   gafferPkgs,
   home-manager,
+  nixFastBuild,
   pkgsUnstable,
   pkgsMaster,
   nix-openclaw,
@@ -19,21 +20,15 @@
 ducktapePkgs
 // gafferPkgs
 // {
-  # Minimal CI package: the BuildBuddy CLIs + sops (no Claude statusline wheel needed).
-  citools = pkgs.symlinkJoin {
-    name = "ducktape-citools";
-    paths = [
-      ducktapePkgs.bb
-      ducktapePkgs.bbapi
-      ducktapePkgs.bbr
-      pkgs.sops
-    ];
-  };
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";
     paths = preCommitPackages;
   };
+  # Pinned nixpkgs has nix-fast-build 1.4.0, which lacks --stream-json-lines.
+  # Remove this pin and use pkgs.nix-fast-build once nixpkgs has both
+  # --stream-json-lines and --skip-cached.
+  nix-fast-build = nixFastBuild.packages.${system}.nix-fast-build;
   # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
   # Default: Rust claude-hook plus Python statusline.
   devtools = pkgs.symlinkJoin {
@@ -57,7 +52,7 @@ ducktapePkgs
   };
   # Deterministic runner image assembly. The publishing workflow supplies the
   # authenticated, digest-pinned base archive as DUCKTAPE_RUNNER_BASE_IMAGE.
-  buildbuddy-remote-runner-image = import ../../devinfra/buildbuddy_remote_runner/image.nix {
+  buildbuddy-remote-runner-image = import ../../devinfra/buildbuddy/images/runner/image.nix {
     inherit pkgs;
     runnerTools = self.packages.${system}.buildbuddy-remote-runner-tools;
   };
@@ -98,19 +93,19 @@ ducktapePkgs
   # Experimental Nix-based RBE container image (plain Docker, no NixOS/systemd).
   # Build: nix build .#nix-rbe-container-image
   # Load:  docker load < result
-  nix-rbe-container-image = import ../../devinfra/rbe_container_image/x/nix { inherit pkgs; };
+  nix-rbe-container-image = import ../../devinfra/buildbuddy/images/rbe/x/nix { inherit pkgs; };
   # agentplane's sandbox image: a box's command-line tools, as one list
-  # (agentplane/images/sandbox.nix).
+  # (agentplane/env/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image
   # Load:  docker load < result
-  agentplane-sandbox-image = import ../../agentplane/images/sandbox.nix {
+  agentplane-sandbox-image = import ../../agentplane/env/images/sandbox.nix {
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };
-  # The build box's image: the sandbox image plus Bazel and its toolchain (agentplane/images/build.nix).
+  # The build box's image: the sandbox image plus Bazel and its toolchain (agentplane/env/images/build.nix).
   # Build: nix build .#agentplane-sandbox-build-image
   # Load:  docker load < result
-  agentplane-sandbox-build-image = import ../../agentplane/images/build.nix {
+  agentplane-sandbox-build-image = import ../../agentplane/env/images/build.nix {
     inherit pkgs;
     agentplaneCli = self.packages.${system}.agentplane-cli;
   };
@@ -120,26 +115,32 @@ ducktapePkgs
     binary = artifacts.agentplane-cli;
   };
   # Shared by the image and its Nix check, so validation cannot drift to another tool list.
-  # Size reference: runner-ducktape:devel-20261008225612-c58bc67 measured 5.93 GiB
+  # Size reference: environment-tools:devel-20261008225612-c58bc67 measured 5.93 GiB
   # unpacked (whole image, not just these tools), with a 1.86 GiB Kubernetes image size.
   # Unpacked: Rust/Cargo/rustfmt/LLVM 2,242 MiB; Ansible/core 703 MiB; Codex 547 MiB;
   # Python interpreters 419 MiB; Claude Code 230 MiB; other tools/libraries 1,929 MiB.
   # rustfmt retains rustc -> LLVM and cargo -> cargo-bootstrap -> rustc-bootstrap.
-  runner-ducktape-tools = pkgs.buildEnv {
-    name = "runner-ducktape-tools";
+  environment-tools = pkgs.buildEnv {
+    name = "environment-tools";
     paths = preCommitPackages;
     pathsToLink = [ "/bin" ];
   };
   # Same harnesses, with the shared repository hook/build clients preinstalled.
-  runner-ducktape-image = import ../../agentplane/runner/image.nix {
+  environment-tools-image = import ../../agentplane/env/images/image.nix {
     inherit pkgs pkgsUnstable;
-    name = "runner-ducktape";
-    extraPaths = [ self.packages.${system}.runner-ducktape-tools ];
+    name = "environment-tools";
+    extraPaths = [ self.packages.${system}.environment-tools ];
   };
   # KubeVirt's NixOS guest packaged as a containerDisk; publish through the dedicated workflow.
-  agentplane-runner-vm-container-disk = import ../../agentplane/runner/container-disk.nix {
+  agentplane-environment-vm-container-disk = import ../../agentplane/env/images/container-disk.nix {
     inherit pkgs self;
   };
+  # Firecracker's static guest kernel, raw ext4 root filesystem and init store path.
+  agentplane-environment-firecracker-image =
+    import ../../agentplane/env/images/firecracker-image.nix
+      {
+        inherit pkgs self;
+      };
   # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
   # output retained; see x/codex_pod_image/deploy/README.md for status.
   # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)
@@ -158,6 +159,7 @@ ducktapePkgs
   # Build: nix build .#openclaw-image
   # Load:  docker load < result
   openclaw-image = import ../../openclaw {
+    agentplaneCli = self.packages.${system}.agentplane-cli;
     inherit
       ducktapePkgs
       nix-openclaw

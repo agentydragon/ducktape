@@ -20,23 +20,25 @@ from __future__ import annotations
 import dataclasses
 import logging
 import subprocess
+import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from devinfra.gc import branch_gc, foreign_clone_gc, git_repo, output_base_gc, worktree_gc
-from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout, PrunableBranch, RetainedBranch
+from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout
 from devinfra.gc.foreign_clone_gc import ForeignCloneClassification
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.scan_progress import NULL_PROGRESS, ProgressCategory, ProgressSink
-from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree
+from devinfra.gc.verdict import verdict_of
+from devinfra.gc.worktree_gc import Classification, PrunableWorktree
 
 logger = logging.getLogger(__name__)
 
-# pygit2/git calls release the GIL, so threads give real concurrency; configurable (the CLI
-# exposes `--workers`) since the right count depends on the machine and disk, not the code.
+# Configurable (the CLI exposes `--workers`) since the right count depends on the machine and
+# disk, not the code.
 DEFAULT_CLASSIFY_WORKERS = 8
 
 
@@ -80,30 +82,6 @@ def _annotate_base(base: Inspection, prunable_workspaces: set[Path]) -> Inspecti
     return dataclasses.replace(base, workspace_is_prunable_worktree=True)
 
 
-def _worktree_category(classification: Classification) -> ProgressCategory:
-    if isinstance(classification, PrunableWorktree):
-        return "PRUNE"
-    if isinstance(classification, RetainedWorktree):
-        return "KEEP"
-    return "REVIEW"
-
-
-def _branch_category(classification: BranchClassification) -> ProgressCategory:
-    if isinstance(classification, PrunableBranch):
-        return "PRUNE"
-    if isinstance(classification, RetainedBranch):
-        return "KEEP"
-    return "REVIEW"
-
-
-def foreign_clone_category(classification: ForeignCloneClassification) -> ProgressCategory:
-    if isinstance(classification, foreign_clone_gc.PrunableForeignClone):
-        return "PRUNE"
-    if isinstance(classification, foreign_clone_gc.RetainedForeignClone):
-        return "KEEP"
-    return "REVIEW"
-
-
 def parallel_classify[T, R](
     items: Sequence[T],
     make_classify_one: Callable[[], Callable[[T], R]],
@@ -115,44 +93,45 @@ def parallel_classify[T, R](
     describe: Callable[[T], str],
     workers: int,
 ) -> list[R]:
-    """Classify `items` in up to `workers`-way parallel contiguous slices.
+    """Classify `items` on up to `workers` threads, returning results in `items` order.
 
     `make_classify_one` is called once per *worker thread*, not once per item: a classifier
-    that needs a shared per-slice resource — a single `pygit2.Repository`, say, since handles
-    aren't shareable across threads — opens it once and reuses it across its whole slice; one
-    with nothing to share (each item opens its own resources independently) just returns the
-    same function every time.
+    that needs a shared per-thread resource — a single `pygit2.Repository`, say, since
+    handles aren't shareable across threads — opens it once and reuses it across everything
+    that thread classifies; one with nothing to share just returns the same function every
+    time.
 
-    Real concurrency despite being threads, not processes: the pygit2/git calls each
-    classifier makes release the GIL. Each worker classifies its own slice in order, so the
-    flattened result stays in `items` order regardless of which slice finishes first;
-    `progress` (thread-safe) is updated as each item completes, from whichever worker
-    finishes it.
+    Concurrency is real only for work that releases the GIL — `git` subprocesses do; libgit2
+    calls generally do not — so classifiers should shell out for anything heavy. Each item is
+    its own task, so `progress` (thread-safe) advances per item and an interrupt abandons all
+    queued items, waiting only for the (at most `workers`) items already running.
     """
     items = list(items)
     total = len(items)
     if total:
         progress.start_phase(phase, total)
+    classifier_by_thread: dict[int, Callable[[T], R]] = {}  # each thread writes only its own key
 
-    def classify_slice(args: tuple[int, list[T]]) -> list[R]:
-        offset, slice_items = args
-        classify_one = make_classify_one()
-        results: list[R] = []
-        for index, item in enumerate(slice_items, start=offset + 1):
-            logger.info("Scanning %s %d/%d %s", noun, index, total, describe(item))
-            result = classify_one(item)
-            results.append(result)
-            logger.info("Finished %s %d/%d %s", noun, index, total, describe(item))
-            progress.record(phase, category_of(result))
-        return results
+    def classify_item(index: int, item: T) -> R:
+        thread = threading.get_ident()
+        if thread not in classifier_by_thread:
+            classifier_by_thread[thread] = make_classify_one()
+        logger.info("Scanning %s %d/%d %s", noun, index, total, describe(item))
+        result = classifier_by_thread[thread](item)
+        logger.info("Finished %s %d/%d %s", noun, index, total, describe(item))
+        progress.record(phase, category_of(result))
+        return result
 
-    workers = min(workers, total)
-    if workers <= 1:
-        return classify_slice((0, items))
-    step = -(-total // workers)  # ceil → `workers` contiguous slices
-    slices = [(i, items[i : i + step]) for i in range(0, total, step)]
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        return [result for chunk in pool.map(classify_slice, slices) for result in chunk]
+    pool = ThreadPoolExecutor(max_workers=max(1, min(workers, total)))
+    try:
+        futures = [pool.submit(classify_item, index, item) for index, item in enumerate(items, start=1)]
+        results = [future.result() for future in futures]
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        git_repo.interrupt_running_git()
+        raise
+    pool.shutdown()
+    return results
 
 
 def _classify_branches(
@@ -182,7 +161,7 @@ def _classify_branches(
         phase="branches",
         noun="branch",
         progress=progress,
-        category_of=_branch_category,
+        category_of=verdict_of,
         describe=str,
         workers=workers,
     )
@@ -208,7 +187,7 @@ def _known_worktree_paths(repo: Path) -> set[Path]:
     return _resolved({wt.path for wt in git_repo.list_worktrees(repo)})
 
 
-def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
+def foreign_clone_roots(repo: Path, output_user_root: Path, *, session_bases: Sequence[Path]) -> list[Path]:
     """Roots of foreign clones of `repo`'s project found among Bazel output-base workspaces.
 
     Filesystem-only (no network): re-scans output bases purely to learn candidate workspace
@@ -219,7 +198,7 @@ def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
     # TODO: Add an age-based `/tmp` review pass for same-project Git clone roots that are not
     # discoverable through a Bazel output base. Dirty/unique-work and live-process checks must
     # continue to govern removal.
-    bases = output_base_gc.scan_output_user_root(output_user_root)
+    bases = output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
     return foreign_clone_gc.discover_foreign_clones(
         _retained_workspaces(bases), known_paths=_known_worktree_paths(repo), repo=repo
     )
@@ -231,7 +210,8 @@ def foreign_clone_branch_candidates(roots: Sequence[Path]) -> set[str]:
     for root in roots:
         try:
             names.update(wt.branch for wt in git_repo.list_worktrees(root) if wt.branch)
-        except OSError, subprocess.CalledProcessError:
+        except (OSError, subprocess.SubprocessError) as error:
+            logger.warning("Cannot read PR branch candidates from %s: %s", root, error)
             continue
     return names
 
@@ -283,7 +263,7 @@ def annotate_bases(
         phase="workspaces",
         noun="base workspace",
         progress=progress,
-        category_of=_worktree_category,
+        category_of=verdict_of,
         describe=lambda wt: str(wt.path),
         workers=workers,
     )
@@ -293,12 +273,57 @@ def annotate_bases(
     return [_annotate_base(base, prunable) for base in bases]
 
 
+def scan_branches(
+    repo: Path,
+    *,
+    worktrees: list[Classification],
+    main: str,
+    default_branch: str,
+    pr_states: dict[str, PrInfo],
+    workers: int,
+    progress: ProgressSink,
+) -> list[BranchClassification]:
+    """Classify local branches against `worktrees` (linked worktrees' classifications).
+
+    Branch holders are read fresh from git, so a caller that removed worktrees since
+    classifying them can pass the original list: a branch whose holder is gone reads as unheld,
+    and the surviving worktrees' classifications are unchanged.
+    """
+    main_path = git_repo.main_worktree(repo)
+    holders = branch_gc.branch_holders(repo)
+    holder_by_path = {item.worktree.path: item for item in worktrees}
+
+    def holder_for(name: str) -> Holder:
+        holder_path = holders.get(name)
+        if holder_path is None:
+            return None
+        if holder_path == main_path:
+            return MainCheckout()
+        return holder_by_path.get(holder_path)
+
+    names = branch_gc.local_branches(git_repo.open_repo(main_path))
+    logger.info("Scanning %d local branches", len(names))
+    branches = _classify_branches(
+        main_path,
+        names,
+        main=main,
+        default_branch=default_branch,
+        pr_states=pr_states,
+        holder_for=holder_for,
+        workers=workers,
+        progress=progress,
+    )
+    logger.info("Branch scan complete: %d local branches", len(branches))
+    return branches
+
+
 def scan_workspace(
     repo: Path,
     *,
     main: str,
     default_branch: str,
     pr_states: dict[str, PrInfo],
+    session_bases: Sequence[Path],
     active_path: Path | None = None,
     output_user_root: Path | None = None,
     foreign_clone_roots: Sequence[Path] = (),
@@ -307,8 +332,9 @@ def scan_workspace(
     workers: int = DEFAULT_CLASSIFY_WORKERS,
     progress: ProgressSink = NULL_PROGRESS,
 ) -> WorkspaceScan:
+    """`session_bases` (see `output_base_gc.session_env_output_bases`) are scanned with the
+    root's bases; both are skipped when `output_user_root` is None."""
     main_path = git_repo.main_worktree(repo)
-    pg = git_repo.open_repo(main_path)
 
     linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
     logger.info("Scanning %d linked worktrees", len(linked))
@@ -330,36 +356,21 @@ def scan_workspace(
         phase="worktrees",
         noun="worktree",
         progress=progress,
-        category_of=_worktree_category,
+        category_of=verdict_of,
         describe=lambda wt: str(wt.path),
         workers=workers,
     )
     logger.info("Worktree scan complete: %d linked worktrees", len(linked))
 
-    holders = branch_gc.branch_holders(repo)
-    holder_by_path = {item.worktree.path: item for item in worktrees}
-
-    def holder_for(name: str) -> Holder:
-        holder_path = holders.get(name)
-        if holder_path is None:
-            return None
-        if holder_path == main_path:
-            return MainCheckout()
-        return holder_by_path.get(holder_path)
-
-    names = branch_gc.local_branches(pg)
-    logger.info("Scanning %d local branches", len(names))
-    branches = _classify_branches(
-        main_path,
-        names,
+    branches = scan_branches(
+        repo,
+        worktrees=worktrees,
         main=main,
         default_branch=default_branch,
         pr_states=pr_states,
-        holder_for=holder_for,
         workers=workers,
         progress=progress,
     )
-    logger.info("Branch scan complete: %d local branches", len(branches))
 
     bases: list[Inspection] = []
     if output_user_root is not None:
@@ -371,7 +382,11 @@ def scan_workspace(
         bases = [
             _annotate_base(base, prunable_workspaces)
             for base in output_base_gc.scan_output_user_root(
-                output_user_root, proc_root=proc_root, mountinfo_path=mountinfo_path, progress=progress
+                output_user_root,
+                session_bases=session_bases,
+                proc_root=proc_root,
+                mountinfo_path=mountinfo_path,
+                progress=progress,
             )
         ]
         logger.info("Bazel output-base scan complete: %d bases", len(bases))
@@ -389,7 +404,7 @@ def scan_workspace(
         phase="foreign_clones",
         noun="foreign clone",
         progress=progress,
-        category_of=foreign_clone_category,
+        category_of=verdict_of,
         describe=str,
         workers=workers,
     )

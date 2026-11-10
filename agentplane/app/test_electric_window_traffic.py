@@ -20,10 +20,14 @@ from agentplane.app.testing.replication_source import ReplicationSource
 from agentplane.history_service.fold.models import FOLD_EPOCH, ThreadEntity
 from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
+from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import event_pb2
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
+
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 Row = dict[str, Any]
 
@@ -179,15 +183,21 @@ async def test_fixed_older_window_receives_busy_tail_changes(
                 }
             )
             assert {row["entity_id"] for row in held} == selected
-            # Electric's raw PostgreSQL JSONB columns are JSON strings; ShapeStream normally decodes them.
-            references = [json.loads(row["text_ref"]) for row in held]
+            references = []
+            for row in held:
+                entity = thread_entity_from_record(row)
+                assert entity.WhichOneof("entity") == "item"
+                assert entity.item.HasField("text_ref")
+                references.append(entity.item.text_ref)
             held_chunks = await chunks.subset(
                 {
                     "where": " OR ".join(
                         f"(owner_id = ${2 * index + 1} AND generation = ${2 * index + 2})" for index in range(6)
                     ),
                     "params": {
-                        str(2 * index + part + 1): str(reference[column])
+                        str(2 * index + part + 1): str(
+                            reference.owner_id if column == "owner_id" else reference.generation
+                        )
                         for index, reference in enumerate(references)
                         for part, column in enumerate(("owner_id", "generation"))
                     },

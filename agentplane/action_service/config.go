@@ -10,15 +10,15 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -34,11 +34,8 @@ const settingPrefix = "AGENTPLANE_ACTIONS_"
 //
 // The database URL is a Secret, so a deployment supplies it as an environment variable.
 type config struct {
-	DatabaseURL string `mapstructure:"database_url"`
-	Host        string `mapstructure:"host"`
-	Port        int    `mapstructure:"port"`
-	// TokenAudience is the audience a workload's projected token must be issued for.
-	TokenAudience string `mapstructure:"token_audience"`
+	DatabaseURL string          `mapstructure:"database_url"`
+	RPC         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
 	// them is refused.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
@@ -49,9 +46,6 @@ type config struct {
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyResyncSeconds is how long the API server holds each policy watch open; nothing auto-decides once a
-	// watch has missed reader.StaleAfterCycles of these.
-	PolicyResyncSeconds int `mapstructure:"policy_resync_seconds"`
 	// GitHubVisibility is the unauthenticated GitHub lookup behind `github_public_repository` policies.
 	GitHubVisibility gitHubVisibility `mapstructure:"github_visibility"`
 	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
@@ -62,25 +56,24 @@ type config struct {
 	MCPServers map[string]linkage.Server `mapstructure:"mcp_servers"`
 	// MCPClientMetadata is the client identity of the servers that use the shared Client ID Metadata Document.
 	MCPClientMetadata linkage.ClientMetadata `mapstructure:"mcp_client_metadata"`
-	// CLEANUP(added 2026-10-27): Accept the generated false value until it is removed from manifests after this image
-	// has rolled out. A true value is rejected; this binary does not serve the integrated Connection API.
-	IntegratedConnectionService bool `mapstructure:"integrated_connection_service"`
-	// CLEANUP(added 2026-10-27): Accept the generated value (up to 180 seconds) until it is removed after this image
-	// rolls out. The MCP edge owns caller waits; Action Service uses DirectWaitSeconds only for orchestration_v1.
-	MaxWaitSeconds float64 `mapstructure:"max_wait_seconds"`
 	// DirectWaitSeconds bounds orchestration_v1 Session operations.
 	DirectWaitSeconds float64 `mapstructure:"direct_wait_seconds"`
 	// SessionDispatcher is where the orchestration_v1 groups send Session commands, and HistoryService where they read
 	// Sessions; both are set exactly when one is configured.
 	SessionDispatcher *peer `mapstructure:"session_dispatcher"`
 	HistoryService    *peer `mapstructure:"history_service"`
+	// SessionDelegationDispatcher is the shared Discovery and Session Dispatcher listener called with forwarded
+	// caller identity; SessionDelegationHistory is the History Service listener with its own audience token.
+	SessionDelegationDispatcher *peer `mapstructure:"session_delegation_dispatcher"`
+	SessionDelegationHistory    *peer `mapstructure:"session_delegation_history"`
 }
 
 // peer is a gRPC service this one calls as its workload, with its projected token for the peer's audience.
 type peer struct {
-	Target                string  `mapstructure:"target"`
-	TokenFile             string  `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
+	Target                string                                   `mapstructure:"target"`
+	TokenFile             string                                   `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64                                  `mapstructure:"request_timeout_s"`
+	TLS                   *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
 }
 
 type gitHubVisibility struct {
@@ -91,11 +84,11 @@ type gitHubVisibility struct {
 
 func defaultConfig() config {
 	return config{
-		Host: "0.0.0.0", Port: 8080, OperatorOIDC: api.DefaultOperatorOIDCSettings(), PolicyResyncSeconds: 300,
+		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 		GitHubVisibility: gitHubVisibility{
 			APIBaseURL: policies.GitHubAPIBaseURL, CacheTTLSeconds: policies.VisibilityTTL.Seconds(),
 		},
-		ActionGroups: &catalog.Catalog{}, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
+		ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
 	}
 }
 
@@ -152,7 +145,11 @@ func loadConfig() (config, error) {
 		settings.Set("reader_accounts", readers)
 	}
 	// The errors name no value: a setting can be a Secret.
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	decodeHook := mapstructure.ComposeDecodeHookFunc(
+		mapstructure.TextUnmarshallerHookFunc(),
+		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
+	)
+	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
 	}
 	if err := c.validate(); err != nil {
@@ -165,10 +162,17 @@ func loadConfig() (config, error) {
 func (c *config) operatorsEnabled() bool { return c.OperatorOIDC != api.DefaultOperatorOIDCSettings() }
 
 func (c *config) validate() error {
+	if err := c.RPC.Validate(); err != nil {
+		return fmt.Errorf("rpc: %w", err)
+	}
+	if !c.RPC.Has(listener.KubernetesBearer) {
+		return errors.New("rpc.auth must include kubernetes_bearer")
+	}
+	if len(c.rpcBearerAudiences()) != 1 {
+		return errors.New("rpc kubernetes_bearer must configure exactly one audience")
+	}
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
-		{"host", c.Host},
-		{"token_audience", c.TokenAudience},
 		{"policy_namespace", c.PolicyNamespace},
 	} {
 		if required.value == "" {
@@ -180,14 +184,8 @@ func (c *config) validate() error {
 			return errors.New("reader_accounts requires namespace and name")
 		}
 	}
-	if c.Port < 1 || c.Port > 65535 {
-		return errors.New("port must be between 1 and 65535")
-	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
-	}
-	if c.policyWatchPeriod() < reader.MinWatchPeriod {
-		return fmt.Errorf("policy_resync_seconds must be at least %v", reader.MinWatchPeriod.Seconds())
 	}
 	if c.GitHubVisibility.CacheTTLSeconds < 0 {
 		return errors.New("github_visibility.cache_ttl_seconds must not be negative")
@@ -200,22 +198,60 @@ func (c *config) validate() error {
 	if err := linkage.Validate(c.MCPServers, c.MCPClientMetadata); err != nil {
 		return err
 	}
-	if c.IntegratedConnectionService {
-		return errors.New("integrated_connection_service is retired")
-	}
-	if c.MaxWaitSeconds > 180 {
-		return errors.New("retired max_wait_seconds must not exceed 180")
-	}
-	for _, seconds := range []float64{c.MaxWaitSeconds, c.DirectWaitSeconds} {
-		if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
-			return errors.New("MCP wait seconds must be finite and nonnegative")
-		}
+	if c.DirectWaitSeconds < 0 || math.IsNaN(c.DirectWaitSeconds) || math.IsInf(c.DirectWaitSeconds, 0) {
+		return errors.New("direct_wait_seconds must be finite and nonnegative")
 	}
 	if err := c.validateOrchestration(); err != nil {
 		return err
 	}
+	if err := c.validateSessionDelegation(); err != nil {
+		return err
+	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()
+	}
+	return nil
+}
+
+func (c config) rpcBearerAudiences() []string {
+	for _, method := range c.RPC.Auth {
+		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok && bearer != nil {
+			return bearer.Audiences
+		}
+	}
+	return nil
+}
+
+func (c config) tokenAudience() string { return c.rpcBearerAudiences()[0] }
+
+// validateSessionDelegation requires the delegated Discovery/Dispatcher and History peers exactly when a
+// session_delegation group calls them.
+func (c *config) validateSessionDelegation() error {
+	var delegated bool
+	for _, group := range c.ActionGroups.Groups() {
+		if _, ok := group.Executor.(catalog.SessionDelegationBinding); ok {
+			delegated = true
+		}
+	}
+	for _, called := range []struct {
+		key  string
+		peer *peer
+	}{{"session_delegation_dispatcher", c.SessionDelegationDispatcher}, {"session_delegation_history", c.SessionDelegationHistory}} {
+		switch p := called.peer; {
+		case delegated && p == nil:
+			return fmt.Errorf("%s is required by session_delegation groups", called.key)
+		case !delegated && p != nil:
+			return fmt.Errorf("%s is set, but no session_delegation group calls it", called.key)
+		case p != nil:
+			if p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+				return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+			}
+			if p.TLS != nil {
+				if err := p.TLS.Validate(); err != nil {
+					return fmt.Errorf("%s tls: %w", called.key, err)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -241,15 +277,18 @@ func (c *config) validateOrchestration() error {
 			return fmt.Errorf("%s is required by the orchestration_v1 groups", called.key)
 		case !orchestration && p != nil:
 			return fmt.Errorf("%s is set, but no orchestration_v1 group calls it", called.key)
-		case p != nil && (p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0)):
-			return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+		case p != nil:
+			if p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0) {
+				return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+			}
+			if p.TLS != nil {
+				if err := p.TLS.Validate(); err != nil {
+					return fmt.Errorf("%s tls: %w", called.key, err)
+				}
+			}
 		}
 	}
 	return nil
-}
-
-func (c *config) policyWatchPeriod() time.Duration {
-	return time.Duration(c.PolicyResyncSeconds) * time.Second
 }
 
 // settingsFile is the settings file as gopkg.in/yaml.v3 decodes it.

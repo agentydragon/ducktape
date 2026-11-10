@@ -1,8 +1,9 @@
 //! E2E coverage for the ownership witnesses attached to unsatisfiable selector
 //! groups. These fixtures drive the real CLI with small synthetic JavaScript.
 
+use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, GraphFixture, Member, find_outcome, logical_module,
+    BindingGroup, FixtureOpts, Member, find_outcome, logical_module,
     logical_module_with_binding_groups, outcomes, read_selector_outcomes,
     run_dry_run_rejection_fixture, run_source_only_validate, validate_json,
 };

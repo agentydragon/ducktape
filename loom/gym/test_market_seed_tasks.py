@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.evidence.markets import Platform, load_roster
 from loom.gym.market_seed_tasks import MARKET_PROB_AT_AS_OF, MARKET_SEED_RECORDS, MARKET_SEED_TASKS
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import WAYBACK_PREFIX
-from util.bazel.runfiles import get_required_path
 
 
 def test_task_ids_unique_across_seed_families() -> None:
@@ -24,7 +24,7 @@ def test_market_ids_unique() -> None:
 
 def test_panel_markets_are_in_the_retained_mirror_roster() -> None:
     """Every panel market stays deep-rostered in the retained Augur scraper config."""
-    roster = load_roster(get_required_path("_main/finance/scraper/market-roster.yaml"))
+    roster = load_roster(Runfiles.CreateOrRaise().root() / "ducktape/finance/scraper/market-roster.yaml")
     rostered = {entry.market_id for entry in roster if entry.platform is Platform.MANIFOLD and entry.deep}
     missing = {record.market_id for record in MARKET_SEED_RECORDS} - rostered
     assert not missing, f"panel markets missing from the retained Augur scraper roster: {sorted(missing)}"

@@ -4,6 +4,9 @@ The minimal CI guest does not respond to KubeVirt's graceful shutdown request. K
 its grace period, destroys the domain, then removes the launcher. The observed cleanup tail is
 mostly this shutdown path; changing Sandbox finalizer or live-update sequencing would not remove it.
 
+The `test_vm_sandbox_vm` command below is the historical target name used for this measurement;
+the current VM suite target is `//agentplane/system_tests/suites:test_vm`.
+
 ## Evidence
 
 Baseline source: `51542844ae8d9d18e71cab407b288ec309f80cbf`. The only experimental changes retained
@@ -20,7 +23,7 @@ bbr test //agentplane/system_tests:test_vm_sandbox_vm \
 ```
 
 [Invocation](https://app.buildbuddy.io/invocation/c7d1affd-a5eb-44f0-b09b-bf63ae1dcae4).
-The [CLI retry and invocation identity evidence](../../../../devinfra/debug/ci_remote_cancellation/vm_shutdown_retry.md)
+The [CLI retry and invocation identity evidence](../../../../devinfra/buildbuddy/debug/ci_remote_cancellation/vm_shutdown_retry.md)
 is consolidated with the remote CI cancellation investigation.
 
 The timeline below comes specifically from the first TestRunner execution:

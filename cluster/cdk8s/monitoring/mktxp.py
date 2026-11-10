@@ -23,6 +23,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
@@ -41,7 +42,6 @@ from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path
 
 NAME = "mktxp"
 NAMESPACE = "monitoring"
@@ -137,8 +137,9 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
         "mktxp.conf": ("mktxp_conf", _ROUTERS, _SAMPLE_ROUTER),
         "_mktxp.conf": ("mktxp_system_conf", _SYSTEM_OVERRIDES, None),
     }
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for name, (repository, overrides, drop) in files.items():
-        template = get_required_path(f"{repository}/file/{name}").read_text()
+        template = (runfiles_root / f"{repository}/file/{name}").read_text()
         (out_dir / name).write_text(_render(template, overrides, drop))
     return [ConfigMapArgs(name=_CONFIG_MAP, namespace=NAMESPACE, files=list(files))]
 

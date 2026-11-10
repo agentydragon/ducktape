@@ -7,7 +7,7 @@ import pytest_bazel
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX
 from devinfra.ci.push_image import pinned_tag, push
-from util.crane import Crane, CraneError
+from devinfra.oci.crane import Crane, CraneError
 
 
 class FakeCrane(Crane):

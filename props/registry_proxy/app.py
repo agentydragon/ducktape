@@ -9,13 +9,13 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
+from props.db.async_database import AsyncDatabase
 from props.db.config import DatabaseConfig
-from props.db.database import Database
 from props.registry_proxy import routes
 from util.logging import LogLevel, configure_logging
 
@@ -25,7 +25,7 @@ configure_logging(
 logger = logging.getLogger(__name__)
 
 
-def create_app(*, db: Database | None = None) -> FastAPI:
+def create_app(*, db: AsyncDatabase | None = None) -> FastAPI:
     """Build the registry proxy app.
 
     ``db`` is injected in tests; production loads it from the standard ``PG*``
@@ -35,9 +35,15 @@ def create_app(*, db: Database | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.admin_db = db or Database(DatabaseConfig())
-        logger.info("Registry proxy ready")
-        yield
+        async with AsyncExitStack() as stack:
+            if db is None:
+                admin_db = await stack.enter_async_context(AsyncDatabase(DatabaseConfig()))
+                await admin_db.verify()
+            else:
+                admin_db = db
+            app.state.admin_db = admin_db
+            logger.info("Registry proxy ready")
+            yield
 
     app = FastAPI(title="props-registry-proxy", lifespan=lifespan)
     app.include_router(routes.router)

@@ -4,19 +4,19 @@ import type { JSX } from "react";
 
 import { MarkGlyph } from "../mark_glyph";
 import { THREAD_STATUS_MARKS, type ThreadStatusKind } from "../status_mark";
-import type { InboxNoticeState } from "../notification_types";
 import { ThreadNoticeBadge } from "./thread_notices";
+import type { Inbox } from "../../../notification_service/notifications_pb";
 import "./thread_status_indicator.css";
 
 export function ThreadStatusIndicator({
   kind,
   label,
-  inboxes = [],
+  inbox,
   live = false,
 }: {
   kind: ThreadStatusKind;
   label: string;
-  inboxes?: readonly InboxNoticeState[];
+  inbox?: Inbox;
   live?: boolean;
 }): JSX.Element {
   return (
@@ -33,7 +33,7 @@ export function ThreadStatusIndicator({
           <MarkGlyph mark={THREAD_STATUS_MARKS[kind]} size="small" />
         </Box>
       </Tooltip>
-      <ThreadNoticeBadge inboxes={inboxes} live={live} />
+      <ThreadNoticeBadge inbox={inbox} live={live} />
     </span>
   );
 }

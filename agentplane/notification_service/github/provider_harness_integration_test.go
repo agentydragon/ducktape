@@ -20,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var database *postgres.Database
@@ -140,7 +139,7 @@ var (
 	testOwner       = model.ServiceAccount{Namespace: "test", Name: "owner"}
 	testDestination = model.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
 	// testIncarnation is testOwner as the Sandbox testDestination names.
-	testIncarnation = store.Owner{Account: testOwner, SandboxUID: testDestination.UID}
+	testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
@@ -159,11 +158,7 @@ type harness struct {
 // newHarness starts from a database without the other tests' rows: the worker claims whichever inbox is due.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", database.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, database.URL)
 	h := &harness{t: t, db: db, fake: fixture.NewFake(t), world: &world{t: t, head: fixture.SHA, base: fixture.BaseSHA}}
 	h.fake.Handler = h.world.serve
 	h.exec(`TRUNCATE inbox, github_installation, github_repository, github_delivery CASCADE`)
@@ -221,7 +216,7 @@ func (h *harness) follow(source model.GitHubSource, key string) store.Subscripti
 	}
 	subscription, err := h.store.Subscribe(h.t.Context(), testOwner, model.Subscribe{
 		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
-	}, &access)
+	}, &access, "test-account-uid")
 	if err != nil {
 		h.t.Fatal(err)
 	}

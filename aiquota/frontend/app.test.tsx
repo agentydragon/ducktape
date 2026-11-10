@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,31 +16,10 @@ class Stream extends EventTarget {
     super();
     Stream.instances.push(this);
   }
-  view(fetchedAt: string, resets = 1): void {
+  view(fetchedAt: string): void {
     this.dispatchEvent(
       new MessageEvent("view", {
-        data: JSON.stringify({
-          fetched_at: fetchedAt,
-          providers: [
-            {
-              provider: "codex",
-              last_output: {
-                fetched_at: fetchedAt,
-                result: {
-                  kind: "success",
-                  windows: [],
-                  available_reset_credits: resets,
-                  reset_credit_expiry_lookup_failed: false,
-                },
-              },
-              last_success: null,
-              currently_over_plan: false,
-              paid_credits_active: false,
-              extra_status: "hidden",
-              burn: null,
-            },
-          ],
-        }),
+        data: JSON.stringify({ fetched_at: fetchedAt, providers: [] }),
       })
     );
   }
@@ -57,7 +37,13 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() => root.render(<App />));
+  act(() =>
+    root.render(
+      <MantineProvider env="test">
+        <App />
+      </MantineProvider>
+    )
+  );
 });
 
 afterEach(() => {
@@ -68,17 +54,17 @@ afterEach(() => {
 });
 
 describe("quota subscription", () => {
-  it("receives initial and replacement snapshots without fetching or polling", () => {
-    const stream = Stream.instances[0];
+  it("subscribes to server views without fetching or polling", () => {
+    const stream = Stream.instances[0]!;
     expect(stream.url).toBe("/v1/events");
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Connecting");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Connecting to live updates…");
+    expect(container.querySelector<HTMLButtonElement>("button")?.textContent).toContain("Reconnect");
+    expect(container.querySelector<HTMLButtonElement>("button")?.disabled).toBe(true);
+
     act(() => stream.view("2026-01-15T12:00:00Z"));
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
-    expect(container.textContent).toContain("1 banked reset");
-    act(() => stream.view("2026-01-16T12:00:00Z", 2));
-    expect(container.textContent).toContain("2 banked resets");
-    expect(container.textContent).not.toContain("checked");
-    expect(container.textContent).not.toContain("Snapshot");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Live updates connected");
+    expect(container.textContent).toContain("No quota providers are available.");
+    expect(container.textContent).toContain("Data freshness is shown on each provider.");
     act(() => {
       vi.advanceTimersByTime(600_000);
     });
@@ -86,95 +72,31 @@ describe("quota subscription", () => {
     expect(Stream.instances).toHaveLength(1);
   });
 
-  it("renders Claude's exact prepaid balance as money, separate from Codex credits", () => {
-    const stream = Stream.instances[0];
-    act(() => {
-      stream.dispatchEvent(
-        new MessageEvent("view", {
-          data: JSON.stringify({
-            fetched_at: "2026-01-15T12:00:00Z",
-            providers: [
-              {
-                provider: "claude",
-                last_output: {
-                  fetched_at: "2026-01-15T12:00:00Z",
-                  result: {
-                    kind: "success",
-                    windows: [],
-                    prepaid_balance: { kind: "available", amount_minor: 12345, exponent: 2, currency: "USD" },
-                  },
-                },
-                last_success: null,
-                currently_over_plan: false,
-                paid_credits_active: false,
-                extra_status: "none",
-                burn: null,
-              },
-            ],
-          }),
-        })
-      );
-    });
-
-    expect(container.textContent).toContain("Claude prepaid balance · $123.45");
-    expect(container.textContent).not.toContain("No quota data.");
-    expect(container.textContent).not.toContain("Paid credits");
-
-    act(() => {
-      stream.dispatchEvent(
-        new MessageEvent("view", {
-          data: JSON.stringify({
-            fetched_at: "2026-01-15T12:00:00Z",
-            providers: [
-              {
-                provider: "claude",
-                last_output: {
-                  fetched_at: "2026-01-15T12:00:00Z",
-                  result: { kind: "success", windows: [], prepaid_balance: { kind: "unavailable" } },
-                },
-                last_success: null,
-                currently_over_plan: false,
-                paid_credits_active: false,
-                extra_status: "none",
-                burn: null,
-              },
-            ],
-          }),
-        })
-      );
-    });
-    expect(container.textContent).toContain("Claude prepaid balance unavailable");
-  });
-
-  it("retains the snapshot through a disconnect and clears the error on recovery", () => {
-    const stream = Stream.instances[0];
+  it("retains the snapshot and explains the automatic retry after an interrupted stream", () => {
+    const stream = Stream.instances[0]!;
     act(() => stream.view("2026-01-15T12:00:00Z"));
-    const initial = container.querySelector(".aiquota-card")?.textContent;
+    const initialBoard = container.querySelector(".aiquota-board")?.textContent;
+
     act(() => stream.onerror?.());
-    expect(container.querySelector(".aiquota-notice")?.textContent).toContain("Reconnecting");
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream unavailable");
-    expect(container.querySelector(".aiquota-card")?.textContent).toBe(initial);
-    act(() => stream.view("2026-01-16T12:00:00Z"));
-    expect(container.querySelector(".aiquota-notice")).toBeNull();
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Quota stream live");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Live updates unavailable");
+    expect(container.querySelector(".aiquota-notice")?.textContent).toContain("browser is retrying");
+    expect(container.querySelector(".aiquota-connection-help")?.textContent).toContain("use Reconnect");
+    expect(container.querySelector(".aiquota-board")?.textContent).toBe(initialBoard);
+    expect(container.querySelector<HTMLButtonElement>("button")?.disabled).toBe(false);
+
+    act(() => container.querySelector<HTMLButtonElement>("button")?.click());
+    expect(stream.close).toHaveBeenCalledOnce();
+    expect(Stream.instances).toHaveLength(2);
   });
 
-  it("closes a replaced subscription and ignores its late callbacks", () => {
-    const previous = Stream.instances[0];
-    act(() => previous.view("2026-01-15T12:00:00Z"));
-    act(() => container.querySelector<HTMLButtonElement>("button")?.click());
-    expect(previous.close).toHaveBeenCalledOnce();
-    const current = Stream.instances[1];
-    act(() => current.view("2026-01-16T12:00:00Z", 2));
-    const latest = container.querySelector(".aiquota-card")?.textContent;
-    act(() => {
-      previous.view("2026-01-14T12:00:00Z");
-      previous.onerror?.();
-    });
-    expect(container.querySelector(".aiquota-card")?.textContent).toBe(latest);
-    expect(container.querySelector(".aiquota-notice")).toBeNull();
-    act(() => root.unmount());
-    expect(current.close).toHaveBeenCalledOnce();
-    expect(vi.getTimerCount()).toBe(0);
+  it("keeps the closed-stream reload recovery path distinct from an interrupted retry", () => {
+    const stream = Stream.instances[0]!;
+    stream.readyState = Stream.CLOSED;
+    act(() => stream.onerror?.());
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Live updates unavailable");
+    expect(container.querySelector(".aiquota-notice")?.textContent).toContain("Reload to start a fresh stream");
+    expect(container.querySelector(".aiquota-connection-help")?.textContent).toContain("will reload the page");
+    expect(container.querySelector<HTMLButtonElement>("button")?.disabled).toBe(false);
   });
 });

@@ -34,7 +34,7 @@ and leaves foreign branch-tracking sources unrendered. Its cache is
 `<directory name>.k8s.yaml`: its one writer, `generation.write_charts` (which
 `write_directory` calls), synthesizes every chart of the directory into that file, in chart
 order. A module whose objects belong in another module's directory exports a chart builder
-that directory's writer includes (`egress_fences.py`, `agents/namespaces.py`), never a
+that directory's writer includes, never a
 second file. Beside it sit only `patches.k8s.yaml`, the strategic-merge patches
 `write_directory` lists under `patches:`, and one file a consumer outside Kubernetes reads:
 `talos-cloud-controller-manager/helmrelease.k8s.yaml`, the lone HelmRelease that

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -78,113 +77,32 @@ func TestNoticeWaitFollowsWhatHoldsTheInboxInPriority(t *testing.T) {
 	}
 }
 
-func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
-	request := uuid.MustParse("5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60")
-	longer := strings.Repeat("é", maxSummaryField+1)
-	for _, c := range []struct {
-		name    string
-		event   model.EventIdentity
-		payload string
-		// want is exactly what an operator is shown, which the CLI prints as it is.
-		want string
-	}{
-		{
-			"an Action with its state",
-			model.ActionsEvent{RequestID: request, Sequence: 3},
-			`{"state": "decision_pending"}`,
-			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3 · decision_pending",
-		},
-		{
-			"an Action without a state",
-			model.ActionsEvent{RequestID: request, Sequence: 3},
-			`{}`,
-			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3",
-		},
-		{
-			"an Action whose state is not text",
-			model.ActionsEvent{RequestID: request, Sequence: 3},
-			`{"state": 7}`,
-			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3",
-		},
-		{
-			"an Action state is cut by characters",
-			model.ActionsEvent{RequestID: request, Sequence: 3},
-			`{"state": "` + longer + `"}`,
-			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3 · " + strings.Repeat("é", maxSummaryField),
-		},
-		{"a GitHub event without an action", model.GitHubEvent{Event: model.EventPush}, `{"ref": "refs/heads/secret"}`, "GitHub push"},
-		{"a GitHub event with an action", model.GitHubEvent{Event: model.EventPullRequest, Action: ptr("opened")}, `{}`, "GitHub pull_request · opened"},
-		{"a GitHub event with an empty action", model.GitHubEvent{Event: model.EventPullRequest, Action: ptr("")}, `{}`, "GitHub pull_request"},
-		{
-			"a GitHub action is cut by characters",
-			model.GitHubEvent{Event: model.EventIssues, Action: ptr(longer)},
-			`{}`,
-			"GitHub issues · " + strings.Repeat("é", maxSummaryField),
-		},
-		{
-			"an Agentplane mergeability observation shows its pull request and sequence",
-			model.GitHubMergeabilityEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3},
-			`{"mergeable": false, "headSha": "private"}`,
-			"GitHub PR #7 mergeability · sequence 3",
-		},
-		{
-			"an initial mergeability snapshot shows its pull request and version",
-			model.GitHubMergeabilitySnapshotEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4},
-			`{"mergeability": "CONFLICTING"}`,
-			"GitHub PR #7 mergeability snapshot · version 4",
-		},
-		{
-			"a check run's conclusion",
-			model.GitHubEvent{Event: model.EventCheckRun, Action: ptr("completed")},
-			`{"check_run": {"conclusion": "failure", "output": "private"}}`,
-			"GitHub check_run · completed · failure",
-		},
-		{
-			"a workflow run's conclusion",
-			model.GitHubEvent{Event: model.EventWorkflowRun, Action: ptr("completed")},
-			`{"workflow_run": {"conclusion": "success"}}`,
-			"GitHub workflow_run · completed · success",
-		},
-		{"a conclusion that is not text", model.GitHubEvent{Event: model.EventCheckRun}, `{"check_run": {"conclusion": null}}`, "GitHub check_run"},
-		{
-			"a conclusion of an event that has none shown",
-			model.GitHubEvent{Event: model.EventCheckSuite},
-			`{"check_suite": {"conclusion": "success"}}`,
-			"GitHub check_suite",
-		},
-		{
-			"a message by its sender, never its body",
-			model.MessageEvent{MessageID: request, Sender: model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}},
-			`{"body": "private", "from_session": "test-session"}`,
-			"Message from test-namespace/test-sender",
-		},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := summarize(1, c.event, []byte(c.payload), time.Time{})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			requireEqual(t, got.Summary, c.want)
-		})
+func TestSummariesExposeOnlyStructuredLifecycleInformation(t *testing.T) {
+	request := uuid.New()
+	event := model.ActionsEvent{RequestID: request, Sequence: 3}
+	summary, err := summarize(1, event, []byte(`{"state":"decision_pending","actor":"private"}`), time.Time{})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
-	for event, want := range map[model.EventIdentity]EntryProvider{
-		model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}:                  EntryFromActions,
-		model.GitHubEvent{Event: model.EventPush}:                               EntryFromGitHub,
-		model.GitHubObservationEvent{Event: model.EventCheckRun, Sequence: 1}:   EntryFromGitHub,
-		model.GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}:        EntryFromGitHub,
-		model.GitHubMergeabilitySnapshotEvent{PullRequestNumber: 7, Version: 1}: EntryFromGitHub,
-		model.MessageEvent{MessageID: uuid.New()}:                               EntryFromMessage,
-	} {
-		got, err := summarize(1, event, []byte(`{}`), time.Time{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		requireEqual(t, got.Provider, want)
+	requireEqual(t, summary.Event, event)
+	requireEqual(t, summary.ActionState, ptr("decision_pending"))
+	github := model.GitHubEvent{Event: model.EventCheckRun}
+	summary, err = summarize(2, github, []byte(`{"check_run":{"conclusion":"success","output":"private"}}`), time.Time{})
+	if err != nil {
+		t.Fatal(err)
 	}
+	requireEqual(t, summary.Event, github)
+	requireEqual(t, summary.GitHubConclusion, ptr("success"))
+	summary, err = summarize(2, github, []byte(`{"check_run":{"conclusion":"private arbitrary text"}}`), time.Time{})
+	if err != nil || summary.GitHubConclusion != nil {
+		t.Fatalf("unsafe conclusion: %v, %v", summary, err)
+	}
+	message := model.MessageEvent{MessageID: request, Sender: model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}}
+	summary, err = summarize(3, message, []byte(`{"body":"private"}`), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireEqual(t, summary.Event, message)
 }
 
 func TestAPayloadThatIsNotJSONFailsTheSummary(t *testing.T) {

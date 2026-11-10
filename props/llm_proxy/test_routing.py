@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from openai_utils.api_shape import LLMApiShape
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
+from props.db.async_database import AsyncDatabase
 from props.db.database import Database
 from props.db.models import ModelMetadata
 from props.llm_proxy.routes import (
@@ -23,6 +24,10 @@ from props.llm_proxy.routes import (
     _resolve_upstream_url,
     _upstream_auth_headers,
 )
+
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 @pytest.fixture
@@ -57,7 +62,8 @@ def test_resolve_upstream_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _resolve_upstream_url(config) == "http://test.example.com/v1"
 
 
-def test_custom_model_routes_to_configured_upstream(
+@pytest.mark.asyncio
+async def test_custom_model_routes_to_configured_upstream(
     synced_db: Database, sample_config: PropsConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Custom model routes to its configured upstream with model rewriting."""
@@ -77,24 +83,28 @@ def test_custom_model_routes_to_configured_upstream(
         )
         session.commit()
 
-    with synced_db.session() as session:
-        with monkeypatch.context() as mp:
-            mp.setenv("LOCAL_API_KEY", "local-key")
-            route = _get_upstream_route("local:llama-70b", session, sample_config, LLMApiShape.RESPONSES)
+    async with AsyncDatabase(synced_db.config) as db:
+        async with db.session() as session:
+            with monkeypatch.context() as mp:
+                mp.setenv("LOCAL_API_KEY", "local-key")
+                route = await _get_upstream_route("local:llama-70b", session, sample_config, LLMApiShape.RESPONSES)
         assert route.url == "http://localhost:11434/v1"
         assert route.api_key == "local-key"
         assert route.model_name == "llama3.3:70b"
 
 
-def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
+@pytest.mark.asyncio
+async def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """Unknown model ID raises HTTPException(400)."""
-    with synced_db.session() as session:
-        with pytest.raises(HTTPException) as exc_info:
-            _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
+    async with AsyncDatabase(synced_db.config) as db:
+        async with db.session() as session:
+            with pytest.raises(HTTPException) as exc_info:
+                await _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 400
 
 
-def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsConfig) -> None:
+@pytest.mark.asyncio
+async def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsConfig) -> None:
     """Model referencing unknown upstream raises HTTPException(500)."""
     # Insert a model pointing to nonexistent upstream
     with synced_db.session() as session:
@@ -112,13 +122,15 @@ def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsCo
         )
         session.commit()
 
-    with synced_db.session() as session:
-        with pytest.raises(HTTPException) as exc_info:
-            _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
+    async with AsyncDatabase(synced_db.config) as db:
+        async with db.session() as session:
+            with pytest.raises(HTTPException) as exc_info:
+                await _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 500
 
 
-def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
+@pytest.mark.asyncio
+async def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """A chat-shaped model cannot be routed through the Responses endpoint."""
     with synced_db.session() as session:
         session.merge(
@@ -136,9 +148,10 @@ def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: Props
         )
         session.commit()
 
-    with synced_db.session() as session:
-        with pytest.raises(HTTPException) as exc_info:
-            _get_upstream_route("chat-model", session, sample_config, LLMApiShape.RESPONSES)
+    async with AsyncDatabase(synced_db.config) as db:
+        async with db.session() as session:
+            with pytest.raises(HTTPException) as exc_info:
+                await _get_upstream_route("chat-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 400
         assert "api_shape" in exc_info.value.detail
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -14,7 +15,6 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "kubectl-passthrough-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
@@ -27,7 +27,7 @@ _CONFIG_MAP = "public"
 _CONFIG_FILE = "00-public.toml"
 _CONFIG_DIR = "/etc/kubectl-passthrough-mcp"
 _PUBLIC_CONFIG = (
-    get_required_path(own_repo_rlocation("cluster/cdk8s/kubectl-passthrough-mcp.toml"))
+    (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/kubectl-passthrough-mcp.toml")
     .read_text()
     .replace("@LISTEN_PORT@", str(SERVICE.pod_port))
 )

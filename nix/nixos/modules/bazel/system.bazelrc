@@ -1,6 +1,6 @@
 # NixOS system-level Bazel configuration.
 # Installed to /etc/bazel.bazelrc so it applies regardless of $HOME.
-# See devinfra/debug/nixos_bazel_bash/STATUS.md for full context.
+# See devinfra/debug/nixos_bazel_bash/README.md for full context.
 
 # Local NixOS actions need a shell outside the FHS paths absent on NixOS.
 # Repo-specific RBE configs may override this with the worker's shell path.

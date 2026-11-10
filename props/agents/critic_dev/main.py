@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import String
 
+from devinfra.oci.oci import write_docker_auth
 from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tools
@@ -36,7 +37,6 @@ from props.core.models.examples import SingleFileSetExample
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import GradingPending
-from util.oci import write_docker_auth
 
 # The critic-dev image bundles the recipe modules so in-container agents can import
 # them (they are advertised in prompt_base.md.mako); no Python import reaches them.

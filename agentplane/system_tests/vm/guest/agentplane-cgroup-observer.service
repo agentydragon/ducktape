@@ -1,0 +1,14 @@
+[Unit]
+Description=Publish read-only cgroup evidence for VM tests
+ConditionKernelCommandLine=agentplane.cgroup-observer=1
+After=agentplane-guest-prepare.service
+Requires=agentplane-guest-prepare.service
+Before=agentplane-environment-runtime.service
+
+[Service]
+ExecStart=/usr/sbin/agentplane-cgroup-observer
+Environment=PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin
+Restart=on-failure
+ProtectControlGroups=yes
+StandardOutput=journal+console
+StandardError=journal+console

@@ -4,8 +4,10 @@ import { type JSX, useEffect, useRef, useState } from "react";
 
 import { consoleText } from "./console_text";
 import { followStream } from "../live_stream";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
-export function SandboxConsole({ sandbox }: { sandbox: string }): JSX.Element {
+export function SandboxConsole({ target }: { target: EnvironmentTarget }): JSX.Element {
+  const { namespace, name, uid } = target;
   const [text, setText] = useState("");
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -14,21 +16,24 @@ export function SandboxConsole({ sandbox }: { sandbox: string }): JSX.Element {
     setUnavailable(null);
     // One decoder per attach: a multi-byte character can straddle two events.
     const decoder = new TextDecoder();
-    const stop = followStream(`/sandboxes/${encodeURIComponent(sandbox)}/console/stream`, {
-      events: {
-        output: (message) => {
-          const bytes = Uint8Array.from(atob(message.data.slice(1, -1)), (char) => char.charCodeAt(0));
-          setText((previous) => consoleText(previous, decoder.decode(bytes, { stream: true })));
+    const stop = followStream(
+      `/sandboxes/${encodeURIComponent(name)}/console/stream?sandbox_uid=${encodeURIComponent(uid)}`,
+      {
+        events: {
+          output: (message) => {
+            const bytes = Uint8Array.from(atob(message.data.slice(1, -1)), (char) => char.charCodeAt(0));
+            setText((previous) => consoleText(previous, decoder.decode(bytes, { stream: true })));
+          },
+          unavailable: (message) => {
+            setUnavailable(JSON.parse(message.data) as string);
+            stop();
+          },
         },
-        unavailable: (message) => {
-          setUnavailable(JSON.parse(message.data) as string);
-          stop();
-        },
-      },
-      onConnection: () => undefined,
-    });
+        onConnection: () => undefined,
+      }
+    );
     return stop;
-  }, [sandbox]);
+  }, [namespace, name, uid]);
   useEffect(() => {
     bottom.current?.scrollIntoView?.({ block: "end" });
   }, [text]);

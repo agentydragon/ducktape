@@ -1,0 +1,83 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qemu-smoke
+  labels:
+    app.kubernetes.io/name: qemu-smoke
+    agentplane-test: vm-shutdown-tcg-smoke
+spec:
+  activeDeadlineSeconds: 1600
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  securityContext:
+    fsGroup: 107
+    runAsGroup: 107
+    runAsNonRoot: true
+    runAsUser: 107
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: qemu-tools
+      image: quay.io/kubevirt/virt-launcher@sha256:574fabe0ff9719fa1e3800dcca8530fa4e02fd71ef74109508e59800e13e8b5d
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -ceu
+      args:
+        - |
+          printf 'UID/GID: '; id
+          grep '^CapEff:' /proc/self/status
+          if test -e /dev/kvm; then echo 'KVM_DEVICE=present'; else echo 'KVM_DEVICE=absent'; fi
+          for binary in /usr/bin/qemu-kvm /usr/libexec/qemu-kvm /usr/bin/qemu-system-x86_64 /usr/libexec/virtiofsd; do
+            if test -x "$binary"; then
+              echo "BINARY=$binary"
+              case "$binary" in
+                */virtiofsd) "$binary" --version 2>&1 || true ;;
+                *) "$binary" --version 2>&1 || true ;;
+              esac
+            fi
+          done
+          command -v socat || true
+          command -v python3 || true
+          command -v nc || true
+          sleep 1500
+      env:
+        - name: TMPDIR
+          value: /tmp
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1700Mi
+          ephemeral-storage: 1Gi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+          ephemeral-storage: 2Gi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+      volumeMounts:
+        - name: scratch
+          mountPath: /scratch
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: scratch
+      emptyDir:
+        sizeLimit: 2Gi
+    - name: tmp
+      emptyDir:
+        sizeLimit: 64Mi

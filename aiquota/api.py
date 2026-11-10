@@ -24,7 +24,6 @@ from typing import Annotated, Protocol, cast
 
 import anyio
 import httpx
-import uvicorn
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
@@ -34,21 +33,17 @@ from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, G
 from starlette.middleware.sessions import SessionMiddleware
 
 from aiquota.cache import _assemble, _instantiate
-from aiquota.clickhouse import ClickHouseSnapshotSink
-from aiquota.config import Config, load as load_config
+from aiquota.config import Config
 from aiquota.models import AllQuotas, FetchSuccess, HistorySnapshot, QuotaSnapshot, RawUpstreamResponse
 from aiquota.providers.base import SupportsHistory
 from aiquota.render.view_model import AllQuotasView, to_view
-from aiquota.settings import Settings
-from util.bazel.runfiles import find_path
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
 _bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
-_FRONTEND_INDEX = "_main/aiquota/frontend/dist/index.html"
-_SSE_HEARTBEAT_SECONDS = 10
+_VIEW_UPDATE_SECONDS = 1
 
 
 class SnapshotFetcher(Protocol):
@@ -95,10 +90,6 @@ class SnapshotFeed:
     @property
     def latest(self) -> QuotaSnapshot | None:
         return self._snapshot
-
-    @property
-    def subscriber_count(self) -> int:
-        return len(self._subscribers)
 
     async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
         # Calls that were already waiting when a refresh began share its result,
@@ -188,7 +179,19 @@ class SnapshotFeed:
 
 
 def _next_view_transition(snapshot: QuotaSnapshot) -> datetime | None:
-    changes = [provider.burn.changes_at for provider in to_view(snapshot.quotas).providers if provider.burn is not None]
+    now = datetime.now(UTC)
+    providers = to_view(snapshot.quotas, now).providers
+    changes = [provider.burn.changes_at for provider in providers if provider.burn is not None]
+    for provider in providers:
+        result = provider.display.result
+        if result is None:
+            continue
+        for grant in result.claude_reset_grants or []:
+            changes.extend(
+                transition
+                for transition in (grant.starts_at, grant.expires_at)
+                if transition is not None and transition > now
+            )
     return min(changes) if changes else None
 
 
@@ -590,19 +593,20 @@ def create_app(
         async def event_stream() -> AsyncIterator[bytes]:
             subscription = await feed.subscribe_current()
             revision = subscription.revision
+            snapshot = subscription.snapshot
             try:
-                yield _view_event(subscription.snapshot)
+                yield _view_event(snapshot)
                 while True:
                     if await request.is_disconnected():
                         return
                     try:
                         revision, snapshot = await asyncio.wait_for(
-                            feed.wait_after(revision), timeout=_SSE_HEARTBEAT_SECONDS
+                            feed.wait_after(revision), timeout=_VIEW_UPDATE_SECONDS
                         )
                     except TimeoutError:
                         if await request.is_disconnected():
                             return
-                        yield b": heartbeat\n\n"
+                        yield _view_event(snapshot)
                     else:
                         yield _view_event(snapshot)
             finally:
@@ -692,71 +696,7 @@ def create_app(
             max_age=3600,
         )
 
-    if frontend_dir is None:
-        # Only the server binaries package the SPA. The API library is also imported without
-        # it — by its own tests, and by the OpenAPI exporter the frontend's types come from,
-        # which cannot depend on the bundle it generates types for.
-        index = find_path(_FRONTEND_INDEX)
-        if index is None:
-            logger.warning("aiquota frontend bundle is not present in runfiles")
-        else:
-            frontend_dir = index.parent
     if frontend_dir is not None:
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
     return app
-
-
-def main() -> None:
-    settings = Settings()
-    service = QuotaAPIService(
-        load_config(settings.config_path),
-        cache_ttl=settings.cache_ttl,
-        claude_proxy=settings.claude_proxy,
-        claude_proxy_ca=settings.claude_proxy_ca,
-        cli_proxy_api_key=settings.cli_proxy_api_key.get_secret_value() if settings.cli_proxy_api_key else None,
-    )
-    metrics = CollectorMetrics()
-    feed = SnapshotFeed(service)
-    sink: ClickHouseSnapshotSink | None = None
-    history_collector: HistoryCollector | None = None
-    if settings.clickhouse_url:
-        assert settings.clickhouse_password is not None
-        sink = ClickHouseSnapshotSink(
-            url=settings.clickhouse_url,
-            username=settings.clickhouse_username,
-            password=settings.clickhouse_password.get_secret_value(),
-            database=settings.clickhouse_database,
-            raw_table=settings.clickhouse_raw_table,
-            windows_table=settings.clickhouse_windows_table,
-        )
-        history_collector = HistoryCollector(
-            service, sink, interval=timedelta(seconds=settings.history_interval_seconds), metrics=metrics
-        )
-    collector = BackgroundCollector(
-        feed, sink, interval=timedelta(seconds=settings.poll_interval_seconds), metrics=metrics
-    )
-    uvicorn.run(
-        create_app(
-            bearer_token=settings.api_bearer_token,
-            fetcher=feed,
-            collector=collector,
-            history_collector=history_collector,
-            metrics=metrics,
-            prepare_storage=None if sink is None else sink.apply_schema,
-            browser_oauth=BrowserOAuth(
-                issuer=settings.oauth_issuer,
-                client_id=settings.oauth_client_id,
-                client_secret=settings.oauth_client_secret.get_secret_value(),
-                session_secret=settings.oauth_session_secret.get_secret_value(),
-                public_base_url=settings.public_base_url,
-                username=settings.oauth_username,
-            ),
-        ),
-        host="0.0.0.0",
-        port=8080,
-    )
-
-
-if __name__ == "__main__":
-    main()

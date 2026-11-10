@@ -8,7 +8,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         "//aiquota:models",
-        "@pypi//pydantic",
+        "//aiquota/render:view_model_lib",
         "@pypi//pyyaml",
     ],
 )
@@ -26,11 +26,7 @@ py_library(
     srcs = ["export_web_fixtures.py"],
     deps = [
         ":quota_fixtures",
-        "//aiquota:models",
-        "//aiquota:pace",
-        "//aiquota/render:format_lib",
-        "//aiquota/render:view_model_lib",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 

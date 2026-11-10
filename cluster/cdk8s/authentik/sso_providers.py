@@ -31,6 +31,7 @@ def chart(app: App) -> Chart:
             # keep-sorted start
             "agentplane-mcp-oauth",
             "agentplane-oidc",
+            "ai-session-archive-oidc",
             "airlock-oidc-config",
             "claude-session-sync-oidc",
             "cli-proxy-api-admin-oidc",
@@ -49,6 +50,22 @@ def chart(app: App) -> Chart:
     )
     opentofu.secret_access(
         chart, "study-casino-secrets", identity=identity, namespace="study-casino", read=[], write=["study-casino-oidc"]
+    )
+    opentofu.secret_access(
+        chart,
+        "quest-diagnostics-secrets",
+        identity=identity,
+        namespace="quest-diagnostics",
+        read=[],
+        write=["quest-diagnostics-oidc"],
+    )
+    opentofu.secret_access(
+        chart,
+        "platform-sessions-secrets",
+        identity=identity,
+        namespace="platform-sessions",
+        read=[],
+        write=["platform-sessions-oidc"],
     )
     opentofu.gitops_workspace(
         chart,

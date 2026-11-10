@@ -82,16 +82,19 @@ Source of truth: <../../cluster/docs/agent_rbac.md>.
 Agents cannot create public routes even if RBAC ever drifted.
 Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
 
-### `haku-egress-proxy` egress fence
+### Agentplane egress fence
 
-On `haku-sandbox` **and** `haku-ci` (agent-authored build compute), which share one
-allowlist chokepoint; currently mitmproxy. Pod egress to the public internet is
-allowlisted at L3/L4 only — mitmproxy terminates TLS but enforces no host list of its
-own, so the Cilium `toFQDNs` policy is the whole fence (an L7 allowlist is what
-iron-proxy adds, and these pods are not on it yet). In-cluster and node-IP destinations
-(all of `*.allegedly.works`) are deliberately unfenced via `toEntities: cluster`; those
-services authenticate their own callers.
-Source of truth: <../../cluster/k8s/agents/haku-egress-proxy/>, <../../cluster/cdk8s/haku_ci/>.
+On `haku-sandbox` **and** `haku-ci` (agent-authored build compute). Each namespace's force-proxy
+CCNP admits kube-dns, in-cluster destinations and Agentplane egress, nothing on the public
+internet. Public egress goes only through Agentplane egress, which checks every request (host and
+method) against the PolicySets bound to the caller's account and records each decision under that
+subject. `haku-sandbox` workloads present standing SVIDs from egress sidecars and all act as the
+shared haku-ui account; `haku-ci`'s runners go through the `haku-ci-egress` relay, account
+`haku-ci-egress` (PolicySet `haku-ci-build-fetch`). Enforcement is L7 only: the egress proxy's own
+Pods have open 80/443. In-cluster and node-IP destinations (all of `*.allegedly.works`) are
+deliberately unfenced via `toEntities: cluster`; those services authenticate their own callers.
+Source of truth: <../../cluster/cdk8s/haku/namespace.py>, <../../cluster/cdk8s/haku_ci/>,
+<../../cluster/cdk8s/agentplane/actions_staging_policies.py>.
 
 ### Operator-source credentials reflected into `haku-sandbox`
 
@@ -211,8 +214,8 @@ channels: haku-ui only holds data Haku can already read (the reflected read-only
 credentials; haku-state content), and exploiting it takes a prompt-injected Haku plus
 the operator's browser on the console.
 
-**haku-ui backend egress** — fenced by the `haku-egress-proxy` allowlist (enforcement
-inventory above).
+**haku-ui backend egress** — fenced by the shared haku-ui account's Agentplane egress PolicySets
+(enforcement inventory above).
 
 **Data in URLs to whitelisted hosts (`claude.ai`, `github.com`, …) via `openLink`** —
 **accepted residual**: the handoff use-case requires it; whitelist hosts are

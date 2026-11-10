@@ -14,11 +14,11 @@ import re
 
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.authentik.jwt_rotation import ROTATIONS
-from util.bazel.runfiles import get_required_path
 
-_SOPS_CONFIG = "_main/.sops.yaml"
+_SOPS_CONFIG = "ducktape/.sops.yaml"
 
 
 def test_names_are_unique() -> None:
@@ -53,7 +53,7 @@ def test_sops_files_have_creation_rules() -> None:
     published k8s Secret paths are covered by the generic cluster deployment-secrets rule
     and are checked here for the same reason.
     """
-    config = yaml.safe_load(get_required_path(_SOPS_CONFIG).read_text())
+    config = yaml.safe_load((Runfiles.CreateOrRaise().root() / _SOPS_CONFIG).read_text())
     patterns = [re.compile(rule["path_regex"]) for rule in config["creation_rules"]]
 
     paths = [str(r.sops_file) for r in ROTATIONS.rotations]

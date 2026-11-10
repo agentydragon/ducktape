@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from grocy_mcp.fix_openapi_spec import (
     _MISSING_PRODUCT_PROPERTIES,
@@ -14,7 +15,6 @@ from grocy_mcp.fix_openapi_spec import (
     strip_replaced_routes,
 )
 from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
-from util.bazel.runfiles import get_required_path
 
 
 def test_strip_empty_enums_removes_empty_enum() -> None:
@@ -76,16 +76,8 @@ def test_strip_replaced_routes_removes_replaced_methods() -> None:
 
 
 def test_fixed_spec_has_every_writable_product_column() -> None:
-    """The built spec served at runtime must have every writable column of the products table.
-
-    Catches the regression where someone adds a field to
-    ``PRODUCT_WRITABLE_FIELDS`` without also adding its schema entry to
-    ``_MISSING_PRODUCT_PROPERTIES`` (or vice versa, once Grocy upstream
-    starts shipping a complete spec). This is the smoke test the
-    ``entity_update`` feedback asked for: every field named in the tool's
-    docstring examples must actually be accepted by the tool's input schema.
-    """
-    spec_path = get_required_path("_main/grocy_mcp/grocy.openapi.fixed.json")
+    """The served Product schema must accept every writable product column."""
+    spec_path = Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/grocy.openapi.fixed.json"
     spec = json.loads(spec_path.read_text())
     properties = spec["components"]["schemas"]["Product"]["properties"]
 

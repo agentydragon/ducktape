@@ -1,14 +1,14 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { IconBox, IconHeartbeat, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
+import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
 import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { ActionsSidebarSection } from "./actions/sidebar";
-import { ResizeHandle, usePaneSize } from "./resize_handle";
+import { ResizeHandle, usePaneSize } from "../../../util/frontend/resize_handle";
 import "./sidebar.css";
 import { ThreadList } from "./threads/thread_list";
-import { ScrollDebugTools } from "./threads/scroll_debug_tools";
+import { ThreadViewRecorderTools } from "./threads/thread_view_recorder_tools";
 
 // Matches sidebar.css's own phone breakpoint.
 const PHONE_QUERY = "(max-width: 560px)";
@@ -97,8 +97,8 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
         {actionsPage === null && <ActionsSidebarSection onNavigate={closeIfPhone} />}
       </div>
       <div className="agentplane-sidebar-footer">
-        <div className="agentplane-sidebar-debug">
-          <ScrollDebugTools />
+        <div className="agentplane-sidebar-recorder">
+          <ThreadViewRecorderTools />
         </div>
         <Tooltip label="Sandboxes" withArrow>
           <ActionIcon
@@ -107,6 +107,15 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
             onClick={() => goTo("/sandboxes")}
           >
             <IconBox size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Identities" withArrow>
+          <ActionIcon
+            variant={location.pathname.startsWith("/identities") ? "light" : "subtle"}
+            aria-label="Identities"
+            onClick={() => goTo("/identities")}
+          >
+            <IconId size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="All actions" withArrow>

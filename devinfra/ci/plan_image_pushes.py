@@ -43,10 +43,10 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob
+from devinfra.ci import publication_evidence
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
-from devinfra.ci.publication_test_verdicts import effective_rbe_image, selector_is_covered, verified_test_summaries
-from util.crane import Crane
+from devinfra.oci.crane import Crane
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,8 +76,8 @@ def load_images(path: Path) -> list[Image]:
 
     A hand-written strict parse rather than a Pydantic model, because this module is
     imported as bare `python3 -m` on a GitHub Actions runner where the only Python is
-    the system one — the `citools` closure is bb, bbapi and sops, with no interpreter
-    of its own. Strictness is the part that matters and cannot be dropped: an
+    the system one, with no third-party Python packages installed. Strictness cannot
+    be dropped: an
     unrecognised key used to be ignored, so `tests:` for `test:` silently published an
     image with no test gate, and a misspelt `registry:` silently published it to GHCR.
     """
@@ -171,11 +171,15 @@ def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int
         return list(pool.map(decider, images))
 
 
-def matrix_include(decisions: list[Decision], reusable_tests: set[str] | None = None) -> list[dict[str, str]]:
+def matrix_include(
+    decisions: list[Decision], reusable_tests: set[str] | None = None, blocked_tests: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Matrix rows for pushes; an image whose test gate push CI already failed never starts a job."""
     reusable_tests = reusable_tests or set()
+    blocked_tests = blocked_tests or set()
     rows = []
     for decision in decisions:
-        if not decision.needs_push:
+        if not decision.needs_push or decision.image.test in blocked_tests:
             continue
         row = {
             "image_name": decision.image.name,
@@ -194,19 +198,6 @@ def _write_github_output(**values: str) -> None:
         return
     with Path(path).open("a") as f:
         f.writelines(f"{key}={value}\n" for key, value in values.items())
-
-
-def _read_invocations(ids: list[str], test_invocation_id: str) -> tuple[Invocation | None, Invocation | None]:
-    """Merge output evidence and retain the original test invocation separately."""
-    readable = {}
-    for invocation_id in ids:
-        try:
-            readable[invocation_id] = read(invocation_id)
-        except (BuildBuddyError, KeyError, TypeError, ValueError, IndexError) as e:
-            print(
-                f"::warning::could not read invocation {invocation_id} ({e}); pushing more than needed", file=sys.stderr
-            )
-    return merge(readable.values()), readable.get(test_invocation_id) if test_invocation_id in ids else None
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -229,44 +220,37 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     images = load_images(args.spec)
 
-    # bazel-ci runs `bazel test` then `bazel build`, so it reports more than one
-    # invocation; merge them rather than guess which one holds a given output.
-    invocation_ids = [i for i in args.invocations.split(",") if i]
-    if not invocation_ids:
-        print("::warning::no bazel-ci invocation to read; pushing everything", file=sys.stderr)
-    merged, test_invocation = _read_invocations(invocation_ids, args.test_invocation_id)
-    digests = local_digests(images, merged, fetch_blob)
-
-    summaries, evidence_problem = verified_test_summaries(
-        test_invocation,
-        invocation_id_value=args.test_invocation_id,
+    evidence = publication_evidence.load(
+        [value for value in args.invocations.split(",") if value],
+        test_invocation_id=args.test_invocation_id,
         source_commit=args.test_source_commit,
-        current_commit=os.environ.get("GITHUB_SHA", ""),
-        run_id=os.environ.get("GITHUB_RUN_ID", ""),
-        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
-        rbe_image=effective_rbe_image(args.rbe_container_image),
+        rbe_container_image=args.rbe_container_image,
     )
+    digests = local_digests(images, evidence.outputs, fetch_blob)
 
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
     reusable_tests = set()
+    blocked_tests = set()
     for decision in decisions:
         selector = decision.image.test
         if not decision.needs_push or not selector:
             continue
-        covered, reason = (
-            selector_is_covered(selector, summaries) if evidence_problem is None else (False, evidence_problem)
-        )
+        blocked, why = evidence.tests.already_failed(selector)
+        if blocked:
+            blocked_tests.add(selector)
+            print(f"::warning::{decision.image.name}: not pushed, {why}", file=sys.stderr)
+            continue
+        covered, reason = evidence.tests.is_covered(selector)
         if covered:
             reusable_tests.add(selector)
             print(f"::notice::{decision.image.name}: reusing the verified bazel-ci test verdict", file=sys.stderr)
         else:
             print(f"::notice::{decision.image.name}: retaining its test gate ({reason})", file=sys.stderr)
-    include = matrix_include(decisions, reusable_tests)
+    include = matrix_include(decisions, reusable_tests, blocked_tests)
 
     for d in sorted(decisions, key=lambda d: d.image.name):
-        marker = "PUSH" if d.needs_push else "skip"
+        marker = "PUSH" if d.needs_push and d.image.test not in blocked_tests else "skip"
         print(f"{marker:>4}  {d.image.name:<32} {d.reason}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decisions)} images need a push.", file=sys.stderr)
 

@@ -9,15 +9,15 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use swc_common::{DUMMY_SP, Spanned};
+use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::{
-    DefaultDecl, ExportDecl, ExportDefaultDecl, Module, ModuleDecl, ModuleItem, Stmt,
+    Decl, ExportDecl, Module, ModuleDecl, ModuleItem, Stmt, VarDecl, VarDeclarator,
 };
 
-use binding_targets::declaration_name_strings;
+use binding_targets::{binding_name_strings, top_level_binding_name_strings};
 use js_ast::{
     ParsedJsModule, emit_module_source, parse_js_module_consuming,
-    statements_for_source_unit_ordinals,
+    source_unit_ordinal_for_statement, split_var_declarators, statements_for_source_unit_ordinals,
 };
 
 /// A parsed JavaScript source file together with its original text and path.
@@ -39,7 +39,19 @@ impl PreparedSource {
         let path = path.as_ref().to_path_buf();
         let source = std::fs::read_to_string(&path)
             .with_context(|| format!("reading source file {}", path.display()))?;
-        let parsed = parse_js_module_consuming(&path.display().to_string(), source)
+        Self::from_source(&path, &path, source)
+    }
+
+    /// Parse verified in-memory source while retaining its physical path for
+    /// reports and its logical path for parser/source-unit identity.
+    pub fn from_source(
+        physical_path: impl AsRef<Path>,
+        source_identity: impl AsRef<Path>,
+        source: impl Into<String>,
+    ) -> Result<Self> {
+        let path = physical_path.as_ref().to_path_buf();
+        let identity = source_identity.as_ref();
+        let parsed = parse_js_module_consuming(&identity.display().to_string(), source.into())
             .with_context(|| format!("parsing source file {}", path.display()))?;
         let source = parsed.source_text();
         let line_starts = std::iter::once(0)
@@ -104,21 +116,6 @@ impl PreparedSource {
             .collect()
     }
 
-    /// Find one top-level item declaring `name` and include up to
-    /// `context_statements` items on either side.
-    ///
-    /// A repeated top-level declaration is rejected as ambiguous because this
-    /// helper is intended to identify a source location, not choose an source_unit.
-    pub fn statement_rows_around_binding(
-        &self,
-        name: &str,
-        context_statements: usize,
-    ) -> Result<Vec<StatementRow>> {
-        self.statement_rows(Some(
-            self.statement_range_around_binding(name, context_statements)?,
-        ))
-    }
-
     /// Find the raw item range around a declaration without rendering it.
     pub fn statement_range_around_binding(
         &self,
@@ -132,7 +129,7 @@ impl PreparedSource {
             .iter()
             .enumerate()
             .filter_map(|(index, item)| {
-                top_level_binding_names(item)
+                top_level_binding_name_strings(item)
                     .iter()
                     .any(|binding| binding == name)
                     .then_some(index)
@@ -161,6 +158,76 @@ impl PreparedSource {
         Ok(StatementRange { start, end })
     }
 
+    /// Find one top-level variable declarator by one of its declared names.
+    /// The returned row keeps the enclosing raw `Module.body` index while its
+    /// source span and text cover only the selected declarator.
+    pub fn variable_declarator_row(
+        &self,
+        name: &str,
+        include_pretty: bool,
+    ) -> Result<StatementRow> {
+        let mut matches = Vec::new();
+        for (body_index, item) in self.parsed.module.body.iter().enumerate() {
+            let Some((var, exported)) = top_level_var_decl(item) else {
+                continue;
+            };
+            for (declarator_index, declarator) in var.decls.iter().enumerate() {
+                if binding_name_strings(&declarator.name)
+                    .iter()
+                    .any(|binding| binding == name)
+                {
+                    matches.push((body_index, declarator_index, var, declarator, exported));
+                }
+            }
+        }
+
+        let (index, declarator_index, var, declarator, exported) = match matches.as_slice() {
+            [] => bail!(
+                "no top-level variable declarator binding `{name}` in {}",
+                self.path.display()
+            ),
+            [matched] => *matched,
+            _ => bail!(
+                "ambiguous top-level variable declarator binding `{name}` in {}: declared by {}",
+                self.path.display(),
+                matches
+                    .iter()
+                    .map(|(body_index, declarator_index, ..)| {
+                        format!("body[{body_index}] declarator[{declarator_index}]")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        let coordinates = self.span_coordinates(index, declarator.span)?;
+        let original_source = self
+            .source
+            .get(coordinates.byte_start..coordinates.byte_end)
+            .with_context(|| {
+                format!("source span for body[{index}] declarator[{declarator_index}] is not on UTF-8 boundaries")
+            })?
+            .to_string();
+        let pretty_source = if include_pretty {
+            pretty_print_item(&single_declarator_item(var, declarator, exported))?
+        } else {
+            String::new()
+        };
+
+        Ok(StatementRow {
+            index,
+            declarator_index: Some(declarator_index),
+            byte_start: coordinates.byte_start,
+            byte_end: coordinates.byte_end,
+            start_line: coordinates.start_line,
+            start_column: coordinates.start_column,
+            end_line: coordinates.end_line,
+            end_column: coordinates.end_column,
+            bindings: binding_name_strings(&declarator.name),
+            original_source,
+            pretty_source,
+        })
+    }
+
     /// Coordinates only, without copying or pretty-printing the source item.
     pub fn statement_coordinates(&self, index: usize) -> Result<StatementCoordinates> {
         let item = self
@@ -172,8 +239,48 @@ impl PreparedSource {
         self.item_coordinates(index, item)
     }
 
+    /// Original source of one graph source unit inside raw item
+    /// `body_index`: its own declarator when the item is a comma-list
+    /// declaration the graph splits, else the whole item.
+    pub fn source_unit_original_source(
+        &self,
+        body_index: usize,
+        ordinal: SourceUnitOrdinal,
+    ) -> Result<&str> {
+        let body = &self.parsed.module.body;
+        let item = body
+            .get(body_index)
+            .with_context(|| format!("body[{body_index}] is outside the parsed source"))?;
+        let span = match split_var_declarators(item) {
+            Some(declarators) => {
+                let first = source_unit_ordinal_for_statement(body, StatementId(body_index));
+                ordinal
+                    .0
+                    .checked_sub(first.0)
+                    .and_then(|offset| declarators.get(offset))
+                    .with_context(|| {
+                        format!(
+                            "source unit ordinal {} is not in body[{body_index}]",
+                            ordinal.0
+                        )
+                    })?
+                    .span
+            }
+            None => item.span(),
+        };
+        let coordinates = self.span_coordinates(body_index, span)?;
+        self.source
+            .get(coordinates.byte_start..coordinates.byte_end)
+            .with_context(|| {
+                format!("source span in body[{body_index}] is not on UTF-8 boundaries")
+            })
+    }
+
     fn item_coordinates(&self, index: usize, item: &ModuleItem) -> Result<StatementCoordinates> {
-        let span = item.span();
+        self.span_coordinates(index, item.span())
+    }
+
+    fn span_coordinates(&self, index: usize, span: Span) -> Result<StatementCoordinates> {
         if span.is_dummy() {
             bail!("parsed source item body[{index}] has no original source span");
         }
@@ -234,13 +341,14 @@ impl PreparedSource {
 
         Ok(StatementRow {
             index,
+            declarator_index: None,
             byte_start: coordinates.byte_start,
             byte_end: coordinates.byte_end,
             start_line: coordinates.start_line,
             start_column: coordinates.start_column,
             end_line: coordinates.end_line,
             end_column: coordinates.end_column,
-            bindings: top_level_binding_names(item),
+            bindings: top_level_binding_name_strings(item),
             original_source,
             pretty_source,
         })
@@ -312,11 +420,15 @@ impl FromStr for StatementRange {
     }
 }
 
-/// One raw top-level module item and its original-source coordinates.
+/// One raw top-level module item or variable declarator and its source coordinates.
 #[derive(Debug, Clone, Serialize)]
 pub struct StatementRow {
     /// Zero-based index in the parsed source module's `Module.body` array.
     pub index: usize,
+    /// Zero-based declarator index when this row selects one fragment of a
+    /// variable declaration; absent when the row represents a whole item.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub declarator_index: Option<usize>,
     /// Half-open UTF-8 byte span in the original source file.
     pub byte_start: usize,
     pub byte_end: usize,
@@ -333,39 +445,32 @@ pub struct StatementRow {
     pub pretty_source: String,
 }
 
-fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
+fn top_level_var_decl(item: &ModuleItem) -> Option<(&VarDecl, bool)> {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_name_strings(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => {
-            declaration_name_strings(decl)
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(ExportDefaultDecl {
-            decl, ..
-        })) => match decl {
-            DefaultDecl::Class(class) => class
-                .ident
-                .as_ref()
-                .map(|ident| vec![ident.sym.to_string()])
-                .unwrap_or_default(),
-            DefaultDecl::Fn(function) => function
-                .ident
-                .as_ref()
-                .map(|ident| vec![ident.sym.to_string()])
-                .unwrap_or_default(),
-            DefaultDecl::TsInterfaceDecl(_) => Vec::new(),
-        },
-        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
-            .specifiers
-            .iter()
-            .map(|specifier| match specifier {
-                swc_ecma_ast::ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                swc_ecma_ast::ImportSpecifier::Namespace(namespace) => {
-                    namespace.local.sym.to_string()
-                }
-                swc_ecma_ast::ImportSpecifier::Named(named) => named.local.sym.to_string(),
-            })
-            .collect(),
-        _ => Vec::new(),
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some((var, false)),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })) => Some((var, true)),
+        _ => None,
+    }
+}
+
+fn single_declarator_item(var: &VarDecl, declarator: &VarDeclarator, exported: bool) -> ModuleItem {
+    let declaration = Decl::Var(Box::new(VarDecl {
+        span: declarator.span,
+        ctxt: var.ctxt,
+        kind: var.kind,
+        declare: var.declare,
+        decls: vec![declarator.clone()],
+    }));
+    if exported {
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            span: declarator.span,
+            decl: declaration,
+        }))
+    } else {
+        ModuleItem::Stmt(Stmt::Decl(declaration))
     }
 }
 

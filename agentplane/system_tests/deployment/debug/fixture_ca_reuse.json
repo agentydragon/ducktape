@@ -1,0 +1,124 @@
+{
+  "invocation": "e77e85c9-4306-4e40-8593-6b5e0cb3a54c",
+  "source": "d2e6f15c4af683a87a5b7dfc10c7d3758d1c2aa6",
+  "certificate_resources": {
+    "name": "test.outputs/certificates/resources.yaml",
+    "uri": "bytestream://remote.buildbuddy.io/blobs/29c8ecaa341ddecbeeb36d6e6b65f304dc1512a1b57a949ed06757ceb86acf1c/949517"
+  },
+  "chain_validation": {
+    "all_five_service_leaves": "Pass through captured prior root and workload intermediate; fail through newly recreated root",
+    "private_material_published": false
+  },
+  "validation": {
+    "control": {
+      "invocation": "b232674e-e454-4d58-b798-50592d74348e",
+      "result": "FAILED on second cycle with InvalidSignature after successful first-cycle issuance and cleanup",
+      "action_seconds": 214.999,
+      "pytest_seconds": 169.18,
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/da7481ab221862cf312720db81ec7d4955e4df715bb019fec6f543e0e7ea5290/7380",
+      "source_file_sha256": {
+        "agentplane/system_tests/deployment/stack.py": "55fa314ec82ab42e5b3a3819d2e49798abaf707f00dace8b1fbf14ec6be2eaf3",
+        "agentplane/system_tests/deployment/certificates.py": "97370a7fc8e6fc6e2326eb50ff86956688f40a352c48d9f1e294b6b59a0d06b6",
+        "agentplane/system_tests/deployment/test_pki_lifecycle.py": "f09fa8cdfac4ec3fe07007dcec292bd1596c4dddd4c00bde5938c3a776cd0e26"
+      }
+    },
+    "repair": {
+      "invocation": "84b1a207-dcb2-4adc-8061-8fd3c73628b7",
+      "effective_local_commit": "f087a487f781497c3c4542330960ce3102ff63d2",
+      "remote_base_before_worktree_patch": "7e9edc9270bef882b5f92549ffde6bec7789db29",
+      "result": "PASSED: two coherent issuance/cleanup cycles; root and intermediate Certificate UIDs changed; retained controller Deployment UIDs unchanged",
+      "action_seconds": 90.967,
+      "pytest_seconds": 79.29,
+      "start_utc": "2026-11-09T18:21:03.736Z",
+      "end_utc": "2026-11-09T18:22:34.703Z",
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/86b0df8b26362781300bd6226eca5f382016c3ddeaaa267212e58ad355b1fb47/2984",
+      "public_lifecycle_uri": "bytestream://remote.buildbuddy.io/blobs/2d6293296addb0af484dee5769fac493b627ad96aaa59d14702460007bdd4c90/440",
+      "cycles": [
+        {
+          "cycle": 0,
+          "certificate_uids": {
+            "test-runner-root": "f6650abd-dd9c-4115-bfff-b558ce8d19df",
+            "agentplane-workload-ca": "2a7d30dc-0a22-4016-8591-df397378a9d2"
+          },
+          "chain_valid": true
+        },
+        {
+          "cycle": 1,
+          "certificate_uids": {
+            "test-runner-root": "d40ca4b9-4d8b-4cfd-9145-4adfeee11b4e",
+            "agentplane-workload-ca": "e8ad28c7-4832-4d00-9098-abf5802e7cee"
+          },
+          "chain_valid": true
+        }
+      ],
+      "source_file_sha256": {
+        "agentplane/system_tests/deployment/stack.py": "ce75cb55e5e2657508a010733bada0ef4b2fa2311eff5dc2d0f4c19e3bf4cd06",
+        "agentplane/system_tests/deployment/certificates.py": "d620fff3a05fa25b1b1c64bce0c4309eb7962973092d14a3d8660c29dfc21037",
+        "agentplane/system_tests/deployment/test_pki_lifecycle.py": "f09fa8cdfac4ec3fe07007dcec292bd1596c4dddd4c00bde5938c3a776cd0e26"
+      },
+      "timing_limit": "Correctness comparison, not a latency treatment: cold-start/cache conditions differed from the control."
+    },
+    "focused_tests": {
+      "invocation": "357bdbd5-0043-4a52-84fc-f6cfa627da11",
+      "result": "PASSED: test_certificates and test_stack"
+    },
+    "named_library_build": {
+      "invocation": "45073596-e20c-4c45-ae23-72d409eb3aa6",
+      "result": "SUCCESS in authoritative invocation; wrapper later failed downloading CAS result"
+    },
+    "full_vm": {
+      "originating_invocation": "aed9b899-fa04-5901-8bdd-68f5b8d00b69",
+      "originating_source": "9758d0a54b141afcf38e1ba727b3fdc629b6a1ee",
+      "receiving_invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+      "receiving_source": "fb0ce2bfe8204287752f51e88bcd71c64ea1f235",
+      "receiving_pr_head": "58bd0acf2c1102146a4791ce416e47fbe31ac56b",
+      "input_proof": "Originating invocation has link type NEW=1; receiving invocation reused the same physical execution ID and action digest (type 2). It is one fresh physical run, not two or an old cached duration.",
+      "action_digest": {
+        "hash": "ee6fdbbf273713138616808fde52685e22306954c0cc12403a7226287aee4d5f",
+        "sizeBytes": "1850"
+      },
+      "result": "PASSED: all three VM scenarios and cleanup completed",
+      "start_utc": "2026-11-09T18:24:24.696022Z",
+      "end_utc": "2026-11-09T18:31:27.838550Z",
+      "action_seconds": 423.142528,
+      "pytest_seconds": 380.54,
+      "phases": [
+        {
+          "phase": "Stack setup",
+          "seconds": 127.44116
+        },
+        {
+          "phase": "Scenarios",
+          "seconds": 216.689288
+        },
+        {
+          "phase": "Cleanup",
+          "seconds": 29.930315
+        },
+        {
+          "phase": "Other action",
+          "seconds": 49.08176500000002
+        }
+      ],
+      "readiness_seconds": [84.88434, 88.266122, 116.21973],
+      "test_log_uri": "bytestream://remote.buildbuddy.io/blobs/33f11dc38abc7eb870d8d0470fccaf4a9d51dec0d347c3464e7fa1d01aa2168e/4537",
+      "test_xml_uri": "bytestream://remote.buildbuddy.io/blobs/4af696c982c08524f8a5559e26198261606e18a7decec64a93ddcb91b36ca28a/354",
+      "spans_uri": "bytestream://remote.buildbuddy.io/blobs/024538b9b44b817e4ba0e4f28fc18f3ac117f7a7b16d313a5930a4467d1f7e1f/93333",
+      "limits": [
+        "One fresh passing execution does not diagnose or establish a repair for the earlier intermittent early-kernel stop.",
+        "Selected top-level phases are disjoint; Other action is elapsed action time outside those spans. Nested readiness and baseline-clean spans are not added.",
+        "Even removing all 127.44 seconds of setup leaves about 295.70 action seconds. This conditional bound holds all other work fixed; it is not an observed optimization.",
+        "Broader CI failed Pod memory admission and MCP delegation after bootstrap; full CI is not green."
+      ]
+    },
+    "broader_ci": {
+      "invocation": "bc8b6a85-f8f5-5fd8-93d9-9424c28a74e0",
+      "tested_pr_head": "58bd0acf2c1102146a4791ce416e47fbe31ac56b",
+      "result": "FAILED",
+      "failures": {
+        "//agentplane/system_tests/suites:test_pod": "19/20 passed; messaging Sandbox Unschedulable/Insufficient memory,300-second readiness deadline; physical action749.180919s.",
+        "//agentplane/system_tests/suites/mcp:test_parent_delegation": "environments/get shell call lost exec-server transport during codex-executor liveness restart; receipt parser then found no JSON. Underlying health-loss cause remains unresolved."
+      }
+    }
+  }
+}

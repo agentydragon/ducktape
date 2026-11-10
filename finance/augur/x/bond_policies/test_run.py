@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.x.bond_policies.construction import ProxyConstruction, compare_constructions, stipulated_curves
 from finance.augur.x.bond_policies.run import CELLS, compose, execute, measurements, situation
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @pytest.fixture
@@ -161,7 +161,7 @@ def test_cli_exports_inputs_compact_results_and_selected_original_timelines(tmp_
     output = tmp_path / "bond_example_output"
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/x/bond_policies/run_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/bond_policies/run_bin"),
             "--output-dir",
             output,
             "--annual-spending",

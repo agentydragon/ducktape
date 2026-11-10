@@ -1,0 +1,284 @@
+"""Retain VM shutdown evidence before kubelet removes the container logs."""
+
+import logging
+import os
+import re
+import shutil
+import threading
+import time
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, contextmanager
+from pathlib import Path
+from typing import BinaryIO
+
+from agentplane.system_tests.vm import shutdown_diagnostic
+
+logger = logging.getLogger(__name__)
+SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
+SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
+SUPERVISION_PASSED = b'AGENTPLANE_GUEST_SUPERVISION_PASSED {"real_systemd_supervision":"passed"}'
+BOOT_EVIDENCE_REPORT_BEGIN = b"AGENTPLANE_BOOT_EVIDENCE_BEGIN"
+BOOT_EVIDENCE_READY = b"AGENTPLANE_UDEV_MONITOR_READY"
+BOOT_EVIDENCE_COMPLETE = b"AGENTPLANE_BOOT_EVIDENCE_END status=complete"
+BOOT_EVIDENCE_PARTIAL = b"AGENTPLANE_BOOT_EVIDENCE_END status=partial"
+BOOT_EVIDENCE_REQUIRED_SECTIONS = (
+    b"AGENTPLANE_BOOT_EVIDENCE_GUEST_END",
+    b"AGENTPLANE_BOOT_EVIDENCE_DEVICE_END",
+    b"AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END",
+)
+CONSOLES_ENV = "AGENTPLANE_TEST_GUEST_CONSOLES"
+
+
+class GuestShutdownError(RuntimeError):
+    """A retained guest incarnation did not complete its orderly shutdown."""
+
+
+class GuestBootError(RuntimeError):
+    """The real-manager supervision proof failed before runner startup."""
+
+
+class GuestBootEvidenceError(RuntimeError):
+    """The selected fixture guest did not retain complete device-discovery evidence."""
+
+
+def _has_payload(path: Path, payload: bytes) -> bool:
+    return any(
+        line.endswith(b"\n") and line.rstrip(b"\r\n").split(b" ", 3)[1:] == [b"stdout", b"F", payload]
+        for line in path.read_bytes().splitlines(keepends=True)
+    )
+
+
+_KERNEL_PRINTK_FRAME = re.compile(rb"\[[ \t]*[0-9]+\.[0-9]{6}\] \S.*")
+
+
+def _has_boot_readiness_payload(path: Path) -> bool:
+    """Accept the readiness marker when a kernel printk shares its CRI record."""
+    for line in path.read_bytes().splitlines(keepends=True):
+        if not line.endswith(b"\n"):
+            continue
+        fields = line.rstrip(b"\r\n").split(b" ", 3)
+        if fields[1:3] != [b"stdout", b"F"] or len(fields) != 4:
+            continue
+        payload = fields[3]
+        if payload == BOOT_EVIDENCE_READY:
+            return True
+        if payload.startswith(BOOT_EVIDENCE_READY) and _KERNEL_PRINTK_FRAME.fullmatch(
+            payload[len(BOOT_EVIDENCE_READY) :]
+        ):
+            return True
+    return False
+
+
+def _require_boot_evidence(consoles: Path) -> None:
+    selected: set[Path] = set()
+    for path in consoles.glob("*/*.cri.log"):
+        # Select only the guest whose reporter ran. Unselected guests still print the literal
+        # kernel argument in systemd's skipped ConditionKernelCommandLine diagnostic.
+        if _has_payload(path, BOOT_EVIDENCE_REPORT_BEGIN):
+            selected.add(path.parent)
+
+    if len(selected) != 1:
+        names = sorted(path.name for path in selected)
+        raise GuestBootEvidenceError(
+            f"Expected exactly one retained guest with {BOOT_EVIDENCE_REPORT_BEGIN.decode()} receipt; "
+            f"found {len(selected)}: {', '.join(names) or 'none'}"
+        )
+
+    incarnation = next(iter(selected))
+    # The selected guest can rotate/restart its console container between boot and teardown.
+    # Retention stores each inode as a separate CRI log under the same launcher UID directory.
+    logs = list(incarnation.glob("*.cri.log"))
+    if not any(_has_boot_readiness_payload(path) for path in logs):
+        raise GuestBootEvidenceError(
+            f"Guest boot-device monitor did not report readiness; see retained console {incarnation}"
+        )
+    if any(_has_payload(path, BOOT_EVIDENCE_PARTIAL) for path in logs):
+        raise GuestBootEvidenceError(f"Guest boot evidence report was partial; see retained console {incarnation}")
+    if not all(any(_has_payload(path, marker) for path in logs) for marker in BOOT_EVIDENCE_REQUIRED_SECTIONS):
+        raise GuestBootEvidenceError(f"Guest boot evidence report missed a required section; see {incarnation}")
+    if not any(_has_payload(path, BOOT_EVIDENCE_COMPLETE) for path in logs):
+        raise GuestBootEvidenceError(f"Guest boot evidence report did not complete; see retained console {incarnation}")
+
+
+def check_boot() -> None:
+    if (directory := os.environ.get(CONSOLES_ENV)) is None:
+        return
+    for path in Path(directory).glob("*/*.cri.log"):
+        if _has_payload(path, SUPERVISION_FAILED):
+            raise GuestBootError(f"Guest supervision proof failed; see retained console {path}")
+
+
+def systemd_supervision_passed(incarnation_uid: str) -> bool:
+    """Require the selected VM's receipt, even when several guests boot concurrently."""
+    return any(
+        _has_payload(path, SUPERVISION_PASSED)
+        for path in Path(os.environ[CONSOLES_ENV]).glob(f"*_{incarnation_uid}/*.cri.log")
+    )
+
+
+def _copy(
+    log_root: Path,
+    pod_root: Path,
+    scopes: dict[str, Path],
+    storage_root: Path,
+    namespace: str,
+    destination: Path,
+    stop: threading.Event,
+) -> None:
+    # Open descriptors keep the last bytes readable after suspend/delete unlinks the source.
+    opened: set[tuple[int, int]] = set()
+    streams: list[tuple[BinaryIO, BinaryIO]] = []
+    journals: list[tuple[BinaryIO, BinaryIO]] = []
+    journal_snapshot_at = 0.0
+    with ExitStack() as files:
+        while True:
+            for pattern, log_destination in scopes.items():
+                for path in log_root.glob(pattern):
+                    _retain(path, log_destination / path.parent.parent.name, opened, streams, files)
+            for path in storage_root.glob(f"pvc-*_{namespace}_*-state/firecracker/firecracker.log"):
+                _retain(
+                    path, destination / "firecracker" / path.parent.parent.name, opened, streams, files, suffix=".log"
+                )
+            for launcher in log_root.glob(f"{namespace}_virt-launcher-*"):
+                pod_uid = launcher.name.rsplit("_", 1)[-1]
+                # Keep QEMU's regular serial file independently of virt-tail/CRI forwarding.
+                for path in pod_root.glob(f"{pod_uid}/volumes/kubernetes.io~empty-dir/private/*/virt-serial0-log"):
+                    _retain(
+                        path,
+                        destination / "serial" / launcher.name / path.parent.name,
+                        opened,
+                        streams,
+                        files,
+                        suffix=".log",
+                    )
+            for reader, writer in streams:
+                shutil.copyfileobj(reader, writer)
+                writer.flush()
+            for path in storage_root.glob(f"pvc-*_{namespace}_*-state/systemd-journal/*/*.journal*"):
+                _retain(
+                    path,
+                    destination / "journals" / path.parents[2].name / path.parent.name,
+                    opened,
+                    journals,
+                    files,
+                    journal=True,
+                    suffix="",
+                )
+            finished = stop.is_set()
+            if finished or time.monotonic() >= journal_snapshot_at:
+                # Journal headers and entries change in place. Refresh whole files while the
+                # test runs too, so a killed driver leaves more than its initial snapshot.
+                for reader, writer in journals:
+                    reader.seek(0)
+                    writer.seek(0)
+                    shutil.copyfileobj(reader, writer)
+                    writer.truncate()
+                    writer.flush()
+                journal_snapshot_at = time.monotonic() + 1
+            if finished:
+                return
+            stop.wait(0.1)
+
+
+def _retain(
+    path: Path,
+    destination: Path,
+    opened: set[tuple[int, int]],
+    streams: list[tuple[BinaryIO, BinaryIO]],
+    files: ExitStack,
+    *,
+    journal: bool = False,
+    suffix: str = ".cri.log",
+) -> None:
+    try:
+        source = path.open("rb")
+    except FileNotFoundError:
+        # kubelet may remove a launcher between directory enumeration and open.
+        return
+    with source:
+        stat = os.fstat(source.fileno())
+        identity = (stat.st_dev, stat.st_ino)
+        if identity in opened:
+            return
+        target = destination / f"{identity[1]}-{path.name}{suffix}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # dup the open descriptor, retaining the inode even if its pathname disappears.
+        retained = files.enter_context(os.fdopen(os.dup(source.fileno()), "rb", buffering=0 if journal else -1))
+        writer = files.enter_context(target.open("wb"))
+        streams.append((retained, writer))
+        if journal:
+            # An initial snapshot also leaves evidence if the test driver is killed outright.
+            shutil.copyfileobj(retained, writer)
+            writer.flush()
+        opened.add(identity)
+
+
+def _require_shutdown(consoles: Path) -> None:
+    # Log rotation/container restarts can split one launcher's evidence across several files.
+    missing = sorted(
+        incarnation.name
+        for incarnation in consoles.glob("*")
+        if incarnation.is_dir()
+        and not any(_has_payload(path, SHUTDOWN_COMPLETE) for path in incarnation.glob("*.cri.log"))
+    )
+    if missing:
+        raise GuestShutdownError(f"Guest shutdown did not complete for launcher(s): {', '.join(missing)}")
+
+
+@contextmanager
+def capture(
+    *,
+    log_root: Path,
+    pod_root: Path,
+    storage_root: Path,
+    namespace: str,
+    kubevirt_namespace: str,
+    destination: Path,
+    validate_shutdown: Callable[[], bool],
+    require_shutdown_marker: bool = True,
+    require_boot_evidence: bool = False,
+    record_shutdown_diagnostic: bool = False,
+) -> Iterator[None]:
+    """Retain native journals, raw serial output and launcher/handler container logs.
+
+    A pytest session fixture exits normally even when its tests failed, so its caller supplies a
+    teardown-time predicate in addition to the exception-unwind protection here.
+    """
+    scopes = {
+        f"{namespace}_virt-launcher-*/guest-console-log/*.log*": destination / "consoles",
+        f"{namespace}_virt-launcher-*/compute/*.log*": destination / "launchers",
+        f"{namespace}_virt-launcher-*/egress-sidecar/*.log*": destination / "relays",
+        f"{namespace}_virt-launcher-*/virtiofs-*/*.log*": destination / "virtiofs",
+        f"{namespace}_*/environment-runtime/*.log*": destination / "runtimes",
+        f"{kubevirt_namespace}_virt-handler-*/virt-handler/*.log*": destination / "handlers",
+    }
+    stop = threading.Event()
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="vm-guest-logs") as executor:
+        copying = executor.submit(_copy, log_root, pod_root, scopes, storage_root, namespace, destination, stop)
+        try:
+            yield
+        except BaseException:
+            stop.set()
+            try:
+                copying.result()
+            except Exception:
+                logger.exception("Could not finish retaining VM logs while unwinding a failure")
+            if record_shutdown_diagnostic:
+                try:
+                    shutdown_diagnostic.record(destination, destination.parent, namespace)
+                except Exception:
+                    logger.exception("Could not write the VM shutdown diagnostic while unwinding a failure")
+            raise
+        finally:
+            stop.set()
+        copying.result()
+        if record_shutdown_diagnostic:
+            report = shutdown_diagnostic.record(destination, destination.parent, namespace)
+            if validate_shutdown():
+                shutdown_diagnostic.require_orderly_shutdown(report)
+        if validate_shutdown():
+            if require_shutdown_marker:
+                _require_shutdown(destination / "consoles")
+            if require_boot_evidence:
+                _require_boot_evidence(destination / "consoles")

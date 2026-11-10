@@ -1,11 +1,27 @@
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode, act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, type Mock, vi } from "vitest";
+import { afterEach, vi } from "vitest";
+import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
+import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import { api } from "../../client";
-import type { ActionGroupView, ActionRequestView, ActionState } from "../client";
-import type { McpLinkageView } from "../../mcp_linkage_client";
+import { createAppQueryClient } from "../../query";
+import {
+  ActionRequestSchema,
+  ActionState,
+  ActionIdentitySchema,
+  DecisionSchema,
+  ExecutionErrorKind,
+  ExecutionSchema,
+  ExecutionState,
+  Verdict,
+  type ActionGroup,
+  type ActionRequest,
+  type ListActionRequestHistoryResponse,
+} from "../../../../action_service/action_service_pb";
+import type { McpServerLinkage } from "../../../../action_service/operator_action_service_pb";
 import {
   actionGroupUpsertProtoJson,
   actionGroupsSnapshotCompleteProtoJson,
@@ -24,7 +40,6 @@ import {
   mcpLinkagesSnapshotProtoJson,
   startMcpLinkageProtoJson,
 } from "./proto_fixtures";
-import type { ActionHistoryPage } from "../types";
 
 /** Shared fixtures, stand-ins for the network, and mounting for the Action views' suites. */
 
@@ -35,52 +50,74 @@ export const ACTION_REQUEST_WATCH = "/upstream/actions/v1/action-requests:watch?
 export const ACTION_GROUP_WATCH = "/upstream/actions/v1/action-groups:watch";
 export const MCP_LINKAGE_WATCH = "/upstream/actions/v1/operator/mcp-servers:watch";
 
-export function request(state: ActionState, index: number): ActionRequestView {
-  const decided = state !== "decision_pending";
-  const executing = !["decision_pending", "allowed", "denied"].includes(state);
-  return {
+function stateName(state: ActionState): string {
+  return ActionState[state].replace("ACTION_STATE_", "").toLowerCase();
+}
+
+export function request(state: ActionState, index: number): ActionRequest {
+  const name = stateName(state);
+  const decided = state !== ActionState.DECISION_PENDING;
+  const executionState = new Map<ActionState, ExecutionState>([
+    [ActionState.DISPATCHING, ExecutionState.DISPATCHING],
+    [ActionState.RUNNING, ExecutionState.RUNNING],
+    [ActionState.SUCCEEDED, ExecutionState.SUCCEEDED],
+    [ActionState.FAILED, ExecutionState.FAILED],
+    [ActionState.CANCELLED, ExecutionState.CANCELLED],
+    [ActionState.EXECUTION_UNKNOWN, ExecutionState.EXECUTION_UNKNOWN],
+  ]).get(state);
+  return create(ActionRequestSchema, {
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-    action: { group: "agentplane", name: `state-${state}` },
-    arguments: { state, token: "test-exact-token", nested: { password: "test-exact-password" } },
-    title: `test title for the ${state} fixture`,
-    description: `test description adding what the ${state} title leaves out`,
-    idempotency_key: `request-${index}`,
+    action: create(ActionIdentitySchema, { group: "agentplane", name: `state-${name}` }),
+    arguments: {
+      state: name,
+      token: "test-exact-token",
+      nested: { password: "test-exact-password" },
+    },
+    title: `test title for the ${name} fixture`,
+    description: `test description adding what the ${name} title leaves out`,
+    idempotencyKey: `request-${index}`,
     caller: { namespace: "agentplane-test", name: "test-agent" },
     state,
-    version: decided ? 2 : 1,
-    created_at: "2026-09-05T12:00:00Z",
-    updated_at: "2026-09-05T12:00:00Z",
+    version: decided ? 2n : 1n,
+    createdAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
+    updatedAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
     decision: decided
-      ? {
+      ? create(DecisionSchema, {
           id: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-          verdict: state === "denied" ? "deny" : "allow",
-          provider: "human_operator",
-          operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-          decision_note: DECISION_NOTE,
-          reason_code: null,
-          reason_description: null,
-          policy_evidence: null,
-          idempotency_key: `decision-${index}`,
-          decided_at: "2026-09-05T12:00:00Z",
-        }
-      : null,
-    execution: executing
-      ? {
-          id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-          state: state as NonNullable<ActionRequestView["execution"]>["state"],
-          result: state === "succeeded" ? { ok: true } : null,
-          error: ["failed", "cancelled", "execution_unknown"].includes(state) ? { kind: state } : null,
-          created_at: "2026-09-05T12:00:00Z",
-          started_at: "2026-09-05T12:00:01Z",
-          reconciled_at: null,
-          completed_at: ["running", "dispatching"].includes(state) ? null : "2026-09-05T12:00:02Z",
-        }
-      : null,
-  };
+          verdict: state === ActionState.DENIED ? Verdict.DENY : Verdict.ALLOW,
+          decider: {
+            case: "operator",
+            value: {
+              operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+              decisionNote: DECISION_NOTE,
+            },
+          },
+          idempotencyKey: `decision-${index}`,
+          decidedAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
+        })
+      : undefined,
+    execution:
+      executionState === undefined
+        ? undefined
+        : create(ExecutionSchema, {
+            id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            state: executionState,
+            result: state === ActionState.SUCCEEDED ? fromJson(ValueSchema, { ok: true }) : undefined,
+            error: [ActionState.FAILED, ActionState.CANCELLED, ActionState.EXECUTION_UNKNOWN].includes(state)
+              ? { kind: ExecutionErrorKind.INVALID_ARGUMENTS, message: name }
+              : undefined,
+            createdAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
+            startedAt: fromJson(TimestampSchema, "2026-09-05T12:00:01Z"),
+            completedAt:
+              state === ActionState.RUNNING || state === ActionState.DISPATCHING
+                ? undefined
+                : fromJson(TimestampSchema, "2026-09-05T12:00:02Z"),
+          }),
+  });
 }
 
 /** Arguments the ssh group's `exec` Action takes. */
-export const SSH_EXEC_ARGUMENTS: ActionRequestView["arguments"] = {
+export const SSH_EXEC_ARGUMENTS: JsonObject = {
   host: "test-host.example",
   user: "test-user",
   command: "echo test-output",
@@ -90,7 +127,7 @@ export const SSH_EXEC_ARGUMENTS: ActionRequestView["arguments"] = {
  * keeps an MCP tool's answer: the whole CallToolResult, where FastMCP writes the `ExecResult` the tool
  * returned twice, as structured content and as one JSON text block. `returned` overrides fields of
  * that `ExecResult`. */
-export function sshExec(state: ActionState, returned: Record<string, unknown> = {}): ActionRequestView {
+export function sshExec(state: ActionState, returned: Record<string, unknown> = {}): ActionRequest {
   const row = request(state, 1);
   const value = {
     host: "test-host.example",
@@ -102,50 +139,48 @@ export function sshExec(state: ActionState, returned: Record<string, unknown> = 
     stderr_truncated: false,
     ...returned,
   };
-  return {
-    ...row,
-    action: { group: "ssh", name: "exec" },
-    arguments: SSH_EXEC_ARGUMENTS,
-    execution: row.execution && {
-      ...row.execution,
-      result: row.execution.result && {
-        content: [{ type: "text", text: JSON.stringify(value) }],
-        structuredContent: value,
-        isError: false,
-      },
-    },
-  };
+  row.action = create(ActionIdentitySchema, { group: "ssh", name: "exec" });
+  row.arguments = SSH_EXEC_ARGUMENTS;
+  if (row.execution?.result !== undefined) {
+    row.execution.result = fromJson(ValueSchema, {
+      content: [{ type: "text", text: JSON.stringify(value) }],
+      structuredContent: value,
+      isError: false,
+    });
+  }
+  return row;
 }
 
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement; queryClient: QueryClient }> = [];
 
 function actionResponse(path: string, value: unknown): unknown {
   if (value instanceof Response || value === undefined || value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) {
     if (path.endsWith("/action-groups")) {
-      if (!value.every(isActionGroupView)) throw new Error("Expected ActionGroupView fixtures.");
+      if (!value.every(isActionGroup)) throw new Error("Expected ActionGroup fixtures.");
       return listActionGroupsProtoJson(value);
     }
     if (path.endsWith("/action-requests")) {
-      if (!value.every(isActionRequestView)) throw new Error("Expected ActionRequestView fixtures.");
+      if (!value.every(isActionRequest)) throw new Error("Expected ActionRequest fixtures.");
       return listActionRequestsProtoJson(value);
     }
     return value;
   }
   if (!isRecord(value)) return value;
   if (path.endsWith("/action-requests:history")) {
-    if (!isActionHistoryPage(value)) throw new Error("Expected an ActionHistoryPage fixture.");
+    if (!isListActionRequestHistoryResponse(value))
+      throw new Error("Expected an ListActionRequestHistoryResponse fixture.");
     return listActionHistoryProtoJson(value);
   }
   if (path.endsWith("/decision")) {
-    if (!isActionRequestView(value)) throw new Error("Expected an ActionRequestView decision fixture.");
+    if (!isActionRequest(value)) throw new Error("Expected an ActionRequest decision fixture.");
     return decideActionRequestProtoJson(value);
   }
   if (path.endsWith("/action-groups")) {
     return value;
   }
   if (/\/action-requests\/[^/]+$/.test(path)) {
-    if (!isActionRequestView(value)) throw new Error("Expected an ActionRequestView fixture.");
+    if (!isActionRequest(value)) throw new Error("Expected an ActionRequest fixture.");
     return getActionRequestProtoJson(value);
   }
   if (path.endsWith("/linkage/start")) {
@@ -153,7 +188,7 @@ function actionResponse(path: string, value: unknown): unknown {
     return startMcpLinkageProtoJson(value.authorization_url);
   }
   if (path.endsWith("/linkage/disconnect")) {
-    if (!isMcpLinkageView(value.linkage)) throw new Error("Expected an MCP linkage fixture.");
+    if (!isMcpServerLinkage(value.linkage)) throw new Error("Expected an MCP linkage fixture.");
     return disconnectMcpLinkageProtoJson(value.linkage);
   }
   return value;
@@ -163,47 +198,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isActionRequestView(value: unknown): value is ActionRequestView {
+function isActionRequest(value: unknown): value is ActionRequest {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
-    typeof value.idempotency_key === "string" &&
+    typeof value.idempotencyKey === "string" &&
     isRecord(value.action) &&
-    typeof value.state === "string" &&
-    typeof value.version === "number" &&
-    typeof value.created_at === "string" &&
-    typeof value.updated_at === "string"
+    typeof value.state === "number" &&
+    typeof value.version === "bigint" &&
+    isRecord(value.createdAt) &&
+    isRecord(value.updatedAt)
   );
 }
 
-function isActionGroupView(value: unknown): value is ActionGroupView {
+function isActionGroup(value: unknown): value is ActionGroup {
   return (
     isRecord(value) &&
     typeof value.key === "string" &&
-    typeof value.executor_kind === "string" &&
+    typeof value.executorKind === "number" &&
     Array.isArray(value.actions)
   );
 }
 
-function isMcpLinkageView(value: unknown): value is McpLinkageView {
+function isMcpServerLinkage(value: unknown): value is McpServerLinkage {
   return (
     isRecord(value) &&
-    typeof value.server_id === "string" &&
-    typeof value.server_url === "string" &&
-    typeof value.status === "string" &&
+    typeof value.serverId === "string" &&
+    typeof value.serverUrl === "string" &&
+    typeof value.status === "number" &&
     Array.isArray(value.scopes)
   );
 }
 
-function isActionHistoryPage(value: Record<string, unknown>): value is Record<string, unknown> & ActionHistoryPage {
+function isListActionRequestHistoryResponse(
+  value: Record<string, unknown>
+): value is Record<string, unknown> & ListActionRequestHistoryResponse {
   return (
-    Array.isArray(value.items) &&
-    value.items.every(isActionRequestView) &&
-    (value.next_cursor === null || typeof value.next_cursor === "string")
+    Array.isArray(value.actionRequests) &&
+    value.actionRequests.every(isActionRequest) &&
+    (value.nextCursor === undefined || typeof value.nextCursor === "string")
   );
 }
 
-type ActionFixture = ActionRequestView | ActionGroupView | McpLinkageView;
+type ActionFixture = ActionRequest | ActionGroup | McpServerLinkage;
 
 /** A browser fetch stream that records the facade's NDJSON watch replay. */
 export class TestNdjsonWatch {
@@ -254,7 +291,7 @@ export class TestNdjsonWatch {
     this.signal?.addEventListener("abort", () => this.close(), { once: true });
   }
 
-  sendActionRequests(value: readonly ActionRequestView[]): void {
+  sendActionRequests(value: readonly ActionRequest[]): void {
     if (this.controller === undefined) return;
     this.controller.enqueue(
       this.encoder.encode(
@@ -263,7 +300,7 @@ export class TestNdjsonWatch {
     );
   }
 
-  sendActionGroups(value: readonly ActionGroupView[]): void {
+  sendActionGroups(value: readonly ActionGroup[]): void {
     if (this.controller === undefined) return;
     this.controller.enqueue(
       this.encoder.encode(
@@ -272,7 +309,7 @@ export class TestNdjsonWatch {
     );
   }
 
-  sendMcpLinkages(value: readonly McpLinkageView[]): void {
+  sendMcpLinkages(value: readonly McpServerLinkage[]): void {
     if (this.controller === undefined) return;
     this.controller.enqueue(
       this.encoder.encode(
@@ -354,26 +391,16 @@ export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  mounted.push({ root, container });
+  const queryClient = createAppQueryClient();
+  mounted.push({ root, container, queryClient });
   await act(async () => {
-    root.render(<MantineProvider env="test">{node}</MantineProvider>);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider env="test">{node}</MantineProvider>
+      </QueryClientProvider>
+    );
   });
   return container;
-}
-
-/** The browser's `EventSource` as a test drives it; `TestEventSource.current` is the latest opened. */
-export class TestEventSource extends EventTarget {
-  static readonly CLOSED = 2;
-  static current: TestEventSource | undefined;
-  static readonly opened: Map<string, TestEventSource> = new Map();
-  readyState = 1;
-  close: Mock<() => void> = vi.fn();
-
-  constructor(readonly url: string) {
-    super();
-    TestEventSource.current = this;
-    TestEventSource.opened.set(url, this);
-  }
 }
 
 /** Pushes one snapshot down the latest stream, or the one opened on `url`; a string goes as the
@@ -392,7 +419,7 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
             ? ACTION_REQUEST_WATCH
             : undefined;
   let watch = watchUrl === undefined ? undefined : TestNdjsonWatch.opened.get(watchUrl);
-  if (watch === undefined && TestEventSource.current === undefined) {
+  if (watch === undefined) {
     watchUrl ??= url === undefined ? ACTION_REQUEST_WATCH : undefined;
     if (watchUrl !== undefined) watch = await TestNdjsonWatch.waitForOpen(watchUrl);
   }
@@ -400,19 +427,19 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
     await act(async () => {
       if (watchUrl === ACTION_GROUP_WATCH) {
         const groups = value.map((item) => {
-          if (!isActionGroupView(item)) throw new Error("Expected ActionGroupView fixtures.");
+          if (!isActionGroup(item)) throw new Error("Expected ActionGroup fixtures.");
           return item;
         });
         watch.sendActionGroups(groups);
       } else if (watchUrl === MCP_LINKAGE_WATCH) {
         const linkages = value.map((item) => {
-          if (!isMcpLinkageView(item)) throw new Error("Expected McpLinkageView fixtures.");
+          if (!isMcpServerLinkage(item)) throw new Error("Expected McpServerLinkage fixtures.");
           return item;
         });
         watch.sendMcpLinkages(linkages);
       } else {
         const requests = value.map((item) => {
-          if (!isActionRequestView(item)) throw new Error("Expected ActionRequestView fixtures.");
+          if (!isActionRequest(item)) throw new Error("Expected ActionRequest fixtures.");
           return item;
         });
         watch.sendActionRequests(requests);
@@ -428,12 +455,7 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
     });
     return;
   }
-  const source = url === undefined ? TestEventSource.current : TestEventSource.opened.get(url);
-  await act(async () => {
-    source?.dispatchEvent(
-      new MessageEvent("snapshot", { data: typeof value === "string" ? value : JSON.stringify(value) })
-    );
-  });
+  throw new Error(`No watch is open for ${url ?? "the Action requests"}`);
 }
 
 /** Pushes upsert frames down a generated watch, as the service does after its initial snapshot. */
@@ -450,7 +472,7 @@ export async function sendUpserts(values: readonly ActionFixture[], url: string)
   await act(async () => {
     if (watchUrl === ACTION_GROUP_WATCH) {
       const groups = values.map((value) => {
-        if (!isActionGroupView(value)) throw new Error("Expected ActionGroupView upserts.");
+        if (!isActionGroup(value)) throw new Error("Expected ActionGroup upserts.");
         return actionGroupUpsertProtoJson(value);
       });
       watch.sendGroupUpsertFrames(groups);
@@ -458,14 +480,14 @@ export async function sendUpserts(values: readonly ActionFixture[], url: string)
     }
     if (watchUrl === MCP_LINKAGE_WATCH) {
       const linkages = values.map((value) => {
-        if (!isMcpLinkageView(value)) throw new Error("Expected McpLinkageView upserts.");
+        if (!isMcpServerLinkage(value)) throw new Error("Expected McpServerLinkage upserts.");
         return mcpLinkageUpsertProtoJson(value);
       });
       watch.sendLinkageUpsertFrames(linkages);
       return;
     }
     const requests = values.map((value) => {
-      if (!isActionRequestView(value)) throw new Error("Expected ActionRequestView upserts.");
+      if (!isActionRequest(value)) throw new Error("Expected ActionRequest upserts.");
       return actionRequestUpsertProtoJson(value);
     });
     watch.sendUpsertFrames(requests);
@@ -512,8 +534,7 @@ export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
 }
 
 /** Mounts `node` with the Action stream stubbed, then pushes `pending` down it. */
-export async function renderLive(node: ReactNode, pending: readonly ActionRequestView[] = []): Promise<HTMLDivElement> {
-  vi.stubGlobal("EventSource", TestEventSource);
+export async function renderLive(node: ReactNode, pending: readonly ActionRequest[] = []): Promise<HTMLDivElement> {
   installActionFetch();
   const container = await mount(node);
   await send(pending);
@@ -534,17 +555,17 @@ export async function unmountLast(): Promise<void> {
   const item = mounted.pop();
   if (!item) return;
   await act(async () => item.root.unmount());
+  item.queryClient.clear();
   item.container.remove();
 }
 
 afterEach(async () => {
   for (const item of mounted.splice(0)) {
     await act(async () => item.root.unmount());
+    item.queryClient.clear();
     item.container.remove();
   }
   for (const eject of ejects.splice(0)) eject();
-  TestEventSource.current = undefined;
-  TestEventSource.opened.clear();
   for (const watch of TestNdjsonWatch.opened.values()) watch.close();
   TestNdjsonWatch.reset();
   actionAnswer = () => undefined;

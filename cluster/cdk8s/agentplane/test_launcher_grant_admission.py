@@ -1,4 +1,4 @@
-"""The Action Service creates Sandboxes and launcher grants only in the orchestration_v1 executor's shape."""
+"""The Action Service creates launcher grants only in the orchestration_v1 executor's shape."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import cdk8s
 import pytest_bazel
+from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config import new_client_from_config
@@ -55,7 +56,7 @@ def _launcher_grant(sandbox: Body) -> tuple[Body, Body]:
                 "type": "argument_schema",
                 "actions": {
                     actions.ORCHESTRATION_GROUP: [
-                        "open_session",
+                        "create_session",
                         "submit_input",
                         "get_session",
                         "read_turns",
@@ -91,10 +92,9 @@ def _without(body: Body, path: Path) -> Body:
     return changed
 
 
-async def test_the_action_service_writes_only_launcher_shaped_grants() -> None:
-    chart = cdk8s.Testing.chart()
-    actions.add_launcher_admission(chart, NAMESPACE)
-    policy, binding = cdk8s.Testing.synth(chart)
+async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_chart: Chart) -> None:
+    actions.add_launcher_admission(scratch_chart, NAMESPACE)
+    policy, binding = cdk8s.Testing.synth(scratch_chart)
     async with kubernetes_apiserver() as server:
         await k8s_client.CoreV1Api(server.api).create_namespace(
             k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE))
@@ -120,26 +120,23 @@ async def test_the_action_service_writes_only_launcher_shaped_grants() -> None:
                     return False
                 return True
 
-            launcher_bound = _sandbox("test-launcher-bound", "test-other.launcher")
-            # The API server loads a new policy in the background, and shows no sign of having loaded it.
-            async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-                with attempt:
-                    assert not await admitted(action_service, launcher_bound)
-
             launched = cast(
                 Body,
-                await action_service.create_namespaced_custom_object(
+                await operator.create_namespaced_custom_object(
                     GROUP, VERSION, NAMESPACE, "sandboxes", _sandbox("test-launched", "test-default")
                 ),
             )
             policy_set, policy_binding = _launcher_grant(launched)
+            # The API server loads a new policy in the background, and shows no sign of having loaded it.
+            async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
+                with attempt:
+                    assert not await admitted(action_service, _without(policy_set, ("metadata", "ownerReferences")))
             assert await admitted(action_service, policy_set)
             assert await admitted(action_service, policy_binding)
 
             other = {"name": "test-other", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
             owners = ("metadata", "ownerReferences")
             denied = {
-                "a Sandbox bound to a launcher grant": launcher_bound,
                 "an unowned grant": _without(policy_set, owners),
                 "a grant owned by two Sandboxes": _with(
                     policy_set, owners, [_owner(launched), {**_owner(launched), **other}]
@@ -157,7 +154,9 @@ async def test_the_action_service_writes_only_launcher_shaped_grants() -> None:
                     policy_set, (*_APPROVAL, "actions", "github"), ["create_branch"]
                 ),
                 "an approval of a group Action that does not take a Sandbox": _with(
-                    policy_set, (*_APPROVAL, "actions", actions.ORCHESTRATION_GROUP), ["open_session", "launch_sandbox"]
+                    policy_set,
+                    (*_APPROVAL, "actions", actions.ORCHESTRATION_GROUP),
+                    ["create_session", "launch_sandbox"],
                 ),
                 "an approval of another Sandbox": _with(policy_set, (*_SANDBOX_SCHEMA, "const"), other),
                 "an approval of any incarnation": _without(policy_set, (*_SANDBOX_SCHEMA, "const", "uid")),

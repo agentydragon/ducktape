@@ -1,3 +1,10 @@
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
+import {
+  CreateEnvironmentRequestSchema,
+  type EnvironmentDescriptor,
+} from "../../../environments/v1/environment_service_pb";
+import { clone, create as createProto } from "@bufbuild/protobuf";
+import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import {
   ActionIcon,
   Button,
@@ -15,24 +22,40 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandbox, NewSandboxDefaults, SandboxPresetView, SandboxView, SandboxesSnapshot } from "../api/schema";
 import { IconDotsVertical } from "../icons";
-import { type JSX, useEffect, useMemo, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError } from "../client";
+import { displayableError } from "../client";
+import { getSandboxForm, listSandboxPresets } from "../app_config_client";
+import type { NewSandboxDefaults, SandboxPreset } from "../../app_service_pb";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl } from "./live";
-import { useLive } from "../live";
+import { useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { TopbarTitle } from "../topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
+import {
+  createEnvironment,
+  deleteEnvironment,
+  listEnvironmentTemplates,
+  resumeSandbox,
+  suspendEnvironment,
+} from "./client";
 
-const EMPTY_FORM: NewSandbox = {
+type NewSandboxForm = {
+  name: string;
+  template: string;
+  policy_sets: string[];
+  inbox_tags: string[];
+  bootstrap: string;
+  wake_on_send: boolean;
+  idle_suspend_after_seconds?: number | null;
+};
+const EMPTY_FORM: NewSandboxForm = {
   name: "",
   template: "",
   policy_sets: [],
@@ -40,10 +63,19 @@ const EMPTY_FORM: NewSandbox = {
   bootstrap: "",
   wake_on_send: false,
 };
+/** The form fields the app's starting wake and idle suspension values fill; a preset leaves them alone. */
+type DefaultFields = Pick<NewSandboxForm, "wake_on_send" | "idle_suspend_after_seconds">;
+function defaultFields(defaults: NewSandboxDefaults): DefaultFields {
+  return {
+    wake_on_send: defaults.wakeOnSend,
+    idle_suspend_after_seconds:
+      defaults.idleSuspendAfterSeconds === undefined ? null : Number(defaults.idleSuspendAfterSeconds),
+  };
+}
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
-function StatusIcon({ row }: { row: SandboxView }): JSX.Element {
+function StatusIcon({ row }: { row: EnvironmentDescriptor }): JSX.Element {
   const summary = sandboxSummary(row);
   return (
     <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
@@ -57,26 +89,31 @@ function StatusIcon({ row }: { row: SandboxView }): JSX.Element {
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
-  // The app's starting wake and idle suspension values; a preset leaves them alone.
-  const [defaults, setDefaults] = useState<NewSandboxDefaults>({ wake_on_send: false });
-  const [presets, setPresets] = useState<SandboxPresetView[]>([]);
+  const [form, setForm] = useState<NewSandboxForm>(EMPTY_FORM);
+  const [defaults, setDefaults] = useState<DefaultFields>({
+    wake_on_send: false,
+    idle_suspend_after_seconds: null,
+  });
+  const [presets, setPresets] = useState<SandboxPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [templates, setTemplates] = useState<string[]>([]);
   // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<string[]>([]);
-  // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
-  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
-  const rows: SandboxView[] = useMemo(() => live.snapshot?.sandboxes ?? [], [live.snapshot?.sandboxes]);
+  // Keep the exact UID selected when opening the confirmation, even if its name is reused.
+  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
+  const live = useRequiredSandboxesLive();
+  const rows = live.snapshot ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.
-  const placeholderName = placeholderSandboxName(selectedPreset ?? "sandbox", new Set(rows.map((row) => row.name)));
+  const placeholderName = placeholderSandboxName(
+    selectedPreset ?? "sandbox",
+    new Set(rows.map((row) => row.target!.name))
+  );
   const nameError = sandboxNameError(form.name || placeholderName);
 
   /** Fill the Sandbox creation fields from a preset; session defaults remain app configuration. */
-  function pickPreset(preset: SandboxPresetView | null): void {
+  function pickPreset(preset: SandboxPreset | null): void {
     setSelectedPreset(preset?.name ?? null);
     if (!preset) {
       setForm((current) => ({
@@ -91,8 +128,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setForm((current) => ({
       ...current,
       template: preset.template,
-      policy_sets: preset.policy_sets,
-      inbox_tags: preset.inbox_tags,
+      policy_sets: preset.policySets,
+      inbox_tags: preset.inboxTags,
       bootstrap: preset.bootstrap,
     }));
   }
@@ -106,43 +143,62 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   useEffect(() => {
     void (async () => {
-      const { data: sandboxForm, error: formFailure } = await api.GET("/sandboxes/form");
-      if (formFailure) setError(displayableError(formFailure));
-      else {
-        setPolicySets(sandboxForm.policy_sets);
-        setDefaults(sandboxForm.new_sandbox_defaults);
-        setForm((current) => ({ ...current, ...sandboxForm.new_sandbox_defaults }));
+      try {
+        const sandboxForm = await getSandboxForm();
+        const fields = defaultFields(sandboxForm.newSandboxDefaults);
+        setPolicySets(sandboxForm.policySets);
+        setDefaults(fields);
+        setForm((current) => ({ ...current, ...fields }));
+      } catch (failure) {
+        setError(displayableError(failure));
       }
-      const { data: presetViews } = await api.GET("/presets");
-      setPresets(presetViews ?? []);
-      const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
-      if (templateFailure) setError(displayableError(templateFailure));
-      else setTemplates(templateNames);
+      try {
+        setPresets(await listSandboxPresets());
+      } catch (failure) {
+        setError(displayableError(failure));
+      }
+      try {
+        setTemplates(await listEnvironmentTemplates());
+      } catch (failure) {
+        setError(displayableError(failure));
+      }
     })();
   }, []);
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
-  async function act(name: string, action: "suspend" | "resume" | "delete"): Promise<void> {
-    const params = { params: { path: { name } } };
-    const { error: failure } =
-      action === "delete"
-        ? await api.DELETE("/sandboxes/{name}", params)
-        : await api.POST(`/sandboxes/{name}/${action}`, params);
+  async function act(target: EnvironmentTarget, action: "suspend" | "resume"): Promise<void> {
+    const failure = await (action === "resume" ? resumeSandbox(target) : suspendEnvironment(target)).then(
+      () => null,
+      (reason: unknown) => reason
+    );
+    setError(failure ? displayableError(failure) : null);
+  }
+
+  async function remove(target: EnvironmentTarget): Promise<void> {
+    const failure = await deleteEnvironment(target).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     setError(failure ? displayableError(failure) : null);
   }
 
   async function create(): Promise<void> {
-    const body = {
-      ...form,
+    const request = createProto(CreateEnvironmentRequestSchema, {
       name: form.name || placeholderName,
+      template: form.template,
+      policySets: form.policy_sets,
+      inboxTags: form.inbox_tags,
+      bootstrap: form.bootstrap,
+      wakeOnSend: form.wake_on_send,
+      idleSuspendAfter:
+        form.idle_suspend_after_seconds == null
+          ? undefined
+          : createProto(DurationSchema, { seconds: BigInt(form.idle_suspend_after_seconds) }),
       preset: selectedPreset ?? undefined,
-    };
-    const { data, error: failure } = await api.POST("/sandboxes", {
-      body,
     });
-    if (failure) setError(displayableError(failure));
-    else {
+    try {
+      const data = await createEnvironment(request);
       setForm({ ...EMPTY_FORM, ...defaults });
       setSelectedPreset(null);
       const params = new URLSearchParams(searchParams);
@@ -150,6 +206,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setSearchParams(params, { replace: true });
       setError(null);
       onOpen(data.name);
+    } catch (failure) {
+      setError(displayableError(failure));
     }
   }
 
@@ -162,10 +220,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       </TopbarTitle>
       {confirmingDelete !== null && (
         <ConfirmDelete
-          name={confirmingDelete}
+          name={confirmingDelete.name}
           onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            void act(confirmingDelete, "delete");
+            void remove(confirmingDelete);
             setConfirmingDelete(null);
           }}
         />
@@ -261,15 +319,15 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Tbody>
           {rows.map((row) => {
             const ip = podIp(row);
-            const node = `${row.pod?.node_name ?? "—"} ${ip ? `(${ip})` : ""}`;
+            const node = `${row.kubernetesDiagnostics?.pod?.nodeName ?? "—"} ${ip ? `(${ip})` : ""}`;
             return (
-              <Table.Tr key={row.name}>
+              <Table.Tr key={row.target!.name}>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <StatusIcon row={row} />
                 </Table.Td>
                 <Table.Td>
-                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.name)}>
-                    {row.name}
+                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.target!.name)}>
+                    {row.target!.name}
                   </Button>
                   {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                   <Stack gap="xs" hiddenFrom="sm">
@@ -297,16 +355,19 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 </Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    <SuspendResume sandbox={row} onAct={(action) => void act(row.name, action)} />
+                    <SuspendResume sandbox={row} onAct={(action) => void act(row.target!, action)} />
                     <Menu position="bottom-end">
                       <Menu.Target>
-                        <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
+                        <ActionIcon variant="subtle" aria-label={`More actions for ${row.target!.name}`}>
                           <IconDotsVertical size={16} />
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        {/* The API refuses a running sandbox (inventory.py); suspend is one click left. */}
-                        <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
+                        <Menu.Item
+                          color="red"
+                          disabled={!deletable(row)}
+                          onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, row.target!))}
+                        >
                           Delete
                         </Menu.Item>
                       </Menu.Dropdown>

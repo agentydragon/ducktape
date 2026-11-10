@@ -38,10 +38,10 @@ py_test(
     deps = [
         "//:conftest",
         "//util:net",
-        "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	"github.com/agentydragon/ducktape/util/testing/nettest"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

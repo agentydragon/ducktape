@@ -1,0 +1,19 @@
+model,slug,creator,intelligence_index,cost_per_task_usd,price_1m_input_usd,price_1m_output_usd,cache_discount_percent,output_tokens_from_index_millions,index_version,fetched_date,source_url
+"Claude Fable 5.1 (Max, Default Fallback)",claude-fable-5-1,Anthropic,49,12.99,10,50,98,160,5.0,2026-10-31,https://artificialanalysis.ai/models/claude-fable-5-1
+Claude Haiku 5.5 (Max),claude-haiku-5-5,Anthropic,36,0.41,0.10,0.50,90,300,5.0,2026-10-31,https://artificialanalysis.ai/models/claude-haiku-5-5
+"Claude Opus 5.5 (Max, Default Fallback)",claude-opus-5-5,Anthropic,58,10.04,4,20,95,220,5.0,2026-10-31,https://artificialanalysis.ai/models/claude-opus-5-5
+"Claude Sonnet 5.5 (Max, Default Fallback)",claude-sonnet-5-5,Anthropic,54,10.02,2,10,95,340,5.0,2026-10-31,https://artificialanalysis.ai/models/claude-sonnet-5-5
+DeepSeek V4.1 Flash 1017 (Max),deepseek-v4-1-flash-1017,DeepSeek,32,0.60,0.30,1.20,98,170,5.0,2026-10-31,https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017
+Gemini 4 Argon (High),gemini-4-argon,Google,50,7.68,4,20,95,110,5.0,2026-10-31,https://artificialanalysis.ai/models/gemini-4-argon
+Gemini 4 Carbon (High),gemini-4-carbon,Google,59,7.76,4,20,95,200,5.0,2026-10-31,https://artificialanalysis.ai/models/gemini-4-carbon
+GLM-5.3 (Max),glm-5-3,Z.ai,32,5.01,1.40,4.40,81,140,5.0,2026-10-31,https://artificialanalysis.ai/models/glm-5-3
+GPT-6 Astra (Max),gpt-6-astra,OpenAI,57,6.24,10,50,90,54,5.0,2026-10-31,https://artificialanalysis.ai/models/gpt-6-astra
+GPT-6 Luna (Max),gpt-6-luna,OpenAI,28,0.15,0.10,0.50,90,110,5.0,2026-10-31,https://artificialanalysis.ai/models/gpt-6-luna
+GPT-6.1 Sol (Max),gpt-6-1-sol,OpenAI,55,1.27,2,10,95,64,5.0,2026-10-31,https://artificialanalysis.ai/models/gpt-6-1-sol
+GPT-6.1 Terra (Max),gpt-6-1-terra,OpenAI,51,0.96,1,5,95,99,5.0,2026-10-31,https://artificialanalysis.ai/models/gpt-6-1-terra
+Grok 4.7 (Xhigh),grok-4-7,xAI,34,7.51,2,6,75,140,5.0,2026-10-31,https://artificialanalysis.ai/models/grok-4-7
+Kimi K3.1 Pro,kimi-k3-1-pro,Kimi,46,3.68,2,10,90,110,5.0,2026-10-31,https://artificialanalysis.ai/models/kimi-k3-1-pro
+MiniMax-M3.1-Flash,minimax-m3-1-flash,MiniMax,29,0.49,0.15,0.60,90,160,5.0,2026-10-31,https://artificialanalysis.ai/models/minimax-m3-1-flash
+Mistral Large 4 (High),mistral-large-4,Mistral,26,2.06,0.70,2.10,90,110,5.0,2026-10-31,https://artificialanalysis.ai/models/mistral-large-4
+Muse Wonder Full (Max),muse-wonder-full,Meta,50,,,,,110,5.0,2026-10-31,https://artificialanalysis.ai/models/muse-wonder-full
+Qwen3.8 Max (0902),qwen3-8-max,Alibaba,34,10.02,2,6,88,150,5.0,2026-10-31,https://artificialanalysis.ai/models/qwen3-8-max

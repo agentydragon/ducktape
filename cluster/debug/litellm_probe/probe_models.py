@@ -17,8 +17,7 @@ import httpx
 import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 DEFAULT_BASE_URL = "https://litellm.allegedly.works"
 REPORT_TEMPLATE_RUNFILE = "ducktape/cluster/debug/litellm_probe/report.html.j2"
@@ -348,7 +347,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _load_model_probes(config_path: Path | None) -> list[ModelProbe]:
     if config_path is None:
-        manifest = get_required_path("ducktape/cluster/k8s/litellm/app/app.k8s.yaml")
+        manifest = Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/litellm/app/app.k8s.yaml"
         [config_map] = [
             resource
             for resource in yaml.safe_load_all(manifest.read_text())
@@ -903,9 +902,10 @@ def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Pat
                 "response_body": _pretty_file(result.response_path),
             }
         )
-    template_path = get_required_path(REPORT_TEMPLATE_RUNFILE)
+    template_path = Runfiles.CreateOrRaise().root() / REPORT_TEMPLATE_RUNFILE
     env = Environment(
-        loader=FileSystemLoader(template_path.parent), autoescape=select_autoescape(enabled_extensions=("html", "j2"))
+        loader=FileSystemLoader(Path(str(template_path)).parent),
+        autoescape=select_autoescape(enabled_extensions=("html", "j2")),
     )
     html_text = env.get_template(template_path.name).render(
         counts=json.dumps(counts, sort_keys=True), response_dir=str(response_dir), rows=rows

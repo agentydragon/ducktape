@@ -1,0 +1,64 @@
+#!/usr/bin/busybox sh
+# Manual-only intervention: activate a short service in the production slice.
+set -eu
+busybox=/usr/bin/busybox
+root=$("$busybox" mktemp -d /run/agentplane-synthetic-slice.XXXXXX)
+record_file=$root/record
+trap '"$busybox" rm -rf "$root"' EXIT
+payload=agentplane-synthetic-slice-payload.service
+
+emit() {
+	bytes=$("$busybox" wc -c <"$record_file")
+	[ "$bytes" -le 1024 ] || exit 1
+	"$busybox" dd if="$record_file" bs=1024 count=1 2>/dev/null
+}
+
+record() {
+	phase=$1
+	state=$2
+	uptime=$("$busybox" awk '{print $1}' /proc/uptime)
+	controllers=$("$busybox" head -c 128 /sys/fs/cgroup/cgroup.controllers | "$busybox" tr ' ' ',')
+	subtree=$("$busybox" head -c 128 /sys/fs/cgroup/cgroup.subtree_control | "$busybox" tr ' ' ',')
+	if [ -d /sys/fs/cgroup/agentplane.slice ]; then
+		present=yes
+		slice_controllers=$("$busybox" head -c 128 /sys/fs/cgroup/agentplane.slice/cgroup.controllers | "$busybox" tr ' ' ',')
+		slice_subtree=$("$busybox" head -c 128 /sys/fs/cgroup/agentplane.slice/cgroup.subtree_control | "$busybox" tr ' ' ',')
+	else
+		present=no
+		slice_controllers=absent
+		slice_subtree=absent
+	fi
+	printf '\nAGENTPLANE_SYNTHETIC_SLICE_PHASE=%s uptime=%s root_controllers=%s root_subtree_control=%s slice_present=%s slice_controllers=%s slice_subtree_control=%s unit_state=%s\n' \
+		"$phase" "$uptime" "$controllers" "$subtree" "$present" "$slice_controllers" "$slice_subtree" "$state" >"$record_file"
+	emit
+}
+
+record baseline inactive
+/usr/bin/systemctl start --no-block "$payload"
+active_seen=0
+state=unknown
+iteration=0
+while [ "$iteration" -lt 20 ]; do
+	state=$(/usr/bin/systemctl show -P ActiveState "$payload")
+	if [ "$state" = active ] && [ "$active_seen" -eq 0 ]; then
+		record active "$state"
+		active_seen=1
+	fi
+	if [ "$state" = inactive ] && [ "$active_seen" -eq 1 ]; then
+		break
+	fi
+	if [ "$state" = failed ]; then
+		break
+	fi
+	iteration=$((iteration + 1))
+	"$busybox" sleep 1
+done
+record after "$state"
+result=$(/usr/bin/systemctl show -P Result "$payload")
+if [ "$active_seen" -ne 1 ] || [ "$state" != inactive ] || [ "$result" != success ]; then
+	printf '\nAGENTPLANE_SYNTHETIC_SLICE_ERROR active_seen=%s state=%s result=%s\n' "$active_seen" "$state" "$result" >"$record_file"
+	emit
+	exit 1
+fi
+printf '\nAGENTPLANE_SYNTHETIC_SLICE_SUCCESS\n' >"$record_file"
+emit

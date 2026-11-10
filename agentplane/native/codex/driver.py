@@ -28,7 +28,7 @@ def thread_start(
     *,
     cwd: str,
     model: str,
-    effort: str,
+    effort: str | None,
     base_instructions: str | None = None,
     persist: bool = False,
     config: dict[str, Any] | None = None,
@@ -42,6 +42,8 @@ def thread_start(
     to preserve them through subsequent compaction. Empty sends no key for them. `dynamic_tools`
     declares the driver's own tools; it requires `initialize(experimental_api=True)` first.
     """
+    thread_config = {"model_reasoning_effort": effort} if effort is not None else {}
+    thread_config.update(config or {})
     return wire.ThreadStartRequest(
         id=request_id,
         params=wire.ThreadStartParams(
@@ -53,7 +55,7 @@ def thread_start(
             model=model,
             base_instructions=base_instructions,
             developer_instructions=instructions or None,
-            config={"model_reasoning_effort": effort, **(config or {})},
+            config=thread_config,
             dynamic_tools=dynamic_tools,
         ),
     )

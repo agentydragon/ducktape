@@ -1,12 +1,12 @@
 # Thread, runner, and harness layering
 
 Status: **cross-layer design under review.** The app opens Sessions and submits commands through
-Session Dispatcher; History owns retained Session/Thread views; Runner Gateway owns the reverse
-control stream and authorized live Runner proxy. The materialized Thread projection and Electric-backed
+Session Dispatcher; History owns retained Session/Thread views; Runner Gateway owns runner
+state observation and the authorized live Runner proxy. The materialized Thread projection and Electric-backed
 conversation sync described in [Thread view synchronization](thread_view_sync.md) are implemented;
 remaining acceptance gates are in [conversation acceptance](../debug/conversation_acceptance.md).
 This document covers identity, durability, command handling and presentation, while the
-[runner specification](../runner/SPEC.md) describes the implemented runner contract. It does not
+[Runtime session protocol](../env/runtime/docs/session_protocol.md) describes the implemented runner contract. It does not
 claim every recovery case works today. Protocol changes are atomic monorepo cutovers, with no
 old-runner/data compatibility.
 
@@ -60,7 +60,7 @@ flowchart LR
     SD -->|runner operations through proxy| G[Runner Gateway]
     A -->|placement and live checks| G
     A -->|Sandbox desired state and lifecycle| K[Kubernetes Sandbox state]
-    G -->|RunnerControl stream| R[Runner journal and scheduler]
+    G -->|Runner gRPC| R[Runner journal and scheduler]
     R --> C[Claude adapter]
     R --> D[Codex adapter]
     C <--> H1[Claude native process]
@@ -111,14 +111,15 @@ a “session”; it already spans process restarts. That existing name does not 
 the target product Thread/incarnation relationship. The Gateway has no Session placement registry;
 it resolves proxy destinations from current Sandbox identity and connection state. History separately
 records the writer's namespace and name.
-App commands use the Thread's stored Sandbox name and send it to Dispatcher, which records the current
-Sandbox UID without checking the Session's earlier association. The complete Session-to-incarnation
-authority across opens, commands and resume remains under review in the
+The app sends the expected Sandbox UID on `CreateSession` requests and commands, and Dispatcher checks it against
+the current Sandbox before accepting the request. This fences same-name replacement at the request
+boundary; it does not validate a Session's earlier association. The complete Session-to-incarnation
+authority across creation, commands and resume remains under review in the
 [service-boundary contract](service_boundaries.md).
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Its id is the client-minted public
-Session UUID submitted through Dispatcher `OpenSession`. History materializes an empty Thread view
+Session UUID submitted through Dispatcher `CreateSession`. History materializes an empty Thread view
 once it retains the authenticated runner admission, even before any Event exists. A catalog entry
 or Dispatcher queue receipt alone does not establish that view. At cursor zero there is no Event
 source, native process or effective model/effort to infer. The first real Event binds the fold's
@@ -247,7 +248,7 @@ History Service has.
 
 ## Command queue ownership
 
-The Session Dispatcher is the sender-facing durable queue for openings and commands. The app server
+The Session Dispatcher is the sender-facing durable queue for Session creation and commands. The app server
 stores Thread presentation state; the browser keeps unconfirmed submissions locally. The app sends
 commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher wakes an eligible
 suspended Sandbox, waits for `Ready`, and delivers through the Runner Gateway proxy. A queued
@@ -280,18 +281,19 @@ E(41, command_admitted { command: M }) = EventEntry {
 have the same value; they do not advance independently. The app submits the command through the
 Session Dispatcher and receives a durable `Dispatch`; the Dispatcher delivers to the runner through
 the Gateway proxy, and the runner later pushes `CommandAdmitted` and other entries to History with
-`RunnerIngress.Push`. HTTP/SSE carry generated payloads in protobuf JSON. Native sketches omit
+`SessionJournalIngress.Push`. HTTP/SSE carry generated payloads in protobuf JSON. Native sketches omit
 unrelated request fields.
 
 ### Dispatcher admission, runner result
 
-The browser retains a command id and payload before sending. The app submits it to Dispatcher and
-reports it as queued when the response confirms a durable `Dispatch`. That is sender intent, not
+The browser retains a command id, payload and original Sandbox name/UID before sending through
+the app proxy to the generated Dispatcher HTTP/JSON facade. It reports the command as queued when
+the response confirms a durable `Dispatch`. That is sender intent, not
 runner admission; the runner later journals `CommandAdmitted` and pushes it to History. The app reads
 Dispatcher state through its dispatch endpoint and the conversation outcome through History.
 
-A timeout leaves the result uncertain. The browser retries the same command id and payload against
-Dispatcher, which returns the existing record or rejects a conflict. The worker uses the same id
+A timeout leaves the result uncertain. The browser retries the same command id, payload and pinned
+Sandbox identity against Dispatcher, which returns the existing record or rejects a conflict. The worker uses the same id
 when delivering to the runner, whose journal deduplicates admitted commands. This provides durable
 queueing while the Sandbox is not ready; it does not preserve an unadmitted command after the
 Dispatcher's Sandbox-deletion outcome or prove native execution.
@@ -307,8 +309,8 @@ sequenceDiagram
     participant R as Runner and journal
     participant HS as History Service
     participant H as Codex harness
-    F->>A: POST /threads/T/change-model<br/>commandId:M, model:new-model
-    A->>SD: ChangeModel {command_id:M, session_id:T, model:new-model}
+    F->>A: POST /upstream/dispatcher/v1/sessions/T:changeModel<br/>commandId:M, sandbox:S, sandboxUid:U, model:new-model
+    A->>SD: Generated ChangeModel {command_id:M, session_id:T, sandbox:S, sandbox_uid:U, model:new-model}
     SD->>SD: Persist Dispatch M
     SD-->>A: Dispatch M queued
     A-->>F: HTTP 200, Dispatch M
@@ -327,8 +329,8 @@ sequenceDiagram
     A-->>F: SSE snapshot, Dispatch M runner-admitted
     A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
-    F->>A: POST /threads/T/submit-input<br/>commandId:I, text:Continue the task
-    A->>SD: SubmitInput {command_id:I, session_id:T, text:Continue the task}
+    F->>A: POST /upstream/dispatcher/v1/sessions/T:submitInput<br/>commandId:I, sandbox:S, sandboxUid:U, text:Continue the task
+    A->>SD: Generated SubmitInput {command_id:I, session_id:T, sandbox:S, sandbox_uid:U, text:Continue the task}
     SD->>SD: Persist Dispatch I
     SD->>G: SubmitInput for T
     G->>R: SubmitInput over the control stream
@@ -360,13 +362,16 @@ next `turn/start`. The runner scheduler handles native dependencies. An interrup
 clicked turn and must not wait for queued inputs to finish. The Session Dispatcher owns sender
 delivery and ordering; the app does not maintain a second command queue.
 
-## Session opening and command ownership
+## Session creation and command ownership
 
-Sandbox creation and Session opening are separate operations. The app creates and manages the
-Sandbox through Kubernetes; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID and
-resolved spec to Dispatcher `OpenSession`. The Dispatcher records the opening and delivers it when
-the Sandbox is ready. The first input, if any, is a separate command with its own ID and durable
-Dispatcher result; there is no app transaction that queues an initial input with Sandbox creation.
+Sandbox creation and Session creation are separate operations. The app proxies authenticated management
+requests to EnvironmentService in the Runner Gateway; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID, the
+expected Sandbox UID and resolved spec to Dispatcher `CreateSession`. Dispatcher checks that UID against
+the current Sandbox and commits a minimal Session resource with placement and materialization status;
+it delivers creation to the placement owner when the Sandbox is ready. A returned logical Session does
+not prove owner acceptance, harness readiness or History projection. The first input, if any, is a
+separate command with its own ID and durable Dispatcher result; there is no app transaction that queues
+an initial input with Sandbox creation.
 
 ## Reconnect and catch-up
 
@@ -412,7 +417,7 @@ sequenceDiagram
     participant R as Runner
     participant HS as History Service
     F->>F: Persist typed operation C and id for retry
-    F->>A: POST /threads/T/submit-input, commandId:C and text
+    F->>A: POST /upstream/dispatcher/v1/sessions/T:submitInput<br/>commandId:C, sandbox:S, sandboxUid:U and text
     A->>SD: SubmitInput C
     SD->>SD: Commit Dispatch C
     SD-->>A: Dispatch C
@@ -430,7 +435,7 @@ sequenceDiagram
         SD-->>A: Dispatch C, then CaughtUp
         A-->>F: the same frames; continue watching History for outcomes
     else No durable Dispatch is found
-        F->>A: POST same Command C with same ID and payload
+        F->>A: POST same Command C with same ID, payload and Sandbox UID
         A->>SD: per-operation RPC for C
         SD->>SD: Create the one durable Dispatch for C
         SD-->>A: Dispatch C
@@ -594,7 +599,7 @@ SQLite owns crash recovery; no custom JSONL repair or old-format import remains.
 
 ### Remaining identity and delivery boundaries
 
-The [current runner specification](../runner/SPEC.md) exposes a session-scoped SQLite
+The [Runtime retained-state contract](../env/runtime/docs/retained_state.md) exposes a session-scoped SQLite
 journal with atomic command/Event commits and publication after the storage fence.
 The target runner Thread identity/cursor change and native crash recovery need implementation
 and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;

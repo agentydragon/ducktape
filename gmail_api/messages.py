@@ -1,35 +1,15 @@
-"""Pydantic models mirroring Gmail's message / thread / draft REST resources.
+"""Pydantic models mirroring Gmail's message and draft REST resources.
 
 Field names and shapes follow the Gmail API (camelCase on the wire, snake_case in
 Python via `to_camel` aliases + `populate_by_name`), so an API JSON response validates
 directly with `Model.model_validate(response)` and serializes back unchanged. See:
 https://developers.google.com/gmail/api/reference/rest/v1/users.messages
-https://developers.google.com/gmail/api/reference/rest/v1/users.threads
 """
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-
-
-class MessageFormat(StrEnum):
-    """`format` for `users.messages.get` — how much of the message Gmail returns."""
-
-    MINIMAL = "minimal"
-    METADATA = "metadata"
-    FULL = "full"
-    RAW = "raw"
-
-
-class ThreadFormat(StrEnum):
-    """`format` for `users.threads.get`. Gmail offers no `raw` here (unlike messages)."""
-
-    MINIMAL = "minimal"
-    METADATA = "metadata"
-    FULL = "full"
 
 
 class MessagePartHeader(BaseModel):
@@ -70,37 +50,8 @@ class Message(BaseModel):
     raw: str | None = Field(default=None, description="Full RFC 2822 message, base64url — present only for format=raw.")
 
 
-class Thread(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    id: str
-    snippet: str | None = None
-    history_id: str | None = None
-    messages: list[Message] | None = None
-
-
 class Draft(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     id: str
     message: Message | None = None
-
-
-class ThreadsListResponse(BaseModel):
-    """Response body of `users.threads.list` (thread stubs plus pagination)."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    threads: list[Thread] = Field(default_factory=list)
-    next_page_token: str | None = None
-    result_size_estimate: int | None = None
-
-
-class DraftsListResponse(BaseModel):
-    """Response body of `users.drafts.list` (draft stubs plus pagination)."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    drafts: list[Draft] = Field(default_factory=list)
-    next_page_token: str | None = None
-    result_size_estimate: int | None = None

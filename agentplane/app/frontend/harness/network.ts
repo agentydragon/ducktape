@@ -38,20 +38,15 @@ export interface ElectricShapeMessage {
 
 const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
   thread_entity: {
-    arguments_ref: { type: "jsonb" },
     cursor: { type: "int8", not_null: true },
     entity_id: { type: "text", not_null: true, pk_index: 3 },
     entity_index: { type: "int8", not_null: true },
     entity_kind: { type: "text", not_null: true, pk_index: 2 },
-    input_ref: { type: "jsonb" },
-    output_ref: { type: "jsonb" },
     pending: { type: "bool", not_null: true },
     projection_epoch: { type: "text", not_null: true, pk_index: 1 },
     revision_cursor: { type: "int8", not_null: true },
     state: { type: "jsonb", not_null: true },
-    text_ref: { type: "jsonb" },
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-    turn_id: { type: "text" },
   },
   thread_payload_chunk: {
     chunk_index: { type: "int8", not_null: true, pk_index: 6 },
@@ -131,16 +126,20 @@ export function electricLive(handle: string, relation?: string, signal?: AbortSi
   return new Response(body, { headers: { ...shapeHeaders(handle, schema), "content-type": "text/event-stream" } });
 }
 
-interface PublishedWatch {
+interface PublishedStream {
   path: string;
   publish: () => void;
 }
 
-const publishedWatches = new Set<PublishedWatch>();
+const publishedStreams = new Set<PublishedStream>();
 
-/** Publish current delta frames to every open facade watch whose path ends with the suffix. */
-export function publishNdjsonWatch(pathSuffix: string): void {
-  for (const watch of publishedWatches) if (watch.path.endsWith(pathSuffix)) watch.publish();
+/** Publish current frames to every open stream whose path ends with the suffix. */
+export function publishStreams(pathSuffix: string): void {
+  for (const stream of publishedStreams) if (stream.path.endsWith(pathSuffix)) stream.publish();
+}
+
+function ndjson(results: readonly unknown[]): string {
+  return results.map((result) => `${JSON.stringify({ result })}\n`).join("");
 }
 
 /** A live facade watch: snapshot frames first, then delta frames when a fixture publishes. */
@@ -148,51 +147,96 @@ export function liveNdjsonWatch(
   path: string,
   initial: readonly unknown[],
   updates: () => readonly unknown[],
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  drop = false
 ): Response {
-  return watchResponse(initial, signal, { path, updates });
+  const text = (results: readonly unknown[]): string =>
+    results.map((result) => `${JSON.stringify({ result })}\n`).join("");
+  return streamResponse(
+    "application/x-ndjson",
+    text(initial),
+    signal,
+    drop ? null : { path, updates: () => text(updates()) },
+    drop
+  );
 }
 
 /** A gRPC-Gateway stream sends `results` and stays open until its reader cancels or signal aborts. */
 export function ndjsonWatch(results: readonly unknown[], signal: AbortSignal | undefined): Response {
-  return watchResponse(results, signal, null);
+  return streamResponse("application/x-ndjson", ndjson(results), signal, null, false);
 }
 
-function watchResponse(
-  initial: readonly unknown[],
+/** One server-sent event; `data` goes as JSON. */
+export interface ServerSentEvent {
+  event: string;
+  data: unknown;
+}
+
+/**
+ * A live event stream: `events()` when it opens and again whenever a fixture publishes its path.
+ * With `drop`, the body fails once the first events are read, as on a dropped network.
+ */
+export function liveEventStream(
+  path: string,
+  events: () => readonly ServerSentEvent[],
   signal: AbortSignal | undefined,
-  publication: { path: string; updates: () => readonly unknown[] } | null
+  drop: boolean
+): Response {
+  const text = (): string =>
+    events()
+      .map(({ event, data }) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      .join("");
+  return streamResponse("text/event-stream", text(), signal, drop ? null : { path, updates: text }, drop);
+}
+
+function streamResponse(
+  contentType: string,
+  initial: string,
+  signal: AbortSignal | undefined,
+  publication: { path: string; updates: () => string } | null,
+  drop: boolean
 ): Response {
   let dispose = (): void => {};
+  let dropping = drop;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      const send = (results: readonly unknown[]): void => {
-        for (const result of results) controller.enqueue(encoder.encode(`${JSON.stringify({ result })}\n`));
+      const send = (text: string): void => {
+        if (text !== "") controller.enqueue(encoder.encode(text));
       };
-      const watch =
+      const stream =
         publication === null ? null : { path: publication.path, publish: () => send(publication.updates()) };
       const onAbort = (): void => {
         dispose();
-        controller.error(new DOMException("The watch request was aborted", "AbortError"));
+        controller.error(new DOMException("The stream request was aborted", "AbortError"));
       };
       dispose = (): void => {
         signal?.removeEventListener("abort", onAbort);
-        if (watch !== null) publishedWatches.delete(watch);
+        if (stream !== null) publishedStreams.delete(stream);
       };
       if (signal?.aborted) {
         onAbort();
         return;
       }
-      if (watch !== null) publishedWatches.add(watch);
+      if (stream !== null) publishedStreams.add(stream);
       signal?.addEventListener("abort", onAbort, { once: true });
       send(initial);
+    },
+    // Called once the reader has taken what `start` sent. Erroring discards what the reader's pipe
+    // stages still hold, so the drop waits a task for them to hand those events on.
+    pull(controller) {
+      if (!dropping) return;
+      dropping = false;
+      setTimeout(() => {
+        dispose();
+        controller.error(new TypeError("the harness dropped this stream"));
+      }, 0);
     },
     cancel() {
       dispose();
     },
   });
-  return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+  return new Response(body, { headers: { "content-type": contentType } });
 }
 
 /**

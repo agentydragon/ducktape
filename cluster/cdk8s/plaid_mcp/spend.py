@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
@@ -14,8 +12,6 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import cilium, external_creds
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
@@ -29,7 +25,6 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from finance.plaid.spend.settings import SpendSettings
 from util.settings_contract import env_name
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
@@ -294,7 +289,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, manifest_name="spend.k8s.yaml")

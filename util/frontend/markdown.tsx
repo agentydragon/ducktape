@@ -28,7 +28,7 @@ const marked = new Marked({
       const code = `${text.replace(/\n$/, "")}\n`;
       const language = lang?.match(/^\S*/)?.[0];
       const languageClass = language !== undefined && isRegisteredLanguage(language) ? ` language-${language}` : "";
-      return `<pre><code class="agentplane-code-fence${languageClass}">${escapeHtml(code)}</code></pre>`;
+      return `<pre><code class="ui-code-fence${languageClass}">${escapeHtml(code)}</code></pre>`;
     },
   },
 });
@@ -63,13 +63,13 @@ const ALLOWED_TAGS = [
   // keep-sorted end
 ];
 
-const STREAMING_CURSOR_MARKER = "data-agentplane-streaming-cursor";
-const STREAMING_CURSOR_KEY = "agentplane-streaming-cursor";
-const MARKDOWN_TABLE_SCROLL_CLASS = "agentplane-markdown-table-scroll";
+const STREAMING_CURSOR_MARKER = "data-ui-streaming-cursor";
+const STREAMING_CURSOR_KEY = "ui-streaming-cursor";
+const MARKDOWN_TABLE_SCROLL_CLASS = "ui-markdown-table-scroll";
 
 function appendStreamingCursor(content: DocumentFragment): void {
   const cursor = document.createElement("span");
-  cursor.className = "agentplane-streaming-cursor";
+  cursor.className = "ui-streaming-cursor";
   cursor.setAttribute("role", "img");
   cursor.setAttribute("aria-label", "Streaming");
   cursor.setAttribute("data-character", STREAMING_CURSOR);
@@ -85,7 +85,7 @@ function appendStreamingCursor(content: DocumentFragment): void {
   const isFencedCode = (element: Element): boolean =>
     element.tagName === "CODE" &&
     element.parentElement?.tagName === "PRE" &&
-    element.classList.contains("agentplane-code-fence");
+    element.classList.contains("ui-code-fence");
   let parent: ParentNode = content;
   let last = lastContentChild(content);
   while (
@@ -120,7 +120,7 @@ const INLINE_CODE_PREVIEW_CHARACTERS = 600;
 function codeFence(node: Element, key: string, singleLine: boolean): ReactNode | null {
   if (node.tagName !== "PRE") return null;
   const code = node.firstElementChild;
-  if (code?.tagName !== "CODE" || !code.classList.contains("agentplane-code-fence")) return null;
+  if (code?.tagName !== "CODE" || !code.classList.contains("ui-code-fence")) return null;
 
   const languageClass = Array.from(code.classList).find((name) => name.startsWith("language-"));
   const language = languageClass?.slice("language-".length);
@@ -253,11 +253,7 @@ export function Markdown({
     return [...template.content.childNodes].map((node, index) => toReactNode(node, String(index), singleLine));
   }, [source, singleLine, streaming]);
   return (
-    <Text
-      component="div"
-      size={size}
-      className={`agentplane-markdown${singleLine ? " agentplane-markdown--single-line" : ""}`}
-    >
+    <Text component="div" size={size} className={`ui-markdown${singleLine ? " ui-markdown--single-line" : ""}`}>
       {content}
     </Text>
   );

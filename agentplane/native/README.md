@@ -16,9 +16,9 @@ the pipe.
 
 Three consumers: the live-capture probe in <../capture/README.md>, which runs a scenario against a
 real model; the [scripted harness tests](#scripted-harness-tests), which drive the same run facades
-against a loopback model the test controls; and the runner in <../runner/README.md>, which reuses
+against a loopback model the test controls; and Runtime in <../env/runtime/docs/session_protocol.md>, which reuses
 the frame constructors and launch configuration behind its harness-neutral protocol over its own
-supervised native-process pipe (`../runner/process.go` and `../runner/supervisor.go`).
+supervised native-process pipe (`../env/runtime/supervision/`).
 
 ## Scripted harness tests
 
@@ -81,7 +81,7 @@ are scenario steps for parent-process death and keep their distinct semantics.
 Gotchas: every scripted message, item and response needs a fresh id because both harnesses key
 transcripts by id and silently merge repeats. Codex turns on code mode (one JavaScript `exec` tool)
 for ids in its built-in catalog; the tests use an unknown id to exercise the classic function-call
-shape, and `runner/test_codex_code_mode.py` serves GPT-6 Luna's entry to cover code mode. Claude's `--name` fixture option suppresses a separate title-generation request, and its
+shape, and `env/e2e/test_codex_code_mode.py` serves GPT-6 Luna's entry to cover code mode. Claude's `--name` fixture option suppresses a separate title-generation request, and its
 retry after a lost stream is non-streaming, so the retry step answers with `message_body`, not
 `message_stream`.
 

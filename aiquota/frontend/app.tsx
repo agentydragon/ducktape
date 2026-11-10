@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from "react";
 
-import type { AllQuotasView } from "./api/schema";
+import type { AllQuotasView } from "./schema";
 import { Dashboard } from "./dashboard";
 
 const TICK_MS = 1_000;
@@ -17,6 +17,7 @@ export function App(): JSX.Element {
     let active = true;
     setConnecting(true);
     setStopped(false);
+    setError(null);
     const events = new EventSource("/v1/events");
     events.addEventListener("view", (event) => {
       if (!active) return;
@@ -24,8 +25,10 @@ export function App(): JSX.Element {
         setQuotas(JSON.parse(event.data) as AllQuotasView);
         setError(null);
         setConnecting(false);
+        setStopped(false);
       } catch {
-        setError("Could not read the live quota update.");
+        setError("A live quota update could not be read.");
+        setConnecting(false);
       }
     });
     events.onerror = () => {
@@ -35,8 +38,8 @@ export function App(): JSX.Element {
       setConnecting(false);
       setError(
         closed
-          ? "Live updates stopped. Reload this page to sign in again."
-          : "Connection interrupted. Reconnecting to live updates…"
+          ? "Live connection closed. Reload to start a fresh stream."
+          : "Live updates are interrupted; the browser is retrying."
       );
     };
     return () => {
@@ -56,6 +59,7 @@ export function App(): JSX.Element {
       now={now}
       error={error}
       connecting={connecting}
+      stopped={stopped}
       onRefresh={() => {
         if (stopped) globalThis.location.reload();
         else setSubscription((value) => value + 1);

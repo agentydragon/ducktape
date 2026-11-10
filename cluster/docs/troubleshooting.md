@@ -4,12 +4,11 @@
 
 ### talosctl upgrade: Hostname Loss
 
-**Symptoms**: After `talosctl upgrade`, nodes get random hostnames; duplicate entries in
-`kubectl get nodes`.
-
-**Fix**: Set `machine.network.hostname` explicitly in Terraform config patches.
-
-See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md>.
+**Signal**: `talosctl upgrade` is followed by random node names or duplicate entries in
+`kubectl get nodes`. The incident also exposed a destructive `tofu apply -target
+-auto-approve` replacement risk. See the
+<lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> for platform-specific
+configuration and the full-plan warning.
 
 ### Stale podCIDR After Node Hostname Change
 
@@ -28,38 +27,23 @@ See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> (Root Cause 3
 
 ### Zombie Kubelet (Containerd Crash Recovery)
 
-**Symptoms**: Node Ready but pods stuck Pending; kubelet `STATE: Failed`;
-"cannot delete running task kubelet: failed precondition".
-
-**Cause**: Containerd crash leaves orphaned kubelet process. Root cause was dual-IP
-assignment on workers (fixed in commit 2bf6ae9 -- `dhcp: false` in worker machine config).
-
-**Fix**: Reboot the node (`talosctl -n <node-ip> reboot`).
-
-See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
+**Signal**: Node is `Ready` but pods stay `Pending`; kubelet is `STATE: Failed` with
+`cannot delete running task kubelet: failed precondition` after a containerd crash.
+See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md> for the dual-IP cause,
+diagnosis, and reboot recovery.
 
 ### Worker Dual-IP Assignment (DHCP + Static IP)
 
-**Symptoms**: Two IPs on eth0, "node IP skipped" in dmesg, kubelet instability.
-
-**Cause**: Workers missing explicit `dhcp: false` -- DHCP assigns second IP.
-**Fixed** in commit 2bf6ae9.
-
-**Diagnosis**: `talosctl -n <ip> get addresses | grep "eth0.*10\."`
-
-See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
+**Signal**: A worker has two `eth0` addresses, repeated `node IP skipped` messages, or
+kubelet instability. The same lesson covers the cause, the `dhcp: false` correction,
+diagnosis, and recovery: <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
 
 ### XFS Quotacheck Stuck After Unclean Shutdown (Boot Hangs)
 
-**Symptoms**: Node stuck at `STAGE: Booting`, `READY: False`. All K8s components `n/a`.
-`ext-nebula` and `ext-iscsid` waiting for `cri`. Nebula IP unreachable, VLAN IP reachable.
-dmesg: `XFS (sda5): Quotacheck needed: Please wait.` with no completion.
-
-**Cause**: Unclean shutdown (e.g., `qm stop` instead of `qm shutdown`) triggers XFS
-quotacheck on EPHEMERAL. On large filesystems with many inodes (container images), the
-quotacheck can hang indefinitely, blocking the boot sequencer at phase 5/9.
-
-**Fix**: Wipe EPHEMERAL and hard-reset the VM. etcd replicates from healthy peers.
+**Signal**: Talos stays at `STAGE: Booting`, `READY: False`, with `XFS (sda5): Quotacheck
+needed` and no completion. `qm stop` caused the incident; always use `qm shutdown` for a
+Talos VM. The recovery wipes EPHEMERAL, so first verify healthy etcd peers can restore the
+node's membership.
 
 ```bash
 talosctl -n <vlan-ip> -e <vlan-ip> --talosconfig terraform/main/talosconfig.yml \
@@ -68,9 +52,8 @@ talosctl -n <vlan-ip> -e <vlan-ip> --talosconfig terraform/main/talosconfig.yml 
 ssh root@atlas "qm reset <vmid>"
 ```
 
-**Prevention**: Never use `qm stop` for Talos VMs — always `qm shutdown` (ACPI).
-
-See <lessons_learned/2026_03_24_xfs_quotacheck_stuck_boot.md>.
+See <lessons_learned/2026_03_24_xfs_quotacheck_stuck_boot.md> for the incident evidence
+and recovery outcome.
 
 ## Cilium Issues
 
@@ -104,117 +87,53 @@ for r in json.load(sys.stdin)['items']:
 
 ### MTU Case Sensitivity (Cross-Node Packet Loss)
 
-**Symptoms**: 10-30% TCP failures between OVH and Proxmox; webhook timeouts; bootstrap
-stalls; `ReasmFails` in `/proc/net/snmp`.
-
-**Cause**: Cilium's Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
-ignored, leaving pod MTU at 1500 and causing cross-node fragmentation/loss over the
-VXLAN-in-Nebula stack.
-
-**Fix**: Set `MTU: 1420` (uppercase) in `cilium-values.yaml`. Note `MTU` is the
-**underlay** value, not the pod MTU — see <network.md> for the full
-model (and the gotcha that `MTU: 1370` wrongly yields a 1320 pod MTU) and the live
-apply procedure.
-
-**Diagnosis**:
-
-```bash
-kubectl get configmap cilium-config -n kube-system -o yaml | grep -i mtu
-kubectl exec -n kube-system ds/cilium -- ip link show cilium_vxlan
-helm get values cilium -n kube-system
-```
-
-See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
+**Signal**: Cross-node TCP failures, webhook timeouts, bootstrap stalls, or `ReasmFails`
+in `/proc/net/snmp`. Cilium's Helm key is uppercase `MTU` and sets the underlay: the
+current <network.md> model uses `MTU: 1420` for pod MTU 1370. Do not copy the incident
+guide's historical `MTU: 1370` setting; see <network.md> for current values and safe
+application, and <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md> for
+the incident diagnostics.
 
 ### `Policy denied` / ClusterIP Timeout During Control-Plane Instability (usually transient)
 
-**Symptoms**: A Flux controller (or similar) times out reaching a ClusterIP / pod
-(`dial ... i/o timeout`, e.g. tofu-controller → source-controller `ArtifactFailed`);
-`cilium-dbg monitor --type drop` shows `Policy denied` (`bpf_lxc.c` ingress). Often
-coincident with etcd/apiserver `context deadline exceeded` and controllers losing leader
-election.
-
-**Do not immediately chase the datapath.** Two traps:
-
-- A `Policy denied` drop from a pod that has **no business** reaching the target (e.g.
-  `litellm` → `source-controller:9090`) is **correct enforcement**, not a fault — easy to
-  misread as a blackhole. Verify the source's Cilium identity is one the target's ingress
-  policy _should_ allow before suspecting Cilium (`cilium-dbg endpoint get <id>`,
-  `identity list`).
-- When the apiserver/etcd is unstable (historically, the etcd-on-HDD contention), Cilium
-  identity/policy **realization lags**, transiently dropping traffic that is normally
-  allowed. This self-resolves once etcd settles — check current etcd disk/workload
-  pressure, then `kubectl logs ... | grep "etcdserver: request timed out"`.
-
-**Fix**: Address the control-plane instability (historically HDD contention; now inspect
-the current NVMe, workload, and network/API path); the drops clear on their own. See the
-"Compounding Factor" section of
+**Signal**: A Flux controller times out reaching a ClusterIP while
+`cilium-dbg monitor --type drop` reports `Policy denied`, often during apiserver/etcd
+instability. Verify the source identity should be allowed (`cilium-dbg endpoint get <id>`,
+`identity list`): a drop from an unrelated pod is correct enforcement. Check current
+control-plane health (`kubectl logs ... | grep "etcdserver: request timed out"`); do not
+assume the historical HDD issue is present. See the “Compounding Factor” in
 <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md>.
 
 ## tofu-controller Issues
 
 ### TLS Secret Cache Desync (Startup GC Bug)
 
-**Symptoms**: Runner pods CrashLoopBackOff with `secrets "terraform-runner.tls-XXX" not found`;
-controller logs `"TLS already generated for"` but secrets don't exist.
-
-**Cause**: Upstream bug -- startup GC deletes all TLS secrets (created before `time.Now()`),
-but in-memory cache isn't cleared. See `mtls/rotator.go` in tf-controller source.
-
-**Fix**:
-
-```bash
-# Restart controller to clear cache + delete stuck runners
-kubectl rollout restart deployment/tofu-controller-tf-controller -n flux-system
-kubectl wait --for=condition=available --timeout=60s deployment/tofu-controller-tf-controller -n flux-system
-kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner
-```
-
-If that fails, suspend all Terraform resources first, restart, then resume.
-
-See <lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>.
+**Signal**: Runner pods are `CrashLoopBackOff` with `secrets "terraform-runner.tls-<id>" not found`,
+while tofu-controller says `TLS already generated for`. The dated lesson owns the startup-
+GC/cache cause and full restart recovery, including the suspend/restart/resume fallback:
+<lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>. This cache failure is
+distinct from the runner-Init reconcile hang below.
 
 ### Reconcile Hang After a Node Reboot (Runner Died Mid-Init)
 
-**Symptoms**: One or more `Terraform` CRs stuck `Ready=Unknown` / `Initializing`, not
-advancing; controller logs go **silent** for those objects (their last line is
-`"generated template"`); **no `tf-runner` pods `Running`** anywhere; stale `*-tf-runner`
-pods left in `Error` (`phase=Failed`). Correlates with a worker-node reboot/eviction
-(especially wyrm2 — all runners schedule there, so one reboot wedges the whole TF fleet).
-
-**Cause**: Upstream bug — the reconcile goroutine parks **forever** in the runner `Init`
-gRPC (`waitForReady:true` on a deadline-less context) when the runner pod dies
-mid-reconcile; controller-runtime never re-runs that key, so it never self-heals and a
-worker slot is leaked. Deleting the dead runner pods alone does **not** unwedge it.
-
-**Fix** (restart the controller to clear the parked goroutines):
-
-```bash
-kubectl -n flux-system rollout restart deploy/tofu-controller
-kubectl -n flux-system rollout status  deploy/tofu-controller --timeout=90s
-kubectl -n flux-system delete pod -l app.kubernetes.io/name=tf-runner --field-selector status.phase=Failed
-```
-
-See <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md> (upstream fix:
-`flux-iac/tofu-controller#1838`).
+**Historical signal (tofu-controller v0.16.1–v0.16.4)**: After a worker reboot or
+eviction, a `Terraform` CR remains `Ready=Unknown` / `Initializing`, logs stop after
+`generated template`, and no `tf-runner` is `Running`. Check the deployed controller
+version first; the dated lesson records affected versions, the later upstream fix, and
+the recovery procedure: <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md>.
 
 ### PG Advisory Lock Survives Runner Node Reboot
 
-PG advisory locks release when the owning **database session ends**, not merely when
-Kubernetes reports the runner pod gone. A node reboot can drop the runner without sending
-FIN/RST; PostgreSQL then retains the idle session and its advisory lock until TCP
-keepalives detect the dead peer. The observed defaults waited two hours before the first
-probe. Repeated `tfstate.forceUnlock` attempts do not evict a lock still owned by another
-PostgreSQL session.
+**Signal**: After a runner-node reboot, tofu-controller cannot acquire a PostgreSQL
+advisory lock. `tfstate.forceUnlock` cannot release a lock still owned by another session. Before
+terminating a backend, prove it is an orphan on the **current CNPG primary**; see
+<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md> for the state matrix, SQL,
+and safe recovery.
 
-Query `pg_stat_activity` plus `pg_locks` on the **current CNPG primary**, prove the client
-IP belongs to no live runner, then terminate only that orphaned backend with
-`pg_terminate_backend(pid)`. See
-<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md> for the state matrix and
-exact diagnosis.
-
-The separate Kubernetes-backend stale-Lease failure mode is historical because all CRs
-now use PG; see <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
+The Kubernetes-backend stale-Lease failure mode is historical. Current PG-backed lock
+diagnosis and recovery are covered by
+<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md>; the March note
+<lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md> preserves the old incident.
 
 ## Secrets & Auth Issues
 
@@ -249,21 +168,15 @@ Recovery (PG-backend CRs — current default):
 4. `flux resume kustomization -n flux-system <name>` and watch a fresh
    plan-and-apply.
 
-For the long-decommissioned `kubernetes` backend, the equivalent step was
-`kubectl delete secret tfstate-default-<name> -n flux-system`. We don't run
-that backend anymore — see <lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>
-for the original write-up.
-
-The pre-2026-04-19 Vault-based variants of this failure (ESO password-generator desync,
-Vault version overwrites) are documented in <lessons_learned/> but no longer reachable —
-Vault is decommissioned. Kept for context only.
+The Kubernetes-backend secret deletion and Vault-based variants (retired 2026-04-19)
+are historical; don't use those recovery steps. See
+<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md> for the original
+incident and historical procedure.
 
 ### SOPS Decryption Failure
 
-`sops decryption error` on a Kustomization means the cluster age key in
-`flux-system/sops-age-cluster-secrets` doesn't match the key that encrypted the
-`*.sops.yaml` files. See <secrets.md> § "SOPS Decryption Failure in Flux" for the
-verify / `sops updatekeys` / redeploy fix (validated by `pre-commit run --all-files`).
+**Signal**: Flux reports `sops decryption error`. See <secrets.md> § “SOPS Decryption
+Failure in Flux” for verification and key-rotation recovery.
 
 ## PVC File Ownership After Restore
 

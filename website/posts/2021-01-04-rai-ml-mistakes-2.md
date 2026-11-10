@@ -35,6 +35,7 @@ about $\pi_*$ from experience $(S \rightarrow_A R,S')$ sampled from any
 $R+\gamma \cdot \max_{A'} \mathrm{\hat{q}}(S',A')$, and to $\max$ is there because you want
 to learn about the optimal policy.
 
+<!-- prettier-ignore-start -->
 But note that in $\ell(w)$, the experience $(S \rightarrow_A R,S')$ is
 sampled from the policy $\mathrm{greedy}(\mathrm{\hat{q}}_w)$.
 We need to expect _over a policy_, because we're using function approximation,
@@ -42,6 +43,7 @@ so presumably we cannot learn a $w$ which would make $\mathrm{\hat{q}}_w$
 exactly fit $q_*$. So we have to pick out battles for how well do we
 approximate $q_*$ - we care about approximating it closely for
 states and actions actually visited by the estimation policy.
+<!-- prettier-ignore-end -->
 
 Instead of assuming that we can sample $(S \rightarrow_A R,S')$ from
 $\mathrm{greedy}(\mathrm{\hat{q}}_w)$ (so that we can approximate the expected

@@ -19,6 +19,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 CLAIMS = {
     "agentplane.namespace": "agentplane-test",
+    "agentplane.session_id": "00000000-0000-4000-8000-000000000055",
     "agentplane.service_account": "agentplane-test-runtime",
     "agentplane.pod_name": "agentplane-test-7f9c8",
     "agentplane.pod_uid": "00000000-0000-4000-8000-000000000001",

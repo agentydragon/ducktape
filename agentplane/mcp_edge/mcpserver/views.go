@@ -3,21 +3,22 @@ package mcpserver
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
 // The views below are what the tools answer: the core's records under the tool schemas' snake_case names and
-// lower-case enum values. Free-form values (arguments, schemas, errors) stay structpb values, which marshal
-// themselves.
+// lower-case enum values. Free-form values (arguments, schemas) stay structpb values, which marshal
+// themselves; an Execution's error is its ProtoJSON.
 
 var defaultReceiptFields = []string{"id", "state", "version", "created_at", "updated_at"}
 
@@ -41,6 +42,7 @@ type receipt struct {
 	UpdatedAt shown[time.Time]      `json:"updated_at,omitzero"`
 	Input     shown[requestInput]   `json:"input,omitzero"`
 	Caller    shown[serviceAccount] `json:"caller,omitzero"`
+	CallerUID shown[*string]        `json:"caller_uid,omitzero"`
 	Decision  shown[*decision]      `json:"decision,omitzero"`
 	Execution shown[*execution]     `json:"execution,omitzero"`
 }
@@ -63,17 +65,25 @@ type operator struct {
 	Subject string `json:"subject"`
 }
 
+// decision has exactly one of Operator and Policy.
 type decision struct {
-	ID                uuid.UUID       `json:"id"`
-	Verdict           string          `json:"verdict"`
-	Provider          string          `json:"provider"`
-	Operator          *operator       `json:"operator"`
-	DecisionNote      *string         `json:"decision_note"`
-	ReasonCode        *string         `json:"reason_code"`
+	ID             uuid.UUID         `json:"id"`
+	Verdict        string            `json:"verdict"`
+	Operator       *operatorDecision `json:"operator"`
+	Policy         *policyDecision   `json:"policy"`
+	IdempotencyKey string            `json:"idempotency_key"`
+	DecidedAt      time.Time         `json:"decided_at"`
+}
+
+type operatorDecision struct {
+	Operator     operator `json:"operator"`
+	DecisionNote *string  `json:"decision_note"`
+}
+
+type policyDecision struct {
+	ReasonCode        string          `json:"reason_code"`
 	ReasonDescription *string         `json:"reason_description"`
-	PolicyEvidence    *policyEvidence `json:"policy_evidence"`
-	IdempotencyKey    string          `json:"idempotency_key"`
-	DecidedAt         time.Time       `json:"decided_at"`
+	Evidence          *policyEvidence `json:"evidence"`
 }
 
 type policyEvidence struct {
@@ -111,13 +121,13 @@ type matchedRepository struct {
 
 // execution is an Execution as a receipt reports it: never its result, which only the tool answer carries.
 type execution struct {
-	ID           uuid.UUID        `json:"id"`
-	State        string           `json:"state"`
-	Error        *structpb.Struct `json:"error"`
-	CreatedAt    time.Time        `json:"created_at"`
-	StartedAt    *time.Time       `json:"started_at"`
-	CompletedAt  *time.Time       `json:"completed_at"`
-	ReconciledAt *time.Time       `json:"reconciled_at"`
+	ID           uuid.UUID       `json:"id"`
+	State        string          `json:"state"`
+	Error        json.RawMessage `json:"error"`
+	CreatedAt    time.Time       `json:"created_at"`
+	StartedAt    *time.Time      `json:"started_at"`
+	CompletedAt  *time.Time      `json:"completed_at"`
+	ReconciledAt *time.Time      `json:"reconciled_at"`
 }
 
 type event struct {
@@ -129,7 +139,8 @@ type event struct {
 }
 
 type callerActor struct {
-	Account serviceAccount `json:"account"`
+	Account   serviceAccount `json:"account"`
+	CallerUID *string        `json:"caller_uid,omitempty"`
 }
 
 type policyView struct {
@@ -232,7 +243,7 @@ func (d *viewDecoder) optionalTime(at *timestamppb.Timestamp) *time.Time {
 	return &value
 }
 
-func accountView(account *sandboxes.ServiceAccount) serviceAccount {
+func accountView(account *identitypb.ServiceAccount) serviceAccount {
 	return serviceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}
 }
 
@@ -269,6 +280,8 @@ func (d *viewDecoder) receiptView(request *pb.ActionRequest, fields []string) re
 			})
 		case "caller":
 			view.Caller = show(accountView(request.GetCaller()))
+		case "caller_uid":
+			view.CallerUID = show(request.CallerUid)
 		case "decision":
 			view.Decision = show(d.decisionView(request.GetDecision()))
 		case "execution":
@@ -284,22 +297,29 @@ func (d *viewDecoder) decisionView(from *pb.Decision) *decision {
 	if from == nil {
 		return nil
 	}
-	var by *operator
-	if from.GetOperator() != nil {
-		by = &operator{Issuer: from.GetOperator().GetIssuer(), Subject: from.GetOperator().GetSubject()}
+	view := &decision{
+		ID:             d.uuid(from.GetId()),
+		Verdict:        enum(d, from.GetVerdict(), "VERDICT_"),
+		IdempotencyKey: from.GetIdempotencyKey(),
+		DecidedAt:      d.time(from.GetDecidedAt()),
 	}
-	return &decision{
-		ID:                d.uuid(from.GetId()),
-		Verdict:           enum(d, from.GetVerdict(), "VERDICT_"),
-		Provider:          from.GetProvider(),
-		Operator:          by,
-		DecisionNote:      from.DecisionNote,
-		ReasonCode:        from.ReasonCode,
-		ReasonDescription: from.ReasonDescription,
-		PolicyEvidence:    d.evidenceView(from.GetPolicyEvidence()),
-		IdempotencyKey:    from.GetIdempotencyKey(),
-		DecidedAt:         d.time(from.GetDecidedAt()),
+	switch decider := from.GetDecider().(type) {
+	case *pb.Decision_Operator:
+		by := decider.Operator.GetOperator()
+		view.Operator = &operatorDecision{
+			Operator:     operator{Issuer: by.GetIssuer(), Subject: by.GetSubject()},
+			DecisionNote: decider.Operator.DecisionNote,
+		}
+	case *pb.Decision_Policy:
+		view.Policy = &policyDecision{
+			ReasonCode:        enum(d, decider.Policy.GetReasonCode(), "REASON_CODE_"),
+			ReasonDescription: decider.Policy.ReasonDescription,
+			Evidence:          d.evidenceView(decider.Policy.GetEvidence()),
+		}
+	default:
+		d.fail("core answered decision %s without a decider", from.GetId())
 	}
+	return view
 }
 
 func (d *viewDecoder) evidenceView(from *pb.PolicyEvidence) *policyEvidence {
@@ -349,12 +369,24 @@ func (d *viewDecoder) executionView(from *pb.Execution) *execution {
 	return &execution{
 		ID:           d.uuid(from.GetId()),
 		State:        enum(d, from.GetState(), "EXECUTION_STATE_"),
-		Error:        from.GetError(),
+		Error:        d.executionErrorView(from.GetError()),
 		CreatedAt:    d.time(from.GetCreatedAt()),
 		StartedAt:    d.optionalTime(from.GetStartedAt()),
 		CompletedAt:  d.optionalTime(from.GetCompletedAt()),
 		ReconciledAt: d.optionalTime(from.GetReconciledAt()),
 	}
+}
+
+// executionErrorView is an Execution's error as its ProtoJSON; nil, which marshals as null, when there is none.
+func (d *viewDecoder) executionErrorView(from *pb.ExecutionError) json.RawMessage {
+	if from == nil {
+		return nil
+	}
+	encoded, err := protojson.Marshal(from)
+	if err != nil {
+		d.fail("core answered an execution error that does not marshal: %w", err)
+	}
+	return encoded
 }
 
 func (d *viewDecoder) eventView(from *pb.ActionEvent) event {
@@ -366,7 +398,7 @@ func (d *viewDecoder) eventView(from *pb.ActionEvent) event {
 	switch actor := from.GetActor().GetPrincipal().(type) {
 	case nil:
 	case *pb.Principal_Caller:
-		view.Actor = callerActor{Account: accountView(actor.Caller)}
+		view.Actor = callerActor{Account: accountView(actor.Caller), CallerUID: from.GetActor().CallerUid}
 	case *pb.Principal_Operator:
 		view.Actor = operator{Issuer: actor.Operator.GetIssuer(), Subject: actor.Operator.GetSubject()}
 	default:
@@ -420,27 +452,27 @@ func (d *viewDecoder) policyView(policy *pb.CallerActionPolicy, fields []string)
 func (d *viewDecoder) ruleView(policy *pb.Policy) any {
 	switch kind := policy.GetKind().(type) {
 	case *pb.Policy_ExactActions:
-		return actionsRule{Type: "exact_actions", Actions: sortedLists(kind.ExactActions.GetActions())}
+		return actionsRule{Type: "exact_actions", Actions: d.actionLists(kind.ExactActions.GetActions())}
 	case *pb.Policy_ArgumentSchema:
 		return argumentSchemaRule{
 			Type:           "argument_schema",
-			Actions:        sortedLists(kind.ArgumentSchema.GetActions()),
+			Actions:        d.actionLists(kind.ArgumentSchema.GetActions()),
 			ArgumentSchema: object(kind.ArgumentSchema.GetArgumentSchema()),
 		}
 	case *pb.Policy_GithubRepository:
 		return githubRepositoryRule{
 			Type:       "github_repository",
-			Actions:    sortedLists(kind.GithubRepository.GetActions()),
+			Actions:    d.actionLists(kind.GithubRepository.GetActions()),
 			Owner:      kind.GithubRepository.GetOwner(),
 			Repository: kind.GithubRepository.GetRepository(),
 		}
 	case *pb.Policy_GithubPublicRepository:
-		return actionsRule{Type: "github_public_repository", Actions: sortedLists(kind.GithubPublicRepository.GetActions())}
+		return actionsRule{Type: "github_public_repository", Actions: d.actionLists(kind.GithubPublicRepository.GetActions())}
 	case *pb.Policy_HomeAssistantEntityControl:
 		return homeAssistantEntityControlRule{
 			Type:     "home_assistant_entity_control",
-			Actions:  sortedLists(kind.HomeAssistantEntityControl.GetActions()),
-			Entities: sortedLists(kind.HomeAssistantEntityControl.GetEntities()),
+			Actions:  d.actionLists(kind.HomeAssistantEntityControl.GetActions()),
+			Entities: d.entityLists(kind.HomeAssistantEntityControl.GetEntities()),
 		}
 	default:
 		d.fail("core answered policy %T, outside the contract", kind)
@@ -448,11 +480,26 @@ func (d *viewDecoder) ruleView(policy *pb.Policy) any {
 	}
 }
 
-// sortedLists is a policy's name lists, each sorted.
-func sortedLists(lists map[string]*pb.StringList) actionLists {
+// actionLists is a policy's Actions as the PolicySet spells them, by group.
+func (d *viewDecoder) actionLists(groups []*pb.GroupActions) actionLists {
 	view := actionLists{}
-	for key, list := range lists {
-		view[key] = slices.Sorted(slices.Values(list.GetValues()))
+	for _, group := range groups {
+		if _, ok := view[group.GetGroup()]; ok {
+			d.fail("core listed group %q twice in one policy", group.GetGroup())
+		}
+		view[group.GetGroup()] = group.GetNames()
+	}
+	return view
+}
+
+// entityLists is a policy's entities as the PolicySet spells them, by entity id.
+func (d *viewDecoder) entityLists(entities []*pb.EntityPermission) actionLists {
+	view := actionLists{}
+	for _, entity := range entities {
+		if _, ok := view[entity.GetEntityId()]; ok {
+			d.fail("core listed entity %q twice in one policy", entity.GetEntityId())
+		}
+		view[entity.GetEntityId()] = entity.GetServices()
 	}
 	return view
 }

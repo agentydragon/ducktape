@@ -1,0 +1,153 @@
+{% import "issue_provenance.j2" as provenance %}
+
+{% macro header(repository, commit_sha, failed=false) -%}
+<!-- pr-visuals -->
+<h2>Visual review{% if failed %} failed{% endif %} for <a href="https://github.com/{{ repository }}/commit/{{ commit_sha }}"><code>{{ commit_sha[:8] }}</code></a></h2>
+{%- endmacro %}
+
+{% macro ci_failure(conclusion, failures) -%}
+> [!WARNING]
+> Bazel CI concluded <code>{{ conclusion }}</code>; showing the visual artifacts that arrived.
+{% if failures %}
+>
+> Failed Bazel targets:
+> <ul>
+{% for target in failures[:20] %}
+> <li><code>{{ target }}</code></li>
+{% endfor %}
+{% if failures | length > 20 %}
+> <li>… and {{ failures | length - 20 }} more</li>
+{% endif %}
+> </ul>
+{% else %}
+> Failed target labels unavailable from BuildBuddy.
+{% endif %}
+{%- endmacro %}
+
+{% macro rerun(details_url) -%}
+<p>Request a manual rerun from the <a href="{{ details_url }}">CI run page</a>.</p>
+{%- endmacro %}
+
+{% macro fallback(target_count, baselines) -%}
+> [!WARNING]
+> {{ target_count }} target{% if target_count != 1 %}s{% endif %} used the latest devel baseline{% if baselines | length != 1 %}s{% endif %} ({% if baselines %}{% for baseline in baselines %}<code>{{ baseline }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}an unavailable commit{% endif %}) because the PR base published none. Diffs there may include devel drift, not just this PR's changes.
+{%- endmacro %}
+
+{% macro no_base(test_count, page_url, url, tests) -%}
+<p>{{ test_count }} Bazel test target{% if test_count != 1 %}s{% endif %} produced visual artifacts. <a href="{{ page_url }}">Open visual review</a>.</p>
+<ul>
+{% for test in tests %}
+<li><a href="{{ url }}tests/{{ test.slug }}/index.html"><code>{{ test.target_label }}</code></a>: {{ test.assets | length }} assets</li>
+{% endfor %}
+</ul>
+{%- endmacro %}
+
+{% macro unchanged_intro(test_count, page_url) -%}
+<p>No visual changes among the {{ test_count }} affected Bazel test target{% if test_count != 1 %}s{% endif %}. <a href="{{ page_url }}">Open visual review</a>.</p>
+{%- endmacro %}
+
+{% macro changed_intro(test_count, page_url, totals) -%}
+<p>{{ test_count }} Bazel test target{% if test_count != 1 %}s{% endif %} produced visual artifacts · <strong>{{ totals.modified }} modified</strong>, {{ totals.new }} new, {{ totals.removed }} removed, {{ totals.unchanged }} unchanged, {{ totals.unstable }} unstable. <a href="{{ page_url }}">Open visual review</a>.</p>
+{%- endmacro %}
+
+{% macro changed_heading() -%}<h3>Changed tests</h3>{%- endmacro %}
+
+{% macro counts(test) -%}
+{% set counts = test.summary %}
+{% set entries = [] %}
+{% if counts %}
+{% for value, label in [(counts.unstable, 'unstable'), (counts.modified, 'modified'), (counts.new, 'new'), (counts.removed, 'removed')] %}
+{% if value %}{% set _ = entries.append(value ~ ' ' ~ label) %}{% endif %}
+{% endfor %}
+{% endif %}
+{% if test.issues %}incomplete or non-comparable{% if entries %}; {% endif %}{% endif %}{{ entries | join(', ') if entries else ('unchanged' if not test.issues else '') }}
+{%- endmacro %}
+
+{% macro stale_warning(test) -%}
+⚠️ stale baseline ({% if test.base_sha %}<code>{{ test.base_sha[:8] }}</code>{% else %}an unavailable commit{% endif %}, not merge base {% if test.merge_base_sha %}<code>{{ test.merge_base_sha[:8] }}</code>{% else %}the merge base{% endif %})
+{%- endmacro %}
+
+{% macro image(url, alt) -%}
+<a href="{{ url }}"><img src="{{ url }}" width="260" alt="{{ alt }}"></a>
+{%- endmacro %}
+
+{% macro asset_body(item, include_heading) -%}
+{% set asset = item.asset %}
+{% if include_heading %}
+<p><strong><a href="{{ item.anchor }}">{{ asset.label }}</a></strong>{% if asset.classification == 'unstable' %} · unstable across runs{% elif asset.classification == 'modified' %} · {{ '%.1f' | format((asset.changed_fraction or 0) * 100) }}% changed{% if asset.baseline_stale %} · {{ stale_warning(item.test) }}{% endif %}{% elif asset.classification == 'new' %} · new{% elif asset.classification == 'removed' %} · removed{% if asset.baseline_stale %} · {{ stale_warning(item.test) }}{% endif %}{% endif %}</p>
+
+{% elif asset.baseline_stale and asset.classification != 'unstable' %}
+<p>{{ stale_warning(item.test) }}</p>
+
+{% endif %}
+{% if asset.classification == 'unstable' %}
+<ul>
+{% for variant in item.urls.variants %}
+<li>{{ image(variant.url, asset.label) }}{% if variant.provenance %}<br>{% for source in variant.provenance %}{{ provenance.variant_provenance(source) }}{% if not loop.last %}; {% endif %}{% endfor %}{% endif %}</li>
+{% endfor %}
+</ul>
+{% elif asset.classification == 'modified' %}
+<table>
+<thead><tr><th>Before</th><th>After</th><th>Diff</th></tr></thead>
+<tbody><tr><td>{{ image(item.urls.baseline_url, asset.label ~ ' baseline') }}</td><td>{{ image(item.urls.candidate_url, asset.label ~ ' candidate') }}</td><td>{% if asset.dimension_changed %}<em>(dimensions changed)</em>{% else %}{{ image(item.urls.diff_url, asset.label ~ ' diff') }}{% endif %}</td></tr></tbody>
+</table>
+{% elif asset.classification == 'new' %}
+{{ image(item.urls.candidate_url, asset.label) }}
+{% elif asset.classification == 'removed' %}
+{{ image(item.urls.baseline_url, asset.label ~ ' baseline') }}
+{% endif %}
+{%- endmacro %}
+
+{% macro target(test, impact, gallery_url, ci_details_url, assets, open_section, inline_limit, issue_invocation_labels, issue_configuration_labels) -%}
+<details{% if open_section %} open{% endif %}>
+<summary><code>{{ test.target_label }}</code> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %}{% if test.title != test.target_label %} · {{ test.title }}{% endif %} · <a href="{{ gallery_url }}">link</a>{% if ci_details_url %} · <a href="{{ ci_details_url }}">request rerun</a>{% endif %}</summary>
+
+{% if test.issues %}
+<ul>{% for problem in test.issues %}<li>⚠️ {{ provenance.issue_details(problem, issue_invocation_labels[problem.source.invocation] if problem.source else none, issue_configuration_labels[problem.source.configuration] if problem.source and problem.source.configuration else none) }}</li>{% endfor %}</ul>
+{% endif %}
+{% for item in assets %}
+{% if assets | length <= inline_limit %}
+{{ asset_body(item, true) }}
+
+{% else %}
+<details{% if open_section and loop.first %} open{% endif %}>
+<summary>{{ item.asset.label }}{% if item.asset.classification == 'modified' and item.asset.changed_fraction is not none %} — {{ '%.1f' | format(item.asset.changed_fraction * 100) }}% changed{% elif item.asset.classification is not none %} — {{ item.asset.classification }}{% endif %}{% if item.asset.baseline_stale %} — ⚠️ stale baseline{% endif %} · <a href="{{ item.anchor }}">link</a></summary>
+
+{{ asset_body(item, false) }}
+
+</details>
+
+{% endif %}
+{% endfor %}
+</details>
+{%- endmacro %}
+
+{% macro unchanged(tests, url) -%}
+<details>
+<summary>{{ tests | length }} unchanged target{% if tests | length != 1 %}s{% endif %}</summary>
+
+<ul>{% for test in tests %}<li><a href="{{ url }}tests/{{ test.slug }}/index.html"><code>{{ test.target_label }}</code></a></li>{% endfor %}</ul>
+</details>
+{%- endmacro %}
+
+{% macro omitted(count, url) -%}
+<p>{{ count }} changed test section{% if count != 1 %}s{% endif %} omitted for length. <a href="{{ url }}index.html">Full gallery</a>.</p>
+{%- endmacro %}
+
+{% macro unchanged_omitted(count) -%}
+<p>{{ count }} unchanged targets; see the full gallery.</p>
+{%- endmacro %}
+
+{% macro no_visual(details_url) -%}
+<p>No visual artifacts were available from the Bazel CI run.</p>
+{% if details_url %}
+<p><a href="{{ details_url }}">Open the CI run</a> for the complete test results or to request a manual rerun.</p>
+{% endif %}
+{%- endmacro %}
+
+{% macro error(message) -%}
+> [!CAUTION]
+> The visual-review publisher failed while processing this Bazel CI run.
+
+<pre><code>{{ message }}</code></pre>
+{%- endmacro %}

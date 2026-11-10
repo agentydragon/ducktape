@@ -1,4 +1,5 @@
-import type { ActionRequestView } from "../types";
+import type { ActionRequest } from "../../../../action_service/action_service_pb";
+import { actionIdentity } from "../presentation";
 import { createBranchNotification } from "./github/create_branch";
 import { createPullRequestNotification } from "./github/create_pull_request";
 import { pushFilesNotification } from "./github/push_files";
@@ -21,7 +22,7 @@ import { sshExecNotification } from "./ssh/exec";
 import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
 
-type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotificationParts | null;
+type ActionNotificationFormatter = (request: ActionRequest) => ActionNotificationParts | null;
 
 function fixedActionNotification(actionTitle: string): ActionNotificationFormatter {
   return (request) => ({
@@ -79,17 +80,19 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
 
 /** Format a pending Action for the OS notification surface. Unknown Actions use only their
  * caller-authored summary and description; arbitrary arguments can be large or sensitive. */
-export function formatActionNotification(request: ActionRequestView): ActionNotificationContent {
-  const parts = FORMATTERS.get(request.action.group)?.get(request.action.name)?.(request) ?? fallbackParts(request);
+export function formatActionNotification(request: ActionRequest): ActionNotificationContent {
+  const action = actionIdentity(request);
+  const parts = FORMATTERS.get(action.group)?.get(action.name)?.(request) ?? fallbackParts(request);
   return {
     title: combineNotificationTitle(request.title, parts.actionTitle),
     text: parts.text,
   };
 }
 
-function fallbackParts(request: ActionRequestView): ActionNotificationParts {
+function fallbackParts(request: ActionRequest): ActionNotificationParts {
+  const action = actionIdentity(request);
   return {
-    actionTitle: `${request.action.group} / ${request.action.name}`,
+    actionTitle: `${action.group} / ${action.name}`,
     text: request.description ?? "Action requires approval",
   };
 }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 from pydantic import Field
@@ -56,7 +56,6 @@ class TrainedPrivateEquityModelArtifact(FrozenModel):
     tender_price_log_discount_mu: float = 0.0
     tender_price_log_discount_sigma: float = Field(default=0.08, ge=0)
     last_tender_observed_at: date | None = None
-    provenance: dict[str, Any] = Field(default_factory=dict)
     scale_prior: TrainedPrivateEquityScalePrior
 
 

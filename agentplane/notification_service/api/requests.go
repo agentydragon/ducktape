@@ -39,18 +39,11 @@ func parseOptionalID(field string, value *string) (*uuid.UUID, error) {
 }
 
 func subscribeBody(request *notificationspb.CreateSubscriptionRequest) (model.Subscribe, error) {
-	if request.GetDestinationRef() == nil {
-		return model.Subscribe{}, invalidRequest("destination_ref is required")
-	}
 	source, err := sourceBody(request.GetSource())
 	if err != nil {
 		return model.Subscribe{}, err
 	}
 	body := model.Subscribe{
-		DestinationRef: model.DestinationRef{
-			Namespace: request.GetDestinationRef().GetNamespace(), Name: request.GetDestinationRef().GetName(),
-			UID: request.GetDestinationRef().GetUid(),
-		},
 		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Source: source,
 		LifetimeDays: int64(request.GetLifetimeDays()),
 	}

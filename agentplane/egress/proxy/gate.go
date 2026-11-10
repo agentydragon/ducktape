@@ -3,20 +3,23 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const proxyAuthorization = "Proxy-Authorization"
@@ -24,10 +27,9 @@ const proxyAuthorization = "Proxy-Authorization"
 // deniedHeader carries the machine-readable reason of a refusal.
 const deniedHeader = "x-agentplane-egress"
 
-// authenticated is a hop bearer a connection proved, and what it may present for substitution.
+// authenticated is the SVID a connection proved, and what it may present for substitution.
 type authenticated struct {
-	bearer    string
-	principal auth.Principal
+	subject auth.Subject
 	// projected holds the tokens the sidecar offered, by audience, that were reviewed as this Pod's.
 	projected map[string]string
 }
@@ -46,10 +48,10 @@ type outcome struct {
 // gate decides one request or CONNECT and records the decision. The hop headers are this proxy's
 // alone: they are removed here, before anything else reads the request, whatever is decided.
 func (p *Proxy) gate(req *http.Request, client *connection, body []byte, host string, port int) (policy.Decision, upstream.Pin) {
-	hop, supplied := req.Header[proxyAuthorization]
+	_, supplied := req.Header[proxyAuthorization]
 	req.Header.Del(proxyAuthorization)
 	presented := takeProjectedTokens(req.Header)
-	result := p.decide(req, client, hop, supplied, presented, body, host, port)
+	result := p.decide(req, client, supplied, presented, body, host, port)
 	p.record(req, client, host, port, result)
 	return result.decision, result.pin
 }
@@ -68,11 +70,11 @@ func takeProjectedTokens(header http.Header) map[string]string {
 }
 
 func (p *Proxy) decide(
-	req *http.Request, client *connection, hop []string, supplied bool, presented map[string]string,
+	req *http.Request, client *connection, supplied bool, presented map[string]string,
 	body []byte, host string, port int,
 ) outcome {
 	ctx := req.Context()
-	who, err := p.authenticate(ctx, client, hop, supplied, presented)
+	who, err := p.authenticate(ctx, client, supplied, presented)
 	if err != nil {
 		var rejection *identity.Rejection
 		if errors.As(err, &rejection) {
@@ -87,17 +89,22 @@ func (p *Proxy) decide(
 	refused := func(reason decision.Reason) outcome {
 		return outcome{decision: policy.Denied{Reason: reason}, caller: who}
 	}
-	if !p.options.Policy.Freshness.Available(time.Now()) {
+	if !p.options.Policy.Health.Available() {
 		return refused(decision.Unavailable)
 	}
-	caller := policyapi.ServiceAccountRef{Namespace: who.principal.Account.Namespace, Name: who.principal.Account.Name}
-	request := policy.Request{Method: req.Method, Host: host, Headers: req.Header, Body: body}
+	caller := policySubject(who.subject)
+	request := policy.Request{Method: req.Method, Host: host, Port: port, Headers: req.Header, Body: body}
+	if server := p.options.Policy.LocalAPIServer; server != nil {
+		// Both evaluations below must see one token, or a rotation between them would read as a
+		// change of decision. Read lazily: most requests never substitute it.
+		request.APIServerToken = sync.OnceValues(server.Token)
+	}
 	if req.Method != http.MethodConnect {
 		request.Path = req.URL.RequestURI()
+		// relay dials https with UpstreamRoots verification; nothing else is TLS to the upstream.
+		request.TLS = req.URL.Scheme == "https"
 	}
-	workload := &policy.WorkloadContext{
-		Bearer: who.bearer, Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
-	}
+	workload := &policy.WorkloadContext{Caller: caller, PodUID: podUID(who.subject), Projected: who.projected}
 	first := p.options.Policy.Evaluate(caller, request, workload)
 	admitted, ok := first.(policy.Allowed)
 	if !ok {
@@ -116,53 +123,79 @@ func (p *Proxy) decide(
 		return refused(decision.Unavailable)
 	}
 	// Identity and DNS awaited I/O. Reading policy and readiness again after the last await is what
-	// keeps a revocation, expiry or staleness during admission from authorizing the dial.
-	if !p.options.Policy.Freshness.Available(time.Now()) ||
+	// keeps a revocation, expiry or watch failure during admission from authorizing the dial.
+	if !p.options.Policy.Health.Available() ||
 		!reflect.DeepEqual(p.options.Policy.Evaluate(caller, request, workload), first) {
 		return refused(decision.Unavailable)
 	}
 	return outcome{decision: admitted, pin: pin, caller: who}
 }
 
-// authenticate proves the hop bearer, or the one this connection proved before, and binds the
-// presented projected tokens to the Pod it proved. A bearer presented on a request replaces
-// whatever the connection held before: it stands on its own, so a malformed or rejected one never
-// falls back to the earlier state.
+// authenticate re-resolves the connection's SVID on every request and binds the presented
+// projected tokens to the Pod it proves. `supplied` is a Proxy-Authorization header on the request,
+// which this listener refuses rather than ignores.
 func (p *Proxy) authenticate(
-	ctx context.Context, client *connection, hop []string, supplied bool, presented map[string]string,
+	ctx context.Context, client *connection, supplied bool, presented map[string]string,
 ) (*authenticated, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	var previous *authenticated
-	token := ""
-	if supplied {
-		client.auth = nil
-		var ok bool
-		if token, ok = identity.BearerToken(hop); !ok {
-			return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "no bearer token in Proxy-Authorization"}
-		}
-	} else if previous = client.auth; previous != nil {
-		token = previous.bearer
-	} else {
-		return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "no bearer token in Proxy-Authorization"}
-	}
-	principal, err := p.options.Identity.Identify(ctx, token)
+	previous := client.auth
+	caller, err := p.options.Authentication.Authenticate(ctx, client.peerState, supplied)
 	if err != nil {
 		client.auth = nil
 		return nil, err
 	}
-	if previous != nil && previous.principal != principal {
+	// A tunnel's requests must still identify the same Pod incarnation as its CONNECT.
+	if previous != nil && caller.Subject != previous.subject {
 		client.auth = nil
 		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "authenticated tunnel identity changed"}
 	}
 	var projected map[string]string
 	if presented != nil {
-		projected = p.options.Identity.VerifyProjected(ctx, presented, principal)
+		projected = p.options.Authentication.VerifyProjected(ctx, caller, presented)
 	} else if previous != nil {
 		projected = maps.Clone(previous.projected)
 	}
-	client.auth = &authenticated{bearer: token, principal: principal, projected: projected}
+	client.auth = &authenticated{subject: caller.Subject, projected: projected}
 	return client.auth, nil
+}
+
+// policySubject is whose bindings decide: an Identity's only while the live Identity of its name
+// still has the UID its credential named.
+func policySubject(subject auth.Subject) reader.Subject {
+	switch subject := subject.(type) {
+	case auth.Principal:
+		return reader.ServiceAccount{Namespace: subject.Account.Namespace, Name: subject.Account.Name}
+	case auth.IdentityPrincipal:
+		return reader.Identity{Name: subject.Identity.Name, UID: types.UID(subject.Identity.UID)}
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
+}
+
+// decisionSubject is the caller as history records it: by name, without an Identity's UID.
+func decisionSubject(subject auth.Subject) decision.Subject {
+	switch subject := subject.(type) {
+	case auth.Principal:
+		return decision.ServiceAccount{Namespace: subject.Account.Namespace, Name: subject.Account.Name}
+	case auth.IdentityPrincipal:
+		return decision.Identity{Name: subject.Identity.Name}
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
+}
+
+// podUID is the Pod the caller's credential was accepted for; empty for a standing workload, which
+// proves none.
+func podUID(subject auth.Subject) string {
+	switch subject := subject.(type) {
+	case auth.Principal:
+		return subject.PodUID
+	case auth.IdentityPrincipal:
+		return subject.PodUID
+	default:
+		panic(fmt.Sprintf("unknown subject %T", subject))
+	}
 }
 
 func (p *Proxy) record(req *http.Request, client *connection, host string, port int, result outcome) {
@@ -180,16 +213,20 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 		record.Phase = decision.Connect
 	}
 	if result.caller != nil {
-		record.Subject = &decision.Subject{
-			Namespace: result.caller.principal.Account.Namespace, Name: result.caller.principal.Account.Name,
+		record.Subject = decisionSubject(result.caller.subject)
+		// A standing workload's credential proves no Pod.
+		if pod := podUID(result.caller.subject); pod != "" {
+			record.SourcePodUID = &pod
 		}
-		record.SourcePodUID = &result.caller.principal.PodUID
 	}
 	switch d := result.decision.(type) {
 	case policy.Allowed:
 		address := result.pin.Address.String()
 		record.Outcome, record.Binding, record.Policy, record.Rule = decision.Allow, &d.Binding, &d.Policy, &d.Rule
 		record.Substituted = len(d.Rewrites) > 0 || d.BodyRewrite != nil
+		if d.Impersonated != nil {
+			record.Impersonated = &decision.ServiceAccount{Namespace: d.Impersonated.Namespace, Name: d.Impersonated.Name}
+		}
 		record.Address = &address
 	case policy.Denied:
 		record.Outcome, record.Reason = decision.Deny, &d.Reason

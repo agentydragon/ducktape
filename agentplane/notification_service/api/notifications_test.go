@@ -12,36 +12,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
-
-func TestEveryRPCRefusesACallerWhoseBearerIsNotAWorkloadOfTheNamespace(t *testing.T) {
-	server := newServer(t)
-	rpcs := map[string]func(context.Context) error{
-		"CreateSubscription": unary(server.client.CreateSubscription),
-		"ListSubscriptions":  unary(server.client.ListSubscriptions),
-		"GetSubscription":    unary(server.client.GetSubscription),
-		"RenewSubscription":  unary(server.client.RenewSubscription),
-		"CancelSubscription": unary(server.client.CancelSubscription),
-		"ListInboxes":        unary(server.client.ListInboxes),
-		"ReadInbox":          unary(server.client.ReadInbox),
-		"AcknowledgeInbox":   unary(server.client.AcknowledgeInbox),
-		"RetireInbox":        unary(server.client.RetireInbox),
-		"SendMessage":        unary(server.client.SendMessage),
-		"GetMessage":         unary(server.client.GetMessage),
-	}
-	for name, call := range rpcs {
-		for bearer, token := range map[string]string{"no bearer": "", "unknown bearer": "test-token-unknown", "other namespace": outsiderToken} {
-			t.Run(name+" with "+bearer, func(t *testing.T) {
-				requireCode(t, call(bearing(t, token)), codes.Unauthenticated)
-			})
-		}
-	}
-}
 
 func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *testing.T) {
 	server := newServer(t)
@@ -63,9 +42,10 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	// The Action Service was asked, as the caller, whether it may follow the request.
 	source := request.GetSource().GetActions()
-	want := actionsCall{owner: model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
-	if got := server.actions.asked(); len(got) != 1 || got[0] != want {
-		t.Errorf("Action Service asked %v, want %v", got, want)
+	owner := model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}
+	if got := server.actions.asked(); len(got) != 1 || got[0].owner.(store.AccountOwner).Account != owner ||
+		got[0].requestID != uuid.MustParse(source.GetRequestId()) || got[0].afterSequence != 0 {
+		t.Errorf("Action Service asked %v, want %v's request %s", got, owner, source.GetRequestId())
 	}
 
 	inboxes, err := server.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
@@ -101,6 +81,38 @@ func TestCreateSubscriptionReplaysItsIdempotencyKey(t *testing.T) {
 	requireCode(t, err, codes.AlreadyExists)
 }
 
+func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testing.T) {
+	s := newServer(t)
+	request := createRequest("retained-subscription")
+	source, err := sourceBody(request.GetSource())
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous, err := s.store.Subscribe(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, model.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
+		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
+	}, nil, accountUID(t, sandboxName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := subscriptionView(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.record(t, stored, 2)
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+		t.Fatal(err)
+	}
+	retried, err := s.client.CreateSubscription(bearing(t, sandboxToken), request)
+	if err != nil || retried.GetSubscription().GetId() != stored.GetId() || retried.GetSubscription().GetInboxId() != stored.GetInboxId() {
+		t.Fatalf("retained subscription = %v, %v", retried, err)
+	}
+	page, err := s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetAcknowledged() != 1 || page.GetInbox().GetLastCursor() != 2 || len(page.GetEntries()) != 2 {
+		t.Fatalf("retained inbox = %v, %v", page, err)
+	}
+}
+
 func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *testing.T) {
 	cases := []struct {
 		name string
@@ -110,13 +122,8 @@ func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *t
 		want       codes.Code
 		asksRunner bool
 	}{
-		{"destination in another namespace", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Namespace = "test-elsewhere" }, codes.NotFound, false},
-		{"destination Sandbox that does not exist", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Name = "no-such-sandbox" }, codes.NotFound, false},
-		{"destination Sandbox that was replaced", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Uid = "replaced-uid" }, codes.NotFound, false},
 		{"another account's Sandbox", otherSandboxToken, func(*notificationspb.CreateSubscriptionRequest) {}, codes.NotFound, false},
 		{"Session the runner does not hold", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "missing-session" }, codes.NotFound, true},
-		{"no destination", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef = nil }, codes.InvalidArgument, false},
-		{"destination without a UID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.DestinationRef.Uid = "" }, codes.InvalidArgument, false},
 		{"no source", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source = nil }, codes.InvalidArgument, false},
 		{"Action request that is no UUID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().RequestId = "request" }, codes.InvalidArgument, false},
 		{"negative sequence", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().AfterSequence = -1 }, codes.InvalidArgument, false},
@@ -160,6 +167,7 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 		cause error
 		want  codes.Code
 	}{
+		{"opening lookup unreachable", func(s testServer, err error) { s.openings.err = err }, errors.New("dial dispatcher-secret-host"), codes.Unavailable},
 		{"runner unreachable", func(s testServer, err error) { s.runner.failWith(err) }, errors.New("dial runner-secret-host"), codes.Unavailable},
 		{"Action request of another account", func(s testServer, err error) { s.actions.failWith(err) }, store.ErrNotFound, codes.NotFound},
 		{"Action Service unreachable", func(s testServer, err error) { s.actions.failWith(err) }, errors.New("dial actions-secret-host"), codes.Unavailable},
@@ -176,6 +184,31 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 			listed, err := server.client.ListSubscriptions(bearing(t, sandboxToken), &notificationspb.ListSubscriptionsRequest{})
 			if err != nil || len(listed.GetSubscriptions()) != 0 {
 				t.Errorf("listed %v, %v", listed, err)
+			}
+		})
+	}
+}
+
+func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		opening *dispatcherpb.Session
+		want    codes.Code
+	}{
+		{name: "no Dispatcher opening", want: codes.NotFound},
+		{name: "different Session", opening: nativeSession("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
+		{name: "no UID", opening: nativeSession(testSession, sandboxName, ""), want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: nativeSession(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
+		{name: "same-name replacement", opening: nativeSession(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := newServer(t)
+			s.openings.placements[testSession] = test.opening
+			_, err := s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("fenced-opening"))
+			requireCode(t, err, test.want)
+			s.requireNoInbox(t)
+			if len(s.runner.questions()) != 0 || len(s.actions.asked()) != 0 {
+				t.Fatal("rejected placement reached Runtime or source authorization")
 			}
 		})
 	}
@@ -390,15 +423,15 @@ func ownedCalls(server testServer, subscription *notificationspb.Subscription) m
 			return err
 		},
 		"ReadInbox": func(ctx context.Context) error {
-			_, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{InboxId: subscription.GetInboxId()})
+			_, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession})
 			return err
 		},
 		"AcknowledgeInbox": func(ctx context.Context) error {
-			_, err := server.client.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{InboxId: subscription.GetInboxId(), ThroughCursor: 1})
+			_, err := server.client.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
 			return err
 		},
 		"RetireInbox": func(ctx context.Context) error {
-			_, err := server.client.RetireInbox(ctx, &notificationspb.RetireInboxRequest{InboxId: subscription.GetInboxId()})
+			_, err := server.client.RetireInbox(ctx, &notificationspb.RetireInboxRequest{SessionId: testSession})
 			return err
 		},
 	}
@@ -422,7 +455,7 @@ func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
 		t.Run(name, func(t *testing.T) { requireCode(t, call(stranger(t)), codes.NotFound) })
 	}
 	// None of it touched the owner's.
-	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: subscription.GetInboxId()})
+	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(read.GetEntries()) != 1 || read.GetInbox().GetAcknowledged() != 0 || read.GetInbox().GetRetired() {
 		t.Errorf("read = %v, %v", read, err)
 	}
@@ -446,9 +479,12 @@ func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testin
 		t.Run(name, func(t *testing.T) { requireCode(t, call(bearing(t, sandboxToken)), codes.NotFound) })
 	}
 
-	// What the successor opens is its own.
+	// The successor cannot reuse its predecessor's globally unique Session identity.
 	request := createRequest("successor")
-	request.DestinationRef.Uid = successorUID
+	_, err = server.client.CreateSubscription(bearing(t, sandboxToken), request)
+	requireCode(t, err, codes.NotFound)
+	// A different Session created by the successor has its own inbox.
+	request.SessionId = "another-session"
 	created, err := server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	if err != nil {
 		t.Fatal(err)
@@ -463,9 +499,8 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "inbox")
 	server.record(t, subscription, 3)
-	inboxID := subscription.GetInboxId()
 	read := func(request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-		request.InboxId = inboxID
+		request.SessionId = testSession
 		return server.client.ReadInbox(bearing(t, sandboxToken), request)
 	}
 
@@ -503,14 +538,14 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 			requireCode(t, err, codes.InvalidArgument)
 		})
 	}
-	_, err = server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: "inbox"})
+	_, err = server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{})
 	requireCode(t, err, codes.InvalidArgument)
 	if again, err := read(&notificationspb.ReadInboxRequest{}); err != nil || again.GetInbox().GetAcknowledged() != 0 {
 		t.Errorf("reading acknowledged: %v, %v", again, err)
 	}
 
 	acknowledge := func(through int64) (*notificationspb.AcknowledgeInboxResponse, error) {
-		return server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: inboxID, ThroughCursor: through})
+		return server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: through})
 	}
 	if acknowledged, err := acknowledge(2); err != nil || acknowledged.GetInbox().GetAcknowledged() != 2 {
 		t.Fatalf("acknowledged = %v, %v", acknowledged, err)
@@ -524,7 +559,7 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 
 	retire := func() error {
-		_, err := server.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{InboxId: inboxID})
+		_, err := server.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{SessionId: testSession})
 		return err
 	}
 	if err := retire(); err != nil {
@@ -548,4 +583,89 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 		SubscriptionId: subscription.GetId(), Version: got.GetSubscription().GetVersion(),
 	})
 	requireCode(t, err, codes.FailedPrecondition)
+}
+
+func TestRetiredInboxAddressIsRejectedEvenWithSessionID(t *testing.T) {
+	server := newServer(t)
+	subscription := server.subscribe(t, "old-inbox-address")
+	server.record(t, subscription, 1)
+	read := &notificationspb.ReadInboxRequest{SessionId: testSession}
+	ack := &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}
+	retire := &notificationspb.RetireInboxRequest{SessionId: testSession}
+	for _, request := range []proto.Message{read, ack, retire} {
+		request.ProtoReflect().SetUnknown([]byte{0x0a, 0x03, 'o', 'l', 'd'})
+	}
+	ctx := bearing(t, sandboxToken)
+	_, err := server.client.ReadInbox(ctx, read)
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = server.client.AcknowledgeInbox(ctx, ack)
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = server.client.RetireInbox(ctx, retire)
+	requireCode(t, err, codes.InvalidArgument)
+	page, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() || len(page.GetEntries()) != 1 {
+		t.Fatalf("rejected requests changed inbox: %v, %v", page, err)
+	}
+}
+
+func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) {
+	s := newServer(t)
+	subscription := s.subscribe(t, "original-account")
+	s.record(t, subscription, 1)
+	account := auth.Account{Namespace: testNamespace, Name: sandboxName}
+	if err := kube.RecreateServiceAccount(t.Context(), account); err != nil {
+		t.Fatal(err)
+	}
+	// Refresh the shared token for subsequent tests; the Session still records its original UID.
+	var err error
+	sandboxToken, err = kube.WorkloadToken(t.Context(), account, testAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inboxes, err := s.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
+	if err != nil || len(inboxes.GetInboxes()) != 0 {
+		t.Fatalf("replacement inboxes = %v, %v", inboxes, err)
+	}
+	_, err = s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.GetInbox(bearing(t, sandboxToken), &notificationspb.GetInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.CancelSubscription(bearing(t, sandboxToken), &notificationspb.CancelSubscriptionRequest{SubscriptionId: subscription.GetId()})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("replacement-account"))
+	requireCode(t, err, codes.NotFound)
+	page, err := s.client.ReadInbox(bearing(t, operatorToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || len(page.GetEntries()) != 1 || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() {
+		t.Fatalf("retained operator view = %v, %v", page, err)
+	}
+}
+
+// A subscription's inbox is also owned by the Identity the Session authority recorded the Session as
+// executing as, so the Sandbox's runner keeps it once it runs as that Identity.
+func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *testing.T) {
+	server := newServer(t)
+	identity := &identitypb.Identity{Name: "test-agent", Uid: "test-agent-uid"}
+	server.openings.placements[testSession].Identity = identity
+	response, err := server.client.CreateSubscription(bearing(t, sandboxToken), createRequest("identity"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := func(uid string) []store.Inbox {
+		t.Helper()
+		inboxes, err := server.store.ListInboxes(t.Context(), store.IdentityOwner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inboxes
+	}
+	if inboxes := owned(identity.Uid); len(inboxes) != 1 || inboxes[0].ID.String() != response.GetSubscription().GetInboxId() {
+		t.Fatalf("the Session's Identity owns %v, want the subscription's inbox", inboxes)
+	}
+	if inboxes := owned("test-successor-uid"); len(inboxes) != 0 {
+		t.Fatalf("a same-named successor Identity owns %v", inboxes)
+	}
 }

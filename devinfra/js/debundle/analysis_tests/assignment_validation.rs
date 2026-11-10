@@ -2,11 +2,13 @@
 //! Acceptance, rejection and runtime ordering are exercised through the CLI
 //! in e2e/realizability_test.rs and the at_init_* and lemma_* suites.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::{analyze_facts, build_dependency_graph, parse, parse_with_source_map, test_id};
 use crate::*;
 use analysis::*;
+use analysis_model::DepKind;
+use source_identity::ChunkId;
 
 #[derive(Debug, Clone, Copy)]
 enum TestDestination {
@@ -15,6 +17,16 @@ enum TestDestination {
 }
 
 /// Test-only convenience for constructing a planned output identity.
+/// Fixtures declare no author inputs, so reports render no spec locations.
+fn dependency_graph_report(assignment_analysis: &AssignmentAnalysis) -> DependencyGraphReport {
+    static NO_OPTIONS: BTreeMap<String, spec::DependencyGraphOptions> = BTreeMap::new();
+    assignment_analysis.dependency_graph_report(
+        "../program_graph.json.gz".into(),
+        &analysis::reports::author_inputs::AuthorInputLocations::new(None, &NO_OPTIONS)
+            .expect("no author inputs need no provenance"),
+    )
+}
+
 fn logical(idx: usize) -> TestDestination {
     TestDestination::Planned(ModuleId(idx))
 }
@@ -96,7 +108,7 @@ fn assignment_analysis_from_facts(
     AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
         ChunkId(0),
-        compute_dependency_graph_and_atomic_groups_with(facts, DependencyGraphOptions::default())
+        compute_dependency_graph_and_atomic_groups_with(facts, GraphOptions::default(), &[])
             .expect("chunk facts declare a binding twice"),
         BindingCatalogue::new(ChunkId(0), bindings),
         planned_modules,
@@ -111,7 +123,7 @@ fn assignment_analysis_rejects_a_catalogue_from_another_chunk() {
     let result = AssignmentAnalysis::build_with(
         "diagnostic_chunk_name".to_string(),
         ChunkId(1),
-        compute_dependency_graph_and_atomic_groups_with(&[], DependencyGraphOptions::default())
+        compute_dependency_graph_and_atomic_groups_with(&[], GraphOptions::default(), &[])
             .expect("empty facts are valid"),
         BindingCatalogue::new(ChunkId(0), HashMap::new()),
         Vec::new(),
@@ -204,7 +216,7 @@ fn empty_dependency_graph_report_includes_entry_destination() {
         EntryDestination::after_planned_modules(0),
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = dependency_graph_report(&assignment_analysis);
     assert_eq!(report.quotient.nodes.len(), 1);
     let entry = &report.quotient.nodes[0];
     assert_eq!(entry.key.as_str(), "logical:0");
@@ -220,7 +232,7 @@ fn dependency_graph_report_emits_atomic_graph() {
         &["Existing"],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = dependency_graph_report(&assignment_analysis);
     assert_eq!(report.atomic_graph.nodes.len(), 3);
     assert_eq!(
         report
@@ -254,7 +266,7 @@ fn dependency_graph_report_emits_atomic_graph() {
     assert!(json.contains(r#""atomic_graph""#));
 }
 
-/// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json` edge to
+/// `cli/gate.rs` reads the callee source unit off the serialized `dependency_graph.json.gz` edge to
 /// drop a promoted edge when callee and caller land in different modules.
 #[test]
 fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_edge() {
@@ -264,7 +276,7 @@ fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_ed
         &[],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = dependency_graph_report(&assignment_analysis);
     let source_unit_of = |binding: &str| {
         report
             .nodes
@@ -304,7 +316,7 @@ fn atomic_graph_collapses_constraining_eager_cycle() {
         &[],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = dependency_graph_report(&assignment_analysis);
     let cycle_atomic_group = report
         .atomic_graph
         .nodes
@@ -325,7 +337,7 @@ fn atomic_graph_preserves_direction_between_atomic_groups() {
         &[],
     );
 
-    let report = assignment_analysis.dependency_graph_report();
+    let report = dependency_graph_report(&assignment_analysis);
     assert_eq!(report.atomic_graph.nodes.len(), 2);
     assert_eq!(report.atomic_graph.edges.len(), 1);
     let edge = &report.atomic_graph.edges[0];
@@ -437,19 +449,14 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
         "export const A = 1,\n             B = 2,\n             C = 3;\n",
     ] {
         let (module, cm) = parse_with_source_map(source);
+        let line_index = js_ast::SourceLineIndex::for_source_map(&cm);
         let analysis = analyze_chunk(
             &module,
             &AnalysisInputs::default(),
-            Some("test.js"),
-            |span| {
-                (span != swc_common::DUMMY_SP).then(|| {
-                    (
-                        cm.lookup_char_pos(span.lo()).line,
-                        cm.lookup_char_pos(span.hi()).line,
-                        cm.lookup_char_pos(span.lo()).col_display + 1,
-                    )
-                })
-            },
+            Some(analysis::execution_evidence::SourceLocator {
+                source_path: "test.js",
+                lines: &line_index,
+            }),
         );
         let lines: Vec<(usize, usize)> = analysis
             .facts

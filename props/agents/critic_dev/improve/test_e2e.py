@@ -26,9 +26,25 @@ from hamcrest import assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.testing.matchers import exited_successfully
 from props.agents.critic_dev.testing.mocks import CriticDevMock
+from props.core.agent_types import CriticDevImproveTypeConfig
 from props.db.database import Database
 from props.db.models import AgentRun
 from props.testing.constants import DEFAULT_TEST_MODEL
+
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:scopes
+# gazelle:include_dep //mcp_infra/testing:fixtures
+# gazelle:include_dep //props/testing/fixtures:e2e_infra
+# gazelle:include_dep //props/testing/fixtures:e2e_container
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.scopes",
+    "mcp_infra.testing.fixtures",
+    "props.testing.fixtures.e2e_infra",
+    "props.testing.fixtures.e2e_container",
+)
 
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 120
@@ -64,6 +80,14 @@ def make_improvement_mock() -> CriticDevMock:
     @CriticDevMock.mock()
     def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
+        # The image entrypoint initialized the aspect_rules_py venv. A bare
+        # child `python3` must inherit that venv's first_party.pth so imports
+        # work without PYTHONPATH knowing Bazel's runfiles repository name.
+        result = yield from m.exec_roundtrip(
+            ["python3", "-c", "from props.db.database import Database"], timeout_ms=15000
+        )
+        assert_that(result, exited_successfully())
+
         # Create package directory and write files
         result = yield from m.exec_roundtrip(
             [
@@ -106,7 +130,8 @@ async def test_prompt_improve_e2e_creates_package(
 
     with db.session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result).one()
-        assert agent_run.critic_dev_improve_config().allowed_examples == [subtract_file_example]
+        assert isinstance(agent_run.type_config, CriticDevImproveTypeConfig)
+        assert agent_run.type_config.allowed_examples == [subtract_file_example]
 
 
 if __name__ == "__main__":

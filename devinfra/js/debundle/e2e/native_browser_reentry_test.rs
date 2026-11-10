@@ -2,7 +2,7 @@
 
 use debundle_e2e_support::*;
 
-const PROVIDER: &str = r#"const prefix = new globalThis.Error();
+const PROVIDER: &str = r#"const prefix = new globalThis.Date();
 export const value = "ready";
 export function read() { return value; }
 "#;
@@ -15,7 +15,7 @@ fn provider_opts<'a>(source: &'a str) -> FixtureOpts<'a> {
             logical_module("values", &[Member::new("value"), Member::new("read")]),
         ],
     );
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts
 }
 
@@ -35,7 +35,7 @@ fn unrelated_commonjs_cannot_expose_native_browser_exports() {
 fn generic_runtime_keeps_loader_fallback() {
     let chunks = [("static/other", "export const load = typeof require;\n")];
     let mut opts = provider_opts(PROVIDER).with_extra_chunks(&chunks);
-    opts.execution_runtime = ExecutionRuntime::Generic;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::Present;
     expect_atomic_conflict_rejection(opts, &["startup", "values"], &[]);
 }
 
@@ -43,7 +43,7 @@ fn generic_runtime_keeps_loader_fallback() {
 fn published_callback_still_constrains_browser_startup() {
     let source = r#"export function read() { return value; }
 globalThis.callback = read;
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 export const value = "ready";
 "#;
     expect_atomic_conflict_rejection(provider_opts(source), &["startup", "values"], &[]);
@@ -52,7 +52,7 @@ export const value = "ready";
 #[test]
 fn inert_global_slot_publication_is_currently_treated_as_reentry() {
     let source = r#"globalThis.inspectState = () => later;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -64,7 +64,7 @@ console.log(later);
             &["globalThis.inspectState = () => later;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "42\n");
     let mut opts = FixtureOpts::new(
         source,
@@ -78,7 +78,7 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts.deferred_global_publications = &[("globalThis", "inspectState")];
     let fixture = run_fixture(opts);
     assert_preserved_entry_output(&fixture, "42\n");
@@ -87,7 +87,7 @@ console.log(later);
 #[test]
 fn no_global_slot_publication_allows_same_startup_split() {
     let source = r#"const unusedReader = () => later;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -99,7 +99,7 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     let fixture = run_fixture(opts);
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -108,7 +108,7 @@ console.log(later);
 fn typeof_window_guarded_publication_uses_same_certificate() {
     let source = r#"import './prelude.js';
 typeof window < 'u' && (window.inspectState = () => later);
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -134,11 +134,11 @@ console.log(later);
         ]
     };
     let mut unasserted = FixtureOpts::new(source, modules()).with_extra_files(&files);
-    unasserted.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    unasserted.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(unasserted, &["startup", "state/later"], &[]);
 
     let mut asserted = FixtureOpts::new(source, modules()).with_extra_files(&files);
-    asserted.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    asserted.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     asserted.deferred_global_publications = &[("window", "inspectState")];
     let fixture = run_fixture(asserted);
     assert_preserved_entry_output(&fixture, "42\n");
@@ -155,7 +155,7 @@ fn static_global_property_probe_preserves_deferred_publication() {
     let write = "globalThis.inspectState = () => later;";
     let source = r#"'cache' in globalThis;
 globalThis.inspectState = () => later;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -167,11 +167,11 @@ console.log(later);
             &[probe, write],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "42\n");
 
     let source_without_publication = r#"'cache' in globalThis;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -183,7 +183,7 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    no_publication.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    no_publication.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(no_publication), "42\n");
 
     let mut split = FixtureOpts::new(
@@ -194,7 +194,7 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("globalThis", "inspectState")];
     assert_preserved_entry_output(&run_fixture(split), "42\n");
 }
@@ -203,7 +203,7 @@ console.log(later);
 fn primitive_result_from_global_receiver_is_not_an_alias() {
     let source = r#"const available = !!globalThis;
 globalThis.inspectState = () => later;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -219,7 +219,7 @@ console.log(later);
             &["globalThis.inspectState = () => later;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "42\n");
 
     let mut split = FixtureOpts::new(
@@ -234,7 +234,7 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("globalThis", "inspectState")];
     assert_preserved_entry_output(&run_fixture(split), "42\n");
 }
@@ -247,7 +247,7 @@ fn confined_local_global_alias_is_not_a_publication() {
     ] {
         let write = "globalThis.inspectState = () => later;";
         let source = format!(
-            "{setup}\n{write}\nconst startup = new globalThis.Error();\nconst later = 42;\nconsole.log(later);\n"
+            "{setup}\n{write}\nconst startup = new globalThis.Date();\nconst later = 42;\nconsole.log(later);\n"
         );
         let mut colocated = FixtureOpts::new(
             &source,
@@ -257,7 +257,7 @@ fn confined_local_global_alias_is_not_a_publication() {
                 &[setup, write],
             )],
         );
-        colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         assert_preserved_entry_output(&run_fixture(colocated), "42\n");
 
         let mut split = FixtureOpts::new(
@@ -268,7 +268,7 @@ fn confined_local_global_alias_is_not_a_publication() {
                 logical_module("state/later", &[Member::new("later")]),
             ],
         );
-        split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         split.deferred_global_publications = &[("globalThis", "inspectState")];
         assert_preserved_entry_output(&run_fixture(split), "42\n");
     }
@@ -278,7 +278,7 @@ fn confined_local_global_alias_is_not_a_publication() {
 fn private_frozen_namespace_does_not_publish_its_callback() {
     let facade = "const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));";
     let source = format!(
-        "{facade}\nconst startup = new globalThis.Error();\nconst later = 42;\nconsole.log(facade.callback(), later);\n"
+        "{facade}\nconst startup = new globalThis.Date();\nconst later = 42;\nconsole.log(facade.callback(), later);\n"
     );
     let mut colocated = FixtureOpts::new(
         &source,
@@ -291,7 +291,7 @@ fn private_frozen_namespace_does_not_publish_its_callback() {
             ],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "42 42\n");
 
     let mut split = FixtureOpts::new(
@@ -302,7 +302,7 @@ fn private_frozen_namespace_does_not_publish_its_callback() {
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(split), "42 42\n");
 }
 
@@ -324,7 +324,7 @@ fn consuming_a_frozen_namespace_still_invokes_its_callback() {
             &["later = 42;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -335,7 +335,7 @@ fn consuming_a_frozen_namespace_still_invokes_its_callback() {
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
 
@@ -359,7 +359,7 @@ fn opaque_consumer_of_frozen_namespace_keeps_stored_callback() {
             &[consumer, "later = 42;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -370,7 +370,7 @@ fn opaque_consumer_of_frozen_namespace_keeps_stored_callback() {
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
 
@@ -387,7 +387,7 @@ fn unsupported_frozen_namespace_shapes_keep_callback_reentry() {
         ),
     ] {
         let source = format!(
-            "let later = 0;\n{setup}\n{facade}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+            "let later = 0;\n{setup}\n{facade}\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
         );
         let mut colocated = FixtureOpts::new(
             &source,
@@ -402,7 +402,7 @@ fn unsupported_frozen_namespace_shapes_keep_callback_reentry() {
                 &["later = 42;"],
             )],
         );
-        colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
         let mut split = FixtureOpts::new(
@@ -416,7 +416,7 @@ fn unsupported_frozen_namespace_shapes_keep_callback_reentry() {
                 logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
             ],
         );
-        split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
     }
 }
@@ -426,7 +426,7 @@ fn changed_frozen_namespace_intrinsic_keeps_early_callback_effects() {
     let source = "let later = 0;
 const Object = {defineProperty(value) { return value; }, freeze(value) { globalThis.observed = value.callback(); return value; }};
 const facade = Object.freeze(Object.defineProperty({__proto__: null, callback: () => later}, Symbol.toStringTag, {value: 'Module'}));
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 later = 42;
 console.log(globalThis.observed, later);
 ";
@@ -443,7 +443,7 @@ console.log(globalThis.observed, later);
             &["later = 42;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -457,7 +457,7 @@ console.log(globalThis.observed, later);
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
 }
 
@@ -482,7 +482,7 @@ fn replaced_frozen_namespace_intrinsics_keep_early_reads() {
         ),
     ] {
         let source = format!(
-            "let later = 0;\n{saved}\n{mutate}\n{facade}\n{restore}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+            "let later = 0;\n{saved}\n{mutate}\n{facade}\n{restore}\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
         );
         let mut colocated = FixtureOpts::new(
             &source,
@@ -497,7 +497,7 @@ fn replaced_frozen_namespace_intrinsics_keep_early_reads() {
                 &[mutate, restore, "later = 42;"],
             )],
         );
-        colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
         let mut split = FixtureOpts::new(
@@ -512,7 +512,7 @@ fn replaced_frozen_namespace_intrinsics_keep_early_reads() {
                 logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
             ],
         );
-        split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
     }
 }
@@ -522,7 +522,7 @@ fn aliased_symbol_replacement_keeps_early_read() {
     let mutate = "root.Symbol = new Proxy(saved, {get(target, key) { if (key === 'toStringTag') globalThis.observed = later; return Reflect.get(target, key); }});";
     let restore = "root.Symbol = saved;";
     let source = format!(
-        "let later = 0;\nconst root = globalThis;\nconst saved = root.Symbol;\n{mutate}\nconst facade = Object.freeze(Object.defineProperty({{__proto__: null, callback: () => later}}, Symbol.toStringTag, {{value: 'Module'}}));\n{restore}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+        "let later = 0;\nconst root = globalThis;\nconst saved = root.Symbol;\n{mutate}\nconst facade = Object.freeze(Object.defineProperty({{__proto__: null, callback: () => later}}, Symbol.toStringTag, {{value: 'Module'}}));\n{restore}\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
     );
     let mut colocated = FixtureOpts::new(
         &source,
@@ -538,7 +538,7 @@ fn aliased_symbol_replacement_keeps_early_read() {
             &[mutate, restore, "later = 42;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -557,7 +557,7 @@ fn aliased_symbol_replacement_keeps_early_read() {
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     expect_atomic_conflict_rejection(split, &["state/facade", "state/later"], &[]);
 }
 
@@ -573,7 +573,7 @@ fn local_global_alias_must_not_escape_its_one_shot_iife() {
         "(() => { const host = globalThis; void host.Error; })();",
     ] {
         let source = format!(
-            "{setup}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Error();\nconst later = 42;\nconsole.log(later);\n"
+            "{setup}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Date();\nconst later = 42;\nconsole.log(later);\n"
         );
         let mut opts = FixtureOpts::new(
             &source,
@@ -587,7 +587,7 @@ fn local_global_alias_must_not_escape_its_one_shot_iife() {
                 logical_module("state/later", &[Member::new("later")]),
             ],
         );
-        opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         opts.deferred_global_publications = &[("globalThis", "inspectState")];
         expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);
     }
@@ -596,7 +596,7 @@ fn local_global_alias_must_not_escape_its_one_shot_iife() {
 #[test]
 fn deferred_global_certificate_does_not_cover_another_slot_or_cross_root_read() {
     let source = r#"globalThis.otherState = () => later;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -610,13 +610,13 @@ console.log(later);
         logical_module("state/later", &[Member::new("later")]),
     ];
     let mut opts = FixtureOpts::new(source, modules);
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts.deferred_global_publications = &[("globalThis", "inspectState")];
     expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);
 
     let source = r#"globalThis.inspectState = () => later;
 typeof window !== 'undefined' && window.inspectState;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 const later = 42;
 console.log(later);
 "#;
@@ -632,7 +632,7 @@ console.log(later);
             logical_module("state/later", &[Member::new("later")]),
         ],
     );
-    opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     opts.deferred_global_publications = &[("globalThis", "inspectState")];
     expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);
 }
@@ -646,7 +646,7 @@ fn deferred_global_certificate_rejects_visible_descriptor_or_alias() {
         "const receive = value => Object.defineProperty(value, 'inspectState', {set(fn) { globalThis.seen = fn(); }}); receive(globalThis);",
     ] {
         let source = format!(
-            "let later = 0;\n{before}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(later);\n"
+            "let later = 0;\n{before}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(later);\n"
         );
         let mut opts = FixtureOpts::new(
             &source,
@@ -660,7 +660,7 @@ fn deferred_global_certificate_rejects_visible_descriptor_or_alias() {
                 logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
             ],
         );
-        opts.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+        opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         opts.deferred_global_publications = &[("globalThis", "inspectState")];
         expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);
     }
@@ -672,7 +672,7 @@ fn dynamic_in_key_keeps_its_early_callback_read() {
 const key = {toString() { globalThis.observed = later; return 'cache'; }};
 key in globalThis;
 globalThis.inspectState = () => later;
-const startup = new globalThis.Error();
+const startup = new globalThis.Date();
 later = 42;
 console.log(globalThis.observed, later);
 "#;
@@ -691,7 +691,7 @@ console.log(globalThis.observed, later);
             &[setup, write, assignment],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -702,7 +702,7 @@ console.log(globalThis.observed, later);
             logical_module_with_anon("state/later", &[Member::new("later")], &[assignment]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("globalThis", "inspectState")];
     expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
@@ -712,7 +712,7 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
     let block = "{ const window = new Proxy({}, {has() { globalThis.observed = later; return false; }}); 'cache' in window; }";
     let write = "typeof window < 'u' && (window.inspectState = () => later);";
     let source = format!(
-        "import './prelude.js';\nlet later = 0;\n{block}\n{write}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+        "import './prelude.js';\nlet later = 0;\n{block}\n{write}\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
     );
     let files = [
         (
@@ -733,7 +733,7 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
         )],
     )
     .with_extra_files(&files);
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -745,7 +745,7 @@ fn block_shadowed_window_in_protocol_cannot_hide_proxy_reentry() {
         ],
     )
     .with_extra_files(&files);
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("window", "inspectState")];
     expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
@@ -755,7 +755,7 @@ fn replaced_window_alias_cannot_certify_a_global_write() {
     let setup = "globalThis.window = new Proxy(globalThis, {set(target, key, value) { if (key === 'inspectState') globalThis.observed = value(); return Reflect.set(target, key, value); }});";
     let write = "typeof window < 'u' && (window.inspectState = () => later);";
     let source = format!(
-        "let later = 0;\n{setup}\n{write}\nconst startup = new globalThis.Error();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
+        "let later = 0;\n{setup}\n{write}\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(globalThis.observed, later);\n"
     );
     let mut colocated = FixtureOpts::new(
         &source,
@@ -765,7 +765,7 @@ fn replaced_window_alias_cannot_certify_a_global_write() {
             &[setup, write, "later = 42;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -776,7 +776,7 @@ fn replaced_window_alias_cannot_certify_a_global_write() {
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("window", "inspectState")];
     expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
@@ -797,7 +797,7 @@ console.log(startup, later);
             &["globalThis.inspectState = () => later;", "later = 42;"],
         )],
     );
-    colocated.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
 
     let mut split = FixtureOpts::new(
@@ -812,7 +812,7 @@ console.log(startup, later);
             logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
         ],
     );
-    split.execution_runtime = ExecutionRuntime::NativeBrowserEsm;
+    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
     split.deferred_global_publications = &[("globalThis", "inspectState")];
     expect_atomic_conflict_rejection(split, &["startup", "state/later"], &[]);
 }
@@ -847,7 +847,7 @@ console.log(startup, later);
 #[test]
 fn cycle_keeps_export_reentry_in_browser() {
     let source = r#"import './other.js';
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 export const value = "ready";
 export function read() { return value; }
 "#;
@@ -862,7 +862,7 @@ export function read() { return value; }
 #[test]
 fn missing_and_pruned_inputs_cannot_certify_browser_closure() {
     let source = r#"import './missing.js';
-const prefix = new globalThis.Error();
+const prefix = new globalThis.Date();
 export const value = "ready";
 export function read() { return value; }
 "#;

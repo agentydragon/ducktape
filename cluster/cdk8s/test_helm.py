@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from constructs import Construct
 
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -31,15 +31,14 @@ def _git_repository(scope: Construct) -> GitRepository:
     ("repository", "version"), [(_helm_repository, None), (_git_repository, "1.0.0")], ids=["helm", "git"]
 )
 def test_version_mismatched_to_source_raises(
-    repository: Callable[[Construct], HelmRepository | GitRepository], version: str | None
+    scratch_chart: Chart, repository: Callable[[Construct], HelmRepository | GitRepository], version: str | None
 ) -> None:
-    chart = Cdk8sTesting.chart()
     with pytest.raises(ValueError, match="version"):
         helm_release(
-            chart,
+            scratch_chart,
             "test-release",
             "test-namespace",
-            repository=repository(chart),
+            repository=repository(scratch_chart),
             chart="test-chart",
             version=version,
             interval="1h",
@@ -47,18 +46,17 @@ def test_version_mismatched_to_source_raises(
         )
 
 
-def test_git_repository_chart_references_its_source() -> None:
-    chart = Cdk8sTesting.chart()
+def test_git_repository_chart_references_its_source(scratch_chart: Chart) -> None:
     helm_release(
-        chart,
+        scratch_chart,
         "test-release",
         "test-namespace",
-        repository=_git_repository(chart),
+        repository=_git_repository(scratch_chart),
         chart="charts/test-chart",
         interval="1h",
         values={},
     )
-    (_, release) = Cdk8sTesting.synth(chart)
+    (_, release) = Cdk8sTesting.synth(scratch_chart)
     assert release["spec"]["chart"]["spec"] == {
         "chart": "charts/test-chart",
         "sourceRef": {"kind": "GitRepository", "name": "test-source", "namespace": "test-namespace"},

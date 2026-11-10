@@ -7,14 +7,15 @@
 //! the unified emission rewriter (`vendor::passthrough`) consuming the
 //! same plan.
 
+use source_identity::{ChunkId, ChunkTable};
 use vendor::{
     DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, VendorImportAction,
     VendorImportRewrites, VendorResolutionPlan, bundled_facade_import_source,
     resolve_partial_swap_import_target,
 };
 
-use crate::imports::{RuntimeImportInfo, RuntimeImportKind};
-use artifact::{ArtifactIndexes, ChunkId, ChunkTable};
+use artifact::ArtifactIndexes;
+use frontend_elaboration::source_ast::{RuntimeImportInfo, RuntimeImportKind};
 use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 

@@ -214,6 +214,8 @@ def build_mock_oidc_app(
                 "scope": scope,
                 "aud": exchange_token_audience or client_id,
             }
+            if authentik_compatible:
+                exchanged_claims["azp"] = exchanged_claims["aud"]
             return JSONResponse(
                 {
                     "access_token": sign_jwt(private_key, exchanged_claims),

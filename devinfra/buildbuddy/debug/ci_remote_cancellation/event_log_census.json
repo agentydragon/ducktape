@@ -1,0 +1,969 @@
+{
+  "collected_date_utc": "2026-10-31",
+  "method": "GetInvocation; GetEventLogChunk from 0000, following nextChunkId to empty; decoded retained buffers, not wire bytes",
+  "invocations": [
+    {
+      "name": "recent_tracing_tests",
+      "invocation_id": "21baa91d-9f05-549e-a08b-6d6d27f45ee8",
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "success": true,
+      "command": "test",
+      "createdAtUsec": "1793442757462000",
+      "commitSha": "929cdb812a8e122d643aded54f6bc2637a5f60cb",
+      "lastChunkId": "0001",
+      "hasChunkedEventLogs": true,
+      "durationUsec": "542974000",
+      "attempt": "1",
+      "advertised_cursor_probe": {
+        "bytes": 144,
+        "next": "0002",
+        "previous": "0000",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 7103,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 144,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 3896,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 0,
+          "next": "",
+          "previous": "0002",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 11143,
+      "newline_count": 74,
+      "carriage_return_count": 0,
+      "processing_segments": 0,
+      "processing_bytes": 0,
+      "mkfs_erofs_mentions": 0,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "361ab0a06aa2b2a0890d3e61db4e81382c7a8cd8689d4a5ed34929d9b21645b8"
+    },
+    {
+      "name": "recent_routing_tests",
+      "invocation_id": "856dbe85-5d71-594c-acb0-ad16366407aa",
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "success": true,
+      "command": "test",
+      "createdAtUsec": "1793442412043000",
+      "commitSha": "c40cc24a5b9bd6b910d051630c6df8a6b59178e9",
+      "lastChunkId": "0001",
+      "hasChunkedEventLogs": true,
+      "durationUsec": "479676000",
+      "attempt": "1",
+      "advertised_cursor_probe": {
+        "bytes": 128,
+        "next": "0002",
+        "previous": "0000",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 7077,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 128,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 5403,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 0,
+          "next": "",
+          "previous": "0002",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 12608,
+      "newline_count": 90,
+      "carriage_return_count": 0,
+      "processing_segments": 0,
+      "processing_bytes": 0,
+      "mkfs_erofs_mentions": 0,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "59504a37815e38cd7f4562fbf51d4c501ef10ebfd3e34c31377d3511b18b0d45"
+    },
+    {
+      "name": "full_50_jobs_tests",
+      "invocation_id": "0c774d6a-22e7-4fc5-80a3-76901f297bc6",
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "success": true,
+      "command": "test",
+      "createdAtUsec": "1793431566582000",
+      "commitSha": "7d4079880e93f57bbc6019ba1134854fbf0219f8",
+      "lastChunkId": "000b",
+      "hasChunkedEventLogs": true,
+      "durationUsec": "607141000",
+      "attempt": "1",
+      "advertised_cursor_probe": {
+        "bytes": 133,
+        "next": "000c",
+        "previous": "000a",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 7090,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 151,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 135,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 131,
+          "next": "0004",
+          "previous": "0002",
+          "live": false
+        },
+        {
+          "cursor": "0004",
+          "bytes": 135,
+          "next": "0005",
+          "previous": "0003",
+          "live": false
+        },
+        {
+          "cursor": "0005",
+          "bytes": 132,
+          "next": "0006",
+          "previous": "0004",
+          "live": false
+        },
+        {
+          "cursor": "0006",
+          "bytes": 132,
+          "next": "0007",
+          "previous": "0005",
+          "live": false
+        },
+        {
+          "cursor": "0007",
+          "bytes": 136,
+          "next": "0008",
+          "previous": "0006",
+          "live": false
+        },
+        {
+          "cursor": "0008",
+          "bytes": 137,
+          "next": "0009",
+          "previous": "0007",
+          "live": false
+        },
+        {
+          "cursor": "0009",
+          "bytes": 133,
+          "next": "000a",
+          "previous": "0008",
+          "live": false
+        },
+        {
+          "cursor": "000a",
+          "bytes": 137,
+          "next": "000b",
+          "previous": "0009",
+          "live": false
+        },
+        {
+          "cursor": "000b",
+          "bytes": 133,
+          "next": "000c",
+          "previous": "000a",
+          "live": false
+        },
+        {
+          "cursor": "000c",
+          "bytes": 166287,
+          "next": "000d",
+          "previous": "000b",
+          "live": false
+        },
+        {
+          "cursor": "000d",
+          "bytes": 0,
+          "next": "",
+          "previous": "000c",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 174869,
+      "newline_count": 1767,
+      "carriage_return_count": 0,
+      "processing_segments": 0,
+      "processing_bytes": 0,
+      "mkfs_erofs_mentions": 0,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "062a2bc6d423cd63bc395ff78701aaff4c95f82df6f6128e1f58d89b53aeadd3"
+    },
+    {
+      "name": "first_documented_oct27_outer",
+      "invocation_id": "1a92557f-ddde-49f6-b592-39f786569728",
+      "invocationStatus": "DISCONNECTED_INVOCATION_STATUS",
+      "success": null,
+      "command": "remote test //agentplane/system_tests:test_vm_sandbox_vm",
+      "createdAtUsec": "1793143337253000",
+      "commitSha": "51542844ae8d9d18e71cab407b288ec309f80cbf",
+      "lastChunkId": "0001",
+      "hasChunkedEventLogs": true,
+      "durationUsec": null,
+      "attempt": "1",
+      "advertised_cursor_probe": {
+        "bytes": 20345,
+        "next": "0002",
+        "previous": "0000",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 5294,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 20345,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 520,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 0,
+          "next": "",
+          "previous": "0002",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 26159,
+      "newline_count": 214,
+      "carriage_return_count": 0,
+      "processing_segments": 4,
+      "processing_bytes": 98,
+      "mkfs_erofs_mentions": 1,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "3fe2971c3bd861355da9bb4d92a62327a88bda977a033a2fb11fe6367e8d4329"
+    },
+    {
+      "name": "oct31_replayed_outer",
+      "invocation_id": "ab9396a7-c8ef-4d1c-ad96-506c0472d412",
+      "invocationStatus": "DISCONNECTED_INVOCATION_STATUS",
+      "success": null,
+      "command": "remote run",
+      "createdAtUsec": "1793430393560000",
+      "commitSha": "7d4079880e93f57bbc6019ba1134854fbf0219f8",
+      "lastChunkId": "000f",
+      "hasChunkedEventLogs": true,
+      "durationUsec": null,
+      "attempt": "2",
+      "advertised_cursor_probe": {
+        "bytes": 152,
+        "next": "0010",
+        "previous": "000e",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 208861,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 159,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 132,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 156,
+          "next": "0004",
+          "previous": "0002",
+          "live": false
+        },
+        {
+          "cursor": "0004",
+          "bytes": 43,
+          "next": "0005",
+          "previous": "0003",
+          "live": false
+        },
+        {
+          "cursor": "0005",
+          "bytes": 34,
+          "next": "0006",
+          "previous": "0004",
+          "live": false
+        },
+        {
+          "cursor": "0006",
+          "bytes": 9,
+          "next": "0007",
+          "previous": "0005",
+          "live": false
+        },
+        {
+          "cursor": "0007",
+          "bytes": 30,
+          "next": "0008",
+          "previous": "0006",
+          "live": false
+        },
+        {
+          "cursor": "0008",
+          "bytes": 74,
+          "next": "0009",
+          "previous": "0007",
+          "live": false
+        },
+        {
+          "cursor": "0009",
+          "bytes": 74,
+          "next": "000a",
+          "previous": "0008",
+          "live": false
+        },
+        {
+          "cursor": "000a",
+          "bytes": 1,
+          "next": "000b",
+          "previous": "0009",
+          "live": false
+        },
+        {
+          "cursor": "000b",
+          "bytes": 109,
+          "next": "000c",
+          "previous": "000a",
+          "live": false
+        },
+        {
+          "cursor": "000c",
+          "bytes": 159,
+          "next": "000d",
+          "previous": "000b",
+          "live": false
+        },
+        {
+          "cursor": "000d",
+          "bytes": 150,
+          "next": "000e",
+          "previous": "000c",
+          "live": false
+        },
+        {
+          "cursor": "000e",
+          "bytes": 146,
+          "next": "000f",
+          "previous": "000d",
+          "live": false
+        },
+        {
+          "cursor": "000f",
+          "bytes": 152,
+          "next": "0010",
+          "previous": "000e",
+          "live": false
+        },
+        {
+          "cursor": "0010",
+          "bytes": 3047,
+          "next": "0011",
+          "previous": "000f",
+          "live": false
+        },
+        {
+          "cursor": "0011",
+          "bytes": 0,
+          "next": "",
+          "previous": "0010",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 213336,
+      "newline_count": 2011,
+      "carriage_return_count": 0,
+      "processing_segments": 0,
+      "processing_bytes": 0,
+      "mkfs_erofs_mentions": 0,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "fe85c22395de77a1061184b7c0e007c38a67a3b297a13aac81058d66f29bfb04"
+    },
+    {
+      "name": "report_failure_outer_a",
+      "invocation_id": "a16a58c3-f5a8-4d0a-9605-c162f7a93705",
+      "invocationStatus": "DISCONNECTED_INVOCATION_STATUS",
+      "success": null,
+      "command": "remote run",
+      "createdAtUsec": "1793394593533000",
+      "commitSha": "9d4f8b3d8fe882f52869e50acfd79ecfab59a764",
+      "lastChunkId": "0009",
+      "hasChunkedEventLogs": true,
+      "durationUsec": null,
+      "attempt": "2",
+      "advertised_cursor_probe": {
+        "bytes": 29,
+        "next": "000a",
+        "previous": "0008",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 483618,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 27,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 25,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 35,
+          "next": "0004",
+          "previous": "0002",
+          "live": false
+        },
+        {
+          "cursor": "0004",
+          "bytes": 35,
+          "next": "0005",
+          "previous": "0003",
+          "live": false
+        },
+        {
+          "cursor": "0005",
+          "bytes": 30,
+          "next": "0006",
+          "previous": "0004",
+          "live": false
+        },
+        {
+          "cursor": "0006",
+          "bytes": 30,
+          "next": "0007",
+          "previous": "0005",
+          "live": false
+        },
+        {
+          "cursor": "0007",
+          "bytes": 29,
+          "next": "0008",
+          "previous": "0006",
+          "live": false
+        },
+        {
+          "cursor": "0008",
+          "bytes": 30,
+          "next": "0009",
+          "previous": "0007",
+          "live": false
+        },
+        {
+          "cursor": "0009",
+          "bytes": 29,
+          "next": "000a",
+          "previous": "0008",
+          "live": false
+        },
+        {
+          "cursor": "000a",
+          "bytes": 2281,
+          "next": "000b",
+          "previous": "0009",
+          "live": false
+        },
+        {
+          "cursor": "000b",
+          "bytes": 0,
+          "next": "",
+          "previous": "000a",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 486169,
+      "newline_count": 8149,
+      "carriage_return_count": 0,
+      "processing_segments": 7984,
+      "processing_bytes": 461777,
+      "mkfs_erofs_mentions": 2,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "b1c7cce5f84d96624579a1be3c07900a95fbe62a06e2bdb17711b24d34c4296a"
+    },
+    {
+      "name": "report_failure_outer_b",
+      "invocation_id": "b840a7e7-6a7d-4662-b01a-503dc573fac9",
+      "invocationStatus": "DISCONNECTED_INVOCATION_STATUS",
+      "success": null,
+      "command": "remote run",
+      "createdAtUsec": "1793395165667000",
+      "commitSha": "d4f7d19faba34f3d4aee023b4977797031c02d56",
+      "lastChunkId": "001c",
+      "hasChunkedEventLogs": true,
+      "durationUsec": null,
+      "attempt": "1",
+      "advertised_cursor_probe": {
+        "bytes": 138,
+        "next": "001d",
+        "previous": "001b",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 1338,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 7251,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 151,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 889,
+          "next": "0004",
+          "previous": "0002",
+          "live": false
+        },
+        {
+          "cursor": "0004",
+          "bytes": 459,
+          "next": "0005",
+          "previous": "0003",
+          "live": false
+        },
+        {
+          "cursor": "0005",
+          "bytes": 1200,
+          "next": "0006",
+          "previous": "0004",
+          "live": false
+        },
+        {
+          "cursor": "0006",
+          "bytes": 3147,
+          "next": "0007",
+          "previous": "0005",
+          "live": false
+        },
+        {
+          "cursor": "0007",
+          "bytes": 350,
+          "next": "0008",
+          "previous": "0006",
+          "live": false
+        },
+        {
+          "cursor": "0008",
+          "bytes": 4845,
+          "next": "0009",
+          "previous": "0007",
+          "live": false
+        },
+        {
+          "cursor": "0009",
+          "bytes": 5502,
+          "next": "000a",
+          "previous": "0008",
+          "live": false
+        },
+        {
+          "cursor": "000a",
+          "bytes": 988,
+          "next": "000b",
+          "previous": "0009",
+          "live": false
+        },
+        {
+          "cursor": "000b",
+          "bytes": 471443,
+          "next": "000c",
+          "previous": "000a",
+          "live": false
+        },
+        {
+          "cursor": "000c",
+          "bytes": 202,
+          "next": "000d",
+          "previous": "000b",
+          "live": false
+        },
+        {
+          "cursor": "000d",
+          "bytes": 57,
+          "next": "000e",
+          "previous": "000c",
+          "live": false
+        },
+        {
+          "cursor": "000e",
+          "bytes": 52,
+          "next": "000f",
+          "previous": "000d",
+          "live": false
+        },
+        {
+          "cursor": "000f",
+          "bytes": 17,
+          "next": "0010",
+          "previous": "000e",
+          "live": false
+        },
+        {
+          "cursor": "0010",
+          "bytes": 16,
+          "next": "0011",
+          "previous": "000f",
+          "live": false
+        },
+        {
+          "cursor": "0011",
+          "bytes": 19,
+          "next": "0012",
+          "previous": "0010",
+          "live": false
+        },
+        {
+          "cursor": "0012",
+          "bytes": 30,
+          "next": "0013",
+          "previous": "0011",
+          "live": false
+        },
+        {
+          "cursor": "0013",
+          "bytes": 37,
+          "next": "0014",
+          "previous": "0012",
+          "live": false
+        },
+        {
+          "cursor": "0014",
+          "bytes": 17,
+          "next": "0015",
+          "previous": "0013",
+          "live": false
+        },
+        {
+          "cursor": "0015",
+          "bytes": 1,
+          "next": "0016",
+          "previous": "0014",
+          "live": false
+        },
+        {
+          "cursor": "0016",
+          "bytes": 7,
+          "next": "0017",
+          "previous": "0015",
+          "live": false
+        },
+        {
+          "cursor": "0017",
+          "bytes": 54,
+          "next": "0018",
+          "previous": "0016",
+          "live": false
+        },
+        {
+          "cursor": "0018",
+          "bytes": 53,
+          "next": "0019",
+          "previous": "0017",
+          "live": false
+        },
+        {
+          "cursor": "0019",
+          "bytes": 27,
+          "next": "001a",
+          "previous": "0018",
+          "live": false
+        },
+        {
+          "cursor": "001a",
+          "bytes": 36,
+          "next": "001b",
+          "previous": "0019",
+          "live": false
+        },
+        {
+          "cursor": "001b",
+          "bytes": 57,
+          "next": "001c",
+          "previous": "001a",
+          "live": false
+        },
+        {
+          "cursor": "001c",
+          "bytes": 138,
+          "next": "001d",
+          "previous": "001b",
+          "live": false
+        },
+        {
+          "cursor": "001d",
+          "bytes": 2623,
+          "next": "001e",
+          "previous": "001c",
+          "live": false
+        },
+        {
+          "cursor": "001e",
+          "bytes": 0,
+          "next": "",
+          "previous": "001d",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 501006,
+      "newline_count": 8281,
+      "carriage_return_count": 0,
+      "processing_segments": 7984,
+      "processing_bytes": 461777,
+      "mkfs_erofs_mentions": 2,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "148199530eebc2bc8f30a90239a2ba5b0fe389f748c5769877f253df59f801e9"
+    },
+    {
+      "name": "report_failure_outer_c",
+      "invocation_id": "7d8c0f28-42f1-4975-8dbc-ca209a54445b",
+      "invocationStatus": "DISCONNECTED_INVOCATION_STATUS",
+      "success": null,
+      "command": "remote run",
+      "createdAtUsec": "1793397082358000",
+      "commitSha": "118400932b7684779b000d05c0e96fab0e17e5cd",
+      "lastChunkId": "000b",
+      "hasChunkedEventLogs": true,
+      "durationUsec": null,
+      "attempt": "1",
+      "advertised_cursor_probe": {
+        "bytes": 39,
+        "next": "000c",
+        "previous": "000a",
+        "live": false
+      },
+      "census_complete": true,
+      "stop_reason": "end",
+      "chunks": [
+        {
+          "cursor": "0000",
+          "bytes": 1778,
+          "next": "0001",
+          "previous": null,
+          "live": false
+        },
+        {
+          "cursor": "0001",
+          "bytes": 1063,
+          "next": "0002",
+          "previous": "0000",
+          "live": false
+        },
+        {
+          "cursor": "0002",
+          "bytes": 7443,
+          "next": "0003",
+          "previous": "0001",
+          "live": false
+        },
+        {
+          "cursor": "0003",
+          "bytes": 473140,
+          "next": "0004",
+          "previous": "0002",
+          "live": false
+        },
+        {
+          "cursor": "0004",
+          "bytes": 37,
+          "next": "0005",
+          "previous": "0003",
+          "live": false
+        },
+        {
+          "cursor": "0005",
+          "bytes": 17,
+          "next": "0006",
+          "previous": "0004",
+          "live": false
+        },
+        {
+          "cursor": "0006",
+          "bytes": 1,
+          "next": "0007",
+          "previous": "0005",
+          "live": false
+        },
+        {
+          "cursor": "0007",
+          "bytes": 7,
+          "next": "0008",
+          "previous": "0006",
+          "live": false
+        },
+        {
+          "cursor": "0008",
+          "bytes": 54,
+          "next": "0009",
+          "previous": "0007",
+          "live": false
+        },
+        {
+          "cursor": "0009",
+          "bytes": 54,
+          "next": "000a",
+          "previous": "0008",
+          "live": false
+        },
+        {
+          "cursor": "000a",
+          "bytes": 30,
+          "next": "000b",
+          "previous": "0009",
+          "live": false
+        },
+        {
+          "cursor": "000b",
+          "bytes": 39,
+          "next": "000c",
+          "previous": "000a",
+          "live": false
+        },
+        {
+          "cursor": "000c",
+          "bytes": 1795,
+          "next": "000d",
+          "previous": "000b",
+          "live": false
+        },
+        {
+          "cursor": "000d",
+          "bytes": 0,
+          "next": "",
+          "previous": "000c",
+          "live": false
+        }
+      ],
+      "log_bytes_read": 485458,
+      "newline_count": 8139,
+      "carriage_return_count": 0,
+      "processing_segments": 7984,
+      "processing_bytes": 461777,
+      "mkfs_erofs_mentions": 2,
+      "internal_error_mentions": 0,
+      "log_index_error_mentions": 0,
+      "sha256": "5830fe37b6c16359a7cdef0a76e2b69b1fddfaf5944af9e23bc500b69898368c"
+    }
+  ]
+}

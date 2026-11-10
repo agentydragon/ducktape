@@ -7,9 +7,9 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result, bail};
 use ring::digest::{self, SHA256};
@@ -80,19 +80,51 @@ pub struct GraphProvenance {
     pub generation_command: Vec<String>,
 }
 
-/// Header projection that skips graph nodes/edges during compatibility checks.
-/// Deserialization still scans the JSON stream, but it does not allocate the
-/// large graph collections or recompute dependency analysis.
-#[derive(Debug, Deserialize)]
+/// A saved graph's chunk, its `program_graph` reference as recorded, and the
+/// input provenance from that program graph.
+#[derive(Debug)]
 pub struct GraphHeader {
     pub chunk_id: String,
+    pub program_graph: PathBuf,
     pub provenance: Option<GraphProvenance>,
 }
 
+/// Header projections that skip graph nodes/edges and the program census
+/// during compatibility checks. Deserialization still scans each JSON stream,
+/// but it does not allocate the large collections or recompute analysis.
+#[derive(Deserialize)]
+struct ChunkGraphHeader {
+    chunk_id: String,
+    program_graph: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct ProgramGraphHeader {
+    provenance: Option<GraphProvenance>,
+}
+
+/// Resolve a chunk graph's `program_graph` reference, which is relative to the
+/// graph file's directory.
+pub fn program_graph_path(graph_path: &Path, program_graph: &Path) -> PathBuf {
+    graph_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(program_graph)
+}
+
+fn read_gzip_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    report_io::read_json_gzip(path).with_context(|| format!("parsing header of {}", path.display()))
+}
+
 pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let file = fs::File::open(path).with_context(|| format!("reading graph {}", path.display()))?;
-    serde_json::from_reader(BufReader::new(file))
-        .with_context(|| format!("parsing graph header {}", path.display()))
+    let graph: ChunkGraphHeader = read_gzip_json_header(path)?;
+    let program: ProgramGraphHeader =
+        read_gzip_json_header(&program_graph_path(path, &graph.program_graph))?;
+    Ok(GraphHeader {
+        chunk_id: graph.chunk_id,
+        program_graph: graph.program_graph,
+        provenance: program.provenance,
+    })
 }
 
 #[derive(Debug, Clone, Default)]
@@ -100,6 +132,53 @@ pub struct CurrentRoots {
     pub spec: Option<PathBuf>,
     pub source: Option<PathBuf>,
     pub packages: BTreeMap<String, PathBuf>,
+}
+
+/// The source bytes and physical path verified for one graph's chunk.
+/// `source_path` remains the graph/selector identity; `input_file` is the
+/// physical file that supplied those bytes to analysis.
+#[derive(Debug, Clone)]
+pub struct VerifiedGraphSourceContext {
+    chunk_id: String,
+    source_path: PathBuf,
+    input_file: PathBuf,
+    modules_root: Option<PathBuf>,
+    sha256: String,
+    source: Arc<str>,
+}
+
+impl VerifiedGraphSourceContext {
+    pub fn chunk_id(&self) -> &str {
+        &self.chunk_id
+    }
+
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    pub fn input_file(&self) -> &Path {
+        &self.input_file
+    }
+
+    /// The full authored modules tree root recorded for this graph, when the
+    /// graph came from a tree spec. Callers may receive an exact chunk subtree
+    /// as their `--modules` argument; after compatibility verification they
+    /// can use this root to interpret the configured chunk scope consistently.
+    pub fn modules_root(&self) -> Option<&Path> {
+        self.modules_root.as_deref()
+    }
+
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub fn matches_source_path(&self, source_path: &str) -> bool {
+        self.source_path == Path::new(source_path)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
@@ -177,23 +256,27 @@ impl GraphMismatch {
 
 impl fmt::Display for GraphMismatch {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "graph compatibility mismatch: {:?}; regenerate with ",
-            self.reason
-        )?;
-        if let Some(cwd) = &self.regenerate_cwd {
-            write!(formatter, "cd {} && ", shell_quote(&cwd.to_string_lossy()))?;
+        match &self.reason {
+            GraphMismatchReason::Engine { expected, actual } => write!(
+                formatter,
+                "graph compatibility mismatch: saved graph engine digest is {expected}, running engine digest is {actual}; use the matching saved engine or regenerate with the running engine using: "
+            )?,
+            reason => write!(
+                formatter,
+                "graph compatibility mismatch: {reason:?}; regenerate with "
+            )?,
         }
-        write!(
-            formatter,
-            "{}",
-            self.regenerate_command
-                .iter()
-                .map(|arg| shell_quote(arg))
-                .collect::<Vec<_>>()
-                .join(" ")
-        )
+        // Arguments come from argv and paths, which cannot hold the NUL byte that
+        // is the only input `shlex` refuses to quote.
+        if let Some(cwd) = &self.regenerate_cwd {
+            let cwd = shlex::try_quote(&cwd.to_string_lossy())
+                .map_err(|_| fmt::Error)?
+                .into_owned();
+            write!(formatter, "cd {cwd} && ")?;
+        }
+        let command = shlex::try_join(self.regenerate_command.iter().map(String::as_str))
+            .map_err(|_| fmt::Error)?;
+        write!(formatter, "{command}")
     }
 }
 
@@ -312,6 +395,15 @@ impl InputCapture {
     }
 
     pub fn finish(self) -> Result<GraphProvenance> {
+        let provenance = self.finish_inputs()?;
+        provenance.verify(&CurrentRoots::default())?;
+        Ok(provenance)
+    }
+
+    /// The captured inputs without `finish`'s replay check, for `debundle
+    /// analyze`: its provenance keys an analysis artifact (engine, parser
+    /// inputs) and is never replayed as a `debundle run`.
+    pub fn finish_inputs(self) -> Result<GraphProvenance> {
         {
             let mut provenance = self
                 .state
@@ -334,7 +426,6 @@ impl InputCapture {
             provenance
                 .yaml_memberships
                 .sort_by(|a, b| (&a.root, &a.directory).cmp(&(&b.root, &b.directory)));
-            provenance.verify(&CurrentRoots::default())?;
             Ok(provenance)
         }
     }
@@ -539,6 +630,23 @@ pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<(
 }
 
 impl GraphProvenance {
+    /// The authored flat-spec or tree-config path recorded when the graph was
+    /// captured. Flat specs do not populate `config_path`; their canonical
+    /// `--spec` argument is retained in the generation command and is already
+    /// the source of truth for replay.
+    pub fn author_spec_path(&self) -> Result<PathBuf> {
+        if let Some(config_path) = &self.config_path {
+            return Ok(self.roots.spec.join(config_path));
+        }
+        let spec_arg = self
+            .generation_command
+            .iter()
+            .position(|argument| argument == "--spec")
+            .and_then(|index| self.generation_command.get(index + 1))
+            .context("graph provenance has no recorded flat spec path for author input evidence")?;
+        Ok(PathBuf::from(spec_arg))
+    }
+
     fn classify_package(&self, name: &str, path: &Path) -> Result<(InputRoot, PathBuf)> {
         let absolute = absolute(path)?;
         let (root_name, root) = self
@@ -741,6 +849,23 @@ impl GraphProvenance {
     }
 
     pub fn verify(&self, current: &CurrentRoots) -> Result<()> {
+        self.verify_with_source_context(current, None).map(|_| ())
+    }
+
+    pub fn verify_chunk_source(
+        &self,
+        current: &CurrentRoots,
+        chunk_id: &str,
+    ) -> Result<VerifiedGraphSourceContext> {
+        self.verify_with_source_context(current, Some(chunk_id))?
+            .context("verified graph source context was not requested")
+    }
+
+    fn verify_with_source_context(
+        &self,
+        current: &CurrentRoots,
+        chunk_id: Option<&str>,
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
         let (regenerate_command, regenerate_cwd) = self.regeneration_recipe(current)?;
         let engine = engine_sha256()?;
         if engine != self.engine_sha256 {
@@ -754,6 +879,50 @@ impl GraphProvenance {
             )
             .into());
         }
+        let mut chunk_ids = std::collections::BTreeSet::new();
+        for source in &self.chunk_sources {
+            anyhow::ensure!(
+                chunk_ids.insert(source.chunk_id.as_str()),
+                "graph provenance has multiple source mappings for chunk {}",
+                source.chunk_id
+            );
+        }
+        let source = if let Some(chunk_id) = chunk_id {
+            let mut matches = self
+                .chunk_sources
+                .iter()
+                .filter(|source| source.chunk_id == chunk_id);
+            let source = matches.next().with_context(|| {
+                format!("graph provenance lacks source mapping for chunk {chunk_id}")
+            })?;
+            anyhow::ensure!(
+                matches.next().is_none(),
+                "graph provenance has multiple source mappings for chunk {chunk_id}"
+            );
+            let matching_files = self.files.iter().filter(|file| {
+                file.root == source.input_file.root && file.path == source.input_file.path
+            });
+            let mut matching_files = matching_files;
+            let input_file = matching_files.next().with_context(|| {
+                format!(
+                    "captured source input {} is missing from graph fingerprints",
+                    source.input_file.path.display()
+                )
+            })?;
+            anyhow::ensure!(
+                matching_files.next().is_none(),
+                "captured source input {} has multiple graph fingerprints",
+                source.input_file.path.display()
+            );
+            anyhow::ensure!(
+                input_file.sha256 == source.sha256,
+                "captured source digest differs from its graph input fingerprint for chunk {chunk_id}"
+            );
+            Some((source, input_file))
+        } else {
+            None
+        };
+        let mut verified_source_bytes = None;
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
             if !dir.is_dir() {
@@ -799,11 +968,18 @@ impl GraphProvenance {
         }
         for file in &self.files {
             let path = self.resolve(&file.root, &file.path, current)?;
-            let actual = match fs::read(&path) {
-                Ok(bytes) => sha256(&bytes),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
+            let (actual, contents) = match fs::read(&path) {
+                Ok(contents) => (sha256(&contents), Some(contents)),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ("missing".to_string(), None)
+                }
                 Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
             };
+            if source.is_some_and(|(source, _)| {
+                source.input_file.root == file.root && source.input_file.path == file.path
+            }) {
+                verified_source_bytes = contents;
+            }
             if actual != file.sha256 {
                 return Err(GraphMismatch::new(
                     GraphMismatchReason::File {
@@ -832,7 +1008,38 @@ impl GraphProvenance {
                 .into());
             }
         }
-        Ok(())
+        let Some((source, _)) = source else {
+            return Ok(None);
+        };
+        let bytes = verified_source_bytes.with_context(|| {
+            format!(
+                "verified graph input did not retain source bytes for chunk {}",
+                source.chunk_id
+            )
+        })?;
+        anyhow::ensure!(
+            sha256(&bytes) == source.sha256,
+            "verified source bytes do not match chunk {} digest",
+            source.chunk_id
+        );
+        let input_file = self.resolve(&source.input_file.root, &source.input_file.path, current)?;
+        let modules_root = self
+            .modules_directory
+            .as_deref()
+            .map(|directory| self.resolve(&InputRoot::Spec, directory, current))
+            .transpose()?
+            .map(|path| absolute(&path))
+            .transpose()?;
+        Ok(Some(VerifiedGraphSourceContext {
+            chunk_id: source.chunk_id.clone(),
+            source_path: source.source_path.clone(),
+            input_file: absolute(&input_file)?,
+            modules_root,
+            sha256: source.sha256.clone(),
+            source: Arc::from(
+                String::from_utf8(bytes).context("captured JavaScript source is not UTF-8")?,
+            ),
+        }))
     }
 }
 
@@ -871,17 +1078,6 @@ pub fn validate_relative_path(path: &Path) -> Result<()> {
         path.display()
     );
     Ok(())
-}
-
-fn shell_quote(value: &str) -> String {
-    if value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "_./:=+-".contains(c))
-    {
-        value.to_string()
-    } else {
-        format!("'{}'", value.replace('\'', "'\\''"))
-    }
 }
 
 pub fn collect_yaml(root: &Path) -> Result<Vec<PathBuf>> {
@@ -924,7 +1120,11 @@ pub fn sha256(bytes: &[u8]) -> String {
     hex(digest::digest(&SHA256, bytes).as_ref())
 }
 
-fn sha256_reader(mut reader: impl Read) -> std::io::Result<String> {
+pub fn sha256_reader(reader: impl Read) -> io::Result<String> {
+    sha256_copy(reader, io::sink())
+}
+
+pub fn sha256_copy(mut reader: impl Read, mut writer: impl Write) -> io::Result<String> {
     let mut hasher = digest::Context::new(&SHA256);
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -933,6 +1133,7 @@ fn sha256_reader(mut reader: impl Read) -> std::io::Result<String> {
             break;
         }
         hasher.update(&buffer[..count]);
+        writer.write_all(&buffer[..count])?;
     }
     Ok(hex(hasher.finish().as_ref()))
 }
@@ -948,8 +1149,16 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn engine_sha256() -> Result<String> {
+    // The running engine is immutable for this process. Rehash source/package
+    // inputs on every verification, but hash the executable only once. A new
+    // process still computes its own digest before reusing saved provenance.
+    static ENGINE: OnceLock<String> = OnceLock::new();
+    if let Some(digest) = ENGINE.get() {
+        return Ok(digest.clone());
+    }
     let file = fs::File::open(std::env::current_exe()?)?;
-    sha256_reader(BufReader::new(file)).context("hashing debundle executable")
+    let digest = sha256_reader(BufReader::new(file)).context("hashing debundle executable")?;
+    Ok(ENGINE.get_or_init(|| digest).clone())
 }
 
 #[cfg(test)]
@@ -966,6 +1175,73 @@ mod tests {
         assert_eq!(
             sha256(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn sha256_copy_hashes_and_copies_short_reads() -> std::io::Result<()> {
+        struct ShortReader<R> {
+            inner: R,
+            max_read: usize,
+        }
+
+        impl<R: Read> Read for ShortReader<R> {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let limit = buffer.len().min(self.max_read);
+                self.inner.read(&mut buffer[..limit])
+            }
+        }
+
+        let bytes: Vec<u8> = (0..200_000).map(|byte| (byte % 251) as u8).collect();
+        let reader = ShortReader {
+            inner: std::io::Cursor::new(&bytes),
+            max_read: 997,
+        };
+        let mut copied = Vec::new();
+
+        let actual = sha256_copy(reader, &mut copied)?;
+
+        assert_eq!(copied, bytes);
+        assert_eq!(
+            actual,
+            "e24bc62381f1224fbbb74688663f8f9743b9680b193edd666835e97b06e730eb"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn sha256_copy_propagates_reader_and_writer_errors() {
+        struct FailingReader;
+
+        impl Read for FailingReader {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset))
+            }
+        }
+
+        struct FailingWriter;
+
+        impl Write for FailingWriter {
+            fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        assert_eq!(
+            sha256_copy(FailingReader, std::io::sink())
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::ConnectionReset
+        );
+        assert_eq!(
+            sha256_copy(&b"input"[..], FailingWriter)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::BrokenPipe
         );
     }
 

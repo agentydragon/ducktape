@@ -20,6 +20,7 @@ from kubevirt_cdi_crds.io.kubevirt.cdi import (
     CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
     CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
     CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    CdiSpecWorkloadTolerations,
 )
 from kubevirt_storageprofile_crds.io.kubevirt.cdi import (
     StorageProfile,
@@ -34,11 +35,10 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/cdi"
 _FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
-_BLOCK = StorageProfileSpecClaimPropertySetsVolumeMode.BLOCK
 # storage class -> (clone strategy, [(access mode, volume mode)])
 _STORAGE_PROFILES = {
     "piraeus-hdd-local": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
-    "seaweedfs-ovh": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
+    "seaweedfs-ovh-ssd": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
 }
 
 
@@ -67,7 +67,14 @@ def chart(app: App) -> Chart:
             ),
             image_pull_policy=CdiSpecImagePullPolicy.IF_NOT_PRESENT,
             infra=CdiSpecInfra(node_selector={"topology.kubernetes.io/region": "hil"}),
+            # Importer pods run where the volume was provisioned, which for a first-consumer local volume is the
+            # node the VM is scheduled on, and the KVM worker VMs run on control-plane nodes.
             workload=CdiSpecWorkload(
+                tolerations=[
+                    CdiSpecWorkloadTolerations(
+                        key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                    )
+                ],
                 affinity=CdiSpecWorkloadAffinity(
                     node_affinity=CdiSpecWorkloadAffinityNodeAffinity(
                         required_during_scheduling_ignored_during_execution=CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
@@ -78,16 +85,13 @@ def chart(app: App) -> Chart:
                                             key="topology.kubernetes.io/region",
                                             operator="In",
                                             values=["hil", "home", "proxmox"],
-                                        ),
-                                        CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
-                                        ),
+                                        )
                                     ]
                                 )
                             ]
                         )
                     )
-                )
+                ),
             ),
         ),
     )

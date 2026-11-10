@@ -1,5 +1,6 @@
 //! Constructor callback retention is independent of call timing and purity.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const PROVIDER: &str = "export class Box { constructor(callback, compare, metadata) { this.callback = callback; this.compare = compare; this.metadata = metadata; } invoke() { return this.callback(); } }\n";
@@ -59,6 +60,44 @@ fn a_retained_instance_can_flow_into_another_audited_constructor() {
         vec![logical_module("callbacks/wrapped", &[Member::new("inner"), Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
     ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[contract().build()]));
     assert_preserved_entry_output(&fixture, "42 42\n");
+}
+
+#[test]
+fn a_constructor_result_does_not_certify_an_ordinary_factory_input() {
+    // The constructor audit permits a provider-private prototype helper.
+    // The ordinary factory contract excludes that extra input capability.
+    let source = "import { Box, outer } from './peer.js';\n\
+                  const inner = new Box(() => { try { return later; } catch (error) { return error.name; } });\n\
+                  const wrapped = outer(inner);\nconst later = 42;\nconsole.log(wrapped.value);\n";
+    let provider = "export class Box { constructor(callback) { this.callback = callback; } invoke() { return this.callback(); } }\n\
+                    export function outer(input) { return { value: Object.getPrototypeOf(input).invoke?.call(input) }; }\n";
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_constructor("Box", 1, &[0])
+        .with_retained_callback_factory("outer", 1, &[0])
+        .build()];
+    let colocated = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_chunk_export_purity(&contracts)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[Member::new("inner"), Member::new("wrapped")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&contracts),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
 }
 
 #[test]
@@ -245,7 +284,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             let target = source_unit_for_binding(&graph, name);
             assert!(graph.edges.iter().any(|edge| edge.source == observed
                 && edge.target == target
-                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
                 && edge.constrains_init_order));
         }
         expect_atomic_conflict_rejection(

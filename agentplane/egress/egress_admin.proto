@@ -3,28 +3,41 @@ syntax = "proto3";
 
 package agentplane.egress;
 
-import "agentplane/proto/sandboxes.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+import "agentplane/egress/egress_rules.proto";
+import "agentplane/proto/identity.proto";
 
 service EgressAdmin {
   // The decisions the proxy retains for the filter, oldest first, bounded by its history window.
   rpc ListDecisions(ListDecisionsRequest) returns (ListDecisionsResponse);
-  // The `ListDecisions` list on subscribing, then again each time it changes. The proxy ends the
-  // stream after its watch lease so the next call is admitted afresh; the caller reconnects.
-  rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse);
+  // The retained window on subscribing, then changes to that window; quiet streams send heartbeats.
+  // Ends if the history feed or caller authorization fails, or the service drains.
+  rpc WatchDecisions(WatchDecisionsRequest) returns (stream WatchDecisionsResponse) {
+    option (google.api.http) = {get: "/v1/decisions:watch"};
+  }
+  // The current redacted credential inventory, then upserts and UID-fenced removals.
+  // Ends if the credential cache becomes unavailable or authorization expires.
+  rpc WatchCredentials(WatchCredentialsRequest) returns (stream WatchCredentialsResponse) {
+    option (google.api.http) = {get: "/v1/credentials:watch"};
+  }
   // The proxy's readiness with the facts it rests on, as `/healthz` reports them.
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
 }
 
-// Refusals that never proved a ServiceAccount.
+// Refusals that never proved a ServiceAccount or an Identity.
 message Unauthenticated {}
 
 // Whose decisions to read. Absent is invalid, so a caller never reads the unauthenticated refusals
 // by leaving a field out.
 message DecisionFilter {
   oneof scope {
+    // A ServiceAccount subject.
     agentplane.proto.ServiceAccount subject = 1;
     Unauthenticated unauthenticated = 2;
+    // An Identity; its decisions span every incarnation of the name.
+    IdentitySubject identity = 3;
   }
 }
 
@@ -37,14 +50,34 @@ message Decision {
     OUTCOME_ALLOW = 1;
     OUTCOME_DENY = 2;
   }
+  // Why the proxy refused; `decision.Reason` names each, as the `x-agentplane-egress` header and
+  // history spell it.
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_TOKEN_MISSING = 1;
+    REASON_TOKEN_REJECTED = 2;
+    REASON_POD_MISMATCH = 3;
+    REASON_NO_BINDING = 4;
+    REASON_NO_RULE = 5;
+    REASON_INVALID_BODY = 6;
+    REASON_PLACEHOLDER_UNRESOLVED = 7;
+    REASON_CREDENTIAL_UNAVAILABLE = 8;
+    REASON_IMPERSONATION_FORBIDDEN = 9;
+    REASON_ADDRESS_FORBIDDEN = 10;
+    REASON_HOST_UNRESOLVED = 11;
+    REASON_UNAVAILABLE = 12;
+    // The proxy recorded a reason this schema does not name.
+    REASON_UNKNOWN = 13;
+  }
 
   google.protobuf.Timestamp at = 1;
   string method = 2;
   string host = 3;
   int32 port = 4;
   Outcome outcome = 5;
-  // The proxy's machine-readable refusal, on a deny.
-  optional string reason = 6;
+  reserved 6;
+  // Set on a deny.
+  optional Reason reason = 14;
   // The rule that admitted the request.
   optional string binding = 7;
   optional string policy = 8;
@@ -53,6 +86,11 @@ message Decision {
   bool substituted = 10;
   // The address the host was pinned to, when admitted.
   optional string address = 11;
+  // Stable event identity, unique across proxy replicas.
+  string event_id = 12;
+  // The ServiceAccount the proxy acted as on the API server by impersonation, when it did. The API
+  // server's audit log names the proxy as the original user.
+  agentplane.proto.ServiceAccount impersonated = 13;
 }
 
 message ListDecisionsRequest {
@@ -67,24 +105,58 @@ message WatchDecisionsRequest {
   DecisionFilter filter = 1;
 }
 
-// The whole list as `ListDecisions` returns it, not the change since the last response.
-message WatchDecisionsResponse {
+// The whole retained window as `ListDecisions` returns it, not a change since the last response.
+message DecisionSnapshot {
   repeated Decision decisions = 1;
+}
+// Changes relative to the preceding window. Decisions are immutable; removal also covers expiry
+// and eviction from the bounded window. Apply the whole delta before displaying it.
+message DecisionDelta {
+  repeated Decision added = 1;
+  repeated string removed_event_ids = 2;
+}
+message WatchDecisionsResponse {
+  oneof frame {
+    DecisionSnapshot snapshot = 1;
+    // The history feed and read succeeded; this is not a claim that the writer lost no records.
+    google.protobuf.Empty heartbeat = 2;
+    DecisionDelta delta = 3;
+  }
 }
 
 message GetHealthRequest {}
 
 // The body of `/healthz`, with its status code as `ready`.
 message GetHealthResponse {
-  // Whether the proxy can enforce on a complete, current index: the 200 or 503 of `/healthz`.
+  // Whether the proxy can enforce on a synced index none of whose kinds is failing: the 200 or 503 of
+  // `/healthz`.
   bool ready = 1;
   bool synced = 2;
   bool draining = 3;
   DecisionHistoryHealth decision_history = 4;
-  // How old a resource kind's last refresh may be before the index counts as stale.
-  double stale_after_seconds = 5;
-  // Seconds since each resource kind was last refreshed, to a tenth.
-  map<string, double> refreshed_seconds_ago = 6;
+  reserved 5, 6, 7;
+  reserved "stale_after_seconds", "refreshed_seconds_ago";
+  // Each resource kind whose last list or watch failed, in Kind order.
+  repeated KindFailure failing = 8;
+}
+
+// Why a resource kind is failing, since its first failure after its last successful list or watch.
+message KindFailure {
+  // A resource kind the proxy watches.
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_POLICY_SETS = 1;
+    KIND_POLICY_BINDINGS = 2;
+    KIND_IDENTITIES = 3;
+    KIND_EGRESS_CREDENTIALS = 4;
+    KIND_SECRETS = 5;
+    // A kind this schema does not name.
+    KIND_UNKNOWN = 6;
+  }
+
+  Kind kind = 3;
+  string error = 1;
+  google.protobuf.Timestamp since = 2;
 }
 
 // The decision writer's counters. Accepted and acknowledged count producer events, and a lost event
@@ -102,4 +174,24 @@ message DecisionHistoryHealth {
   optional bool available = 9;
   int64 queued = 10;
   bool writer_running = 11;
+}
+
+message WatchCredentialsRequest {}
+
+message CredentialSnapshot {
+  repeated Credential credentials = 1;
+}
+message CredentialRemoval {
+  string name = 1;
+  string uid = 2;
+}
+// Snapshot chunks are committed on snapshot_complete, before any upserts or removals.
+// Frames contain no Secret reference or value; an impersonation credential names its ServiceAccount.
+message WatchCredentialsResponse {
+  oneof frame {
+    CredentialSnapshot snapshot = 1;
+    Credential upsert = 2;
+    CredentialRemoval removed = 3;
+    google.protobuf.Empty snapshot_complete = 4;
+  }
 }

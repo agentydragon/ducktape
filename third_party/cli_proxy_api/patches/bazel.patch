@@ -20,6 +20,13 @@ diff --git a/internal/api/handlers/management/BUILD.bazel b/internal/api/handler
 +    ],
 +    visibility = ["//visibility:public"],
 +)
+diff --git a/cmd/server/BUILD.bazel b/cmd/server/BUILD.bazel
+--- a/cmd/server/BUILD.bazel
++++ b/cmd/server/BUILD.bazel
+@@ -38,2 +38,3 @@
+     name = "server",
++    race = "off",
+     visibility = ["//visibility:public"],
 diff --git a/internal/managementasset/BUILD.bazel b/internal/managementasset/BUILD.bazel
 --- a/internal/managementasset/BUILD.bazel
 +++ b/internal/managementasset/BUILD.bazel

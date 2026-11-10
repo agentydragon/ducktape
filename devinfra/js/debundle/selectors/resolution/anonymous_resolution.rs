@@ -10,13 +10,15 @@ use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, SourceUnitClass, SourceUnitId, StatementKind};
+use analysis::{DependencyGraphReport, SourceUnitClass, StatementKind};
 use anyhow::{Context, Result, bail};
+use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;
 use selector_resolve::{
     DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
 };
+use source_identity::SourceUnitId;
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, SourceMatchClaim};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
@@ -104,6 +106,7 @@ pub fn resolve_source_claims(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     claim_sets: &[SourceClaimSet<'_>],
 ) -> Result<Vec<ResolvedSourceClaims>> {
     resolve_claim_sets(
@@ -111,6 +114,7 @@ pub fn resolve_source_claims(
         dependency_graph_path,
         modules_root,
         source_root,
+        source_context,
         claim_sets,
     )?
     .into_iter()
@@ -125,6 +129,7 @@ pub fn resolve_source_claims_of(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     claim_sets: &[SourceClaimSet<'_>],
     index: usize,
 ) -> Result<ResolvedSourceClaims> {
@@ -133,6 +138,7 @@ pub fn resolve_source_claims_of(
         dependency_graph_path,
         modules_root,
         source_root,
+        source_context,
         claim_sets,
     )?
     .swap_remove(index)
@@ -160,6 +166,7 @@ fn resolve_claim_sets(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     claim_sets: &[SourceClaimSet<'_>],
 ) -> Result<Vec<Result<ResolvedClaimSet>>> {
     let mut resolved = claim_sets
@@ -198,13 +205,14 @@ fn resolve_claim_sets(
         });
     if direct_binding_claims {
         let no_sources = "spec contains typed direct, source-backed, or relational binding claims, but \
-             dependency_graph.json has no source_location data; cannot resolve selectors";
+             dependency_graph.json.gz has no source_location data; cannot resolve selectors";
         return js_ast::with_swc_globals(|| {
             with_source_modules(
                 graph,
                 dependency_graph_path,
                 modules_root,
                 source_root,
+                source_context,
                 no_sources,
                 |parsed_by_source| {
                     let needs_local_declarations = claim_sets.iter().any(|claims| {
@@ -305,17 +313,18 @@ fn resolve_claim_sets(
             }
         }
         let no_sources = if has_anonymous {
-            "spec contains anonymous_statements, but dependency_graph.json has no source_location \
+            "spec contains anonymous_statements, but dependency_graph.json.gz has no source_location \
              data; cannot resolve anonymous selectors"
         } else {
             "spec contains typed direct, source-backed, or relational binding claims, but \
-             dependency_graph.json has no source_location data; cannot resolve selectors"
+             dependency_graph.json.gz has no source_location data; cannot resolve selectors"
         };
         with_source_modules(
             graph,
             dependency_graph_path,
             modules_root,
             source_root,
+            source_context,
             no_sources,
             |parsed_by_source| {
                 // Every source is a chunk every module is scoped to.
@@ -530,7 +539,7 @@ fn claim_entity(
                 .with_context(|| {
                     format!(
                         "module {} anonymous statement selector matched source {} statement \
-                         ordinal {ordinal}, but dependency_graph.json has no anonymous source_unit at that \
+                         ordinal {ordinal}, but dependency_graph.json.gz has no anonymous source_unit at that \
                          source position",
                         claims.module_path.display(),
                         source.source_path,
@@ -707,6 +716,7 @@ pub fn addressable_anonymous_statement_source_unit_ids(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<BTreeSet<String>> {
     js_ast::with_swc_globals(|| {
         addressable_anonymous_statement_source_unit_ids_in_globals(
@@ -714,6 +724,7 @@ pub fn addressable_anonymous_statement_source_unit_ids(
             dependency_graph_path,
             modules_root,
             source_root,
+            source_context,
         )
     })
 }
@@ -723,6 +734,7 @@ fn addressable_anonymous_statement_source_unit_ids_in_globals(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<BTreeSet<String>> {
     let mut source_unit_by_source_ordinal = HashMap::<(String, usize), &str>::new();
     let mut source_paths = BTreeSet::<String>::new();
@@ -751,6 +763,7 @@ fn addressable_anonymous_statement_source_unit_ids_in_globals(
             source_root,
             dependency_graph_path,
             modules_root,
+            source_context,
         )?;
         let unique_body_indices = unique_body_indices(&parsed.module.body);
         for body_idx in unique_body_indices {
@@ -831,6 +844,7 @@ fn with_source_modules<R>(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     no_sources: &str,
     body: impl FnOnce(&BTreeMap<String, js_ast::ParsedJsModule>) -> Result<R>,
 ) -> Result<R> {
@@ -854,6 +868,7 @@ fn with_source_modules<R>(
                     source_root,
                     dependency_graph_path,
                     modules_root,
+                    source_context,
                 )?,
             ))
         })
@@ -869,15 +884,25 @@ fn read_and_parse_source(
     source_root: Option<&Path>,
     dependency_graph_path: &Path,
     modules_root: &Path,
+    source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<js_ast::ParsedJsModule> {
     let resolved = resolve_source_file(
         source_path,
         source_root,
         dependency_graph_path,
         modules_root,
+        source_context,
     )?;
-    let source = fs::read_to_string(&resolved)
-        .with_context(|| format!("reading source file {}", resolved.display()))?;
+    let source = match source_context {
+        Some(context) if context.matches_source_path(source_path) => context.source().to_owned(),
+        Some(context) => bail!(
+            "graph source path {source_path:?} does not match verified chunk {} source path {:?}",
+            context.chunk_id(),
+            context.source_path()
+        ),
+        None => fs::read_to_string(&resolved)
+            .with_context(|| format!("reading source file {}", resolved.display()))?,
+    };
     js_ast::parse_js_module(source_path, &source)
         .with_context(|| format!("parsing source file {}", resolved.display()))
 }
@@ -889,7 +914,63 @@ pub fn resolve_source_file(
     source_root: Option<&Path>,
     dependency_graph_path: &Path,
     modules_root: &Path,
+    source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<PathBuf> {
+    if let Some(context) = source_context {
+        anyhow::ensure!(
+            context.matches_source_path(source_path),
+            "graph source path {source_path:?} does not match verified chunk {} source path {:?}",
+            context.chunk_id(),
+            context.source_path()
+        );
+        return Ok(context.input_file().to_path_buf());
+    }
+    let candidates = source_file_candidates(
+        source_path,
+        source_root,
+        dependency_graph_path,
+        modules_root,
+    );
+    for candidate in &candidates {
+        if candidate.is_file() {
+            return Ok(candidate.clone());
+        }
+    }
+    bail!(
+        "could not resolve source path {source_path:?}; pass --source-root. Tried: {}",
+        candidates
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// Return the first existing source candidate in the legacy fallback order.
+/// Graph compatibility uses this to reject a fallback shadow while allowing
+/// an absent logical alias to resolve through captured provenance.
+pub fn find_source_file_candidate(
+    source_path: &str,
+    source_root: Option<&Path>,
+    dependency_graph_path: &Path,
+    modules_root: &Path,
+) -> Option<PathBuf> {
+    source_file_candidates(
+        source_path,
+        source_root,
+        dependency_graph_path,
+        modules_root,
+    )
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+}
+
+fn source_file_candidates(
+    source_path: &str,
+    source_root: Option<&Path>,
+    dependency_graph_path: &Path,
+    modules_root: &Path,
+) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     let source = PathBuf::from(source_path);
     if source.is_absolute() {
@@ -915,19 +996,7 @@ pub fn resolve_source_file(
         );
     }
     dedup_paths(&mut candidates);
-    for candidate in &candidates {
-        if candidate.is_file() {
-            return Ok(candidate.clone());
-        }
-    }
-    bail!(
-        "could not resolve source path {source_path:?}; pass --source-root. Tried: {}",
-        candidates
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+    candidates
 }
 
 fn push_relative_candidate(candidates: &mut Vec<PathBuf>, root: Option<&Path>, source_path: &str) {

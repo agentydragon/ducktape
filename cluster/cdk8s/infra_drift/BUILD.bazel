@@ -18,7 +18,7 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )

@@ -1,0 +1,317 @@
+package supervision
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
+)
+
+// This binary runs as container PID 1, outside supervision_test's process tree.
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--pid1-proof-native":
+			os.Exit(pid1ProofNative(os.Args[2]))
+		case "--pid1-proof-fast":
+			fmt.Fprint(os.Stdout, "stdout")
+			fmt.Fprint(os.Stderr, "stderr")
+			os.Exit(42)
+		case "--pid1-proof-orphan":
+			child := exec.Command(os.Args[0], "--pid1-proof-fast")
+			child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			if err := child.Start(); err != nil {
+				panic(err)
+			}
+			fmt.Fprint(os.Stdout, child.Process.Pid)
+			os.Exit(0)
+		case "--pid1-proof-descendant":
+			signal.Ignore(syscall.SIGTERM)
+			wake := make(chan os.Signal, 1)
+			signal.Notify(wake, syscall.SIGUSR1)
+			if err := os.WriteFile(filepath.Join("/proof", os.Args[2]+".pid"), []byte(fmt.Sprint(os.Getpid())), 0600); err != nil {
+				panic(err)
+			}
+			for range wake {
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func pid1ProofNative(mode string) int {
+	roles := []string{"group"}
+	if mode != "host-setup" {
+		roles = append(roles, "escaped")
+	}
+	for _, role := range roles {
+		child := exec.Command(os.Args[0], "--pid1-proof-descendant", role)
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		child.SysProcAttr = &syscall.SysProcAttr{Setsid: role == "escaped"}
+		if err := child.Start(); err != nil {
+			panic(err)
+		}
+	}
+	signals := make(chan os.Signal, 1)
+	if mode == "host-setup" {
+		signal.Notify(signals, syscall.SIGUSR1)
+	} else if mode == "escalate" {
+		signal.Ignore(syscall.SIGTERM)
+		signal.Notify(signals, syscall.SIGUSR1)
+	} else {
+		signal.Notify(signals, syscall.SIGTERM)
+	}
+	if err := os.WriteFile("/proof/native.pid", []byte(fmt.Sprint(os.Getpid())), 0600); err != nil {
+		panic(err)
+	}
+	if mode == "native-exit" {
+		var line string
+		if _, err := fmt.Fscanln(os.Stdin, &line); err != nil || line != "exit" {
+			return 124
+		}
+		return 23
+	}
+	<-signals
+	if mode == "host-setup" {
+		return 23 // Complete accepted setup without launching the mock harness.
+	}
+	return 0
+}
+
+func TestPID1ContainerContract(t *testing.T) {
+	if os.Getpid() != 1 {
+		t.Fatal("PID1 proof requires a private container PID namespace")
+	}
+	mode := os.Getenv("PID1_PROOF_MODE")
+	if mode != "native-exit" && mode != "term" && mode != "escalate" && mode != "crash" {
+		t.Fatalf("invalid PID1_PROOF_MODE %q", mode)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	supervisor, err := NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode == "native-exit" {
+		t.Run("wait-ownership-and-orphan-reaping", func(t *testing.T) { provePID1Waits(t, ctx, supervisor) })
+	}
+	p, err := supervisor.NewProcess(ProcessConfig{
+		Command:   []string{os.Args[0], "--pid1-proof-native", mode},
+		StopGrace: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.FenceNamespace(ctx); err == nil || !strings.Contains(err.Error(), "managed child processes") {
+		t.Fatalf("namespace fence accepted a live managed child: %v", err)
+	}
+	if !p.Running() {
+		t.Fatal("rejected namespace fence stopped the managed child")
+	}
+	readers := make(chan error, 2)
+	for _, stream := range []io.Reader{p.Stdout(), p.Stderr()} {
+		go func() { _, err := io.Copy(os.Stderr, stream); readers <- err }()
+	}
+	if err := waitPID1ProofFile(ctx, "/proof/native.pid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitPID1ProofFile(ctx, "/proof/group.pid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitPID1ProofFile(ctx, "/proof/escaped.pid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("/proof/ready", []byte("ready\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if mode == "native-exit" {
+		if err := waitPID1ProofFile(ctx, "/proof/exit-native"); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.WriteLine(ctx, "exit"); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-signals:
+		}
+		if err := p.Stop(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, err := p.Wait(ctx)
+	if err != nil || mode == "native-exit" && code != 23 || mode == "term" && code != 0 || mode == "escalate" && code != 137 {
+		t.Fatalf("native completion = (%d, %v)", code, err)
+	}
+	if mode == "native-exit" {
+		data, err := os.ReadFile("/proof/escaped.pid")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var escapedPID int
+		if _, err := fmt.Sscan(string(data), &escapedPID); err != nil {
+			t.Fatal(err)
+		}
+		if err := supervisor.FenceNamespace(ctx); err != nil {
+			t.Fatalf("fence escaped PID namespace workload: %v", err)
+		}
+		ticker := time.NewTicker(10 * time.Millisecond)
+		for !errors.Is(unix.Kill(escapedPID, 0), unix.ESRCH) {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				t.Fatal("escaped process survived namespace fence:", ctx.Err())
+			case <-ticker.C:
+			}
+		}
+		ticker.Stop()
+		if os.Getpid() != 1 {
+			t.Fatal("namespace fence terminated PID 1")
+		}
+		// PID 1 remains usable and can own a new process after the fence.
+		afterFence, err := supervisor.NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := afterFence.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if code, err := afterFence.Wait(ctx); code != 42 || err != nil {
+			t.Fatalf("process after namespace fence = (%d, %v)", code, err)
+		}
+		// The escaped descendant held these pipes until FenceNamespace; now their
+		// readers must finish without terminating the container.
+		for range 2 {
+			select {
+			case err := <-readers:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		}
+	}
+}
+
+func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
+	t.Helper()
+	failedStart, err := supervisor.NewProcess(ProcessConfig{
+		Command: []string{"/run/agentplane-pid1-proof-absent"},
+		Env:     map[string]string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failedStart.Start(ctx); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("PID1 start did not report an exec failure: %v", err)
+	}
+	if code, err := failedStart.Wait(ctx); code != 125 || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("wait after failed start = (%d, %v), want exit 125 and exec failure", code, err)
+	}
+	fast, err := supervisor.NewProcess(ProcessConfig{
+		Command: []string{os.Args[0], "--pid1-proof-fast"},
+		Env:     map[string]string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fast.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := fast.Wait(ctx); code != 42 || err != nil {
+		t.Fatalf("PID1 result = (%d, %v)", code, err)
+	}
+	for _, stream := range []io.Reader{fast.Stdout(), fast.Stderr()} {
+		if _, err := io.Copy(io.Discard, stream); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Fast exits race registration and SIGCHLD delivery. All native results must
+	// retain their own status and caller-owned pipes through the central reaper.
+	for range 32 {
+		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if p.PID() <= 1 {
+			t.Fatalf("fast native published an invalid PID: %d", p.PID())
+		}
+		code, err := p.Wait(ctx)
+		if code != 42 || err != nil {
+			t.Fatalf("fast native result = (%d, %v)", code, err)
+		}
+		out, outErr := io.ReadAll(p.Stdout())
+		stderr, stderrErr := io.ReadAll(p.Stderr())
+		if string(out) != "stdout" || string(stderr) != "stderr" || outErr != nil || stderrErr != nil {
+			t.Fatalf("native streams = (%q, %q, %v, %v)", out, stderr, outErr, stderrErr)
+		}
+	}
+	for range 8 {
+		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-orphan"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if code, err := p.Wait(ctx); code != 0 || err != nil {
+			t.Fatalf("orphan parent result = (%d, %v)", code, err)
+		}
+		var orphan int
+		if _, err := fmt.Fscan(p.Stdout(), &orphan); err != nil {
+			t.Fatal(err)
+		}
+		ticker := time.NewTicker(10 * time.Millisecond)
+		for !errors.Is(unix.Kill(orphan, 0), unix.ESRCH) {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				t.Fatal("adopted orphan was not reaped:", ctx.Err())
+			case <-ticker.C:
+			}
+		}
+		ticker.Stop()
+	}
+}
+
+func waitPID1ProofFile(ctx context.Context, path string) error {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		data, err := os.ReadFile(path)
+		if err == nil && strings.TrimSpace(string(data)) != "" {
+			return nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}

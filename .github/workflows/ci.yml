@@ -20,8 +20,9 @@ on:
 # Each called workflow carries its own group instead, and the polarity differs according
 # to what the work is worth once it has been superseded:
 #
-#   bazel-ci.yml                  cancels only PR runs — a test result for a PR head
-#                                 nobody will merge is worthless. A push run is for a
+#   bazel-ci.yml                  admits same-repo PR runs independently; the trusted
+#                                 cancel-obsolete-pr-ci controller retires older runs.
+#                                 Fork PRs retain their separate policy. A push run is for a
 #                                 commit that ships, so it queues behind the run in
 #                                 flight; GitHub keeps one pending run per group, so a
 #                                 merge burst costs the run in flight plus the newest.
@@ -33,10 +34,9 @@ on:
 #                                 not worthless. Queued runs coalesce (a new one replaces
 #                                 the pending one); running ones are left to finish.
 #
-# The publish jobs below still skip a cancelled bazel-ci rather than publish from it.
-# `cancelled()` reports the *run*, not the dependency, so without the explicit
-# `needs.bazel-ci.result` check they would go ahead with no invocation ids and fail open
-# across the full publishable roster.
+# The publish jobs below still skip a cancelled bazel-ci, whose invocation data may be
+# incomplete. `cancelled()` reports the *run*, not the dependency, so keep the explicit
+# `needs.bazel-ci.result` check to exclude a cancelled dependency.
 
 permissions:
   contents: write
@@ -68,20 +68,21 @@ jobs:
       # What bazel-ci already built. Empty if it was skipped or died before Bazel
       # ran, which release.yml turns into "publish everything" rather than "nothing".
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
-      # Reuse test results only after the full bazel-ci job succeeds; failed CI
-      # keeps each publication job's own test gate enabled.
-      bazel_test_invocation_id: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_invocation_id || '' }}
-      bazel_test_source_commit: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_source_commit || '' }}
+      # Forward identity whenever bazel-ci produced it. Planners validate the exact
+      # test invocation: only a successful sweep supplies reusable passes, while a
+      # finished failed sweep can suppress reruns for recorded repeatable failures.
+      bazel_test_invocation_id: ${{ needs.bazel-ci.outputs.test_invocation_id }}
+      bazel_test_source_commit: ${{ needs.bazel-ci.outputs.test_source_commit }}
     secrets: inherit
 
-  # push-images also pushes the props agent images (props-agents job) to the
-  # props registry, gated on props tests — see push-images.yml.
+  # push-images retains a disabled props-agents job. Whether to revive Props
+  # image publishing remains undecided; see push-images.yml and props/TODO.md.
   push-images:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push' && needs.bazel-ci.result != 'cancelled'
     uses: ./.github/workflows/push-images.yml
     with:
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
-      bazel_test_invocation_id: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_invocation_id || '' }}
-      bazel_test_source_commit: ${{ needs.bazel-ci.result == 'success' && needs.bazel-ci.outputs.test_source_commit || '' }}
+      bazel_test_invocation_id: ${{ needs.bazel-ci.outputs.test_invocation_id }}
+      bazel_test_source_commit: ${{ needs.bazel-ci.outputs.test_source_commit }}
     secrets: inherit

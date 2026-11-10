@@ -1,69 +1,43 @@
 """Account-specific model facts and canonical routes shared by configuration consumers.
 
-Select Route objects and serialize their attributes at the consumer boundary.
-Deployment endpoints and credentials belong to the consuming deployment, not this catalogue.
+Select Route objects and serialize their attributes at the consumer boundary. Deployment
+endpoints and credentials belong to each deployment, not this catalogue.
 
-Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
-upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream
-model:
+Naming (#4823): `model_name` is `{provider}/{shape}/{model}`.
+Provider identifies whose credentials serve the model (not its manufacturer); shape is
+the outbound wire. Keep both distinct:
 
-- `chatgpt-sub/ant-messages/*` / `chatgpt-sub/oai-responses/*` — ChatGPT/Codex subscription via
-  CLIProxyAPI, which serves it on both the Anthropic Messages and the OpenAI Responses
-  wire; the two entries pick between them
-- `anthropic-max20/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude
-  OAuth session, on the Anthropic Messages wire (a different upstream session on the same
-  pod as `chatgpt-sub/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
-- `anthropic-api/ant-messages/*` — direct Anthropic API on the Anthropic Messages wire
-- `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
-  passthrough
-- `google/goog-generate/*` / `google/goog-embed/*` — Google AI key (Gemini), on Google's
-  own `:generateContent` / `:embedContent` wire
-- `mistral/oai-chat/*` — Mistral API key
-- `groq/oai-chat/*` — Groq API key, OpenAI-compatible at api.groq.com/openai/v1
-- `ollama/oai-chat/*` / `ollama/olm-chat/*` / `ollama/olm-embed/*` — self-hosted Ollama,
-  which serves the same models on an OpenAI-compatible `/v1` and on its own native
-  endpoints; the chat model segment carries the `num_ctx` variant (`gpt-oss-20b-512k`)
-  that distinguishes chat entries
+- `chatgpt-sub/{ant-messages,oai-responses}/*` selects CLIProxyAPI's Anthropic Messages
+  or OpenAI Responses wire. `anthropic-max20/ant-messages/*` is a separate Claude OAuth
+  session from `chatgpt-sub/*` on the same pod; `anthropic-api/ant-messages/*` is the
+  direct API account.
+- `google/{goog-generate,goog-embed}/*` uses the Gemini API key;
+  `antigravity/ant-messages/*` uses the separate Antigravity OAuth account through
+  CLIProxyAPI's Anthropic translator.
+- `tana/oai-chat/*` uses Chat Completions; its in-process adapter calls Tana's private
+  core-message HTTP endpoint.
+- `ollama/oai-chat/*` and `ollama/olm-chat/*` expose OpenAI-compatible and native chat;
+  chat IDs encode the `num_ctx` variant (for example, `gpt-oss-20b-512k`).
 
-The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
-request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
-on `model_name` alone, takes the incoming shape from whichever endpoint the client called,
-and translates rather than rejecting a mismatch, so every entry is reachable from
-`/v1/messages`, `/v1/chat/completions` and `/v1/responses` alike — the laptop
-`gemini-claude` wrapper runs Claude Code's `/v1/messages` traffic against
-`google/goog-generate/*`. What the shape does decide is which translator does the work,
-load-bearing wherever one account is served over two wires:
-`chatgpt-sub/{ant-messages,oai-responses}/*` exists so CLIProxyAPI translates Claude Code's
-tool calls instead of LiteLLM's own Messages bridge (<nix/home/claude_code/codex-claude.nix>).
+Outbound shape does not constrain the inbound client endpoint. LiteLLM routes on
+`model_name`, accepts the shape from the called endpoint, and translates mismatches:
+chat entries can be reached through `/v1/messages`, `/v1/chat/completions`, and
+`/v1/responses`. For example, `gemini-claude` sends Claude Code Messages traffic to
+`google/goog-generate/*`. The ChatGPT pair lets CLIProxyAPI translate Claude Code tool
+calls instead of LiteLLM's Messages bridge (<nix/home/claude_code/codex-claude.nix>).
 
-A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
-goog-generate, goog-embed, olm-chat): the shape segment names a wire protocol, and wire protocols are
-identified by their definer — the bare nouns are unique only in today's snapshot
-("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
-distinct wire shapes answering to the same nouns). The definer prefix is NOT the
-provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
-PROTOCOL that wire is, and they vary independently — `chatgpt-sub/ant-messages/*` is the
-ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
-(ant, oai, goog, olm; future coh, ...) so a provider slug can never stutter against a
-definer name (openai/openai-chat, ollama/ollama-chat).
+Shape slugs are `<definer>-<protocol>`: the definer names the wire protocol, independently
+of the provider/account (`chatgpt-sub/ant-messages/*` is the ChatGPT account on Anthropic's
+wire). The prefix disambiguates generic protocol names such as Cohere chat and Google
+embedContent, and avoids redundant names such as `openai/openai-chat`. `/` separates fields
+at boundaries because upstream model slugs contain dashes. It matches LiteLLM's model-group
+form (`openai/gpt-4o`, wildcard `openai/*`). Model names
+travel in request bodies, not URL paths or Kubernetes resource names. Provider-first names
+make Crossplane key lanes share a prefix that LiteLLM can match as a wildcard.
 
-Segments are separated by `/`, not `-`: provider model slugs are dash-heavy
-(gpt-6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
-boundaries unambiguously. `/` is LiteLLM's own model-group idiom (its docs' recommended
-`model_name: openai/gpt-4o`, wildcard `openai/*`) and is already served in-cluster by
-tana-litellm (`claude-sonnet-4-6/medium`, `gpt-5.1/medium`); clients carry the model in
-the request body (Claude Code, Codex, OpenClaw), and on this stack a model name never
-rides in a URL path or a Kubernetes resource name.
-
-The provider segment rides in front, not behind, because a key allowlist is a provider
-lane: each Crossplane `Key`'s `forProvider.models` list in
-cluster/cdk8s/litellm/crossplane_keys.py enumerates one provider's names explicitly, so
-the lane is the common prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
-renamed: the raw upstream model slugs inside the exposed names, and the two groq whisper
-entries, whose historical bare IDs are retained even though their outbound shape is known. The bare
-`gemini-embedding-2` alias (GEMINI_EMBEDDING_COMPAT_ALIAS) is exempt too: it predates the
-scheme and public-coder-agent's durable memory index stores that model identity, so it
-stays until the index is deliberately rebuilt.
+Preserve raw upstream model slugs and the two historical bare Groq Whisper IDs, despite
+their known outbound shape. The bare `gemini-embedding-2` compatibility alias stays until
+public-coder-agent's durable memory index is deliberately rebuilt under the prefixed name.
 """
 
 from dataclasses import dataclass, replace
@@ -132,9 +106,8 @@ _UPSTREAM_DEFINER: dict[str, str] = {
     # LiteLLM's native Ollama chat adapter has its own provider prefix. It speaks
     # the same Ollama wire shape, so public `olm-chat` route names remain unchanged.
     "ollama_chat": "olm",
-    # The in-process Tana adapter speaks Anthropic Messages on the wire while using its
-    # own LiteLLM provider prefix for dispatch.
-    "tana": "ant",
+    # The custom provider consumes Chat Completions messages and maps them to Tana core messages.
+    "tana": "oai",
 }
 
 
@@ -245,6 +218,7 @@ class RouteAlias:
 
 
 _ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
+_ANTHROPIC_5_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # CLIProxyAPI's Codex model-registry snapshot declares these five API reasoning
 # levels for GPT-6 Astra, Luna, Sol, and 6.1 Sol:
 # https://raw.githubusercontent.com/router-for-me/models/63c1ae7e1d6dfb0224b0f8fb9e3e072f458589ce/models.json
@@ -306,16 +280,12 @@ GPT_6_1_SOL = Model(id="gpt-6.1-sol", display_name="GPT-6.1 Sol", limits=_GPT_6_
 # "one model + effort knob" to map onto; we expose one model per family at its default
 # effort. Each entry: (exposed-name base, Tana provider model suffix). The provider
 # adds its dispatch prefix and preserves the suffix's slash for Tana.
-TANA_MESSAGES = Upstream(Provider.TANA, "tana", "messages", supports_function_calling=True)
+TANA_CHAT = Upstream(Provider.TANA, "tana", "chat", supports_function_calling=True)
 TANA_SONNET = Route(
-    Model("claude-sonnet-4-6", "Claude Sonnet 4.6"), TANA_MESSAGES, upstream_model="tana/claude-sonnet-4-6/medium"
+    Model("claude-sonnet-4-6", "Claude Sonnet 4.6"), TANA_CHAT, upstream_model="tana/claude-sonnet-4-6/medium"
 )
-TANA_OPUS = Route(
-    Model("claude-opus-4-6", "Claude Opus 4.6"), TANA_MESSAGES, upstream_model="tana/claude-opus-4-6/high"
-)
-TANA_HAIKU = Route(
-    Model("claude-haiku-4-5", "Haiku 4.5"), TANA_MESSAGES, upstream_model="tana/claude-haiku-4-5-20251001"
-)
+TANA_OPUS = Route(Model("claude-opus-4-6", "Claude Opus 4.6"), TANA_CHAT, upstream_model="tana/claude-opus-4-6/high")
+TANA_HAIKU = Route(Model("claude-haiku-4-5", "Haiku 4.5"), TANA_CHAT, upstream_model="tana/claude-haiku-4-5-20251001")
 
 # Direct-API identities retain their separately sourced declarations below. Do not
 # upgrade them or copy subscription gateway limits merely because vendor names match.
@@ -670,7 +640,38 @@ HAIKU_API = Route(
     ANTHROPIC_API,
     publish_limits=True,
 )
-ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
+# Current public Anthropic API models, checked against Anthropic's model overview and
+# per-model API documentation on 2026-10-30. These use fixed unversioned API IDs, adaptive
+# thinking, all five effort levels, and explicit model-level function calling. Context and
+# output limits are Anthropic's published limits, not measured account capacity.
+# Sources: https://platform.claude.com/docs/en/models/overview and the model-specific pages.
+_ANTHROPIC_API_5_5_LIMITS = TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+OPUS_5_5_API = Route(
+    Model("claude-opus-5-5", "Opus 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+SONNET_5_5_API = Route(
+    Model("claude-sonnet-5-5", "Sonnet 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+HAIKU_5_5_API = Route(
+    Model("claude-haiku-5-5", "Haiku 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+FABLE_5_1_API = Route(
+    Model("claude-fable-5-1", "Fable 5.1", _ANTHROPIC_API_5_5_LIMITS),
+    ANTHROPIC_API,
+    reasoning_efforts=_ANTHROPIC_5_EFFORTS,
+    supports_function_calling=True,
+)
+ANTHROPIC_API_LATEST_ROUTES = (OPUS_5_5_API, SONNET_5_5_API, HAIKU_5_5_API, FABLE_5_1_API)
+ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API, *ANTHROPIC_API_LATEST_ROUTES)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(
     _ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS

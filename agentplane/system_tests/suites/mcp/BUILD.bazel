@@ -1,0 +1,147 @@
+load("//agentplane/system_tests/k3s:defs.bzl", "k3s_suite")
+load("//devinfra/python:defs.bzl", "py_library")
+
+# gazelle:map_kind py_test k3s_suite //agentplane/system_tests/k3s:defs.bzl
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+# Batch the first three independent Actions cases in two slots; keep OAuth linkage serial.
+k3s_suite(
+    name = "test_actions",
+    srcs = ["test_actions.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:case_batch",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//util:net",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+k3s_suite(
+    name = "test_services",
+    srcs = ["test_services.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/mcp_edge:connection_service_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:mcp_connection",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:mcp",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# The external delegation acceptance scales app to zero after OAuth consent, so it owns a stack
+# independent from the services and Action suites.
+k3s_suite(
+    name = "test_delegation",
+    srcs = ["test_delegation.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/mcp_edge:connection_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:egress_decisions",
+        "//agentplane/system_tests/driver:mcp_connection",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:port_forward",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/testing:scripted_model",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+# Keep the parent-to-child CLI flow separate from the external OAuth acceptance stack.
+k3s_suite(
+    name = "test_parent_delegation",
+    srcs = ["test_parent_delegation.py"],
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/testing:scripted_model",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/scenarios:mcp",
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
+)

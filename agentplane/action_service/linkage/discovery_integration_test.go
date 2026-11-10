@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
-	"github.com/agentydragon/ducktape/util/testing/nettest"
+	"github.com/agentydragon/ducktape/agentplane/action_service/testing/nettest"
 )
 
 // answer is what a fake MCP server or authorization server answers at a path; every other path answers 404.

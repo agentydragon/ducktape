@@ -13,8 +13,8 @@
 // in a JSX component.
 //
 // In-progress (active) study-session timer state lives in `localStorage`,
-// not on the server — see `use_casino.js`. Only `/actions/session/complete`
-// and `/actions/session/add-past` ever insert into the `sessions` table.
+// not on the server — see `use_casino.js`. Completion and backfill actions
+// create session rows; `/actions/import` can also restore them.
 
 import { useEffect, useState } from "react";
 
@@ -26,7 +26,7 @@ import {
   zMeResponse,
   zStateDump,
   zWsStateChangedMessage,
-} from "./lib/api/schema.zod.mjs";
+} from "./lib/schema_zod.js";
 
 const WS_RECONNECT_BASE_MS = 1_000;
 const WS_RECONNECT_MAX_MS = 30_000;

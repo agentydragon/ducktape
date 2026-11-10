@@ -1,0 +1,420 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+
+# gazelle:exclude test_visual.py
+# gazelle:exclude test_visual_layout.py
+# gazelle:exclude test_visual_claude_tools.py
+# gazelle:exclude test_visual_recorder.py
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+
+package(default_visibility = ["//x/ai_session_archive:__pkg__"])
+
+TSCONFIG = ":tsconfig"
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]),
+)
+
+filegroup(
+    name = "typed_lint_program_data",
+    srcs = [
+        ":tsconfig",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/happy-dom",
+    ],
+)
+
+typed_eslint_test(
+    name = "eslint_typed_test",
+    srcs = ":typed_lint_srcs",
+    extra_data = [
+        ":bundle",
+        ":typed_lint_program_data",
+        "//util/frontend:typed_lint_program_data",
+    ],
+    source_data = [
+        "//util/frontend:typed_lint_srcs",
+    ],
+    tsconfig = "tsconfig.json",
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "api",
+    srcs = ["api.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":schema"],
+)
+
+ts_library(
+    name = "event_content",
+    srcs = ["event-content.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":schema",
+        ":transcript_rows",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//util/frontend:code_block",
+        "//util/frontend:disclosure",
+        "//util/frontend:markdown",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:text_block",
+    ],
+)
+
+ts_library(
+    name = "schema",
+    srcs = ["schema.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "import_progress",
+    srcs = [
+        "import-progress.tsx",
+        "tabler_icons.d.ts",
+    ],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":schema",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "session_viewer",
+    srcs = [
+        "session-viewer.tsx",
+        "tabler_icons.d.ts",
+    ],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":history_recorder",
+        ":import_progress",
+        ":schema",
+        ":transcript",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//util/frontend:resize_handle",
+        "//util/frontend/transcript:history_recorder_tools",
+    ],
+)
+
+ts_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":import_progress",
+        ":session_viewer",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+js_library(
+    name = "session_viewer_css",
+    srcs = ["session-viewer.css"],
+)
+
+ts_library(
+    name = "main",
+    srcs = ["main.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":session_viewer_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+    ],
+)
+
+spa_bundle(
+    name = "bundle",
+    entry_point = "main.tsx",
+    jsx = "automatic",
+    deps = [":main"],
+)
+
+ts_library(
+    name = "session_fixture",
+    testonly = True,
+    srcs = [
+        "fixtures/claude-work.ts",
+        "fixtures/codex-work.ts",
+        "fixtures/session-data.ts",
+    ],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":api",
+        ":schema",
+    ],
+)
+
+vitest_config(
+    name = "vitest_config",
+    data = [
+        "//:node_modules/happy-dom",
+        "//util/frontend:test_setup",
+    ],
+    environment = "node",
+    setup_files = ["//util/frontend:test_setup.js"],
+)
+
+vitest_test(
+    name = "session_viewer_test",
+    srcs = ["session-viewer.test.tsx"],
+    config = ":vitest_config",
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":session_fixture",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//util/frontend:deferred_test_utils",
+    ],
+)
+
+ts_library(
+    name = "visual_harness_lib",
+    testonly = True,
+    srcs = ["harness/harness.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":session_fixture",
+        ":session_viewer_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+    ],
+)
+
+esbuild(
+    name = "visual_harness_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "harness/harness.tsx",
+    format = "iife",
+    minify = False,
+    output = "harness/dist/harness.js",
+    output_css = "harness/dist/harness.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":visual_harness_lib"],
+)
+
+filegroup(
+    name = "visual_harness_js",
+    testonly = True,
+    srcs = ["harness/dist/harness.js"],
+)
+
+filegroup(
+    name = "visual_harness_css",
+    testonly = True,
+    srcs = ["harness/dist/harness.css"],
+)
+
+py_visual_test(
+    name = "visual",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    shard_count = 2,
+    test_deps = [
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
+        "//util/testing/frontend_visual:viewports",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual",
+    test_srcs = ["test_visual.py"],
+    title = "Local workstation sessions",
+)
+
+py_visual_test(
+    name = "visual_layout",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    test_deps = [
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
+        "//util/testing/frontend_visual:viewports",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual_layout",
+    test_srcs = ["test_visual_layout.py"],
+    title = "Archive compact layout",
+)
+
+py_visual_test(
+    name = "visual_claude_tools",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    test_deps = [
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
+        "//util/testing/frontend_visual:viewports",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual_claude_tools",
+    test_srcs = ["test_visual_claude_tools.py"],
+    title = "Claude paired tool steps",
+)
+
+py_visual_test(
+    name = "visual_recorder",
+    assets = [
+        "harness/index.html",
+        ":visual_harness_css",
+    ],
+    harness = ":visual_harness_js",
+    test_deps = [
+        "//devinfra/testing:undeclared_outputs",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:page_capture",
+        "//util/testing/frontend_visual:viewports",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "x.ai_session_archive.frontend.test_visual_recorder",
+    test_srcs = ["test_visual_recorder.py"],
+    title = "Archive transcript recorder",
+)
+
+ts_library(
+    name = "history_recorder",
+    srcs = ["history-recorder.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//util/frontend/transcript:history_recorder"],
+)
+
+ts_library(
+    name = "transcript_rows",
+    srcs = ["transcript-rows.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [":schema"],
+)
+
+ts_library(
+    name = "transcript",
+    srcs = ["transcript.tsx"],
+    isolated_typecheck = True,
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        ":event_content",
+        ":history_recorder",
+        ":schema",
+        ":transcript_rows",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//util/frontend:code_block",
+        "//util/frontend:disclosure",
+        "//util/frontend:json_view",
+        "//util/frontend:markdown",
+        "//util/frontend/transcript:inspection",
+        "//util/frontend/transcript:message",
+        "//util/frontend/transcript:retained_disclosures",
+        "//util/frontend/transcript:step_line",
+        "//util/frontend/transcript:text_block",
+        "//util/frontend/transcript:virtualized_history",
+    ],
+)
+
+vitest_test(
+    name = "transcript_rows_test",
+    srcs = ["transcript-rows.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":schema",
+        ":transcript_rows",
+        "//:node_modules/vitest",
+    ],
+)
+
+check_vitest_specs()

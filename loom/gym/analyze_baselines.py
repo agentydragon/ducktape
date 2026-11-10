@@ -5,7 +5,7 @@ per-task log loss / Brier from the gym scorer, and compares them against the
 market crowd baseline (`prob_at_as_of`). All means carry a 95% percentile
 cluster-bootstrap CI clustered by `as_of` (tasks sharing an era are correlated).
 
-    bazelisk run //loom/gym:analyze_baselines_bin -- \
+    bb run //loom/gym:analyze_baselines_bin -- \
         --run no-archive=/tmp/baseline/noarch --run archive=/tmp/baseline/arch \
         --out /tmp/baseline/plots
 """

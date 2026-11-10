@@ -8,8 +8,8 @@ py_library(
         "//agent_core:events",
         "//openai_utils:client_factory",
         "//openai_utils:model",
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -31,9 +31,9 @@ py_library(
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//agent_core:mcp_provider",
+        "//devinfra/oci",
         "//skills/eval_infra:docker_exec",
         "//third_party/containers:debian_slim",
-        "//util:oci",
         "@pypi//fastmcp_slim",
     ],
 )

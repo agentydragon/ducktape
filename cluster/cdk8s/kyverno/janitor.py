@@ -20,12 +20,6 @@ from kyverno_cleanuppolicy_crds.io.kyverno import (
 
 from cluster.cdk8s.providers.kyverno.cleanup_policy import CleanupPolicy
 
-# agent-sandbox's CRs. A Sandbox whose owner forgot shutdownTime (the default shutdownPolicy is
-# Retain) otherwise pins quota forever. Reaped at the CR level: the controller recreates a
-# Sandbox's pod, so a pod-level janitor only churns. A warm pool recreates the sandboxes reaped
-# from it, a harmless periodic refresh. Delete RBAC: `policies.cleanup_controller_sandboxes_chart`.
-SANDBOX_KINDS = ("agents.x-k8s.io/v1beta1/Sandbox", "extensions.agents.x-k8s.io/v1beta1/SandboxClaim")
-
 
 def janitor(
     scope: Construct, id: str, *, name: str, namespace: str, schedule: str, kinds: Sequence[str]

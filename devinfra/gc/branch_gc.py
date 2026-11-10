@@ -27,6 +27,8 @@ output-base removal use. The default branch is never a candidate.
 from __future__ import annotations
 
 import enum
+import logging
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,7 +37,11 @@ import pygit2
 from devinfra.gc import git_repo
 from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
+from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,21 +71,23 @@ class RetainedBranchReason(enum.StrEnum):
 
 
 class ReviewBranchReason(enum.StrEnum):
+    INSPECTION_FAILED = enum.auto()
     PR_HEAD_EXCEEDED = enum.auto()  # commits beyond the head of the branch's merged or closed PR
     UNMERGED = enum.auto()
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableBranch:
+class PrunableBranch(Prunable):
     branch: Branch
     reason: PrunableBranchReason
     checkout: Path | None  # the prunable worktree holding it, removed before the branch
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
+    tip: str  # the commit the verdict was judged on; deletion requires the branch still be here
     pr: PrInfo | None  # set for PR_HEAD_REACHED; for CONTENT_IN_MAIN when the branch has a merged or closed PR
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedBranch:
+class RetainedBranch(Retained):
     branch: Branch
     reason: RetainedBranchReason
     checkout: Path | None = None  # set for HELD_BY_WORKTREE: the worktree holding it
@@ -87,11 +95,12 @@ class RetainedBranch:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewBranch:
+class ReviewBranch(Review):
     branch: Branch
     reason: ReviewBranchReason
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
     pr: PrInfo | None = None  # set for PR_HEAD_EXCEEDED
+    detail: str | None = None
 
 
 type BranchClassification = PrunableBranch | RetainedBranch | ReviewBranch
@@ -99,10 +108,12 @@ type BranchClassification = PrunableBranch | RetainedBranch | ReviewBranch
 
 def describe_reason(item: BranchClassification) -> str:
     match item:
+        case ReviewBranch(reason=ReviewBranchReason.INSPECTION_FAILED, detail=str() as detail):
+            return f"cannot inspect: {detail}"
         case PrunableBranch(reason=PrunableBranchReason.CONTENT_IN_MAIN, main=main, pr=pr):
             return f"changes already in {main}" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case PrunableBranch(reason=PrunableBranchReason.PR_HEAD_REACHED, pr=PrInfo() as pr):
-            return f"{pr_phrase(pr)}; nothing beyond the {pr.state.value} head"
+            return f"{pr_phrase(pr)}; nothing beyond the {pr.state.lower()} head"
         case PrunableBranch(reason=PrunableBranchReason.PATCHES_IN_MAIN, main=main):
             return f"every commit has an equivalent already on {main}"
         case RetainedBranch(reason=RetainedBranchReason.DEFAULT_BRANCH):
@@ -151,6 +162,18 @@ def _tip_within_pr_head(pg: pygit2.Repository, branch_oid: pygit2.Oid, pr: PrInf
 def classify_branch(
     name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
 ) -> BranchClassification:
+    """Classify one branch, reporting inspection failures without blocking other branches."""
+    try:
+        return _classify_branch(name, pg=pg, main=main, default_branch=default_branch, pr=pr, holder=holder)
+    except git_repo.INSPECTION_ERRORS as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.warning("Cannot inspect branch %s in %s: %s", name, pg.path, detail)
+        return ReviewBranch(Branch(name), ReviewBranchReason.INSPECTION_FAILED, main, detail=detail)
+
+
+def _classify_branch(
+    name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
+) -> BranchClassification:
     branch = Branch(name)
 
     if name == default_branch:
@@ -166,47 +189,36 @@ def classify_branch(
     checkout = holder.worktree.path if isinstance(holder, PrunableWorktree) else None
     branch_oid = pg.branches.local[name].peel(pygit2.Commit).id
     if content_in_main(pg, branch_oid, main):
-        return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, pr)
+        return PrunableBranch(branch, PrunableBranchReason.CONTENT_IN_MAIN, checkout, main, str(branch_oid), pr)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED) and _tip_within_pr_head(pg, branch_oid, pr):
-        return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, pr)
+        return PrunableBranch(branch, PrunableBranchReason.PR_HEAD_REACHED, checkout, main, str(branch_oid), pr)
     # Last, because it is the only check here that shells out: ~200ms, worth paying for the
     # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
     # The cheaper tests above also name a more specific reason when they apply.
     if patches_landed_in_main(Path(pg.path), name, main):
-        return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, None)
+        return PrunableBranch(branch, PrunableBranchReason.PATCHES_IN_MAIN, checkout, main, str(branch_oid), None)
     if pr is not None and pr.state in (PrState.MERGED, PrState.CLOSED):
         return ReviewBranch(branch, ReviewBranchReason.PR_HEAD_EXCEEDED, main, pr)
     return ReviewBranch(branch, ReviewBranchReason.UNMERGED, main)
 
 
-@dataclass(frozen=True, slots=True)
-class RemovedBranch:
-    name: str
+def delete_branch(repo: Path, name: str, *, expected_tip: str) -> RemovalResult[str]:
+    """Force-delete one branch with `git branch -D` (git's safe `-d` rejects squash-merges),
+    unless it no longer points at `expected_tip`, the commit proven to be in main.
 
-
-@dataclass(frozen=True, slots=True)
-class SkippedBranch:
-    name: str
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FailedBranch:
-    name: str
-    error: str
-
-
-type BranchRemovalResult = RemovedBranch | SkippedBranch | FailedBranch
-
-
-def delete_branch(repo: Path, name: str) -> BranchRemovalResult:
-    """Force-delete one branch with `git branch -D` (git's safe `-d` rejects squash-merges).
-
-    Safe because the caller re-scans and only passes still-prunable branches — its content is
-    proven to be in main. `git branch` refuses a branch still checked out in any worktree, so
-    the caller must remove a holding worktree first.
+    `git branch` refuses a branch still checked out in any worktree, so the caller must remove
+    a holding worktree first. The tip check and the delete are two git calls, so a commit
+    landing between them is still lost from the branch (it stays in the reflog).
     """
-    outcome = git_repo.git(repo, "branch", "-D", name, check=False)
+    try:
+        tip = git_repo.git(repo, "rev-parse", "--verify", f"refs/heads/{name}", check=False)
+        if tip.returncode != 0:
+            return Skipped(name, "branch no longer exists")
+        if tip.stdout.strip() != expected_tip:
+            return Skipped(name, "branch moved since the scan")
+        outcome = git_repo.git(repo, "branch", "-D", name, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return Failed(name, str(error))
     if outcome.returncode == 0:
-        return RemovedBranch(name)
-    return FailedBranch(name, outcome.stderr.strip() or "git branch -D failed")
+        return Removed(name)
+    return Failed(name, outcome.stderr.strip() or "git branch -D failed")

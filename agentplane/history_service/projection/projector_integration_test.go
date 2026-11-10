@@ -1,8 +1,10 @@
 package projection
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -13,11 +15,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -25,7 +29,7 @@ import (
 const testPageSize = 8
 
 var (
-	testWriter = storage.Writer{Namespace: "test-sandbox-namespace", Name: "test-sandbox-runner", UID: "test-runner-account-uid"}
+	testWriter = storage.ServiceAccountWriter{Namespace: "test-sandbox-namespace", Name: "test-sandbox-runner", UID: "test-runner-account-uid"}
 	testOrigin = time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 )
 
@@ -83,7 +87,7 @@ func newProjectorFixture(t *testing.T) projectorFixture {
 func (f projectorFixture) retained(t *testing.T, history *storage.Store, entries ...*eventlogpb.EventEntry) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := history.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := history.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec("INSERT INTO thread_history_summary (thread_id) VALUES ($1)", sessionID); err != nil {
@@ -153,12 +157,12 @@ func (f projectorFixture) ended(t *testing.T, sessionID uuid.UUID) *string {
 	return document
 }
 
-func attachedFeed(sessionID uuid.UUID, attached *runnerpb.Attached) *historypb.SessionFeedState {
+func attachedFeed(sessionID uuid.UUID, attached *sessionpb.Attached) *historypb.SessionFeedState {
 	attached.SessionId = sessionID.String()
 	return &historypb.SessionFeedState{Attached: attached}
 }
 
-func (f projectorFixture) recordFeed(t *testing.T, sessionID uuid.UUID, attached *runnerpb.Attached) {
+func (f projectorFixture) recordFeed(t *testing.T, sessionID uuid.UUID, attached *sessionpb.Attached) {
 	t.Helper()
 	if err := f.history.RecordFeedState(t.Context(), sessionID, attachedFeed(sessionID, attached)); err != nil {
 		t.Fatal(err)
@@ -248,10 +252,10 @@ func TestASessionEndsOnlyOnceItsHarnessLaunchHasAnOutcome(t *testing.T) {
 	f := newProjectorFixture(t)
 	// The runner announces a Session whose setup script runs before its harness starts.
 	sessionID := f.retained(t, f.history, entry(1, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}))
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		SetupState:    runnerpb.SetupState_SETUP_STATE_RUNNING,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		SetupState:    sessionpb.SetupState_SETUP_STATE_RUNNING,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
 	})
 	lease := f.acquire(t, sessionID)
 
@@ -277,9 +281,9 @@ func TestASessionEndsOnlyOnceItsHarnessLaunchHasAnOutcome(t *testing.T) {
 func TestAnAdmittedInputKeepsADormantSessionOpenUntilItsStartupOutcome(t *testing.T) {
 	f := newProjectorFixture(t)
 	sessionID := f.retained(t, f.history, harnessStarted(1), harnessExited(2))
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
 	})
 	lease := f.acquire(t, sessionID)
 	ended := func(entries ...*eventlogpb.EventEntry) *string {
@@ -319,16 +323,16 @@ func TestAnAdmittedSessionWithoutEventsGetsAnEmptyViewFromItsAttachment(t *testi
 		t.Fatal("a catalog row alone gave the Session a view")
 	}
 
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		SetupState:    runnerpb.SetupState_SETUP_STATE_RUNNING,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		SetupState:    sessionpb.SetupState_SETUP_STATE_RUNNING,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING,
 	})
 	f.fold(t, sessionID, lease)
 	if _, through := checkpointOf(t, f.db, sessionID); through != 0 {
 		t.Fatalf("empty view through %d, want 0", through)
 	}
-	if view, _ := viewStateOf(t, f.db, sessionID); view.Operational.Status != threadfold.StatusActive {
+	if view, _ := viewStateOf(t, f.db, sessionID); view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE {
 		t.Fatalf("operational = %+v", view.Operational)
 	}
 
@@ -387,7 +391,7 @@ func TestTheFoldPassesOverRemovedCursorsIncludingThoseEndingTheHistory(t *testin
 // generation is the cursor that last wrote it, which a settled item's chunks no longer are.
 func foldedRows(t *testing.T, db *sql.DB, sessionID uuid.UUID) []string {
 	t.Helper()
-	rows, err := db.Query(`SELECT entity_kind, entity_id, cursor, revision_cursor, pending, state::text, text_ref
+	rows, err := db.Query(`SELECT entity_kind, entity_id, cursor, revision_cursor, pending, state::text
 		FROM thread_entity WHERE thread_id = $1 AND projection_epoch = $2 ORDER BY entity_index`, sessionID, testEpoch)
 	if err != nil {
 		t.Fatal(err)
@@ -398,17 +402,29 @@ func foldedRows(t *testing.T, db *sql.DB, sessionID uuid.UUID) []string {
 		var kind, id, state string
 		var cursor, revision uint64
 		var pending bool
-		var textRef []byte
-		if err := rows.Scan(&kind, &id, &cursor, &revision, &pending, &state, &textRef); err != nil {
+		if err := rows.Scan(&kind, &id, &cursor, &revision, &pending, &state); err != nil {
 			t.Fatal(err)
 		}
 		body := ""
-		if textRef != nil {
-			reference, err := threadfold.ParseReference(textRef)
+		if kind == "item" {
+			item := &historypb.ThreadItem{}
+			if err := protojson.Unmarshal([]byte(state), item); err != nil {
+				t.Fatal(err)
+			}
+			if item.TextRef != nil {
+				body = bodyOf(t, db, sessionID, *item.TextRef)
+			}
+			// Settled history may use different payload generations while representing the same body.
+			item.TextRef = nil
+			encoded, err := protojson.Marshal(item)
 			if err != nil {
 				t.Fatal(err)
 			}
-			body = bodyOf(t, db, sessionID, reference)
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, encoded); err != nil {
+				t.Fatal(err)
+			}
+			state = compact.String()
 		}
 		folded = append(folded, fmt.Sprintf("%s/%s cursor=%d revision=%d pending=%t state=%s body=%q", kind, id, cursor, revision, pending, state, body))
 	}
@@ -510,7 +526,7 @@ func TestHistoryTheFoldCannotApplyIsRetainedAsAFailureAtItsCursor(t *testing.T) 
 		t.Fatalf("a source change = %v, want a ReplicationError", err)
 	}
 	view, _ := viewStateOf(t, f.db, sessionID)
-	if view.Operational.Status != threadfold.StatusFailed || view.Operational.FeedError == nil ||
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.FeedError == nil ||
 		view.Operational.FeedError.Message != stalledMessage ||
 		view.Operational.FeedError.Cursor == nil || *view.Operational.FeedError.Cursor != 3 {
 		t.Fatalf("operational = %+v %+v, want the stall at cursor 3", view.Operational, view.Operational.FeedError)
@@ -535,7 +551,7 @@ func TestAnObservationTheFoldDoesNotModelStallsWithoutACursor(t *testing.T) {
 		t.Fatalf("an item of no known kind = %v, want ObservationNotUnderstoodError", err)
 	}
 	view, _ := viewStateOf(t, f.db, sessionID)
-	if view.Operational.Status != threadfold.StatusFailed || view.Operational.FeedError == nil || view.Operational.FeedError.Cursor != nil {
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.FeedError == nil || view.Operational.FeedError.Cursor != nil {
 		t.Fatalf("operational = %+v %+v, want a stall naming no cursor", view.Operational, view.Operational.FeedError)
 	}
 }
@@ -543,13 +559,13 @@ func TestAnObservationTheFoldDoesNotModelStallsWithoutACursor(t *testing.T) {
 func TestAProjectionWithoutItsLeaseFoldsNothing(t *testing.T) {
 	f := newProjectorFixture(t)
 	sessionID := f.retained(t, f.history, harnessStarted(1))
-	lease := f.acquire(t, sessionID)
-	if err := withTx(t, f.db, func(tx *sql.Tx) error { return ReleaseLease(context.Background(), tx, lease) }); err != nil {
+	held := f.acquire(t, sessionID)
+	if err := withTx(t, f.db, func(tx *sql.Tx) error { return ReleaseLease(context.Background(), tx, held) }); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := f.projector.ProjectBatch(t.Context(), sessionID, lease); !errors.Is(err, ErrLeaseLost) {
-		t.Fatalf("projecting without the lease = %v, want ErrLeaseLost", err)
+	if _, err := f.projector.ProjectBatch(t.Context(), sessionID, held); !errors.Is(err, lease.ErrLost) {
+		t.Fatalf("projecting without the lease = %v, want lease.ErrLost", err)
 	}
 	if count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", sessionID) != 0 {
 		t.Fatal("a projection without its lease advanced the fold")
@@ -563,10 +579,10 @@ func TestAFeedSnapshotPastTheFoldedPrefixWaitsForTheFoldToReachIt(t *testing.T) 
 		entries = append(entries, harnessStarted(cursor))
 	}
 	sessionID := f.retained(t, f.history, entries...)
-	f.recordFeed(t, sessionID, &runnerpb.Attached{
+	f.recordFeed(t, sessionID, &sessionpb.Attached{
 		LastCursor:    uint64(len(entries)),
-		HarnessState:  runnerpb.HarnessState_HARNESS_STATE_STOPPED,
-		LaunchOutcome: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
+		HarnessState:  sessionpb.HarnessState_HARNESS_STATE_STOPPED,
+		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
 	})
 	lease := f.acquire(t, sessionID)
 

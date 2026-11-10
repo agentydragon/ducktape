@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Center, Loader, Text } from "@mantine/core";
 
 import DefinitionDetail from "$components/DefinitionDetail";
-import type { DefinitionDetailResponse } from "$lib/api/schema";
+import type { DefinitionDetailResponse } from "$lib/schema";
 import { fetchDefinitionDetail } from "$lib/api/client";
 
 interface Props {

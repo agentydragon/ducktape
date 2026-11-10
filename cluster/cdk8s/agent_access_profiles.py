@@ -12,6 +12,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from agentplane_kubernetesroleset_crds.works.allegedly.agentplane import (
+    KubernetesRoleSetSpecRules,
+    KubernetesRoleSetSpecRulesRoleKind,
+)
 from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
@@ -30,11 +34,14 @@ from agentplane.sandboxes.kubernetes_grants import (
 )
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db, pgweb as plaid_pgweb, spend
+from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRule
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
 COINBASE_POLICY = "coinbase"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
+SHARED_DIAGNOSTICS_POLICY = "shared-diagnostics"
+CLUSTER_DIAGNOSTICS_POLICY = "cluster-diagnostics"
 
 
 @dataclass(frozen=True)
@@ -171,9 +178,9 @@ PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, "cluster-diagnostics")
 # its own rules before materializing the complete PolicySet, then separately materializes controller
 # RBAC from the resolved assignable grants.
 POLICY_SETS = {
-    "shared-diagnostics": SHARED_DIAGNOSTICS,
+    SHARED_DIAGNOSTICS_POLICY: SHARED_DIAGNOSTICS,
     "public-inventory": PUBLIC_INVENTORY,
-    "cluster-diagnostics": ("cluster-diagnostics",),
+    CLUSTER_DIAGNOSTICS_POLICY: ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
     COINBASE_POLICY: ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),
@@ -186,9 +193,8 @@ def policy_set_grants(catalog: Mapping[str, KubernetesGrant]) -> dict[str, tuple
     return {name: tuple(catalog[grant] for grant in grants) for name, grants in POLICY_SETS.items()}
 
 
-def rules_for_grants(grants: Sequence[KubernetesGrant]) -> list[PolicySetSpecRules]:
-    """Render Kubernetes grants as the rules a PolicySet materializes."""
-    role_kinds = {"Role": PolicySetSpecRulesRoleKind.ROLE, "ClusterRole": PolicySetSpecRulesRoleKind.CLUSTER_ROLE}
+def _bindings_for_grants(grants: Sequence[KubernetesGrant]) -> tuple[list[tuple[str, str, list[str]]], list[str]]:
+    """The grants as (role kind, role name, namespaces) RoleBinding groups and bound ClusterRoles."""
     namespaces: defaultdict[tuple[str, str], set[str]] = defaultdict(set)
     cluster_roles: set[str] = set()
     for grant in grants:
@@ -196,12 +202,35 @@ def rules_for_grants(grants: Sequence[KubernetesGrant]) -> list[PolicySetSpecRul
             namespaces[(grant.role_ref.kind, grant.role_ref.name)].add(grant.namespace)
         else:
             cluster_roles.add(grant.role_ref.name)
+    return [(kind, name, sorted(namespaces[(kind, name)])) for kind, name in sorted(namespaces)], sorted(cluster_roles)
+
+
+def rules_for_grants(grants: Sequence[KubernetesGrant]) -> list[PolicySetSpecRules]:
+    """Render Kubernetes grants as the rules a PolicySet materializes."""
+    role_kinds = {"Role": PolicySetSpecRulesRoleKind.ROLE, "ClusterRole": PolicySetSpecRulesRoleKind.CLUSTER_ROLE}
+    role_bindings, cluster_roles = _bindings_for_grants(grants)
     return [
         *(
-            Rule.kubernetes_role_binding(kind=role_kinds[kind], name=name, namespaces=sorted(namespaces[(kind, name)]))
-            for kind, name in sorted(namespaces)
+            Rule.kubernetes_role_binding(kind=role_kinds[kind], name=name, namespaces=namespaces)
+            for kind, name, namespaces in role_bindings
         ),
-        *(Rule.kubernetes_cluster_role_binding(cluster_role=name) for name in sorted(cluster_roles)),
+        *(Rule.kubernetes_cluster_role_binding(cluster_role=name) for name in cluster_roles),
+    ]
+
+
+def role_set_rules_for_grants(grants: Sequence[KubernetesGrant]) -> list[KubernetesRoleSetSpecRules]:
+    """Render Kubernetes grants as the rules a KubernetesRoleSet materializes."""
+    role_kinds = {
+        "Role": KubernetesRoleSetSpecRulesRoleKind.ROLE,
+        "ClusterRole": KubernetesRoleSetSpecRulesRoleKind.CLUSTER_ROLE,
+    }
+    role_bindings, cluster_roles = _bindings_for_grants(grants)
+    return [
+        *(
+            KubernetesRule.role_binding(kind=role_kinds[kind], name=name, namespaces=namespaces)
+            for kind, name, namespaces in role_bindings
+        ),
+        *(KubernetesRule.cluster_role_binding(cluster_role=name) for name in cluster_roles),
     ]
 
 

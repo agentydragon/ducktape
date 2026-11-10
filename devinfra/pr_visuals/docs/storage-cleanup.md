@@ -12,11 +12,16 @@ Retain current baselines and active review dependencies regardless of age.
    `pr-visuals-writer`, `flux-system/pr-visuals-s3-credentials`, and
    `ducktape-flux/seaweedfs-pr-visuals-bucket`. Recheck them before each operation;
    never print credential values or change ownership as part of data cleanup.
-2. Save a complete S3 listing with key, size, modification time, and ETag. Group
-   `commits/<sha>/` and `reviews/<sha>/` objects by their full commit SHA. A bundle
-   is old only when its newest object predates the cutoff. Keep unknown prefixes.
-3. Protect every commit reached by legacy and new baseline pointers
-   (`baselines/<slug>.json`, `baselines/reviews/<slug>.json`), open PR heads and
+2. Build the inventory through paginated S3 `ListObjectsV2` requests, recording
+   key, size, modification time, and ETag in a durable manifest. Stream pages to
+   the manifest instead of buffering a whole bucket response. Enumerate root
+   prefixes with delimiter `/` and retain unknown prefixes. Separately list the
+   known `baselines/reviews-test-outputs/`, `reviews-test-outputs/`, and `assets/`
+   prefixes needed for the reference check. For each candidate, list its exact
+   `reviews-test-outputs/<full-sha>/` prefix. Group objects by full commit SHA. A
+   bundle is old only when its newest object predates the cutoff. Do not
+   recursively list the filer filesystem.
+3. Protect every commit reached by `baselines/reviews-test-outputs/<slug>.json`, open PR heads and
    current merge bases, and recorded `base_sha`/`merge_base_sha` dependencies.
    Follow dependencies of retained metadata until no new protected commits appear.
    Also protect active CI/publisher work and recently closed PR heads that may
@@ -28,36 +33,55 @@ Retain current baselines and active review dependencies regardless of age.
    Stop on incomplete listings, failed reference reads, malformed metadata, or
    evidence of renewed publication. An online scan is not an atomic snapshot.
 
-Keep all baseline pointer objects and shared `assets/` images during this legacy
-bundle cleanup. A shared image may be old and still referenced by a recent review.
+Keep all baseline pointer objects and shared `assets/` images during bundle cleanup.
+A shared image may be old and still referenced by a recent review.
 Even an unreferenced old image can be reused by a publisher before the new review
 metadata is visible. Age grace periods alone do not make image deletion safe;
 automated shared-image collection needs coordination with publishers.
 
 ## Delete selected bundles
 
-S3 `DeleteObjects` supports per-key ETag guards in SeaweedFS 4.46. Check the deployed
-version's conditional-delete behavior before relying on it. It gives finer guards
-than native directory removal but was much slower for this bucket's millions of
-small objects.
+S3 `DeleteObjects` supports per-key ETag guards in SeaweedFS 4.46. Verify the
+deployed version's conditional-delete behavior before relying on it. Delete through
+the S3 gateway from a dedicated, one-shot client Job; do not run a recursive delete
+or a large listing in a filer container. The proposed in-cluster Job was not used
+or verified in the 2026-11-02 cleanup. Model its controls on the `replication-repair`
+AdminScript in <../../../cluster/cdk8s/seaweedfs/cluster.py>: no automatic retry, a
+finite deadline, `Never` restart, serialized execution, and explicit CPU and memory
+requests and limits. The Job must run in `flux-system` to reference
+`flux-system/pr-visuals-s3-credentials`; use
+`http://seaweedfs-s3.seaweedfs.svc:8333` and verify the Job can reach that service.
+Reference the Secret without printing or copying its values. Keep the inventory,
+request and response records, and deletion journal outside the Job's ephemeral
+filesystem.
 
-For a reviewed whole-bundle set, SeaweedFS 4.46's `weed shell` `fs.rm -r` deletes
-filer metadata and backing object data recursively. Connect to the verified
-cluster, for example:
+The tested alternative is a local bounded client through a Kubernetes port-forward.
+Keep this command running in a separate terminal and point the client at
+`http://127.0.0.1:18733`:
 
 ```bash
-kubectl -n seaweedfs exec -i seaweedfs-filer-0 -- \
-  weed shell -master=seaweedfs-master:9333 -filer=localhost:8888
+kubectl -n seaweedfs port-forward service/seaweedfs-s3 18733:8333
 ```
 
-Pass only approved, full SHA directories below the one authorized bucket, such as
-`fs.rm -r /buckets/pr-visuals/commits/<approved-full-sha>`. Never pass the bucket
-root, wildcard paths, or `-f`. Native directory deletion has no per-object ETag
-guard; use it only after checking for concurrent writers to each selected bundle.
-The shell can print `rm:` errors while exiting successfully: inspect its output
-as well as its exit status, and stop on recursive/RPC errors. Journal each batch's
-exact prefixes before starting and after successful completion. Resolve partially
-completed batches from a fresh listing before resuming.
+Load credentials from the existing Secret through a protected local mechanism; do
+not place values in command arguments, shell history, or logs. Both execution paths
+send S3 requests through the filer, so monitor filer readiness, restarts, OOM state,
+memory against its configured limit, and gateway errors throughout inventory and
+deletion. Pause before the next page or batch if memory pressure rises, readiness
+degrades, or errors or canceled filer requests increase. A separate client Job
+isolates the client process from the filer cgroup; it does not remove server-side
+filer load.
+
+Submit only reviewed object keys from exact candidate prefixes. Split them into
+batches of at most 1,000 keys, and include each listed ETag in that key's
+`DeleteObjects` entry. Persist a `started` journal record before the request. Mark a
+batch `completed` only when the request succeeds, returns no per-key errors, and
+reports one deletion per submitted key. If a request fails, is partial, or has an
+unknown outcome, stop and reconcile by listing those exact keys again before
+resuming. Run one batch at a time. The ETag guard detects stale listings when an
+object's ETag changes; it does not prove object-version identity or detect a
+same-content rewrite. Keep checking publication markers and protection roots before
+each batch, and stop on evidence of concurrent publication.
 
 Then list the bucket again. Verify selected prefixes are absent and protected
 objects are still present. Resolve live baseline pointers, read their target
@@ -73,8 +97,10 @@ node filesystem usage includes actual copies and other collections. The operator
 `objectCount` is not a live S3 key count.
 
 Before compaction, check volume-server health, replica availability, and free disk
-space for rewriting retained data. In the same verified `weed shell`, record
-`collection.list`, then run:
+space for rewriting retained data. Use a separate bounded SeaweedFS admin Job,
+following the `replication-repair` AdminScript execution pattern, to run `weed
+shell` commands against the master. Do not `kubectl exec` into a filer for these
+commands. Record `collection.list`, then run:
 
 ```text
 lock
@@ -93,6 +119,9 @@ Volumes below the garbage threshold can remain for normal maintenance.
 After compaction, repeat baseline image reads and check workload readiness. Record
 S3 payload totals and collection-size reduction separately; ongoing publication
 means a net size change is not exact accounting of this operation alone.
+
+The 2026-11-02 filer OOM evidence and its limits are recorded in
+[the cleanup incident note](../debug/2026-11-02-filer-oom-during-cleanup.md).
 
 ## Measured cleanup, 2026-10-19
 

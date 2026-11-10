@@ -1,5 +1,7 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -40,6 +42,62 @@ py_binary(
     name = "export_frontend_schema_bin",
     main_module = "ssh_mcp_server.export_frontend_schema",
     deps = [":export_frontend_schema"],
+)
+
+genrule(
+    name = "frontend_exec_schemas",
+    outs = [
+        "exec.arguments.schema.json",
+        "exec.result.schema.json",
+    ],
+    cmd = "$(location :export_frontend_schema_bin) $(RULEDIR)/exec.arguments.schema.json $(RULEDIR)/exec.result.schema.json",
+    tools = [":export_frontend_schema_bin"],
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "exec_arguments",
+    schema = ":exec.arguments.schema.json",
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "exec_result",
+    schema = ":exec.result.schema.json",
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+)
+
+py_library(
+    name = "export_exec_payload_fixture",
+    testonly = True,
+    srcs = ["export_exec_payload_fixture.py"],
+    deps = [
+        ":server",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_binary(
+    name = "export_exec_payload_fixture_bin",
+    testonly = True,
+    main_module = "ssh_mcp_server.export_exec_payload_fixture",
+    deps = [":export_exec_payload_fixture"],
+)
+
+genrule(
+    name = "exec_payload_fixture",
+    testonly = True,
+    outs = ["exec_payload_fixture.json"],
+    cmd = "$(location :export_exec_payload_fixture_bin) $@",
+    tools = [":export_exec_payload_fixture_bin"],
+    visibility = ["//agentplane/app/frontend/actions/rendering:__pkg__"],
+)
+
+js_library(
+    name = "exec_payload_fixture_js",
+    testonly = True,
+    srcs = [":exec_payload_fixture.json"],
+    visibility = ["//agentplane/app/frontend/actions/rendering:__pkg__"],
 )
 
 py_test(

@@ -6,15 +6,82 @@ Caller-provided provenance never assigns authority. A caller-scoped idempotency 
 once: a repeated key is refused, and the request it named is recovered by looking it up by key,
 never by another submission.
 
-The service publishes an agent overview at `/llms.txt`, linked Markdown workflow guides under
-`/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
-surfaces do not require caller admission.
+The `agentplane actions guide` command and MCP Edge's read-only `get_guide` tool use the shared
+agent-facing Markdown guide assets. Documentation describes
+workflows; live Action schemas, policy and backend admission determine current capabilities and access.
+
+The public `LinkageService` gRPC API completes MCP OAuth callbacks and returns the shared Client ID Metadata
+Document. It requires no bearer: callback state is a single-use, expiring capability and the metadata is public.
+The app and MCP edge present these operations over HTTP at the public protocol boundary.
+
+## Metrics
+
+The Action Service exports an OAuth token-request histogram over OTLP with seconds, operation and
+outcome dimensions, and explicit bucket boundaries. The OTLP stream also includes selected Go runtime values
+(goroutines, heap allocation/in-use/reserved bytes, GC count and cumulative pause time) and Linux
+process values (CPU time, resident memory and open file descriptors). These OTLP metrics are not
+series-equivalent to the former Prometheus Go and process collectors: in particular they do not preserve the
+complete `go_memstats_*` family or `go_gc_duration_seconds` histogram/quantiles. Cumulative temporality
+is required by the shared Alloy-to-Mimir conversion pipeline.
+
+## Durable storage
+
+The service owns the `actions` database. Action identity and lookup fields use SQL columns;
+immutable event actors and decision policy evidence use the canonical `Principal` and
+`PolicyEvidence` protobuf messages as binary snapshots. Arguments, execution results and errors
+remain JSONB. Serving code reads and writes only this representation, with no legacy JSON fallback.
+
+The service applies Goose migrations before opening listeners or starting workers. Replicas use
+the environment's rolling deployment profile, and a startup probe waits for migration and service
+initialization before normal health checks begin. Goose serializes concurrent starts with its
+PostgreSQL session lock. Schema changes must remain compatible with old and new replicas during a
+roll. Version 7 creates the typed schema for a fresh database or adopts a complete version 6
+schema without rewriting data. Version 8 adds nullable caller UID provenance without rewriting
+requests; NULL means the caller incarnation is unknown. During a rolling update, older writers may
+still insert NULL; new readers preserve it as unknown. Older and incomplete schemas are rejected;
+existing Goose history remains intact. A database created at version 8 requires a version-8-aware
+rollback image or a coordinated restore.
+
+## Built-in input contracts
+
+Sandbox and orchestration Action inputs have one Go contract per wire shape. The same typed
+contract produces the advertised JSON Schema and validates arguments before decoding them for its
+executor. Objects reject unknown properties, including nested objects. Optional nullable fields
+accept absence and explicit null; required fields remain required. Integer inputs use Go's standard
+JSON decoding: send integer literals such as `60`. Field constraints enforce their allowed ranges.
+Invalid arguments expose no validator detail that could quote their values.
+
+Sandbox exec admission advertises the deployment's current timeout and output maxima. Execution
+accepts the stable hard ceilings (3600 seconds and 1,000,000 bytes), then clips to the current
+deployment maxima. This lets an already-admitted request execute across a settings change that
+lowers those maxima. Both profiles derive from the same typed input contract.
+
+Go and Python Sandbox Action names are generated from a shared JSON Schema enum. Externally
+supplied MCP schemas and policy-authored argument schemas retain their own JSON Schema contracts.
 
 ## Caller admission and Connection authority
 
-Every caller is a Kubernetes ServiceAccount carrying the label
-`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace.
-A Kubernetes token proves that account directly through TokenReview for the configured audience.
+A workload caller is a Kubernetes ServiceAccount carrying the label
+`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace, or,
+by SVID only, an `Identity` of the policy namespace.
+The shared TLS RPC listener on 8080 verifies an agentplane Runtime SVID with explicit
+clientAuth against the trust-manager roots. It resolves the exact live Sandbox UID and accepted
+credential to the subject the credential names: a ServiceAccount and its canonical UID, or an
+Identity and its UID, read live and fenced on that UID. The sidecar originates TLS
+through the central proxy's opaque CONNECT; the proxy supplies no identity. Native gRPC runs
+the same Gate. Bearer headers cannot replace the certificate
+peer; deleted Sandboxes, stale credentials and invalid leaves fail before a handler runs.
+ActionService admits SVIDs; operator RPCs on the same listener retain their OIDC verifier and
+refuse Sandbox certificates. Linkage callbacks retain their single-use state authorization.
+
+The Gate admits only explicitly listed full gRPC method names; any other method is denied before
+its handler runs. ActionService methods use workload admission, while OperatorActionService,
+WebPushService and the MCP Edge's explicitly supplied ConnectionService methods use operator OIDC.
+Health methods remain public. Linkage methods remain bearer-free because the callback verifies its
+single-use state itself and the client metadata document is public. A new RPC stays denied until it
+is assigned an explicit boundary.
+
+On the same listener, a Kubernetes token proves that account directly through TokenReview for the configured audience.
 The resolver requires an allowed namespace and ServiceAccount UID; Actions accepts tokens with or without a Pod binding. A supplied
 Pod binding must have exactly one name and UID. An external MCP bearer proves an active
 Connection grant whose currently bound account is admitted by the same label. Nothing is admitted
@@ -32,10 +99,34 @@ admission refuses subsequent MCP authority resolution. Revoking an old grant can
 replacement, and no Connection or grant history is deleted.
 
 The core receives a ServiceAccount principal and has no Connection authority or grant provenance.
-Requests and idempotency keys are scoped to the submitting account. Connections acting as the
-same account share its receipt reads; different accounts remain isolated. Rebinding changes only
-future submissions, not the account of an existing Action. Revoking a Connection stops further
-requests; it does not cancel an Action the core has already accepted.
+At admission it stores the authentication-verified UID beside the ServiceAccount's namespace and name.
+The UID pins the exact account incarnation in receipts and execution payloads. Requests whose
+admitting writer did not store a UID remain explicitly unknown, including writes by older replicas
+during a roll. The service never looks up a same-name live account to fill it in, and a
+caller-delegating executor must refuse those requests.
+
+An Identity caller is admitted while a live `PolicyBinding` of the policy namespace names its
+Identity incarnation, whether or not the binding grants an Action rule; the index answers only
+while that Identity of that UID exists, and a watch rechecks it before every frame. No Identity is
+a service reader. It is recorded by name and UID on its requests and cancellation events, and owns,
+reads, cancels and spends idempotency keys by incarnation: a later Identity of the same name shares
+nothing with it, as it shares none of its bindings. Its policy is the bindings naming its Identity.
+`orchestration_v1` launches, which act as the calling ServiceAccount, refuse an Identity's request
+with `caller_not_service_account`. `session_delegation` forwards it as that Identity incarnation,
+which Dispatcher and History authorize as the Identity's own workload; the Environment Service
+admits no Identity caller and refuses it, and Dispatcher refuses its `sessions/create`. MCP groups
+run it, and a `pod` group gives it boxes of its own. A request a newer release recorded for a caller kind this one does not know names no
+caller in its receipt, is no workload's, and the executors that act as the caller refuse it.
+
+Ownership reads, PolicySet subject matching, and submission idempotency remain scoped by the
+ServiceAccount namespace and name for a ServiceAccount caller. A same-name replacement therefore shares the existing read and
+idempotency scope: it can read the retained request and reusing its key is refused, while that
+request still carries its original UID and does not become a request from the replacement account.
+Connections acting as the same account share its receipt reads; different accounts remain isolated.
+Rebinding changes only future submissions, not the account identity recorded on an existing Action.
+Revoking a Connection stops further requests; it does not cancel an Action the core has already
+accepted. Decisions stay linked to their ActionRequest rather than duplicating its caller identity;
+caller-authored event actors record their verified UID when known.
 
 ## Action policies
 
@@ -74,6 +165,8 @@ auto-approves with an Execution; no match leaves the request on the human path; 
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
 bindings with their resource versions, the sets with their generations, and the matching policy.
+A Decision names exactly one decider: an operator, with the operator's note, or a policy, with its reason code,
+description and evidence. A reason code this release does not name reads as `REASON_CODE_UNKNOWN`.
 The request is persisted only once evaluation has finished, together with any auto-decision, so a
 request is observable as pending only while it waits for a human.
 
@@ -87,6 +180,11 @@ and every request takes the human path, whatever the objects say. A set that is 
 refused contributes nothing and is simply absent from the caller's view; verdicts, validation
 reports and labels are shown only to the operator, who can read the same resolution for any
 named subject.
+
+`WatchActionPolicy` uses the same subject and viewer rules as `GetActionPolicy`. It sends the current
+policy followed by changed snapshots, including changes in the index's availability; intermediate
+states may be coalesced. Reconnection starts with a fresh snapshot. The service rechecks the bearer
+while the stream is idle and before each frame; it does not impose a fixed watch lifetime.
 
 ## External OAuth consent
 
@@ -127,9 +225,15 @@ notification content or decision buttons, and owns their presentation.
 
 `ActionService.GetActionRequest` reads the current receipt once. `WatchActionRequest` streams that
 receipt immediately and then on committed changes until `WatchUntil` holds or the client deadline
-ends; the last received receipt is current state. The HTTP/JSON facade exposes the generated stream
-route described by `/openapi.json`. The receipt read has no `wait_seconds` or `wait_until` query
+ends; the last received receipt is current state. The app's generated HTTP/JSON facade exposes the stream.
+The receipt read has no `wait_seconds` or `wait_until` query
 parameters.
+
+Every Action Service watch bounds waiting for a stream write to clear transport backpressure at five
+seconds; an exceeded bound ends the stream with `DEADLINE_EXCEEDED`. That bound does not guarantee
+when the peer receives a frame: a facade may have queued it before the flush. Idle drain
+behavior keeps each watch's protocol: watches with a `reconnect_required` frame send it when no write
+is outstanding, while a drain that ends an outstanding write ends the stream without another frame.
 
 MCP tools retain their bounded `wait.wait_seconds` and `wait.wait_until` options. A receipt wait can
 return immediately or wait up to the MCP edge's configured `max_wait_seconds` (30 seconds by default)
@@ -156,7 +260,7 @@ ServiceAccount, then calls Action Service with that workload identity. Action Se
 serve the external MCP or OAuth endpoints.
 
 The edge exposes a generic MCP frontend backed by Action Service, with the same catalog,
-admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
+admission, Decision, Execution, and receipt authority as its gRPC interface. Its fixed tools
 discover Actions, submit/cancel requests, read receipts and results, and page durable events. A result
 reads as the tool that ran answered, an MCP backend's own result exactly with every content block, and a
 request without one says what it is waiting on or why it has none. A submission answers the same way once
@@ -187,12 +291,12 @@ authorization.
 Refresh and bearer admission resolve current canonical grant validity and the current Connection
 binding. External receipts and idempotency are ServiceAccount-scoped. Connections retain their grant
 history; accepted Actions retain their submitting account independently of later Connection changes.
-In-cluster Actions RPCs and their HTTP facade use live ServiceAccount authentication; workload tokens
+In-cluster Actions RPCs use live ServiceAccount authentication; workload tokens
 do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
 tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.
 
 MCP cancellation uses the same owner-only, pre-dispatch-claim cutoff and typed outcomes as the
-HTTP cancellation route. It requires no version and never stops in-progress execution. This is
+gRPC cancellation method. It requires no version and never stops in-progress execution. This is
 an explicit tool operation, separate from cancelling or disconnecting a receipt wait.
 
 ## Execution ownership and shutdown
@@ -203,12 +307,34 @@ Renewal proves that the local owner is alive, not that the backend is making pro
 ownership, inability to renew, or an execution deadline stops local waiting and reports an unknown
 outcome. None is evidence that a remote side effect stopped or permission to replay it.
 
-Termination removes readiness and refuses new traffic before waiting for HTTP shutdown. Queued
+Termination removes readiness and refuses new traffic before draining gRPC. Queued
 work is left unclaimed for another replica. A claim already in progress belongs to the draining
 replica, which keeps execution and executor liveness active while waiting for its outcome.
 Completed work is persisted before adapters and database connections close. The drain has a bounded
 budget; forced cancellation records uncertainty when storage is available, otherwise lease expiry
 recovers it. Claimed work is never automatically replayed.
+
+Command/build PodTemplates may be offline, without an egress sidecar. Template admission requires
+`automountServiceAccountToken: false` and refuses projected ServiceAccount tokens mounted in workload
+containers; it checks those invariants at startup and again on creation. It also refuses a template
+defining the `workload-svid` volume or a mount at `/run/agentplane/workload-svid`. The deployed
+offline boxes retain their DNS-only network fence and receive no proxy settings or credentials.
+
+Each box has a `WorkloadCredential` of the box Pod's name, subject the caller, bound to the box's Pod
+once it exists. Create waits for the record's unbound credential, starts the
+Pod with that credential's Secret mounted into its egress sidecar alone, and then binds the Pod,
+which accepts that credential ID. A box made from a template without a sidecar mounts nothing.
+The record is the box Pod's controller owner. A ServiceAccount caller's box runs as it, and the
+record's own owner is the account's controller (a Session Sandbox), else the account. An Identity
+caller's box runs on the group namespace's `default` ServiceAccount, in any group namespace, and its
+record names the Identity incarnation and has no owner: acting as an Identity confers no authority
+over a box's lifecycle, so the box lives until it is disposed of, and deleting the Identity only
+revokes its SVID. Boxes are found by their caller's labels: a later Identity of the same name, or a
+same-named account, reaches none of them, and its create of a box of the same name is refused while
+that box exists. Dispose deletes the record before the Pod, so the
+box's SVID stops resolving before the Pod has stopped; garbage collection of a ServiceAccount caller's
+Sandbox or account removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
+resolves against it.
 
 ## Orchestration Actions (v1)
 
@@ -223,9 +349,38 @@ other incarnation and reads only that incarnation's Sessions. A repeated launch 
 Sandbox; any other launch of a taken name is refused, and a launch may not bind a PolicySet a
 Sandbox owns.
 
+## Same-principal Session delegation Actions
+
+A `session_delegation` group acts on behalf of the Action caller only when the durable request
+retains its verified ServiceAccount UID. Each outbound call authenticates Actions as the service
+actor and carries the caller account, UID, Action request UUID and Execution UUID in the shared
+delegation envelope. Discovery, Dispatcher and History apply their normal resource checks to that
+effective caller; privileged actor membership does not widen the caller's authority. Missing caller
+UIDs fail closed, and ambiguous mutation replies end as `execution_unknown` without replay.
+
+The reviewed `environments` group lists, reads and explicitly resumes existing eligible targets.
+Reads return the current snapshot immediately; they neither wait nor resume. The resume Action uses
+`EnvironmentService`, which rechecks the effective caller's current same-ServiceAccount
+`resumePolicy` and exact Sandbox UID/generation; it creates no target or grant. The `sessions` group
+creates Sessions, submits input with caller-minted command IDs, observes input delivery and History
+facts, cancels only a queued input whose durable receipt matches the supplied Session, interrupts
+the exact observed turn, reads the retained Dispatcher Session and History summary, and reads
+paginated retained turns with explicit coverage and source errors. These projections do not look up
+live environments and preserve facts already observed when another source is unavailable. Session creation
+does not start a turn; `additional_instructions` is an additive standing brief and the caller submits
+the task separately. This surface creates no environments or caller grants. Explicit resume uses
+the existing target policy; submitted input follows the separate backend wake-on-send policy.
+
+MCP Edge names direct tools `<group>__<action>` (for example `sessions__submit_input`) while the
+Action catalog retains the reviewed group/action pair. Successful output is structured JSON from
+the owning protobuf or typed Session projection; source-specific partial and unavailable facts stay
+explicit. Existing ServiceAccount and Sandbox PolicyBindings are not rewritten; an Action is
+auto-approved only where a PolicySet already bound to the caller applies. Resume also requires the
+backend's current target policy.
+
 ## Optional MCP backends
 
-Backend availability is independent of Action Service readiness and HTTP/OAuth availability.
+Backend availability is independent of Action Service readiness and public OAuth availability.
 Malformed local bindings fail startup; unavailable peers, runtime credentials, linkage, and
 invalid discovered catalogs affect only their group and recover without a service restart.
 Discovery exposes replica-local, credential-safe lifecycle diagnostics, never stale runnable tools.

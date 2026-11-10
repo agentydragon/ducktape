@@ -1,8 +1,10 @@
 import os
 import shutil
+import subprocess
 import time
 from enum import StrEnum
 from pathlib import Path
+from typing import cast
 
 import pytest
 import pytest_bazel
@@ -11,6 +13,7 @@ from devinfra.gc import git_repo, worktree_gc as wg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.removal import Failed, RemovalResult, Removed, Skipped
 
 
 def _classify(repo: GitRepo, path: Path, proc: Path, **kwargs: object) -> wg.Classification:
@@ -67,17 +70,16 @@ def test_dirty_tracked_deletion_is_kept(repo: GitRepo, proc: Path) -> None:
 
 
 def _record_status_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Patch `pygit2.Repository.status` to record each call's `untracked_files` mode while
-    still delegating to the real implementation."""
+    """Patch `worktree_gc.git` to record each `git status` call's `--untracked-files` mode
+    while still delegating to the real implementation."""
     calls: list[str] = []
-    real_status = wg.pygit2.Repository.status
+    real_git = wg.git
 
-    def recording_status(self: object, untracked_files: str = "all", **kwargs: object) -> dict[str, int]:
-        calls.append(untracked_files)
-        result: dict[str, int] = real_status(self, untracked_files=untracked_files, **kwargs)
-        return result
+    def recording_git(repo: Path, *args: str, **kwargs: bool) -> subprocess.CompletedProcess[str]:
+        calls.extend(arg.removeprefix("--untracked-files=") for arg in args if arg.startswith("--untracked-files="))
+        return real_git(repo, *args, **kwargs)
 
-    monkeypatch.setattr(wg.pygit2.Repository, "status", recording_status)
+    monkeypatch.setattr(wg, "git", recording_git)
     return calls
 
 
@@ -106,7 +108,7 @@ def test_clean_on_tracked_files_falls_back_to_the_full_status(
 
     result = _classify(repo, wt.path, proc)
 
-    assert calls == ["no", "all"]
+    assert calls == ["no", "normal"]
     assert result.reason is wg.RetainedWorktreeReason.UNCOMMITTED_CHANGES
 
 
@@ -146,6 +148,38 @@ def test_missing_worktree_directory_is_prunable(repo: GitRepo, proc: Path) -> No
     assert result.last_activity is None
 
 
+def test_existing_worktree_with_broken_gitdir_is_review(repo: GitRepo, proc: Path) -> None:
+    wt = repo.worktree("wt", "feature")
+    (wt.path / ".git").write_text("gitdir: /nonexistent/worktree-admin\n")
+
+    result = _classify(repo, wt.path, proc)
+
+    assert isinstance(result, wg.ReviewWorktree)
+    assert result.reason is wg.ReviewWorktreeReason.INSPECTION_FAILED
+    assert "cannot inspect" in wg.describe_reason(result)
+    assert wt.path.is_dir()
+
+
+@pytest.mark.parametrize("stage", ["_status", "_last_activity", "content_in_main", "patches_landed_in_main"])
+@pytest.mark.parametrize("error_type", [KeyError, ValueError, PermissionError])
+def test_worktree_inspection_failure_is_review(
+    repo: GitRepo, proc: Path, monkeypatch: pytest.MonkeyPatch, stage: str, error_type: type[Exception]
+) -> None:
+    wt = repo.worktree("wt", "feature")
+    wt.commit("novel", "unique\n", "unmerged work")
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise error_type("unreadable Git state")
+
+    monkeypatch.setattr(wg, stage, fail)
+
+    result = _classify(repo, wt.path, proc)
+
+    assert isinstance(result, wg.ReviewWorktree)
+    assert result.reason is wg.ReviewWorktreeReason.INSPECTION_FAILED
+    assert "unreadable Git state" in wg.describe_reason(result)
+
+
 def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
     path = repo.path.parent / "wt"
     repo.run("worktree", "add", "-q", "--detach", str(path), "main")
@@ -153,33 +187,27 @@ def test_detached_head_with_commit_is_review(repo: GitRepo, proc: Path) -> None:
     assert _classify(repo, path, proc).reason is wg.ReviewWorktreeReason.DETACHED_HEAD
 
 
-def test_merged_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
+@pytest.mark.parametrize(
+    ("pr", "expected_type", "expected_reason"),
+    [
+        pytest.param(PrInfo(42, PrState.MERGED), wg.PrunableWorktree, wg.PrunableWorktreeReason.PR_LANDED, id="merged"),
+        # A closed unmerged PR leaves its branch ref reachable; pruning the tree loses no commits.
+        pytest.param(PrInfo(11, PrState.CLOSED), wg.PrunableWorktree, wg.PrunableWorktreeReason.PR_LANDED, id="closed"),
+        pytest.param(PrInfo(7, PrState.OPEN), wg.RetainedWorktree, wg.RetainedWorktreeReason.OPEN_PR, id="open"),
+    ],
+)
+def test_pr_state_classifies_unmerged_worktree(
+    repo: GitRepo,
+    proc: Path,
+    pr: PrInfo,
+    expected_type: type[wg.PrunableWorktree] | type[wg.RetainedWorktree],
+    expected_reason: wg.PrunableWorktreeReason | wg.RetainedWorktreeReason,
+) -> None:
     wt = repo.worktree("wt", "feature")
-    wt.commit("novel", "unique\n", "landed via squash PR")
-    pr = PrInfo(42, PrState.MERGED)
+    wt.commit("novel", "unique\n", "unmerged work")
     result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.PrunableWorktree)
-    assert (result.reason, result.pr) == (wg.PrunableWorktreeReason.PR_LANDED, pr)
-
-
-def test_closed_pr_overrides_unmerged_git(repo: GitRepo, proc: Path) -> None:
-    # A PR was closed unmerged; the worktree is clean. Nothing is lost by removing the
-    # worktree either way — its branch (whatever it holds) stays reachable through the ref.
-    wt = repo.worktree("wt", "feature")
-    wt.commit("novel", "unique\n", "abandoned attempt")
-    pr = PrInfo(11, PrState.CLOSED)
-    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.PrunableWorktree)
-    assert (result.reason, result.pr) == (wg.PrunableWorktreeReason.PR_LANDED, pr)
-
-
-def test_open_pr_is_kept(repo: GitRepo, proc: Path) -> None:
-    wt = repo.worktree("wt", "feature")
-    wt.commit("novel", "unique\n", "work in review")
-    pr = PrInfo(7, PrState.OPEN)
-    result = _classify(repo, wt.path, proc, pr_states={"feature": pr})
-    assert isinstance(result, wg.RetainedWorktree)
-    assert (result.reason, result.pr) == (wg.RetainedWorktreeReason.OPEN_PR, pr)
+    assert isinstance(result, expected_type)
+    assert (result.reason, cast(wg.PrunableWorktree | wg.RetainedWorktree, result).pr) == (expected_reason, pr)
 
 
 def test_live_process_is_kept(repo: GitRepo, proc: Path) -> None:
@@ -206,7 +234,7 @@ def test_remove_worktree_deletes_and_leaves_branch(repo: GitRepo) -> None:
 
     result = wg.remove_worktree(repo.path, wt.path)
 
-    assert result == wg.RemovedWorktree(wt.path)
+    assert result == Removed(wt.path)
     assert not wt.path.exists()
     assert repo.has_branch("feature")  # the work stays reachable through the branch
 
@@ -218,7 +246,45 @@ def test_remove_worktree_fails_on_dirty_tree(repo: GitRepo) -> None:
     result = wg.remove_worktree(repo.path, wt.path)
 
     # `git worktree remove` without --force refuses a dirty tree, so nothing is lost.
-    assert isinstance(result, wg.FailedWorktree)
+    assert isinstance(result, Failed)
+    assert wt.path.exists()
+
+
+def _remove_if_still_prunable(repo: GitRepo, wt: GitRepo, *, live_pids: list[int]) -> RemovalResult[Path]:
+    return wg.remove_if_still_prunable(
+        repo.path,
+        Worktree(path=wt.path, branch="feature"),
+        main="main",
+        pr_states={},
+        main_path=repo.path,
+        active_path=None,
+        live_pids=live_pids,
+    )
+
+
+def test_remove_if_still_prunable_removes_an_unchanged_tree(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+
+    assert _remove_if_still_prunable(repo, wt, live_pids=[]) == Removed(wt.path)
+    assert not wt.path.exists()
+
+
+def test_remove_if_still_prunable_skips_a_tree_a_process_entered_since_the_scan(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+
+    result = _remove_if_still_prunable(repo, wt, live_pids=[4242])
+
+    assert isinstance(result, Skipped)
+    assert wt.path.exists()
+
+
+def test_remove_if_still_prunable_skips_a_tree_with_uncommitted_work_since_the_scan(repo: GitRepo) -> None:
+    wt = repo.worktree("wt", "feature")
+    (wt.path / "notes").write_text("new since the scan\n")
+
+    result = _remove_if_still_prunable(repo, wt, live_pids=[])
+
+    assert isinstance(result, Skipped)
     assert wt.path.exists()
 
 
@@ -235,7 +301,7 @@ def _populated(reason: StrEnum) -> wg.Classification:
         case wg.RetainedWorktreeReason():
             return wg.RetainedWorktree(worktree, reason, None, _PR, 4242)
         case wg.ReviewWorktreeReason():
-            return wg.ReviewWorktree(worktree, reason, None, _MAIN)
+            return wg.ReviewWorktree(worktree, reason, None, _MAIN, detail="test error")
     raise TypeError(reason)
 
 

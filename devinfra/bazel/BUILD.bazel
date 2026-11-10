@@ -1,0 +1,42 @@
+"""Bazel utility libraries."""
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files([
+    "artifacts.MODULE.bazel",
+    "go.MODULE.bazel",
+    "oci.MODULE.bazel",
+])
+
+py_library(
+    name = "workspace",
+    srcs = ["workspace.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "subprocess",
+    srcs = ["subprocess.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_subprocess",
+    srcs = ["test_subprocess.py"],
+    deps = [
+        ":subprocess",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_workspace",
+    srcs = ["test_workspace.py"],
+    deps = [
+        ":workspace",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

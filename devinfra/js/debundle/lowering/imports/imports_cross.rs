@@ -9,11 +9,11 @@
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
-use crate::chunk_ast::declaration_names;
 use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, bail};
+use binding_targets::declaration_name_strings;
 use gate::AssignmentAnalysis;
 use js_ast::import_decl_module_item;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -145,7 +145,7 @@ pub(crate) fn residual_entry_imports_for_moved_body(
         // — bail with the offending names so the bug stays
         // diagnosable.
         bail!(
-            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `dependency_graph.json`.",
+            "materialize_logical_modules: moved module {module_id} references residual entry binding(s) {} that are not exported by entry. This is an internal invariant violation in `auto_grown_residual_exports` — the export-growth pass should have surfaced these names before per-module emission. Report with the chunk's `dependency_graph.json.gz`.",
             missing_exports.into_iter().collect::<Vec<_>>().join(", "),
         );
     }
@@ -203,7 +203,7 @@ pub(crate) fn collect_entry_exports_by_original_local(
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for final_local in declaration_names(&export_decl.decl) {
+                for final_local in declaration_name_strings(&export_decl.decl) {
                     let original = final_to_original
                         .get(&final_local)
                         .cloned()

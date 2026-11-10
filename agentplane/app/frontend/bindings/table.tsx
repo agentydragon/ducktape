@@ -1,123 +1,84 @@
+import { toJson } from "@bufbuild/protobuf";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Badge, Box, Button, Group, Stack, Table, Text, Tooltip } from "@mantine/core";
 import type { JSX } from "react";
 import { useSearchParams } from "react-router";
 
-import type { BindingView, EgressRuleView, PolicySetView } from "../api/schema";
-import { bindingState } from "./state";
+import { TargetSchema, type Credential, type Target } from "../../../egress/egress_rules_pb";
+import { RuleSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
+import type { PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 import { CodeBlock } from "../../../../util/frontend/code_block";
 import { MarkGlyph } from "../mark_glyph";
 import { BINDING_STATE_MARKS } from "../status_mark";
 import { TimeAgo } from "../time_ago";
-
-const PROVENANCE: Record<BindingView["provenance"], string> = {
-  git: "from git",
-  sandbox: "Sandbox",
-  operator: "operator",
-};
-
-/** The bindings whose rules are open, comma-separated; a binding name has no comma in it. */
-const RULES_PARAM = "rules";
-
-const REVOKE_EXPLAINS =
-  "Deletes the binding, which is what takes the access away. There is no undo; a new binding has to be made.";
-const NOT_REVOCABLE: Partial<Record<BindingView["provenance"], string>> = {
-  git: "Applied by Flux: remove it in the repository, or the next reconcile applies it again.",
-  sandbox: "Kept equal to the Sandbox's policy sets by its controller, which would recreate it.",
-};
+import { useCredentialMetadata } from "./credential_watch";
+import { bindingState } from "./state";
 
 export const BINDING_GRANT_HELP =
-  "A binding grants the rules of its policy sets until it expires or is revoked. One from the repository is removed there.";
+  "A binding grants the rules of its policy sets until it is deleted. The Policy Controller deletes expired bindings.";
 
-/** When a binding stops counting, red once that is past: the objects are pushed, the clock is not. */
-function Expiry({ expiresAt }: { expiresAt: string | null | undefined }): JSX.Element {
-  if (!expiresAt) return <Text size="sm">never</Text>;
-  const at = new Date(expiresAt);
-  return (
-    <Text size="sm" c={at.getTime() < Date.now() ? "red" : undefined}>
-      <TimeAgo value={at} />
-    </Text>
-  );
+function provenance(binding: PolicyBinding): "git" | "sandbox" | "identity" | "operator" {
+  if ("kustomize.toolkit.fluxcd.io/name" in binding.labels) return "git";
+  if (binding.ownerReferences.some((owner) => owner.controller && owner.kind === "Sandbox")) return "sandbox";
+  return binding.ownerReferences.some((owner) => owner.kind === "Identity") ? "identity" : "operator";
+}
+const PROVENANCE = { git: "from git", sandbox: "Sandbox", identity: "identity's own", operator: "operator" } as const;
+const NOT_REVOCABLE = {
+  git: "Applied by Flux: remove it in the repository, or the next reconcile applies it again.",
+  sandbox: "Kept equal to the Sandbox's policy sets by its controller, which would recreate it.",
+  identity: "Owned by its identity, and deleted with it.",
+} as const;
+
+function targetLabel(target: Target): string {
+  const value = toJson(TargetSchema, target);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "unknown target";
+  const method =
+    typeof value.method === "string"
+      ? value.method
+          .replace(/^METHOD_/, "")
+          .toLowerCase()
+          .replaceAll("_", " ")
+      : "unknown method";
+  return [method, value.header, value.field, value.scheme]
+    .filter((part) => typeof part === "string" && part)
+    .join(" · ");
 }
 
-/** Whether the binding's readers accept it, as an icon; why is on hover. */
-function BindingStateMark({ binding }: { binding: BindingView }): JSX.Element {
-  const state = bindingState(binding);
-  return (
-    <Tooltip
-      multiline
-      w={320}
-      withArrow
-      events={{ hover: true, focus: true, touch: true }}
-      label={
-        <Stack gap={2}>
-          <Text size="sm" fw={600}>
-            {state.title}
-          </Text>
-          {state.reasons.map((reason) => (
-            <Text key={reason} size="xs">
-              {reason}
-            </Text>
-          ))}
-        </Stack>
-      }
-    >
-      <Box component="span" role="img" aria-label={state.title} tabIndex={0} style={{ display: "inline-flex" }}>
-        <MarkGlyph mark={BINDING_STATE_MARKS[state.kind]} size="small" />
-      </Box>
-    </Tooltip>
-  );
-}
-
-function EgressRule({ rule }: { rule: EgressRuleView }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      {rule.hosts.join(", ")} · {rule.methods ? rule.methods.join(" ") : "any method"} ·{" "}
-      {rule.paths ? rule.paths.join(", ") : "any path"}
-      {rule.credential
-        ? ` · ${rule.credential.name}: ${rule.credential.description} (${rule.credential.targets
-            .map((t) =>
-              t.method === "jsonField"
-                ? `JSON field ${t.field}: <credential>`
-                : t.method === "schemeToken"
-                  ? `${t.header}: ${t.scheme} <credential>`
-                  : `${t.header} ${t.method}`
-            )
-            .join(", ")}, from ${
-            rule.credential.secret && rule.credential.key
-              ? `${rule.credential.secret}/${rule.credential.key}`
-              : "authenticated workload token"
-          })`
-        : rule.missing_credential
-          ? ` · credential ${rule.missing_credential}: no such EgressCredential`
-          : " · no credential"}
-    </Text>
-  );
-}
-
-/** A set's rules in its order, each under the type that selects the reader enforcing it. */
-function PolicySetRules({ policySet }: { policySet: PolicySetView }): JSX.Element {
+function PolicySetRules({
+  policySet,
+  credentials,
+}: {
+  policySet: PolicySet;
+  credentials: Map<string, Credential> | null;
+}): JSX.Element {
   return (
     <Stack gap={4}>
       <Text size="sm" fw={600}>
-        {policySet.name}{" "}
-        <Text span size="xs" c="dimmed" fw={400}>
-          generation {policySet.generation}
+        {policySet.identity?.name}{" "}
+        <Text span size="xs" c="dimmed">
+          generation {String(policySet.generation)}
         </Text>
       </Text>
-      {policySet.refused && (
-        <Text size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
-          {policySet.refused}
-        </Text>
-      )}
-      {policySet.rules.map((rule) => (
-        <Stack key={rule.number} gap={2} pl="sm">
+      {(policySet.spec?.rules ?? []).map((rule, index) => (
+        <Stack key={index} gap={2} pl="sm">
           <Text size="xs" c="dimmed">
-            rules[{rule.number}] · {rule.kind === "egress" ? "egress" : rule.type}
+            rules[{index}] · {rule.type}
           </Text>
-          {rule.kind === "egress" ? (
-            <EgressRule rule={rule} />
+          {rule.type === "egress" ? (
+            <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+              {rule.hosts.join(", ")} · {rule.methods.length ? rule.methods.join(" ") : "any method"} ·{" "}
+              {rule.paths.length ? rule.paths.join(", ") : "any path"}
+              {rule.credentialRef
+                ? (() => {
+                    const credential = credentials?.get(rule.credentialRef.name);
+                    return credential
+                      ? ` · credential ${credential.name}: ${credential.description} · ${credential.targets.map(targetLabel).join(", ")}`
+                      : ` · credential ${rule.credentialRef.name}: ${credentials ? "not found" : "details unavailable"}`;
+                  })()
+                : " · no credential"}
+            </Text>
           ) : (
-            <CodeBlock text={JSON.stringify(rule.fields)} language="json" />
+            <CodeBlock text={JSON.stringify(toJson(RuleSchema, rule))} language="json" />
           )}
         </Stack>
       ))}
@@ -125,52 +86,28 @@ function PolicySetRules({ policySet }: { policySet: PolicySetView }): JSX.Elemen
   );
 }
 
-function RevokeButton({ binding, onRevoke }: { binding: BindingView; onRevoke: () => void }): JSX.Element {
-  const unavailable = NOT_REVOCABLE[binding.provenance];
-  return (
-    <Tooltip label={unavailable ?? REVOKE_EXPLAINS} withArrow multiline w={280}>
-      {unavailable ? (
-        // `disabled` fires no pointer events, so the button would carry a tooltip nobody sees.
-        <Button
-          size="compact-xs"
-          variant="light"
-          color="gray"
-          data-disabled
-          onClick={(event) => event.preventDefault()}
-        >
-          Revoke
-        </Button>
-      ) : (
-        <Button size="compact-xs" variant="light" color="red" onClick={onRevoke}>
-          Revoke
-        </Button>
-      )}
-    </Tooltip>
-  );
-}
-
-/**
- * The bindings naming a ServiceAccount: what each is, when it ends, its sets and every rule in them, and
- * whether its readers accept it. `onRevoke` is null where the list is only shown.
- */
 export function BindingsTable({
   bindings,
+  policySets,
   onRevoke,
+  subjectKind,
 }: {
-  bindings: BindingView[];
-  onRevoke: ((name: string) => void) | null;
+  bindings: PolicyBinding[];
+  policySets: PolicySet[];
+  onRevoke: ((binding: PolicyBinding) => void) | null;
+  /** What the table's bindings name, for its empty state. */
+  subjectKind: "ServiceAccount" | "identity";
 }): JSX.Element {
-  // Which bindings show their rules is in the URL, like the tab and the session page's switches, so
-  // a reading of what a sandbox may reach can be linked to and survives a reload.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const expanded = new Set((searchParams.get(RULES_PARAM) ?? "").split(",").filter((name) => name));
+  const [params, setParams] = useSearchParams();
+  const credentials = useCredentialMetadata();
+  const expanded = new Set((params.get("rules") ?? "").split(",").filter(Boolean));
+  const sets = new Map(policySets.map((set) => [set.identity?.name ?? "", set]));
   function toggle(name: string): void {
-    const next = new Set(expanded);
-    if (!next.delete(name)) next.add(name);
-    const params = new URLSearchParams(searchParams);
-    if (next.size === 0) params.delete(RULES_PARAM);
-    else params.set(RULES_PARAM, [...next].join(","));
-    setSearchParams(params, { replace: true });
+    if (!expanded.delete(name)) expanded.add(name);
+    const next = new URLSearchParams(params);
+    if (expanded.size) next.set("rules", [...expanded].join(","));
+    else next.delete("rules");
+    setParams(next, { replace: true });
   }
   const columns = onRevoke === null ? 5 : 6;
   return (
@@ -182,7 +119,7 @@ export function BindingsTable({
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
           <Table.Th visibleFrom="sm">Policy sets</Table.Th>
-          {onRevoke !== null && <Table.Th />}
+          {onRevoke && <Table.Th />}
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -190,97 +127,120 @@ export function BindingsTable({
           <Table.Tr>
             <Table.Td colSpan={columns}>
               <Text size="sm" c="dimmed">
-                No binding names this ServiceAccount.
+                No binding names this {subjectKind}.
               </Text>
             </Table.Td>
           </Table.Tr>
         )}
         {bindings.flatMap((binding) => {
-          const policySets = (
+          const name = binding.identity?.name ?? "";
+          const source = provenance(binding);
+          const state = bindingState(binding, sets);
+          const expires = binding.spec?.expiresAt;
+          const expiresAt = expires ? timestampDate(expires) : null;
+          const references = binding.spec?.policySets ?? [];
+          const labels = (
             <Group gap={4}>
-              {binding.policy_sets.map((policySet) => (
+              {references.map((reference) => (
+                <Badge key={reference} color={sets.has(reference) ? undefined : "red"} variant="light">
+                  {reference}
+                  {sets.has(reference) ? "" : "?"}
+                </Badge>
+              ))}
+              <Button size="compact-xs" variant="subtle" onClick={() => toggle(name)}>
+                {expanded.has(name) ? "Hide rules" : "Rules"}
+              </Button>
+            </Group>
+          );
+          const subject = binding.spec?.subject;
+          const rows = [
+            <Table.Tr key={name}>
+              <Table.Td>
                 <Tooltip
-                  key={policySet.name}
-                  label={policySet.refused}
-                  disabled={!policySet.refused}
+                  label={
+                    <Stack gap={2}>
+                      <Text size="sm" fw={600}>
+                        {state.title}
+                      </Text>
+                      {state.reasons.map((reason) => (
+                        <Text key={reason} size="xs">
+                          {reason}
+                        </Text>
+                      ))}
+                    </Stack>
+                  }
                   withArrow
                   multiline
                   w={320}
                 >
-                  <Badge color={policySet.refused ? "red" : undefined} variant="light">
-                    {policySet.name}
-                  </Badge>
+                  <Box component="span" role="img" aria-label={state.title} tabIndex={0}>
+                    <MarkGlyph mark={BINDING_STATE_MARKS[state.kind]} size="small" />
+                  </Box>
                 </Tooltip>
-              ))}
-              {binding.missing_policy_sets.map((name) => (
-                <Tooltip key={name} label="No such PolicySet in the namespace" withArrow>
-                  <Badge color="red" variant="light">
-                    {name}?
-                  </Badge>
-                </Tooltip>
-              ))}
-              <Button size="compact-xs" variant="subtle" onClick={() => toggle(binding.name)}>
-                {expanded.has(binding.name) ? "Hide rules" : "Rules"}
-              </Button>
-            </Group>
-          );
-          const rows = [
-            <Table.Tr key={binding.name}>
-              <Table.Td style={{ width: "1%" }}>
-                <BindingStateMark binding={binding} />
               </Table.Td>
               <Table.Td>
                 <Tooltip
-                  label={binding.subjects.map((subject) => `${subject.namespace}/${subject.name}`).join(", ")}
+                  label={
+                    subject?.identity ? `identity ${subject.identity.name}` : `${subject?.namespace}/${subject?.name}`
+                  }
                   withArrow
                 >
-                  <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-                    {binding.name}
+                  <Text size="sm" fw={600}>
+                    {name}
                   </Text>
                 </Tooltip>
-                {/* On a phone the other columns fold under the name. */}
                 <Stack gap="xs" hiddenFrom="sm" mt="xs">
                   <Text size="xs" c="dimmed">
-                    {PROVENANCE[binding.provenance]} · expires{" "}
-                    {binding.expires_at ? <TimeAgo value={binding.expires_at} /> : "never"}
+                    {PROVENANCE[source]} · expires {expiresAt ? <TimeAgo value={expiresAt} /> : "never"}
                   </Text>
-                  {policySets}
+                  {labels}
                 </Stack>
               </Table.Td>
               <Table.Td visibleFrom="sm">
-                <Text size="sm">{PROVENANCE[binding.provenance]}</Text>
+                <Text size="sm">{PROVENANCE[source]}</Text>
               </Table.Td>
               <Table.Td visibleFrom="sm">
-                <Expiry expiresAt={binding.expires_at} />
+                <Text size="sm" c={expiresAt && expiresAt.getTime() < Date.now() ? "red" : undefined}>
+                  {expiresAt ? <TimeAgo value={expiresAt} /> : "never"}
+                </Text>
               </Table.Td>
-              <Table.Td visibleFrom="sm">{policySets}</Table.Td>
-              {onRevoke !== null && (
-                <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
-                  <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    <RevokeButton binding={binding} onRevoke={() => onRevoke(binding.name)} />
-                  </Group>
+              <Table.Td visibleFrom="sm">{labels}</Table.Td>
+              {onRevoke && (
+                <Table.Td>
+                  {source === "operator" ? (
+                    <Button size="compact-xs" color="red" variant="light" onClick={() => onRevoke(binding)}>
+                      Revoke
+                    </Button>
+                  ) : (
+                    <Tooltip label={NOT_REVOCABLE[source]}>
+                      <Button size="compact-xs" data-disabled onClick={(event) => event.preventDefault()}>
+                        Revoke
+                      </Button>
+                    </Tooltip>
+                  )}
                 </Table.Td>
               )}
             </Table.Tr>,
           ];
-          if (expanded.has(binding.name)) {
+          if (expanded.has(name))
             rows.push(
-              <Table.Tr key={`${binding.name}-rules`}>
+              <Table.Tr key={`${name}-rules`}>
                 <Table.Td colSpan={columns}>
                   <Stack gap="sm">
-                    {binding.policy_sets.map((policySet) => (
-                      <PolicySetRules key={policySet.name} policySet={policySet} />
-                    ))}
-                    {binding.missing_policy_sets.map((name) => (
-                      <Text key={name} size="sm" c="red">
-                        {name}: no such PolicySet
-                      </Text>
-                    ))}
+                    {references.map((reference) => {
+                      const set = sets.get(reference);
+                      return set ? (
+                        <PolicySetRules key={reference} policySet={set} credentials={credentials} />
+                      ) : (
+                        <Text key={reference} size="sm" c="red">
+                          {reference}: not present in the current PolicySet view
+                        </Text>
+                      );
+                    })}
                   </Stack>
                 </Table.Td>
               </Table.Tr>
             );
-          }
           return rows;
         })}
       </Table.Tbody>

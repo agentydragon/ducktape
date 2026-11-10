@@ -3,20 +3,17 @@
 Evaluating options for the cluster's GPU inference path. See <README.md> for
 the wider docs hub.
 
-## Current state
+## Declared deployment
 
-| Aspect          | Value                                                                                                                 |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Backend         | Ollama (single Deployment, <../../cdk8s/ollama/app.py>)                                                               |
-| Node            | wyrm2 (2× RTX 5090, 32 GB each, 64 GB total VRAM, **no GPU P2P** — VM passthrough)                                    |
-| Model storage   | PVC `llm-models` (200 Gi, **`lvm-proxmox-hdd`** — OpenEBS LVM on wyrm2 HDD, on-node) at `/models`                     |
-| Auth            | nginx sidecar bearer-token proxy                                                                                      |
-| **Format**      | **GGUF** — all weights are GGUF                                                                                       |
-| Models loaded   | `gpt-oss:20b` (MXFP4-in-GGUF, 13.8 GB), `gpt-oss:120b` (MXFP4-in-GGUF, 65.4 GB), `gemma4:31b-it-q8_0` (Q8_0, 33.8 GB) |
-| KV cache        | `q8_0` (`OLLAMA_KV_CACHE_TYPE=q8_0`)                                                                                  |
-| Context         | `OLLAMA_NUM_CTX=131072`                                                                                               |
-| Flash attention | enabled (`OLLAMA_FLASH_ATTENTION=1`)                                                                                  |
-| Tensor parallel | **none** (Ollama only does sequential layer split)                                                                    |
+Ollama runs on wyrm2 with two RTX 5090 GPUs. Its declaration mounts the
+`models` PVC (200 GiB, `piraeus-hdd-local`) at `/models` and the `qwen38-iq4`
+PVC (100 GiB, `piraeus-ssd-local`) at `/ssd-models`. The nginx sidecar provides
+bearer-token access to the public endpoint. The deployment sets q8_0 KV cache,
+flash attention and a 131072-token default context via `OLLAMA_CONTEXT_LENGTH`.
+
+The configured route roster is in <../../../model_catalog/ollama.py>; it does
+not establish which weights are currently registered or loaded. Inspect the
+running service for live state. See <../../cdk8s/ollama/app.py> for the deployment.
 
 The MXFP4 weights inside the gpt-oss GGUFs are _not_ exercised as native
 Blackwell FP4 — Ollama/llama.cpp dequantize them into compute kernels that
@@ -35,15 +32,10 @@ for the prior wyrm2-host vLLM work that informs configuration choices.
 
 ### Storage class
 
-Stay on **`lvm-proxmox-hdd`** — these are big sequential blobs, weights
-land in page cache after first load, and we have plenty of HDD vs limited
-NVMe. The cold-start tax (~5 min vs ~30 s) is a one-time hit per model.
-
-Use a **single PVC with subdirs** (`/models/gguf/`, `/models/safetensors/`,
-`/models/awq/`) instead of a PVC per format. Per-format PVCs punish models
-that exist in two formats (where do they live?) without delivering much
-over subdirs. May resize the existing `llm-models` PVC upward as we add
-non-GGUF formats.
+The existing Ollama PVCs use Piraeus local storage on wyrm2. Choose any future
+vLLM volume and layout against current pool capacity, data placement and
+recovery requirements; do not assume the retired OpenEBS LVM class remains
+available. See <../plans/piraeus_production.md>.
 
 ## Requirements (in priority order)
 

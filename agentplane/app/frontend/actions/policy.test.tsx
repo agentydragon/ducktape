@@ -1,11 +1,24 @@
 // @vitest-environment happy-dom
+import { fromJson } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
-import type { ActionPolicyUnavailable, ActionPolicyView } from "../api/schema";
-import { ActionPolicySection } from "./policy";
+import { CallerActionPolicySchema } from "../../../action_service/action_service_pb";
+import { ActionPolicySection, ActionPolicyWatch } from "./policy";
+import type { WatchHandlers } from "../watch_stream";
+
+const watch = vi.hoisted(() => ({ calls: [] as { url: string; handlers: WatchHandlers; stopped: boolean }[] }));
+vi.mock("../watch_stream", () => ({
+  followWatch: (url: string, handlers: WatchHandlers) => {
+    const call = { url, handlers, stopped: false };
+    watch.calls.push(call);
+    return () => {
+      call.stopped = true;
+    };
+  },
+}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -13,80 +26,88 @@ let container: HTMLDivElement;
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  watch.calls.length = 0;
 });
-
-async function render(policy: ActionPolicyView | ActionPolicyUnavailable | null): Promise<void> {
+async function render(element: ReactNode): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <ActionPolicySection policy={policy} />
-      </MantineProvider>
-    )
-  );
+  await act(async () => root.render(<MantineProvider env="test">{element}</MantineProvider>));
 }
 
-const EMPTY: ActionPolicyView = {
-  synced: true,
-  auto_approve_if: [],
-};
-
-it("says an empty list leaves every Action waiting for the operator", async () => {
-  await render(EMPTY);
-  expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
-  expect(container.querySelector("[role=alert]")).toBeNull();
-});
-
-it("says nothing auto-decides while the service's watch has not synced", async () => {
-  await render({ ...EMPTY, synced: false });
-  expect(container.querySelector("[role=alert]")?.textContent).toContain("has not synced");
-});
-
-it("says why there is no policy when the service could not be asked", async () => {
-  await render({
-    kind: "unavailable",
-    code: "upstream_request_failed",
-    upstream: {
-      method: "GET",
-      url: "http://test-actions.invalid/v1/operator/action-policy",
-      upstream_status: 503,
-      error_type: "HTTPStatusError",
-    },
-  });
-  const alert = container.querySelector("[role=alert]")?.textContent ?? "";
-  expect(alert).toContain("could not be asked");
-  expect(alert).toContain("upstream_request_failed");
-  expect(alert).toContain("503");
-  expect(container.querySelector("table")).toBeNull();
-});
-
-it("renders nothing until the stream has delivered a snapshot", async () => {
-  await render(null);
-  // MantineProvider contributes a <style> of its own, so the check is for content, not text.
-  expect(container.querySelector("table, h5")).toBeNull();
-});
-
-it("shows the auto-approval list in evaluation order, naming the binding and set behind each entry", async () => {
-  await render({
+it("shows the generated effective policy in evaluation order", async () => {
+  const policy = fromJson(CallerActionPolicySchema, {
     synced: true,
-    auto_approve_if: [
+    autoApproveIf: [
       {
-        binding: "test-sandbox-launch",
-        policy_set: "test-reads",
-        source: "rules",
+        binding: "sandbox",
+        policySet: "reads",
         index: 1,
         policy: {
-          type: "argument_schema",
-          actions: { github: ["create_issue"] },
-          argument_schema: { properties: { owner: { const: "test-owner" } } },
+          argumentSchema: {
+            actions: [{ group: "github", names: ["create_issue"] }],
+            argumentSchema: { properties: { owner: { const: "test-owner" } } },
+          },
         },
       },
     ],
   });
-  const text = container.textContent ?? "";
-  expect(text).toContain("test-sandbox-launch · test-reads[1]");
-  expect(text).toContain("github: create_issue");
-  expect(text).toContain('"owner"');
+  await render(<ActionPolicySection policy={policy} />);
+  expect(container.textContent).toContain("sandbox · reads[1]");
+  expect(container.textContent).toContain("github: create_issue");
+  expect(container.textContent).toContain('"owner"');
+});
+
+it("distinguishes an empty policy, an unsynced policy, and an unavailable watch", async () => {
+  await render(<ActionPolicySection policy={fromJson(CallerActionPolicySchema, { synced: true })} />);
+  expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ActionPolicySection policy={fromJson(CallerActionPolicySchema, {})} />
+      </MantineProvider>
+    )
+  );
+  expect(container.textContent).toContain("watch has not synced");
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ActionPolicySection policy={null} error="unavailable" />
+      </MantineProvider>
+    )
+  );
+  expect(container.textContent).toContain("unavailable");
+});
+
+it("uses the generated watch and drops the old subject when the target changes", async () => {
+  await render(<ActionPolicyWatch subject={{ namespace: "team", name: "old" }} fence="uid-1" />);
+  const first = watch.calls[0]!;
+  expect(first.url).toContain("subject.namespace=team");
+  expect(first.url).toContain("subject.name=old");
+  await act(async () =>
+    first.handlers.onFrame({ actionPolicy: { subject: { namespace: "team", name: "old" }, synced: true } })
+  );
+  expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <ActionPolicyWatch subject={{ namespace: "team", name: "new" }} fence="uid-2" />
+      </MantineProvider>
+    )
+  );
+  expect(first.stopped).toBe(true);
+  expect(container.textContent).not.toContain("every Action from this ServiceAccount waits for the operator");
+  const second = watch.calls[1]!;
+  expect(() => second.handlers.onFrame({ actionPolicy: { subject: { namespace: "team", name: "old" } } })).toThrow(
+    "different subject"
+  );
+  await act(async () =>
+    second.handlers.onFrame({ actionPolicy: { subject: { namespace: "team", name: "new" }, synced: false } })
+  );
+  expect(container.textContent).toContain("watch has not synced");
+  await act(async () =>
+    second.handlers.onConnection({ phase: "reconnecting", since: 0, attempt: 1, lastError: "offline" })
+  );
+  expect(container.textContent).toContain("offline");
+  expect(container.textContent).not.toContain("watch has not synced");
 });

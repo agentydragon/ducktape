@@ -1,104 +1,28 @@
 """Emit the Augur API OpenAPI schema (to stdout) for frontend Zod/TS codegen.
 
-Builds the *real* FastAPI app and dumps its `.openapi()`, adding the request schema for the
-undocumented CSV endpoint from its existing Pydantic model. There is no separate schema-only app
-to drift. The OpenAPI document is a function of route signatures (request/response models), not
-config data, so the exporter constructs a minimal valid deployment in Python rather than reading
-a YAML fixture from runfiles — which would break when ducktape is consumed as an external module.
+Registers the real route graph (`build_app`) with no deployment bound and dumps its `.openapi()`,
+adding the request schema for the undocumented CSV endpoint from its existing Pydantic model. The
+document is a function of route signatures (request/response models) alone, so no catalog, model
+or price client is acquired, and there is no separate schema-only app to drift.
 """
 
 from __future__ import annotations
 
 import json
-import tempfile
-from decimal import Decimal
-from pathlib import Path
 
-from finance.augur.api.config import (
-    AgentDefinition,
-    CalibrationCatalogConfig,
-    Config,
-    LocationConfig,
-    PropertySourceConfig,
-)
-from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
-from finance.augur.api.server import create_app_from_augur_config, static_price_clients
-from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.series import LocationId
-from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
-from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.api.server import build_app
 from finance.budget.wire import BudgetSummaryCsvRequest
-
-_SCHEMA_LOCATION_ID = LocationId("schema_location")
-
-_SCHEMA_PROPERTY = Property(
-    id=PropertyId("schema_property"),
-    source_catalog_id="schema",
-    source_property_id="schema-property",
-    location_id=_SCHEMA_LOCATION_ID,
-    address="Schema Property",
-    neighborhood="Schema",
-    type="Fixture",
-    price=Decimal(900_000),
-    rent_estimate=Decimal(4_200),
-    beds=3,
-    baths=2,
-    sqft=1_400,
-    year_built=2000,
-)
-
-
-def _schema_export_config(properties_path: Path, calibration_catalog_path: Path) -> Config:
-    """A minimal valid `Config` sufficient to build the full app for schema export.
-
-    The bootstrap requires a non-empty property catalog whose locations are config-defined, so
-    a single location + property are supplied; the model preset is an empty `independent`
-    provider (no artifacts), and the calibration catalog points at an empty `MarketCatalog`.
-    None of this data shapes the OpenAPI document — only the routes do."""
-
-    return Config(
-        agents=(AgentDefinition(actor_id=AgentId("schema"), label="Schema", role=ActorRole.PRIMARY_OWNER),),
-        property_source=PropertySourceConfig(properties_path=properties_path),
-        portfolio_sources=PortfolioSourcesConfig(
-            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-01-01"))
-        ),
-        max_rollout_samples=1,
-        locations=(
-            LocationConfig(
-                location_id=_SCHEMA_LOCATION_ID,
-                label="Schema",
-                city="Schema",
-                state="Schema",
-                situs=JurisdictionId("san_francisco"),
-            ),
-        ),
-        models={"schema": IndependentProviderConfig()},
-        default_model_id="schema",
-        calibration_catalog=CalibrationCatalogConfig(catalog_path=calibration_catalog_path),
-    )
 
 
 def main() -> None:
-    # `PropertySourceConfig` addresses the property catalog by path, so serialize the in-Python
-    # property to a temp file. This keeps the exporter free of any checked-in / runfiles fixture.
-    with tempfile.TemporaryDirectory() as tmpdir:
-        properties_path = Path(tmpdir) / "properties.json"
-        properties_path.write_text(json.dumps([_SCHEMA_PROPERTY.model_dump(mode="json")]), encoding="utf-8")
-        # `create_app_from_augur_config` loads the calibration catalog at startup, so materialize a
-        # minimal empty `MarketCatalog` (only its routes/component schemas matter for the export).
-        calibration_catalog_path = Path(tmpdir) / "calibration_catalog.yaml"
-        calibration_catalog_path.write_text('metadata: {as_of: "2026-01-01"}\nmarkets: []\n', encoding="utf-8")
-        document = create_app_from_augur_config(
-            _schema_export_config(properties_path, calibration_catalog_path), price_clients=static_price_clients({})
-        ).openapi()
-        # The CSV route stays out of path docs; its existing request model still drives frontend types.
-        csv_request_schema = BudgetSummaryCsvRequest.model_json_schema(ref_template="#/components/schemas/{model}")
-        schemas = document["components"]["schemas"]
-        for name, schema in csv_request_schema.pop("$defs", {}).items():
-            schemas.setdefault(name, schema)
-        schemas["BudgetSummaryCsvRequest"] = csv_request_schema
-        print(json.dumps(document, indent=2))
+    document = build_app(lifespan=None).openapi()
+    # The CSV route stays out of path docs; its existing request model still drives frontend types.
+    csv_request_schema = BudgetSummaryCsvRequest.model_json_schema(ref_template="#/components/schemas/{model}")
+    schemas = document["components"]["schemas"]
+    for name, schema in csv_request_schema.pop("$defs", {}).items():
+        schemas.setdefault(name, schema)
+    schemas["BudgetSummaryCsvRequest"] = csv_request_schema
+    print(json.dumps(document, indent=2))
 
 
 if __name__ == "__main__":

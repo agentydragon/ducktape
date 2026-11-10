@@ -87,41 +87,23 @@ factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
 Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
 `preconditions` has a typed factory built from the real `any`/`all` shape.
 
-## PolicySet composition and controller RBAC
+## Watch GitHub secret inputs declaratively (deferred)
 
-Each deployment chart composes complete PolicySets from shared Kubernetes grant references and its
-own egress rules. The Policy Controller workload is materialized separately from PolicySets and
-RBAC; the same assignable grant references produce the controller's role-binding authority.
+Keep the current polling and Attic rotator Workspace notification for now.
+The deployed provider-opentofu v1.1.10 defaults to a 10-minute poll interval
+with plus-or-minus one minute of jitter, so unrelated Secret changes normally
+propagate on the next poll, plus OpenTofu execution time.
 
-Done: no PolicySet rules or role wiring are passed into the Policy Controller construct; each
-deployment materializes complete PolicySets and separately materializes exact-name controller RBAC
-from the assignable grant inventory.
+Before adding production watch infrastructure, evaluate native Secret dependency
+watches in provider-opentofu. Its Secret references currently supply values at
+reconcile time without triggering reconciliation; dependencies read inside HCL
+would need an explicit declaration. A Crossplane required-resource Composition
+watch with Workspace UID/resourceVersion annotations is a verified alternative;
+see [the spike](../debug/native_secret_watch.md). The production implementation
+is deferred by decision on 2026-10-30.
 
-Decision: keep exact-name `bind` rules as the explicit ceiling on which ClusterRoles can be granted,
-and treat ClusterRoleBinding reconciliation as part of the Policy Controller's trusted authority.
-RBAC cannot restrict top-level create requests by `resourceNames`, so this controller can create a
-ClusterRoleBinding for any subject to an allowlisted ClusterRole; its current unscoped `delete` rule
-can delete any ClusterRoleBinding. Labels and generated names limit normal reconciliation, not what
-this ServiceAccount can do. Namespaced RoleBinding writes already have the narrower per-namespace
-Role boundary.
-
-A separate binding writer could isolate the credential and reduce the main controller's compromise
-scope, but that writer would still need cluster-wide ClusterRoleBinding create/delete and the same
-`bind` authority. Without an admission guard, its credential could still bind any subject to an
-allowed role and delete any ClusterRoleBinding. Static ClusterRoleBindings would give up
-PolicyBindings' runtime ServiceAccount subjects.
-
-If the threat model later requires containment after writer compromise, require an API-server
-admission check that verifies each ClusterRoleBinding's subject and role against its live
-PolicyBinding and PolicySets. Since expiry deletes the PolicyBinding before its native bindings, the
-cleanup path must authorize deletion from ownership data on the old ClusterRoleBinding after its
-source disappears. A `ValidatingAdmissionPolicy` can validate request fields and supplied parameters
-but cannot fetch that dynamic cross-object relationship; this needs a validating webhook or another
-authoritative server-side source. See Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
-and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
-
-## Extract only when another caller needs it
-
-A second Haku deployment may justify Environment props. Namespace-default charts may
-help a purely namespaced component, but splitting mixed-scope charts solely to omit
-`namespace=` from each object's `ApiObjectMetadata` is not scheduled.
+Done: changing or recreating any input Secret promptly reconciles the Workspace,
+including changes outside the rotator; retries survive controller restarts, no
+credential values are copied into Workspace metadata/spec, and the rotator no
+longer needs Workspace patch permission. Keep OpenTofu as the sole GitHub secret
+owner and preserve the existing Workspace identity and state during migration.

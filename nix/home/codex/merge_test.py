@@ -2,16 +2,17 @@ import textwrap
 import tomllib
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from nix.home.codex import merge
-from util.bazel.runfiles import get_required_path
 
 
 def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, monkeypatch, capsys) -> None:
     base = tmp_path / "config.nix-base.toml"
     live = tmp_path / "config.toml"
-    base.write_text(get_required_path("_main/nix/home/codex/testdata/nix-base.toml").read_text())
-    live.write_text(get_required_path("_main/nix/home/codex/testdata/live.toml").read_text())
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    base.write_text((runfiles_root / "ducktape/nix/home/codex/testdata/nix-base.toml").read_text())
+    live.write_text((runfiles_root / "ducktape/nix/home/codex/testdata/live.toml").read_text())
     monkeypatch.setenv("BASE", str(base))
     monkeypatch.setenv("LIVE", str(live))
 

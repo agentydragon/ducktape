@@ -22,9 +22,9 @@ fence enforces. The target (or the fence) enforces every call; no human is on th
   custody is separate from whose authority the target enforces.
 - Audit lives in the target's logs and the fence's logs, not in a ledger of named operations.
 
-**Brokered credential.** Haku holds the operator's privileged credential. The agent calls a Haku
-tool; policy auto-approves or a human approves; Haku executes with the operator's credential and
-returns the result.
+**Brokered credential.** The Action Service holds the operator's privileged credential. The agent
+requests an Action; policy auto-approves or a human approves; the Action Service executes with the
+operator's credential and returns the result.
 
 - Works for any system, including ones with no usable RBAC.
 - Argument-level conditions are possible ("only labels under this namespace", "only repositories
@@ -40,24 +40,32 @@ The common case is a mix, split by operation class rather than by system:
 
 - **Reads direct, mutations brokered.** A GET allowlist or read-only RBAC covers the high-volume,
   low-stakes traffic; writes go through the broker with approval.
-- **Broker mints delegated grants instead of executing calls.** The former Haku Console grants
-  system did this through `create_grant`: one approval yielded standing authority for exact origins
-  or Kubernetes namespaces and verbs. That integration has been retired; a replacement broker and
-  lifecycle owner would need to be selected before this pattern is available again.
+- **Broker mints delegated grants instead of executing calls.** One approval yields standing
+  authority for exact origins or Kubernetes namespaces and verbs. No broker does this today; for
+  Kubernetes the planned path is an app-approved expiring `ServiceAccountGrant` or
+  `ManagedServiceAccount` ([identity plan](identity_and_kubernetes_accounts.md), `APP_IDENTITIES_UI`).
 - **Agent-requested grants.** The agent asks for additional authority on its own identity, the
   operator approves once, and the target enforces from then on. This keeps the apiserver's
   authorization semantics where they belong; the risk is authority issued that cannot be revoked
   in time. See [the candidate revocation gate](#candidate-revocation-gate-for-minted-grants).
-- **Broker refuses what delegation already covers.** The Kubernetes redundancy auto-deny is the
-  general rule: when the caller's own identity covers a request, the brokered path denies with a
-  pointer to the direct path, so the privileged credential is never spent where a scoped one works.
+- **Broker refuses what delegation already covers.** When the caller's own identity covers a
+  request, the brokered path denies with a pointer to the direct path, so the privileged credential
+  is never spent where a scoped one works. The Action Service has no equivalent yet
+  ([TODO](../action_service/TODO.md#refuse-an-action-the-callers-own-permissions-already-cover)).
+
+The Sandbox SA arrangement below is current access. The
+[identity plan](identity_and_kubernetes_accounts.md) replaces it at `IDENTITY_CUTOVER`: an agent is
+an `Identity` with no ServiceAccount by default, and reaches Kubernetes only by the proxy
+impersonating an account its rules let it use.
 
 ## Kubernetes Sandbox access decisions
 
 [#8596](https://github.com/agentydragon/ducktape/issues/8596) selected one ServiceAccount
 per managed Sandbox. Its egress sidecar holds a projected Kubernetes-audience token and
-substitutes that Sandbox SA's identity for `kubectl` requests. The workload receives a
-placeholder kubeconfig, not the token. Kubernetes enforces the resulting SA's RBAC.
+substitutes that Sandbox SA's identity for `kubectl` requests. The credential description at the
+egress rules endpoint supplies the API server, that it acts as the Sandbox's ServiceAccount, and the
+`kubectl --server <host> --token <placeholder>` invocation. The workload holds no token; Kubernetes
+enforces the resulting SA's RBAC.
 
 [Agent RBAC](../../cluster/docs/agent_rbac.md#agentplane-managed-sandbox-grants) documents the
 implemented grant catalog, launch-time resolution and binding ownership, and the
@@ -77,7 +85,7 @@ accounting and the observation-to-use race; they are not established by this pla
 
 Authority in Kubernetes is the token times the bindings, and either can be cut at the apiserver.
 "Issued but not revocable" therefore means the reconciler is down or lagging. The guard is a third
-cut under Haku's control alone: the agent never holds the real credential, only a placeholder, and
+cut under Agentplane's control alone: the agent never holds the real credential, only a placeholder, and
 the proxy substitutes the real one only while the identity's RBAC objects match what the ledger
 says they should be. This applies the egress gateway's
 [identity boundary and evidence](../docs/adr_sandbox_proxy_gateway.md#identity-boundary-and-historical-evidence)
@@ -292,6 +300,5 @@ selected by this plan.
 
 - Whether raw direct traffic should be mirrored into the ledger from fence logs, or stay separate.
 - Per-agent identity provisioning per system: what it costs to mint, rotate, and revoke, and which
-  active products already cover it. Haku Console grants previously covered only a subset of these
-  cases and are retired.
+  active products already cover it.
 - Which of the unassessed systems have RBAC worth delegating to.

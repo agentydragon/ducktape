@@ -1,6 +1,7 @@
 //! Real JS/spec workflows for assignment validation and atomic edits.
 
-use debundle_e2e_support::{GraphFixture, parse_stdout_json, run_debundle, write_text_file};
+use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::{parse_stdout_json, run_debundle, write_text_file};
 use std::fs;
 
 #[test]

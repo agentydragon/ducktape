@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import pytest_bazel
-from cdk8s import Testing as Cdk8sTesting
+from cdk8s import App, Testing as Cdk8sTesting
 
 from cluster.cdk8s.haku_ci import runner
 
 
-def test_keda_authentication_and_scaled_job_are_wired() -> None:
-    resources = Cdk8sTesting.synth(runner.chart(Cdk8sTesting.app()))
+def test_keda_authentication_and_scaled_job_are_wired(scratch_app: App) -> None:
+    resources = Cdk8sTesting.synth(runner.chart(scratch_app))
 
     authentication = next(resource for resource in resources if resource["kind"] == "TriggerAuthentication")
     assert authentication["metadata"]["name"] == "forgejo"

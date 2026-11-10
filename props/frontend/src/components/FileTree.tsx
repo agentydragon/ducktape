@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { UnstyledButton } from "@mantine/core";
-import type { FileTreeNode } from "../lib/api/schema";
+import type { FileTreeNode } from "../lib/schema";
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from "../lib/icons";
 import { getFileIcon } from "../lib/fileTypes";
 

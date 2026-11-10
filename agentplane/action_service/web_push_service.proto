@@ -35,7 +35,10 @@ service WebPushService {
   }
 
   // The calling operator's push subscriptions, then each one again when it is added or changed. A subscription that
-  // is removed, including one the push service reports gone, arrives as `removed_endpoint`.
+  // is removed, including one the push service reports gone, arrives as `removed_endpoint`. Each stream write is
+  // bounded to wait five seconds for transport backpressure to clear; this bounds waiting on the write, not when a
+  // queued frame reaches the peer. An idle drain sends `reconnect_required`; a drain during an outstanding write ends
+  // the stream without another frame.
   rpc WatchPushSubscriptions(WatchPushSubscriptionsRequest) returns (stream WatchPushSubscriptionsResponse) {
     option (google.api.http) = {get: "/v1/operator/push/subscriptions:watch"};
   }

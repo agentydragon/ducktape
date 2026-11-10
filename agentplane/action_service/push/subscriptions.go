@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 )
 
 // UpdatesChannel is notified, with no payload, in every commit that adds, changes or removes a subscription.

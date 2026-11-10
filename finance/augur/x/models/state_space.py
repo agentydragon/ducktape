@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -37,7 +37,11 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.float64 import LEVEL_DTYPE
-from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from finance.augur.model.path_models.scenarios import (
+    HistoricalSeries,
+    historical_log_returns,
+    require_increasing_calendar_months,
+)
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
@@ -65,16 +69,13 @@ class StateSpacePrivateEquityEventPrior(FrozenModel):
 
 
 class StateSpaceModelArtifact(FrozenModel):
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
     factor_names: tuple[str, ...] = Field(min_length=1)
-    trained_through_month: str = Field(min_length=7, max_length=7)
     latest_observations: dict[str, ExogenousObservedPoint] = Field(min_length=1)
     monthly_log_return_mu: dict[str, float] = Field(min_length=1)
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
     private_equity_event_priors: dict[IssuerId, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
     private_equity_scale_priors: dict[IssuerId, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
-    source_manifest: dict[str, Any] = Field(default_factory=dict)
-    prior_manifest: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_shapes(self) -> StateSpaceModelArtifact:
@@ -130,7 +131,6 @@ class StateSpaceAdditionalFactor:
     monthly_log_return_mu: float
     monthly_log_return_sigma: float
     covariance_with_factors: Mapping[str, float] = field(default_factory=dict)
-    source_ids: tuple[str, ...] = ()
     private_equity_issuer_id: IssuerId | None = None
     private_equity_event_prior: StateSpacePrivateEquityEventPrior | None = None
     private_equity_scale_prior: TrainedPrivateEquityScalePrior | None = None
@@ -143,11 +143,7 @@ class StateSpaceProviderConfig(FrozenModel):
     current_mortgage30_rate_pct: float
 
     def realize_model(self) -> StateSpaceModel:
-        return StateSpaceModel.from_path(
-            self.trained_artifact_path,
-            conditioning=self.conditioning,
-            evidence_source_id=str(self.trained_artifact_path),
-        )
+        return StateSpaceModel.from_path(self.trained_artifact_path, conditioning=self.conditioning)
 
 
 @dataclass
@@ -156,22 +152,18 @@ class StateSpaceModel:
     conditioning: ExogenousConditioningContext
     label: str = "state_space"
     model_version_id: str = ""
-    evidence_set_id: str = ""
-    calibration_artifact_id: str = ""
 
     def __post_init__(self) -> None:
         self._conditioned_start_levels()
 
     @classmethod
-    def from_path(
-        cls, path: Path, *, conditioning: ExogenousConditioningContext, evidence_source_id: str
-    ) -> StateSpaceModel:
+    def from_path(cls, path: Path, *, conditioning: ExogenousConditioningContext) -> StateSpaceModel:
         try:
             artifact = StateSpaceModelArtifact.model_validate_json(path.read_text(encoding="utf-8"))
         except Exception as error:
             raise ValueError(f"failed to load trained state-space model {path}: {error}") from error
         model = cls(artifact=artifact, conditioning=conditioning)
-        model._compute_provenance(evidence_source_id)
+        model._compute_model_version_id()
         return model
 
     @classmethod
@@ -180,14 +172,36 @@ class StateSpaceModel:
         historical: HistoricalSeries,
         *,
         latest_observations: Mapping[str, ExogenousObservedPoint],
-        source_manifest: Mapping[str, Any],
-        prior_manifest: Mapping[str, Any],
         additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
     ) -> StateSpaceModelArtifact:
+        return cls.fit_monthly_returns(
+            series_names=historical.series_names,
+            monthly_log_returns=historical_log_returns(historical),
+            monthly_return_months=historical.months[1:],
+            latest_observations=latest_observations,
+            additional_factors=additional_factors,
+        )
+
+    @classmethod
+    def fit_monthly_returns(
+        cls,
+        *,
+        series_names: tuple[LevelSeriesKey, ...],
+        monthly_log_returns: np.ndarray,
+        monthly_return_months: tuple[str, ...],
+        latest_observations: Mapping[str, ExogenousObservedPoint],
+        additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
+    ) -> StateSpaceModelArtifact:
+        """Fit iid monthly returns directly, retaining the calendar labels of observed transitions."""
+        require_increasing_calendar_months(monthly_return_months)
+        returns = np.asarray(monthly_log_returns, dtype=np.float64)
+        if returns.ndim != 2 or returns.shape != (len(monthly_return_months), len(series_names)):
+            raise ValueError("monthly return values and their factor/calendar labels have different shapes")
+        if not monthly_return_months:
+            raise ValueError("state-space training needs dated monthly return rows")
         # The artifact's on-disk factor identity is the wire-id string; the typed
-        # FactorKeys on `historical` project to it here, the artifact's write boundary.
-        base_factor_names = tuple(factor.wire_id for factor in historical.series_names)
-        returns = historical_log_returns(historical)
+        # FactorKeys on the input project to it at the artifact write boundary.
+        base_factor_names = tuple(factor.wire_id for factor in series_names)
         if returns.shape[0] < 3:
             raise ValueError("state-space training needs at least three monthly return rows")
         mean = returns.mean(axis=0)
@@ -229,21 +243,13 @@ class StateSpaceModel:
                 scale_priors[extra.private_equity_issuer_id] = extra.private_equity_scale_prior
 
         covariance = _nearest_positive_semidefinite(covariance)
-        trained_through_month = historical.months[-1]
-        merged_source_manifest = {
-            **dict(source_manifest),
-            "additional_factors": {extra.factor_name: {"source_ids": extra.source_ids} for extra in additional_factors},
-        }
         return StateSpaceModelArtifact(
             factor_names=tuple(factor_names),
-            trained_through_month=trained_through_month,
             latest_observations=observations,
             monthly_log_return_mu=mean_by_factor,
             monthly_log_return_cov=_matrix_to_tuple(covariance),
             private_equity_event_priors=event_priors,
             private_equity_scale_priors=scale_priors,
-            source_manifest=merged_source_manifest,
-            prior_manifest=dict(prior_manifest),
         )
 
     @property
@@ -317,12 +323,7 @@ class StateSpaceModel:
                 "model_version_id": self.model_version_id,
                 "scenario_generator_id": "state_space_numpy",
                 "scenario_generator_version_id": "state_space_numpy:v1",
-                "evidence_set_id": self.evidence_set_id,
-                "calibration_artifact_id": self.calibration_artifact_id,
-                "trained_through_month": self.artifact.trained_through_month,
                 "conditioning_start_at": self.conditioning.start_at.isoformat(),
-                "source_manifest": self.artifact.source_manifest,
-                "prior_manifest": self.artifact.prior_manifest,
                 "exogenous_provider_label": self.label,
             },
         )
@@ -330,6 +331,7 @@ class StateSpaceModel:
         return sampled
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
+        historical.require_consecutive_months()
         if horizon < 1:
             raise ValueError(f"horizon must be >= 1; got {horizon}")
         n_steps = historical.levels.shape[0] - 1
@@ -454,15 +456,9 @@ class StateSpaceModel:
                 indexes.append((factor_index[factor_name], scale_prior))
         return tuple(indexes)
 
-    def _compute_provenance(self, evidence_source_id: str) -> None:
+    def _compute_model_version_id(self) -> None:
         self.model_version_id = "model_version:" + stable_identity_digest(
             {"label": self.label, "class": type(self).__qualname__, "schema_version": self.artifact.schema_version}
-        )
-        self.evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {"evidence_source_id": evidence_source_id, "conditioning": self.conditioning}
-        )
-        self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {"model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
 
 

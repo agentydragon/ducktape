@@ -30,7 +30,7 @@ py_library(
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//skills/eval_infra:eval_prompt",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -38,7 +38,6 @@ py_library(
     name = "direct_provider",
     srcs = ["direct_provider.py"],
     deps = [
-        "//agent_core:pydantic_utils",
         "//agent_core:tool_provider",
         "//openai_utils:json_schema",
         "@pypi//pydantic",
@@ -91,6 +90,7 @@ py_test(
         ":twenty_questions",
         "//:conftest",
         "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
         "@pypi//pytest_bazel",
     ],
 )

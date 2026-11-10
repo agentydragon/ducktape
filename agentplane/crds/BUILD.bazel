@@ -1,4 +1,4 @@
-# Sandbox, EgressCredential, PolicySet and PolicyBinding CRDs derive from Go API types. The typed
+# Every CRD here derives from Go API types. The typed
 # cdk8s Python constructs are generated from these first-party manifests, so importing directly
 # from them is correct (see
 # devinfra/js/cdk8s_import.bzl's crd arg doc, which only warns against vendoring a copy of an
@@ -9,6 +9,7 @@
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
 # package -- gazelle can't resolve it from the requirements manifest.
 
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -16,12 +17,20 @@ filegroup(
     name = "crds",
     srcs = glob(["manifests/crd-*.yaml"]),
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
         "//agentplane/testing:__pkg__",
         "//agentplane/testing/kubeapiserver:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
     ],
+)
+
+copy_to_directory(
+    name = "crds_tree",
+    srcs = glob(["manifests/crd-*.yaml"]),
+    out = "crds_tree",
+    root_paths = [package_name() + "/manifests"],
+    visibility = ["//agentplane/testing/kubeapiserver:__pkg__"],
 )
 
 filegroup(
@@ -38,9 +47,9 @@ py_library(
     srcs = ["generate.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//util/bazel:runfiles",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -50,6 +59,7 @@ py_binary(
         "//agentplane/egress/api/v1alpha1:generated_crds",
         "//agentplane/policy/api/v1alpha1:generated_crds",
         "//agentplane/sandboxes/api:generated_crds",
+        "//agentplane/workload_identity/api/v1alpha1:generated_crds",
     ],
     main_module = "agentplane.crds.generate",
     deps = [":generate"],
@@ -63,16 +73,17 @@ py_test(
         "//agentplane/egress/api/v1alpha1:generated_crds",
         "//agentplane/policy/api/v1alpha1:generated_crds",
         "//agentplane/sandboxes/api:generated_crds",
+        "//agentplane/workload_identity/api/v1alpha1:generated_crds",
     ],
     deps = [
         ":generate",
         "//:conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//jsonschema",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//referencing",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -129,4 +140,62 @@ cdk8s_import(
     module_name = "agentplane_policybinding_crds",
     module_path = "works/allegedly/agentplane",
     visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "identity",
+    crd = "manifests/crd-identities.yaml",
+    module_name = "agentplane_identity_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "kubernetesroleset",
+    crd = "manifests/crd-kubernetesrolesets.yaml",
+    module_name = "agentplane_kubernetesroleset_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "serviceaccountgrant",
+    crd = "manifests/crd-serviceaccountgrants.yaml",
+    module_name = "agentplane_serviceaccountgrant_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "workloadcredential",
+    crd = "manifests/crd-workloadcredentials.yaml",
+    module_name = "agentplane_workloadcredential_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_identity_admission",
+    srcs = ["test_identity_admission.py"],
+    data = [":crds"],
+    deps = [
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_workloadcredential_admission",
+    srcs = ["test_workloadcredential_admission.py"],
+    data = [":crds"],
+    deps = [
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

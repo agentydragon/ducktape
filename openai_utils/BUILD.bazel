@@ -51,6 +51,7 @@ py_library(
     srcs = ["model.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":api_shape",
         ":errors",
         ":types",
         "@pypi//openai",
@@ -149,6 +150,7 @@ py_test(
         ":conftest",
         ":model",
         "//:conftest",
+        "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -232,7 +234,19 @@ py_library(
 
 py_binary(
     name = "probe_context_window_bin",
-    imports = [".."],
     main_module = "openai_utils.probe_context_window",
     deps = [":probe_context_window"],
+)
+
+py_test(
+    name = "test_http_logging",
+    srcs = ["test_http_logging.py"],
+    deps = [
+        ":conftest",
+        ":http_logging",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

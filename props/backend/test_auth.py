@@ -18,7 +18,6 @@ from props.backend.auth import (
     SessionIdentity,
     get_caller_db,
     is_admin_or_evaluator,
-    require_admin_access,
     require_evaluator_or_admin_access,
 )
 from props.db.config import DatabaseConfig
@@ -46,12 +45,11 @@ def test_get_caller_db_sso_session_returns_admin_db(exhaust_generator):
     assert db is admin_db
 
 
-def test_sso_session_passes_admin_and_evaluator_acls():
-    """A SessionIdentity is treated as admin by the ACL helpers."""
+def test_sso_session_passes_evaluator_or_admin_acl():
+    """A SessionIdentity passes the evaluator-or-admin route ACL."""
     auth = SessionIdentity(email="admin@test.invalid")
     assert is_admin_or_evaluator(auth)
-    # These raise HTTPException on denial; not raising means access is allowed.
-    require_admin_access(auth)
+    # The route dependency raises HTTPException on denial.
     require_evaluator_or_admin_access(auth)
 
 

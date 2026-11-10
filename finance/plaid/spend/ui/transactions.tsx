@@ -19,7 +19,7 @@ import {
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
 
-import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./api/schema";
+import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { Metric, Money, money, periodLabels, time } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay } from "./rule_display";
@@ -40,7 +40,7 @@ const dispositionText = {
   card_payment: "Card payment excluded from spend",
   superseded_pending: "Pending version replaced by posted charge",
   other_currency: "Different currency · outside allowance",
-} satisfies Record<NonNullable<SpendTransactionRow["disposition"]>, string>;
+} satisfies Record<NonNullable<SpendTransactionRow["allowance"]["disposition"]>, string>;
 
 const statementText = {
   counted: "Counted in card cycle",
@@ -49,14 +49,15 @@ const statementText = {
   card_payment: "Card payment excluded from card spend",
   other_currency: "Different currency excluded from card spend",
   unavailable: "Card cycle unavailable",
-} satisfies Record<NonNullable<SpendTransactionRow["statement_reason"]>, string>;
+} satisfies Record<NonNullable<SpendTransactionRow["statement"]["reason"]>, string>;
 
 function isReviewRow(row: SpendTransactionRow): boolean {
   // The server resolves which rule governs the money (first match in the ordered list); the client only reads it.
-  const kind = row.effective_kind;
+  const kind = row.allowance.effective_kind;
   return (
-    row.allowance_in_scope &&
-    ((row.disposition === "counted" && (kind == null || kind === "review")) || row.disposition === "held_refund")
+    row.allowance.in_scope &&
+    ((row.allowance.disposition === "counted" && (kind == null || kind === "review")) ||
+      row.allowance.disposition === "held_refund")
   );
 }
 
@@ -68,43 +69,47 @@ const dispositionKindText = {
 } satisfies Record<RuleKind, string>;
 
 function classificationForRow(row: SpendTransactionRow): { label: string; color: string } {
-  if (row.disposition === "reversed") return { label: "Full reversal", color: "teal" };
-  if (row.disposition === "held_refund") return { label: "Refund held", color: "orange" };
-  if (row.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
-  if (row.disposition === "other_currency") return { label: "Other currency", color: "gray" };
-  if (row.rule)
-    return row.rule.scope === "one_off"
-      ? { label: `${ruleKindDisplay[row.rule.kind].label} (one-off)`, color: "violet" }
-      : ruleKindDisplay[row.rule.kind];
-  if (!row.allowance_in_scope) return { label: "Outside allowance", color: "gray" };
-  if (row.disposition === null) return { label: "Unavailable", color: "gray" };
+  if (row.allowance.disposition === "reversed") return { label: "Full reversal", color: "teal" };
+  if (row.allowance.disposition === "held_refund") return { label: "Refund held", color: "orange" };
+  if (row.allowance.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
+  if (row.allowance.disposition === "other_currency") return { label: "Other currency", color: "gray" };
+  if (row.allowance.rule)
+    return row.allowance.rule.scope === "one_off"
+      ? { label: `${ruleKindDisplay[row.allowance.rule.kind].label} (one-off)`, color: "violet" }
+      : ruleKindDisplay[row.allowance.rule.kind];
+  if (!row.allowance.in_scope) return { label: "Outside allowance", color: "gray" };
+  if (row.allowance.disposition === null) return { label: "Unavailable", color: "gray" };
   return { label: "Unmatched", color: "orange" };
 }
 
 function categoryForRow(row: SpendTransactionRow): string {
-  return row.category?.label || row.rule?.analysis_category || "No category inferred";
+  return row.allowance.category?.label || row.allowance.rule?.analysis_category || "No category inferred";
 }
 
 function CategoryMarker({ row }: { row: SpendTransactionRow }): ReactNode {
-  if (!row.category) return null;
+  if (!row.allowance.category) return null;
   return (
     <Box
       component="span"
       aria-hidden="true"
-      data-category-id={row.category.id}
+      data-category-id={row.allowance.category.id}
       style={{
         display: "inline-block",
         width: 10,
         height: 10,
         flex: "0 0 auto",
         borderRadius: "50%",
-        backgroundColor: row.category.color,
+        backgroundColor: row.allowance.category.color,
       }}
     />
   );
 }
 
-function CompactCounterparties({ counterparties }: { counterparties: SpendTransactionRow["counterparties"] }) {
+function CompactCounterparties({
+  counterparties,
+}: {
+  counterparties: SpendTransactionRow["transaction"]["counterparties"];
+}) {
   if (!counterparties?.length) return null;
   return (
     <Text size="xs" c="dimmed" lineClamp={1}>
@@ -114,8 +119,8 @@ function CompactCounterparties({ counterparties }: { counterparties: SpendTransa
 }
 
 function TransactionTitle({ row }: { row: SpendTransactionRow }) {
-  const title = row.merchant_name || row.name;
-  const counterparties = row.counterparties || [];
+  const title = row.transaction.merchant_name || row.transaction.name;
+  const counterparties = row.transaction.counterparties || [];
   const merchants = counterparties.filter((party) => party.type?.toLowerCase() === "merchant");
   // A single merchant with at most one other counterparty fits in the title line.
   // Keep unusual/multi-party data in the original separate line rather than hiding it.
@@ -139,7 +144,7 @@ function TransactionTitle({ row }: { row: SpendTransactionRow }) {
       <Text size="sm" fw={650} lineClamp={1} title={title}>
         {title}
       </Text>
-      <CompactCounterparties counterparties={row.counterparties} />
+      <CompactCounterparties counterparties={row.transaction.counterparties} />
     </>
   );
 }
@@ -173,7 +178,7 @@ function PlaidFieldGroup({ title, fields }: { title: string; fields: Array<[stri
 }
 
 function PlaidSourceFields({ row }: { row: SpendTransactionRow }) {
-  const details = row.details;
+  const details = row.transaction.details;
   return (
     <Accordion variant="contained">
       <Accordion.Item value="plaid-fields">
@@ -211,7 +216,7 @@ function PlaidSourceFields({ row }: { row: SpendTransactionRow }) {
               <PlaidFieldGroup
                 title="Timing and categories"
                 fields={[
-                  ["Plaid date", row.plaid_date ?? row.date],
+                  ["Plaid date", row.transaction.plaid_date ?? row.transaction.date],
                   ["Authorized date", details?.authorized_date],
                   ["Authorized time", details?.authorized_datetime],
                   ["Posted time", details?.datetime],
@@ -270,71 +275,71 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
     <Stack gap="sm">
       <Text size="sm">
         <strong>Allowance:</strong>{" "}
-        {row.disposition
-          ? dispositionText[row.disposition]
-          : row.allowance_in_scope
+        {row.allowance.disposition
+          ? dispositionText[row.allowance.disposition]
+          : row.allowance.in_scope
             ? "Unavailable"
             : "Account outside allowance"}
         .
         {isReviewRow(row) &&
-          row.disposition === "counted" &&
+          row.allowance.disposition === "counted" &&
           " This charge is counted as flexible while its classification is reviewed."}
       </Text>
-      {row.reversal_pair && (
-        <Stack gap="xs" aria-label={`Full reversal pair ${row.reversal_pair.id}`}>
+      {row.allowance.reversal_pair && (
+        <Stack gap="xs" aria-label={`Full reversal pair ${row.allowance.reversal_pair.id}`}>
           <Group gap="xs" wrap="wrap">
             <Badge color="teal" variant="light">
               Full reversal pair
             </Badge>
-            <Badge color={row.amount_minor_units > 0 ? "blue" : "teal"} variant="light">
-              {row.amount_minor_units > 0 ? "Original debit" : "Reversal credit"}
+            <Badge color={row.transaction.amount_minor_units > 0 ? "blue" : "teal"} variant="light">
+              {row.transaction.amount_minor_units > 0 ? "Original debit" : "Reversal credit"}
             </Badge>
             <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
-              {row.reversal_pair.id}
+              {row.allowance.reversal_pair.id}
             </Text>
           </Group>
           <Text size="sm" c="dimmed">
-            {row.reversal_pair.description}
+            {row.allowance.reversal_pair.description}
           </Text>
           <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-            <strong>Original debit selector:</strong> {ruleConditionText(row.reversal_pair.original)}
+            <strong>Original debit selector:</strong> {ruleConditionText(row.allowance.reversal_pair.original)}
           </Text>
           <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-            <strong>Reversal credit selector:</strong> {ruleConditionText(row.reversal_pair.reversal)}
+            <strong>Reversal credit selector:</strong> {ruleConditionText(row.allowance.reversal_pair.reversal)}
           </Text>
         </Stack>
       )}
-      {row.rule && (
+      {row.allowance.rule && (
         <Stack gap={2}>
           <Group gap="xs" wrap="wrap">
             <Text size="sm" component="span">
-              <strong>Rule #{row.rule_number}:</strong> {ruleConditionText(row.rule.condition)}
+              <strong>Rule #{row.allowance.rule_number}:</strong> {ruleConditionText(row.allowance.rule.condition)}
             </Text>
-            {row.rule.scope === "one_off" && (
+            {row.allowance.rule.scope === "one_off" && (
               <Badge color="violet" variant="light" size="xs">
                 One-off
               </Badge>
             )}
           </Group>
           <Text size="sm">
-            {row.reversal_pair
+            {row.allowance.reversal_pair
               ? "Classification rule is shown as context; the full reversal pair controls the zero allowance effect."
-              : dispositionKindText[row.rule.kind]}
+              : dispositionKindText[row.allowance.rule.kind]}
           </Text>
-          {row.rule.id && (
+          {row.allowance.rule.id && (
             <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-              {row.rule.id}
+              {row.allowance.rule.id}
             </Text>
           )}
-          {row.rule.description && (
+          {row.allowance.rule.description && (
             <Text size="sm" c="dimmed">
-              {row.rule.description}
+              {row.allowance.rule.description}
             </Text>
           )}
-          {row.category && (
+          {row.allowance.category && (
             <Text size="xs" c="dimmed">
               Analysis category: {categoryForRow(row)}
-              {row.category.id !== "unclassified" && ` (${row.category.id})`}
+              {row.allowance.category.id !== "unclassified" && ` (${row.allowance.category.id})`}
             </Text>
           )}
           <Button component="a" href="#/configuration" variant="subtle" size="xs" w="fit-content" px={0}>
@@ -345,31 +350,31 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
       <Divider />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
         <Text size="sm">
-          Allowance balance effect: {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
+          Allowance balance effect: {m(row.allowance.amount_minor_units === 0 ? 0 : -row.allowance.amount_minor_units)}
         </Text>
-        {row.pace_effects.map((effect) => (
+        {row.allowance.pace_effects.map((effect) => (
           <Text size="sm" key={effect.period_id}>
             {periodLabels[effect.period_id]} pace input: {m(effect.amount_minor_units)}
           </Text>
         ))}
         <Text size="sm">
           Card statement:{" "}
-          {row.statement_reason
-            ? `${statementText[row.statement_reason]} · ${money(row.statement_minor_units, row.currency, true)}`
+          {row.statement.reason
+            ? `${statementText[row.statement.reason]} · ${money(row.statement.amount_minor_units, row.transaction.currency, true)}`
             : "Not a configured card"}
         </Text>
       </SimpleGrid>
       <Text size="xs" c="dimmed">
-        Plaid name: {row.name} · merchant: {row.merchant_name || "Unknown"} · category:{" "}
-        {row.pfc_detailed || row.pfc_primary || "Unknown"} · merchant category code:{" "}
-        {row.merchant_category_code || "Unknown"}
+        Plaid name: {row.transaction.name} · merchant: {row.transaction.merchant_name || "Unknown"} · category:{" "}
+        {row.transaction.pfc_detailed || row.transaction.pfc_primary || "Unknown"} · merchant category code:{" "}
+        {row.transaction.merchant_category_code || "Unknown"}
       </Text>
-      {(row.counterparties?.length ?? 0) > 0 && (
+      {(row.transaction.counterparties?.length ?? 0) > 0 && (
         <Stack gap={2}>
           <Text size="sm" fw={650}>
             Plaid counterparties
           </Text>
-          {row.counterparties?.map((counterparty, index) => (
+          {row.transaction.counterparties?.map((counterparty, index) => (
             <PlaidFieldGroup
               key={index}
               title={`${counterparty.name || "Unnamed"} · ${counterparty.type || "Unknown type"}`}
@@ -553,12 +558,12 @@ export function TransactionsPage({
     .map((row, index) => ({ row, index }))
     .filter(({ row }) => {
       const matchesRowFilter =
-        filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance_minor_units !== 0 : true;
+        filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance.amount_minor_units !== 0 : true;
       const matchesExcludedFlow =
         activeExcludedFlowFilter === null ||
-        (row.disposition === "excluded" &&
-          (row.category?.id ?? "uncategorized") === activeExcludedFlowFilter.categoryId &&
-          row.currency === activeExcludedFlowFilter.currency);
+        (row.allowance.disposition === "excluded" &&
+          (row.allowance.category?.id ?? "uncategorized") === activeExcludedFlowFilter.categoryId &&
+          row.transaction.currency === activeExcludedFlowFilter.currency);
       return matchesRowFilter && matchesExcludedFlow;
     });
   const allowance = transactions?.allowance;
@@ -728,11 +733,14 @@ export function TransactionsPage({
                   const classification = classificationForRow(row);
                   const expanded = expandedRow === index;
                   return (
-                    <Table.Tbody className="transaction-rows" key={`${row.date}-${row.account_label}-${index}`}>
+                    <Table.Tbody
+                      className="transaction-rows"
+                      key={`${row.transaction.date}-${row.transaction.account_label}-${index}`}
+                    >
                       <Table.Tr
                         data-transaction-row
                         tabIndex={0}
-                        aria-label={`${expanded ? "Hide" : "Show"} details for ${row.merchant_name || row.name}`}
+                        aria-label={`${expanded ? "Hide" : "Show"} details for ${row.transaction.merchant_name || row.transaction.name}`}
                         aria-expanded={expanded}
                         onClick={() => setExpandedRow(expanded ? null : index)}
                         onKeyDown={(event) => {
@@ -743,7 +751,7 @@ export function TransactionsPage({
                         }}
                         style={{ cursor: "pointer" }}
                       >
-                        <Table.Td style={{ whiteSpace: "nowrap" }}>{row.date}</Table.Td>
+                        <Table.Td style={{ whiteSpace: "nowrap" }}>{row.transaction.date}</Table.Td>
                         <Table.Td>
                           <Group gap="xs" wrap="nowrap">
                             <Box c="dimmed" aria-hidden="true">
@@ -752,14 +760,14 @@ export function TransactionsPage({
                             <Stack gap={0} miw={0} maw={320}>
                               <TransactionTitle row={row} />
                             </Stack>
-                            {row.pending && (
+                            {row.transaction.pending && (
                               <Badge size="xs" variant="light" color="yellow">
                                 Pending
                               </Badge>
                             )}
                           </Group>
                         </Table.Td>
-                        <Table.Td>{row.account_label}</Table.Td>
+                        <Table.Td>{row.transaction.account_label}</Table.Td>
                         <Table.Td>
                           <Stack gap={2}>
                             <Group gap="xs" wrap="nowrap">
@@ -774,10 +782,12 @@ export function TransactionsPage({
                           </Stack>
                         </Table.Td>
                         <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
-                          {money(row.amount_minor_units, row.currency, true)}
+                          {money(row.transaction.amount_minor_units, row.transaction.currency, true)}
                         </Table.Td>
                         <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
-                          {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                          {row.allowance.amount_minor_units === 0
+                            ? "—"
+                            : money(row.allowance.amount_minor_units, currency, true)}
                         </Table.Td>
                       </Table.Tr>
                       {expanded && (
@@ -798,7 +808,10 @@ export function TransactionsPage({
               {shown.map(({ row, index }) => {
                 const classification = classificationForRow(row);
                 return (
-                  <Accordion.Item key={`${row.date}-${row.account_label}-${index}`} value={String(index)}>
+                  <Accordion.Item
+                    key={`${row.transaction.date}-${row.transaction.account_label}-${index}`}
+                    value={String(index)}
+                  >
                     <Accordion.Control>
                       <Group justify="space-between" gap="sm" wrap="nowrap">
                         <Stack gap={2} miw={0} style={{ flex: "1 1 0" }}>
@@ -811,9 +824,9 @@ export function TransactionsPage({
                           </Group>
                           <Group gap="xs">
                             <Text size="xs" c="dimmed">
-                              {row.date} · {row.account_label}
+                              {row.transaction.date} · {row.transaction.account_label}
                             </Text>
-                            {row.pending && (
+                            {row.transaction.pending && (
                               <Badge size="xs" variant="light" color="yellow">
                                 Pending
                               </Badge>
@@ -825,11 +838,13 @@ export function TransactionsPage({
                         </Stack>
                         <Stack gap={2} align="flex-end" style={{ flexShrink: 0 }}>
                           <Text fw={700} size="sm">
-                            {money(row.amount_minor_units, row.currency, true)}
+                            {money(row.transaction.amount_minor_units, row.transaction.currency, true)}
                           </Text>
                           <Text size="xs" c="dimmed">
                             Allowance{" "}
-                            {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
+                            {row.allowance.amount_minor_units === 0
+                              ? "—"
+                              : money(row.allowance.amount_minor_units, currency, true)}
                           </Text>
                         </Stack>
                       </Group>

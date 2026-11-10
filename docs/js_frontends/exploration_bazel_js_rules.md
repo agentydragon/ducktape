@@ -1,433 +1,65 @@
-# Bazel JavaScript/TypeScript Rules Exploration
-
-## Overview
-
-This document surveys Bazel rulesets for JavaScript/TypeScript development, focusing on dependency management, module resolution, workspace support, and linting integration. The repository now has three independent React frontends.
-
----
-
-## 1. Recommended Primary Ruleset
-
-### aspect_rules_js (formerly rules_js from Aspect Build)
-
-**Repository:** <https://github.com/aspect-build/rules_js>
-
-**Current Status:** Actively maintained, recommended for all new projects
-
-#### Overview
-
-- High-performance Bazel integration for JavaScript/Node.js based on **pnpm**
-- Lazy dependency resolution: only fetches/installs npm packages needed for requested build/test targets
-- Works seamlessly with Node.js module resolution (no pathMapping hacks needed)
-- Written by the original authors of build_bazel_rules_nodejs after learning from 4 years of experience
-
-#### Dependency Management
-
-**How it works:**
-
-- Uses **pnpm-lock.yaml** as the single source of truth
-- Mirrors pnpm's lock file into Starlark code
-- Uses Bazel repository rules to fetch individual packages
-- Only downloads packages actually needed for the requested targets
-- Each package's integrity hash is verified (supply-chain security)
-
-**Package Manager Support:**
-
-- Primary: **pnpm** (recommended and best supported)
-- Limited npm support via `npm_translate_lock`
-- Limited yarn support via `yarn_lock` attribute (but **does NOT support** pnpm-workspace.yaml)
-
-**Module Resolution:**
-
-- Uses pnpm's symlink-based node_modules structure, which aligns with Bazel's external repositories model
-- No TypeScript rootDirs pathMapping hacks needed
-- Runs JS tools with working directory in Bazel's output tree under bazel-out
-- Creates node_modules tree via pnpm-style layout, all resolutions work naturally
-
-#### Workspace Support
-
-**Full support for pnpm workspaces:**
-
-- Declared via `pnpm-workspace.yaml`
-- Each workspace member has its own `package.json`
-- Single lockfile across all members (`pnpm-lock.yaml`)
-- aspect_rules_js reads workspace configuration and automatically sets up dependencies
-
-**Configuration in MODULE.bazel:**
-
-```starlark
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-npm.npm_translate_lock(
-    name = "npm_ducktape",
-    npmrc = "@@//:.npmrc",
-    pnpm_lock = "//:pnpm-lock.yaml",
-    data = [
-        "//:package.json",
-        "//:pnpm-workspace.yaml",
-        "//:workspace/member1/package.json",
-        "//:workspace/member2/package.json",
-    ],
-    update_pnpm_lock = True,  # Auto-regenerate on package.json changes
-    public_hoist_packages = { ... },  # For runtime discovery of plugins
-)
-```
-
-#### Known Limitations & Issues
-
-1. **Module Identity Mismatch (Critical - Affects Playwright/Multi-Instance Packages)**
-   - When a package like `@playwright/test` re-exports from `playwright`, symlink resolution can cause the same module to be loaded with different filesystem paths
-   - Node.js caches modules by resolved path, not by identity
-   - This breaks packages that use module identity for internal state (e.g., Playwright's test registry)
-   - Documented in ducktape investigation: `props/frontend/docs/playwright_bazel_investigation.md`
-   - **Workaround:** Use native Playwright install or rules_playwright directly instead of aspect_rules_js wrappers
-
-2. **Sandbox Symlink Escape via esbuild (Issue #58 aspect_rules_esbuild)**
-   - esbuild leaves the sandbox by following symlinks when `preserveSymlinks` is off
-   - FSs monkey patches don't cover all ESM entry points (.mjs files)
-   - Node.js 19.8+ added new fs APIs not covered by rules_js patches (potential sandbox escape)
-   - **Mitigation:** Ensure inputs include all transitive npm dependencies; avoid relying on workspace pnpm install
-
-3. **ESM Import Sandbox Escape (Issue #362)**
-   - `realPathSync` in Node.js's ESM resolver is not patched while CJS require loader is
-   - Affects .mjs entry points
-   - Requires `--preserve-symlinks-main` flag to prevent sandbox escape
-   - **Mitigation:** Use `--preserve-symlinks-main=true` in js_binary/js_library
-
-4. **Framework Integration Challenges**
-   - **Next.js:** "read-only file system" errors when building in sandbox (historically problematic)
-   - **React:** Works well with webpack-cli or esbuild; no inherent issues
-
-5. **Development Server Setup**
-   - `js_run_devserver` doesn't watch source files directly (Bazel sandbox limitation)
-   - Requires explicit file dependencies in `data` attribute
-   - Works best with Vite (which supports explicit deps)
-
-#### Aspect-Based Linting Support
-
-**Via aspect_rules_lint (separate ruleset):**
-
-- ESLint: Full support, configurable via `.eslintrc` files
-- Prettier: Full support, configurable via `.prettierrc` files
-- No changes needed to BUILD files — lint applied as aspect on existing \*\_library targets
-- Run with: `bazel lint //src:all` (requires Aspect CLI)
-- Can apply fixes with `--fix` flag
-- Integrates with Remote Execution and Remote Cache
-
-**Hoist configuration:**
-
-- ESLint plugins must be hoisted for runtime discovery
-- Configure in MODULE.bazel `npm_translate_lock` via `public_hoist_packages`:
-  ```starlark
-  public_hoist_packages = {
-      "@eslint/js": [""],
-      "@typescript-eslint/eslint-plugin": [""],
-      "@typescript-eslint/parser": [""],
-      "eslint-plugin-import-x": [""],
-      "eslint-plugin-react": [""],
-      "eslint-plugin-react-hooks": [""],
-      "globals": [""],
-  },
-  ```
-
-#### Real-World Usage in Ducktape
-
-The ducktape repository currently uses aspect_rules_js for:
-
-- **Props frontend** (React + Mantine): esbuild, TypeScript checks, Playwright visual sweep
-- **Airlock frontend** (React + Mantine): esbuild, TypeScript checks, browser visual tests
-- **study_casino frontend** (React): browser frontend
-
-Bundling and dev servers work across these projects. Props renders its visual harness with the Python Playwright sweep; the Playwright module-identity issue (#1) remains relevant for projects that run Playwright from JS.
-
----
-
-## 2. Companion Ruleset: aspect_rules_ts
-
-**Repository:** <https://github.com/aspect-build/rules_ts>
-
-**Current Status:** Actively maintained, recommended replacement for @bazel/typescript
-
-#### Overview
-
-- High-performance Bazel rules for TypeScript compiler (tsc)
-- Direct replacement for the deprecated @bazel/typescript from rules_nodejs
-- Layered on top of aspect_rules_js (uses its dependency management)
-
-#### Key Features
-
-- `ts_project` rule: thin wrapper around tsc, configuration via tsconfig.json
-- First-class worker support for parallel compilation
-- Support for separate transpiler (swc) for dev/incremental builds (order of magnitude faster than ts_library)
-- Identical API to rules_nodejs's ts_project (easy migration)
-
-#### Performance
-
-- ts_project with swc transpiler: significantly faster on incremental dev builds than ts_library
-- ts_library still slightly faster on full clean builds (due to worker caching) but deprecated
-- Recommended for all new code
-
----
-
-## 3. Framework-Specific & Toolchain Rulesets
-
-All maintained by Aspect Build, all layer on aspect_rules_js:
-
-### aspect_rules_esbuild
-
-**Repository:** <https://github.com/aspect-build/rules_esbuild>
-
-- Bazel rules for esbuild (extremely fast JS bundler)
-- Can bundle JS/TS/JSX/TSX/CSS with tree-shaking and minification
-- Never runs npm install (fully hermetic)
-- Fetches native esbuild binary via Bazel downloader
-
-**Key limitation:** esbuild itself leaves the sandbox by following symlinks (Issue #58)
-
-### aspect_rules_rollup
-
-- Bazel rules for Rollup bundler
-- For projects needing Rollup-specific features (plugins, code-splitting strategies)
-
-### aspect_rules_webpack
-
-- Bazel rules for Webpack
-- For projects with complex Webpack configurations
-- Less commonly needed with modern tooling (Vite, esbuild)
-
-### aspect_rules_swc
-
-- Bazel rules for SWC transpiler
-- Recommended for ts_project transpilation (significant speed improvement)
-- Can be configured as alternative to tsc for performance-critical builds
-
-### aspect_rules_jest
-
-- Bazel rules for Jest testing framework
-- Full TypeScript support
-- Compatible with aspect_rules_js dependencies
-
-### aspect_rules_cypress
-
-- Bazel rules for Cypress E2E testing
-- Browser-based testing integration
-
-### aspect_rules_terser
-
-- Bazel rules for Terser (JavaScript minification)
-- Often used as final build step
-
----
-
-## 4. Legacy/Deprecated Ruleset: rules_nodejs
-
-**Repository:** <https://github.com/bazel-contrib/rules_nodejs> (bazel-contrib community maintained)
-
-**Current Status:** Limited maintenance, recommend migrating to aspect_rules_js
-
-#### Overview
-
-- Original Node.js toolchain and build rules for Bazel
-- Current version (6.x.x) has greatly reduced scope: only provides Node.js toolchain, **not** actual build rules
-- Rules were merged into aspect_rules_js and rewritten
-
-#### Why It's Deprecated
-
-- Separate source/output trees broke Node.js tooling expectations
-- TypeScript required hacky rootDirs pathMapping
-- No workspace support without independent npm installations per package
-- Inefficient: treated npm packages as thousands of individual files instead of directories
-- rules_js solves all these issues with cleaner design
-
-#### What It's Still Used For
-
-- Providing Node.js toolchain (bazel-contrib/rules_nodejs still provides this)
-- Legacy projects not yet migrated
-- Historical reference/comparison
-
----
-
-## 5. Alternative Implementations (Historical/Niche)
-
-### npm-bazel (Redfin)
-
-**Repository:** <https://github.com/redfin/npm-bazel>
-
-- Early attempt: generator tool + Skylark rules for npm modules
-- Public clone of internal Redfin code
-- Not actively maintained, unstable
-- Superseded by aspect_rules_js
-
-### rules_node (pubref)
-
-**Repository:** <https://github.com/pubref/rules_node>
-
-- Niche implementation using yarn
-- Creates external workspace `@yarn_modules` and invokes yarn install
-- Not actively maintained
-- Superseded by aspect_rules_js
-
----
-
-## 6. Browser Testing & Playwright Integration
-
-### rules_playwright
-
-**Repository:** (in /home/agentydragon/code/rules_playwright)
-
-**Purpose:** Download and manage Playwright browser binaries
-
-#### Features
-
-- Handles platform-specific Playwright browser downloads (Chromium, Firefox, WebKit)
-- Computes and verifies integrity hashes for supply-chain security
-- Supports configurable platform versions (macOS, Linux distro)
-- Generates integrity maps for offline builds
-
-#### Integration with aspect_rules_js
-
-- Provides pre-downloaded browser binaries for Playwright tests
-- Eliminates need for `npx playwright install` in sandbox
-- Set `PLAYWRIGHT_BROWSERS_PATH` to binary locations
-
-#### Known Issue: Module Identity Mismatch
-
-- When using `playwright_bin.playwright_test()` wrapper from aspect_rules_js npm packages
-- @playwright/test re-exports from playwright; symlink resolution causes same module to load twice (different paths)
-- Breaks Playwright's internal test registry (uses module identity for state)
-- **Workaround:** Run tests outside Bazel or use custom js_test with proper entry point configuration
-
----
-
-## 7. Linting & Formatting
-
-### aspect_rules_lint
-
-**Repository:** <https://github.com/aspect-build/rules_lint>
-
-**Status:** Generally Available (GA)
-
-#### Overview
-
-- Run linters/formatters as Bazel aspects (not separate rules)
-- No BUILD file changes needed
-- Works on existing js_library, ts_project targets
-- Incremental: results cached in Remote Execution
-
-#### Supported for JavaScript/TypeScript
-
-- **ESLint:** Via configurable aspect, uses eslintrc files
-- **Prettier:** Via configurable aspect, uses .prettierrc
-- Can run via `bazel lint //...` (requires Aspect CLI)
-- Supports `--fix` to apply fixes
-- Can fail build on violations: `--@aspect_rules_lint//lint:fail_on_violation`
-
-#### TypeScript Configuration
-
-- For ts_project, lint the [name]\_typings label (original TS source, not transpiled output)
-- ESLint configuration must include TypeScript parser (via @typescript-eslint/parser)
-
----
-
-## 8. Module Resolution Issues Deep Dive
-
-### Fundamental Challenge
-
-Bazel keeps outputs in a distinct output tree (bazel-out), separate from sources. Node.js naturally looks in the same directory tree. This causes friction.
-
-### aspect_rules_js Approach: Output Tree Working Directory
-
-- Always run JS tools with working directory = Bazel output tree
-- Use pnpm-style layout to create node_modules under bazel-out
-- All resolutions work naturally without monkey-patching Node.js
-- **Downside:** BAZEL_BINDIR must be set in env; some tools need re-pathing of inputs/outputs
-
-### Symlink Handling
-
-- Bazel uses symlinks extensively (efficient, avoids copies)
-- Node.js follows symlinks by default
-- aspect_rules_js patches fs APIs to prevent sandbox escape:
-  - Patches: lstat, readlink, realpath, readdir, opendir (sync and async)
-  - Default: `--preserve-symlinks=true`
-  - ESM note: `--preserve-symlinks-main=true` prevents .mjs entry point escape
-
-### Workspace Module Resolution
-
-- pnpm workspaces resolve all members' dependencies through single lockfile
-- aspect_rules_js transparently supports this
-- All workspace members can be built with single npm_translate_lock rule
-- Cross-workspace dependencies work: `import { X } from '@workspace/member2'`
-
----
-
-## 9. Comparison Matrix
-
-| Feature                        | aspect_rules_js            | rules_nodejs         | aspect_rules_ts            | aspect_rules_esbuild |
-| ------------------------------ | -------------------------- | -------------------- | -------------------------- | -------------------- |
-| **Actively Maintained**        | ✅ Yes                     | ⚠️ Limited           | ✅ Yes                     | ✅ Yes               |
-| **Lazy Dependency Resolution** | ✅ Yes                     | ❌ No                | ✅ (via rules_js)          | ✅ Yes               |
-| **pnpm Workspace Support**     | ✅ Yes                     | ❌ No                | ✅ (via rules_js)          | N/A                  |
-| **npm Workspace Support**      | ⚠️ Limited                 | ❌ No                | ⚠️ Limited                 | N/A                  |
-| **Module Resolution Correct**  | ✅ Yes                     | ❌ Requires rootDirs | ✅ Yes                     | ✅ Yes               |
-| **TypeScript Compilation**     | ❌ (via rules_ts)          | ⚠️ Deprecated        | ✅ Yes                     | ✅ (via ts_project)  |
-| **ESLint Support**             | ✅ (via rules_lint aspect) | ⚠️ External          | ✅ (via rules_lint aspect) | N/A                  |
-| **React Support**              | ✅ Works                   | ✅ Works             | ✅ Works                   | ✅ Works             |
-| **Next.js Support**            | ⚠️ Sandbox write issues    | ❌ No                | ⚠️ Issues                  | ⚠️ Issues            |
-| **Dev Server Watch**           | ⚠️ Manual deps             | ⚠️ Manual deps       | N/A                        | N/A                  |
-
----
-
-## 10. Recommended Setup for Ducktape
-
-Given the current architecture (3 React frontends):
-
-### Primary Stack
-
-- **Dependency management:** `aspect_rules_js` with pnpm
-- **TypeScript:** `aspect_rules_ts` (ts_project rule)
-- **Bundling:** Bazel-managed Vite or esbuild, selected per frontend
-- **Linting:** `aspect_rules_lint` with ESLint + Prettier aspects
-- **Browser binary:** a pinned Chrome for Testing headless shell (`@chrome_headless_shell` in `MODULE.bazel`) for the Playwright tests
-- **Framework tooling:** Let the selected bundler and framework tools handle framework-specific requirements
-
-### For Your Specific Issues
-
-1. **Module Resolution (Playwright test runner)**
-   - Don't use `playwright_bin.playwright_test()` wrapper
-   - Either: run Playwright outside Bazel via `manual` target + pnpm
-   - Or: use custom `js_test` with explicit entry point configuration
-   - Or: implement custom wrapper that ensures module identity consistency
-
----
-
-## 11. Further Investigation Areas
-
-### For Ducktape Team
-
-1. **Playwright Module Identity Fix**
-   - Investigate custom js_test wrapper that ensures single module load
-   - Consider patching NODE_PATH or using require cache control
-   - Evaluate if rules_playwright + custom runner better than npm packages
-
-2. **ESLint Integration**
-   - Set up aspect_rules_lint configuration
-   - Test all three current frontends with their TypeScript and ESLint checks
-   - Configure hoisting for all required plugins
-
-3. **Cross-Frontend Shared Packages**
-   - Consider workspace members for shared components (if applicable)
-   - Test pnpm workspace resolution through Bazel
-
----
-
-## Sources
-
-- [GitHub - aspect-build/rules_js](https://github.com/aspect-build/rules_js)
-- [GitHub - aspect-build/rules_ts](https://github.com/aspect-build/rules_ts)
-- [GitHub - aspect-build/rules_lint](https://github.com/aspect-build/rules_lint)
-- [GitHub - aspect-build/rules_esbuild](https://github.com/aspect-build/rules_esbuild)
-- [GitHub - bazel-contrib/rules_nodejs](https://github.com/bazel-contrib/rules_nodejs)
-- [Bazel and JavaScript](https://bazel.build/docs/bazel-and-javascript)
-- [rules_js documentation](https://docs.aspect.build/rulesets/aspect_rules_js/)
-- [rules_lint documentation](https://docs.aspect.build/workflows/features/lint/)
-- [pnpm Workspaces Documentation](https://pnpm.io/workspaces)
-- [Ducktape Playwright Investigation](../../props/frontend/docs/playwright_bazel_investigation.md)
+# JavaScript/TypeScript rules in Ducktape
+
+The repository uses `aspect_rules_js` for npm dependencies, `aspect_rules_ts`
+through local macros for compilation, and `rules_nodejs` for the Node toolchain.
+This page records local choices; the earlier upstream ruleset survey is superseded
+by the implementations linked below.
+
+## Dependencies and toolchains
+
+[MODULE.bazel](../../MODULE.bazel) owns the ruleset, Node, TypeScript and pnpm pins,
+`npm_translate_lock`, workspace inputs and ESLint plugin hoisting. Read that
+configuration rather than copying a standalone upstream setup.
+
+- Root [package.json](../../package.json), [pnpm-workspace.yaml](../../pnpm-workspace.yaml)
+  and [pnpm-lock.yaml](../../pnpm-lock.yaml) define the shared workspace. New workspace
+  manifests must also be inputs to `npm_translate_lock`.
+- Bazel updates the lockfile after dependency edits; follow the root
+  [AGENTS.md](../../AGENTS.md#javascript--typescript) workflow. Do not run `pnpm install`.
+- BUILD dependencies name exact `//:node_modules/<package>` targets. Runtime plugin
+  discovery may additionally require hoisting in `MODULE.bazel`.
+- Bundlers consume the emitted JavaScript; see the
+  [Props bundle](../../props/frontend/BUILD.bazel) for esbuild integration.
+
+## Compilation and specs
+
+[STYLE.md](../../STYLE.md#typescript) defines the TypeScript contract. The local
+[ts_library](../../devinfra/js/ts_library.bzl) macro deliberately differs from stock
+`ts_project`: it generates a config whose `files` are exactly the target's `srcs`,
+extends the shared `ts_config`, and uses `tsc` for both checking and emission.
+Substituting SWC or esbuild here would remove the type check.
+
+With `isolated_typecheck`, checking moves to `<name>_typecheck`; building only the
+library no longer checks types. CI includes those generated targets. This opt-in
+requires `isolatedDeclarations` and explicit types on exported symbols.
+
+The [Vitest macros](../../devinfra/js/vitest.bzl) compile each spec through
+`ts_library` and run the emitted JavaScript. They generate the package config;
+`check_vitest_specs()` detects unlisted specs within that Bazel package, so each
+package containing specs needs the check. Environment choices and DOM exceptions
+are specified in [STYLE.md](../../STYLE.md#frontend-specs-vitest).
+
+## Lint and formatting
+
+[.bazelrc](../../.bazelrc) enables the repository's
+[lint aspects](../../devinfra/lint/linters.bzl) on builds, including ESLint with
+findings treated as failures. [eslint.config.js](../../eslint.config.js) is the
+flat configuration; its project globs determine which frontend sources are covered.
+Prettier runs through the repository's [pre-commit configuration](../../.pre-commit-config.yaml).
+
+## Browser tests and the historical module-identity failure
+
+[MODULE.bazel](../../MODULE.bazel) pins Chrome for Testing's headless shell;
+[the browser launcher](../../util/testing/browser/launcher.py) supplies it from
+runfiles. Review screenshots use the
+[Python visual-test harness](../../util/testing/frontend_visual/README.md#one-way-in)
+and its deterministic context and capture API. Browser tests run on RBE, as required
+by [AGENTS.md](../../AGENTS.md#bazel-commands).
+
+The [Props Playwright investigation](../../props/frontend/docs/playwright_bazel_investigation.md)
+retains the original module-identity failure and unsuccessful experiments:
+the JS runner and test imports resolved different instances of `@playwright/test`,
+breaking its shared test registry. Props now uses Python Playwright visual tests;
+the investigation's manual/pnpm workaround describes that historical setup and is
+not the current browser-test workflow. It remains relevant when diagnosing a
+Playwright-from-JS integration.

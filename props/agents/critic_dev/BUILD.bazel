@@ -8,6 +8,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//props:py_test.bzl", "py_test")
+load("//props/testing:exec_properties.bzl", "CONTAINER_E2E_EXEC_PROPERTIES")
 
 exports_files([
     "authoring_agents.md.mako",
@@ -64,6 +65,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":loop",
+        "//devinfra/oci",
         "//props/agents:runtime",
         "//props/agents/af:loop",
         "//props/agents/af:middleware",
@@ -77,7 +79,6 @@ py_library(
         "//props/db:config",
         "//props/db:database",
         "//props/db:models",
-        "//util:oci",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
@@ -168,14 +169,16 @@ py_test(
         "//props/agents/critic_dev/optimize:image",
         "//props/agents/grader:image",
     ],
+    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":registry_push_probe",
         "//:conftest",
         "//agent_core/testing:responses",
+        "//devinfra/oci",
+        "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",
@@ -187,8 +190,13 @@ py_test(
         "//props/db:models",
         "//props/testing",
         "//props/testing:constants",
-        "//util:oci",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
+        "//props/testing/fixtures:scopes",
         "//util/exec:models",
+        "//util/testing:postgres_fixtures",
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",

@@ -1,7 +1,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 
 pkg_files(
     name = "boot_script",
@@ -49,7 +49,7 @@ oci_image(
     ],
 )
 
-oci_layout_rloc(
+oci_layout_py(
     name = "gnome_shell_test",
     testonly = True,
     image = ":gnome_shell_test_image",

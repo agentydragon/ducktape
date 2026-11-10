@@ -70,7 +70,7 @@ def py_visual_test(
         tags = tags + ["visual"],
         deps = [
             "//:conftest",
-            "//util/testing:visual_fixtures",
+            "//util/testing/frontend_visual:fixtures",
         ] + test_deps,
         **kwargs
     )

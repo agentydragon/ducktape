@@ -14,6 +14,7 @@ import pytest
 import pytest_bazel
 from agent_framework import ChatResponse, Content, Message
 
+from devinfra.oci.oci import load_oci_image
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import stage_skill
@@ -21,7 +22,6 @@ from skills.info_gathering.evals.replay_client import ReplayChatClient
 from skills.info_gathering.evals.twenty_questions.result_types import RunSummary
 from skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions import run_game
 from third_party.containers import python_3_14_slim
-from util.oci import load_oci_image
 
 
 def _tool_call_reply(name: str, arguments: dict[str, object]) -> ChatResponse:
@@ -80,11 +80,11 @@ async def _run_with_replay(
     layer breaks.
     """
     client = ReplayChatClient(responses=completions)
-    load_oci_image(python_3_14_slim.IMAGE)
+    image_ref = load_oci_image(python_3_14_slim.LAYOUT_RLOCATION)
 
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
 
-    async with eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None, image=image_ref) as exec_tool:
         return await run_game(
             variant_name=variant_name,
             model="test-model",

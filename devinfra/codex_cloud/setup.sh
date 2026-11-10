@@ -97,10 +97,10 @@ install_or_refresh_devtools() {
 }
 
 run_buildbuddy_setup() {
-  if [ -f devinfra/setup_buildbuddy.sh ]; then
+  if [ -f devinfra/buildbuddy/setup.sh ]; then
     load_agent_secrets
     log "running BuildBuddy setup"
-    bash devinfra/setup_buildbuddy.sh
+    bash devinfra/buildbuddy/setup.sh
   fi
 }
 

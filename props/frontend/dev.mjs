@@ -3,15 +3,18 @@
 
 import { spawn } from "child_process";
 import esbuild from "esbuild";
-import tailwindcss from "esbuild-plugin-tailwindcss";
-import { createServer } from "http";
+import { createServer, request } from "http";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
-import { dirname, extname, join, resolve } from "path";
+import { delimiter, dirname, extname, join, resolve } from "path";
 import { existsSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+// Tailwind's CSS resolver reads NODE_PATH at module load; these are Bazel's linked npm trees.
+const nodePaths = [resolve(__dirname, "node_modules"), resolve(__dirname, "../../node_modules")];
+process.env.NODE_PATH = [...nodePaths, process.env.NODE_PATH].filter(Boolean).join(delimiter);
+const { default: tailwindcss } = await import("esbuild-plugin-tailwindcss");
 
 const FRONTEND_PORT = 5173;
 const BACKEND_PORT = 8000;
@@ -55,40 +58,6 @@ async function waitForBackend(timeoutMs = 30000) {
   return false;
 }
 
-// Start backend process
-let backendProcess = null;
-if (!skipBackend) {
-  // Check for required environment variables
-  const REQUIRED_ENV = ["PGHOST", "PGPORT", "PGDATABASE", "PGUSER"];
-  const missing = REQUIRED_ENV.filter((v) => !process.env[v]);
-  if (missing.length > 0) {
-    console.warn(`${C.yellow}Warning: Missing env vars: ${missing.join(", ")}${C.reset}`);
-    console.warn(`${C.dim}Backend may fail. Run from props/ direnv shell.${C.reset}`);
-  }
-
-  // Backend CLI is in runfiles at props/backend/backend_cli
-  // From props/frontend (chdir location), go up to runfiles root then down to backend
-  const backendBin = resolve(__dirname, "..", "backend", "backend_cli");
-
-  backendProcess = spawn(backendBin, ["--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
-  });
-
-  backendProcess.stdout.on("data", (d) => prefixLines("backend", C.cyan, d));
-  backendProcess.stderr.on("data", (d) => prefixLines("backend", C.cyan, d));
-
-  backendProcess.on("error", (err) => {
-    console.error(`${C.cyan}[backend]${C.reset} Failed to start: ${err.message}`);
-  });
-
-  backendProcess.on("exit", (code, signal) => {
-    if (signal !== "SIGTERM" && signal !== "SIGINT" && code !== 0) {
-      console.error(`${C.cyan}[backend]${C.reset} Process exited (code: ${code})`);
-    }
-  });
-}
-
 const CONTENT_TYPES = {
   ".html": "text/html",
   ".js": "application/javascript",
@@ -106,6 +75,7 @@ const CONTENT_TYPES = {
 const ctx = await esbuild.context({
   entryPoints: [resolve(__dirname, "src/main.tsx")],
   bundle: true,
+  nodePaths,
   outdir: resolve(__dirname, "dist"),
   format: "esm",
   jsx: "automatic",
@@ -121,8 +91,57 @@ const ctx = await esbuild.context({
   logLevel: "info",
 });
 
+await ctx.rebuild();
 await ctx.watch();
 console.log(`${C.yellow}[esbuild]${C.reset} watching for changes...`);
+
+// Start backend process
+let backendProcess = null;
+if (!skipBackend) {
+  // Check for required environment variables
+  const REQUIRED_ENV = ["PGHOST", "PGPORT", "PGDATABASE", "PGUSER"];
+  const missing = REQUIRED_ENV.filter((v) => !process.env[v]);
+  if (missing.length > 0) {
+    console.warn(`${C.yellow}Warning: Missing env vars: ${missing.join(", ")}${C.reset}`);
+    console.warn(`${C.dim}Backend may fail. Run from props/ direnv shell.${C.reset}`);
+  }
+
+  const backendRlocation = process.env.PROPS_BACKEND_CLI_RLOCATION;
+  const runfilesDir = process.env.JS_BINARY__RUNFILES;
+  if (!backendRlocation || !runfilesDir) {
+    throw new Error("Bazel did not provide the backend CLI runfiles path");
+  }
+  const backendBin = resolve(runfilesDir, backendRlocation);
+  if (!existsSync(backendBin)) {
+    throw new Error(`Backend CLI runfile was not found: ${backendBin}`);
+  }
+  const backendEnv = {
+    ...process.env,
+    RUNFILES_DIR: runfilesDir,
+    JAVA_RUNFILES: runfilesDir,
+  };
+  // Use the same runfiles tree for the Python child as for this JS launcher.
+  delete backendEnv.RUNFILES_MANIFEST_FILE;
+  delete backendEnv.RUNFILES_MANIFEST_ONLY;
+
+  backendProcess = spawn(backendBin, ["serve", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: backendEnv,
+  });
+
+  backendProcess.stdout.on("data", (d) => prefixLines("backend", C.cyan, d));
+  backendProcess.stderr.on("data", (d) => prefixLines("backend", C.cyan, d));
+
+  backendProcess.on("error", (err) => {
+    console.error(`${C.cyan}[backend]${C.reset} Failed to start: ${err.message}`);
+  });
+
+  backendProcess.on("exit", (code, signal) => {
+    if (signal !== "SIGTERM" && signal !== "SIGINT" && code !== 0) {
+      console.error(`${C.cyan}[backend]${C.reset} Process exited (code: ${code})`);
+    }
+  });
+}
 
 // Wait for backend health (if started)
 let backendHealthy = skipBackend;
@@ -149,6 +168,25 @@ function resolveSafe(root, urlPath) {
 // Start HTTP server
 const server = createServer(async (req, res) => {
   let urlPath = req.url.split("?")[0];
+
+  // The browser uses same-origin API and auth URLs. Forward them before the
+  // SPA fallback so that the backend sees the original method, URL and headers.
+  if (["/api", "/auth"].some((prefix) => urlPath === prefix || urlPath.startsWith(`${prefix}/`))) {
+    const upstream = request(
+      { hostname: "127.0.0.1", port: BACKEND_PORT, method: req.method, path: req.url, headers: req.headers },
+      (response) => {
+        res.writeHead(response.statusCode, response.headers);
+        response.pipe(res);
+      }
+    );
+    upstream.on("error", (err) => {
+      console.error(`[dev-server] Backend request failed: ${err.message}`);
+      if (!res.headersSent) res.writeHead(502);
+      res.end();
+    });
+    req.pipe(upstream);
+    return;
+  }
 
   // Serve index.html for root and all routes (SPA behavior)
   if (urlPath === "/" || !urlPath.includes(".")) {

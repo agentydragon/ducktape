@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func conflictReason(err error) ConflictReason {
@@ -29,12 +30,20 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 	request := f.submitInput(t, caller, body, Admission{RequestID: id})
 
 	if request.ID != id || request.IdempotencyKey != "pending" || request.Action != body.Action ||
-		request.Title != body.Title || *request.Description != description || request.Caller != caller.Account ||
+		request.Title != body.Title || *request.Description != description || accountOf(request.Caller) != caller.Account ||
 		request.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || request.Version != 1 ||
 		!request.CreatedAt.Equal(request.UpdatedAt) || request.Decision != nil || request.Execution != nil {
 		t.Errorf("stored %+v", request)
 	}
 	sameJSON(t, request.Arguments, body.Arguments)
+	var actionGroup, actionName string
+	if err := f.db.QueryRowContext(t.Context(), `SELECT action_group, action_name FROM action_request WHERE id = $1`, id).
+		Scan(&actionGroup, &actionName); err != nil {
+		t.Fatal(err)
+	}
+	if actionGroup != body.Action.Group || actionName != body.Action.Name {
+		t.Errorf("typed action identity = %q/%q, want %q/%q", actionGroup, actionName, body.Action.Group, body.Action.Name)
+	}
 	if got := f.get(t, id); !reflect.DeepEqual(got, request) {
 		t.Errorf("read back %+v, want %+v", got, request)
 	}
@@ -96,19 +105,38 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 		t.Run(string(test.verdict), func(t *testing.T) {
 			f := newFixture(t)
 			request := f.submitInput(t, caller, input("voted"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
-				Provider: "test-provider", Verdict: test.verdict, ReasonCode: "test_reason", ReasonDescription: &description,
-				Evidence: evidence,
+				Verdict: test.verdict, Policy: PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE, ReasonDescription: &description, Evidence: evidence},
 			}})
 
 			if request.State != test.state || request.Version != 2 {
 				t.Errorf("state %s version %d, want %s version 2", request.State, request.Version, test.state)
 			}
 			decision := request.Decision
-			if decision == nil || decision.Verdict != test.verdict || decision.Provider != "test-provider" ||
-				decision.Operator != nil || decision.DecisionNote != nil || *decision.ReasonCode != "test_reason" ||
-				*decision.ReasonDescription != description || !reflect.DeepEqual(decision.PolicyEvidence, evidence) ||
+			want := PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE, ReasonDescription: &description, Evidence: evidence}
+			if decision == nil || decision.Verdict != test.verdict || !reflect.DeepEqual(decision.Decider, want) ||
 				decision.IdempotencyKey != "auto:"+request.ID.String() || !decision.DecidedAt.Equal(request.UpdatedAt) {
 				t.Errorf("decision %+v", decision)
+			}
+			var encodedEvidence []byte
+			if err := f.db.QueryRowContext(t.Context(), `SELECT policy_evidence_proto FROM action_decision WHERE request_id = $1`,
+				request.ID).Scan(&encodedEvidence); err != nil {
+				t.Fatal(err)
+			}
+			var storedEvidence action_servicepb.PolicyEvidence
+			if err := proto.Unmarshal(encodedEvidence, &storedEvidence); err != nil {
+				t.Fatal(err)
+			}
+			wantEvidence := &action_servicepb.PolicyEvidence{
+				Bindings:   []*action_servicepb.BindingEvidence{{Namespace: "test-namespace", Name: "test-binding", ResourceVersion: "7"}},
+				PolicySets: []*action_servicepb.PolicySetEvidence{{Namespace: "test-namespace", Name: "test-set", Generation: 4}},
+				Matched: &action_servicepb.MatchedPolicy{
+					Namespace: "test-namespace", PolicySet: "test-set",
+					Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
+					Type:   action_servicepb.PolicyKind_POLICY_KIND_ARGUMENT_SCHEMA,
+				},
+			}
+			if !proto.Equal(&storedEvidence, wantEvidence) {
+				t.Errorf("protobuf evidence = %v, want %v", &storedEvidence, wantEvidence)
 			}
 			if (request.Execution != nil) != test.execution {
 				t.Fatalf("execution = %+v, want one: %v", request.Execution, test.execution)
@@ -140,7 +168,7 @@ func TestAnInvalidSubmissionStoresNothing(t *testing.T) {
 	if _, err := f.Submit(t.Context(), caller, body, Admission{RequestID: uuid.New()}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("an empty title: %v", err)
 	}
-	vote := &ProviderVote{Provider: "test-provider", Verdict: "no_opinion", ReasonCode: "test_reason"}
+	vote := &ProviderVote{Verdict: "no_opinion", Policy: PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE}}
 	if _, err := f.Submit(t.Context(), caller, input("invalid"), Admission{RequestID: uuid.New(), Vote: vote}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("a vote that does not decide: %v", err)
 	}
@@ -167,9 +195,9 @@ func TestSubmissionsOfOneKeyHaveOneWinner(t *testing.T) {
 			defer other.Rollback()
 			// The competing insert is in flight and uncommitted: the submission queues behind its key.
 			if _, err := other.ExecContext(t.Context(), `
-				INSERT INTO action_request (id, idempotency_key, action, arguments, title, caller_namespace, caller_name,
+				INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title, caller_namespace, caller_name,
 					state, version, created_at, updated_at)
-				VALUES ($1, 'contended', '{"group": "test-group", "name": "test-action"}', '{}', 'test title', $2, $3,
+				VALUES ($1, 'contended', 'test-group', 'test-action', '{}', 'test title', $2, $3,
 					'decision_pending', 1, now(), now())`,
 				uuid.New(), caller.Account.Namespace, caller.Account.Name); err != nil {
 				t.Fatal(err)

@@ -19,8 +19,9 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 
-from cluster.cdk8s import cilium, cnpg, cnpg_backup, gateway, namespaces, node_scheduling
+from cluster.cdk8s import cilium, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import namespace
@@ -44,7 +45,7 @@ _INGRESS_NAME = "haku-mailbox-smtp-ingress"  # the ingress pods' label value and
 _INGRESS_LABELS = {"app.kubernetes.io/name": _INGRESS_NAME}
 _INGRESS_OBJECT_NAME = "smtp-ingress"  # the DaemonSet and its CiliumNetworkPolicy
 _TLS_SECRET = "mx-allegedly-works-tls"
-DATABASE = cnpg.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
 _DB_PASSWORD = DATABASE.app_secret.key("password")
 _PUBLIC_URL = "https://haku-mailbox.allegedly.works"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
@@ -109,17 +110,17 @@ def _add_store(chart: Chart) -> None:
     # Store for the Stalwart mailserver (data + blobs + search + settings all live in Postgres --
     # no PVC on the app; see cluster/k8s/haku/mailbox/README.md). OVH-HA CNPG profile per
     # cluster/docs/cnpg_conventions.md: mail must stay OVH-resilient.
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "db",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="10Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb("stalwart"),
+        initdb=cluster.same_owner_initdb("stalwart"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _add_deployment(chart: Chart) -> None:
@@ -395,8 +396,8 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # The Haku mailbox's own trusted namespace -- deliberately NOT haku-sandbox. The Stalwart
     # mailserver here enforces the inbound-email perimeter (DMARC-gated sender whitelist,
-    # operator-owned provisioning plan), so it sits OUTSIDE Haku's RBAC and OUTSIDE the
-    # haku-egress-proxy egress fence: Haku must not be able to patch the server, edit the
+    # operator-owned provisioning plan), so it sits OUTSIDE Haku's RBAC and OUTSIDE
+    # haku-sandbox's egress fence: Haku must not be able to patch the server, edit the
     # whitelist, read the admin/TLS secrets, or touch the CNPG store. Haku is a mail *user* only,
     # authenticated via its Authentik-issued bearer. See cluster/k8s/haku/mailbox/README.md.
     namespaces.namespace(

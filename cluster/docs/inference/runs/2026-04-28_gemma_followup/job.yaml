@@ -3,7 +3,7 @@
 # (gemma uses these instead of gpt-oss's `delta.reasoning_content`), and
 # REASONING_EFFORT="off" sends `think: false` to actually suppress reasoning.
 #
-# Apply with: ./run.sh
+# Apply with: ./run.sh (mounts bench.py and ../ollama_bench_helpers.py).
 ---
 apiVersion: batch/v1
 kind: Job
@@ -57,3 +57,5 @@ spec:
             items:
               - key: bench.py
                 path: bench.py
+              - key: ollama_bench_helpers.py
+                path: ollama_bench_helpers.py

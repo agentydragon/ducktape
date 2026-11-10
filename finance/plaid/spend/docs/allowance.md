@@ -200,8 +200,10 @@ and year _spend totals_ still start at activation. The separate `recorded_pace_p
 startup without pace evidence). `forecast.basis_period` identifies the selected rolling window.
 `forecast.daily_pace_minor_units` is the potentially higher, early-burst-sensitive projection pace; do not present it as
 a literal rolling average. Web, GNOME and CLI show both observed rates against the same approximate
-monthly-credit-equivalent daily reference; `spending_signal` compares the selected estimate window's observed rate and
-forecast against that **provisional allowance**, not a sustainability guarantee. Web can select the estimate window;
+monthly-credit-equivalent daily reference supplied in `daily_reference_minor_units`. The service rounds that displayed
+value half-up to one minor unit, while `spending_signal` compares the selected estimate window's observed rate with the
+full-precision Decimal rate and its forecast against that **provisional allowance**, not a sustainability guarantee.
+Web can select the estimate window;
 GNOME and CLI use the configured default. Each recorded pace report's `unmatched_charges` count and
 amount count positive, default-flexible purchases in the pace lookback, including before activation; this is separate
 from the postactivation review tally. Purchase days define membership in each window and the transaction list:
@@ -220,8 +222,10 @@ pending row. A newly linked account with a short historical backfill can underst
 promise of comprehensive coverage. CLI, web and GNOME show both rolling windows' unmatched counts and summed amounts.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and checking/debit); otherwise this is
-not a reliable allowance. If an account is missing, inactive, or its sync exceeds `max_sync_age_hours`, the allowance
-shows _unavailable_ with no available balance. Ordered private rules match `name`/`merchant_name` prefixes,
+not a reliable allowance. If an account is missing, detached from the latest complete account listing, inactive, or
+its Item sync exceeds `max_sync_age_hours`, the allowance shows _unavailable_ with no available balance. A fresh sync
+of another account on the same Item does not restore coverage, and retained transaction history remains queryable.
+Ordered private rules match `name`/`merchant_name` prefixes,
 case-insensitive substrings, exact `pfc_primary`/`pfc_detailed` values, or an `all_of` of two or more of those
 conditions; first match wins. For a named transfer embedded in a long bank descriptor, combine `name_contains` with an
 exact transfer category rather than excluding all wires. **No spending categories are hard-coded.** A purchase with no

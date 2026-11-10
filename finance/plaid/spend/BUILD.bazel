@@ -2,6 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "app",
@@ -10,12 +11,13 @@ py_library(
         ":allowance",
         ":configuration",
         ":models",
+        ":oidc_principal",
+        ":pace_history",
         ":portfolio",
         ":service",
         ":settings",
         ":sustainability",
         "//util:oidc_login",
-        "//util:oidc_principal",
         "@pypi//fastapi",
         "@pypi//uvicorn",
     ],
@@ -42,20 +44,43 @@ py_library(
 )
 
 py_library(
+    name = "pace_history",
+    srcs = ["pace_history.py"],
+    deps = [
+        ":allowance",
+        ":sustainability",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
         ":allowance",
         ":configuration",
         ":models",
+        ":pace_history",
+        ":policy_queries",
         ":portfolio",
         ":portfolio_models",
         ":reconciliation_views",
+        ":statement_queries",
         ":sustainability",
+        ":transaction_views",
         "//finance/plaid/db:models",
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//babel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "statement_queries",
+    srcs = ["statement_queries.py"],
+    deps = [
+        "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
     ],
 )
@@ -86,7 +111,7 @@ py_library(
 py_library(
     name = "portfolio_models",
     srcs = ["portfolio_models.py"],
-    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    visibility = ["//finance/plaid/spend/ui:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
@@ -101,6 +126,20 @@ py_library(
 )
 
 py_test(
+    name = "test_pace_history",
+    srcs = ["test_pace_history.py"],
+    deps = [
+        ":allowance",
+        ":conftest",
+        ":pace_history",
+        ":sustainability",
+        "//:conftest",
+        "//finance/plaid/spend/testing:transaction",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_allowance",
     srcs = ["test_allowance.py"],
     data = ["one-off-configuration.yaml"],
@@ -111,10 +150,11 @@ py_test(
         ":models",
         ":reconciliation_views",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -127,12 +167,13 @@ py_test(
         ":app",
         ":conftest",
         ":models",
+        ":oidc_principal",
+        ":pace_history",
         ":service",
         ":settings",
         ":sustainability",
         "//:conftest",
         "//util:oidc_login",
-        "//util:oidc_principal",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pydantic",
@@ -146,6 +187,7 @@ py_test(
     size = "medium",
     srcs = ["test_service.py"],
     data = ["//finance/plaid/spend/ui:bundle"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":allowance",
@@ -156,6 +198,7 @@ py_test(
         ":portfolio_models",
         ":service",
         ":sustainability",
+        ":transaction_views",
         "//:conftest",
         "@pypi//asyncpg",
         "@pypi//pytest",
@@ -169,6 +212,7 @@ py_test(
     name = "test_portfolio",
     size = "medium",
     srcs = ["test_portfolio.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -225,6 +269,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+)
+
 aspect_py_binary(
     name = "server_bin",
     data = ["//finance/plaid/spend/ui:bundle"],
@@ -276,7 +328,7 @@ py_library(
 py_library(
     name = "sustainability",
     srcs = ["sustainability.py"],
-    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    visibility = ["//finance/plaid/spend/ui:__subpackages__"],
     deps = [
         ":allowance",
         ":consumption",
@@ -297,6 +349,7 @@ py_test(
         ":reconciliation_views",
         ":sustainability",
         "//:conftest",
+        "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -314,6 +367,7 @@ py_test(
         ":reconciliation_views",
         ":sustainability",
         "//:conftest",
+        "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -323,6 +377,7 @@ py_test(
 py_library(
     name = "portfolio_queries",
     srcs = ["portfolio_queries.py"],
+    visibility = ["//cluster/cdk8s/plaid_mcp:__pkg__"],
     deps = [
         "//finance/plaid/db:models",
         "//finance/plaid/db:read_model",
@@ -334,6 +389,7 @@ py_test(
     name = "test_portfolio_queries",
     size = "medium",
     srcs = ["test_portfolio_queries.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -371,12 +427,13 @@ py_test(
 py_library(
     name = "reconciliation",
     srcs = ["reconciliation.py"],
-    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    visibility = ["//finance/plaid/spend/ui:__subpackages__"],
 )
 
 py_library(
     name = "reconciliation_views",
     srcs = ["reconciliation_views.py"],
+    visibility = ["//finance/plaid/spend/testing:__pkg__"],
     deps = [
         ":allowance",
         ":reconciliation",
@@ -387,11 +444,63 @@ py_library(
 py_library(
     name = "configuration",
     srcs = ["configuration.py"],
+    visibility = ["//finance/plaid/spend/testing:__pkg__"],
     deps = [
         ":allowance",
         ":sustainability",
         "//finance:yaml_decimal",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "policy_queries",
+    srcs = ["policy_queries.py"],
+    deps = [
+        "//finance/plaid/db:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "transaction_views",
+    srcs = ["transaction_views.py"],
+    visibility = ["//finance/plaid/spend/ui/testing:__pkg__"],
+    deps = [
+        ":allowance",
+        ":configuration",
+        ":models",
+        "@pypi//babel",
+    ],
+)
+
+py_library(
+    name = "oidc_principal",
+    srcs = ["oidc_principal.py"],
+    deps = [
+        "//util:urls",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_test(
+    name = "test_oidc_principal",
+    srcs = ["test_oidc_principal.py"],
+    deps = [
+        ":conftest",
+        ":oidc_principal",
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )

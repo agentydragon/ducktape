@@ -32,8 +32,9 @@ tools only.
   build time by <fix_openapi_spec.py>): every route needs a `TOOL_OVERRIDES` entry in
   <tool_metadata.py> (name, extra description, `enabled`), or the build raises. Output schemas
   are stripped (Grocy's are unreliable; e2e tests are the contract). Generated tools get the
-  per-call client through <../mcp_infra/request_scoped_openapi.py>, since FastMCP 3.4.4 has no
-  public per-invocation OpenAPI client factory.
+  per-call client through <../mcp_infra/request_scoped_openapi.py>: FastMCP binds the configured
+  client to each generated tool, so the transform binds the `Depends` client to an invocation-local
+  copy while preserving the generated route metadata.
 - **Custom batch tools** in <batch_tools.py> (`register_batch_tools`) replace single-shot routes
   with N-item operations via `asyncio.gather`. A failed item is reported `ok=False` without
   aborting the rest. Stock operations return a `transaction_id` per item for

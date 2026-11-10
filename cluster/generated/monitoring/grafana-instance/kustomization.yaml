@@ -3,6 +3,10 @@ kind: Kustomization
 resources:
   - grafana-instance.k8s.yaml
 configMapGenerator:
+  - name: buildbuddy-executor-pool-dashboard
+    namespace: monitoring
+    files:
+      - buildbuddy-executor-pool.json
   - name: flux-cluster-dashboard
     namespace: monitoring
     files:

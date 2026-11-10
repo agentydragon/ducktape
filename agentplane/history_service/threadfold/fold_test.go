@@ -254,11 +254,11 @@ func TestEffortChangeSettlesItsCommandAndUpdatesControls(t *testing.T) {
 	if got := store.state.Controls.AppliedReasoningEffort; got == nil || *got != "high" {
 		t.Errorf("applied reasoning effort = %v, want high", got)
 	}
-	if command.Outcome != OutcomeEffected || command.RequestedValue == nil || *command.RequestedValue != "high" {
+	if command.Outcome != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED || command.RequestedValue == nil || *command.RequestedValue != "high" {
 		t.Errorf("command = %+v, want effected with requested value high", command)
 	}
-	if got := result.LifecycleUpserts[0].Observation; got != "reasoning_effort_changed" {
-		t.Errorf("first lifecycle segment = %q", got)
+	if got := result.LifecycleUpserts[0].Event.GetReasoningEffortChanged(); got == nil {
+		t.Errorf("first lifecycle segment = %v", result.LifecycleUpserts[0].Event)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestParallelOldItemUpdatesKeepPositionsFieldsAndEvidence(t *testing.T) {
 	if got := store.payloads[*first.Output]; got != "" {
 		t.Errorf("output body = %q, want the authoritative empty output", got)
 	}
-	if first.Output.Field != FieldOutput || first.Arguments.Field != FieldArguments {
+	if first.Output.Field != historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT || first.Arguments.Field != historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS {
 		t.Errorf("payload fields = %s, %s", first.Output.Field, first.Arguments.Field)
 	}
 	if first.Completion != (ToolCompletion{Succeeded: false}) || answer.Completion != (TextCompletion{}) {
@@ -312,21 +312,21 @@ func TestParallelOldItemUpdatesKeepPositionsFieldsAndEvidence(t *testing.T) {
 	}
 }
 
-func streaming(cursor uint64, field PayloadField, text string) *eventlogpb.EventEntry {
+func streaming(cursor uint64, field historypb.ThreadPayloadField, text string) *eventlogpb.EventEntry {
 	switch field {
-	case FieldText:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT:
 		return textDelta(cursor, "item", text)
-	case FieldArguments:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS:
 		return argumentsDelta(cursor, "item", text)
 	}
 	return outputDelta(cursor, "item", text)
 }
 
-func authoritative(cursor uint64, field PayloadField, text string) *eventlogpb.EventEntry {
+func authoritative(cursor uint64, field historypb.ThreadPayloadField, text string) *eventlogpb.EventEntry {
 	switch field {
-	case FieldText:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT:
 		return textCompleted(cursor, "item", text)
-	case FieldArguments:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS:
 		return toolArguments(cursor, "item", text)
 	}
 	return toolCompleted(cursor, "item", text, true)
@@ -348,7 +348,7 @@ func partitions(entries []*eventlogpb.EventEntry, visit func([][]*eventlogpb.Eve
 }
 
 func TestAnAuthoritativeValueKeepsTheBodyOnlyWhenItIsWhatStreamed(t *testing.T) {
-	for _, field := range []PayloadField{FieldText, FieldArguments, FieldOutput} {
+	for _, field := range []historypb.ThreadPayloadField{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT} {
 		for _, test := range []struct {
 			name   string
 			deltas []string
@@ -407,7 +407,7 @@ func TestAnAuthoritativeValueKeepsTheBodyOnlyWhenItIsWhatStreamed(t *testing.T) 
 func TestCommandsSettleCoalescedInputAndObservedModelEffect(t *testing.T) {
 	store := replay(t, script(), 17)
 	for _, id := range []string{"input-1", "input-2", "model-1"} {
-		if got := store.commands[id].Outcome; got != OutcomeEffected {
+		if got := store.commands[id].Outcome; got != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED {
 			t.Errorf("command %s outcome = %s, want effected", id, got)
 		}
 	}
@@ -468,7 +468,7 @@ func TestRejectsWrongFieldRefAndUnknownKindWithoutMutatingInputs(t *testing.T) {
 	prior := store.items["item"]
 	invalid := Item{
 		ProjectionEpoch: testEpoch, ItemID: "item", Cursor: prior.Cursor, RevisionCursor: prior.RevisionCursor,
-		Text: &PayloadRef{testEpoch, 1, "item", FieldOutput, 1, 1},
+		Text: &PayloadRef{testEpoch, 1, "item", historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT, 1, 1},
 	}
 	_, err := Advance(store.state, EventBatch{
 		SourceID: testSource, AfterCursor: 1, Entries: []*eventlogpb.EventEntry{textDelta(2, "item", "y")},
@@ -645,12 +645,9 @@ func TestSetupOutputAndFailureRemainVisibleLifecycleEvidence(t *testing.T) {
 		}}}),
 		entry(3, &eventpb.Event{Observation: &eventpb.Event_SetupFinished{SetupFinished: &eventpb.SetupFinished{ExitCode: 7}}}),
 	)
-	var observations []string
-	for _, segment := range result.LifecycleUpserts {
-		observations = append(observations, segment.Observation)
-	}
-	if want := []string{"setup_started", "setup_output", "setup_finished"}; !reflect.DeepEqual(observations, want) {
-		t.Errorf("lifecycle observations = %v, want %v", observations, want)
+	if len(result.LifecycleUpserts) != 3 || result.LifecycleUpserts[0].Event.GetSetupStarted() == nil ||
+		result.LifecycleUpserts[1].Event.GetSetupOutput() == nil || result.LifecycleUpserts[2].Event.GetSetupFinished() == nil {
+		t.Fatalf("unexpected lifecycle observations: %v", result.LifecycleUpserts)
 	}
 	if got := string(result.LifecycleUpserts[1].Event.GetSetupOutput().GetStdout()); got != "setup output\n" {
 		t.Errorf("setup output = %q", got)
@@ -687,7 +684,7 @@ func TestTouchedKeysAreSortedAndDropEmptyIdentities(t *testing.T) {
 	if want := []string{"m"}; !reflect.DeepEqual(keys.CommandIDs, want) {
 		t.Errorf("command ids = %v, want %v", keys.CommandIDs, want)
 	}
-	if want := []ItemField{{"a", FieldArguments}, {"b", FieldText}}; !reflect.DeepEqual(keys.Completed, want) {
+	if want := []ItemField{{"a", historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS}, {"b", historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT}}; !reflect.DeepEqual(keys.Completed, want) {
 		t.Errorf("completed = %v, want %v", keys.Completed, want)
 	}
 }
@@ -705,4 +702,26 @@ func TestSettledRangesAreSkippedWhenCheckingContiguity(t *testing.T) {
 	batch.Settled = nil
 	_, err := Advance(store.state, batch, PriorEntities{Items: map[string]*Item{"item": nil}})
 	contractError(t, err)
+}
+
+func TestSamplerBoundariesPreserveDisplayProjection(t *testing.T) {
+	entries := []*eventlogpb.EventEntry{
+		entry(1, &eventpb.Event{Observation: &eventpb.Event_BoundaryRecord{BoundaryRecord: &eventpb.BoundaryRecord{Boundary: "provider", Direction: "response", Payload: []byte(`{"type":"response.output_item.added"}`)}}}),
+		entry(2, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{OperationId: "request", Kind: eventpb.ExecutionProgress_KIND_PROVIDER, Phase: eventpb.ExecutionProgress_PHASE_RECEIVED}}}, 1),
+		itemStarted(3, "answer", eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "", 1),
+		textCompleted(4, "answer", "central answer", 1),
+	}
+	state := replay(t, entries, len(entries))
+	if len(state.items) != 1 || state.items["answer"].Completion == nil {
+		t.Fatalf("missing normalized answer: %v", state.items)
+	}
+	found := false
+	for _, evidence := range state.evidence {
+		if len(evidence.SourceSequences) == 1 && evidence.SourceSequences[0] == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("boundary source lost from display evidence")
+	}
 }

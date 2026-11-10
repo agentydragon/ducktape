@@ -91,13 +91,13 @@ bb ssh mybox hostname          # single command
 `bbr` wraps `bb remote` and is the recommended way to run Bazel from Claude Code web. It:
 
 - Auto-syncs local git diffs as patches (no `git push` needed for uncommitted changes)
-- Uses the custom `buildbuddy-remote-runner` Ubuntu image (configured in `devinfra/bbr.json`)
+- Uses the custom `buildbuddy-remote-runner` Ubuntu image (configured in `.bbrc`)
 - Mints and prints the Bazel invocation ID (`--invocation-id-file=PATH` records it)
 - Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis
   cache, output base) survives across builds
 
 ```bash
-bbr build //devinfra/buildbuddy_cli:bbapi
+bbr build //devinfra/buildbuddy/bbapi:bbapi
 ```
 
 ### Snapshot recycling — how it works
@@ -142,7 +142,7 @@ Snapshot behavior is controlled by two `runner_exec_properties`:
 branch, and always on the default branch. Subsequent runs on the same branch read the existing
 snapshot but don't write a new one.
 
-**This repo uses `always` + `newest` as the default** (set in `devinfra/bbr.json`):
+**This repo uses `always` + `newest` as the default** (set in `.bbrc`):
 
 ```json
 {
@@ -155,7 +155,7 @@ snapshot but don't write a new one.
 ```
 
 `bbr` picks these up automatically. The same properties are applied to CI via
-`.github/actions/bb-remote/action.yml`. No `BBR_REMOTE_ARGS` override is needed.
+`.github/actions/bb-remote/action.yml`. No additional remote-flag override is needed.
 
 With the default policy, back-to-back builds frequently cold-start due to a snapshot
 serialization race (snapshot not yet written before the next build starts) or landing on a
@@ -172,7 +172,7 @@ recycling; `runner-recycling-key` is optional and only matters if you want execu
 
 ### Observed build times
 
-Three consecutive `bbr build //devinfra/buildbuddy_cli:bbapi` with
+Three consecutive `bbr build //devinfra/buildbuddy/bbapi:bbapi` with
 `remote-snapshot-save-policy=always`:
 
 | Build | Snapshot state        | Bazel elapsed | Packages loaded      |
@@ -232,7 +232,7 @@ fc_exec() {
 fc_exec bash -c 'uname -a && df -h / && curl -s ifconfig.me'
 fc_exec bash -c '
   git clone --depth=1 https://github.com/agentydragon/ducktape /workspace/repo
-  cd /workspace/repo && bazelisk build //devinfra/buildbuddy_cli:bbapi
+  cd /workspace/repo && bazelisk build //devinfra/buildbuddy/bbapi:bbapi
 '
 ```
 
@@ -253,27 +253,7 @@ export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
 
 ## Invocation IDs
 
-`bbr` produces two invocation IDs
-([details](../../devinfra/docs/bb_remote_internals.md)):
-
-```bash
-# Inner (Bazel RBE build) — minted and printed by bbr ("bbr: invocation <id>");
-# use for targets, test results, artifacts, action cache stats. For scripts,
-# have bbr record it (or pass your own --invocation_id=<uuid> after the verb):
-bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
-bbapi invocation $(cat /tmp/bbr-inv)
-# Actions: 271   Duration: 6s   AC Hits: 865
-
-# Outer (bb remote / runner invocation) — printed by bb remote itself as
-# "Streaming remote runner logs to: .../invocation/<outer>"
-bbapi invocation <outer>
-# Duration:    8s   Host: 192.168.241.2   Role: HOSTED_BAZEL
-# Child:       <inner>   ← the Bazel invocation above
-
-# Browse: https://app.buildbuddy.io/invocation/<id>
-```
-
-`bbapi target` and `bbapi target log` auto-resolve outer IDs to inner — either works.
+`bbr` produces an outer runner invocation and an inner Bazel invocation. Use the inner ID for target results and artifacts; `bbapi` accepts either and resolves the outer to its child. See the [remote execution guide's invocation-ID section](../../devinfra/buildbuddy/docs/remote.md#invocation-ids) for per-run capture, explicit IDs, and the shared-file race caveat.
 
 ---
 
@@ -297,12 +277,12 @@ Tools (default image):  git 2.7.4, bazelisk, java, curl — no rsync, no bb bina
 
 ## Summary: State Persistence by Access Method
 
-| Method                                    | State preserved                    | Works from Claude Code web     | Notes                                                                    |
-| ----------------------------------------- | ---------------------------------- | ------------------------------ | ------------------------------------------------------------------------ |
-| `bb box` + `bb ssh`                       | Full persistent process            | **No** — WireGuard/UDP blocked | Works from regular dev machine                                           |
-| `bbr` (repo default: `always` + `newest`) | Full VM memory (Bazel server warm) | **Yes**                        | Build 3 showed 0 packages loaded, 0.652s; default in `devinfra/bbr.json` |
-| `bbr` with default BB policy              | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                         |
-| `bb execute`                              | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud        |
+| Method                                    | State preserved                    | Works from Claude Code web     | Notes                                                             |
+| ----------------------------------------- | ---------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `bb box` + `bb ssh`                       | Full persistent process            | **No** — WireGuard/UDP blocked | Works from regular dev machine                                    |
+| `bbr` (repo default: `always` + `newest`) | Full VM memory (Bazel server warm) | **Yes**                        | Build 3 showed 0 packages loaded, 0.652s; default in `.bbrc`      |
+| `bbr` with default BB policy              | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                  |
+| `bb execute`                              | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud |
 
 `boot_id` is **not** a reliable indicator of snapshot reuse — it always changes on Firecracker
 snapshot restore by design (entropy regeneration per clone). Use Bazel analysis time and

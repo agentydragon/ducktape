@@ -15,7 +15,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/google/uuid"
 )
 
 // decisionsChannel is notified with every committed batch, to every replica listening.
@@ -33,9 +34,10 @@ const (
 )
 
 const columns = "event_id, decided_at, producer_id, subject_namespace, subject_name, source_pod_uid, connection_id, " +
-	"phase, method, host, port, outcome, reason, binding, policy, rule, substituted, address"
+	"phase, method, host, port, outcome, reason, binding, policy, rule, substituted, address, " +
+	"impersonated_namespace, impersonated_name, subject_identity"
 
-const columnCount = 18
+const columnCount = 21
 
 // Open opens the history database with the connection bounds every operation relies on: a small pool
 // and a connect timeout, either of which the URL may override.
@@ -87,6 +89,12 @@ type Store struct {
 	capacity  int
 }
 
+// Window is the per-subject visible history bound used by Recent and decision watches.
+type Window struct {
+	Retention time.Duration
+	Capacity  int
+}
+
 // NewStore reads and keeps decisions for `retention`, returning at most `capacity` per read.
 func NewStore(db *sql.DB, retention time.Duration, capacity int) (*Store, error) {
 	if retention <= 0 || capacity < 1 || capacity > MaxCapacity {
@@ -95,11 +103,14 @@ func NewStore(db *sql.DB, retention time.Duration, capacity int) (*Store, error)
 	return &Store{db: db, retention: retention, capacity: capacity}, nil
 }
 
-// Retention is how long a decision is kept and served.
-func (s *Store) Retention() time.Duration { return s.retention }
+// Window reports the retention and capacity the store applies to every subject read.
+func (s *Store) Window() Window { return Window{Retention: s.retention, Capacity: s.capacity} }
 
 // Append stores the records and notifies listening replicas, in one transaction.
 func (s *Store) Append(ctx context.Context, records []decision.Record) error {
+	if len(records) == 0 {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -113,8 +124,10 @@ func (s *Store) Append(ctx context.Context, records []decision.Record) error {
 			return err
 		}
 	}
-	if err := postgres.Notify(ctx, tx, decisionsChannel, ""); err != nil {
-		return err
+	for _, payload := range notificationPayloads(records) {
+		if err := postgres.Notify(ctx, tx, decisionsChannel, payload); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -135,26 +148,74 @@ func insertStatement(records []decision.Record) (string, []any) {
 			fmt.Fprintf(&query, "$%d", i*columnCount+column+1)
 		}
 		query.WriteByte(')')
-		var namespace, name *string
-		if record.Subject != nil {
-			namespace, name = &record.Subject.Namespace, &record.Subject.Name
+		namespace, name, identity := subjectColumns(record.Subject)
+		var impersonatedNamespace, impersonatedName *string
+		if account := record.Impersonated; account != nil {
+			impersonatedNamespace, impersonatedName = &account.Namespace, &account.Name
 		}
 		args = append(args, record.EventID, record.At, record.ProducerID, namespace, name, record.SourcePodUID,
 			record.ConnectionID, record.Phase, record.Method, record.Host, record.Port, record.Outcome,
-			record.Reason, record.Binding, record.Policy, record.Rule, record.Substituted, record.Address)
+			record.Reason, record.Binding, record.Policy, record.Rule, record.Substituted, record.Address,
+			impersonatedNamespace, impersonatedName, identity)
 	}
 	query.WriteString(" ON CONFLICT (event_id) DO NOTHING")
 	return query.String(), args
 }
 
+// subjectColumns is a subject as its row stores it: a ServiceAccount's namespace and name, or an
+// Identity's name; all three are NULL for a request that never authenticated.
+func subjectColumns(subject decision.Subject) (namespace, name, identity *string) {
+	switch subject := subject.(type) {
+	case nil:
+		return nil, nil, nil
+	case decision.ServiceAccount:
+		return &subject.Namespace, &subject.Name, nil
+	case decision.Identity:
+		return nil, nil, &subject.Name
+	default:
+		panic(fmt.Sprintf("unknown decision subject %T", subject))
+	}
+}
+
+// scanRecord reads one row selected as `columns`.
+func scanRecord(rows *sql.Rows) (decision.Record, error) {
+	var record decision.Record
+	var namespace, name, impersonatedNamespace, impersonatedName, identity sql.NullString
+	if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
+		&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
+		&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address,
+		&impersonatedNamespace, &impersonatedName, &identity); err != nil {
+		return decision.Record{}, err
+	}
+	// The table's constraints admit at most one subject kind per row.
+	switch {
+	case namespace.Valid && name.Valid:
+		record.Subject = decision.ServiceAccount{Namespace: namespace.String, Name: name.String}
+	case identity.Valid:
+		record.Subject = decision.Identity{Name: identity.String}
+	}
+	if impersonatedNamespace.Valid && impersonatedName.Valid {
+		record.Impersonated = &decision.ServiceAccount{Namespace: impersonatedNamespace.String, Name: impersonatedName.String}
+	}
+	return record, nil
+}
+
 // Recent is one subject's retained decisions, oldest first and at most the store's capacity of the
 // latest, or -- for a nil subject -- those of refusals that never authenticated.
-func (s *Store) Recent(ctx context.Context, subject *decision.Subject) ([]decision.Record, error) {
+func (s *Store) Recent(ctx context.Context, subject decision.Subject) ([]decision.Record, error) {
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	where, args := "subject_namespace IS NULL AND subject_name IS NULL", []any{}
-	if subject != nil {
+	var where string
+	var args []any
+	switch subject := subject.(type) {
+	case nil:
+		where = "subject_namespace IS NULL AND subject_name IS NULL AND subject_identity IS NULL"
+	case decision.ServiceAccount:
 		where, args = "subject_namespace = $1 AND subject_name = $2", []any{subject.Namespace, subject.Name}
+	case decision.Identity:
+		where, args = "subject_identity = $1", []any{subject.Name}
+	default:
+		panic(fmt.Sprintf("unknown decision subject %T", subject))
 	}
 	args = append(args, time.Now().Add(-s.retention), s.capacity)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
@@ -167,15 +228,9 @@ func (s *Store) Recent(ctx context.Context, subject *decision.Subject) ([]decisi
 	defer rows.Close()
 	records := []decision.Record{}
 	for rows.Next() {
-		var record decision.Record
-		var namespace, name sql.NullString
-		if err := rows.Scan(&record.EventID, &record.At, &record.ProducerID, &namespace, &name, &record.SourcePodUID,
-			&record.ConnectionID, &record.Phase, &record.Method, &record.Host, &record.Port, &record.Outcome,
-			&record.Reason, &record.Binding, &record.Policy, &record.Rule, &record.Substituted, &record.Address); err != nil {
+		record, err := scanRecord(rows)
+		if err != nil {
 			return nil, err
-		}
-		if namespace.Valid && name.Valid {
-			record.Subject = &decision.Subject{Namespace: namespace.String, Name: name.String}
 		}
 		records = append(records, record)
 	}
@@ -184,6 +239,54 @@ func (s *Store) Recent(ctx context.Context, subject *decision.Subject) ([]decisi
 	}
 	slices.Reverse(records)
 	return records, nil
+}
+
+// ByEventIDs reads only the decisions named by committed change notifications. The returned order
+// is not meaningful; callers merge records by event identity and decision time.
+func (s *Store) ByEventIDs(ctx context.Context, eventIDs []uuid.UUID) ([]decision.Record, error) {
+	if len(eventIDs) == 0 {
+		return []decision.Record{}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	args := make([]any, len(eventIDs))
+	placeholders := make([]string, len(eventIDs))
+	for i, eventID := range eventIDs {
+		args[i] = eventID
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
+		"SELECT %s FROM egress_decision WHERE event_id IN (%s)", columns, strings.Join(placeholders, ","),
+	), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := make([]decision.Record, 0, len(eventIDs))
+	for rows.Next() {
+		record, err := scanRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// Readable checks that the history table can be queried without loading a subject window. Watch
+// heartbeats use it to retain their history-read health contract at a bounded, shared cost.
+func (s *Store) Readable(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	var exists bool
+	return s.db.QueryRowContext(
+		ctx,
+		"SELECT EXISTS (SELECT 1 FROM egress_decision WHERE decided_at >= $1 LIMIT 1)",
+		time.Now().Add(-s.retention),
+	).Scan(&exists)
 }
 
 // Cleanup deletes one batch of expired decisions. Fixed-size, SKIP LOCKED batches keep concurrent

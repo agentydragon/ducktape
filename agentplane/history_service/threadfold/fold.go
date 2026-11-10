@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/settledcursors"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -19,6 +20,7 @@ import (
 // silentObservations advance the projection without a row.
 var silentObservations = map[string]bool{
 	"native": true, "harness_stderr": true, "debug_checkpoint": true, "journal_reopened": true,
+	"boundary_record": true, "execution_progress": true,
 }
 
 // lifecycleObservations are kept whole as lifecycle segments.
@@ -64,7 +66,7 @@ func Touched(batch EventBatch) TouchedKeys {
 		case "tool_arguments":
 			id := event.GetToolArguments().GetItemId()
 			items[id] = struct{}{}
-			completed[ItemField{id, FieldArguments}] = struct{}{}
+			completed[ItemField{id, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS}] = struct{}{}
 		case "tool_output_delta":
 			items[event.GetToolOutputDelta().GetItemId()] = struct{}{}
 		case "item_completed":
@@ -72,15 +74,15 @@ func Touched(batch EventBatch) TouchedKeys {
 			items[id] = struct{}{}
 			switch event.GetItemCompleted().GetOutcome().(type) {
 			case *eventpb.ItemCompleted_Text:
-				completed[ItemField{id, FieldText}] = struct{}{}
+				completed[ItemField{id, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT}] = struct{}{}
 			case *eventpb.ItemCompleted_Tool:
-				completed[ItemField{id, FieldOutput}] = struct{}{}
+				completed[ItemField{id, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT}] = struct{}{}
 			}
 		case "conversation_reconciled":
 			for _, recovered := range event.GetConversationReconciled().GetItems() {
 				items[recovered.GetItemId()] = struct{}{}
 				if recovered.GetReplacement() != nil {
-					for _, field := range []PayloadField{FieldText, FieldArguments, FieldOutput} {
+					for _, field := range []historypb.ThreadPayloadField{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT} {
 						completed[ItemField{recovered.GetItemId(), field}] = struct{}{}
 					}
 				}
@@ -165,7 +167,7 @@ func itemOwner(item Item) PayloadOwner {
 	return PayloadOwner{item.ProjectionEpoch, item.Cursor, item.ItemID, item.RevisionCursor}
 }
 
-func (f *folder) validateRef(reference PayloadRef, owner PayloadOwner, field PayloadField, preloaded bool) error {
+func (f *folder) validateRef(reference PayloadRef, owner PayloadOwner, field historypb.ThreadPayloadField, preloaded bool) error {
 	if reference.ProjectionEpoch != f.state.Position.ProjectionEpoch ||
 		reference.OwnerCursor != owner.Cursor ||
 		reference.OwnerID != owner.OwnerID ||
@@ -205,9 +207,9 @@ func (f *folder) item(cursor uint64, itemID string) (Item, error) {
 		}
 		owner := itemOwner(*prior)
 		for _, held := range []struct {
-			field PayloadField
+			field historypb.ThreadPayloadField
 			ref   *PayloadRef
-		}{{FieldText, prior.Text}, {FieldArguments, prior.Arguments}, {FieldOutput, prior.Output}} {
+		}{{historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, prior.Text}, {historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, prior.Arguments}, {historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT, prior.Output}} {
 			if held.ref == nil {
 				continue
 			}
@@ -228,7 +230,7 @@ func (f *folder) saveItem(item Item, cursor uint64) Item {
 }
 
 func (f *folder) write(
-	owner PayloadOwner, base *PayloadRef, cursor uint64, field PayloadField, text string, appending bool,
+	owner PayloadOwner, base *PayloadRef, cursor uint64, field historypb.ThreadPayloadField, text string, appending bool,
 ) (PayloadRef, error) {
 	if base != nil {
 		if err := f.validateRef(*base, owner, field, false); err != nil {
@@ -279,7 +281,7 @@ func (f *folder) body(reference PayloadRef) (string, error) {
 	return strings.Join(fragments, ""), nil
 }
 
-func (f *folder) itemWrite(cursor uint64, itemID string, field PayloadField, text string, appending bool) (Item, error) {
+func (f *folder) itemWrite(cursor uint64, itemID string, field historypb.ThreadPayloadField, text string, appending bool) (Item, error) {
 	item, err := f.item(cursor, itemID)
 	if err != nil {
 		return Item{}, err
@@ -293,11 +295,11 @@ func (f *folder) itemWrite(cursor uint64, itemID string, field PayloadField, tex
 		return Item{}, err
 	}
 	switch field {
-	case FieldText:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT:
 		item.Text = &value
-	case FieldArguments:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS:
 		item.Arguments = &value
-	case FieldOutput:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT:
 		item.Output = &value
 	}
 	return f.saveItem(item, cursor), nil
@@ -305,7 +307,7 @@ func (f *folder) itemWrite(cursor uint64, itemID string, field PayloadField, tex
 
 // complete makes an authoritative value the field's body, unless the body already holds exactly that text:
 // then only the revision moves, so a reader holding the body has nothing to fetch.
-func (f *folder) complete(cursor uint64, itemID string, field PayloadField, text string) (Item, error) {
+func (f *folder) complete(cursor uint64, itemID string, field historypb.ThreadPayloadField, text string) (Item, error) {
 	item, err := f.item(cursor, itemID)
 	if err != nil {
 		return Item{}, err
@@ -352,7 +354,7 @@ func (f *folder) command(commandID string) (CommandSummary, error) {
 	}
 	if reference := prior.Input; reference != nil {
 		owner := PayloadOwner{prior.ProjectionEpoch, prior.AdmissionCursor, commandID, prior.AdmissionCursor}
-		if f.validateRef(*reference, owner, FieldCommandInput, true) != nil ||
+		if f.validateRef(*reference, owner, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, true) != nil ||
 			reference.RevisionCursor != prior.AdmissionCursor {
 			return CommandSummary{}, fmt.Errorf("invalid prior command input: %s", commandID)
 		}
@@ -370,40 +372,44 @@ func (f *folder) admit(cursor uint64, command *commandpb.Command) error {
 	if _, admitted := f.commands.get(commandID); admitted || prior != nil {
 		return fmt.Errorf("duplicate command admission: %s", commandID)
 	}
-	operation := oneofName(command, "operation")
-	if operation == "" {
-		return &ObservationNotUnderstoodError{cursor, "command_admitted.operation"}
-	}
 	summary := CommandSummary{
 		ProjectionEpoch: f.state.Position.ProjectionEpoch,
 		CommandID:       commandID,
 		AdmissionCursor: cursor,
-		Operation:       operation,
-		Outcome:         OutcomePending,
+		Outcome:         historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING,
 	}
-	switch operation {
-	case "change_model":
-		summary.RequestedValue = proto.String(command.GetChangeModel().GetModel())
-	case "change_reasoning_effort":
-		summary.RequestedValue = proto.String(command.GetChangeReasoningEffort().GetEffort())
-	case "submit_input":
+	switch operation := command.GetOperation().(type) {
+	case *commandpb.Command_SubmitInput:
+		summary.Operation = commandpb.Operation_OPERATION_SUBMIT_INPUT
 		owner := PayloadOwner{summary.ProjectionEpoch, cursor, commandID, cursor}
-		input, err := f.write(owner, nil, cursor, FieldCommandInput, command.GetSubmitInput().GetText(), false)
+		input, err := f.write(owner, nil, cursor, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, operation.SubmitInput.GetText(), false)
 		if err != nil {
 			return err
 		}
 		summary.Input = &input
+	case *commandpb.Command_ChangeModel:
+		summary.Operation = commandpb.Operation_OPERATION_CHANGE_MODEL
+		summary.RequestedValue = proto.String(operation.ChangeModel.GetModel())
+	case *commandpb.Command_ChangeReasoningEffort:
+		summary.Operation = commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT
+		summary.RequestedValue = proto.String(operation.ChangeReasoningEffort.GetEffort())
+	case *commandpb.Command_InterruptTurn:
+		summary.Operation = commandpb.Operation_OPERATION_INTERRUPT_TURN
+	case *commandpb.Command_Compact:
+		summary.Operation = commandpb.Operation_OPERATION_COMPACT
+	default:
+		return &ObservationNotUnderstoodError{cursor, "command_admitted.operation"}
 	}
 	f.commands.set(commandID, summary)
 	return nil
 }
 
-func (f *folder) settle(entry *eventlogpb.EventEntry, commandID string, outcome CommandOutcome, reason *string) error {
+func (f *folder) settle(entry *eventlogpb.EventEntry, commandID string, outcome historypb.ThreadCommandOutcome, reason *string) error {
 	summary, err := f.command(commandID)
 	if err != nil {
 		return err
 	}
-	if summary.Outcome != OutcomePending {
+	if summary.Outcome != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING {
 		return fmt.Errorf("command already settled: %s", commandID)
 	}
 	cursor := entry.GetCursor()
@@ -419,7 +425,6 @@ func (f *folder) recordLifecycle(entry *eventlogpb.EventEntry, observation strin
 		ProjectionEpoch: f.state.Position.ProjectionEpoch,
 		Cursor:          cursor,
 		RevisionCursor:  cursor,
-		Observation:     observation,
 		Event:           proto.Clone(event).(*eventpb.Event),
 	})
 	controls := f.state.Controls
@@ -433,7 +438,7 @@ func (f *folder) recordLifecycle(entry *eventlogpb.EventEntry, observation strin
 	case "turn_completed":
 		completed := event.GetTurnCompleted()
 		if completed.GetInterruptedByCommandId() != "" {
-			if err := f.settle(entry, completed.GetInterruptedByCommandId(), OutcomeEffected, nil); err != nil {
+			if err := f.settle(entry, completed.GetInterruptedByCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED, nil); err != nil {
 				return err
 			}
 		}
@@ -443,7 +448,7 @@ func (f *folder) recordLifecycle(entry *eventlogpb.EventEntry, observation strin
 	case "model_changed":
 		changed := event.GetModelChanged()
 		if changed.GetCommandId() != "" {
-			if err := f.settle(entry, changed.GetCommandId(), OutcomeEffected, nil); err != nil {
+			if err := f.settle(entry, changed.GetCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED, nil); err != nil {
 				return err
 			}
 		}
@@ -451,7 +456,7 @@ func (f *folder) recordLifecycle(entry *eventlogpb.EventEntry, observation strin
 	case "reasoning_effort_changed":
 		changed := event.GetReasoningEffortChanged()
 		if changed.GetCommandId() != "" {
-			if err := f.settle(entry, changed.GetCommandId(), OutcomeEffected, nil); err != nil {
+			if err := f.settle(entry, changed.GetCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED, nil); err != nil {
 				return err
 			}
 		}
@@ -486,28 +491,28 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 		f.recordEvidence(f.saveItem(item, cursor).Cursor, entry)
 	case "text_delta":
 		delta := event.GetTextDelta()
-		item, err := f.itemWrite(cursor, delta.GetItemId(), FieldText, delta.GetText(), true)
+		item, err := f.itemWrite(cursor, delta.GetItemId(), historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, delta.GetText(), true)
 		if err != nil {
 			return err
 		}
 		f.recordEvidence(item.Cursor, entry)
 	case "tool_arguments_delta":
 		delta := event.GetToolArgumentsDelta()
-		item, err := f.itemWrite(cursor, delta.GetItemId(), FieldArguments, delta.GetPartialJson(), true)
+		item, err := f.itemWrite(cursor, delta.GetItemId(), historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, delta.GetPartialJson(), true)
 		if err != nil {
 			return err
 		}
 		f.recordEvidence(item.Cursor, entry)
 	case "tool_arguments":
 		arguments := event.GetToolArguments()
-		item, err := f.complete(cursor, arguments.GetItemId(), FieldArguments, arguments.GetArgumentsJson())
+		item, err := f.complete(cursor, arguments.GetItemId(), historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, arguments.GetArgumentsJson())
 		if err != nil {
 			return err
 		}
 		f.recordEvidence(item.Cursor, entry)
 	case "tool_output_delta":
 		delta := event.GetToolOutputDelta()
-		item, err := f.itemWrite(cursor, delta.GetItemId(), FieldOutput, delta.GetText(), true)
+		item, err := f.itemWrite(cursor, delta.GetItemId(), historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT, delta.GetText(), true)
 		if err != nil {
 			return err
 		}
@@ -518,13 +523,13 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 		var err error
 		switch completed.GetOutcome().(type) {
 		case *eventpb.ItemCompleted_Text:
-			if item, err = f.complete(cursor, completed.GetItemId(), FieldText, completed.GetText()); err != nil {
+			if item, err = f.complete(cursor, completed.GetItemId(), historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, completed.GetText()); err != nil {
 				return err
 			}
 			item.Completion = TextCompletion{}
 		case *eventpb.ItemCompleted_Tool:
 			tool := completed.GetTool()
-			if item, err = f.complete(cursor, completed.GetItemId(), FieldOutput, tool.GetOutput()); err != nil {
+			if item, err = f.complete(cursor, completed.GetItemId(), historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT, tool.GetOutput()); err != nil {
 				return err
 			}
 			item.Completion = ToolCompletion{Succeeded: tool.GetSucceeded()}
@@ -541,7 +546,7 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 			ownerID = fmt.Sprintf("confirmed:%d", cursor)
 		}
 		epoch := f.state.Position.ProjectionEpoch
-		text, err := f.write(PayloadOwner{epoch, cursor, ownerID, cursor}, nil, cursor, FieldConfirmedInput, confirmed.GetText(), false)
+		text, err := f.write(PayloadOwner{epoch, cursor, ownerID, cursor}, nil, cursor, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_CONFIRMED_INPUT, confirmed.GetText(), false)
 		if err != nil {
 			return err
 		}
@@ -558,7 +563,7 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 		}
 		f.confirmed.set(cursor, input)
 		for _, commandID := range confirmed.GetOriginCommandIds() {
-			if err := f.settle(entry, commandID, OutcomeEffected, nil); err != nil {
+			if err := f.settle(entry, commandID, historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED, nil); err != nil {
 				return err
 			}
 		}
@@ -570,10 +575,10 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 		f.recordEvidence(cursor, entry)
 	case "command_failed":
 		failed := event.GetCommandFailed()
-		return f.settle(entry, failed.GetCommandId(), OutcomeFailed, proto.String(failed.GetReason()))
+		return f.settle(entry, failed.GetCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED, proto.String(failed.GetReason()))
 	case "command_noop":
 		noop := event.GetCommandNoop()
-		return f.settle(entry, noop.GetCommandId(), OutcomeNoop, proto.String(noop.GetReason()))
+		return f.settle(entry, noop.GetCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_NOOP, proto.String(noop.GetReason()))
 	default:
 		switch {
 		case lifecycleObservations[observation]:
@@ -618,12 +623,12 @@ func (f *folder) reconcile(entry *eventlogpb.EventEntry) error {
 		if revised {
 			content := recovered.GetReplacement()
 			if item.Kind == eventpb.ItemKind_ITEM_KIND_TOOL_CALL {
-				if _, err := f.complete(cursor, item.ItemID, FieldArguments, content.GetArgumentsJson()); err != nil {
+				if _, err := f.complete(cursor, item.ItemID, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS, content.GetArgumentsJson()); err != nil {
 					return err
 				}
-				item, err = f.complete(cursor, item.ItemID, FieldOutput, content.GetOutput())
+				item, err = f.complete(cursor, item.ItemID, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT, content.GetOutput())
 			} else {
-				item, err = f.complete(cursor, item.ItemID, FieldText, content.GetText())
+				item, err = f.complete(cursor, item.ItemID, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT, content.GetText())
 			}
 			if err != nil {
 				return err

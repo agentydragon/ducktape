@@ -2,28 +2,42 @@
 name: workspace-gc
 description: >-
   Inspect and safely clean stale local dev state: unused Git worktrees, merged
-  branches, orphaned Bazel output bases. Use for pruning worktrees/branches or
-  reclaiming Bazel disk — drive the `workspace-gc` tool and apply PR judgment
-  to REVIEW items.
+  branches, orphaned Bazel output bases, unreferenced repo-contents-cache
+  entries. Use for pruning worktrees/branches or reclaiming Bazel disk — drive
+  the `workspace-gc` tool and apply PR judgment to REVIEW items.
 ---
 
 # Clean Workspaces
 
-`workspace-gc` runs **one joint scan** over three coupled domains and classifies them
+`workspace-gc` runs **one joint scan** over four coupled domains and classifies them
 together (the domains depend on each other: a branch checked out in a live worktree can't be
-deleted; an output base orphans when its workspace worktree is removed):
+deleted; an output base orphans when its workspace worktree is removed; a repo-cache entry is
+unreferenced once the bases linking to it are gone):
 
 - **worktrees** — local worktrees whose work is already merged;
 - **branches** — local branches whose work is already in the default branch;
-- **bazel-bases** — orphaned Bazel output bases and bases linked to workspaces under `/tmp`.
+- **bazel-bases** — orphaned Bazel output bases (the default MD5-named ones and Claude Code's
+  per-session ones) and bases linked to workspaces under `/tmp`;
+- **repo-cache** — entries of Bazel's repo contents cache that no output base links to.
 
-`workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees` and
-`workspace-gc bazel-bases` are **views** of that same computed result, scoped to one domain.
+`workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
+`workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
+result, scoped to one domain.
 All use the PRUNE/KEEP/REVIEW model, are dry by default, and revalidate every candidate
-immediately before removing it.
+immediately before removing it, skipping (and exiting nonzero for) one that changed.
+Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
+them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
+anything you would miss.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
+
+Git or filesystem failures inspecting a worktree, branch, or foreign clone produce `REVIEW`
+with the error, leaving that item intact while other items continue. This also applies during
+deletion revalidation. An existing directory with unreadable Git metadata is never treated as
+a missing worktree. Failures that block the entire command exit nonzero with a diagnostic.
+An item skipped at deletion (it no longer qualifies, or its Bazel lock or the cache is busy) is
+reported as `SKIPPED` and does not change the exit status; a failed removal does.
 
 **The tool automates what's easy to automate; you apply intelligence where the automation
 needs supplementation.** It makes the clear-cut calls — an ancestor merge, a merged PR, a
@@ -58,14 +72,19 @@ workspace-gc                        # the default: worktrees + branches + bases 
 workspace-gc --sizes                # add du-measured base sizes (slow on a large cache)
 workspace-gc worktrees              # the worktree slice only
 workspace-gc bazel-bases            # the output-base slice only
+workspace-gc repo-cache             # the repo-contents-cache slice only
 git worktree prune --dry-run --verbose   # stale admin records
 ```
 
-Add `--all` to show KEEP rows too. Omit `--sizes` for a quick first pass on a large cache.
+Repo-cache reports summarize PRUNE and KEEP entries and list REVIEW entries; use `--verbose`
+to list PRUNE entries and individual deletion results, or `--all` to list all cache entries.
+Add `--all` to show KEEP rows in other domains too. Omit `--sizes` for a quick first pass on a large cache.
 Pass `--no-prs` to skip the GitHub PR cross-check (offline, or to avoid one API call per
 branch on a repo with many branches). The base scanner covers one output-user-root at a time
-(default `$XDG_CACHE_HOME/bazel/_bazel_$USER`); re-run with `--output-user-root PATH` for
-known custom cache locations rather than assuming the default is the only root.
+(default `$XDG_CACHE_HOME/bazel/_bazel_$USER`) plus, always, every Claude Code per-session base
+(`~/.claude/session-env/*/bazel-output-base`, where each session's `bazelrc` points Bazel);
+re-run with `--output-user-root PATH` for known custom cache locations rather than assuming the
+default is the only root.
 
 ## Worktrees
 
@@ -74,7 +93,7 @@ known custom cache locations rather than assuming the default is the only root.
 - `PRUNE`: clean, idle (not main/active, no process cwd'd inside), and its work is already
   in the main branch — an ancestor, a squash/rebase-merge (merging into main is a no-op),
   an empty branch, or a **merged GitHub PR** for its branch. Remove with
-  `workspace-gc worktrees --prune`: it re-scans, runs `git worktree remove` **without
+  `workspace-gc worktrees --prune`: it re-classifies each worktree right before removing it, runs `git worktree remove` **without
   `--force`** (so a tree that turned dirty is skipped), and **never deletes branches** —
   the work stays reachable through them.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
@@ -139,10 +158,13 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
 
 `workspace-gc bazel-bases` classifies each base; interpret it literally:
 
-- `PRUNE`: a default MD5-named base whose recorded workspace is absent or under `/tmp`, with
-  no live server or nested mount. Remove with `workspace-gc bazel-bases --delete`; it
-  revalidates and locks every candidate before deletion. Deleting a `/tmp` output base leaves
-  its workspace intact.
+- `PRUNE`: a default MD5-named base, or a per-session base under `~/.claude/session-env/`,
+  whose recorded workspace is absent or under `/tmp`, with no live server or nested mount. A
+  server is live only when some process's argv names that very base as `--output_base` — a
+  bare recorded PID proves nothing, since a sandboxed server records its namespace-local PID
+  and a host PID is recycled once the server exits. Remove with `workspace-gc bazel-bases --delete`;
+  it revalidates and locks every candidate before deletion. Deleting a `/tmp` output base
+  leaves its workspace intact.
 - `KEEP`: leave it alone. A base whose workspace is a **prunable worktree** outside `/tmp`
   stays KEEP in the `bazel-bases` view (its workspace still exists) but is annotated
   "workspace is a prunable worktree"; run `all --prune` to remove the worktree and then its
@@ -151,8 +173,34 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
   failed-quarantine issue. Never convert `REVIEW` into `rm -rf` without proving what the
   directory is and why removal is safe.
 
-Re-run the dry scan after deletion. A nonzero delete result or a `.bazel-output-base-gc-*`
+Re-run the dry scan after deletion. A nonzero delete result (a failed removal) or a `.bazel-output-base-gc-*`
 quarantine means cleanup is incomplete and needs inspection.
+
+## Repo Contents Cache
+
+Bazel stores every fetched repository once, under `<output user root>/cache/repos/v1/contents/
+<hash>/<uuid>/` with a sibling `<uuid>.recorded_inputs`, and an output base uses it through the
+symlink `external/<repo>`. Bazel's own GC (`--repo_contents_cache_gc_max_age`) is age-based,
+runs only on an idle server, and never asks whether anything still links to an entry.
+`workspace-gc repo-cache` does; interpret it literally:
+
+- `PRUNE`: no output base the scan knows — the root's and the per-session ones — links to the
+  entry. Remove with `workspace-gc repo-cache --delete`: it takes Bazel's `gc_lock`
+  exclusively (every Bazel command holds it shared while it runs, so nothing can be fetching
+  or linking meanwhile; a busy lock skips the round), re-lists the bases and their links,
+  then removes the entry the way Bazel's GC does (recorded inputs first, directory via
+  `_trash/`).
+- `KEEP`: some base that itself stays (KEEP or REVIEW) links to it. An entry whose only
+  referrers are **prunable bases** is KEEP in this view, annotated "only prunable bases
+  reference it"; run `all --prune` to remove those bases and then the entry in one pass.
+- `REVIEW`: a malformed name, a directory without its `.recorded_inputs` (or the reverse), a
+  nested mount, or an unreadable entry. Never `rm -rf` one without proving what it is.
+
+`LAST USED` is the recorded-inputs mtime, which Bazel touches on every cache hit. `--sizes`
+runs `du` per entry and is slow on thousands of entries. The scan derives the cache location
+from `--output-user-root` as Bazel's default does; a base under _another_ output user root
+that points `--repo_contents_cache` at this cache is invisible, and an entry only it links to
+is deleted — that base re-fetches the repo, the same exposure Bazel's own GC already creates.
 
 ## Leave Judgment Where It Belongs
 
@@ -162,12 +210,12 @@ Handle these manually per situation instead of expanding the tool's deletion sur
 - stale directories that are not registered Git worktrees;
 - `REVIEW` output bases and failed GC quarantines;
 - nondefault output-base layouts and additional output-user-roots; and
-- Bazel's shared repository, disk, and install caches, plus any legacy `repo-contents`
-  cache.
+- Bazel's shared repository (download), disk, and install caches.
 
 `workspace-gc` deletes only **local** branches it proves are merged; deleting remote branches
 is never implied — do that only when the user separately requests it and its safety is
 established.
 
 Finish with a concise ledger: worktrees removed and retained, branches deleted and retained,
-output bases deleted, space reclaimed, roots scanned, and every item still requiring review.
+output bases and repo-cache entries deleted, space reclaimed, roots scanned, and every item
+still requiring review.

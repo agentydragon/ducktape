@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "kvm_test",
+    srcs = ["kvm_test.go"],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "1",
+        "test.Pool": "wyrm2-kvm",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "oci",
+    },
+    tags = ["manual"],
+)
+
+go_test(
+    name = "kvm_vm_test",
+    srcs = [
+        "kvm_test.go",
+        "worker_keyring_test.go",
+        "worker_pivot_root_test.go",
+    ],
+    exec_properties = {
+        "test.EstimatedComputeUnits": "1",
+        "test.Pool": "kvm-vm",
+        "test.init-dockerd": "false",
+        "test.recycle-runner": "false",
+        "test.use-self-hosted-executors": "true",
+        "test.workload-isolation-type": "docker",
+    },
+    tags = ["manual"],
+)

@@ -1,12 +1,11 @@
 """The Grafana instance (run by grafana-operator), its Postgres, route, datasources and
 dashboards. A dashboard authored here is `dashboards/<name>.json` beside this module plus its
-line in `_FILE_DASHBOARDS`.
+entry in `grafana_dashboard_inputs.FILE_DASHBOARDS`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
@@ -31,12 +30,13 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring.grafana_dashboard_inputs import FILE_DASHBOARDS
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -54,13 +54,13 @@ TEMPO_DATASOURCE_UID = "f99d1a97-7e72-4887-9277-0b105a5ccf44"
 # The existing CR cannot gain immutable spec.uid; use the supported legacy datasource.uid.
 LOKI_DATASOURCE_UID = "fc9a18f9-6955-4e40-95c1-66e32e7e8431"
 # The Service grafana-operator creates for the Grafana named `_NAME`.
-_SERVICE = ServiceRef(
+SERVICE = ServiceRef(
     name=f"{_NAME}-service",
     port=Port(name="grafana", number=3000),
     pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
 )
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-instance"
-DATABASE = cnpg.PostgresRef(
+DATABASE = cluster.PostgresRef(
     name="grafana-db-ovh",
     namespace=_NAMESPACE,
     # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
@@ -70,33 +70,7 @@ DATABASE = cnpg.PostgresRef(
 _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
-_INSTANCE_LABELS = {"dashboards": _NAME}
-
-
-@dataclass(frozen=True)
-class _FileDashboard:
-    # Maps each dashboard input to a datasource name.
-    datasources: Mapping[str, str]
-    folder: str | None = None
-
-
-# `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap.
-_FILE_DASHBOARDS = {
-    "flux-cluster": _FileDashboard(datasources={}, folder="Cluster & Platform"),
-    "interface-flap-frequency": _FileDashboard(
-        datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"
-    ),
-    "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}, folder="Nodes & Hardware"),
-    "node-memory": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Nodes & Hardware"),
-    "cluster-storage-io": _FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Storage"),
-    "s3-operations": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "piraeus-storage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "storage-service-details": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    "io-pressure": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Storage"),
-    # Beside the AT&T gateway exporter's own "Home gateway" dashboard.
-    "home-network-overview": _FileDashboard(datasources={"DS_LOKI": "Loki"}, folder="Network"),
-}
+INSTANCE_LABELS = {"dashboards": _NAME}
 
 
 def _dashboard_file(name: str) -> DashboardFile:
@@ -105,15 +79,15 @@ def _dashboard_file(name: str) -> DashboardFile:
     )
 
 
-DASHBOARDS = [_dashboard_file(name) for name in _FILE_DASHBOARDS]
+DASHBOARDS = [_dashboard_file(name) for name in FILE_DASHBOARDS]
 
 
 def _database(chart: Chart) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="4Gi",
         resize_in_use_volumes=False,
         # Created by pg_basebackup from the retired grafana-db, so this never initializes
@@ -121,10 +95,10 @@ def _database(chart: Chart) -> None:
         # exporter's default queries run against the database, and CNPG keeps the role's
         # password in sync with the Secret Grafana also authenticates with. Without it CNPG
         # defaults to `app`, which does not exist here.
-        initdb=cnpg.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
+        initdb=cluster.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _secret_env(name: str, key: SecretKey) -> GrafanaSpecDeploymentSpecTemplateSpecContainersEnv:
@@ -143,7 +117,7 @@ def _grafana(chart: Chart) -> None:
     Grafana(
         chart,
         "grafana",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=INSTANCE_LABELS),
         client=GrafanaSpecClient(use_kube_auth=True),
         config={
             "server": {"root_url": GRAFANA_BASE_URL},
@@ -231,7 +205,7 @@ def _grafana(chart: Chart) -> None:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=[HOSTNAME],
-        backend=_SERVICE,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
@@ -242,7 +216,7 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
         chart,
         f"datasource-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=INSTANCE_LABELS),
         datasource=datasource,
     )
 
@@ -332,7 +306,7 @@ def _dashboard(
         chart,
         f"dashboard-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=INSTANCE_LABELS),
         folder=folder,
         datasources=[
             GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
@@ -346,7 +320,7 @@ def _dashboard(
 
 
 def _dashboards(chart: Chart) -> None:
-    for name, dashboard in _FILE_DASHBOARDS.items():
+    for name, dashboard in FILE_DASHBOARDS.items():
         _dashboard(
             chart, name, datasources=dashboard.datasources, folder=dashboard.folder, config_map=_dashboard_file(name)
         )

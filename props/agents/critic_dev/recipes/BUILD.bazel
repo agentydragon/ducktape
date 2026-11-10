@@ -5,6 +5,7 @@ Bundled into critic-dev OCI images so agents can import or inspect them.
 
 load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
+load("//props/testing:exec_properties.bzl", "CONTAINER_E2E_EXEC_PROPERTIES")
 
 # An exported critic recipe consumed as a file by test_build_critic_e2e and the
 # critic-dev image; the _test.py suffix is part of that contract, not a py_test.
@@ -77,19 +78,25 @@ py_test(
         "//props/agents/critic:image",
         "//props/agents/critic_dev/optimize:image",
     ],
+    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
+        "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
         "//openai_utils:model",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/core:agent_types",
         "//props/db:models",
         "//props/testing:constants",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
         "//util/exec:models",
+        "//util/testing:postgres_fixtures",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
@@ -105,13 +112,14 @@ py_test(
         "//props/agents/critic_dev/optimize:image",
         "//props/agents/grader:image",
     ],
+    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
+        "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",
         "//props/agents/grader:tools",
@@ -121,6 +129,11 @@ py_test(
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:models",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],

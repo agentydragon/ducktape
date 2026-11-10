@@ -3,10 +3,7 @@ package webhook
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"database/sql/driver"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,12 +11,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	githubapi "github.com/google/go-github/v88/github"
 	"github.com/google/uuid"
 )
 
@@ -155,10 +154,10 @@ func (h *Handler) receive(ctx context.Context, header http.Header, raw []byte) (
 }
 
 func (h *Handler) signed(raw []byte, signature string) bool {
-	mac := hmac.New(sha256.New, h.secret)
-	mac.Write(raw)
-	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
+	// GitHub documents lower-case SHA-256 here; the library also accepts other
+	// algorithms and uppercase hex, which this endpoint does not.
+	return strings.HasPrefix(signature, "sha256=") && signature == strings.ToLower(signature) &&
+		githubapi.ValidateSignature(signature, raw, h.secret) == nil
 }
 
 // timedOut is a failure that came with the request's time running out, whether on its context or on the connection.

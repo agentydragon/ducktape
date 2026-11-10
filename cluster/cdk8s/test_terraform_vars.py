@@ -11,11 +11,12 @@ import pygohcl
 import pytest
 import pytest_bazel
 from pydantic import BaseModel
+from python.runfiles import Runfiles
 
+from cluster.cdk8s.cdviz.github_webhook import CdvizGithubWebhookVars
 from cluster.cdk8s.forgejo_registry.chart import ForgejoImagesVars
 from cluster.cdk8s.monitoring.home_switch import HomeSwitchVars
 from cluster.cdk8s.route53_domain_delegation import Route53DomainDelegationVars
-from util.bazel.runfiles import get_required_path
 
 
 @pytest.mark.parametrize(
@@ -24,10 +25,11 @@ from util.bazel.runfiles import get_required_path
         (Route53DomainDelegationVars, "route53-domain-delegation"),
         (ForgejoImagesVars, "forgejo-images"),
         (HomeSwitchVars, "home-switch"),
+        (CdvizGithubWebhookVars, "cdviz-github-webhook"),
     ],
 )
-def test_vars_model_matches_module(model: type[BaseModel], module: str) -> None:
-    declared = pygohcl.loads(get_required_path(f"_main/tf/gitops/{module}/variables.tf").read_text())["variable"]
+def test_vars_model_matches_module(runfiles: Runfiles, model: type[BaseModel], module: str) -> None:
+    declared = pygohcl.loads((runfiles.root() / f"ducktape/tf/gitops/{module}/variables.tf").read_text())["variable"]
     assert (
         {name for name, spec in declared.items() if "default" not in spec} <= set(model.model_fields) <= set(declared)
     )

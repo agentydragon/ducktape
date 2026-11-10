@@ -26,8 +26,8 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
-# The tag `//third_party/containers:ryuk` loads its image into the Docker daemon under, and
-# the Ryuk image every `requires_docker` test's testcontainers starts. Testcontainers' own
+# The image name every `requires_docker` test's testcontainers starts. Tests preload the
+# pinned Ryuk layout under this name from the testcontainers configuration. Testcontainers' own
 # default (`testcontainers/ryuk:0.8.1`) is a tag nothing preloads, which the daemon pulls
 # from Docker Hub.
 RYUK_TAG = "testcontainers/ryuk:0.14.0"
@@ -40,7 +40,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         size: Test size. Defaults to 'small' (60s timeout). A target that times out on RBE
             without doing 60s of work is hitting executor I/O latency rather than its own
             cost -- size that target 'medium' where it happens, and see
-            devinfra/debug/2026_08_rbe_small_test_timeouts.md before assuming the test is at fault.
+            devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md before assuming the test is at fault.
         requires_docker: Whether this test needs Docker. If True, adds the
             "requires_docker" tag and sets RYUK_CONTAINER_IMAGE to RYUK_TAG.
         uses_syrupy: Whether this test uses syrupy snapshots. If True, wires
@@ -52,7 +52,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         env: Extra env vars.
         env_inherit: Extra env vars to inherit.
         shard_count: Split the test's cases across this many Bazel shards, item i of
-            the collection on shard i mod shard_count. Loads util/testing/sharding.py,
+            the collection on shard i mod shard_count. Loads devinfra/testing/sharding.py,
             which is what reads the --shard-id/--num-shards pytest_bazel derives from
             Bazel's shard environment; without it pytest rejects those flags and the
             test fails at startup rather than sharding.
@@ -71,21 +71,31 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     base_env_inherit = list(env_inherit or [])
     base_args = list(args or [])
     base_deps = list(deps or [])
+
+    # importlib: pytest imports test modules without inserting their directories into sys.path.
+    # Prepend mode would put e.g. cluster/cdk8s on sys.path for a conftest there, letting
+    # cluster/cdk8s/agentplane shadow the top-level agentplane package.
+    # consider_namespace_packages: the repo has no __init__.py files, so without it pytest
+    # registers empty stand-in parent modules (`haku`, `haku.console`) that hide the real
+    # namespace packages spanning the main repo and external repos like @ducktape_haku.
+    # Passed via the environment, not `args`: pydantic-settings classes with `cli_parse_args`
+    # read sys.argv.
+    env = {"PYTEST_ADDOPTS": "--import-mode=importlib -o consider_namespace_packages=true"} | (env or {})
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
-        env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | (env or {})
+        env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | env
     if shard_count != None:
-        base_args = base_args + ["-p", "util.testing.sharding"]
-        base_deps = base_deps + ["//util/testing:sharding"]
+        base_args = base_args + ["-p", "devinfra.testing.sharding"]
+        base_deps = base_deps + ["//devinfra/testing:sharding"]
         kwargs["shard_count"] = shard_count
     if uses_syrupy:
         base_args = base_args + [
-            "--snapshot-default-extension=util.testing.bazel_snapshot_extension.BazelAmberExtension",
+            "--snapshot-default-extension=devinfra.testing.bazel_snapshot_extension.BazelAmberExtension",
             "-p",
-            "util.testing.bazel_snapshot_extension",
+            "devinfra.testing.bazel_snapshot_extension",
         ]
         base_deps = base_deps + [
-            "//util/testing:bazel_snapshot_extension",
+            "//devinfra/testing:bazel_snapshot_extension",
         ]
 
     _py_test(

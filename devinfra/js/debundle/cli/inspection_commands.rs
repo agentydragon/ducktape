@@ -1,9 +1,9 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
-use crate::gate::InspectionRoots;
-use crate::{GraphCompatibilityScope, emit_report, verify_graph_header_compatibility};
-use analysis::DepKind;
+use crate::emit_report;
+use analysis_model::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::plan::ExplainSession;
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
@@ -18,7 +18,6 @@ use source_identity::SourceUnitOrdinal;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
@@ -40,11 +39,15 @@ pub(super) struct DescribeArgs {
     #[command(flatten)]
     pub common: PeelCommonArgs,
 
+    /// Tree config for chunk-scoped queries over an app-level modules tree.
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    pub tree_config: Option<PathBuf>,
+
     /// Hard line ceiling used when resolving proposal-id references.
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
-    /// Maximum number of rows per report section (default 20; use --all for exhaustive results).
+    /// Maximum number of rows per report section (default 20; edge census counts stay complete).
     #[arg(
         long,
         default_value = "20",
@@ -57,11 +60,11 @@ pub(super) struct DescribeArgs {
     #[arg(long)]
     pub all: bool,
 
-    /// Which dependency-graph edge directions to show.
+    /// Which dependency-graph edge directions to show and count.
     #[arg(long, value_enum, default_value = "both")]
     pub direction: ExplainDirection,
 
-    /// Keep edges with this dependency reason; repeat to include several reasons.
+    /// Keep edges with this dependency reason; repeat to filter details and census counts.
     #[arg(long = "reason", value_name = "REASON")]
     pub reasons: Vec<DepKind>,
 
@@ -80,11 +83,15 @@ pub(super) struct DescribeArgs {
     pub format: Option<OutputFormat>,
 }
 
+pub(super) struct ValidatedDescribeQuery {
+    ids: Vec<String>,
+}
+
 /// Args for `debundle inspect-source`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
     /// Resolve a binding, source unit, atom, proposal, diagnostic, or module ID.
-    #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding"])]
+    #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding", "declarator_binding"])]
     pub id: Option<String>,
 
     /// Dependency graph for --id (or DEBUNDLE_GRAPH).
@@ -112,15 +119,22 @@ pub(super) struct InspectSourceArgs {
     pub chunk: Option<PathBuf>,
 
     /// Select one zero-based statement index or an inclusive `START..END` range.
-    #[arg(long, conflicts_with = "around_binding")]
+    #[arg(long, conflicts_with_all = ["around_binding", "declarator_binding"])]
     pub statements: Option<StatementRange>,
 
-    /// Select the unique top-level item declaring this binding.
-    #[arg(long)]
+    /// Select the unique top-level item declaring this raw input binding.
+    /// Resolve readable spec names with --id instead.
+    #[arg(long, conflicts_with_all = ["id", "statements", "declarator_binding"])]
     pub around_binding: Option<String>,
 
+    /// Select one top-level variable declarator by a declared raw input name.
+    /// The reported body index is its enclosing raw item; its span and source
+    /// contain only the declarator. Resolve readable spec names with --id instead.
+    #[arg(long, conflicts_with_all = ["id", "statements", "around_binding", "context_statements"])]
+    pub declarator_binding: Option<String>,
+
     /// Neighboring items around --around-binding (default 2) or --id (default 0).
-    #[arg(long = "context-statements")]
+    #[arg(long = "context-statements", conflicts_with = "declarator_binding")]
     pub context_statements: Option<usize>,
 
     /// Show readable SWC output or exact source bytes.
@@ -175,6 +189,8 @@ struct InspectedFile {
 #[derive(Debug, Serialize)]
 struct InspectedStatement {
     index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declarator_index: Option<usize>,
     byte_start: usize,
     byte_end: usize,
     start_line: usize,
@@ -205,39 +221,24 @@ pub(super) const ACCEPTED_IDENTIFIER_EXAMPLES: &[&str] = &[
     "auto_partition_0007",
 ];
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "unsupported identifier prefix {prefix:?} in {identifier:?}{}; accepted prefixes are {}",
+    .suggestion.as_ref().map_or(String::new(), |suggestion| format!("; use {suggestion:?} for a logical module id")),
+    ACCEPTED_IDENTIFIER_PREFIXES.join(", ")
+)]
 pub(super) struct UnsupportedIdentifierPrefix {
     pub identifier: String,
     pub prefix: String,
     pub suggestion: Option<String>,
 }
 
-impl fmt::Display for UnsupportedIdentifierPrefix {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "unsupported identifier prefix {:?} in {:?}",
-            self.prefix, self.identifier
-        )?;
-        if let Some(suggestion) = &self.suggestion {
-            write!(formatter, "; use {suggestion:?} for a logical module id")?;
-        }
-        write!(
-            formatter,
-            "; accepted prefixes are {}",
-            ACCEPTED_IDENTIFIER_PREFIXES.join(", ")
-        )
-    }
-}
-
-impl std::error::Error for UnsupportedIdentifierPrefix {}
-
 /// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
 /// paths and logical module ids resolve through the same dependency-graph/spec
 /// claim path as other structured IDs, so binding members and anonymous
 /// statements stay in sync. Unknown colon prefixes are rejected after checking
 /// for a real module path, since `:` is legal in Linux filenames.
-fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionKind> {
+fn dispatch_id_selection(id: &str, module_paths: &mut ModulePathIndex) -> Result<SelectionKind> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
     if id.starts_with("unit:") {
@@ -256,7 +257,7 @@ fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<Sel
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
-    if let Some(module_path) = resolve_id_as_module_path(id, modules_root)? {
+    if let Some(module_path) = module_paths.resolve_id(id)? {
         return Ok(SelectionKind::ModulePath(module_path));
     }
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
@@ -285,7 +286,7 @@ fn unsupported_typed_prefix(id: &str) -> Option<(&str, &str)> {
 }
 
 pub(super) fn validate_query_id(id: &str, modules_root: &std::path::Path) -> Result<()> {
-    dispatch_id_selection(id, modules_root).map(|_| ())
+    dispatch_id_selection(id, &mut ModulePathIndex::under(modules_root)).map(|_| ())
 }
 
 fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
@@ -305,64 +306,108 @@ fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
     }
 }
 
-fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result<Option<String>> {
-    let module_id = id.strip_suffix(".yaml").unwrap_or(id);
-    let candidate = modules_root.join(format!("{module_id}.yaml"));
-    if candidate.is_file() {
-        return Ok(Some(module_id.to_string()));
-    }
-    if module_id.contains('/') {
-        return Ok(None);
-    }
-
-    let filename = format!("{module_id}.yaml");
-    let mut matches = collect_module_files(modules_root)
-        .with_context(|| format!("walking modules tree {}", modules_root.display()))?
-        .into_iter()
-        .filter(|path| {
-            path.file_name()
-                .is_some_and(|name| name == filename.as_str())
-        })
-        .map(|path| module_path_from_file(&path, modules_root));
-    let Some(first) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Ok(None);
-    }
-    Ok(Some(first))
-}
-
-pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result<()> {
+pub(super) fn validate_describe_query(args: &DescribeArgs) -> Result<ValidatedDescribeQuery> {
     if args.limit == Some(0) {
         bail!("--limit must be greater than zero; use --all for exhaustive results");
     }
-    let ids = describe_ids(&args)?;
+    let ids = describe_ids(args)?;
+    // Preserve the early unsupported-prefix check. The verified, chunk-scoped
+    // module index is built after provenance preflight in `run_describe`.
+    let mut module_paths = ModulePathIndex::under(&args.common.modules_root);
+    ids.iter()
+        .try_for_each(|id| dispatch_id_selection(id, &mut module_paths).map(|_| ()))?;
+    Ok(ValidatedDescribeQuery { ids })
+}
+
+/// Resolve module paths only when a query needs the path-versus-binding
+/// disambiguation. Reserved typed IDs have a complete interpretation without
+/// reading the current modules tree.
+struct ModulePathIndex {
+    modules_root: Option<PathBuf>,
+    paths: Option<Vec<String>>,
+}
+
+impl ModulePathIndex {
+    fn under(modules_root: &std::path::Path) -> Self {
+        Self {
+            modules_root: Some(modules_root.to_path_buf()),
+            paths: None,
+        }
+    }
+
+    fn from_paths(paths: Vec<String>) -> Self {
+        Self {
+            modules_root: None,
+            paths: Some(paths),
+        }
+    }
+
+    fn resolve_id(&mut self, id: &str) -> Result<Option<String>> {
+        Ok(resolve_id_as_module_path(id, self.paths()?))
+    }
+
+    fn paths(&mut self) -> Result<&[String]> {
+        if self.paths.is_none() {
+            let modules_root = self
+                .modules_root
+                .as_deref()
+                .context("module path index has no modules root")?;
+            self.paths = Some(module_paths_under(modules_root)?);
+        }
+        Ok(self.paths.as_deref().expect("module paths were loaded"))
+    }
+}
+
+fn module_paths_under(modules_root: &std::path::Path) -> Result<Vec<String>> {
+    Ok(collect_module_files(modules_root)?
+        .iter()
+        .map(|path| module_path_from_file(path, modules_root))
+        .collect())
+}
+
+fn resolve_id_as_module_path(id: &str, module_paths: &[String]) -> Option<String> {
+    let module_id = id.strip_suffix(".yaml").unwrap_or(id);
+    if module_paths.iter().any(|path| path == module_id) {
+        return Some(module_id.to_string());
+    }
+    if module_id.contains('/') {
+        return None;
+    }
+
+    let mut matches = module_paths.iter().filter(|path| {
+        std::path::Path::new(path)
+            .file_name()
+            .is_some_and(|name| name == module_id)
+    });
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(first.clone())
+}
+
+pub(super) fn run_describe(
+    args: DescribeArgs,
+    source_context: Option<VerifiedGraphSourceContext>,
+    validated: ValidatedDescribeQuery,
+) -> Result<()> {
+    let ValidatedDescribeQuery { ids } = validated;
+    let mut session = ExplainSession::load(
+        args.common.clone(),
+        args.tree_config.clone(),
+        args.source_root.clone(),
+        args.size_cap_lines,
+        source_context,
+    )?;
+    let mut module_paths = ModulePathIndex::from_paths(session.module_paths());
     let selections = ids
         .iter()
         .enumerate()
         .map(|(index, id)| {
-            dispatch_id_selection(id, &args.common.modules_root)
+            dispatch_id_selection(id, &mut module_paths)
                 .with_context(|| format!("describing item {} ({id:?})", index + 1))
         })
         .collect::<Result<Vec<_>>>()?;
-    let mut session = ExplainSession::load(
-        args.common.clone(),
-        args.source_root.clone(),
-        args.size_cap_lines,
-    )?;
-    let graph = session.graph();
-    verify_graph_header_compatibility(
-        &args.common.dependency_graph_path,
-        &graph_provenance::GraphHeader {
-            chunk_id: graph.chunk_id.clone(),
-            provenance: graph.provenance.clone(),
-        },
-        &args.common.modules_root,
-        args.source_root.as_deref(),
-        &roots,
-        GraphCompatibilityScope::AuthoredModuleTree { tree_config: None },
-    )?;
     // Finish the entire batch before emitting any result, including NDJSON.
     // A failed item must not leave an apparently successful partial document.
     let results = selections
@@ -415,7 +460,10 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
     )
 }
 
-pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
+pub(super) fn run_inspect_source(
+    args: InspectSourceArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     let mut report = InspectSourceReport {
         query: None,
         selected_source_unit_count: None,
@@ -428,16 +476,19 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
     if let Some(id) = &args.id {
         let graph = args.graph.clone().context("--id requires --graph")?;
         let modules = args.modules.clone().context("--id requires --modules")?;
-        let selection = dispatch_id_selection(id, &modules)?;
-        let selected = run_source_selection_report(&SourceSelectionArgs {
-            common: PeelCommonArgs {
-                dependency_graph_path: graph,
-                modules_root: modules,
+        let selection = dispatch_id_selection(id, &mut ModulePathIndex::under(&modules))?;
+        let selected = run_source_selection_report(
+            &SourceSelectionArgs {
+                common: PeelCommonArgs {
+                    dependency_graph_path: graph,
+                    modules_root: modules,
+                },
+                selection,
+                size_cap_lines: args.size_cap_lines,
+                source_root: args.source_root.clone(),
             },
-            selection,
-            size_cap_lines: args.size_cap_lines,
-            source_root: args.source_root.clone(),
-        })?;
+            source_context,
+        )?;
         report.query = Some(selected.query);
         report.selected_source_unit_count = Some(selected.source_unit_ids.len());
         report.unknown_binding_ids = selected.unknown_binding_ids;
@@ -449,7 +500,22 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
                 .push(source_unit);
         }
         for (path, source_units) in by_file {
-            let source = PreparedSource::load(&path)?;
+            let source = if let Some(context) = source_context {
+                anyhow::ensure!(
+                    context.input_file() == std::path::Path::new(&path)
+                        && source_units
+                            .iter()
+                            .all(|unit| context.matches_source_path(&unit.source_path)),
+                    "selected source units do not match the verified graph source context"
+                );
+                PreparedSource::from_source(
+                    &path,
+                    context.source_path(),
+                    context.source().to_owned(),
+                )?
+            } else {
+                PreparedSource::load(&path)?
+            };
             let mut by_index: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
             let ordinals: Vec<_> = source_units
                 .iter()
@@ -512,23 +578,39 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
             args.chunk.as_deref(),
         )?;
         let source = PreparedSource::load(&source_file)?;
-        let range =
-            match args.around_binding.as_deref() {
-                Some(binding) => Some(source.statement_range_around_binding(
-                    binding,
-                    args.context_statements.unwrap_or(2),
-                )?),
+        if let Some(binding) = args.declarator_binding.as_deref() {
+            let row =
+                source.variable_declarator_row(binding, matches!(args.view, SourceView::Pretty))?;
+            append_declarator_file(&mut report, &source, row, &args);
+        } else {
+            let range = match args.around_binding.as_deref() {
+                Some(binding) => Some(
+                    source
+                        .statement_range_around_binding(
+                            binding,
+                            args.context_statements.unwrap_or(2),
+                        )
+                        .with_context(|| {
+                            format!(
+                                "--around-binding {binding:?} searches raw input names; \
+                                 for a readable spec name, use `inspect-source --id <name>` \
+                                 with matching --graph and --modules, or `describe <name>` \
+                                 to find its input binding"
+                            )
+                        })?,
+                ),
                 None => args.statements,
             };
-        let (start, end) = match range {
-            Some(range) => {
-                range.validate(source.statement_count())?;
-                (range.start, range.end + 1)
-            }
-            None => (0, source.statement_count()),
-        };
-        let indices = (start..end).map(|index| (index, BTreeSet::new())).collect();
-        append_file(&mut report, &source, indices, 0, &args)?;
+            let (start, end) = match range {
+                Some(range) => {
+                    range.validate(source.statement_count())?;
+                    (range.start, range.end + 1)
+                }
+                None => (0, source.statement_count()),
+            };
+            let indices = (start..end).map(|index| (index, BTreeSet::new())).collect();
+            append_file(&mut report, &source, indices, 0, &args)?;
+        }
     }
     let format = OutputFormat::resolve(args.format);
     bound_report(&mut report, format, args.max_output_bytes)?;
@@ -598,6 +680,24 @@ fn append_file(
     Ok(())
 }
 
+fn append_declarator_file(
+    report: &mut InspectSourceReport,
+    source: &PreparedSource,
+    row: StatementRow,
+    args: &InspectSourceArgs,
+) {
+    report.files.push(InspectedFile {
+        source_file: source.path().display().to_string(),
+        total_statements: source.statement_count(),
+        statements: vec![inspected_statement(
+            row,
+            Vec::new(),
+            args.view,
+            args.max_line_bytes,
+        )],
+    });
+}
+
 fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
     out.push_str(&format!("Index: {}\n", report.index_basis));
     out.push_str(&format!(
@@ -626,9 +726,13 @@ fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
             } else {
                 statement.bindings.join(", ")
             };
+            let declarator = statement
+                .declarator_index
+                .map_or_else(String::new, |index| format!(" declarator[{index}]"));
             out.push_str(&format!(
-                "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}] source_units=[{}]\n",
+                "\nbody[{}]{} bytes={}..{} location={}:{}..{}:{} bindings=[{}] source_units=[{}]\n",
                 statement.index,
+                declarator,
                 statement.byte_start,
                 statement.byte_end,
                 statement.start_line,
@@ -676,6 +780,7 @@ fn inspected_statement(
     let source = clip_source_lines(&full_source, max_line_bytes);
     InspectedStatement {
         index: row.index,
+        declarator_index: row.declarator_index,
         byte_start: row.byte_start,
         byte_end: row.byte_end,
         start_line: row.start_line,
@@ -812,6 +917,49 @@ fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String
 }
 
 fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
+    for source_unit in report
+        .source_units
+        .iter()
+        .chain(&report.neighbor_source_units)
+    {
+        if let Some(execution) = &source_unit.synchronous_execution {
+            for check in &execution.native_prototype_property_checks {
+                out.push_str(&format!(
+                    "  {} Object.prototype.{:?} absent={} blockers={}\n",
+                    source_unit.id, check.property, check.intact, check.blocking_mutation_count
+                ));
+            }
+            for check in &execution.native_integrity_checks {
+                out.push_str(&format!(
+                    "  {} failed native premise {:?}: {:?}\n",
+                    source_unit.id, check.guard, check.affected_roots
+                ));
+            }
+        }
+    }
+    for mutation in &report.native_prototype_mutations {
+        out.push_str(&format!(
+            "  prototype mutation {}:unit:{} {:?} properties={:?} location={:?}\n",
+            mutation.chunk_id,
+            mutation.statement_ordinal.0,
+            mutation.kind,
+            mutation.properties,
+            mutation.source_location
+        ));
+    }
+    for witness in &report.native_integrity_witnesses {
+        out.push_str(&format!(
+            "  native census {}:unit:{} {:?} receiver={:?} alias={} affected={:?} location={:?}\n",
+            witness.chunk_id,
+            witness.statement_ordinal.0,
+            witness.operation,
+            witness.receiver_roots,
+            witness.through_local_alias,
+            witness.affected_roots,
+            witness.source_location
+        ));
+    }
+
     out.push_str(&format!(
         "{:?} {:?}\n",
         report.query.kind, report.query.value
@@ -829,9 +977,6 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             .collect::<Vec<_>>()
             .join(", ")
     ));
-    // Home module path per binding (CLI_DOGFOOD #6): the JSON carries
-    // `binding_homes[].path`, but the text view previously dropped it,
-    // leaving no way to see where a binding lives without `--format json`.
     if !report.binding_homes.is_empty() {
         out.push_str("  homes:\n");
         for home in &report.binding_homes {
@@ -853,6 +998,12 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         report.incoming_edges.len(),
         report.outgoing_edges.len()
     ));
+    out.push_str("  edge census (directional incidences):\n");
+    out.push_str(&format!(
+        "    incoming: {}\n    outgoing: {}\n",
+        render_edge_census(&report.edge_census.incoming),
+        render_edge_census(&report.edge_census.outgoing),
+    ));
     if let Some(limits) = &report.limits {
         for (section, limit) in &limits.sections {
             if limit.truncated {
@@ -865,6 +1016,16 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
     }
 }
 
+fn render_edge_census(rows: &[peel::plan::EdgeCensusRow]) -> String {
+    if rows.is_empty() {
+        return "none".to_string();
+    }
+    rows.iter()
+        .map(|row| format!("{}/{}={}", row.edge_kind, row.role, row.count))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
     let report = run_atomic_groups_report(&args)?;
     emit_report(
@@ -875,8 +1036,11 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
     )
 }
 
-pub(super) fn run_coverage(args: PatchPlanArgs) -> Result<()> {
-    let report = run_patch_plan_report(&args)?;
+pub(super) fn run_coverage(
+    args: PatchPlanArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
+    let report = run_patch_plan_report(&args, source_context)?;
     emit_report(
         args.format,
         &report,
@@ -885,8 +1049,11 @@ pub(super) fn run_coverage(args: PatchPlanArgs) -> Result<()> {
     )
 }
 
-pub(super) fn run_graph_summary(args: GraphSummaryArgs) -> Result<()> {
-    let report = run_graph_summary_report(&args)?;
+pub(super) fn run_graph_summary(
+    args: GraphSummaryArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
+    let report = run_graph_summary_report(&args, source_context)?;
     emit_report(
         args.format,
         &report,

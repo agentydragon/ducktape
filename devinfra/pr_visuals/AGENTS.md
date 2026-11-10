@@ -1,8 +1,7 @@
 @README.md
 
-- A test writing a `visual-review.json` manifest needs the `visual` tag so the
-  determinism sweep includes it; producers of only unregistered (diagnostic) PNGs
-  don't.
+- A test writing screenshot output records needs the `visual` tag so the
+  determinism sweep includes it; diagnostic-only producers do not.
 - Determinism sweep: if a repeated `bbr test` attempt leaves no BuildBuddy
   invocation, keep completed runs (compare only with ≥2), report the command and exit
   code, and fail the sweep — don't retry or count its absent outputs as missing

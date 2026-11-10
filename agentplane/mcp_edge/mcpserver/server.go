@@ -1,6 +1,6 @@
 // Package mcpserver serves the standalone edge's /mcp endpoint to callers on an external Connection: the Action
-// tools and the caller's direct tools over stateless Streamable HTTP. It reaches the Action Service only through its
-// workload API.
+// tools, static workflow guides and the caller's direct tools over stateless Streamable HTTP. It reaches the Action
+// Service only through its workload API.
 package mcpserver
 
 import (
@@ -44,9 +44,9 @@ type Options struct {
 	Logger              *slog.Logger
 }
 
-// NewHandler serves /mcp. A request needs a bearer the verifier accepts; the tools call core with that request's
-// context, which carries the verified auth.TokenInfo, and attach no credential of their own. Cross-origin browser
-// requests are refused, and go-sdk's DNS-rebinding protection guards a loopback listener.
+// NewHandler serves /mcp. A request needs a bearer the verifier accepts; Action tools call core with that request's
+// context, which carries the verified auth.TokenInfo, and attach no credential of their own. Guide reads use local
+// assets. Cross-origin browser requests are refused, and go-sdk's DNS-rebinding protection guards a loopback listener.
 func NewHandler(core pb.ActionServiceClient, verifier auth.TokenVerifier, options Options) http.Handler {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
@@ -84,7 +84,8 @@ func NewHandler(core pb.ActionServiceClient, verifier auth.TokenVerifier, option
 }
 
 func instructions(maxWaitSeconds float64) string {
-	return "Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh " +
+	return "Read get_guide(name=\"index\") for workflow guides; read the session_delegation guide before delegating. " +
+		"Discover Action identifiers, fetch details only when needed, then submit each request once under a fresh " +
 		"idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a lost " +
 		"response with get_action_request(idempotency_key=...), never with a replacement key. This instance allows " +
 		"wait.wait_seconds up to " + seconds(maxWaitSeconds) + " seconds."
@@ -105,6 +106,7 @@ func newServer(t *tools, options Options, schemaCache *mcp.SchemaCache, catalog 
 		known[definition.Name] = definition
 	}
 	logger := options.Logger
+	addTool(server, known["get_guide"], logger, t.getGuide)
 	addTool(server, known["list_actions"], logger, t.listActions)
 	addTool(server, known["get_action"], logger, t.getAction)
 	addTool(server, known["get_action_policy"], logger, t.getActionPolicy)

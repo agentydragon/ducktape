@@ -14,7 +14,7 @@ bbr test //haku/console/frontend/tool_rendering/<server>:previews [--test_filter
 - Tool-call preview cards: one `:previews` target per server under `tool_rendering/<server>/`
   (`preview_fixtures.ts` mounted by `preview_harness.tsx`; shared harness in
   `tool_rendering/screenshot/`, `preview_screenshots` macro in `screenshot_test.bzl`), each
-  emitting its own `visual-review.json` figure. Adding/changing a widget → add a
+  emitting its own structured screenshot record. Adding/changing a widget → add a
   `RegisteredToolPreviewFixture` to that server's `preview_fixtures.ts`, covering both variants.
 - A single-component scene renders inside its real production container (preview cards:
   `.haku-shell-panels`) and screenshots that element — no hardcoded width or full-viewport shot

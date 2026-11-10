@@ -13,8 +13,6 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
 from agentplane.action_service import action_service_pb2, action_service_pb2_grpc
-from agentplane.app.grpc_stream import OperatorGrpcClient
-from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 
 
@@ -35,6 +33,9 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
     def __init__(self) -> None:
         self.calls: list[ActionCall] = []
         self.policy = action_service_pb2.GetActionPolicyResponse()
+        self.policy_by_subject: dict[tuple[str, str], action_service_pb2.GetActionPolicyResponse] = {}
+        self.policy_watch_frames: asyncio.Queue[action_service_pb2.GetActionPolicyResponse] = asyncio.Queue()
+        self.policy_watch_cancelled = asyncio.Event()
         self.requests = action_service_pb2.ListActionRequestsResponse()
         self.groups = action_service_pb2.ListActionGroupsResponse()
         self.unary_gate: asyncio.Event | None = None
@@ -62,7 +63,24 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
     ) -> action_service_pb2.GetActionPolicyResponse:
         self._record("GetActionPolicy", request, context)
         await self._hold_unary()
-        return self.policy
+        subject = request.subject
+        return self.policy_by_subject.get((subject.namespace, subject.name), self.policy)
+
+    @override
+    async def WatchActionPolicy(
+        self, request: action_service_pb2.GetActionPolicyRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[action_service_pb2.GetActionPolicyResponse]:
+        self._record("WatchActionPolicy", request, context)
+        initial = action_service_pb2.GetActionPolicyResponse()
+        initial.CopyFrom(self.policy_by_subject.get((request.subject.namespace, request.subject.name), self.policy))
+        initial.action_policy.subject.CopyFrom(request.subject)
+        try:
+            yield initial
+            while True:
+                yield await self.policy_watch_frames.get()
+        except asyncio.CancelledError:
+            self.policy_watch_cancelled.set()
+            raise
 
     @override
     async def ListActionRequests(
@@ -105,15 +123,9 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
 
 
 @asynccontextmanager
-async def served_action_service(
-    service: FakeActionService, *, request_timeout_s: float = 5
-) -> AsyncIterator[tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient]]:
-    """Serve the fake on loopback and yield its generated stub with the shared transport."""
+async def served_action_service(service: FakeActionService) -> AsyncIterator[tuple[FakeActionService, str]]:
+    """Serve the fake on loopback and yield its gRPC target for the real app process."""
     server = grpc.aio.server()
     action_service_pb2_grpc.add_ActionServiceServicer_to_server(service, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield (
-            service,
-            action_service_pb2_grpc.ActionServiceStub(channel),
-            OperatorGrpcClient(request_timeout_s=request_timeout_s),
-        )
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield service, f"127.0.0.1:{port}"

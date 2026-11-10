@@ -43,7 +43,7 @@ Getting these wrong is destructive or silently corrupting.
 ## Key files (`terraform/main/`)
 
 `ovh-nodes.tf` (OVH bare metal), `home-nodes.tf` (home Talos workers), `proxmox-nodes.tf`
-(Proxmox VMs), `talos-machine-secrets.tf` (ephemeral), `cilium.tf`, `infrastructure.tf`
+(Proxmox VMs), `talos-machine-secrets.tf` (persistent), `cilium.tf`, `infrastructure.tf`
 (firewall, Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
 `nebula.tf` (per-node config + endpoint drift check).
 
@@ -86,7 +86,15 @@ Guide: <docs/container-images.md>.
 
 ## Storage Selection
 
-App PVCs default to `seaweedfs-ovh` (not node-pinned). Use `local-path-*` only for:
+**One replication layer per data copy.** When a workload replicates the same data at the
+application layer, use single-copy storage for each application replica and place those
+replicas in distinct failure domains. Do not also replicate each replica's volume through
+DRBD, SeaweedFS, or another storage layer. Check the StorageClass's actual replica count and
+placement, not just its name. A single-instance workload may use replicated storage because
+it has no application replica. CNPG details and an incident example: <docs/cnpg_conventions.md> § R3.
+
+Choose app PVC storage for the workload. `seaweedfs-ovh-ssd` provides distributed
+SeaweedFS CSI storage in OVH. Use `local-path-*` only for:
 
 - self-replicating stores needing a raw local disk — CNPG Postgres
   (<docs/cnpg_conventions.md>; never a DB on SeaweedFS);
@@ -94,6 +102,9 @@ App PVCs default to `seaweedfs-ovh` (not node-pinned). Use `local-path-*` only f
 
 Before operating on SeaweedFS `Bucket`/`S3Identity`/`S3Credentials` objects, read
 <skills/seaweed_operator/SKILL.md>.
+For retirement, follow <docs/runbooks/seaweedfs_s3_retirement.md>; delete the
+identity only after credential and other IAM writers have finalized.
+For volume bytes above what the filer accounts for, follow <docs/runbooks/seaweedfs_orphan_chunks.md>.
 
 ## Flux Kustomizations
 

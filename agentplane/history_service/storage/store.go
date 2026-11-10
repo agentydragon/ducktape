@@ -11,11 +11,14 @@ import (
 	"math"
 	"slices"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -23,11 +26,11 @@ const (
 	// ChannelHistory is notified when raw Session history committed.
 	ChannelHistory = "agentplane_session_history_changes"
 	// ChannelSessions is notified when a Session was recorded.
-	ChannelSessions = "agentplane_history_session_openings"
+	ChannelSessions = "agentplane_history_sessions"
 
-	// openingLock is held from drawing a Session's opening position to commit, so positions become
+	// sessionLock is held from drawing a Session's session position to commit, so positions become
 	// visible in order.
-	openingLock = 0x534F504E
+	sessionLock = 0x534F504E
 )
 
 var (
@@ -39,28 +42,111 @@ var (
 	ErrWriterMismatch = errors.New("session is bound to another writer")
 	// ErrSandboxMismatch means the Session is pinned to another Sandbox incarnation.
 	ErrSandboxMismatch = errors.New("session is bound to another sandbox")
+	// ErrExecutionPrincipalMismatch means a Session's immutable execution identity is absent or differs.
+	ErrExecutionPrincipalMismatch = errors.New("session execution principal does not match retained identity")
 	// ErrInvalidArgument means the request names a page the store cannot serve.
 	ErrInvalidArgument = errors.New("invalid session history request")
 )
 
-// Writer is the ServiceAccount a Session's ingress pushes come from; the UID tells apart an account
-// recreated under the same name.
-type Writer struct{ Namespace, Name, UID string }
+// Writer is who a Session's ingress pushes come from: a ServiceAccountWriter or an IdentityWriter.
+// Each UID tells apart a subject recreated under the same name.
+type Writer interface{ isWriter() }
+
+// ServiceAccountWriter is a runner or central sampler authenticated as a ServiceAccount.
+type ServiceAccountWriter struct{ Namespace, Name, UID string }
+
+// IdentityWriter is a runner whose workload credential names an Identity incarnation.
+type IdentityWriter struct{ Identity }
+
+func (ServiceAccountWriter) isWriter() {}
+func (IdentityWriter) isWriter()       {}
+
+// Identity is an Identity incarnation in the policy namespace.
+type Identity struct{ Name, UID string }
+
+func (i Identity) valid() bool { return i.Name != "" && i.UID != "" }
+
+// ExecutionPrincipal is the logical ServiceAccount identity under which the Session executes. It is
+// retained independently of the authenticated ingress writer and the execution Sandbox.
+type ExecutionPrincipal struct{ Namespace, Name, UID string }
+
+func (p ExecutionPrincipal) valid() bool {
+	return p.Namespace != "" && p.Name != "" && p.UID != ""
+}
+
+// Sandbox is the Sandbox incarnation a Session executes in. UID is empty for a legacy writer whose
+// ServiceAccount has no Sandbox controller.
+type Sandbox struct{ Namespace, Name, UID string }
+
+// ReadScope limits retained reads to one immutable execution principal or execution Identity, or
+// explicitly to all Sessions for an existing Pod-bound backend reader. The zero value denies every
+// Session.
+type ReadScope struct {
+	principal *ExecutionPrincipal
+	identity  *Identity
+	all       bool
+}
+
+// TODO(SESSION_IDENTITY_AUTHZ): decide History reads by the Session's Identity and its bindings, not
+// by the execution account or the writer's Sandbox (agentplane/plans/task_dag.md).
+
+// OwnedBy returns a scope for exactly one ServiceAccount incarnation. An incomplete identity yields
+// a scope that denies reads.
+func OwnedBy(principal ExecutionPrincipal) ReadScope {
+	if !principal.valid() {
+		return ReadScope{}
+	}
+	copy := principal
+	return ReadScope{principal: &copy}
+}
+
+// OwnedByIdentity returns a scope for the Sessions recorded as executing as exactly one Identity
+// incarnation. An incomplete identity yields a scope that denies reads.
+func OwnedByIdentity(identity Identity) ReadScope {
+	if !identity.valid() {
+		return ReadScope{}
+	}
+	copy := identity
+	return ReadScope{identity: &copy}
+}
+
+// AllSessions returns the explicit unfiltered scope used only by configured Pod-bound backend readers.
+func AllSessions() ReadScope { return ReadScope{all: true} }
+
+// Predicate returns a SQL predicate and its parameters for a session_history alias. The alias is a
+// source constant, never request data. firstArgument is the first free PostgreSQL bind number.
+func (scope ReadScope) Predicate(alias string, firstArgument int) (string, []any) {
+	if scope.all {
+		return "TRUE", nil
+	}
+	if firstArgument >= 1 && scope.identity != nil && scope.identity.valid() {
+		return fmt.Sprintf("%s.execution_identity_name = $%d AND %s.execution_identity_uid = $%d",
+				alias, firstArgument, alias, firstArgument+1),
+			[]any{scope.identity.Name, scope.identity.UID}
+	}
+	if scope.principal == nil || !scope.principal.valid() || firstArgument < 1 {
+		return "FALSE", nil
+	}
+	p := scope.principal
+	return fmt.Sprintf("%s.execution_principal_namespace = $%d AND %s.execution_principal_name = $%d AND %s.execution_principal_uid = $%d",
+			alias, firstArgument, alias, firstArgument+1, alias, firstArgument+2),
+		[]any{p.Namespace, p.Name, p.UID}
+}
 
 type Checkpoint struct {
 	Cursor uint64
 	// Seal is the seal at Cursor, once committed: nothing more is accepted from its own incarnation.
-	Seal *runnerpb.Sealed
+	Seal *sessionpb.Sealed
 }
 
-type OpenedSession struct {
+type RecordedSession struct {
 	SessionID uuid.UUID
 	Position  uint64
 }
 
 type Observation struct {
 	Cursor uint64
-	Kind   string
+	Kind   historypb.EventKind
 }
 
 type CursorRange struct{ First, Last uint64 }
@@ -72,15 +158,41 @@ type ObservationPage struct {
 	Settled []CursorRange
 }
 
+type SequenceRead struct {
+	Sequence  uint64
+	NextEntry *eventlogpb.EventEntry
+	Unstored  bool
+}
+
+type SequenceReadPage struct {
+	LastCursor uint64
+	Reads      []SequenceRead
+}
+
 type Store struct {
 	db           *sql.DB
 	settleDeltas bool
+	readScope    *ReadScope
 }
 
 // NewStore returns a store over db. With settleDeltas, Append removes an item's streamed delta entries
 // once its completion provably holds their concatenation; only the runner ingress sets it.
 func NewStore(db *sql.DB, settleDeltas bool) *Store {
 	return &Store{db: db, settleDeltas: settleDeltas}
+}
+
+// WithReadScope returns a read-only view whose SQL reads are scoped before they page or project.
+func (s *Store) WithReadScope(scope ReadScope) *Store {
+	copy := *s
+	copy.readScope = &scope
+	return &copy
+}
+
+func (s *Store) sessionPredicate(alias string, firstArgument int) (string, []any) {
+	if s.readScope == nil {
+		return "TRUE", nil
+	}
+	return s.readScope.Predicate(alias, firstArgument)
 }
 
 func transaction(ctx context.Context, db *sql.DB, opts sql.TxOptions, f func(*sql.Tx) error) error {
@@ -109,25 +221,44 @@ type historyRow struct {
 	sourceID   *string
 	lastCursor uint64
 	feedState  []byte
-	writer     *Writer
-	sandboxUID *string
+	// writer is nil while no push has bound the Session.
+	writer             Writer
+	sandboxUID         *string
+	executionPrincipal *ExecutionPrincipal
+	executionIdentity  *Identity
 }
 
 // lockRow reads and locks the Session's history row.
 func lockRow(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*historyRow, error) {
 	var row historyRow
 	var namespace, name, uid *string
-	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, sandbox_uid
+	var executionNamespace, executionName, executionUID *string
+	var identityName, identityUID, executionIdentityName, executionIdentityUID *string
+	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, sandbox_uid,
+		execution_principal_namespace, execution_principal_name, execution_principal_uid,
+		writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid
 		FROM session_history WHERE id = $1 FOR UPDATE`, sessionID).
-		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &row.sandboxUID)
+		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &row.sandboxUID,
+			&executionNamespace, &executionName, &executionUID,
+			&identityName, &identityUID, &executionIdentityName, &executionIdentityUID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, sessionID)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if uid != nil {
-		row.writer = &Writer{Namespace: *namespace, Name: *name, UID: *uid}
+	// history_writer_one_kind keeps at most one writer kind per row.
+	switch {
+	case uid != nil:
+		row.writer = ServiceAccountWriter{Namespace: *namespace, Name: *name, UID: *uid}
+	case identityUID != nil:
+		row.writer = IdentityWriter{Identity{Name: *identityName, UID: *identityUID}}
+	}
+	if executionUID != nil {
+		row.executionPrincipal = &ExecutionPrincipal{Namespace: *executionNamespace, Name: *executionName, UID: *executionUID}
+	}
+	if executionIdentityUID != nil {
+		row.executionIdentity = &Identity{Name: *executionIdentityName, UID: *executionIdentityUID}
 	}
 	return &row, nil
 }
@@ -145,9 +276,49 @@ func (row *historyRow) checkpoint() (Checkpoint, error) {
 	return checkpoint, nil
 }
 
-// BindWriter binds the Session to writer if it has no writer yet, creating its row; any other writer
-// is refused. Of two concurrent first writers, the row lock lets one bind and refuses the other.
-func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, sandboxUID string) (Checkpoint, error) {
+// BindWriter binds the Session to a ServiceAccount runner if it has no writer yet, creating its row;
+// any other writer is refused. Of two concurrent first writers, the row lock lets one bind and
+// refuses the other. The runner's Sandbox runs as the ServiceAccount of its own name.
+func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer ServiceAccountWriter, sandboxUID string, principal *ExecutionPrincipal) (Checkpoint, error) {
+	return s.bindWriter(ctx, sessionID, writer, Sandbox{Namespace: writer.Namespace, Name: writer.Name, UID: sandboxUID}, principal, nil)
+}
+
+// BindIdentityWriter is BindWriter for a runner authenticated as an Identity, pinned to the Sandbox
+// that owns its workload credential. identity, the Identity the Dispatcher recorded the Session as
+// executing as, is retained like the execution principal.
+func (s *Store) BindIdentityWriter(ctx context.Context, sessionID uuid.UUID, writer IdentityWriter, sandbox Sandbox, principal *ExecutionPrincipal, identity *Identity) (Checkpoint, error) {
+	if !writer.valid() || sandbox.Namespace == "" || sandbox.Name == "" || sandbox.UID == "" {
+		return Checkpoint{}, ErrInvalidArgument
+	}
+	return s.bindWriter(ctx, sessionID, writer, sandbox, principal, identity)
+}
+
+// BindSamplerWriter retains the producer identity independently of its fixed execution target.
+func (s *Store) BindSamplerWriter(ctx context.Context, sessionID uuid.UUID, writer ServiceAccountWriter, sandbox Sandbox, principal *ExecutionPrincipal, identity *Identity) (Checkpoint, error) {
+	if sandbox.Namespace == "" || sandbox.Name == "" || sandbox.UID == "" {
+		return Checkpoint{}, ErrInvalidArgument
+	}
+	return s.bindWriter(ctx, sessionID, writer, sandbox, principal, identity)
+}
+
+// writerColumns are writer_{namespace,name,uid} and writer_identity_{name,uid}.
+func writerColumns(writer Writer) []any {
+	switch writer := writer.(type) {
+	case ServiceAccountWriter:
+		return []any{writer.Namespace, writer.Name, writer.UID, nil, nil}
+	case IdentityWriter:
+		return []any{nil, nil, nil, writer.Name, writer.UID}
+	default:
+		panic(fmt.Sprintf("unknown writer %T", writer))
+	}
+}
+
+func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, sandbox Sandbox, principal *ExecutionPrincipal, identity *Identity) (Checkpoint, error) {
+	if principal != nil && !principal.valid() || identity != nil && !identity.valid() {
+		return Checkpoint{}, ErrInvalidArgument
+	}
+	namespace, name, sandboxUID := sandbox.Namespace, sandbox.Name, sandbox.UID
+	written := writerColumns(writer)
 	var checkpoint Checkpoint
 	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		created := false
@@ -156,19 +327,30 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		if sandboxUID != "" {
 			sandboxUIDValue = sandboxUID
 		}
+		var executionNamespace, executionName, executionUID any
+		if principal != nil {
+			executionNamespace, executionName, executionUID = principal.Namespace, principal.Name, principal.UID
+		}
+		var executionIdentityName, executionIdentityUID any
+		if identity != nil {
+			executionIdentityName, executionIdentityUID = identity.Name, identity.UID
+		}
 		var exists bool
 		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session_history WHERE id = $1)", sessionID).Scan(&exists); err != nil {
 			return err
 		}
-		// Only a first push takes the opening lock, so a reconnecting runner never waits on another's.
+		// Only a first push takes the session lock, so a reconnecting runner never waits on another's.
 		if !exists {
-			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", openingLock); err != nil {
+			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", sessionLock); err != nil {
 				return err
 			}
 			result, err := tx.ExecContext(ctx, `INSERT INTO session_history
-				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid, source_id, last_cursor)
-				VALUES ($1, $2, $3, $4, $2, $3, $5, NULL, 0) ON CONFLICT DO NOTHING`,
-				sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue)
+				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid,
+				execution_principal_namespace, execution_principal_name, execution_principal_uid,
+				writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid, source_id, last_cursor)
+				VALUES ($1, $2, $3, $4, $6, $7, $5, $8, $9, $10, $11, $12, $13, $14, NULL, 0) ON CONFLICT DO NOTHING`,
+				sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
+				executionNamespace, executionName, executionUID, written[3], written[4], executionIdentityName, executionIdentityUID)
 			if err != nil {
 				return err
 			}
@@ -182,19 +364,28 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		if err != nil {
 			return err
 		}
+		if principal != nil && (row.executionPrincipal == nil || *row.executionPrincipal != *principal) {
+			// A later announcement cannot assign an owner to an existing unassociated row.
+			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
+		}
+		if identity != nil && (row.executionIdentity == nil || *row.executionIdentity != *identity) {
+			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
+		}
 		switch {
 		case row.writer == nil:
 			if _, err := tx.ExecContext(ctx, `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4,
-				sandbox_namespace = COALESCE(sandbox_namespace, $2), sandbox_name = COALESCE(sandbox_name, $3), sandbox_uid = $5
-				WHERE id = $1`, sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue); err != nil {
+				sandbox_namespace = COALESCE(sandbox_namespace, $6), sandbox_name = COALESCE(sandbox_name, $7), sandbox_uid = $5,
+				writer_identity_name = $8, writer_identity_uid = $9
+				WHERE id = $1`, sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
+				written[3], written[4]); err != nil {
 				return err
 			}
 			row.sandboxUID = optionalString(sandboxUID)
 			changed = true
-		case *row.writer != writer:
+		case row.writer != writer:
 			return fmt.Errorf("%w: %s", ErrWriterMismatch, sessionID)
 		}
-		if row.writer != nil && *row.writer == writer {
+		if row.writer != nil && row.writer == writer {
 			switch {
 			case row.sandboxUID == nil && sandboxUID != "":
 				if _, err := tx.ExecContext(ctx, `UPDATE session_history SET sandbox_uid = $2 WHERE id = $1`, sessionID, sandboxUID); err != nil {
@@ -231,20 +422,34 @@ func optionalString(value string) *string {
 	return &value
 }
 
-// OpenedSessions returns up to limit Sessions recorded after afterPosition, in recording order.
-func (s *Store) OpenedSessions(ctx context.Context, afterPosition uint64, limit int) ([]OpenedSession, error) {
+// RecordedSessions returns up to limit Sessions recorded after afterPosition, in recording order.
+func (s *Store) RecordedSessions(ctx context.Context, afterPosition uint64, limit int) ([]RecordedSession, error) {
 	if afterPosition > math.MaxInt64 || limit < 1 || limit > 1000 {
-		return nil, invalid("opened Session page")
+		return nil, invalid("recorded Session page")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, opened_position FROM session_history
-		WHERE opened_position > $1 ORDER BY opened_position LIMIT $2`, afterPosition, limit)
+	predicate, scopeArgs := s.sessionPredicate("h", 2)
+	args := append([]any{afterPosition}, scopeArgs...)
+	args = append(args, limit)
+	query := fmt.Sprintf(`SELECT h.id, h.recorded_position FROM session_history h
+		WHERE h.recorded_position > $1 AND %s ORDER BY h.recorded_position LIMIT $%d`, predicate, len(args))
+	if s.readScope != nil && !s.readScope.all {
+		// The persisted session position is global. Return an ordinal over only the caller's
+		// retained Sessions so a normal watch cursor does not reveal foreign session gaps.
+		query = fmt.Sprintf(`WITH owned AS (
+			SELECT h.id, row_number() OVER (ORDER BY h.recorded_position) AS position
+			FROM session_history h WHERE %s
+		)
+		SELECT owned.id, owned.position FROM owned
+		WHERE owned.position > $1 ORDER BY owned.position LIMIT $%d`, predicate, len(args))
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var opened []OpenedSession
+	var opened []RecordedSession
 	for rows.Next() {
-		var session OpenedSession
+		var session RecordedSession
 		if err := rows.Scan(&session.SessionID, &session.Position); err != nil {
 			return nil, err
 		}
@@ -409,6 +614,29 @@ func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *
 		if next.GetAttached().GetLastCursor() > row.lastCursor {
 			return conflict("feed snapshot is ahead of committed history")
 		}
+		identity := next.GetAttached().GetExecutionPrincipal()
+		switch {
+		case row.executionPrincipal == nil && identity != nil:
+			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
+		case row.executionPrincipal != nil && identity == nil:
+			// Older Runner snapshots cannot erase a principal already pinned by the session.
+			next.GetAttached().ExecutionPrincipal = wireExecutionPrincipal(row.executionPrincipal)
+		case row.executionPrincipal != nil && identity != nil && !matchesExecutionPrincipal(identity, *row.executionPrincipal):
+			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
+		}
+		// A ServiceAccount runner's execution Identity is not retained (its writer cannot vouch for
+		// it), so only a retained one, or an Identity runner's absent one, is checked.
+		_, identityWriter := row.writer.(IdentityWriter)
+		executionIdentity := next.GetAttached().GetExecutionIdentity()
+		switch {
+		case row.executionIdentity == nil && executionIdentity != nil && identityWriter:
+			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
+		case row.executionIdentity != nil && executionIdentity == nil:
+			next.GetAttached().ExecutionIdentity = &identitypb.Identity{Name: row.executionIdentity.Name, Uid: row.executionIdentity.UID}
+		case row.executionIdentity != nil && executionIdentity != nil &&
+			(executionIdentity.GetName() != row.executionIdentity.Name || executionIdentity.GetUid() != row.executionIdentity.UID):
+			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
+		}
 		if next.GetSealed() != nil && next.GetSealed().GetCursor() != row.lastCursor {
 			return conflict("seal does not end the committed history")
 		}
@@ -435,6 +663,20 @@ func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *
 	})
 }
 
+func wireExecutionPrincipal(principal *ExecutionPrincipal) *identitypb.ServiceAccountIdentity {
+	if principal == nil {
+		return nil
+	}
+	return &identitypb.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: principal.Namespace, Name: principal.Name}, Uid: principal.UID,
+	}
+}
+
+func matchesExecutionPrincipal(identity *identitypb.ServiceAccountIdentity, principal ExecutionPrincipal) bool {
+	return identity.GetAccount().GetNamespace() == principal.Namespace &&
+		identity.GetAccount().GetName() == principal.Name && identity.GetUid() == principal.UID
+}
+
 // mergeFeedState folds the stored snapshot prior into next: a stored seal is sticky, and an older or
 // same-cursor snapshot cannot replace a newer one.
 func mergeFeedState(next, prior *historypb.SessionFeedState) error {
@@ -442,13 +684,13 @@ func mergeFeedState(next, prior *historypb.SessionFeedState) error {
 		if next.GetSealed() != nil && !proto.Equal(next.GetSealed(), prior.GetSealed()) {
 			return conflict("conflicting seals")
 		}
-		next.Sealed = proto.Clone(prior.GetSealed()).(*runnerpb.Sealed)
+		next.Sealed = proto.Clone(prior.GetSealed()).(*sessionpb.Sealed)
 	}
 	switch priorCursor := prior.GetAttached().GetLastCursor(); {
 	case next.GetAttached().GetLastCursor() < priorCursor:
-		next.Attached = proto.Clone(prior.GetAttached()).(*runnerpb.Attached)
+		next.Attached = proto.Clone(prior.GetAttached()).(*sessionpb.Attached)
 	case next.GetAttached().GetLastCursor() == priorCursor && !proto.Equal(next.GetAttached(), prior.GetAttached()):
-		sameExceptHarness := proto.Clone(prior.GetAttached()).(*runnerpb.Attached)
+		sameExceptHarness := proto.Clone(prior.GetAttached()).(*sessionpb.Attached)
 		sameExceptHarness.HarnessState = next.GetAttached().GetHarnessState()
 		// A later incarnation announces again at the cursor the earlier one ended at.
 		sameExceptHarness.IncarnationUid = next.GetAttached().IncarnationUid
@@ -458,14 +700,14 @@ func mergeFeedState(next, prior *historypb.SessionFeedState) error {
 		nextState, priorState := next.GetAttached().GetHarnessState(), prior.GetAttached().GetHarnessState()
 		switch {
 		case nextState == priorState:
-		case prior.GetSealed() == nil && priorState == runnerpb.HarnessState_HARNESS_STATE_STOPPED &&
-			nextState == runnerpb.HarnessState_HARNESS_STATE_RUNNING:
+		case prior.GetSealed() == nil && priorState == sessionpb.HarnessState_HARNESS_STATE_STOPPED &&
+			nextState == sessionpb.HarnessState_HARNESS_STATE_RUNNING:
 			// Resume can be confirmed before HarnessStarted advances the journal.
-		case priorState == runnerpb.HarnessState_HARNESS_STATE_RUNNING &&
-			nextState == runnerpb.HarnessState_HARNESS_STATE_STOPPED:
+		case priorState == sessionpb.HarnessState_HARNESS_STATE_RUNNING &&
+			nextState == sessionpb.HarnessState_HARNESS_STATE_STOPPED:
 			// Stops have journal entries. A stopped snapshot at the same cursor after Resume belongs to
 			// the previous run.
-			next.Attached = proto.Clone(prior.GetAttached()).(*runnerpb.Attached)
+			next.Attached = proto.Clone(prior.GetAttached()).(*sessionpb.Attached)
 		default:
 			return conflict("conflicting attachment snapshots at one cursor")
 		}
@@ -482,7 +724,9 @@ func (s *Store) ReadPage(ctx context.Context, sessionID uuid.UUID, afterCursor u
 	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		var lastCursor uint64
 		var feedState []byte
-		err := tx.QueryRowContext(ctx, "SELECT last_cursor, feed_state FROM session_history WHERE id = $1", sessionID).
+		predicate, scopeArgs := s.sessionPredicate("h", 2)
+		args := append([]any{sessionID}, scopeArgs...)
+		err := tx.QueryRowContext(ctx, "SELECT h.last_cursor, h.feed_state FROM session_history h WHERE h.id = $1 AND "+predicate, args...).
 			Scan(&lastCursor, &feedState)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrNotFound, sessionID)
@@ -542,6 +786,104 @@ func (s *Store) ReadPage(ctx context.Context, sessionID uuid.UUID, afterCursor u
 	return page, err
 }
 
+// ReadSequences reads the next retained entry at each sequence from one retained-history snapshot,
+// with at most batchSize requested sequences in each SQL query.
+func (s *Store) ReadSequences(ctx context.Context, sessionID uuid.UUID, sequences []uint64, batchSize int) (SequenceReadPage, error) {
+	if len(sequences) == 0 || batchSize < 1 {
+		return SequenceReadPage{}, invalid("sequence read page")
+	}
+	for _, sequence := range sequences {
+		if sequence == 0 {
+			return SequenceReadPage{}, invalid("sequence read page")
+		}
+	}
+	var page SequenceReadPage
+	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
+		predicate, scopeArgs := s.sessionPredicate("h", 2)
+		args := append([]any{sessionID}, scopeArgs...)
+		if err := tx.QueryRowContext(ctx, "SELECT h.last_cursor FROM session_history h WHERE h.id = $1 AND "+predicate, args...).Scan(&page.LastCursor); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: %s", ErrNotFound, sessionID)
+			}
+			return err
+		}
+
+		page.Reads = make([]SequenceRead, len(sequences))
+		var retained []int64
+		var retainedIndexes []int
+		for i, sequence := range sequences {
+			page.Reads[i].Sequence = sequence
+			if sequence <= page.LastCursor {
+				retained = append(retained, int64(sequence))
+				retainedIndexes = append(retainedIndexes, i)
+			}
+		}
+		if len(retained) == 0 {
+			return nil
+		}
+		for start := 0; start < len(retained); start += batchSize {
+			end := min(start+batchSize, len(retained))
+			if err := readSequenceChunk(ctx, tx, sessionID, page.LastCursor, retained[start:end], retainedIndexes[start:end], page.Reads); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return page, err
+}
+
+func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, lastCursor uint64, sequences []int64, readIndexes []int, reads []SequenceRead) error {
+	rows, err := tx.QueryContext(ctx, `SELECT requested.sequence, candidate.cursor, candidate.payload,
+			EXISTS (SELECT FROM session_event_settled_range r
+				WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
+			OR EXISTS (SELECT FROM session_event_removed_range r
+				WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
+		FROM unnest($2::bigint[]) WITH ORDINALITY AS requested(sequence, position)
+		LEFT JOIN LATERAL (
+			SELECT e.cursor, e.payload FROM session_event e
+			WHERE e.session_id = $1 AND e.cursor >= requested.sequence AND e.cursor <= $3
+			ORDER BY e.cursor LIMIT 1
+		) candidate ON true
+		ORDER BY requested.position`, sessionID, pq.Array(sequences), lastCursor)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	rowIndex := 0
+	for rows.Next() {
+		if rowIndex >= len(sequences) {
+			return fmt.Errorf("sequence query returned more than %d rows", len(sequences))
+		}
+		var sequence int64
+		var cursor sql.NullInt64
+		var payload []byte
+		var unstored bool
+		if err := rows.Scan(&sequence, &cursor, &payload, &unstored); err != nil {
+			return err
+		}
+		read := &reads[readIndexes[rowIndex]]
+		if read.Sequence != uint64(sequence) {
+			return fmt.Errorf("sequence query returned %d at position %d, want %d", sequence, rowIndex, read.Sequence)
+		}
+		read.Unstored = unstored
+		if cursor.Valid {
+			entry := &eventlogpb.EventEntry{}
+			if err := proto.Unmarshal(payload, entry); err != nil {
+				return err
+			}
+			read.NextEntry = entry
+		}
+		rowIndex++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if rowIndex != len(sequences) {
+		return fmt.Errorf("sequence query returned %d rows, want %d", rowIndex, len(sequences))
+	}
+	return nil
+}
+
 // readSettlements returns every settlement whose completion entry or settled range falls in the window
 // after afterCursor and through through, in completion order.
 func readSettlements(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, afterCursor, through uint64) ([]*historypb.SettledDeltas, error) {
@@ -598,7 +940,9 @@ func (s *Store) ReadObservations(ctx context.Context, sessionID uuid.UUID, befor
 	}
 	var page ObservationPage
 	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
-		err := tx.QueryRowContext(ctx, "SELECT last_cursor FROM session_history WHERE id = $1", sessionID).Scan(&page.LastCursor)
+		predicate, scopeArgs := s.sessionPredicate("h", 2)
+		scopeArguments := append([]any{sessionID}, scopeArgs...)
+		err := tx.QueryRowContext(ctx, "SELECT h.last_cursor FROM session_history h WHERE h.id = $1 AND "+predicate, scopeArguments...).Scan(&page.LastCursor)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrNotFound, sessionID)
 		}
@@ -674,18 +1018,9 @@ func readObservations(ctx context.Context, tx *sql.Tx, query string, args ...any
 		if err := proto.Unmarshal(payload, &entry); err != nil {
 			return nil, err
 		}
-		observations = append(observations, Observation{Cursor: cursor, Kind: observationKind(&entry)})
+		observations = append(observations, Observation{Cursor: cursor, Kind: historypb.EventKind(observationNumber(&entry))})
 	}
 	return observations, rows.Err()
-}
-
-// observationKind names the Event's observation, or is empty when it carries none.
-func observationKind(entry *eventlogpb.EventEntry) string {
-	event := entry.GetEvent().ProtoReflect()
-	if field := event.WhichOneof(event.Descriptor().Oneofs().ByName("observation")); field != nil {
-		return string(field.Name())
-	}
-	return ""
 }
 
 // observationNumber stores the Event.observation field number for FollowSession's indexed reads.

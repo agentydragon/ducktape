@@ -252,7 +252,7 @@ flowchart LR
     archive --> history[History Service fold]
     history --> pg[(History DB conversation state)]
     pg --> electric[Electric sync service]
-    electric --> proxy[Python app authorization proxy]
+    electric --> proxy[Go app authorization proxy]
     proxy --> client[Electric client and thread store in the browser]
     client --> react[React conversation view]
 ```
@@ -354,10 +354,10 @@ payload reference; loading is explicit until its whole revision is available. Fo
 concurrent changes using engine sync tokens. No replay of old token Events and no hidden
 background history load.
 
-A thread whose runner has recorded nothing yet has no fold to pin a shape to. Its scope
-read is a long poll: the proxy holds it until the first fold commits, for as long as
-Electric holds a live request (20 seconds), and answers 204 if there is still none; the
-store asks again at once.
+A thread whose runner has recorded nothing yet has no fold to pin a shape to. The browser
+opens History's generated summary watch and uses its initial change notification to read the
+scope through `ReadThreadEntities`. While no fold exists, later changes prompt another read;
+the browser does not poll for the fold. Electric shapes are pinned to the resulting epoch.
 
 ### Scroll upward while an old item changes
 

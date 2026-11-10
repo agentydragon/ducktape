@@ -137,13 +137,16 @@ KV cache per token = 2 × num_layers × num_kv_heads × head_dim × bytes_per_el
 
 ```text
 Model: cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit
-Weights: ~7.6 GB per GPU (vs 28.5 GB bf16)
-KV cache: ~23 GB available per GPU
-Max context: 131K+ tokens
+Weights: 8.56 GiB per GPU loaded (vs 28.51 GiB bf16)
+KV cache: ~23 GiB available per GPU
+Max context: 262K configured and effective in the E1 run
 ```
 
-AWQ 4-bit quantization reduces weights by ~4x while maintaining quality.
-This is the **only way to run full context on 2x 5090 with vLLM**.
+The earlier 131K estimate was superseded by the measured
+[E1 Kubernetes run](runs/2026-07-17_e1_qwen3coder_awq/README.md): FP8 KV,
+`--max-num-seqs 32`, and a completed 255,669-token request. E1 did not measure
+coding-task quality, so the configuration result does not establish that AWQ
+maintains model quality.
 
 **⚠️ No Thinking Mode**: Qwen3-Coder does not support thinking mode. This is a base model
 property — Qwen3-Coder was post-trained with Agent RL only, without thinking mode fusion.
@@ -152,7 +155,7 @@ use the original Qwen3-30B-A3B instead.
 
 ```bash
 # Start vLLM with AWQ model
-~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+~/code/ducktape/x/local_llm/start-vllm-awq.sh
 ```
 
 ### For Ollama: Q4_K_M with FP8 KV Cache
@@ -433,28 +436,18 @@ Tested with `cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit` on vLLM:
 - Prefill speed: 28-100K tokens/sec (higher when cached)
 - Needle-in-haystack recall: 100% accuracy at all tested lengths
 
-### Test Command
+### Probe source and run record
 
-```bash
-./experimental/local-llm/test_long_context.py 2150  # ~130K tokens
-```
+The retained <../../../x/local_llm/demo_long_context.py> is a hand-run probe: it
+generates one prompt with a hidden key in the last section and sends it to a
+hard-coded local vLLM endpoint and model. The saved NIAH results above are
+historical; this note does not claim that the demo currently reproduces them.
+The [E1 run record](runs/2026-07-17_e1_qwen3coder_awq/README.md) documents the
+262K vLLM capacity and tool checks from that run, not current capacity.
 
-## Ollama Quick Start
+## Current local setup
 
-```bash
-# Pull the model (default Q4_K_M)
-ollama pull qwen3-coder:30b
-
-# Run with extended context
-ollama run qwen3-coder:30b --num-ctx 131072
-
-# Or create a Modelfile for persistent settings
-cat > Modelfile << 'EOF'
-FROM qwen3-coder:30b-a3b-q4_K_M
-PARAMETER num_ctx 131072
-EOF
-ollama create qwen3-coder-long -f Modelfile
-```
+Managed OpenCode provider/model settings live in [wyrm2-opencode.nix](../../../nix/home/hosts/wyrm2-opencode.nix); its Qwen3-Coder AWQ entry sets `reasoning = false`. Launch defaults live in [start-vllm-awq.sh](../../../x/local_llm/start-vllm-awq.sh), which sources the Podman launcher. These are configuration defaults, not evidence that the model is downloaded or serving now.
 
 ## vLLM Memory Debugging Options
 
@@ -578,56 +571,7 @@ Please try lowering `max_num_seqs` or `gpu_memory_utilization` when initializing
 3. **`--quantization awq` flag** - Model uses `compressed-tensors` format, auto-detected
 4. **FP16 KV cache at 262K** - Not enough memory, use FP8
 
-### OpenCode Configuration
-
-Add to `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "provider": {
-    "vllm": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "vLLM (local, tensor parallel)",
-      "options": {
-        "baseURL": "http://0.0.0.0:8000/v1"
-      },
-      "models": {
-        "qwen3-coder-awq": {
-          "name": "Qwen3-Coder 30B AWQ (vLLM)",
-          "reasoning": true,
-          "tool_call": true,
-          "interleaved": {
-            "field": "reasoning_content"
-          },
-          "limit": {
-            "context": 262144,
-            "output": 8192
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-**Important:** Use `0.0.0.0` not `localhost` for baseURL when vLLM runs in Docker.
-
-### Start Script
-
-Use the provided script which includes all fixes:
-
-```bash
-~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
-```
-
-Environment variables for customization:
-
-- `MAX_MODEL_LEN=131072` - Lower context if needed
-- `MAX_NUM_SEQS=64` - Increase concurrent sequences
-- `KV_CACHE_DTYPE=fp16` - Use FP16 KV (halves max context)
-- `GPU_MEM_UTIL=0.95` - Increase memory utilization (risky)
-
-## References
+### References
 
 - [Qwen3-Coder GitHub](https://github.com/QwenLM/Qwen3-Coder)
 - [Qwen3-Coder Blog Post](https://qwenlm.github.io/blog/qwen3-coder/)

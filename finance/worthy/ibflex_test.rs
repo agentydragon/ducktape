@@ -6,7 +6,6 @@ use ibflex::{
     Period::LastBusinessDay,
     Side::Long,
     Status::{Fail, Success},
-    parse_flex_statement_response,
 };
 use rust_decimal::Decimal;
 use url::Url;
@@ -19,7 +18,7 @@ fn flex_statement_response_success() {
 <Url>https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement</Url>
 </FlexStatementResponse>";
     assert_eq!(
-        parse_flex_statement_response(xml).unwrap(),
+        serde_xml_rs::from_str::<FlexStatementResponse>(xml).unwrap(),
         FlexStatementResponse {
             status: Success,
             timestamp: "16 February, 2021 04:50 PM EST".to_string(),
@@ -39,7 +38,7 @@ fn flex_statement_response_error_invalid() {
 <ErrorMessage>Invalid request or unable to validate request.</ErrorMessage>
 </FlexStatementResponse>";
     assert_eq!(
-        parse_flex_statement_response(xml).unwrap(),
+        serde_xml_rs::from_str::<FlexStatementResponse>(xml).unwrap(),
         FlexStatementResponse {
             status: Fail,
             timestamp: "16 February, 2021 05:16 PM EST".to_string(),

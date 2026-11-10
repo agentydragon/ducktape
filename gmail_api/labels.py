@@ -5,7 +5,7 @@ See: https://developers.google.com/gmail/api/reference/rest/v1/users.labels
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 
@@ -63,12 +63,6 @@ class PatchLabelRequest(BaseModel):
     message_list_visibility: MessageListVisibility | None = None
 
 
-class LabelsListResponse(BaseModel):
-    """Response body of `users.labels.list`."""
-
-    labels: list[GmailLabel] = Field(default_factory=list)
-
-
 class SystemLabel(StrEnum):
     """Gmail system label IDs."""
 
@@ -96,18 +90,7 @@ def is_system_label(label_id: str) -> bool:
 
 
 def resolve_label_id(name: str, label_map: dict[str, str]) -> str:
-    """Resolve label name to ID. System labels return as-is, user labels looked up in map.
-
-    Args:
-        name: Label name or system label ID
-        label_map: Dict mapping user label names to IDs
-
-    Returns:
-        Label ID (system labels unchanged, user labels looked up)
-
-    Raises:
-        ValueError: If user label not found in map
-    """
+    """Return system IDs unchanged, resolve user-label names, or raise ``ValueError``."""
     if is_system_label(name):
         return name
     if name in label_map:

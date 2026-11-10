@@ -1,11 +1,11 @@
 """Tests for the 20 Questions eval game loop."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest_bazel
 
 from openai_utils.model import AssistantMessageOut, FunctionCallItem, OutputText, ResponsesResult, ResponseUsage
+from openai_utils.testing.openai_mock import FakeOpenAIModel
 from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider
 from skills.info_gathering.evals.twenty_questions.twenty_questions import Correct, Timeout, run_twenty_questions
 
@@ -30,11 +30,8 @@ def _tool_result(name: str, args: dict, call_id: str) -> ResponsesResult:
     )
 
 
-def _make_mock_model(*responses: ResponsesResult) -> MagicMock:
-    mock = AsyncMock()
-    mock.model = "test-model"
-    mock.responses_create = AsyncMock(side_effect=list(responses))
-    return mock
+def _make_mock_model(*responses: ResponsesResult) -> FakeOpenAIModel:
+    return FakeOpenAIModel(list(responses))
 
 
 async def test_timeout(tmp_path):
@@ -62,7 +59,7 @@ async def test_timeout(tmp_path):
     assert isinstance(summary.result, Timeout)
     assert summary.result.limit == 3
     assert summary.turns == 3
-    assert mock_model.responses_create.call_count == 6
+    assert mock_model.calls == 6
 
 
 async def test_success_on_turn_2(tmp_path):
@@ -88,7 +85,7 @@ async def test_success_on_turn_2(tmp_path):
     assert isinstance(summary.result, Correct)
     assert summary.result.turns == 2
     assert summary.turns == 2
-    assert mock_model.responses_create.call_count == 4
+    assert mock_model.calls == 4
 
 
 async def test_success_on_turn_1(tmp_path):

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -16,15 +17,22 @@ import (
 )
 
 type watchSubscription struct {
-	changed  chan struct{}
+	changed chan struct{}
+	// Nil for a subscriber that only needs invalidations. A bounded terminal buffer nobody drains
+	// would overflow and fail the subscriber after its capacity of terminal events.
 	terminal chan TerminalEvent
 	failure  chan string
 }
 
 type terminalAssembly struct {
-	started time.Time
-	count   int
-	parts   map[int][]byte
+	started      time.Time
+	count        int
+	parts        map[int][]byte
+	ownerNS      string
+	ownerName    string
+	ownerUID     string
+	identityName string
+	identityUID  string
 }
 
 // WatchHub transports committed PostgreSQL invalidations and terminal
@@ -63,13 +71,22 @@ func (h *WatchHub) connectionEvent(event pq.ListenerEventType, err error) {
 	_ = err // Listener reconnects itself; stream failure is the observable contract.
 }
 
+// subscribe is a WatchDispatches stream's subscription: invalidations and terminal snapshots.
 func (h *WatchHub) subscribe() (*watchSubscription, func(), error) {
+	return h.add(&watchSubscription{make(chan struct{}, 1), make(chan TerminalEvent, 32), make(chan string, 1)})
+}
+
+// subscribeChanges receives invalidations and listener failures but no terminal snapshots.
+func (h *WatchHub) subscribeChanges() (*watchSubscription, func(), error) {
+	return h.add(&watchSubscription{changed: make(chan struct{}, 1), failure: make(chan string, 1)})
+}
+
+func (h *WatchHub) add(sub *watchSubscription) (*watchSubscription, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if !h.connected {
 		return nil, nil, errors.New("PostgreSQL watch listener is disconnected")
 	}
-	sub := &watchSubscription{make(chan struct{}, 1), make(chan TerminalEvent, 32), make(chan string, 1)}
 	h.subscribers[sub] = struct{}{}
 	return sub, func() { h.mu.Lock(); delete(h.subscribers, sub); h.mu.Unlock() }, nil
 }
@@ -107,6 +124,9 @@ func (h *WatchHub) notifyTerminal(event TerminalEvent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for sub := range h.subscribers {
+		if sub.terminal == nil {
+			continue
+		}
 		select {
 		case sub.terminal <- event:
 		default:
@@ -187,6 +207,11 @@ func (h *WatchHub) terminalPart(payload string) error {
 	if len(data) > terminalChunkBytes {
 		return errors.New("terminal part is too large")
 	}
+	ownerNS, ownerName, ownerUID := item.GetExecutionAccountNamespace(), item.GetExecutionAccountName(), item.GetExecutionAccountUid()
+	identityName, identityUID := item.GetExecutionIdentityName(), item.GetExecutionIdentityUid()
+	if (ownerNS == "") != (ownerName == "") || ownerUID != "" && ownerNS == "" || (identityName == "") != (identityUID == "") {
+		return errors.New("terminal notification has an incomplete Session principal association")
+	}
 	h.mu.Lock()
 	assembly := h.pending[item.GetEventId()]
 	if assembly == nil {
@@ -194,10 +219,14 @@ func (h *WatchHub) terminalPart(payload string) error {
 			h.mu.Unlock()
 			return errors.New("too many pending terminal events")
 		}
-		assembly = &terminalAssembly{started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{}}
+		assembly = &terminalAssembly{
+			started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{},
+			ownerNS: ownerNS, ownerName: ownerName, ownerUID: ownerUID, identityName: identityName, identityUID: identityUID,
+		}
 		h.pending[item.GetEventId()] = assembly
 	}
-	if assembly.count != int(item.GetPartCount()) {
+	if assembly.count != int(item.GetPartCount()) || assembly.ownerNS != ownerNS || assembly.ownerName != ownerName || assembly.ownerUID != ownerUID ||
+		assembly.identityName != identityName || assembly.identityUID != identityUID {
 		h.mu.Unlock()
 		return errors.New("terminal part count changed")
 	}
@@ -229,6 +258,14 @@ func (h *WatchHub) terminalPart(payload string) error {
 		(dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED && dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN) {
 		return errors.New("terminal snapshot did not describe Sandbox deletion")
 	}
-	h.notifyTerminal(TerminalEvent{item.GetEventId(), dispatch})
+	var owner *ServiceAccountIdentity
+	if assembly.ownerNS != "" && assembly.ownerName != "" {
+		owner = serviceAccountIdentityFor(Account{Namespace: assembly.ownerNS, Name: assembly.ownerName}, assembly.ownerUID)
+	}
+	event := TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch, Owner: owner}
+	if assembly.identityName != "" {
+		event.OwnerIdentity = &identitypb.Identity{Name: assembly.identityName, Uid: assembly.identityUID}
+	}
+	h.notifyTerminal(event)
 	return nil
 }

@@ -9,6 +9,7 @@
 //! sub-expression's reason is concatenated alongside the outer
 //! `unknown_new` umbrella reason in source order.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 #[test]
@@ -22,11 +23,7 @@ export { a };
     ));
     assert_entry_output(&fixture, "1\n");
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("source_unit declaring a should exist");
+    let source_unit = node_declaring(&graph, "a");
     let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     assert_eq!(
         v["kind"], "pure",
@@ -38,7 +35,7 @@ export { a };
 fn unknown_call_init_reports_unknown_call_reason() {
     // `Number(x)` is a global-callable that may coerce via
     // user `[Symbol.toPrimitive]` / `valueOf` / `toString` —
-    // not on the PURE_GLOBAL_CALLS whitelist. The classifier
+    // and has no builtin summary row. The classifier
     // returns NotPure with rule = unknown_call.
     let fixture = run_fixture(FixtureOpts::new(
         r#"const x = "1";
@@ -51,11 +48,7 @@ export { a };
     assert_entry_output(&fixture, "1\n");
 
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("source_unit declaring a should exist");
+    let source_unit = node_declaring(&graph, "a");
 
     let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     assert_eq!(
@@ -107,11 +100,7 @@ export { a };
     assert_entry_output(&fixture, "1\n");
 
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("source_unit declaring a should exist");
+    let source_unit = node_declaring(&graph, "a");
     let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     assert_eq!(v["kind"], "not_pure", "should be NotPure: {v}");
     let rules: Vec<&str> = v["reasons"]
@@ -146,11 +135,7 @@ export { a };
     assert_entry_output(&fixture, "0\n");
 
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("source_unit declaring a should exist");
+    let source_unit = node_declaring(&graph, "a");
     let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let rules: Vec<&str> = v["reasons"]
         .as_array()
@@ -179,11 +164,7 @@ export { a };
     assert_entry_output(&fixture, "2\n");
 
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|n| n.declared_bindings.iter().any(|b| b.binding == "a"))
-        .expect("source_unit declaring a should exist");
+    let source_unit = node_declaring(&graph, "a");
     let v = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let unknown_call_count = v["reasons"]
         .as_array()

@@ -1,12 +1,13 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { SandboxView, ThreadView } from "../api/schema";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { displayableError } from "../client";
-import { getThread } from "./client";
+import { type ThreadView, getThread } from "./client";
+import { attachedHarness, harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
-import { useRequiredSandboxesLive } from "../sandboxes/live";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
@@ -27,19 +28,19 @@ import "./conversation.css";
 /** Why the thread's sandbox cannot take commands, as the inventory last reported it; the composer's
  * dot says only "Sandbox unavailable". An absence reads as a deletion only from a current inventory:
  * a stale or dropped stream may not have seen the sandbox since. */
-function suspendedSandboxLabel(sandbox: SandboxView): string {
+function suspendedSandboxLabel(sandbox: EnvironmentDescriptor): string {
   const reason = suspensionReason(sandbox);
   return reason === null ? "Sandbox is suspended." : `Sandbox is suspended (${reason}).`;
 }
 
-function sandboxComposerPlaceholder(sandbox: SandboxView | undefined, inventoryFresh: boolean): string {
+function sandboxComposerPlaceholder(sandbox: EnvironmentDescriptor | undefined, inventoryFresh: boolean): string {
   if (!sandbox || !inventoryFresh || !sandboxSuspended(sandbox)) return DEFAULT_COMPOSER_PLACEHOLDER;
-  return sandbox.wake_on_send
+  return sandbox.configuration?.wakeOnSend
     ? `${suspendedSandboxLabel(sandbox)} Wake on message is on; submitted commands will queue while it wakes. ${DEFAULT_COMPOSER_PLACEHOLDER}`
     : `${suspendedSandboxLabel(sandbox)} Wake on message is off; submitted commands stay queued until you resume it manually.`;
 }
 
-function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean): string | null {
+function sandboxNotice(sandbox: EnvironmentDescriptor | undefined, inventoryFresh: boolean): string | null {
   if (sandbox === undefined) {
     return inventoryFresh
       ? "Sandbox no longer exists. Showing archived Thread history; controls are disabled."
@@ -62,28 +63,42 @@ export interface ThreadPageProps {
 export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
-  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
+  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
-  const topbarStatus = threadStatusFromSnapshot(
-    snapshotThread,
-    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
-    snapshotFresh(threadsLive)
+  const environment = useRequiredSandboxesLive();
+  const inventoryFresh = sandboxInventoryFresh(environment);
+  // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
+  const sandbox = environment.snapshot?.find(
+    (candidate) =>
+      thread !== null &&
+      Boolean(thread.summary.sandbox?.uid) &&
+      candidate.target !== undefined &&
+      candidate.target.name === thread.summary.sandbox?.name &&
+      candidate.target.uid === thread.summary.sandbox?.uid
   );
+  const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
-  const traceSearch = frontendConfig?.trace_search ?? null;
-  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
-  const environment = useRequiredSandboxesLive();
-  const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
-  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
-  const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
+  const traceSearch = frontendConfig?.traceSearch ?? null;
+  const langfuseSearch = frontendConfig?.langfuseSearch ?? null;
+  const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread?.summary.attached));
+  const notice =
+    !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
+      ? "Execution Sandbox is unavailable. Central sampling controls remain available."
+      : thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   const suspended = sandboxSuspended(sandbox);
-  const composerPlaceholder = sandboxComposerPlaceholder(sandbox, inventoryFresh);
+  const composerPlaceholder = !commandsRequireReadySandbox
+    ? DEFAULT_COMPOSER_PLACEHOLDER
+    : sandboxComposerPlaceholder(sandbox, inventoryFresh);
   const canQueueCommands =
-    inventoryFresh && sandbox !== undefined && ((suspended && sandbox.wake_on_send) || sandboxStarting(sandbox));
-  const canResumeSandbox = inventoryFresh && suspended && sandbox?.wake_on_send === false;
+    commandsRequireReadySandbox &&
+    inventoryFresh &&
+    sandbox !== undefined &&
+    ((suspended && sandbox.configuration?.wakeOnSend) || sandboxStarting(sandbox));
+  const canResumeSandbox =
+    commandsRequireReadySandbox && inventoryFresh && suspended && sandbox?.configuration?.wakeOnSend === false;
   useEffect(() => {
     let current = true;
     setError(null);
@@ -110,8 +125,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   useEffect(() => {
     document.title = settingsOpen
       ? appDocumentTitle("/", true)
-      : threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId, settingsOpen]);
+      : threadDocumentTitle(thread?.metadata.name, threadId, tabStatus);
+  }, [thread?.metadata.name, tabStatus, threadId, settingsOpen]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
@@ -120,8 +135,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             <ThreadStatusIndicator
               kind={topbarStatus.kind}
               label={topbarStatus.label}
-              inboxes={notices.bySession?.get(thread.id) ?? []}
-              live={notices.live}
+              inbox={notices.bySession.get(thread.metadata.threadId)}
+              live={notices.live.has(thread.metadata.threadId)}
             />
           )}
           <Box className="agentplane-thread-heading">
@@ -129,12 +144,16 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               className="agentplane-thread-heading-name"
               threadId={threadId}
               thread={thread}
-              onRenamed={setThread}
+              onRenamed={(metadata) =>
+                setThread((current) =>
+                  current && current.metadata.threadId === metadata.threadId ? { ...current, metadata } : current
+                )
+              }
               onError={setError}
             />
             {thread && (
               <Text size="xs" c="dimmed" className="agentplane-thread-heading-sandbox">
-                {thread.sandbox} · {harnessLabel(thread.harness)}
+                {thread.summary.sandbox?.name ?? ""} · {harnessLabel(attachedHarness(thread.summary.attached))}
               </Text>
             )}
           </Box>
@@ -146,7 +165,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {error}
           </Text>
         )}
-        {thread?.archived && (
+        {thread?.metadata.archived && (
           <Text role="status" c="dimmed">
             Thread archived. Showing retained thread history; controls are disabled.
           </Text>
@@ -161,13 +180,15 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             <ThreadConversation
               threadId={threadId}
               thread={thread}
-              available={inventoryFresh && sandboxReady(sandbox)}
+              available={
+                inventoryFresh && (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
+              }
               canQueueCommands={canQueueCommands}
               canResumeSandbox={canResumeSandbox}
               composerPlaceholder={composerPlaceholder}
               onResumeSandbox={() => {
-                if (canResumeSandbox && thread) {
-                  void resumeSandbox(thread.sandbox).catch((reason: unknown) => setError(displayableError(reason)));
+                if (canResumeSandbox && thread && sandbox?.target) {
+                  void resumeSandbox(sandbox.target).catch((reason: unknown) => setError(displayableError(reason)));
                 }
               }}
               onStatusChange={setTabStatus}

@@ -8,11 +8,18 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from tana.export.convert import export_node_as_tanapaste
+from tana.domain.nodes import BaseNode
+from tana.export.convert import RenderContext
+from tana.graph.graph import TanaGraph
 from tana.graph.loader import load_workspace
 
 # Testdata lives alongside this test under tana/testdata
 TESTDATA_PATH = Path(__file__).parent / "testdata"
+
+
+def _render_node_as_tanapaste(store: TanaGraph, node: BaseNode) -> str:
+    lines = ["%%tana%%", *RenderContext(store, "tana").render_node(node)]
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def check_content_match(actual: str, expected: str, test_name: str) -> None:
@@ -32,7 +39,7 @@ def test_node_export(node_id):
     if node_id == "b9AZZEuj42vC":
         pytest.skip("Pending golden review for search-table node; converter emits only search rows")
     store = load_workspace(TESTDATA_PATH / "test_workspace.json")
-    actual = export_node_as_tanapaste(store, store[node_id])
+    actual = _render_node_as_tanapaste(store, store[node_id])
     expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, node_id)
 
@@ -59,7 +66,7 @@ def test_node_export_minimal_json(folder, node_id):
     # Load from the minimal JSON file in the feature folder
     base = TESTDATA_PATH / folder
     store = load_workspace(base / f"{node_id}.json")
-    actual = export_node_as_tanapaste(store, store[node_id])
+    actual = _render_node_as_tanapaste(store, store[node_id])
     expected = (base / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, f"{node_id} using minimal JSON")
 

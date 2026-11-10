@@ -100,6 +100,11 @@ CREDENTIALS = (
         ),
     ),
     Credential(
+        secret_file="gaffer-repo-fetch-pat.sops.yaml",
+        secret_name="gaffer-repo-fetch-pat",
+        consumers=(ApprovedConsumer("flux-system", "gaffer-repo-fetch-pat-flux-system-reader"),),
+    ),
+    Credential(
         secret_file="gemini.sops.yaml",
         secret_name="llm-gemini",
         consumers=(ApprovedConsumer("litellm", "llm-gemini-litellm-reader"),),

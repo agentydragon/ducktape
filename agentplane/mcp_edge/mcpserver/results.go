@@ -27,8 +27,9 @@ func structuredResult(view any) (*mcp.CallToolResult, error) {
 
 // requestState is the structured content of an answer that is not the Action's result.
 type requestState struct {
-	RequestID uuid.UUID `json:"request_id"`
-	State     string    `json:"state"`
+	RequestID uuid.UUID       `json:"request_id"`
+	State     string          `json:"state"`
+	Error     json.RawMessage `json:"error,omitempty"`
 }
 
 func textResult(text string, structured requestState, isError bool) (*mcp.CallToolResult, error) {
@@ -69,7 +70,11 @@ func actionResult(request *pb.ActionRequest, executor pb.ExecutorKind, maxWaitSe
 		if execution == nil {
 			return nil, fmt.Errorf("core answered %s request %s without an Execution", stateView.State, id)
 		}
-		failure, err := json.Marshal(execution.GetError())
+		stateView.Error = d.executionErrorView(execution.GetError())
+		if d.err != nil {
+			return nil, d.err
+		}
+		failure, err := json.Marshal(stateView.Error)
 		if err != nil {
 			return nil, err
 		}
@@ -83,9 +88,12 @@ func actionResult(request *pb.ActionRequest, executor pb.ExecutorKind, maxWaitSe
 			return nil, fmt.Errorf("core answered denied request %s without a Decision", id)
 		}
 		text := prefix + "was denied and did not run."
-		reason := decision.GetDecisionNote()
-		if reason == "" {
-			reason = decision.GetReasonDescription()
+		var reason string
+		switch decider := decision.GetDecider().(type) {
+		case *pb.Decision_Operator:
+			reason = decider.Operator.GetDecisionNote()
+		case *pb.Decision_Policy:
+			reason = decider.Policy.GetReasonDescription()
 		}
 		if reason != "" {
 			text += " Reason: " + reason
@@ -119,7 +127,8 @@ func succeededResult(stored *structpb.Value, executor pb.ExecutorKind) (*mcp.Cal
 			return nil, fmt.Errorf("stored MCP result: %w", err)
 		}
 		return &result, nil
-	case pb.ExecutorKind_EXECUTOR_KIND_POD, pb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1:
+	case pb.ExecutorKind_EXECUTOR_KIND_POD, pb.ExecutorKind_EXECUTOR_KIND_ORCHESTRATION_V1,
+		pb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION:
 		fields := stored.GetStructValue()
 		if fields == nil {
 			return nil, fmt.Errorf("stored %v result is not an object: %v", executor, stored)

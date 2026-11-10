@@ -1,0 +1,453 @@
+# Python OCI image layering (aspect_rules_py)
+bazel_dep(name = "aspect_rules_py", version = "1.12.1")
+
+# Container images (rules_oci)
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_distroless", version = "0.9.4")
+bazel_dep(name = "rules_pkg", version = "1.3.0")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+# Isolated Grafana dashboard visual tests; Grafana matches the deployed version.
+oci.pull(
+    name = "grafana_visual",
+    digest = "sha256:e932bd6ed0e026595b08483cd0141e5103e1ab7ff8604839ff899b8dc54cabcb",
+    image = "mirror.gcr.io/grafana/grafana",
+    platforms = ["linux/amd64"],
+    tag = "12.4.1",
+)
+oci.pull(
+    name = "prometheus_visual",
+    digest = "sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996",
+    image = "mirror.gcr.io/prom/prometheus",
+    platforms = ["linux/amd64"],
+    tag = "v3.5.0",
+)
+use_repo(oci, "grafana_visual", "grafana_visual_linux_amd64", "prometheus_visual", "prometheus_visual_linux_amd64")
+
+# Most Docker Hub base images are pulled through mirror.gcr.io (Google's pull-through
+# cache of Docker Hub) instead of docker.io directly: Docker Hub's anonymous
+# per-IP pull-rate limit reliably 429s the shared CI runner during
+# `bazel build //...`. mirror.gcr.io serves the same content-addressed digests
+# with much higher anonymous limits and no credentials. gcr.io/ghcr.io images
+# below are pulled directly (they don't rate-limit).
+
+# Production base image for py_image_layer containers.
+# aspect_rules_py's py_binary generates a bash launcher, so the base needs a
+# shell. Debian slim provides bash + glibc + libstdc++ at ~30 MB compressed.
+# The hermetic Python toolchain is bundled in the interpreter layer.
+oci.pull(
+    name = "debian_trixie_slim",
+    digest = "sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132",
+    image = "mirror.gcr.io/library/debian",
+    platforms = ["linux/amd64"],
+    tag = "trixie-slim",
+)
+
+# LiteLLM's upstream image includes the proxy runtime's Prisma client,
+# generated query engine, Node.js, and startup entrypoint. The Tana image
+# layers our provider source onto this database-capable image rather than
+# rebuilding that runtime from the Python wheel alone.
+oci.pull(
+    name = "litellm_upstream",
+    digest = "sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7",
+    image = "mirror.gcr.io/litellm/litellm",
+    platforms = ["linux/amd64"],
+    tag = "1.103.0",
+)
+
+# Base of //cluster/tf_runner:image. Keep it at the upstream release third_party/tofu_controller's
+# fork branch is based on (v0.16.5, runner/ untouched), which release.py's chart version names.
+oci.pull(
+    name = "tf_runner",
+    digest = "sha256:7209171093907ec1d0559c682949fcee4b625205a6a058c16fe0ce0017af5f41",
+    image = "ghcr.io/flux-iac/tf-runner",
+    platforms = ["linux/amd64"],
+    tag = "v0.16.5",
+)
+
+# Bare-k3s fixture: published PostgreSQL 18 without LLVM JIT. CNPG supplies the
+# binaries; //agentplane/system_tests/k3s owns standalone initialization and startup.
+oci.pull(
+    name = "postgres_18_minimal",
+    digest = "sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f",
+    image = "ghcr.io/cloudnative-pg/postgresql",
+    platforms = ["linux/amd64"],
+    tag = "18.6-minimal-trixie",
+)
+
+# Bare-k3s fixture: the Dex and `mcp-everything` images
+# (//agentplane/system_tests/deployment:{dex,mcp_fixture_servers}) for MCP scenarios.
+oci.pull(
+    name = "dex",
+    digest = "sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462",
+    image = "ghcr.io/dexidp/dex",
+    platforms = ["linux/amd64"],
+    tag = "v2.45.1",
+)
+oci.pull(
+    name = "mcp_everything",
+    digest = "sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7",
+    image = "docker.io/tzolov/mcp-everything-server",
+    platforms = ["linux/amd64"],
+)
+
+# Test infrastructure: PostgreSQL with pgvector, for //agentplane/x/indexing and //haku/console
+# tests. The stock postgres image ships no `vector` extension, and the index's search is only
+# testable against the real operator.
+oci.pull(
+    name = "pgvector_pg18",
+    digest = "sha256:1d50c689b0a6511b9ea0a15615281c81a59fd04a08eb35057ec8646fb3a2118a",
+    image = "mirror.gcr.io/pgvector/pgvector",
+    platforms = ["linux/amd64"],
+    tag = "pg18",
+)
+
+# Test infrastructure: Grocy for MCP e2e tests (match cluster/k8s/grocy/deployment.yaml)
+oci.pull(
+    name = "grocy",
+    digest = "sha256:01036076182f2191e8ac42a3876548bfd3a139a2ada8705212e83806865c1f58",
+    image = "mirror.gcr.io/linuxserver/grocy",
+    platforms = ["linux/amd64"],
+    tag = "v4.6.0-ls318",
+)
+
+# Static Go services need certificates and runtime data, but no shell or libc.
+oci.pull(
+    name = "distroless_static_debian13",
+    digest = "sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3",
+    image = "gcr.io/distroless/static-debian13",
+    platforms = ["linux/amd64"],
+    tag = "nonroot",
+)
+
+# Distroless cc: minimal glibc + libstdc++ + ca-certificates, no shell.
+# Debian 12 (Bookworm) ships glibc 2.36.
+oci.pull(
+    name = "distroless_cc_debian12",
+    digest = "sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# InvenTree application base image — for layering in the rai_plugin wheel.
+# To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
+oci.pull(
+    name = "inventree_stable",
+    digest = "sha256:a946ec09da3e5a5b7343fb7d02f2367f74167f4ce883a62e4a313db7bdb9bd54",
+    image = "mirror.gcr.io/inventree/inventree",
+    platforms = ["linux/amd64"],
+    tag = "stable",
+)
+
+# Base image for container E2E tests. rules_distroless layers curl + git on top.
+oci.pull(
+    name = "python_3_14_slim",
+    digest = "sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
+    image = "mirror.gcr.io/library/python",
+    platforms = ["linux/amd64"],
+    tag = "3.14-slim",
+)
+
+# Stalwart mailserver — base for the haku-mailbox repack (server + stalwart-cli,
+# //cluster/k8s/haku/mailbox/image). To repin:
+#   crane digest --platform linux/amd64 docker.io/stalwartlabs/stalwart:<tag>
+oci.pull(
+    name = "stalwart",
+    digest = "sha256:388dcb75a70727c5b551249a6d34b1f1321294852489e4fa3a4e6be698b7c4f0",
+    image = "mirror.gcr.io/stalwartlabs/stalwart",
+    platforms = ["linux/amd64"],
+    tag = "v0.16.22",
+)
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "dex_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_static_debian13", "distroless_static_debian13_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "mcp_everything", "mcp_everything_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18_minimal", "postgres_18_minimal_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "stalwart", "stalwart_linux_amd64", "tf_runner", "tf_runner_linux_amd64")
+
+# Container image pins from devinfra/image_pins.json.
+# - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
+# - Calls oci_pull for images with "platforms" (creates OCI repos for tests)
+# CI workflows update the JSON via devinfra/update_image_pin.py.
+image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
+image_pins.from_file(lockfile = "//devinfra:image_pins.json")
+use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins", "k3s_test_node", "k3s_test_node_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
+use_repo(image_pins, "busybox_1_38", "busybox_1_38_linux_amd64", "mitmproxy_12_2_3", "mitmproxy_12_2_3_linux_amd64")
+
+# Hermetic deb packages for container images (rules_distroless).
+# Replaces Dockerfile apt-get with snapshot-pinned deb extraction.
+apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
+
+# Keep all images in one extension so they share a coherent resolution graph.
+# CI retains the generated MODULE.bazel.lock outside the cleaned checkout as a
+# disposable cache; Bazel validates its inputs before reusing the resolution.
+apt.sources_list(
+    architectures = ["amd64"],
+    components = ["main"],
+    suites = ["forky"],
+    types = ["deb"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260905T000000Z"],
+)
+apt.sources_list(
+    architectures = ["amd64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    types = ["deb"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260301T000000Z"],
+)
+apt.sources_list(
+    architectures = ["amd64"],
+    components = ["updates/main"],
+    suites = ["trixie-security"],
+    types = ["deb"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260301T000000Z"],
+)
+
+# E2E test container: curl + git layered on python:3.14-slim base.
+apt.install(
+    dependency_set = "trixie_e2e",
+    packages = [
+        "curl",
+        "git",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
+# Firecracker VM pod: nftables on debian:trixie-slim.
+apt.install(
+    dependency_set = "trixie_fc_vm_pod",
+    packages = ["nftables"],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+
+# Minimal Codex `exec_command` environment for the Agentplane runner-layering spike. Keep this
+# separate from the harness and boot artifacts so a shell update does not rebuild either one.
+apt.install(
+    dependency_set = "trixie_runner_tools",
+    # `mawk` is explicit because the shared apt resolver also sees forky's newer
+    # mawk metadata, which evicts trixie's `awk` provider while resolving Bash.
+    packages = [
+        "bash",
+        "mawk",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
+# CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
+# dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
+apt.install(
+    dependency_set = "trixie_cpap_sync",
+    packages = [
+        "git",
+        "iproute2",
+        "isc-dhcp-client",
+        "iw",
+        "wpasupplicant",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+
+# git on debian:trixie-slim for the authentik-jwt-rotation and forgejo-token-rotation
+# CronJobs, which clone, commit and push with the git CLI.
+apt.install(
+    dependency_set = "trixie_authentik_rotation",
+    packages = ["git"],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+
+# gnome-shell + Xvfb + dbus on debian:trixie-slim for the aiquota
+# extension golden-render tests.
+apt.install(
+    dependency_set = "gnome_shell_test",
+    packages = [
+        "dbus-x11",
+        "fonts-cantarell",
+        "gir1.2-secret-1",
+        "gnome-shell",
+        "libgdk-pixbuf2.0-bin",
+        "libglib2.0-bin",
+        "libglib2.0-dev-bin",
+        "librsvg2-common",
+        # Explicit awk provider: forky and trixie share one apt extension,
+        # and forky's newer mawk evicts trixie's Provides:awk entry
+        # (bazel-contrib/rules_distroless#272), so base-files' awk lookup
+        # fails silently otherwise.
+        "mawk",
+        "procps",
+        "scrot",
+        "shared-mime-info",
+        "xauth",
+        "xvfb",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
+# erofs-utils for //devinfra/erofs: mkfs.erofs and its libraries as a closure that runs on the
+# RBE image's Ubuntu libc (devinfra/erofs/erofs_tool.py).
+apt.install(
+    dependency_set = "trixie_erofs_utils",
+    packages = ["erofs-utils"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
+# The k3s fixture's VM guest boots real systemd, with the same runner unit as production.
+# Busybox supplies its initramfs and ACPI listener; the other tools prepare and exercise workspaces.
+apt.install(
+    dependency_set = "trixie_vm_guest",
+    packages = [
+        "acl",
+        "bash",
+        "busybox-static",
+        "dbus",
+        "e2fsprogs",
+        "git",
+        "systemd",
+        "udev",
+        "util-linux",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
+# Manual VM startup profiling supplies perf as a separate guest-root variant. Ordinary VM tests
+# retain their smaller root image and do not import a profiler they never execute.
+apt.install(
+    dependency_set = "trixie_vm_perf",
+    packages = ["linux-perf"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
+# Budget exporter image: git + ca-certificates on debian:trixie-slim so the
+# export_ledger CronJob can clone/commit/push the Beancount ledger repo.
+apt.install(
+    dependency_set = "trixie_budget_exporter",
+    packages = [
+        "ca-certificates",
+        "git",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+
+# wayback cache service: libssl + CA bundle on debian:trixie-slim for the
+# Rust runtime image.
+apt.install(
+    dependency_set = "trixie_wayback_cache",
+    packages = [
+        "ca-certificates",
+        "libssl3t64",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+
+# Exercise wt's sourced shell function in Zsh without adding it to the RBE image.
+apt.install(
+    dependency_set = "wt_shell_test",
+    packages = ["zsh"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+apt.install(
+    dependency_set = "trixie_agentplane_firecracker",
+    packages = [
+        "coreutils",
+        "e2fsprogs",
+        "iproute2",
+        "iptables",
+        "util-linux",
+        "xorriso",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+    ],
+)
+apt.install(
+    dependency_set = "trixie_firecracker_guest",
+    packages = [
+        "acl",
+        "bash",
+        "busybox-static",
+        "ca-certificates",
+        "coreutils",
+        "dbus",
+        "mawk",
+        "python3",
+        "systemd",
+        "systemd-resolved",
+        "udev",
+        "util-linux",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+
+# CDviz collector, migration runner, and TimescaleDB test fixtures.
+oci.pull(
+    name = "cdviz_collector",
+    digest = "sha256:7d69848b44d608e56db67b8af6b28885071ae593bcda35bf23cdb220ae45dab8",
+    image = "ghcr.io/cdviz-dev/cdviz-collector",
+    platforms = ["linux/amd64"],
+    tag = "0.53.1",
+)
+oci.pull(
+    name = "cdviz_db_migration",
+    digest = "sha256:6bbc4e2b9e3bfbe283571e80eff2d59ca2e9ecb5d50d51f174535af073b2fb1d",
+    image = "ghcr.io/cdviz-dev/cdviz-db-migration",
+    platforms = ["linux/amd64"],
+    tag = "1.5.0",
+)
+oci.pull(
+    name = "timescaledb_pg18",
+    digest = "sha256:cc00b0ede968b0c6e55212bd55a9a195726afe5a9e19dcf8af49a13334e92ff3",
+    image = "mirror.gcr.io/timescale/timescaledb",
+    platforms = ["linux/amd64"],
+    tag = "2.31.0-pg18-oss",
+)
+use_repo(oci, "cdviz_collector", "cdviz_collector_linux_amd64", "cdviz_db_migration", "cdviz_db_migration_linux_amd64", "timescaledb_pg18", "timescaledb_pg18_linux_amd64")
+
+use_repo(image_pins, "generic_device_plugin", "generic_device_plugin_linux_amd64")

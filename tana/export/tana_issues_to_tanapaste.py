@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 
 from tana.export.convert import RenderContext
+from tana.graph.loader import load_workspace
 from tana.query.filters import filter_open_issues
-from tana.workspace import Workspace
 
 EXPECTED_ARGS = 2
 
@@ -26,8 +26,7 @@ def main():
         sys.exit(1)
 
     # Load and process
-    workspace = Workspace.load(input_path)
-    store = workspace.graph
+    store = load_workspace(input_path)
     issue_ids = list(filter_open_issues(store))
 
     # Export the given issues as a flat TanaPaste document

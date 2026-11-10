@@ -37,38 +37,37 @@
 //! The quotient is the single source of truth for "which source units are
 //! in which proposed class."
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    DependencyGraph, DependencyGraphReport, LineRange, ModuleAssignment, ModuleDestinationKind,
-    ModuleId, SourceUnitClass, SourceUnitReport, StatementKind,
+    DependencyEdgeReport, DependencyGraphInput, DependencyGraphReport, LineRange, SourceUnitClass,
+    SourceUnitReport, StatementKind,
 };
-use anonymous_resolution::{
-    ModuleNeutralReferenceMeaning, ResolvedLocalMemberOrigin, ResolvedLocalMemberReference,
-    ResolvedSourceClaims, SourceClaimSet, addressable_anonymous_statement_source_unit_ids,
-    resolve_source_claims,
-};
-use spec::{MemberSelectorSpec, ModulePath};
-use spec_modules::{
-    ModuleClaims, collect_module_files, load_active_claims, module_claims, module_path_from_file,
-    read_module_file,
-};
+use anonymous_resolution::addressable_anonymous_statement_source_unit_ids;
+use graph_provenance::VerifiedGraphSourceContext;
+use source_identity::SourceUnitId;
+use spec::ModulePath;
+use spec_modules::load_active_claims;
 use spec_tree::ModuleTreeScope;
 
 use crate::quotient::{
     ClassId, QuotientGraph, SeedContractionRejected, SourceUnitIndex, SpecModuleGroup,
-    build_same_module_seed_quotient, build_seed_quotient, greedy_merge_to_convergence,
+    build_seed_quotient, greedy_merge_to_convergence,
 };
 
 /// Default `--size-cap-lines` for every CLI verb that runs the
 /// proposer. One named constant so the planner verbs and the
 /// internal rebuild paths can't drift apart.
 pub const DEFAULT_SIZE_CAP_LINES: usize = 10_000;
+
+const MAX_OBSERVED_CONSUMER_SOURCE_UNITS: usize = 8;
+const MAX_OBSERVED_CONSUMER_MODULES: usize = 8;
+const MAX_OBSERVED_CONSUMER_EDGES: usize = 12;
 
 #[derive(Debug, Clone)]
 pub struct ProposalOptions {
@@ -77,198 +76,11 @@ pub struct ProposalOptions {
     /// Optional tree config that scopes active claims to the graph's chunk.
     pub tree_config: Option<PathBuf>,
     pub source_root: Option<PathBuf>,
+    /// Source bytes verified by graph preflight for the graph's chunk.
+    pub source_context: Option<VerifiedGraphSourceContext>,
     /// Hard ceiling (in summed source-line counts) per emitted
     /// proposal. Frontiers exceeding the cap appear as diagnostics.
     pub size_cap_lines: usize,
-}
-
-/// Read-only candidate formed by splitting existing modules into the
-/// same-module classes that survived the gated seed pass.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionReport {
-    pub strategy: ModuleDecompositionStrategy,
-    /// True only when the candidate also keeps resolved local selector
-    /// anchors with the members that reference them.
-    #[serde(skip_serializing_if = "is_false")]
-    pub preserve_selector_anchors: bool,
-    /// Resolved local anchor relationships when the opt-in mode is enabled.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selector_anchor_relations: Option<Vec<ModuleDecompositionSelectorAnchor>>,
-    /// True only when the candidate preserves whole structural atoms and
-    /// passes the shared assignment gate over the complete dependency graph.
-    pub candidate_is_realizable: bool,
-    pub coverage_complete: bool,
-    pub source_unit_count: usize,
-    pub assigned_source_unit_count: usize,
-    pub unchanged_module_count: usize,
-    /// Existing modules that would split into two or more suggested parts.
-    pub modules: Vec<ModuleDecomposition>,
-    /// Structural atoms that the candidate would assign to multiple modules.
-    pub atomic_group_conflicts: Vec<ModuleDecompositionAtomicConflict>,
-    /// The exact cycle and rebinding result from the shared assignment gate.
-    pub cycles: Vec<gate::CycleReport>,
-    pub cross_rebinds: Vec<String>,
-    /// Present only when the caller explicitly requested SCC coarsening.
-    /// `modules` remains the initial decomposition; this records the final
-    /// candidate and the gate-reported merges used to reach it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub coarsening: Option<ModuleDecompositionCoarsening>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModuleDecompositionCoarseningMode {
-    None,
-    MergeBlockingSccs,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModuleDecompositionCoarseningStopReason {
-    Accepted,
-    AtomicGroupConflicts,
-    CrossModuleRebinds,
-    NoProgress,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionCoarsening {
-    pub stop_reason: ModuleDecompositionCoarseningStopReason,
-    /// Whole candidate-group merges required by reported structural atoms.
-    /// Empty unless the caller opted in to coarsening atomic conflicts.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub atomic_conflict_merges: Vec<ModuleDecompositionAtomicConflictMerge>,
-    pub rounds: Vec<ModuleDecompositionCoarseningRound>,
-    /// Final ownership under the names checked by the last full gate run.
-    /// These names are suggestions, and can combine distinct source homes.
-    pub groups: Vec<ModuleDecompositionCoarsenedGroup>,
-    /// Source-resolved readable export names that would collide if a final
-    /// group were materialized. Only available with selector-anchor resolution.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub naming_collisions: Option<Vec<ModuleDecompositionNamingCollision>>,
-    /// Present only when the caller asked to safely rejoin fragments from
-    /// their original semantic homes after SCC coarsening.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub original_home_rejoining: Option<ModuleDecompositionHomeRejoining>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionAtomicConflictMerge {
-    pub atomic_group_ids: Vec<String>,
-    pub merged_candidate_paths: Vec<ModulePath>,
-    pub suggested_module_path: ModulePath,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionHomeRejoining {
-    pub stop_reason: ModuleDecompositionHomeRejoiningStopReason,
-    pub attempted_contractions: usize,
-    pub accepted_contractions: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pair_attempt_limit: Option<usize>,
-    pub whole_home_pass_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub whole_home_pass_limit: Option<usize>,
-    pub budget_limited_home_count: usize,
-    pub budget_limited_home_paths: Vec<ModulePath>,
-    pub original_module_count: usize,
-    pub fully_restored_module_count: usize,
-    pub fully_restored_module_paths: Vec<ModulePath>,
-    pub unrestored_module_paths: Vec<ModulePath>,
-    pub final_group_count: usize,
-    pub largest_group_source_unit_count: usize,
-    pub largest_group_origin_module_count: usize,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModuleDecompositionHomeRejoiningStopReason {
-    CandidateNotRealizable,
-    Converged,
-    PairAttemptLimitReached,
-    WholeHomePassLimitReached,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionCoarseningRound {
-    /// The exact blocking SCCs consumed from the shared gate report.
-    pub blocking_sccs: Vec<Vec<ModulePath>>,
-    pub suggested_merge_paths: Vec<ModulePath>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionCoarsenedGroup {
-    pub suggested_module_path: ModulePath,
-    /// Original source module labels represented by this candidate group.
-    pub origin_module_paths: Vec<ModulePath>,
-    pub source_unit_ids: Vec<String>,
-    pub binding_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionNamingCollision {
-    pub suggested_module_path: ModulePath,
-    pub readable_name: String,
-    pub claims: Vec<ModuleDecompositionNamedClaim>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionNamedClaim {
-    pub original_module_path: ModulePath,
-    pub binding_id: String,
-    pub source_unit_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModuleDecompositionStrategy {
-    Seed,
-    Atomic,
-    AtomicIncludingResidual,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecomposition {
-    pub module_id: ModulePath,
-    pub fragments: Vec<ModuleDecompositionFragment>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionFragment {
-    /// Suggested output path. The command never edits the spec.
-    pub suggested_module_path: ModulePath,
-    pub source_unit_ids: Vec<String>,
-    pub binding_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionSelectorAnchor {
-    pub kind: ModuleDecompositionSelectorAnchorKind,
-    pub module_path: ModulePath,
-    pub source: ModuleDecompositionSelectorAnchorSource,
-    pub referenced_by: String,
-    pub source_unit_ids: Vec<String>,
-    pub anchor_source_unit_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ModuleDecompositionSelectorAnchorSource {
-    Member { name: String },
-    AnonymousStatement { index: usize },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModuleDecompositionSelectorAnchorKind {
-    IntrinsicAlias,
-    SourceMatchReference,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleDecompositionAtomicConflict {
-    pub atomic_group_id: String,
-    pub source_unit_ids: Vec<String>,
-    pub candidate_modules: Vec<ModulePath>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -311,6 +123,37 @@ pub struct ProposalSizeBucketCount {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ObservedConsumers {
+    /// Value reads from source units outside this proposal's resulting quotient class.
+    pub value_reads: ConsumerEvidence,
+    /// Rebinding writes from source units outside this proposal's resulting quotient class.
+    pub writes: ConsumerEvidence,
+    /// Scheduling constraints and promoted-at-init edges. A promoted read or
+    /// write also appears in its value-read or write category.
+    pub scheduling_or_promoted_context: ConsumerEvidence,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ConsumerEvidence {
+    pub total_source_units: usize,
+    pub omitted_source_units: usize,
+    pub source_units: Vec<ObservedConsumerSourceUnit>,
+    pub total_modules: usize,
+    pub omitted_modules: usize,
+    pub modules: Vec<String>,
+    pub total_edges: usize,
+    pub omitted_edges: usize,
+    /// Original directed graph edges (`source` consumes or constrains `target`).
+    pub edges: Vec<DependencyEdgeReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ObservedConsumerSourceUnit {
+    pub source_unit_id: String,
+    pub current_module: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ModuleProposal {
     pub proposed_module_id: String,
     pub source_unit_ids: Vec<String>,
@@ -318,6 +161,9 @@ pub struct ModuleProposal {
     /// anonymous side-effect statements, which appear under
     /// `anonymous_statement_source_unit_ids` instead.
     pub binding_ids: Vec<String>,
+    /// Bounded incoming graph evidence for the source units this proposal adds.
+    /// These observed consumers are context for source review, not inferred owners.
+    pub observed_consumers: ObservedConsumers,
     /// Anonymous side-effect statements (source_units with empty
     /// `declared_bindings`) in this cell. Lane workers materialize
     /// these via `anonymous_statements:` entries quoting the
@@ -407,15 +253,17 @@ pub struct ModuleProposal {
     pub merge_into: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum PeelCandidateStatus {
     PeelableNow,
     BlockedResidualDependency,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ProposalDiagnosticReason {
     ExceedsSizeCap,
 }
@@ -436,35 +284,33 @@ pub struct ProposalDiagnostic {
 }
 
 pub fn propose_from_files(options: &ProposalOptions) -> Result<ProposalsReport> {
-    let graph: DependencyGraphReport = serde_json::from_str(
-        &fs::read_to_string(&options.dependency_graph_path)
-            .with_context(|| format!("reading {}", options.dependency_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", options.dependency_graph_path.display()))?;
-    propose_from_graph(&graph, options)
+    let input = DependencyGraphInput::read(&options.dependency_graph_path)?;
+    propose_from_graph(&input, options)
 }
 
-/// [`propose_from_files`] for callers that already hold the parsed
-/// `DependencyGraphReport`. The planner verbs load the graph once for their
-/// own report sections; re-reading `dependency_graph_path` here would parse
-/// the same multi-megabyte JSON a second time per command.
+/// [`propose_from_files`] for callers that already hold the validated graph
+/// input. Topology is shared across proposal construction and every candidate
+/// gate query; report data supplies labels and destinations.
 pub fn propose_from_graph(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     options: &ProposalOptions,
 ) -> Result<ProposalsReport> {
+    let graph = input.report();
     let claims = active_claims_from_options(graph, options)?;
-    let addressable_anonymous_source_unit_ids = if options.source_root.is_some() {
-        Some(addressable_anonymous_statement_source_unit_ids(
-            graph,
-            &options.dependency_graph_path,
-            &options.modules_root,
-            options.source_root.as_deref(),
-        )?)
-    } else {
-        None
-    };
+    let addressable_anonymous_source_unit_ids =
+        if options.source_root.is_some() || options.source_context.is_some() {
+            Some(addressable_anonymous_statement_source_unit_ids(
+                graph,
+                &options.dependency_graph_path,
+                &options.modules_root,
+                options.source_root.as_deref(),
+                options.source_context.as_ref(),
+            )?)
+        } else {
+            None
+        };
     propose_with_context(
-        graph,
+        input,
         &claims,
         options.size_cap_lines,
         ProposalContext {
@@ -473,76 +319,7 @@ pub fn propose_from_graph(
     )
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ModuleDecompositionOptions {
-    pub strategy: ModuleDecompositionStrategy,
-    pub coarsening: ModuleDecompositionCoarseningMode,
-    pub preserve_selector_anchors: bool,
-    /// Include intact current named modules as one-fragment report rows.
-    pub include_unchanged: bool,
-    pub coarsen_atomic_conflicts: bool,
-    pub rejoin_original_modules: bool,
-    pub rejoin_pair_attempt_limit: Option<usize>,
-    pub whole_home_pass_limit: Option<usize>,
-}
-
-pub fn decompose_modules_from_files_with_options(
-    options: &ProposalOptions,
-    decomposition: ModuleDecompositionOptions,
-) -> Result<ModuleDecompositionReport> {
-    let graph: DependencyGraphReport = serde_json::from_str(
-        &fs::read_to_string(&options.dependency_graph_path)
-            .with_context(|| format!("reading {}", options.dependency_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", options.dependency_graph_path.display()))?;
-    decompose_modules_from_graph_with_options(&graph, options, decomposition)
-}
-
-pub fn decompose_modules_from_graph_with_options(
-    graph: &DependencyGraphReport,
-    options: &ProposalOptions,
-    decomposition: ModuleDecompositionOptions,
-) -> Result<ModuleDecompositionReport> {
-    let claims = active_claims_from_options(graph, options)?;
-    let existing_module_paths = module_paths_from_options(graph, options)?;
-    decompose_modules(
-        graph,
-        &claims,
-        existing_module_paths,
-        options,
-        decomposition,
-    )
-}
-
-fn module_paths_from_options(
-    graph: &DependencyGraphReport,
-    options: &ProposalOptions,
-) -> Result<BTreeSet<ModulePath>> {
-    let roots = if let Some(config) = &options.tree_config {
-        ModuleTreeScope::from_config(config, &graph.chunk_id)?
-            .roots()
-            .to_vec()
-    } else {
-        vec![PathBuf::new()]
-    };
-    let mut module_paths = BTreeSet::new();
-    for root in roots {
-        let modules_root = options.modules_root.join(root);
-        if !modules_root.exists() {
-            continue;
-        }
-        for file in collect_module_files(&modules_root)? {
-            let raw_path = module_path_from_file(&file, &modules_root);
-            module_paths.insert(
-                ModulePath::parse(&raw_path, "")
-                    .with_context(|| format!("module path from {}", file.display()))?,
-            );
-        }
-    }
-    Ok(module_paths)
-}
-
-fn active_claims_from_options(
+pub(crate) fn active_claims_from_options(
     graph: &DependencyGraphReport,
     options: &ProposalOptions,
 ) -> Result<BTreeMap<String, ModulePath>> {
@@ -562,1539 +339,13 @@ fn active_claims_from_options(
     Ok(claims)
 }
 
-fn decompose_modules(
-    graph: &DependencyGraphReport,
-    active_claims: &BTreeMap<String, ModulePath>,
-    existing_module_paths: BTreeSet<ModulePath>,
-    options: &ProposalOptions,
-    decomposition: ModuleDecompositionOptions,
-) -> Result<ModuleDecompositionReport> {
-    let strategy = decomposition.strategy;
-    let source_unit_modules: Vec<ModulePath> = graph
-        .nodes
-        .iter()
-        .map(|node| active_module_label(node, active_claims, graph))
-        .collect::<Result<_>>()?;
-    let residual_path = graph
-        .quotient
-        .nodes
-        .iter()
-        .find(|module| {
-            matches!(
-                module.kind,
-                ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
-            )
-        })
-        .map(|module| module.path.clone())
-        .context("dependency graph has no residual module for decomposition validation")?;
-    let include_residual = strategy == ModuleDecompositionStrategy::AtomicIncludingResidual;
-
-    let mut module_source_units: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
-    for (source_unit_idx, node) in graph.nodes.iter().enumerate() {
-        if include_residual || !graph.is_unassigned_or_entry(&node.destination) {
-            module_source_units
-                .entry(source_unit_modules[source_unit_idx].clone())
-                .or_default()
-                .push(source_unit_idx);
-        }
-    }
-    let mut module_groups = match strategy {
-        ModuleDecompositionStrategy::Seed => {
-            let spec_modules: Vec<SpecModuleGroup> = module_source_units
-                .iter()
-                .map(|(module_id, source_unit_indices)| SpecModuleGroup {
-                    module_id: module_id.to_string(),
-                    source_unit_ids: source_unit_indices
-                        .iter()
-                        .map(|&source_unit_idx| graph.nodes[source_unit_idx].id.clone())
-                        .collect(),
-                })
-                .collect();
-            // Module size is not a decomposition constraint. Keep the gate's
-            // structural and timing checks while allowing an existing large module
-            // to be considered as a whole.
-            let (quotient, _) = build_same_module_seed_quotient(
-                graph,
-                &graph.atomic_graph.nodes,
-                &spec_modules,
-                usize::MAX,
-            )?;
-            module_source_units
-                .iter()
-                .map(|(module_id, source_unit_indices)| {
-                    let mut fragments_by_class: BTreeMap<ClassId, Vec<usize>> = BTreeMap::new();
-                    for &source_unit_idx in source_unit_indices {
-                        let source_unit = quotient
-                            .source_unit_index_of(&graph.nodes[source_unit_idx].id)
-                            .with_context(|| {
-                                format!(
-                                    "source unit {} disappeared from seed quotient",
-                                    graph.nodes[source_unit_idx].id
-                                )
-                            })?;
-                        fragments_by_class
-                            .entry(quotient.class_of(source_unit))
-                            .or_default()
-                            .push(source_unit_idx);
-                    }
-                    Ok((
-                        module_id.clone(),
-                        fragments_by_class
-                            .into_values()
-                            .map(|source_unit_indices| (source_unit_indices, false))
-                            .collect::<Vec<_>>(),
-                    ))
-                })
-                .collect::<Result<BTreeMap<_, _>>>()?
-        }
-        ModuleDecompositionStrategy::Atomic => atomic_module_groups(
-            graph,
-            &module_source_units,
-            &source_unit_modules,
-            &residual_path,
-            false,
-        )?,
-        ModuleDecompositionStrategy::AtomicIncludingResidual => atomic_module_groups(
-            graph,
-            &module_source_units,
-            &source_unit_modules,
-            &residual_path,
-            true,
-        )?,
-    };
-
-    let resolved_modules = if decomposition.preserve_selector_anchors {
-        Some(resolve_decomposition_claims(graph, options)?)
-    } else {
-        None
-    };
-    let selector_anchor_relations = if let Some(resolved_modules) = &resolved_modules {
-        let relations =
-            resolve_selector_anchor_relations(graph, &source_unit_modules, resolved_modules)?;
-        let included_modules = module_source_units.keys().cloned().collect();
-        cohere_selector_anchor_groups(&mut module_groups, &relations, &included_modules)?;
-        Some(
-            relations
-                .iter()
-                .map(|relation| relation.report.clone())
-                .collect(),
-        )
-    } else {
-        None
-    };
-
-    let mut occupied_paths: BTreeSet<ModulePath> = source_unit_modules.iter().cloned().collect();
-    occupied_paths.extend(existing_module_paths.iter().cloned());
-    let mut candidate_source_unit_modules = source_unit_modules.clone();
-    let mut refinements = Vec::new();
-    let mut split_module_count = 0;
-    for (module_id, groups) in module_groups {
-        if groups.len() < 2 {
-            if decomposition.include_unchanged
-                && !groups.is_empty()
-                && !(include_residual && module_id == residual_path)
-            {
-                let fragments = groups
-                    .into_iter()
-                    .map(|(source_unit_indices, _)| {
-                        module_decomposition_fragment(graph, module_id.clone(), source_unit_indices)
-                    })
-                    .collect();
-                refinements.push(ModuleDecomposition {
-                    module_id,
-                    fragments,
-                });
-            }
-            continue;
-        }
-
-        let mut fragments = Vec::with_capacity(groups.len());
-        for (source_unit_indices, preserve_module_path) in groups {
-            let suggested_module_path = if preserve_module_path {
-                module_id.clone()
-            } else if include_residual && module_id == residual_path {
-                next_residual_fragment_path(&mut occupied_paths)
-            } else {
-                next_fragment_path(&module_id, &mut occupied_paths)
-            };
-            for &source_unit_idx in &source_unit_indices {
-                candidate_source_unit_modules[source_unit_idx] = suggested_module_path.clone();
-            }
-            fragments.push(module_decomposition_fragment(
-                graph,
-                suggested_module_path,
-                source_unit_indices,
-            ));
-        }
-        refinements.push(ModuleDecomposition {
-            module_id,
-            fragments,
-        });
-        split_module_count += 1;
-    }
-
-    let mut validation =
-        validate_decomposition_candidate(graph, &candidate_source_unit_modules, &residual_path)?;
-    let mut coarsening = None;
-    anyhow::ensure!(
-        !decomposition.coarsen_atomic_conflicts
-            || decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs,
-        "coarsening atomic conflicts requires SCC coarsening"
-    );
-    if decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs {
-        let mut occupied_paths: BTreeSet<ModulePath> =
-            candidate_source_unit_modules.iter().cloned().collect();
-        occupied_paths.extend(existing_module_paths.iter().cloned());
-        let atomic_conflict_merges = if decomposition.coarsen_atomic_conflicts {
-            let merges = coarsen_atomic_conflicts(
-                &validation.atomic_group_conflicts,
-                &residual_path,
-                &mut occupied_paths,
-                &mut candidate_source_unit_modules,
-            )?;
-            if !merges.is_empty() {
-                validation = validate_decomposition_candidate(
-                    graph,
-                    &candidate_source_unit_modules,
-                    &residual_path,
-                )?;
-                anyhow::ensure!(
-                    validation.atomic_group_conflicts.is_empty(),
-                    "native atomic-conflict coarsening left structural atomic groups split"
-                );
-            }
-            merges
-        } else {
-            Vec::new()
-        };
-        let mut rounds = Vec::new();
-        let stop_reason = loop {
-            if !validation.atomic_group_conflicts.is_empty() {
-                break ModuleDecompositionCoarseningStopReason::AtomicGroupConflicts;
-            }
-            if !validation.cross_rebinds.is_empty() {
-                break ModuleDecompositionCoarseningStopReason::CrossModuleRebinds;
-            }
-            if validation.cycles.is_empty() {
-                break ModuleDecompositionCoarseningStopReason::Accepted;
-            }
-
-            let mut remaps = Vec::new();
-            let mut blocking_sccs = Vec::new();
-            let mut suggested_merge_paths = Vec::new();
-            let mut consumed_paths = BTreeSet::new();
-            for cycle in &validation.cycles {
-                let cycle_paths: BTreeSet<ModulePath> = cycle.modules.iter().cloned().collect();
-                let mut represented_paths: BTreeSet<ModulePath> = candidate_source_unit_modules
-                    .iter()
-                    .filter(|path| cycle_paths.contains(*path))
-                    .cloned()
-                    .collect();
-                if cycle_paths.contains(&residual_path) {
-                    represented_paths.insert(residual_path.clone());
-                }
-                if represented_paths.len() < 2
-                    || represented_paths
-                        .iter()
-                        .any(|path| consumed_paths.contains(path))
-                {
-                    continue;
-                }
-
-                let target = if represented_paths.contains(&residual_path) {
-                    residual_path.clone()
-                } else {
-                    let first_path = represented_paths
-                        .iter()
-                        .next()
-                        .expect("at least two represented paths")
-                        .clone();
-                    next_fragment_path(&first_path, &mut occupied_paths)
-                };
-                consumed_paths.extend(represented_paths.iter().cloned());
-                blocking_sccs.push(cycle.modules.clone());
-                suggested_merge_paths.push(target.clone());
-                remaps.push((represented_paths, target));
-            }
-            if remaps.is_empty() {
-                break ModuleDecompositionCoarseningStopReason::NoProgress;
-            }
-
-            for (paths, target) in &remaps {
-                for source_unit_path in &mut candidate_source_unit_modules {
-                    if paths.contains(source_unit_path) {
-                        *source_unit_path = target.clone();
-                    }
-                }
-            }
-            rounds.push(ModuleDecompositionCoarseningRound {
-                blocking_sccs,
-                suggested_merge_paths,
-            });
-            validation = validate_decomposition_candidate(
-                graph,
-                &candidate_source_unit_modules,
-                &residual_path,
-            )?;
-        };
-        coarsening = Some(ModuleDecompositionCoarsening {
-            stop_reason,
-            atomic_conflict_merges,
-            rounds,
-            groups: coarsened_groups(graph, &source_unit_modules, &candidate_source_unit_modules),
-            naming_collisions: None,
-            original_home_rejoining: None,
-        });
-    }
-
-    if decomposition.rejoin_original_modules {
-        anyhow::ensure!(
-            decomposition.coarsening == ModuleDecompositionCoarseningMode::MergeBlockingSccs,
-            "rejoining original modules requires SCC coarsening"
-        );
-        let coarsening_report = coarsening
-            .as_mut()
-            .context("SCC coarsening report is missing")?;
-        let accepted_baseline =
-            coarsening_report.stop_reason == ModuleDecompositionCoarseningStopReason::Accepted;
-        let home_rejoining = if accepted_baseline {
-            rejoin_original_home_fragments(
-                graph,
-                &source_unit_modules,
-                &residual_path,
-                &mut candidate_source_unit_modules,
-                decomposition.rejoin_pair_attempt_limit,
-                decomposition.whole_home_pass_limit,
-            )?
-        } else {
-            summarize_home_rejoining(
-                ModuleDecompositionHomeRejoiningStopReason::CandidateNotRealizable,
-                &source_unit_modules,
-                &candidate_source_unit_modules,
-                HomeRejoiningCounters::default(),
-                decomposition.rejoin_pair_attempt_limit,
-                decomposition.whole_home_pass_limit,
-                Vec::new(),
-            )
-        };
-        validation = validate_decomposition_candidate(
-            graph,
-            &candidate_source_unit_modules,
-            &residual_path,
-        )?;
-        anyhow::ensure!(
-            !accepted_baseline
-                || (validation.atomic_group_conflicts.is_empty()
-                    && validation.cycles.is_empty()
-                    && validation.cross_rebinds.is_empty()),
-            "shared gate rejected the assignment after original-home rejoining"
-        );
-        coarsening_report.groups =
-            coarsened_groups(graph, &source_unit_modules, &candidate_source_unit_modules);
-        coarsening_report.original_home_rejoining = Some(home_rejoining);
-    }
-
-    if let (Some(coarsening_report), Some(resolved_modules)) =
-        (coarsening.as_mut(), resolved_modules.as_ref())
-    {
-        coarsening_report.naming_collisions = Some(coarsened_naming_collisions(
-            graph,
-            &source_unit_modules,
-            &candidate_source_unit_modules,
-            resolved_modules,
-        )?);
-    }
-
-    let covered_source_unit_ids: BTreeSet<&str> =
-        graph.nodes.iter().map(|node| node.id.as_str()).collect();
-    let coverage_complete = covered_source_unit_ids.len() == graph.nodes.len()
-        && candidate_source_unit_modules.len() == graph.nodes.len();
-    let candidate_is_realizable = coverage_complete
-        && validation.atomic_group_conflicts.is_empty()
-        && validation.cycles.is_empty()
-        && validation.cross_rebinds.is_empty();
-    let original_modules: BTreeSet<ModulePath> = source_unit_modules.into_iter().collect();
-    let unchanged_module_count = original_modules.len().saturating_sub(split_module_count);
-
-    Ok(ModuleDecompositionReport {
-        strategy,
-        preserve_selector_anchors: decomposition.preserve_selector_anchors,
-        selector_anchor_relations,
-        candidate_is_realizable,
-        coverage_complete,
-        source_unit_count: graph.nodes.len(),
-        assigned_source_unit_count: candidate_source_unit_modules.len(),
-        unchanged_module_count,
-        modules: refinements,
-        atomic_group_conflicts: validation.atomic_group_conflicts,
-        cycles: validation.cycles,
-        cross_rebinds: validation.cross_rebinds,
-        coarsening,
-    })
-}
-
-fn module_decomposition_fragment(
-    graph: &DependencyGraphReport,
-    suggested_module_path: ModulePath,
-    source_unit_indices: Vec<usize>,
-) -> ModuleDecompositionFragment {
-    let mut source_unit_ids = Vec::with_capacity(source_unit_indices.len());
-    let mut binding_ids = BTreeSet::new();
-    for source_unit_idx in source_unit_indices {
-        let node = &graph.nodes[source_unit_idx];
-        source_unit_ids.push(node.id.clone());
-        binding_ids.extend(
-            node.declared_bindings
-                .iter()
-                .map(|binding| binding.binding.to_string()),
-        );
-    }
-    source_unit_ids.sort();
-    ModuleDecompositionFragment {
-        suggested_module_path,
-        source_unit_ids,
-        binding_ids: binding_ids.into_iter().collect(),
-    }
-}
-
-fn is_false(value: &bool) -> bool {
-    !value
-}
-
-struct SelectorAnchorConstraint {
-    module_path: ModulePath,
-    source_unit_indices: Vec<usize>,
-    anchor_source_unit_indices: Vec<usize>,
-    report: ModuleDecompositionSelectorAnchor,
-}
-
-struct ResolvedDecompositionModule {
-    claims: ModuleClaims,
-    resolved: ResolvedSourceClaims,
-}
-
-fn resolve_decomposition_claims(
-    graph: &DependencyGraphReport,
-    options: &ProposalOptions,
-) -> Result<Vec<ResolvedDecompositionModule>> {
-    let source_root = options
-        .source_root
-        .as_deref()
-        .context("--preserve-selector-anchors requires --source-root")?;
-    let roots = if let Some(config) = &options.tree_config {
-        ModuleTreeScope::from_config(config, &graph.chunk_id)?
-            .roots()
-            .to_vec()
-    } else {
-        vec![PathBuf::new()]
-    };
-    let mut modules = Vec::<(PathBuf, ModuleClaims)>::new();
-    for root in roots {
-        let root = options.modules_root.join(root);
-        if !root.exists() {
-            continue;
-        }
-        for path in collect_module_files(&root)? {
-            let claims = module_claims(read_module_file(&path)?)?;
-            modules.push((path, claims));
-        }
-    }
-    let claim_sets = modules
-        .iter()
-        .map(|(path, claims)| SourceClaimSet {
-            module_path: path,
-            member_selectors: &claims.member_selectors,
-            source_matches: &claims.source_matches,
-            anonymous_selectors: &claims.anonymous_selectors,
-        })
-        .collect::<Vec<_>>();
-    let resolved = resolve_source_claims(
-        graph,
-        &options.dependency_graph_path,
-        &options.modules_root,
-        Some(source_root),
-        &claim_sets,
-    )?;
-
-    Ok(modules
-        .into_iter()
-        .zip(resolved)
-        .map(|((_, claims), resolved)| ResolvedDecompositionModule { claims, resolved })
-        .collect())
-}
-
-fn resolve_selector_anchor_relations(
-    graph: &DependencyGraphReport,
-    source_unit_modules: &[ModulePath],
-    modules: &[ResolvedDecompositionModule],
-) -> Result<Vec<SelectorAnchorConstraint>> {
-    let mut source_unit_indices_by_binding = BTreeMap::<String, Vec<usize>>::new();
-    for (source_unit_index, node) in graph.nodes.iter().enumerate() {
-        for binding in &node.declared_bindings {
-            let source_units = source_unit_indices_by_binding
-                .entry(binding.binding.to_string())
-                .or_default();
-            if !source_units.contains(&source_unit_index) {
-                source_units.push(source_unit_index);
-            }
-        }
-    }
-
-    let mut relations = Vec::new();
-    for module in modules {
-        let claims = &module.claims;
-        let resolved = &module.resolved;
-        let resolver = SelectorAnchorResolver {
-            graph,
-            source_unit_modules,
-            source_unit_indices_by_binding: &source_unit_indices_by_binding,
-            claims,
-            resolved,
-        };
-        for (member, selector) in &claims.member_selectors {
-            let MemberSelectorSpec::IntrinsicAlias(alias) = selector else {
-                continue;
-            };
-            relations.push(resolver.member_constraint(
-                member,
-                &alias.referenced_by,
-                ModuleDecompositionSelectorAnchorKind::IntrinsicAlias,
-            )?);
-        }
-        for reference in &resolved.local_member_references {
-            if reference.module_neutral_meaning != ModuleNeutralReferenceMeaning::Ambiguous {
-                continue;
-            }
-            relations.push(resolver.source_match_constraint(reference)?);
-        }
-    }
-    Ok(relations)
-}
-
-struct SelectorAnchorResolver<'a> {
-    graph: &'a DependencyGraphReport,
-    source_unit_modules: &'a [ModulePath],
-    source_unit_indices_by_binding: &'a BTreeMap<String, Vec<usize>>,
-    claims: &'a ModuleClaims,
-    resolved: &'a ResolvedSourceClaims,
-}
-
-impl SelectorAnchorResolver<'_> {
-    fn member_constraint(
-        &self,
-        member: &str,
-        referenced_by: &str,
-        kind: ModuleDecompositionSelectorAnchorKind,
-    ) -> Result<SelectorAnchorConstraint> {
-        self.constraint(
-            ModuleDecompositionSelectorAnchorSource::Member {
-                name: member.to_string(),
-            },
-            self.source_unit_indices_for_member(member)?,
-            referenced_by,
-            kind,
-        )
-    }
-
-    fn source_match_constraint(
-        &self,
-        reference: &ResolvedLocalMemberReference,
-    ) -> Result<SelectorAnchorConstraint> {
-        let (source, source_unit_indices) = match &reference.source {
-            ResolvedLocalMemberOrigin::Member(member) => (
-                ModuleDecompositionSelectorAnchorSource::Member {
-                    name: member.clone(),
-                },
-                self.source_unit_indices_for_member(member)?,
-            ),
-            ResolvedLocalMemberOrigin::AnonymousStatement { index, selector } => {
-                let source_unit = self
-                    .resolved
-                    .anonymous_selector_source_units
-                    .get(selector)
-                    .with_context(|| {
-                        format!("anonymous selector index {index} has no resolved source unit")
-                    })?;
-                anyhow::ensure!(
-                    self.graph.nodes.get(source_unit.0).is_some(),
-                    "anonymous selector index {index} resolved to missing source unit {}",
-                    source_unit.0
-                );
-                (
-                    ModuleDecompositionSelectorAnchorSource::AnonymousStatement { index: *index },
-                    vec![source_unit.0],
-                )
-            }
-        };
-        self.constraint(
-            source,
-            source_unit_indices,
-            &reference.referenced_by,
-            ModuleDecompositionSelectorAnchorKind::SourceMatchReference,
-        )
-    }
-
-    fn source_unit_indices_for_member(&self, member: &str) -> Result<Vec<usize>> {
-        let member_binding = binding_for_member(self.claims, self.resolved, member)
-            .with_context(|| format!("selector anchor member {member:?} did not resolve"))?;
-        self.source_unit_indices_by_binding
-            .get(member_binding)
-            .with_context(|| {
-                format!("selector anchor member {member:?} binding has no source unit")
-            })
-            .cloned()
-    }
-
-    fn constraint(
-        &self,
-        source: ModuleDecompositionSelectorAnchorSource,
-        source_unit_indices: Vec<usize>,
-        referenced_by: &str,
-        kind: ModuleDecompositionSelectorAnchorKind,
-    ) -> Result<SelectorAnchorConstraint> {
-        let anchor_binding = binding_for_member(self.claims, self.resolved, referenced_by)
-            .with_context(|| {
-                format!("selector anchor reference {referenced_by:?} did not resolve")
-            })?;
-        let anchor_source_unit_indices = self
-            .source_unit_indices_by_binding
-            .get(anchor_binding)
-            .with_context(|| {
-                format!("selector anchor reference {referenced_by:?} binding has no source unit")
-            })?
-            .clone();
-        let relation_modules = source_unit_indices
-            .iter()
-            .chain(&anchor_source_unit_indices)
-            .map(|&source_unit_index| self.source_unit_modules[source_unit_index].clone())
-            .collect::<BTreeSet<_>>();
-        anyhow::ensure!(
-            relation_modules.len() == 1,
-            "selector anchor source {source:?} and reference {referenced_by:?} resolve to different modules: {}",
-            relation_modules
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let module_path = relation_modules
-            .into_iter()
-            .next()
-            .context("selector anchor relation has no source unit module")?;
-        Ok(SelectorAnchorConstraint {
-            module_path: module_path.clone(),
-            source_unit_indices: source_unit_indices.clone(),
-            anchor_source_unit_indices: anchor_source_unit_indices.clone(),
-            report: ModuleDecompositionSelectorAnchor {
-                kind,
-                module_path,
-                source,
-                referenced_by: referenced_by.to_string(),
-                source_unit_ids: source_unit_ids(self.graph, &source_unit_indices),
-                anchor_source_unit_ids: source_unit_ids(self.graph, &anchor_source_unit_indices),
-            },
-        })
-    }
-}
-
-fn binding_for_member<'a>(
-    claims: &'a ModuleClaims,
-    resolved: &'a ResolvedSourceClaims,
-    name: &str,
-) -> Option<&'a str> {
-    resolved
-        .member_bindings
-        .get(name)
-        .map(String::as_str)
-        .or_else(|| {
-            claims
-                .member_selectors
-                .iter()
-                .find(|(member, _)| member == name)
-                .and_then(|(_, selector)| match selector {
-                    MemberSelectorSpec::Binding(binding) => Some(binding.name.as_str()),
-                    _ => None,
-                })
-        })
-}
-
-fn source_unit_ids(graph: &DependencyGraphReport, source_unit_indices: &[usize]) -> Vec<String> {
-    let mut source_unit_ids = source_unit_indices
-        .iter()
-        .map(|&source_unit_index| graph.nodes[source_unit_index].id.clone())
-        .collect::<Vec<_>>();
-    source_unit_ids.sort();
-    source_unit_ids.dedup();
-    source_unit_ids
-}
-
-fn cohere_selector_anchor_groups(
-    groups_by_module: &mut AtomicModuleGroups,
-    relations: &[SelectorAnchorConstraint],
-    included_modules: &BTreeSet<ModulePath>,
-) -> Result<()> {
-    for (module_path, groups) in groups_by_module.iter_mut() {
-        if !included_modules.contains(module_path) {
-            continue;
-        }
-        let relevant = relations
-            .iter()
-            .filter(|relation| relation.module_path == *module_path)
-            .collect::<Vec<_>>();
-        if relevant.is_empty() {
-            continue;
-        }
-        let mut group_by_source_unit = BTreeMap::new();
-        for (group_index, (source_unit_indices, _)) in groups.iter().enumerate() {
-            for &source_unit_index in source_unit_indices {
-                anyhow::ensure!(
-                    group_by_source_unit
-                        .insert(source_unit_index, group_index)
-                        .is_none(),
-                    "source unit {} appears in more than one decomposition group in module {module_path}",
-                    source_unit_index
-                );
-            }
-        }
-        let mut parents = (0..groups.len()).collect::<Vec<_>>();
-        for relation in relevant {
-            let source_groups = relation
-                .source_unit_indices
-                .iter()
-                .map(|source_unit_index| {
-                    group_by_source_unit.get(source_unit_index).copied().with_context(|| {
-                        format!(
-                            "selector anchor source {:?} source unit {} is absent from decomposition groups",
-                            relation.report.source, source_unit_index
-                        )
-                    })
-                })
-                .collect::<Result<BTreeSet<_>>>()?;
-            let anchor_groups = relation
-                .anchor_source_unit_indices
-                .iter()
-                .map(|source_unit_index| {
-                    group_by_source_unit.get(source_unit_index).copied().with_context(|| {
-                        format!(
-                            "selector anchor reference {} source unit {} is absent from decomposition groups",
-                            relation.report.referenced_by, source_unit_index
-                        )
-                    })
-                })
-                .collect::<Result<BTreeSet<_>>>()?;
-            for &source_group in &source_groups {
-                for &anchor_group in &anchor_groups {
-                    union_groups(&mut parents, source_group, anchor_group);
-                }
-            }
-        }
-
-        let mut merged = BTreeMap::<usize, (Vec<usize>, bool)>::new();
-        for (group_index, (source_unit_indices, preserve_module_path)) in
-            groups.drain(..).enumerate()
-        {
-            let root = find_group_root(&mut parents, group_index);
-            let (merged_source_units, merged_preserve_path) = merged.entry(root).or_default();
-            merged_source_units.extend(source_unit_indices);
-            *merged_preserve_path |= preserve_module_path;
-        }
-        *groups = merged
-            .into_values()
-            .map(|(mut source_unit_indices, preserve_module_path)| {
-                source_unit_indices.sort_unstable();
-                (source_unit_indices, preserve_module_path)
-            })
-            .collect();
-    }
-    Ok(())
-}
-
-fn find_group_root(parents: &mut [usize], group: usize) -> usize {
-    if parents[group] != group {
-        parents[group] = find_group_root(parents, parents[group]);
-    }
-    parents[group]
-}
-
-fn union_groups(parents: &mut [usize], left: usize, right: usize) {
-    let left_root = find_group_root(parents, left);
-    let right_root = find_group_root(parents, right);
-    if left_root != right_root {
-        let (lower, upper) = if left_root < right_root {
-            (left_root, right_root)
-        } else {
-            (right_root, left_root)
-        };
-        parents[upper] = lower;
-    }
-}
-
-fn coarsen_atomic_conflicts(
-    conflicts: &[ModuleDecompositionAtomicConflict],
-    residual_path: &ModulePath,
-    occupied_paths: &mut BTreeSet<ModulePath>,
-    candidate_source_unit_modules: &mut [ModulePath],
-) -> Result<Vec<ModuleDecompositionAtomicConflictMerge>> {
-    if conflicts.is_empty() {
-        return Ok(Vec::new());
-    }
-    let paths: Vec<ModulePath> = candidate_source_unit_modules
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    let path_indices: BTreeMap<ModulePath, usize> = paths
-        .iter()
-        .enumerate()
-        .map(|(idx, path)| (path.clone(), idx))
-        .collect();
-    let mut parents: Vec<usize> = (0..paths.len()).collect();
-    for conflict in conflicts {
-        let mut indices = conflict.candidate_modules.iter().map(|path| {
-            path_indices.get(path).copied().with_context(|| {
-                format!(
-                    "atomic group {} references absent candidate path {path}",
-                    conflict.atomic_group_id
-                )
-            })
-        });
-        let first = indices
-            .next()
-            .context("reported atomic conflict has no candidate paths")??;
-        for index in indices {
-            union_groups(&mut parents, first, index?);
-        }
-    }
-
-    let mut paths_by_root = BTreeMap::<usize, Vec<ModulePath>>::new();
-    for (idx, path) in paths.into_iter().enumerate() {
-        let root = find_group_root(&mut parents, idx);
-        paths_by_root.entry(root).or_default().push(path);
-    }
-    let mut atomic_group_ids_by_root = BTreeMap::<usize, BTreeSet<String>>::new();
-    for conflict in conflicts {
-        let first_path = conflict.candidate_modules.first().expect("checked above");
-        let root = find_group_root(&mut parents, path_indices[first_path]);
-        atomic_group_ids_by_root
-            .entry(root)
-            .or_default()
-            .insert(conflict.atomic_group_id.clone());
-    }
-
-    let mut remaps = BTreeMap::<ModulePath, ModulePath>::new();
-    let mut merges = Vec::new();
-    for (root, merged_candidate_paths) in paths_by_root {
-        if merged_candidate_paths.len() < 2 {
-            continue;
-        }
-        let suggested_module_path = if merged_candidate_paths.contains(residual_path) {
-            residual_path.clone()
-        } else {
-            next_fragment_path(&merged_candidate_paths[0], occupied_paths)
-        };
-        for path in &merged_candidate_paths {
-            remaps.insert(path.clone(), suggested_module_path.clone());
-        }
-        merges.push(ModuleDecompositionAtomicConflictMerge {
-            atomic_group_ids: atomic_group_ids_by_root
-                .remove(&root)
-                .context("coarsened component lost its reported atomic groups")?
-                .into_iter()
-                .collect(),
-            merged_candidate_paths,
-            suggested_module_path,
-        });
-    }
-    for path in candidate_source_unit_modules {
-        if let Some(target) = remaps.get(path) {
-            *path = target.clone();
-        }
-    }
-    Ok(merges)
-}
-
-struct DecompositionValidation {
-    atomic_group_conflicts: Vec<ModuleDecompositionAtomicConflict>,
-    cycles: Vec<gate::CycleReport>,
-    cross_rebinds: Vec<String>,
-}
-
-fn validate_decomposition_candidate(
-    graph: &DependencyGraphReport,
-    candidate_source_unit_modules: &[ModulePath],
-    residual_path: &ModulePath,
-) -> Result<DecompositionValidation> {
-    let source_unit_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(idx, node)| (node.id.as_str(), idx))
-        .collect();
-    let mut atomic_group_conflicts = Vec::new();
-    for atomic_group in &graph.atomic_graph.nodes {
-        let mut candidate_modules = BTreeSet::new();
-        for source_unit_id in &atomic_group.source_unit_ids {
-            let source_unit_idx = source_unit_index
-                .get(source_unit_id.as_str())
-                .with_context(|| {
-                    format!(
-                        "atomic group {} references unknown source unit {source_unit_id}",
-                        atomic_group.id
-                    )
-                })?;
-            candidate_modules.insert(candidate_source_unit_modules[*source_unit_idx].clone());
-        }
-        if candidate_modules.len() > 1 {
-            atomic_group_conflicts.push(ModuleDecompositionAtomicConflict {
-                atomic_group_id: atomic_group.id.clone(),
-                source_unit_ids: atomic_group.source_unit_ids.clone(),
-                candidate_modules: candidate_modules.into_iter().collect(),
-            });
-        }
-    }
-
-    let dependency_graph = DependencyGraph::from_report(graph)
-        .context("reconstructing the dependency graph for decomposition validation")?;
-    let (assignments, paths_by_module_id) =
-        candidate_module_assignments(candidate_source_unit_modules, residual_path)?;
-    let assignment = ModuleAssignment::from_assignments(
-        assignments,
-        analysis::EntryDestination::from_module_id(ModuleId(0)),
-    );
-    let gate_report = gate::validate_assignment(&dependency_graph, &assignment, &|module_id| {
-        paths_by_module_id
-            .get(&module_id)
-            .cloned()
-            .unwrap_or_else(|| residual_path.clone())
-    });
-    Ok(DecompositionValidation {
-        atomic_group_conflicts,
-        cycles: gate_report.cycles,
-        cross_rebinds: gate_report.cross_rebinds,
-    })
-}
-
-fn candidate_module_assignments(
-    candidate_source_unit_modules: &[ModulePath],
-    residual_path: &ModulePath,
-) -> Result<(Vec<ModuleId>, BTreeMap<ModuleId, ModulePath>)> {
-    let mut paths: BTreeSet<ModulePath> = candidate_source_unit_modules.iter().cloned().collect();
-    paths.insert(residual_path.clone());
-    let mut module_ids = BTreeMap::from([(residual_path.clone(), ModuleId(0))]);
-    let mut paths_by_module_id = BTreeMap::from([(ModuleId(0), residual_path.clone())]);
-    let mut next_module_idx = 1;
-    for path in paths {
-        if &path == residual_path {
-            continue;
-        }
-        let module_id = ModuleId(next_module_idx);
-        next_module_idx += 1;
-        module_ids.insert(path.clone(), module_id);
-        paths_by_module_id.insert(module_id, path);
-    }
-    let assignments = candidate_source_unit_modules
-        .iter()
-        .map(|path| {
-            module_ids
-                .get(path)
-                .copied()
-                .with_context(|| format!("candidate module {path} has no gate identity"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok((assignments, paths_by_module_id))
-}
-
-fn rejoin_original_home_fragments(
-    graph: &DependencyGraphReport,
-    original_source_unit_modules: &[ModulePath],
-    residual_path: &ModulePath,
-    candidate_source_unit_modules: &mut [ModulePath],
-    pair_attempt_limit: Option<usize>,
-    whole_home_pass_limit: Option<usize>,
-) -> Result<ModuleDecompositionHomeRejoining> {
-    let mut owners_by_candidate = BTreeMap::<ModulePath, Vec<usize>>::new();
-    let mut home_source_unit_counts = BTreeMap::<ModulePath, usize>::new();
-    for (source_unit_idx, (candidate, home)) in candidate_source_unit_modules
-        .iter()
-        .zip(original_source_unit_modules)
-        .enumerate()
-    {
-        owners_by_candidate
-            .entry(candidate.clone())
-            .or_default()
-            .push(source_unit_idx);
-        *home_source_unit_counts.entry(home.clone()).or_default() += 1;
-    }
-    // A coarsened group spanning multiple original homes is already a gate
-    // accepted indivisible class. Never contract it with a pure home fragment.
-    let mut pure_home_representatives = BTreeMap::<ModulePath, Vec<SourceUnitIndex>>::new();
-    for source_units in owners_by_candidate.values() {
-        let home = &original_source_unit_modules[source_units[0]];
-        if source_units
-            .iter()
-            .all(|&source_unit_idx| &original_source_unit_modules[source_unit_idx] == home)
-        {
-            pure_home_representatives
-                .entry(home.clone())
-                .or_default()
-                .push(SourceUnitIndex(source_units[0]));
-        }
-    }
-
-    if whole_home_pass_limit == Some(0) {
-        let split_pure_home_remains = pure_home_representatives
-            .values()
-            .any(|representatives| representatives.len() > 1);
-        return Ok(summarize_home_rejoining(
-            if split_pure_home_remains {
-                ModuleDecompositionHomeRejoiningStopReason::WholeHomePassLimitReached
-            } else {
-                ModuleDecompositionHomeRejoiningStopReason::Converged
-            },
-            original_source_unit_modules,
-            candidate_source_unit_modules,
-            HomeRejoiningCounters::default(),
-            pair_attempt_limit,
-            whole_home_pass_limit,
-            Vec::new(),
-        ));
-    }
-
-    let (assignments, _) =
-        candidate_module_assignments(candidate_source_unit_modules, residual_path)?;
-    // Decomposition has no size ceiling: an original home can be larger than
-    // the proposer's default cap. The shared incremental gate still checks
-    // every contraction against the complete candidate assignment.
-    let mut quotient = QuotientGraph::from_report_with_realizable_assignment(
-        graph,
-        usize::MAX,
-        &assignments,
-        ModuleId(0),
-    )?;
-
-    let mut attempted = 0;
-    let mut accepted = 0;
-    let mut whole_home_pass_count = 0;
-    let mut whole_home_pass_limit_reached = false;
-    let mut pair_attempts_by_home = BTreeMap::<ModulePath, usize>::new();
-    let mut limited_homes = BTreeSet::<ModulePath>::new();
-    // Stable path and source_unit order makes the result deterministic. Exhaust each
-    // home before moving to the next; another home's contraction may make an
-    // earlier rejected pair admissible, so repeat whole-home passes only when
-    // some contraction was accepted during the previous pass.
-    loop {
-        if whole_home_pass_limit.is_some_and(|limit| whole_home_pass_count >= limit) {
-            whole_home_pass_limit_reached =
-                has_split_pure_home_fragments(&quotient, &pure_home_representatives);
-            break;
-        }
-        whole_home_pass_count += 1;
-        let mut pass_progress = false;
-        for (home, representatives) in &pure_home_representatives {
-            let mut attempted_whole_home = false;
-            loop {
-                let classes: Vec<ClassId> = representatives
-                    .iter()
-                    .map(|&source_unit| quotient.class_of(source_unit))
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-                // A rejected whole-home target is unchanged by this home's
-                // pairwise contractions. Retry only on another whole-home
-                // pass, after other homes may have changed the gate.
-                if !attempted_whole_home
-                    && (classes.len() > 2 || (pair_attempt_limit.is_some() && classes.len() == 2))
-                {
-                    attempted_whole_home = true;
-                    attempted += 1;
-                    let whole_home_accepted = if classes.len() == 2 {
-                        quotient.contract_if_preserving(classes[0], classes[1])
-                    } else {
-                        quotient.contract_group_if_preserving(&classes)
-                    };
-                    if whole_home_accepted {
-                        accepted += classes.len() - 1;
-                        pass_progress = true;
-                        break;
-                    }
-                    // With exactly two classes, this was the only possible pair.
-                    if classes.len() == 2 {
-                        break;
-                    }
-                }
-                let mut home_progress = false;
-                'pairs: for (left_idx, &left) in classes.iter().enumerate() {
-                    for &right in classes.iter().skip(left_idx + 1) {
-                        if let Some(limit) = pair_attempt_limit {
-                            let pair_attempts =
-                                pair_attempts_by_home.entry(home.clone()).or_default();
-                            if *pair_attempts >= limit {
-                                limited_homes.insert(home.clone());
-                                break 'pairs;
-                            }
-                            *pair_attempts += 1;
-                        }
-                        attempted += 1;
-                        if quotient.contract_if_preserving(left, right) {
-                            accepted += 1;
-                            home_progress = true;
-                            pass_progress = true;
-                            break 'pairs;
-                        }
-                    }
-                }
-                if !home_progress {
-                    break;
-                }
-            }
-        }
-        if !pass_progress {
-            break;
-        }
-    }
-
-    // A later whole-home pass can restore a home even after its fallback
-    // budget was exhausted. A two-class home also gets its sole pair checked
-    // as a whole-home move, leaving no untried pairs to report.
-    limited_homes.retain(|home| {
-        pure_home_representatives
-            .get(home)
-            .is_some_and(|representatives| {
-                representatives
-                    .iter()
-                    .map(|&source_unit| quotient.class_of(source_unit))
-                    .collect::<BTreeSet<_>>()
-                    .len()
-                    > 2
-            })
-    });
-
-    let mut final_paths = BTreeMap::<ClassId, ModulePath>::new();
-    let mut used_paths = BTreeSet::new();
-    for class in quotient.iter_classes() {
-        let members: Vec<usize> = quotient
-            .class_members(class)
-            .map(|source_unit| source_unit.0)
-            .collect();
-        let homes: BTreeSet<&ModulePath> = members
-            .iter()
-            .map(|&source_unit_idx| &original_source_unit_modules[source_unit_idx])
-            .collect();
-        let candidate_paths: BTreeSet<&ModulePath> = members
-            .iter()
-            .map(|&source_unit_idx| &candidate_source_unit_modules[source_unit_idx])
-            .collect();
-        let restored_home = homes.iter().next().filter(|home| {
-            homes.len() == 1 && home_source_unit_counts.get(*home) == Some(&members.len())
-        });
-        let path = if let Some(home) = restored_home {
-            (**home).clone()
-        } else if candidate_paths.iter().any(|path| *path == residual_path) {
-            residual_path.clone()
-        } else {
-            (**candidate_paths
-                .iter()
-                .next()
-                .expect("nonempty quotient class"))
-            .clone()
-        };
-        anyhow::ensure!(
-            used_paths.insert(path.clone()),
-            "original-home rejoining produced duplicate candidate path {path}"
-        );
-        final_paths.insert(class, path);
-    }
-    for (source_unit_idx, path) in candidate_source_unit_modules.iter_mut().enumerate() {
-        *path = final_paths
-            .get(&quotient.class_of(SourceUnitIndex(source_unit_idx)))
-            .expect("every source unit belongs to a live quotient class")
-            .clone();
-    }
-    let stop_reason = if whole_home_pass_limit_reached {
-        ModuleDecompositionHomeRejoiningStopReason::WholeHomePassLimitReached
-    } else if limited_homes.is_empty() {
-        ModuleDecompositionHomeRejoiningStopReason::Converged
-    } else {
-        ModuleDecompositionHomeRejoiningStopReason::PairAttemptLimitReached
-    };
-    Ok(summarize_home_rejoining(
-        stop_reason,
-        original_source_unit_modules,
-        candidate_source_unit_modules,
-        HomeRejoiningCounters {
-            attempted_contractions: attempted,
-            accepted_contractions: accepted,
-            whole_home_pass_count,
-        },
-        pair_attempt_limit,
-        whole_home_pass_limit,
-        limited_homes.into_iter().collect(),
-    ))
-}
-
-fn has_split_pure_home_fragments(
-    quotient: &QuotientGraph,
-    pure_home_representatives: &BTreeMap<ModulePath, Vec<SourceUnitIndex>>,
-) -> bool {
-    pure_home_representatives.values().any(|representatives| {
-        representatives
-            .iter()
-            .map(|&source_unit| quotient.class_of(source_unit))
-            .collect::<BTreeSet<_>>()
-            .len()
-            > 1
-    })
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct HomeRejoiningCounters {
-    attempted_contractions: usize,
-    accepted_contractions: usize,
-    whole_home_pass_count: usize,
-}
-
-fn summarize_home_rejoining(
-    stop_reason: ModuleDecompositionHomeRejoiningStopReason,
-    original_source_unit_modules: &[ModulePath],
-    candidate_source_unit_modules: &[ModulePath],
-    counters: HomeRejoiningCounters,
-    pair_attempt_limit: Option<usize>,
-    whole_home_pass_limit: Option<usize>,
-    budget_limited_home_paths: Vec<ModulePath>,
-) -> ModuleDecompositionHomeRejoining {
-    let mut groups = BTreeMap::<&ModulePath, (usize, BTreeSet<&ModulePath>)>::new();
-    let mut homes = BTreeMap::<&ModulePath, BTreeSet<&ModulePath>>::new();
-    for (home, candidate) in original_source_unit_modules
-        .iter()
-        .zip(candidate_source_unit_modules)
-    {
-        let group = groups.entry(candidate).or_default();
-        group.0 += 1;
-        group.1.insert(home);
-        homes.entry(home).or_default().insert(candidate);
-    }
-    let (fully_restored_module_paths, unrestored_module_paths): (Vec<_>, Vec<_>) =
-        homes.into_iter().partition(|(home, candidates)| {
-            candidates.len() == 1
-                && candidates.contains(home)
-                && groups.get(home).is_some_and(|group| group.1.len() == 1)
-        });
-    let fully_restored_module_paths: Vec<ModulePath> = fully_restored_module_paths
-        .into_iter()
-        .map(|(home, _)| home.clone())
-        .collect();
-    let unrestored_module_paths: Vec<ModulePath> = unrestored_module_paths
-        .into_iter()
-        .map(|(home, _)| home.clone())
-        .collect();
-    ModuleDecompositionHomeRejoining {
-        stop_reason,
-        attempted_contractions: counters.attempted_contractions,
-        accepted_contractions: counters.accepted_contractions,
-        pair_attempt_limit,
-        whole_home_pass_count: counters.whole_home_pass_count,
-        whole_home_pass_limit,
-        budget_limited_home_count: budget_limited_home_paths.len(),
-        budget_limited_home_paths,
-        original_module_count: fully_restored_module_paths.len() + unrestored_module_paths.len(),
-        fully_restored_module_count: fully_restored_module_paths.len(),
-        fully_restored_module_paths,
-        unrestored_module_paths,
-        final_group_count: groups.len(),
-        largest_group_source_unit_count: groups.values().map(|group| group.0).max().unwrap_or(0),
-        largest_group_origin_module_count: groups
-            .values()
-            .map(|group| group.1.len())
-            .max()
-            .unwrap_or(0),
-    }
-}
-
-fn coarsened_groups(
-    graph: &DependencyGraphReport,
-    original_source_unit_modules: &[ModulePath],
-    candidate_source_unit_modules: &[ModulePath],
-) -> Vec<ModuleDecompositionCoarsenedGroup> {
-    let mut by_module: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
-    for (source_unit_idx, path) in candidate_source_unit_modules.iter().enumerate() {
-        by_module
-            .entry(path.clone())
-            .or_default()
-            .push(source_unit_idx);
-    }
-    by_module
-        .into_iter()
-        .map(|(suggested_module_path, source_unit_indices)| {
-            let mut origin_module_paths = BTreeSet::new();
-            let mut source_unit_ids = Vec::new();
-            let mut binding_ids = BTreeSet::new();
-            for source_unit_idx in source_unit_indices {
-                origin_module_paths.insert(original_source_unit_modules[source_unit_idx].clone());
-                let source_unit = &graph.nodes[source_unit_idx];
-                source_unit_ids.push(source_unit.id.clone());
-                binding_ids.extend(
-                    source_unit
-                        .declared_bindings
-                        .iter()
-                        .map(|binding| binding.binding.to_string()),
-                );
-            }
-            source_unit_ids.sort();
-            ModuleDecompositionCoarsenedGroup {
-                suggested_module_path,
-                origin_module_paths: origin_module_paths.into_iter().collect(),
-                source_unit_ids,
-                binding_ids: binding_ids.into_iter().collect(),
-            }
-        })
-        .collect()
-}
-
-fn coarsened_naming_collisions(
-    graph: &DependencyGraphReport,
-    original_source_unit_modules: &[ModulePath],
-    candidate_source_unit_modules: &[ModulePath],
-    modules: &[ResolvedDecompositionModule],
-) -> Result<Vec<ModuleDecompositionNamingCollision>> {
-    let mut owners_by_binding = BTreeMap::<String, Vec<usize>>::new();
-    for (source_unit_idx, source_unit) in graph.nodes.iter().enumerate() {
-        for binding in &source_unit.declared_bindings {
-            owners_by_binding
-                .entry(binding.binding.to_string())
-                .or_default()
-                .push(source_unit_idx);
-        }
-    }
-
-    // Enumerate names from the canonical authored claims, then use the same
-    // resolved binding lookup as selector-anchor cohesion. A claim can have
-    // multiple source_unit sites, but it is one prospective export per destination.
-    let mut by_name =
-        BTreeMap::<(ModulePath, String), BTreeMap<(ModulePath, String), BTreeSet<String>>>::new();
-    for module in modules {
-        let readable_names = module
-            .claims
-            .member_selectors
-            .iter()
-            .map(|(name, _)| name.clone())
-            .chain(module.claims.source_matches.iter().flat_map(|claim| {
-                claim
-                    .bindings
-                    .iter()
-                    .map(|binding| binding.name().to_string())
-            }))
-            .collect::<BTreeSet<_>>();
-        for readable_name in readable_names {
-            let binding_id =
-                binding_for_member(&module.claims, &module.resolved, &readable_name)
-                    .with_context(|| format!("member {readable_name:?} has no resolved binding"))?;
-            let source_unit_indices = owners_by_binding.get(binding_id).with_context(|| {
-                format!(
-                    "resolved member {readable_name:?} binding {binding_id:?} has no graph source unit"
-                )
-            })?;
-            for &source_unit_idx in source_unit_indices {
-                by_name
-                    .entry((
-                        candidate_source_unit_modules[source_unit_idx].clone(),
-                        readable_name.clone(),
-                    ))
-                    .or_default()
-                    .entry((
-                        original_source_unit_modules[source_unit_idx].clone(),
-                        binding_id.to_string(),
-                    ))
-                    .or_default()
-                    .insert(graph.nodes[source_unit_idx].id.clone());
-            }
-        }
-    }
-
-    Ok(by_name
-        .into_iter()
-        .filter_map(|((suggested_module_path, readable_name), claims)| {
-            let homes = claims.keys().map(|(path, _)| path).collect::<BTreeSet<_>>();
-            let bindings = claims
-                .keys()
-                .map(|(_, binding)| binding)
-                .collect::<BTreeSet<_>>();
-            (homes.len() > 1 && bindings.len() > 1).then(|| ModuleDecompositionNamingCollision {
-                suggested_module_path,
-                readable_name,
-                claims: claims
-                    .into_iter()
-                    .map(|((original_module_path, binding_id), source_unit_ids)| {
-                        ModuleDecompositionNamedClaim {
-                            original_module_path,
-                            binding_id,
-                            source_unit_ids: source_unit_ids.into_iter().collect(),
-                        }
-                    })
-                    .collect(),
-            })
-        })
-        .collect())
-}
-
-type AtomicModuleGroups = BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>>;
-
-fn atomic_module_groups(
-    graph: &DependencyGraphReport,
-    module_source_units: &BTreeMap<ModulePath, Vec<usize>>,
-    source_unit_modules: &[ModulePath],
-    residual_path: &ModulePath,
-    include_residual: bool,
-) -> Result<AtomicModuleGroups> {
-    let source_unit_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(idx, node)| (node.id.as_str(), idx))
-        .collect();
-    let mut atomic_group_by_source_unit = vec![None; graph.nodes.len()];
-    for (atomic_group_idx, atomic_group) in graph.atomic_graph.nodes.iter().enumerate() {
-        for source_unit_id in &atomic_group.source_unit_ids {
-            let source_unit_idx = source_unit_index
-                .get(source_unit_id.as_str())
-                .with_context(|| {
-                    format!(
-                        "atomic group {} references unknown source unit {source_unit_id}",
-                        atomic_group.id
-                    )
-                })?;
-            if let Some(previous_atomic_group) =
-                atomic_group_by_source_unit[*source_unit_idx].replace(atomic_group_idx)
-            {
-                anyhow::bail!(
-                    "source unit {source_unit_id} appears in atomic groups {previous_atomic_group} and {atomic_group_idx}"
-                );
-            }
-        }
-    }
-    if let Some(source_unit_idx) = atomic_group_by_source_unit.iter().position(Option::is_none) {
-        anyhow::bail!(
-            "source unit {} is absent from the atomic graph",
-            graph.nodes[source_unit_idx].id
-        );
-    }
-
-    let mut groups_by_module: BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>> = BTreeMap::new();
-    let mut preserved_by_module: BTreeMap<ModulePath, Vec<usize>> = BTreeMap::new();
-    for atomic_group in &graph.atomic_graph.nodes {
-        let source_unit_indices = atomic_group
-            .source_unit_ids
-            .iter()
-            .map(|source_unit_id| {
-                source_unit_index
-                    .get(source_unit_id.as_str())
-                    .copied()
-                    .with_context(|| {
-                        format!(
-                            "atomic group {} references unknown source unit {source_unit_id}",
-                            atomic_group.id
-                        )
-                    })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let modules = source_unit_indices
-            .iter()
-            .map(|&source_unit_idx| source_unit_modules[source_unit_idx].clone())
-            .collect::<BTreeSet<_>>();
-        if modules.len() > 1 {
-            for source_unit_idx in source_unit_indices {
-                if module_source_units.contains_key(&source_unit_modules[source_unit_idx]) {
-                    preserved_by_module
-                        .entry(source_unit_modules[source_unit_idx].clone())
-                        .or_default()
-                        .push(source_unit_idx);
-                }
-            }
-        } else if let Some(module_id) = modules.into_iter().next()
-            && module_source_units.contains_key(&module_id)
-        {
-            let keep_in_entry = include_residual
-                && module_id == *residual_path
-                && source_unit_indices.iter().any(|&source_unit_idx| {
-                    matches!(
-                        graph.nodes[source_unit_idx].statement_kind,
-                        StatementKind::Import | StatementKind::Export
-                    )
-                });
-            if keep_in_entry {
-                preserved_by_module
-                    .entry(module_id)
-                    .or_default()
-                    .extend(source_unit_indices);
-            } else {
-                groups_by_module
-                    .entry(module_id)
-                    .or_default()
-                    .push((source_unit_indices, false));
-            }
-        }
-    }
-    for (module_id, mut source_unit_indices) in preserved_by_module {
-        source_unit_indices.sort_unstable();
-        source_unit_indices.dedup();
-        groups_by_module
-            .entry(module_id)
-            .or_default()
-            .push((source_unit_indices, true));
-    }
-
-    for (module_id, expected_source_unit_indices) in module_source_units {
-        let mut grouped_source_unit_indices = groups_by_module
-            .get(module_id)
-            .into_iter()
-            .flatten()
-            .flat_map(|(indices, _)| indices.iter().copied())
-            .collect::<Vec<_>>();
-        grouped_source_unit_indices.sort_unstable();
-        let mut expected_source_unit_indices = expected_source_unit_indices.clone();
-        expected_source_unit_indices.sort_unstable();
-        anyhow::ensure!(
-            grouped_source_unit_indices == expected_source_unit_indices,
-            "atomic groups do not cover source units in module {module_id} exactly once"
-        );
-    }
-    Ok(groups_by_module)
-}
-
-fn next_fragment_path(
-    module_id: &ModulePath,
-    occupied_paths: &mut BTreeSet<ModulePath>,
-) -> ModulePath {
-    for suffix in 1usize.. {
-        let raw = format!("{module_id}/part-{suffix}");
-        let candidate = ModulePath::parse(&raw, "")
-            .expect("a canonical module path followed by a simple suffix is valid");
-        if occupied_paths.insert(candidate.clone()) {
-            return candidate;
-        }
-    }
-    unreachable!("an unbounded suffix always has an unused module path")
-}
-
-fn next_residual_fragment_path(occupied_paths: &mut BTreeSet<ModulePath>) -> ModulePath {
-    for suffix in 1usize.. {
-        let raw = format!("decomposition/residual/part-{suffix}");
-        let candidate =
-            ModulePath::parse(&raw, "").expect("a fixed path followed by a simple suffix is valid");
-        if occupied_paths.insert(candidate.clone()) {
-            return candidate;
-        }
-    }
-    unreachable!("an unbounded suffix always has an unused module path")
-}
-
 pub fn propose(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
 ) -> Result<ProposalsReport> {
     propose_with_context(
-        graph,
+        input,
         active_claims,
         size_cap_lines,
         ProposalContext::default(),
@@ -2107,18 +358,12 @@ struct ProposalContext {
 }
 
 fn propose_with_context(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
     context: ProposalContext,
 ) -> Result<ProposalsReport> {
-    let source_unit_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| (node.id.as_str(), i))
-        .collect();
-
+    let graph = input.report();
     let residual: BTreeSet<usize> = graph
         .nodes
         .iter()
@@ -2141,11 +386,11 @@ fn propose_with_context(
     // absorbs orphans into them.
     let spec_modules = spec_module_groups(graph);
     let (mut quotient, seed_rejections) = build_seed_quotient(
-        graph,
+        input,
         &graph.atomic_graph.nodes,
         &spec_modules,
         size_cap_lines,
-    )?;
+    );
     // Mutates the quotient in place; the returned merge-step list is unused here.
     greedy_merge_to_convergence(&mut quotient);
 
@@ -2159,16 +404,11 @@ fn propose_with_context(
     // to peel proposals.
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, ModulePath)> = Vec::new();
-    for edge in &graph.edges {
-        if !edge.constrains_init_order {
+    for edge in input.graph().iter_edges() {
+        if !edge.reason.constrains_init_order() {
             continue;
         }
-        let (Some(&source), Some(&target)) = (
-            source_unit_index.get(edge.source.as_str()),
-            source_unit_index.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
+        let (source, target) = (edge.from.0, edge.to.0);
         if !residual.contains(&source) || source == target {
             continue;
         }
@@ -2197,7 +437,7 @@ fn propose_with_context(
         &class_to_labels,
         &residual_constraining_edges,
         &edges_to_active,
-        graph,
+        input,
         size_cap_lines,
         &context,
     );
@@ -2227,9 +467,9 @@ fn propose_with_context(
 /// chunk-prefix stripping or fallback chain is needed and two source_units of
 /// one module can never disagree (the former self-merge bug). A
 /// destination key absent from the table is a malformed report
-/// (truncated / version-skewed `dependency_graph.json`), surfaced as an
+/// (truncated / version-skewed `dependency_graph.json.gz`), surfaced as an
 /// `Err` rather than a panic so the CLI reports it cleanly.
-fn active_module_label(
+pub(crate) fn active_module_label(
     node: &SourceUnitReport,
     active_claims: &BTreeMap<String, ModulePath>,
     graph: &DependencyGraphReport,
@@ -2335,10 +575,18 @@ fn emit_proposals(
     class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, ModulePath)],
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     size_cap_lines: usize,
     context: &ProposalContext,
 ) -> Vec<ModuleProposal> {
+    let graph = input.report();
+    let source_modules = source_modules_by_id(graph);
+    let build_context = ProposalBuildContext {
+        proposal_context: context,
+        input,
+        source_modules: &source_modules,
+    };
+
     // Candidate classes: every live class that either has source_units or
     // carries module labels. We skip classes whose only members are
     // spec-module source_units with no residual extensions (= pre-existing
@@ -2424,8 +672,7 @@ fn emit_proposals(
                 class_to_labels.get(&class_id),
                 quotient,
                 edges,
-                graph,
-                context,
+                &build_context,
             )
         })
         .collect();
@@ -2519,6 +766,139 @@ struct CandidateEdgeStats {
     active_targets: BTreeSet<ModulePath>,
 }
 
+struct ProposalBuildContext<'context, 'graph> {
+    proposal_context: &'context ProposalContext,
+    input: &'graph DependencyGraphInput,
+    source_modules: &'context HashMap<&'graph str, &'graph analysis::ModuleEntry>,
+}
+
+fn source_modules_by_id(graph: &DependencyGraphReport) -> HashMap<&str, &analysis::ModuleEntry> {
+    let modules_by_key: HashMap<&str, &analysis::ModuleEntry> = graph
+        .quotient
+        .nodes
+        .iter()
+        .map(|module| (module.key.as_str(), module))
+        .collect();
+    graph
+        .nodes
+        .iter()
+        .map(|source_unit| {
+            let module = modules_by_key
+                .get(source_unit.destination.as_str())
+                .copied()
+                .expect("source unit destination must exist in graph modules");
+            (source_unit.id.as_str(), module)
+        })
+        .collect()
+}
+
+fn observed_consumers_for(
+    target_source_unit_idxs: &[usize],
+    proposal_class_source_unit_idxs: &[usize],
+    input: &DependencyGraphInput,
+    source_modules: &HashMap<&str, &analysis::ModuleEntry>,
+) -> ObservedConsumers {
+    let candidate_source_units: BTreeSet<usize> =
+        proposal_class_source_unit_idxs.iter().copied().collect();
+    let mut value_reads = Vec::new();
+    let mut writes = Vec::new();
+    let mut scheduling_or_promoted_context = Vec::new();
+
+    for &target_idx in target_source_unit_idxs {
+        for &edge_id in input.graph().in_edges_of(SourceUnitId(target_idx)) {
+            let edge = input.graph().edge(edge_id);
+            let report = input.edge_report(edge_id);
+            if candidate_source_units.contains(&edge.from.0) {
+                continue;
+            }
+            // Keep recorded promotion evidence even when a historical
+            // report's callee is unavailable to the canonical topology.
+            let promoted = report.role.is_some();
+            match edge.reason.kind() {
+                DepKind::EagerUse | DepKind::LazyUse | DepKind::HoistedUse => {
+                    value_reads.push(report);
+                    if promoted {
+                        scheduling_or_promoted_context.push(report);
+                    }
+                }
+                DepKind::EagerRebind | DepKind::LazyRebind | DepKind::DeferredRebind => {
+                    writes.push(report);
+                    if promoted {
+                        scheduling_or_promoted_context.push(report);
+                    }
+                }
+                DepKind::Sequenced
+                | DepKind::CoDeclaration
+                | DepKind::CoLocation
+                | DepKind::LocalEffect => {
+                    scheduling_or_promoted_context.push(report);
+                }
+            }
+        }
+    }
+
+    ObservedConsumers {
+        value_reads: consumer_evidence(&value_reads, source_modules),
+        writes: consumer_evidence(&writes, source_modules),
+        scheduling_or_promoted_context: consumer_evidence(
+            &scheduling_or_promoted_context,
+            source_modules,
+        ),
+    }
+}
+
+fn consumer_evidence(
+    edges: &[&DependencyEdgeReport],
+    source_modules: &HashMap<&str, &analysis::ModuleEntry>,
+) -> ConsumerEvidence {
+    let mut source_units = BTreeMap::new();
+    for edge in edges {
+        let current_module = source_modules
+            .get(edge.source.as_str())
+            .expect("dependency edge source must exist in graph nodes")
+            .path
+            .to_string();
+        source_units.insert(
+            edge.source.clone(),
+            ObservedConsumerSourceUnit {
+                source_unit_id: edge.source.clone(),
+                current_module,
+            },
+        );
+    }
+    let modules: BTreeSet<String> = source_units
+        .values()
+        .map(|source_unit| source_unit.current_module.clone())
+        .collect();
+    let mut sorted_edges = edges.to_vec();
+    sorted_edges.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let total_source_units = source_units.len();
+    let total_modules = modules.len();
+    let total_edges = sorted_edges.len();
+    ConsumerEvidence {
+        total_source_units,
+        omitted_source_units: total_source_units.saturating_sub(MAX_OBSERVED_CONSUMER_SOURCE_UNITS),
+        source_units: source_units
+            .into_values()
+            .take(MAX_OBSERVED_CONSUMER_SOURCE_UNITS)
+            .collect(),
+        total_modules,
+        omitted_modules: total_modules.saturating_sub(MAX_OBSERVED_CONSUMER_MODULES),
+        modules: modules
+            .into_iter()
+            .take(MAX_OBSERVED_CONSUMER_MODULES)
+            .collect(),
+        total_edges,
+        omitted_edges: total_edges.saturating_sub(MAX_OBSERVED_CONSUMER_EDGES),
+        edges: sorted_edges
+            .into_iter()
+            .take(MAX_OBSERVED_CONSUMER_EDGES)
+            .cloned()
+            .collect(),
+    }
+}
+
 /// Build a `ProposalDiagnostic(ExceedsSizeCap)` for every
 /// surviving class whose proposal size exceeds the cap. Uses the same
 /// `class_proposal_lines` measure as `emit_proposals`' cap filter, so
@@ -2561,7 +941,7 @@ fn collect_size_cap_diagnostics(
         diagnostics.push(ProposalDiagnostic {
             diagnostic_id: format!(
                 "diagnostic:{}_{idx:04}",
-                diagnostic_reason_key(ProposalDiagnosticReason::ExceedsSizeCap),
+                ProposalDiagnosticReason::ExceedsSizeCap,
             ),
             source_unit_ids,
             binding_ids: binding_ids.into_iter().collect(),
@@ -2623,9 +1003,9 @@ fn build_proposal(
     labels: Option<&BTreeSet<ModulePath>>,
     quotient: &QuotientGraph,
     edges: CandidateEdgeStats,
-    graph: &DependencyGraphReport,
-    context: &ProposalContext,
+    context: &ProposalBuildContext<'_, '_>,
 ) -> ModuleProposal {
+    let graph = context.input.report();
     // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
     // Convert to wire strings once, at this boundary; identity logic
     // above this point is type-safe.
@@ -2718,7 +1098,7 @@ fn build_proposal(
         addressable,
         unaddressable_source_unit_ids,
         mut notes,
-    } = anonymous_addressability(&source_unit_idxs, graph, context);
+    } = anonymous_addressability(&source_unit_idxs, graph, context.proposal_context);
     // Status reflects the cell-graph reality: outgoing constraining
     // edges into other residual classes mean this cell cannot be
     // promoted alone (the reads would route through residual_entry).
@@ -2741,6 +1121,12 @@ fn build_proposal(
         proposed_module_id,
         source_unit_ids,
         binding_ids: binding_ids.into_iter().collect(),
+        observed_consumers: observed_consumers_for(
+            source_unit_idxs.as_slice(),
+            all_source_unit_idxs.as_slice(),
+            context.input,
+            context.source_modules,
+        ),
         anonymous_statement_source_unit_ids: anonymous_source_unit_ids,
         size_lines_estimate: size_lines,
         source_line_range: line_range.into_array(),
@@ -2812,9 +1198,7 @@ fn anonymous_addressability(
 fn status_counts(proposals: &[ModuleProposal]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for proposal in proposals {
-        *counts
-            .entry(status_key(proposal.status).to_string())
-            .or_insert(0) += 1;
+        *counts.entry(proposal.status.to_string()).or_insert(0) += 1;
     }
     counts
 }
@@ -2822,9 +1206,7 @@ fn status_counts(proposals: &[ModuleProposal]) -> BTreeMap<String, usize> {
 fn diagnostic_counts(diagnostics: &[ProposalDiagnostic]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for diagnostic in diagnostics {
-        *counts
-            .entry(diagnostic_reason_key(diagnostic.reason).to_string())
-            .or_insert(0) += 1;
+        *counts.entry(diagnostic.reason.to_string()).or_insert(0) += 1;
     }
     counts
 }
@@ -2892,27 +1274,24 @@ fn size_bucket(value: usize) -> &'static str {
     }
 }
 
-fn status_key(status: PeelCandidateStatus) -> &'static str {
-    match status {
-        PeelCandidateStatus::PeelableNow => "peelable_now",
-        PeelCandidateStatus::BlockedResidualDependency => "blocked_residual_dependency",
-    }
-}
-
-fn diagnostic_reason_key(reason: ProposalDiagnosticReason) -> &'static str {
-    match reason {
-        ProposalDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{DepKind, StatementKind};
+    use analysis::StatementKind;
+    use analysis_model::DepKind;
     use report_fixtures::{
         active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
         module_ref, residual_source_unit, source_unit,
     };
+
+    fn propose_report(
+        report: &DependencyGraphReport,
+        active_claims: &BTreeMap<String, ModulePath>,
+        size_cap_lines: usize,
+    ) -> Result<ProposalsReport> {
+        let input = DependencyGraphInput::from_report(report.clone())?;
+        propose(&input, active_claims, size_cap_lines)
+    }
 
     #[test]
     fn residual_atomic_groups_become_singleton_proposals() {
@@ -2927,7 +1306,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         assert_eq!(report.residual_source_unit_count, 2);
         assert_eq!(report.proposals.len(), 2);
         assert!(
@@ -2980,7 +1359,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         let blocked = report
             .proposals
             .iter()
@@ -3040,8 +1419,8 @@ mod tests {
             ],
             vec![],
         );
-        let json =
-            serde_json::to_value(propose(&graph, &BTreeMap::new(), 10_000).unwrap()).unwrap();
+        let json = serde_json::to_value(propose_report(&graph, &BTreeMap::new(), 10_000).unwrap())
+            .unwrap();
         let proposal = |binding: &str| {
             json["proposals"]
                 .as_array()
@@ -3073,9 +1452,10 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let json =
-            serde_json::to_value(propose(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap())
-                .unwrap();
+        let json = serde_json::to_value(
+            propose_report(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap(),
+        )
+        .unwrap();
         assert_eq!(json["proposals"][0]["extends_module_id"], "ui/x");
         assert_eq!(
             json["proposals"][0]["extension_source_unit_ids"],
@@ -3097,7 +1477,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
-        let report = propose(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
+        let report = propose_report(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -3163,7 +1543,7 @@ mod tests {
             // consumer and bridge into one class.
             vec![atomic_edge("atomic_edge:0", "atomic:2", "atomic:0")],
         );
-        let report = propose(
+        let report = propose_report(
             &graph,
             &claims(&[("foo", "features/foo"), ("baz", "features/baz")]),
             10_000,
@@ -3250,7 +1630,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -3290,7 +1670,8 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
+        let report =
+            propose_report(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
         assert!(
             report.proposals.iter().all(|p| p.merge_into.is_none()),
             "expected no self-merge proposal from two spellings of one module: {report:#?}",
@@ -3301,7 +1682,7 @@ mod tests {
     fn non_residual_source_unit_with_missing_destination_is_clean_error_not_panic() {
         // A non-residual source_unit whose `destination` key is absent from
         // the module table (`quotient.nodes`) models a truncated /
-        // version-skewed `dependency_graph.json` deserialized from disk by
+        // version-skewed `dependency_graph.json.gz` deserialized from disk by
         // `propose_from_files`. `is_residual` returns false for an
         // unknown key, so the source_unit survives the residual filter and
         // reaches `active_module_label`. The proposer must surface a
@@ -3322,7 +1703,7 @@ mod tests {
             .retain(|entry| entry.key != a.destination);
         assert!(graph.module(&a.destination).is_none());
 
-        let result = propose(&graph, &BTreeMap::new(), 10_000);
+        let result = propose_report(&graph, &BTreeMap::new(), 10_000);
         let err = result.expect_err("missing destination must be a clean error, not a panic");
         let message = format!("{err:#}");
         assert!(
@@ -3341,7 +1722,7 @@ mod tests {
             vec![atomic_group_for("atomic:0", &[&import])],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert_eq!(
             proposal.anonymous_statement_source_unit_ids,
@@ -3371,8 +1752,9 @@ mod tests {
             vec![atomic_group_for("atomic:0", &[&effect])],
             vec![],
         );
+        let input = DependencyGraphInput::from_report(graph).unwrap();
         let report = propose_with_context(
-            &graph,
+            &input,
             &BTreeMap::new(),
             10_000,
             ProposalContext {
@@ -3406,7 +1788,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = propose(&graph, &BTreeMap::new(), 5).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 5).unwrap();
         assert!(
             report.proposals.is_empty(),
             "oversized source units should not appear as proposals: {report:#?}",

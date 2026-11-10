@@ -93,7 +93,7 @@ func dump(c *Catalog) map[string]any {
 		case OrchestrationBinding:
 			executor = map[string]any{
 				"kind": "orchestration_v1", "description": binding.Description, "namespace": binding.Namespace,
-				"default_policy_sets": binding.DefaultPolicySets, "presets": binding.Presets,
+				"presets": binding.Presets,
 			}
 		}
 		actions := map[string]any{}

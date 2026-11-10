@@ -1,13 +1,13 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "manifest",
     srcs = ["manifest.py"],
     data = ["//devinfra/claude/web_env:exclusions.yaml"],
     deps = [
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -53,7 +53,7 @@ py_library(
     name = "fetch_debs",
     srcs = ["fetch_debs.py"],
     deps = [
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//requests",
         "@pypi//urllib3",  # keep: mypy checks requests stubs' transitive imports
     ],
@@ -74,7 +74,7 @@ py_library(
         ":diff_manifests",
         ":fetch_debs",
         ":manifest",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
     ],
 )
 
@@ -82,4 +82,17 @@ py_binary(
     name = "build_and_diff_bin",
     main_module = "devinfra.claude.web_env.tools.build_and_diff",
     deps = [":build_and_diff"],
+)
+
+py_test(
+    name = "build_and_diff_test",
+    srcs = ["build_and_diff_test.py"],
+    requires_docker = True,
+    deps = [
+        ":build_and_diff",
+        "//:conftest",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

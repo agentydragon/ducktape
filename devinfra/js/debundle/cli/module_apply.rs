@@ -1,5 +1,6 @@
 //! Apply reviewed residual-source unit proposals without transient name-pinned YAML.
 
+use graph_provenance::VerifiedGraphSourceContext;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
@@ -14,7 +15,10 @@ use spec::LogicalModule;
 use spec_tree::ModuleTreeScope;
 
 use crate::binding::{apply_doc_changes, canonical_module_path, load_module_docs, matches_in_docs};
-use crate::edit_gate::{ExpectedResolvedMember, Gate, post_edit_spec_from_docs};
+use crate::candidate_assessment::{
+    CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
+};
+use crate::edit_gate::{ExpectedResolvedMember, Gate, GraphEditArgs, post_edit_spec_from_docs};
 use crate::outcome::{MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
 #[derive(Debug, Args)]
@@ -34,6 +38,10 @@ pub struct ModulesApplyArgs {
     /// Root for the chunk's source file.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub(super) source_root: PathBuf,
+    /// Report-only relocation assessment of the exact candidate before an
+    /// optional write, using a staged `--analysis` artifact.
+    #[command(flatten)]
+    effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
     /// Match the size cap used when generating the proposal IDs.
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     size_cap_lines: usize,
@@ -63,7 +71,7 @@ struct ApplyRequest {
 #[serde(tag = "kind", content = "selector", rename_all = "snake_case")]
 enum ApplySelectorOverride {
     SourceMatch(spec::SourceMatchClaim),
-    Relational(Box<spec::MemberSelector>),
+    Relational(Box<spec::RawMemberSelector>),
 }
 
 #[derive(Serialize)]
@@ -89,7 +97,7 @@ enum SelectorReview {
         source_file: PathBuf,
         binding_id: String,
         readable_name: String,
-        selector: Box<spec::MemberSelector>,
+        selector: Box<spec::RawMemberSelector>,
         review_warnings: Vec<&'static str>,
     },
 }
@@ -101,9 +109,32 @@ struct ApplyOutcome {
     proposals_applied: usize,
     bindings_claimed: usize,
     selector_reviews: Vec<SelectorReview>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    /// Why the canonical effect verdict was unavailable for this graph-only
+    /// edit. The legacy gate still decides whether the edit can be written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
 }
 
-pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
+pub fn run_modules_apply(
+    args: ModulesApplyArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
+    let edit = GraphEditArgs {
+        modules_root: args.modules_root.clone(),
+        dry_run: args.dry_run,
+        no_verify: false,
+        dependency_graph_path: Some(args.graph.clone()),
+        source_root: Some(args.source_root.clone()),
+        format: args.format,
+    };
+    let effect_context = args.effect_assessment.resolve_for_verified_write(
+        &edit,
+        source_context,
+        args.tree_config.as_deref(),
+    )?;
     let json = if args.batch == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
@@ -115,11 +146,11 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
     if requests.is_empty() {
         bail!("apply batch is empty");
     }
-    let graph = crate::load_dependency_graph_report(&args.graph)?;
+    let graph = std::sync::Arc::new(analysis::DependencyGraphInput::read(&args.graph)?);
     let scope = args
         .tree_config
         .as_deref()
-        .map(|config| ModuleTreeScope::from_config(config, &graph.chunk_id))
+        .map(|config| ModuleTreeScope::from_config(config, &graph.report().chunk_id))
         .transpose()?;
     let proposals = propose_from_graph(
         &graph,
@@ -128,6 +159,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
             modules_root: args.modules_root.clone(),
             tree_config: args.tree_config.clone(),
             source_root: Some(args.source_root.clone()),
+            source_context: source_context.cloned(),
             size_cap_lines: args.size_cap_lines,
         },
     )?;
@@ -200,13 +232,12 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
         let mut residual_bindings = BTreeSet::new();
         for source_unit_id in &proposal.source_unit_ids {
             let node = graph
-                .nodes
-                .iter()
-                .find(|node| node.id == *source_unit_id)
+                .source_unit_id(source_unit_id)
+                .map(|id| &graph.report().nodes[id.0])
                 .with_context(|| {
                     format!("proposal source unit {source_unit_id:?} absent from graph")
                 })?;
-            if !graph.is_unassigned_or_entry(&node.destination) {
+            if !graph.report().is_unassigned_or_entry(&node.destination) {
                 continue;
             }
             let location = node.source_location.as_ref().with_context(|| {
@@ -343,7 +374,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                 }
                 if binding.local() == runtime && readable != runtime {
                     bail!(
-                        "source_match override for {runtime:?} retains its minified local name; use a neutral selector-local name"
+                        "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
                     );
                 }
                 selector_reviews.push(SelectorReview::SourceMatch {
@@ -359,7 +390,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                 doc.source_matches.push(claim);
             }
             ApplySelectorOverride::Relational(selector) => {
-                if matches!(selector.selected()?, spec::MemberSelectorSpec::Binding(_)) {
+                if matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)) {
                     bail!("relational override for {runtime:?} cannot use a binding name pin");
                 }
                 selector_reviews.push(SelectorReview::Relational {
@@ -382,8 +413,10 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
 
     let deleted = BTreeSet::new();
     let gate = Gate::Run {
-        graph: &args.graph,
+        graph_path: &args.graph,
+        input: std::sync::Arc::clone(&graph),
         source_root: Some(&args.source_root),
+        source_context,
     };
     if let Err(err) = gate.check_expected(
         &args.modules_root,
@@ -393,20 +426,43 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
         emit_gate_rejection_json("apply", args.format, &err);
         return Err(err);
     }
+    let effect_relocation_assessment = effect_context
+        .as_ref()
+        .map(|context| {
+            let candidate_modules = docs
+                .iter()
+                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+                .collect();
+            context.assess(
+                &args.modules_root,
+                &candidate_modules,
+                analysis_engine_sha256,
+            )
+        })
+        .transpose()?;
+    if let Some(assessment) = &effect_relocation_assessment {
+        pipeline::ensure_candidate_emittable_for_write(assessment, args.dry_run)?;
+    }
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &deleted, args.dry_run)?;
     let out = ApplyOutcome {
-        outcome: MutationOutcome {
-            verb: "apply",
-            action: if args.dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+        outcome: MutationOutcome::ownership_edit(
+            "apply",
+            if args.dry_run { "dry-run" } else { "applied" },
+            gate.outcome(),
+            effect_relocation_assessment.as_ref(),
             files_written,
             files_deleted,
-        },
+        ),
         proposals_applied: requests.len(),
         bindings_claimed,
         selector_reviews,
+        effect_assessment_unavailable: effect_relocation_assessment
+            .is_none()
+            .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
+        effect_relocation_assessment,
     };
+    out.outcome.warn_if_unassessed_write();
     match OutputFormat::resolve(args.format) {
         OutputFormat::Text => {
             println!(

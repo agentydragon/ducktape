@@ -2,12 +2,6 @@
 
 Gaps to close if a workflow needs them; none is committed.
 
-## Replace legacy model storage representations
-
-Evaluate typed SQL or binary protobuf storage for Action/Notification models, the migration
-scope, and any data-retention requirements. Keep current stored formats compatible during this
-shared-protobuf refactor.
-
 ## Dynamic Client Registration for MCP OAuth linkage
 
 `linkage.Server` requires either a registered `client_id` or the shared Client ID Metadata
@@ -23,6 +17,16 @@ authentication cannot be linked.
 
 An MCP binding offers every upstream tool as an Action. A group could name tools to hide from
 discovery and refuse at admission, such as GitHub's Copilot delegation tools.
+
+## Expose half-broken group states and their reasons
+
+A group is `available` while it silently lacks tools: `mirror` leaves out each tool the catalog cannot hold
+(invalid input schema, over-long description, duplicate name) and only logs `MCP tools skipped`. Nothing in
+`ListActionGroups` says a tool is missing or why, so a group that looks healthy is not told apart from a complete
+one, and the Tana outage's cause was readable only in `McpHealth.detail` and the executor logs. Add the skipped
+tools with their reasons to `McpHealth` (for example a repeated `{tool, reason}`), present for operators only like
+`detail` since a reason can name backend details, with a coarse count a workload may see. Consider the same for the
+other partial states: a session that is up but whose last refresh failed, and a catalog that is stale.
 
 ## Wire up Home Assistant entity control
 

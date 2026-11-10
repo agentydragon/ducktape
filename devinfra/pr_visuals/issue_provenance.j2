@@ -1,0 +1,7 @@
+{% macro issue_details(issue, invocation_label, configuration_label) -%}
+{{ issue.message }}{% if issue.source %} ({{ 'shard' if issue.source.shards | length == 1 else 'shards' }} {{ issue.source.shards | shard_ranges }} · run {{ issue.source.run if issue.source.run is not none else 'unknown' }} · attempt {{ issue.source.attempt if issue.source.attempt is not none else 'unknown' }}{% if configuration_label %} · config {{ configuration_label }}{% endif %}) · <a href="{{ issue.source.invocation | buildbuddy_url }}">BuildBuddy {{ invocation_label }}</a>{% endif %}
+{%- endmacro %}
+
+{% macro variant_provenance(source) -%}
+run {{ source.run if source.run is not none else 'unknown' }} · {{ 'shard' if source.shards | length == 1 else 'shards' }} {{ source.shards | shard_ranges }} · attempt {{ source.attempt if source.attempt is not none else 'unknown' }}{% if source.configuration_label %} · config {{ source.configuration_label }}{% endif %} · <a href="{{ source.invocation_url }}">BuildBuddy {{ source.invocation_label }}</a>
+{%- endmacro %}

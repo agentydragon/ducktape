@@ -3,7 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { SpendTransactionsView, SpendView } from "./api/schema";
+import { deferred } from "../../../../util/frontend/testing/deferred";
+import type { SpendTransactionsView, SpendView } from "./schema";
 import { useSpendData } from "./use_spend_data";
 import type { SpendTab, TransactionPeriodId } from "./types";
 
@@ -66,19 +67,6 @@ function Probe({ activeTab, transactionPeriodId }: ProbeProps) {
   return (
     <output>{`${spend.connectionState}|${spend.error ?? "no-error"}|${spend.transactions?.requested_period_id ?? "no-period"}|${spend.transactionsLoading ? "loading" : "loaded"}`}</output>
   );
-}
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
 }
 
 function transactionView(periodId: TransactionPeriodId): SpendTransactionsView {

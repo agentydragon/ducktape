@@ -1,22 +1,55 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { type QueryClient, QueryClientProvider, queryOptions } from "@tanstack/react-query";
 import { IconCheck, IconX } from "../icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../client";
-import type { StreamConnection } from "../live_stream";
+import type { StreamConnection } from "../stream_reader";
 import { useOptionalStreamStatus } from "../stream_status";
+import { createAppQueryClient } from "../query";
 import { ActionCall } from "./call";
-import {
-  decideAction,
-  followActionRequests,
-  getAction,
-  type ActionRequestView,
-  type ActionState,
-  type Verdict,
-} from "./client";
+import { ActionState, Verdict, type ActionGroup, type ActionRequest } from "../../../action_service/action_service_pb";
+import { timestampText } from "./presentation";
+import { decideAction, followActionRequests, getAction, listActionGroups } from "./client";
+
+export function actionRequestQuery(requestId: string): ReturnType<typeof queryOptions<ActionRequest>> {
+  return queryOptions<ActionRequest>({
+    queryKey: ["action-request", requestId],
+    queryFn: () => getAction(requestId),
+  });
+}
+
+export function actionGroupsQuery(): ReturnType<typeof queryOptions<ActionGroup[]>> {
+  return queryOptions<ActionGroup[]>({
+    queryKey: ["action-groups"],
+    queryFn: listActionGroups,
+    staleTime: 0,
+  });
+}
 
 export function stateLabel(state: ActionState): string {
-  return state.replaceAll("_", " ");
+  switch (state) {
+    case ActionState.DECISION_PENDING:
+      return "decision pending";
+    case ActionState.ALLOWED:
+      return "allowed";
+    case ActionState.DENIED:
+      return "denied";
+    case ActionState.DISPATCHING:
+      return "dispatching";
+    case ActionState.RUNNING:
+      return "running";
+    case ActionState.SUCCEEDED:
+      return "succeeded";
+    case ActionState.FAILED:
+      return "failed";
+    case ActionState.CANCELLED:
+      return "cancelled";
+    case ActionState.EXECUTION_UNKNOWN:
+      return "execution unknown";
+    default:
+      throw new Error(`Unknown Action state (${state}).`);
+  }
 }
 
 /** Paired human decisions, shared by the Actions list, detail page, and compact card. */
@@ -42,7 +75,7 @@ export function ActionDecisionButtons({
         color="red"
         leftSection={<IconX size={iconSize} aria-hidden="true" />}
         loading={deciding}
-        onClick={() => onDecide("deny")}
+        onClick={() => onDecide(Verdict.DENY)}
       >
         Deny
       </Button>
@@ -54,7 +87,7 @@ export function ActionDecisionButtons({
         color="green"
         leftSection={<IconCheck size={iconSize} aria-hidden="true" />}
         loading={deciding}
-        onClick={() => onDecide("allow")}
+        onClick={() => onDecide(Verdict.ALLOW)}
       >
         Approve
       </Button>
@@ -64,142 +97,70 @@ export function ActionDecisionButtons({
 
 /** Shared fetch/decide plumbing for the pending and history views, over Action Service watches. */
 export function useActionRequests(enabled = true): {
-  requests: ActionRequestView[];
+  requests: ActionRequest[];
   error: string | null;
   loading: boolean;
   deciding: string | null;
-  decide: (request: ActionRequestView, verdict: Verdict) => void;
-  knownRequests: ReadonlyMap<string, ActionRequestView>;
-  staleRequestIds: ReadonlySet<string>;
-  detailLoadingIds: ReadonlySet<string>;
-  detailErrors: ReadonlyMap<string, string>;
-  loadDetail: (requestId: string, forceRefresh?: boolean) => Promise<ActionRequestView>;
+  decide: (request: ActionRequest, verdict: Verdict) => void;
+  queryClient: QueryClient;
 } {
-  const [requests, setRequests] = useState<ActionRequestView[]>([]);
+  const [requests, setRequests] = useState<ActionRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [knownRequests, setKnownRequests] = useState<ReadonlyMap<string, ActionRequestView>>(() => new Map());
-  const [staleRequestIds, setStaleRequestIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [detailLoadingIds, setDetailLoadingIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [detailErrors, setDetailErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
-  const requestsRef = useRef<ActionRequestView[]>([]);
-  const knownRequestsRef = useRef(new Map<string, ActionRequestView>());
-  const staleRequestIdsRef = useRef(new Set<string>());
-  const detailLoadsRef = useRef(new Map<string, Promise<ActionRequestView>>());
+  const [queryClient] = useState(() => {
+    const client = createAppQueryClient();
+    client.setQueryDefaults(["action-request"], {
+      // Fence both HTTP and watch writes; other resources have no ActionRequest version.
+      structuralSharing: (previous, incoming) => {
+        const current = previous as ActionRequest | undefined;
+        const next = incoming as ActionRequest;
+        return current !== undefined &&
+          (current.version > next.version || (current.version === next.version && current.state === next.state))
+          ? current
+          : next;
+      },
+    });
+    return client;
+  });
+  const requestsRef = useRef<ActionRequest[]>([]);
   useOptionalStreamStatus("Actions", connection);
 
-  const rememberRequests = useCallback((rows: readonly ActionRequestView[]): void => {
-    let next = knownRequestsRef.current;
-    let changed = false;
-    for (const request of rows) {
-      const previous = next.get(request.id);
-      if (
-        previous !== undefined &&
-        (previous.version > request.version ||
-          (previous.version === request.version && previous.state === request.state))
-      ) {
-        continue;
-      }
-      if (!changed) next = new Map(next);
-      next.set(request.id, request);
-      changed = true;
-    }
-    if (changed) {
-      knownRequestsRef.current = next;
-      setKnownRequests(next);
-    }
+  useEffect(() => () => queryClient.clear(), [queryClient]);
 
-    const freshIds = rows.filter((request) => staleRequestIdsRef.current.has(request.id)).map((request) => request.id);
-    if (freshIds.length > 0) {
-      const fresh = new Set(staleRequestIdsRef.current);
-      for (const requestId of freshIds) fresh.delete(requestId);
-      staleRequestIdsRef.current = fresh;
-      setStaleRequestIds(fresh);
-    }
-
-    setDetailErrors((current) => {
-      if (!rows.some((request) => current.has(request.id))) return current;
-      const next = new Map(current);
+  const rememberRequests = useCallback(
+    (rows: readonly ActionRequest[]): void => {
       for (const request of rows) {
-        next.delete(request.id);
+        queryClient.setQueryData(actionRequestQuery(request.id).queryKey, request);
       }
-      return next;
-    });
-  }, []);
+    },
+    [queryClient]
+  );
 
   const storePendingSnapshot = useCallback(
-    (rows: ActionRequestView[]): void => {
+    (rows: ActionRequest[]): void => {
       const nextIds = new Set(rows.map((request) => request.id));
-      const stale = new Set(staleRequestIdsRef.current);
       for (const previous of requestsRef.current) {
+        const queryKey = actionRequestQuery(previous.id).queryKey;
         if (
-          previous.state === "decision_pending" &&
+          previous.state === ActionState.DECISION_PENDING &&
           !nextIds.has(previous.id) &&
-          knownRequestsRef.current.get(previous.id)?.state === "decision_pending"
+          queryClient.getQueryData(queryKey)?.state === ActionState.DECISION_PENDING
         ) {
-          stale.add(previous.id);
+          void queryClient.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
         }
-      }
-      for (const requestId of nextIds) stale.delete(requestId);
-      if (
-        stale.size !== staleRequestIdsRef.current.size ||
-        [...stale].some((id) => !staleRequestIdsRef.current.has(id))
-      ) {
-        staleRequestIdsRef.current = stale;
-        setStaleRequestIds(stale);
       }
       requestsRef.current = rows;
       setRequests(rows);
       rememberRequests(rows);
     },
-    [rememberRequests]
-  );
-
-  const loadDetail = useCallback(
-    (requestId: string, forceRefresh = false): Promise<ActionRequestView> => {
-      const cached = knownRequestsRef.current.get(requestId);
-      if (!forceRefresh && !staleRequestIdsRef.current.has(requestId) && cached !== undefined) {
-        return Promise.resolve(cached);
-      }
-      const inFlight = detailLoadsRef.current.get(requestId);
-      if (inFlight !== undefined) return inFlight;
-      setDetailLoadingIds((current) => new Set(current).add(requestId));
-      setDetailErrors((current) => {
-        if (!current.has(requestId)) return current;
-        const next = new Map(current);
-        next.delete(requestId);
-        return next;
-      });
-      const request = Promise.resolve()
-        .then(() => getAction(requestId))
-        .then((loaded) => {
-          rememberRequests([loaded]);
-          return loaded;
-        })
-        .catch((failure: unknown) => {
-          setDetailErrors((current) => new Map(current).set(requestId, displayableError(failure)));
-          throw failure;
-        })
-        .finally(() => {
-          detailLoadsRef.current.delete(requestId);
-          setDetailLoadingIds((current) => {
-            if (!current.has(requestId)) return current;
-            const next = new Set(current);
-            next.delete(requestId);
-            return next;
-          });
-        });
-      detailLoadsRef.current.set(requestId, request);
-      return request;
-    },
-    [rememberRequests]
+    [queryClient, rememberRequests]
   );
 
   useEffect(() => {
     if (!enabled) return;
-    let snapshot: ActionRequestView[] = [];
+    let snapshot: ActionRequest[] = [];
     return followActionRequests({
       onOpen: () => {
         snapshot = [];
@@ -219,12 +180,16 @@ export function useActionRequests(enabled = true): {
             const current = requestsRef.current;
             const exists = current.some((item) => item.id === frame.request.id);
             const next =
-              frame.request.state === "decision_pending"
+              frame.request.state === ActionState.DECISION_PENDING
                 ? exists
                   ? current.map((item) =>
                       item.id === frame.request.id && frame.request.version >= item.version ? frame.request : item
                     )
-                  : [...current, frame.request].sort((left, right) => right.created_at.localeCompare(left.created_at))
+                  : [...current, frame.request].sort(
+                      (left, right) =>
+                        Date.parse(timestampText(right.createdAt) ?? "") -
+                        Date.parse(timestampText(left.createdAt) ?? "")
+                    )
                 : current.filter((item) => item.id !== frame.request.id);
             requestsRef.current = next;
             setRequests(next);
@@ -241,7 +206,7 @@ export function useActionRequests(enabled = true): {
     });
   }, [enabled, rememberRequests, storePendingSnapshot]);
 
-  async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
+  async function decideRequest(request: ActionRequest, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
       const updated = await decideAction(request, verdict);
@@ -264,11 +229,7 @@ export function useActionRequests(enabled = true): {
     loading,
     deciding,
     decide: (request, verdict) => void decideRequest(request, verdict),
-    knownRequests,
-    staleRequestIds,
-    detailLoadingIds,
-    detailErrors,
-    loadDetail,
+    queryClient,
   };
 }
 
@@ -278,7 +239,11 @@ export const ActionRequestsContext: ReturnType<typeof createContext<ReturnType<t
 /** Own one live Action store for the whole app shell, including route transitions. */
 export function ActionRequestsProvider({ children }: { children: ReactNode }): JSX.Element {
   const actions = useActionRequests();
-  return <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>;
+  return (
+    <QueryClientProvider client={actions.queryClient}>
+      <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>
+    </QueryClientProvider>
+  );
 }
 
 export function PendingActionCard({
@@ -286,9 +251,9 @@ export function PendingActionCard({
   deciding,
   onDecide,
 }: {
-  request: ActionRequestView;
+  request: ActionRequest;
   deciding: boolean;
-  onDecide: (request: ActionRequestView, verdict: Verdict) => void;
+  onDecide: (request: ActionRequest, verdict: Verdict) => void;
 }): JSX.Element {
   const [raw, setRaw] = useState(false);
   return (
@@ -314,7 +279,7 @@ export function ActionRequests({ embedded = false }: { embedded?: boolean }): JS
   const shared = useContext(ActionRequestsContext);
   const local = useActionRequests(shared === null);
   const { requests, error, loading, deciding, decide } = shared ?? local;
-  const pending = requests.filter((request) => request.state === "decision_pending");
+  const pending = requests.filter((request) => request.state === ActionState.DECISION_PENDING);
 
   return (
     <Stack>

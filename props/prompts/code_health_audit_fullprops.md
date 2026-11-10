@@ -1,9 +1,13 @@
-# Repository Code Health Audit — Full Properties (This Codebase)
+# Repository Code Health Audit — Historical Property Snapshot
+
+This standalone prompt preserves an older snapshot of property definitions. It is not an
+exhaustive or current description of this repository’s standards. Standards-based evaluation
+is on hold; see the [standards status](../standards/README.md) for the current context.
 
 Goal
 
 - Audit a codebase for code‑health issues and design/architecture smells.
-- Apply every formal property defined in this repository (embedded below).
+- Apply the historical property definitions embedded below.
 - Produce two outputs: (1) Findings with precise anchors, (2) A prioritized Plan.
 
 How To Work
@@ -23,7 +27,7 @@ Deliverables (print exactly these sections)
 
 ---
 
-## Embedded Property Definitions (exhaustive)
+## Embedded Property Definitions (historical snapshot)
 
 ### Property: consistent-naming-and-notation.md
 
@@ -44,7 +48,7 @@ Adopt one clear naming/notation convention per project (or per package) and appl
     Mixing both within the same project/package is a violation.
 - Directory placement is consistent: keep related tests together under their package/module (e.g., `my_service/test_*.py`, `other_service/test_*.py`), not scattered across differently named paths.
 - File names use one tokenization scheme consistently (e.g., underscores, no intermix of custom affixes/orderings like `test_pkg_run_bar.py` vs `test_pkg_baz.py`).
-- Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless distinctions are intentional and documented; prefer one obvious name. See also: [Renames must pay rent](./no-random-renames.md).
+- Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless distinctions are intentional and documented; prefer one obvious name. See also: Renames must pay rent.
 - Exceptions (legacy pockets, third‑party layout) must be isolated and documented in a short comment or contributing guide; new files conform to the chosen convention.
 
 ## Positive examples
@@ -110,7 +114,7 @@ tests/foo/test_baz.py   # ❌ mixed conventions
 
 - Pick one convention per project; consider documenting it in CONTRIBUTING.md; use linters/review to keep it consistent.
 - Consistency reduces cognitive load and speeds navigation/grep.
-- Related properties: [Renames must pay rent](./no-random-renames.md), [Self‑describing names](./self-describing-names.md).
+- Related properties: Renames must pay rent, Self‑describing names.
 
 ````
 
@@ -201,12 +205,12 @@ MAX_UPLOAD = 25                     # units unclear
 
 ## Sub‑rules
 
-- [Time and duration](time.md)
-- [URLs](urls.md)
-- [Byte sizes](bytes.md)
-- [Physical quantities](physical-quantities.md)
-- [Paths (PathLike, Python)](../python/pathlike.md)
-- [Pathlib usage (Python)](../python/pathlib.md)
+- Time and duration
+- URLs
+- Byte sizes
+- Physical quantities
+- Paths (PathLike, Python)
+- Pathlib usage (Python)
 
 ````
 
@@ -225,7 +229,7 @@ Maintain a single consistent internal unit per quantity to avoid drift.
 
 ## Acceptance criteria (checklist)
 - Use typed units where practical
-  - Python: prefer a unit library (for example, Pint) or typed wrappers; [use `datetime` types for time/duration](time.md)
+  - Python: prefer a unit library (for example, Pint) or typed wrappers; use `datetime` types for time/duration
   - Go: define small newtypes (for example, `type Meters float64`) or structs with methods; avoid untyped `float64` for mixed units
 - If primitives are used, names explicitly include units - e.g.: `user_height_cm`, `speed_mph`, `roll_degrees`.
 - Choose one canonical internal unit per quantity (for example, meters for length, m/s for speed)
@@ -667,7 +671,7 @@ fd = os.open("out.txt", os.O_WRONLY | os.O_CREAT)  # ❌ prefer Path("out.txt").
 ## Notes
 
 - Principle of least power: pick the simplest construct that expresses intent safely; only escalate when there’s a clear, documented need.
-- Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under [Modern Python idioms](./modern-python-idioms.md) and are not “sus” on their own.
+- Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under Modern Python idioms and are not “sus” on their own.
 - These are heuristics; exceptions exist, but require a short inline rationale.
 - Related properties: see cross‑links above for exact rules and exceptions.
 
@@ -1171,11 +1175,11 @@ Do not introduce aliases or new names unless they add clear value (disambiguatio
   - Allowed with rationale: name collision (`from httpx import Response as HttpxResponse`), contextual disambiguation (`from foo.api import Response as FooApiResponse`), or to avoid overshadowing a local symbol.
 - No pass‑through aliases (one‑off renames) that add no semantics:
   - Disallowed: `x2 = x; process(x2)` when `process(x)` suffices.
-  - Prefer inlining trivial values: `process(make_value())` when readability is unchanged. See also: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md).
+  - Prefer inlining trivial values: `process(make_value())` when readability is unchanged. See also: No one‑off vars.
 - Consistent terminology: do not refer to the same thing by multiple different names in the same scope/module (e.g., calling a `MyServer()` instance `http_server` in one place and `processor` elsewhere) unless the roles truly differ and are documented.
 - Contextual renames must strengthen meaning and then be used consistently:
   - Good: renaming a generic value to a domain‑specific one at the point its meaning becomes clear; drop the old name and continue with the precise one.
-  - If the reason is non‑obvious, include a short inline comment (e.g., “avoid import cycle”, “disambiguate two Response types”). Misleading justifications violate [Truthfulness](./truthfulness.md).
+  - If the reason is non‑obvious, include a short inline comment (e.g., “avoid import cycle”, “disambiguate two Response types”). Misleading justifications violate Truthfulness.
 - Avoid introducing parallel synonyms for the same concept (e.g., `interface` vs `protocol` vs `facade`) unless they represent distinct, well‑defined abstractions.
 
 ## Positive examples
@@ -1236,7 +1240,7 @@ processor = server       # ❌ misleading name; not a processor
 
 - Renames should “pay rent”: resolve a collision, remove ambiguity, or increase semantic precision. Otherwise, keep the original name.
 - When you must rename for semantics, migrate fully to the new name in that scope; do not keep both alive.
-- Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md), [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).
+- Cross‑refs: No one‑off vars, Self‑describing names, and Truthfulness.
 
 ````
 
@@ -1473,7 +1477,7 @@ __all__ = [name for name in globals() if not name.startswith("_")]
 
 - Public API curation belongs at the package root **init**.py of a real library/SDK with versioning; everywhere else, keep imports explicit to preserve clear dependencies and call sites.
 - Re‑exports should be rare, selective, and documented; wildcard exports and convenience barrels hinder traceability and refactoring.
-- Related properties: [Imports at the top](./imports-top.md), [Truthfulness](../truthfulness.md) (comments must reflect real intent), [Consistent naming and notation](../consistent-naming-and-notation.md).
+- Related properties: Imports at the top, Truthfulness (comments must reflect real intent), Consistent naming and notation.
 
 ````
 
@@ -1659,7 +1663,7 @@ def run_task(name: str):
 
 ### Misleading justification (still a violation)
 
-These examples are additionally also [truthfulness](../truthfulness.md) violations.
+These examples are additionally also truthfulness violations.
 
 ```python
 # mod_a.py
@@ -1705,7 +1709,7 @@ def compute_now():
 
 ## Cross-references
 
-- [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.
+- Truthfulness: misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.
 
 ````
 
@@ -1727,12 +1731,12 @@ Use modern Python 3.11+ idioms that improve clarity and brevity: dict merge oper
   - Use operator forms for set algebra: `|` (union), `&` (intersection), `-` (difference), `^` (symmetric difference), and their in‑place variants `|=`, `&=`, `-=`, `^=`. Avoid verbose method chains when simple operators suffice.
 - Type hints:
   - Use union types with `|` (PEP 604): `A | B | C` instead of `Union[A, B, C]`.
-  - Prefer `Self`/`from __future__ import annotations` patterns as needed (see [Type hints](./type-hints.md)).
+  - Prefer `Self`/`from __future__ import annotations` patterns as needed (see Type hints).
 - isinstance/issubclass:
   - Continue to use tuples for multiple types: `isinstance(x, (A, B, C))`.
   - Do NOT write `isinstance(x, A | B)` — union types are for annotations, not for runtime checks.
 - Strings:
-  - Prefer `str.removeprefix/suffix` over slicing for safety and intent (see [String affixes](./str-affixes.md)).
+  - Prefer `str.removeprefix/suffix` over slicing for safety and intent (see String affixes).
 - Pattern matching:
   - Consider `match/case` for simple tag dispatch or structural cases when it improves readability over long `if/elif` chains.
 
@@ -1806,7 +1810,7 @@ def f(x: Union[int, str]) -> int:  # ❌ prefer int | str
 ## Notes
 
 - Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning in a complex expression, a named helper or method call can be acceptable.
-- Related properties: [Walrus operator](./walrus.md), [String affixes](./str-affixes.md), [Type hints](./type-hints.md), [Pathlib usage](./pathlib.md).
+- Related properties: Walrus operator, String affixes, Type hints, Pathlib usage.
 
 ````
 
@@ -1897,10 +1901,10 @@ process(payload)
 
 ## See also
 
-- [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
-- [Use yield fixtures for teardown](./pytest-yield-fixtures.md)
-- [Structured data types over untyped mappings](../structured-data-over-untyped-mappings.md)
-- [No useless tests](../no-useless-tests.md)
+- Use pytest's standard fixtures for temp dirs and monkeypatching
+- Use yield fixtures for teardown
+- Structured data types over untyped mappings
+- No useless tests
 
 ````
 
@@ -2019,7 +2023,7 @@ except Exception:  # ❌ should catch FileNotFoundError if ignoring that case on
 
 ## See also
 
-- [Try/except is scoped around the operation it guards](./scoped-try-except.md)
+- Try/except is scoped around the operation it guards
 
 ````
 
@@ -2407,8 +2411,8 @@ def test_writes_file():
 
 ## See also
 
-- [PathLike (Python)](./pathlike.md)
-- [Pathlib usage (Python)](./pathlib.md)
+- PathLike (Python)
+- Pathlib usage (Python)
 
 ````
 
@@ -2495,7 +2499,7 @@ def srv(tmp_path):
 
 ## See also
 
-- [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
+- Use pytest's standard fixtures for temp dirs and monkeypatching
 
 ````
 
@@ -3027,7 +3031,7 @@ Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java
 ## Acceptance criteria (checklist)
 - No new function parameters/returns are untyped or loosely typed maps for domain data (e.g., `dict[str, Any]`, `Mapping[str, Any]`, `Record<string, unknown>`, `map[string]any`)
 - Enumerations: when a field has one of N possible options, use a proper enum — not a bare primitive
-  - Python: `enum.StrEnum` (3.11+) for string‑valued enums; plain `Enum` for non‑string values. See [Use StrEnum for string‑valued enums](python/strenum.md)
+  - Python: `enum.StrEnum` (3.11+) for string‑valued enums; plain `Enum` for non‑string values. See Use StrEnum for string‑valued enums
   - TypeScript: string literal unions (preferred) or `enum` with a runtime schema (e.g., zod) for external input
   - Go: define a named type with `const ( ... iota )` values; add `MarshalJSON/UnmarshalJSON` when serializing
   - Java: `enum` for closed sets
@@ -3040,7 +3044,7 @@ Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java
 - Serialization uses library methods (`model_dump(_json)`, `JSON.stringify(value)`, `json.Marshal`, `ObjectMapper.writeValueAsString`) — do not hand‑assemble nested maps
 - Temporary map‑like collections are acceptable for inherently map‑shaped data (e.g., HTTP headers/query params, logging contexts); document invariants and normalize to a model ASAP if they cross module boundaries
 - Prefer precise fields over opaque blobs; avoid passing through arbitrary `extra` unless explicitly modeled and justified
-- Related: keep types precise and explicit; see [type correctness and specificity](./type-correctness-and-specificity.md) and [forbid dynamic attribute access](python/forbid-dynamic-attrs.md); Python should also [target Pydantic 2](python/pydantic-2.md)
+- Related: keep types precise and explicit; see type correctness and specificity and forbid dynamic attribute access; Python should also target Pydantic 2
 
 ## Positive examples
 
@@ -3264,8 +3268,8 @@ text = text.rstrip()
 
 ## Cross-references
 
-- [Self‑describing names](./self-describing-names.md)
-- [No useless docs](./no-useless-docs.md)
+- Self‑describing names
+- No useless docs
 
 ````
 

@@ -18,10 +18,10 @@ decision as a later input in its thread.
 
 Standing under it:
 
-- The former Haku Console grants system brokered this for tool calls through `create_grant`,
-  manual approval, and `get_tool_call`. That integration has been retired; this story now needs an
-  active Action Service path for requesting and receiving permission decisions. The agent working
-  on Agentplane lives this story from the agent's side every time it needs a key it does not hold.
+- Agents ask through the Action Service: `request_action` on the MCP edge or
+  [`agentplane actions submit`](../docs/agent_cli.md) records the request, and `get_action_result`,
+  `submit --wait` or the runner-session inbox returns the Decision. The agent working on Agentplane
+  lives this story from the agent's side every time it needs a key it does not hold.
 - The [Action Service](../action_service/SPEC.md): one invariant ActionRequest, a separate human
   Decision, automatic at-most-one Execution, a namespaced Action catalog with MCP executors, and
   Action policies that auto-approve within reviewed scope.
@@ -51,6 +51,8 @@ Standing under it:
 
 Missing:
 
+- **A permission-request Action type** whose approval view shows the account, sets and duration
+  ([`AGENT_PERMISSION_REQUESTS`](task_dag.md#agent_permission_requests--an-action-type-and-approval-view-for-permission-requests)).
 - **Standing grants as a separate product.** A `PolicyBinding` represents reusable authority, for
   any rule type, written by the operator in the app; it is not
   another outcome or repeated Execution of one ActionRequest.
@@ -75,6 +77,13 @@ Standing under it:
 - The threads API is the seed of cross-transcript reads. Haku's
   [information trust tiers](../../haku/plans/information_trust_tiers.md) sketch scopes conversation
   reads to the reader's trust tier: the fence is the tier, not the room.
+- Same-privilege delegation: an agent or MCP client opens child Sessions in an existing environment
+  of its own account, submits input and reads compact retained turns and the final assistant text
+  ([`session_delegation`](../action_service/session_delegation/README.md)), so an orchestrator need
+  not follow every native frame.
+- Messaging in any topology: a `session_inbox_access` rule grants one direction of sends to tagged
+  or named Sandboxes, independently of transcript reads
+  ([API](../notification_service/docs/api.md#messages)).
 
 Missing:
 
@@ -82,17 +91,13 @@ Missing:
   provider it talks to, and the tier pre-selects the credential set the proxy will substitute (the
   OpenAI-safe set), the transcripts the agent may read, and whether a judge sits on its channel.
   Each part stays separately configurable, and backends see the resolved parts, not the tier name.
-- **Delegation workflow.** One candidate uses the objects Rai uses: it creates a sandbox
+- **Delegation across tiers.** One candidate uses the objects Rai uses: it creates a sandbox
   from a template its identity may use, opens a session, sends an `Input`, and reads the
   session's events. Its prompt tells it which templates and RBAC configurations it may create
   without asking, that doing so is allowed, and how to start and monitor an agent. This candidate
   needs no additional task/delegation object. A2A for communication remains an
   [open alternative](multiagent_communication.md#prior-art-and-protocol-scope); its
   [harness/thread-protocol rejection](../docs/a2a.md) remains decided.
-- **Reading an agent without drowning.** The events stream carries every native frame and text
-  delta; an orchestrator wants a turn's outcome and the assistant's final text. The thin
-  addition is a kind filter on the events endpoint and on stored events, so the orchestrator
-  subscribes to `TurnCompleted` and completed items only.
 - **Optional future content safeguards.** A classifier or trusted-model judge could examine
   cross-tier messages; outbound disclosure and inbound prompt injection are different concerns.
   This is outside v1. Placement, allow/redact/block semantics, evidence and implementation remain
@@ -103,9 +108,7 @@ Missing:
   on staging today. What it may create is a permission on that identity, held wherever the app
   keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because editing a
   template never changes a running Pod, while a permission on the identity can (Rai).
-- **Messaging in any topology.** A specialist may talk to a sibling or back to the orchestrator;
-  communication need not follow the launch tree. Each direction needs its own send permission,
-  independently of transcript reads. Delivery and optional future safeguards remain open in the
+- **Delivery and safeguards for cross-tier messaging** remain open in the
   [communication design space](multiagent_communication.md).
 - **Subscriptions to lifecycle events.** An agent that spawned another subscribes to what happens
   to it, "this sandbox died" first of all, and gets that as an input; the same delivery path as
@@ -129,9 +132,8 @@ Missing:
   of results one input.
 - **Every agent-addressed event in the inbox.** The
   [notification service](../notification_service/README.md) inbox is the queue an agent reads
-  and explicitly acknowledges, with a notice telling it the inbox is non-empty; its sources are
-  Actions and GitHub. A sandbox dying, a turn completing and a message from another agent are not
-  sources yet.
+  and explicitly acknowledges, with a notice telling it the inbox is non-empty; it receives Action
+  and GitHub events and peer messages. A sandbox dying and a turn completing are not sources yet.
 - **Cross-transcript reads for the orchestrator**, tier-scoped, so Haku can read what a specialist
   did without the specialist being able to read Haku.
 
@@ -152,7 +154,7 @@ Standing under it:
   egress proxy substitutes for Haku's identity. The shape is proven: staging's sandboxes reach
   GitHub's API and HTTPS git as `agentydragon-agent` with a PAT they never hold, and the acceptance
   suite checks it against the proxy's own record rather than the agent's account of it.
-- Standing instructions on the session (<../runner/SPEC.md>): what a long-lived agent is for reaches
+- Standing instructions on the session (<../env/runtime/docs/session_protocol.md>): what a long-lived agent is for reaches
   the model on every turn, including a resumed one, without being written into the harness or into
   the first input. They are fixed for the session's life, which is the strongest promise both
   harnesses can keep — Codex accepts an override on resume and silently ignores it.
@@ -200,10 +202,10 @@ Missing:
 
 ## What this fixes about the order of work
 
-- Story 1 lacks only standing grants as their own product: the proxy, the Action Service and
-  approval delivery stand.
-- Story 2 has the proxy's per-identity credential sets and the thread store, and proposes tiers
-  and the events kind filter. A judge is an optional later addition.
+- Story 1 still lacks a permission-request Action and standing grants as their own product; the
+  proxy, the Action Service and approval delivery stand.
+- Story 2 has the proxy's per-identity credential sets, the thread store, same-privilege
+  delegation and directed peer messaging, and proposes tiers. A judge is an optional later addition.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
 - Story 4 is the long-lived thread and memory-in-git on top of a resuming sandbox and `T1`; story 5
   is the event pipe on top of story 4, Haku's existing UI pipeline, and the approvals delivery

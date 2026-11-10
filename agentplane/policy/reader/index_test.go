@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,12 +48,15 @@ func TestGrantsAreTheCallersBindingsWithRulesOfTheType(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-other-reader"},
 		Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "kubernetes_cluster_role_binding", ClusterRole: "test-role"}}},
 	})
-	other := policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: "test-other-workload"}
+	other := policyapi.Subject{Namespace: subject.Namespace, Name: "test-other-workload"}
+	// An Identity subject never answers a ServiceAccount lookup.
+	identity := policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
 	for name, binding := range map[string]policyapi.PolicyBindingSpec{
-		"test-b":           {Subject: subject, PolicySets: []string{"test-mixed", "test-missing", "test-own"}},
-		"test-a":           {Subject: subject, PolicySets: []string{"test-own"}},
-		"test-other-sets":  {Subject: subject, PolicySets: []string{"test-other-reader"}},
+		"test-b":           {Subject: bindingSubject, PolicySets: []string{"test-mixed", "test-missing", "test-own"}},
+		"test-a":           {Subject: bindingSubject, PolicySets: []string{"test-own"}},
+		"test-other-sets":  {Subject: bindingSubject, PolicySets: []string{"test-other-reader"}},
 		"test-other-agent": {Subject: other, PolicySets: []string{"test-own"}},
+		"test-identity":    {Subject: identity, PolicySets: []string{"test-own"}},
 	} {
 		index.PutBinding(&policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: binding})
 	}
@@ -81,11 +85,14 @@ func TestBindingsAreEveryBindingNamingTheSubjectWithEachSetsStanding(t *testing.
 		ObjectMeta: metav1.ObjectMeta{Name: "test-broken"},
 		Spec:       policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: testRuleType}}},
 	})
-	other := policyapi.ServiceAccountRef{Namespace: subject.Namespace, Name: "test-other-workload"}
+	other := policyapi.Subject{Namespace: subject.Namespace, Name: "test-other-workload"}
+	// An Identity subject never answers a ServiceAccount lookup.
+	identity := policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}
 	for name, binding := range map[string]policyapi.PolicyBindingSpec{
-		"test-b":           {Subject: subject, PolicySets: []string{"test-broken", "test-own", "test-missing"}},
-		"test-a":           {Subject: subject, PolicySets: []string{"test-other-reader"}},
+		"test-b":           {Subject: bindingSubject, PolicySets: []string{"test-broken", "test-own", "test-missing"}},
+		"test-a":           {Subject: bindingSubject, PolicySets: []string{"test-other-reader"}},
 		"test-other-agent": {Subject: other, PolicySets: []string{"test-own"}},
+		"test-identity":    {Subject: identity, PolicySets: []string{"test-own"}},
 	} {
 		index.PutBinding(&policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: binding})
 	}
@@ -93,6 +100,9 @@ func TestBindingsAreEveryBindingNamingTheSubjectWithEachSetsStanding(t *testing.
 	got := index.Bindings(subject)
 	if len(got) != 2 || got[0].Binding.Name != "test-a" || got[1].Binding.Name != "test-b" {
 		t.Fatalf("Bindings = %+v", got)
+	}
+	if got := index.Bindings(ServiceAccount{}); len(got) != 0 {
+		t.Errorf("Bindings of the zero ServiceAccount = %+v, want none", got)
 	}
 	// A set of another reader's rules still stands, with what it grants this one: nothing.
 	if sets := got[0].Sets; len(sets) != 1 || sets[0].Name != "test-other-reader" || sets[0].Generation != 3 || len(sets[0].Rules) != 0 {
@@ -106,6 +116,114 @@ func TestBindingsAreEveryBindingNamingTheSubjectWithEachSetsStanding(t *testing.
 	got[1].Binding.Spec.PolicySets[0] = "test-changed"
 	if again := index.Bindings(subject); again[1].Binding.Spec.PolicySets[0] != "test-broken" {
 		t.Errorf("changing a returned binding changed the index: %+v", again[1].Binding)
+	}
+}
+
+// A binding past its expiresAt stops granting under a live index, though nothing deletes it: the
+// controller may be down.
+func TestExpiredBindingStopsGrantingWithoutADelete(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	index.now = func() time.Time { return now }
+	index.PutPolicySet(testSet("test-own", 1))
+	expiresAt := metav1.NewTime(now.Add(time.Hour))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-expiring"},
+		Spec:       policyapi.PolicyBindingSpec{Subject: bindingSubject, PolicySets: []string{"test-own"}, ExpiresAt: &expiresAt},
+	})
+	if got := index.Grants(subject); len(got) != 1 || len(index.Bindings(subject)) != 1 {
+		t.Fatalf("before expiry: Grants = %+v", got)
+	}
+	now = expiresAt.Add(time.Second)
+	if got := index.Grants(subject); len(got) != 0 {
+		t.Errorf("after expiry: Grants = %+v, want none", got)
+	}
+	if got := index.Bindings(subject); len(got) != 0 {
+		t.Errorf("after expiry: Bindings = %+v, want none", got)
+	}
+}
+
+// Watchers of the index learn of an expiry at its deadline, with no event from the API server.
+func TestExpiryNotifiesWatchers(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	index.PutPolicySet(testSet("test-own", 1))
+	expiresAt := metav1.NewTime(time.Now().Add(100 * time.Millisecond))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-expiring"},
+		Spec:       policyapi.PolicyBindingSpec{Subject: bindingSubject, PolicySets: []string{"test-own"}, ExpiresAt: &expiresAt},
+	})
+	changed := index.Changed()
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no change at the binding's expiresAt")
+	}
+	if got := index.Grants(subject); len(got) != 0 {
+		t.Errorf("Grants after the expiry notification = %+v, want none", got)
+	}
+}
+
+// An identity binding expires the way a ServiceAccount one does: at its deadline, watchers learn of
+// it, and it stops granting with no delete.
+func TestAnExpiredIdentityBindingStopsGrantingWithoutADelete(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	index.PutPolicySet(testSet("test-own", 1))
+	agent := Identity{Name: "test-agent", UID: "test-uid"}
+	index.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: agent.Name, UID: agent.UID}})
+	expiresAt := metav1.NewTime(time.Now().Add(time.Second))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-expiring"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: agent.Name}},
+			PolicySets: []string{"test-own"}, ExpiresAt: &expiresAt,
+		},
+	})
+	changed := index.Changed()
+	if got := index.Grants(agent); len(got) != 1 {
+		t.Fatalf("before expiry: Grants = %+v", got)
+	}
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no change at the binding's expiresAt")
+	}
+	if got := index.Grants(agent); len(got) != 0 {
+		t.Errorf("after expiry: Grants = %+v, want none", got)
+	}
+	if got := index.Bindings(agent); len(got) != 0 {
+		t.Errorf("after expiry: Bindings = %+v, want none", got)
+	}
+}
+
+func TestAnIdentityChangeSignalsReaders(t *testing.T) {
+	index := NewIndex(testRuleType, parseHosts)
+	index.PutPolicySet(testSet("test-own", 1))
+	index.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-identity"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: "test-agent"}}, PolicySets: []string{"test-own"},
+		},
+	})
+	agent := Identity{Name: "test-agent", UID: "test-uid"}
+
+	changed := index.Changed()
+	index.PutIdentity(&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: agent.Name, UID: agent.UID}})
+	if !closed(changed) || len(index.Grants(agent)) != 1 {
+		t.Errorf("after the Identity appeared: signalled %v, grants %+v", closed(changed), index.Grants(agent))
+	}
+	changed = index.Changed()
+	index.DeleteIdentity(agent.Name)
+	if !closed(changed) || len(index.Grants(agent)) != 0 {
+		t.Errorf("after the Identity was deleted: signalled %v, grants %+v", closed(changed), index.Grants(agent))
+	}
+}
+
+func closed(changed <-chan struct{}) bool {
+	select {
+	case <-changed:
+		return true
+	default:
+		return false
 	}
 }
 

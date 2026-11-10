@@ -1,36 +1,86 @@
+import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
  * `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers API, Electric Shape and Dispatcher watch routes. `EventSource`
- * remains only for the live sandbox, thread, and action-inventory views.
+ * app's client captures the stub) answers API, Electric Shape, event stream and watch routes.
  */
 import {
   electricLive,
   electricShape,
   electricSubset,
+  liveEventStream,
   liveNdjsonWatch,
   ndjsonWatch,
-  publishNdjsonWatch,
+  publishStreams,
   routes,
+  type ServerSentEvent,
   UNANSWERED,
 } from "./network";
-import type {
-  ActionPolicyView,
-  BindingView,
-  Decision,
-  DecisionsSnapshot,
-  PolicySetView,
-  SandboxSnapshot,
-  SandboxView,
-  SandboxesSnapshot,
-  ThreadView,
-  ThreadsSnapshot,
-  WatchHealth,
-} from "../api/schema";
+import {
+  ActionGroupSchema,
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ListActionRequestHistoryResponseSchema,
+  ActionState,
+  ExecutorKind,
+  McpLifecycle,
+  McpHealthSchema,
+  McpUnavailableReason,
+  GetActionPolicyResponseSchema,
+  Verdict,
+  type ActionGroup,
+  type ActionRequest,
+} from "../../../action_service/action_service_pb";
+import {
+  McpLinkageStatus,
+  McpRefreshAction,
+  McpServerLinkageSchema,
+  type McpServerLinkage,
+} from "../../../action_service/operator_action_service_pb";
+import {
+  IdentitySchema,
+  PolicyBindingSchema,
+  PolicySetSchema,
+  WatchIdentitiesResponseSchema,
+  WatchPolicyBindingsResponseSchema,
+  WatchPolicySetsResponseSchema,
+  type Identity,
+  type PolicyBinding,
+} from "../../../policy/v1/policy_service_pb";
+import {
+  Decision_Outcome,
+  Decision_Reason,
+  WatchCredentialsResponseSchema,
+  WatchDecisionsResponseSchema,
+  type Decision,
+} from "../../../egress/egress_admin_pb";
+import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
+import { DurationSchema, TimestampSchema, ValueSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { SubjectSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
+import { ServiceAccountIdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
+import {
+  ConnectionSchema,
+  GrantSchema,
+  GrantStatus,
+  ListCallerServiceAccountsResponseSchema,
+  type Connection,
+} from "../../../mcp_edge/connection_service_pb";
+import { OwnerReferenceSchema } from "../../../proto/kubernetes_pb";
+import {
+  SandboxPhase,
+  EnvironmentDescriptorSchema,
+  OperatingMode,
+  ReadinessSchema,
+  ReadinessState,
+  type EnvironmentDescriptor,
+} from "../../../environments/v1/environment_service_pb";
+
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
+import { testSandbox } from "../testing/sandbox";
+import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -53,30 +103,63 @@ import {
   mcpLinkageUpsertProtoJson,
 } from "../actions/testing/proto_fixtures";
 import { sampleConnection } from "../connections/testing/fixture";
-import type { Connection } from "../connections/models";
 
-import type { DispatchReceipt } from "../threads/client";
+import { type ThreadView, dispatchFromJson } from "../threads/client";
+import { ThreadMetadataSchema } from "../../app_service_pb";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
-import type { ActionGroupView, ActionRequestView } from "../actions/client";
-import type { McpLinkageView } from "../mcp_linkage_client";
-import type {
-  GitHubSubject,
-  InboxNoticeState,
-  InboxStatus,
-  SandboxNotificationStatus,
-  SessionNoticeStates,
-  SubscriptionStatus,
-} from "../notification_types";
-import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
-import { CommandSchema } from "../../../proto/command_pb";
+import {
+  WatchInboxResponseSchema,
+  WatchInboxEntriesResponseSchema,
+  WatchSubscriptionsResponseSchema,
+} from "../../../notification_service/notifications_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus, type Event } from "../../../proto/event_pb";
+import { CommandSchema, Operation } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
+import {
+  AttachedSchema,
+  CentralSamplerV1PlacementSchema,
+  EnvironmentHostedPlacementSchema,
+  Harness,
+  HarnessState,
+  LaunchOutcome,
+  ProcessState,
+  SessionPlacementSchema,
+  SessionSpecSchema,
+  SessionExecutionState,
+  SetupState,
+} from "../../../proto/session_pb";
+import {
+  ReadThreadEntitiesRequestSchema,
+  ReadThreadEntitiesResponseSchema,
+  ThreadCommandOutcome,
+  ThreadCommandSchema,
+  ThreadConfirmedInputSchema,
+  ThreadFeedStatus,
+  ThreadItemSchema,
+  ThreadItemToolCompletionSchema,
+  ThreadItemTextCompletionSchema,
+  ThreadLifecycleSchema,
+  ThreadPayloadField,
+  ThreadPayloadReferenceSchema,
+  ThreadViewStateSchema,
+  FeedStatus,
+  SandboxRefSchema,
+  SessionSummarySchema,
+  WatchSessionSummariesResponseSchema,
+  type ThreadEntity,
+  type ThreadPayloadReference,
+} from "../../../history_service/history_service_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
+import { electricEntityVariant } from "../threads/testing/electric_entity";
+import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";
+
+const COMMAND_TARGET = { sandbox: "ready-sandbox", sandboxUid: "0f9c1d2e-0000-4000-8000-00000000a1b2" };
 
 // Each test owns its local-command fixtures.
 localStorage.clear();
@@ -89,153 +172,202 @@ function ago(ms: number): string {
   return new Date(NOW - ms).toISOString();
 }
 
-const SANDBOXES: SandboxView[] = [
-  {
-    name: "ready-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    namespace: "agentplane-visual",
-    created_at: ago(3 * HOUR),
-    operating_mode: "Running",
-    service_account: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    wake_on_send: true,
-    idle_suspend_after_seconds: 3600,
-    status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
-    phase: "Running",
-    pod: {
-      name: "ready-sandbox",
-      namespace: "agentplane-visual",
-      uid: "visual-pod-a1b2",
-      deleting: false,
-      owner_references: [
-        {
-          api_version: "agentplane.allegedly.works/v1alpha1",
-          kind: "Sandbox",
-          name: "ready-sandbox",
-          uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-          controller: true,
+function threadView(
+  metadata: MessageInitShape<typeof ThreadMetadataSchema>,
+  summary: MessageInitShape<typeof SessionSummarySchema>
+): ThreadView {
+  return {
+    metadata: create(ThreadMetadataSchema, metadata),
+    summary: create(SessionSummarySchema, {
+      sessionId: metadata.threadId,
+      foldedThrough: 0n,
+      feedStatus: FeedStatus.UNSPECIFIED,
+      ...summary,
+    }),
+  };
+}
+
+function visualSandbox(
+  init: MessageInitShape<typeof EnvironmentDescriptorSchema>,
+  ready = false
+): EnvironmentDescriptor {
+  const result = create(EnvironmentDescriptorSchema, init);
+  const target = result.target;
+  if (!target?.namespace || !target.name || !target.uid) throw new Error("Visual Environment needs an exact target");
+  const base = testSandbox(target.name, target.uid, target.namespace);
+  if (result.executionAccount && !result.executionAccount.uid) result.executionAccount.uid = base.executionAccount!.uid;
+  result.observedState!.readiness = create(ReadinessSchema, {
+    state: ready ? ReadinessState.READY : ReadinessState.NOT_READY,
+    reason: ready ? "PodReady" : "NotReady",
+  });
+  return result;
+}
+
+const SANDBOXES: EnvironmentDescriptor[] = [
+  visualSandbox(
+    {
+      target: { name: "ready-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000a1b2", namespace: "agentplane-visual" },
+      observedState: {
+        createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+        operatingMode: OperatingMode.RUNNING,
+        phase: SandboxPhase.RUNNING,
+      },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "ready-sandbox" } },
+      configuration: { wakeOnSend: true, idleSuspendAfter: { seconds: 3600n } },
+      kubernetesDiagnostics: {
+        sandboxStatus: {
+          conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }],
         },
-      ],
-      node_name: "harness-node",
-      status: {
-        phase: "Running",
-        podIP: "10.0.0.7",
-        startTime: ago(2 * HOUR),
-        qosClass: "Burstable",
-        conditions: [
-          { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
-          { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
-        ],
-        containerStatuses: [
-          { name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 },
-        ],
+        pod: {
+          name: "ready-sandbox",
+          namespace: "agentplane-visual",
+          uid: "visual-pod-a1b2",
+          deleting: false,
+          ownerReferences: [
+            {
+              apiVersion: "agentplane.allegedly.works/v1alpha1",
+              kind: "Sandbox",
+              name: "ready-sandbox",
+              uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
+              controller: true,
+            },
+          ],
+          nodeName: "harness-node",
+          status: {
+            phase: "Running",
+            podIP: "10.0.0.7",
+            startTime: ago(2 * HOUR),
+            qosClass: "Burstable",
+            conditions: [
+              { type: "PodScheduled", status: "True", lastTransitionTime: ago(2 * HOUR) },
+              { type: "Ready", status: "True", lastTransitionTime: ago(HOUR) },
+            ],
+            containerStatuses: [
+              { name: "runner", state: { running: { startedAt: ago(HOUR) } }, ready: true, restartCount: 0 },
+            ],
+          },
+        },
       },
     },
-  },
-  {
-    name: "pending-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    namespace: "agentplane-visual",
-    created_at: ago(2 * 60_000),
-    operating_mode: "Running",
-    service_account: { namespace: "agentplane-visual", name: "pending-sandbox" },
-    wake_on_send: false,
-    status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
-    phase: "Running",
-    pod: {
-      name: "pending-sandbox",
-      namespace: "agentplane-visual",
-      uid: "visual-pod-c3d4",
-      deleting: false,
-      owner_references: [
-        {
-          api_version: "agentplane.allegedly.works/v1alpha1",
-          kind: "Sandbox",
-          name: "pending-sandbox",
-          uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-          controller: true,
-        },
-      ],
-      node_name: "harness-node",
-      status: {
-        phase: "Pending",
-        conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady" }],
-        containerStatuses: [
+    true
+  ),
+  visualSandbox({
+    target: { name: "pending-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000c3d4", namespace: "agentplane-visual" },
+    observedState: {
+      createdAt: timestampFromDate(new Date(ago(2 * 60_000))),
+      operatingMode: OperatingMode.RUNNING,
+      phase: SandboxPhase.RUNNING,
+    },
+    executionAccount: { account: { namespace: "agentplane-visual", name: "pending-sandbox" } },
+    configuration: { wakeOnSend: false },
+    kubernetesDiagnostics: {
+      sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
+      pod: {
+        name: "pending-sandbox",
+        namespace: "agentplane-visual",
+        uid: "visual-pod-c3d4",
+        deleting: false,
+        ownerReferences: [
           {
-            name: "runner",
-            state: {
-              waiting: {
-                reason: "ImagePullBackOff",
-                message: 'Back-off pulling image "registry.test/runner:harness"',
-              },
-            },
-            ready: false,
-            restartCount: 0,
+            apiVersion: "agentplane.allegedly.works/v1alpha1",
+            kind: "Sandbox",
+            name: "pending-sandbox",
+            uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
+            controller: true,
           },
         ],
+        nodeName: "harness-node",
+        status: {
+          phase: "Pending",
+          conditions: [{ type: "Ready", status: "False", reason: "ContainersNotReady" }],
+          containerStatuses: [
+            {
+              name: "runner",
+              state: {
+                waiting: {
+                  reason: "ImagePullBackOff",
+                  message: 'Back-off pulling image "registry.test/runner:harness"',
+                },
+              },
+              ready: false,
+              restartCount: 0,
+            },
+          ],
+        },
       },
     },
-  },
-  {
-    name: "suspended-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    namespace: "agentplane-visual",
-    created_at: ago(48 * HOUR),
-    operating_mode: "Suspended",
-    service_account: { namespace: "agentplane-visual", name: "suspended-sandbox" },
-    wake_on_send: false,
-    status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
-    phase: "Suspended",
-    pod: null,
-  },
+  }),
+  visualSandbox({
+    target: { name: "suspended-sandbox", uid: "0f9c1d2e-0000-4000-8000-00000000e5f6", namespace: "agentplane-visual" },
+    observedState: {
+      createdAt: timestampFromDate(new Date(ago(48 * HOUR))),
+      operatingMode: OperatingMode.SUSPENDED,
+      phase: SandboxPhase.SUSPENDED,
+    },
+    executionAccount: { account: { namespace: "agentplane-visual", name: "suspended-sandbox" } },
+    configuration: { wakeOnSend: false },
+    kubernetesDiagnostics: {
+      sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
+    },
+  }),
 ];
 
 /** One Sandbox suspended because its runner was idle, and one because a requester suspended it. */
 function addSuspendedSandboxes(): void {
   SANDBOXES.push(
-    {
-      name: "idle-suspended-sandbox",
-      uid: "0f9c1d2e-0000-4000-8000-00000000b7c8",
-      namespace: "agentplane-visual",
-      created_at: ago(30 * HOUR),
-      operating_mode: "Suspended",
-      service_account: { namespace: "agentplane-visual", name: "idle-suspended-sandbox" },
-      wake_on_send: true,
-      idle_suspend_after_seconds: 1800,
-      suspended_by: "Idle",
-      status: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] },
-      phase: "Suspended",
-      pod: null,
-    },
-    {
-      name: "requested-suspended-sandbox",
-      uid: "0f9c1d2e-0000-4000-8000-00000000d9e0",
-      namespace: "agentplane-visual",
-      created_at: ago(26 * HOUR),
-      operating_mode: "Suspended",
-      service_account: { namespace: "agentplane-visual", name: "requested-suspended-sandbox" },
-      wake_on_send: false,
-      idle_suspend_after_seconds: 7200,
-      suspended_by: "Requested",
-      status: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] },
-      phase: "Suspended",
-      pod: null,
-    }
+    visualSandbox({
+      target: {
+        name: "idle-suspended-sandbox",
+        uid: "0f9c1d2e-0000-4000-8000-00000000b7c8",
+        namespace: "agentplane-visual",
+      },
+      observedState: {
+        createdAt: timestampFromDate(new Date(ago(30 * HOUR))),
+        operatingMode: OperatingMode.SUSPENDED,
+        suspendedBy: "Idle",
+        phase: SandboxPhase.SUSPENDED,
+      },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "idle-suspended-sandbox" } },
+      configuration: { wakeOnSend: true, idleSuspendAfter: { seconds: 1800n } },
+      kubernetesDiagnostics: { sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] } },
+    }),
+    visualSandbox({
+      target: {
+        name: "requested-suspended-sandbox",
+        uid: "0f9c1d2e-0000-4000-8000-00000000d9e0",
+        namespace: "agentplane-visual",
+      },
+      observedState: {
+        createdAt: timestampFromDate(new Date(ago(26 * HOUR))),
+        operatingMode: OperatingMode.SUSPENDED,
+        suspendedBy: "Requested",
+        phase: SandboxPhase.SUSPENDED,
+      },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "requested-suspended-sandbox" } },
+      configuration: { wakeOnSend: false, idleSuspendAfter: { seconds: 7200n } },
+      kubernetesDiagnostics: { sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "Stopped" }] } },
+    })
   );
 }
 
 function addProvisioningSandbox(): void {
-  SANDBOXES.push({
-    name: "test-provisioning",
-    uid: "0f9c1d2e-0000-4000-8000-000000000007",
-    namespace: "agentplane-visual",
-    created_at: ago(30_000),
-    operating_mode: "Running",
-    service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
-    wake_on_send: false,
-    status: null,
-    phase: "Creating",
-    pod: null,
-  });
+  SANDBOXES.push(
+    visualSandbox({
+      target: {
+        name: "test-provisioning",
+        uid: "0f9c1d2e-0000-4000-8000-000000000007",
+        namespace: "agentplane-visual",
+      },
+      observedState: {
+        createdAt: timestampFromDate(new Date(ago(30_000))),
+        operatingMode: OperatingMode.RUNNING,
+        phase: SandboxPhase.CREATING,
+      },
+      executionAccount: { account: { namespace: "agentplane-visual", name: "test-provisioning" } },
+      configuration: { wakeOnSend: false },
+      kubernetesDiagnostics: { sandboxStatus: {} },
+    })
+  );
 }
 
 const TEST_CODER_POLICY_SETS = [
@@ -255,357 +387,303 @@ const TEST_CODER_POLICY_SETS = [
   "test-pr-failed-jobs",
 ];
 
-const POLICY_SETS: PolicySetView[] = [
-  {
-    name: "github-public",
-    generation: 1,
-    refused: null,
-    rules: [
-      {
-        kind: "egress",
-        number: 0,
-        hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
-        methods: ["GET", "POST"],
-        paths: null,
-        credential: {
-          name: "harness-github-pat",
-          description: "A token for the demo bot account; requests carrying it act as that account.",
-          placeholder: "agentplane-credential-harness-github-pat",
-          secret: "harness-github-pat",
-          key: "token",
-          targets: [{ header: "Authorization", method: "schemeToken", scheme: "Bearer" }],
+const POLICY_SETS = [
+  create(PolicySetSchema, {
+    identity: { namespace: "agentplane-visual", name: "github-public", uid: "set-github" },
+    generation: 1n,
+    spec: {
+      rules: [
+        {
+          type: "egress",
+          hosts: ["api.github.com", "github.com"],
+          methods: ["GET", "POST"],
+          credentialRef: { name: "harness-github-pat" },
         },
-        missing_credential: null,
-      },
-    ],
-  },
-  {
-    name: "pypi",
-    generation: 1,
-    refused: null,
-    rules: [
-      {
-        kind: "egress",
-        number: 0,
-        hosts: ["pypi.org", "files.pythonhosted.org"],
-        methods: ["GET"],
-        paths: ["/simple/**"],
-        credential: null,
-        missing_credential: null,
-      },
-    ],
-  },
-  {
-    name: "test-coder",
-    generation: 2,
-    refused: null,
-    rules: [
-      {
-        kind: "other",
-        number: 0,
-        type: "action_auto_approve",
-        fields: {
-          policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
+      ],
+    },
+  }),
+  create(PolicySetSchema, {
+    identity: { namespace: "agentplane-visual", name: "kube-reader", uid: "set-kube-reader" },
+    generation: 1n,
+    spec: {
+      rules: [
+        {
+          type: "egress",
+          hosts: ["kubernetes.default.svc"],
+          methods: ["GET"],
+          credentialRef: { name: "harness-kube-token" },
         },
-      },
-      {
-        kind: "other",
-        number: 1,
-        type: "action_auto_approve",
-        fields: {
-          policy: {
-            type: "argument_schema",
-            actions: { github: ["create_issue"] },
-            argument_schema: {
-              properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
-              required: ["owner", "repo"],
-            },
+      ],
+    },
+  }),
+  create(PolicySetSchema, {
+    identity: { namespace: "agentplane-visual", name: "pypi", uid: "set-pypi" },
+    generation: 1n,
+    spec: {
+      rules: [
+        { type: "egress", hosts: ["pypi.org", "files.pythonhosted.org"], methods: ["GET"], paths: ["/simple/**"] },
+      ],
+    },
+  }),
+  ...["test-coder", "harness-reviews", "harness-push", "harness-edited"].map((name) =>
+    fromJson(PolicySetSchema, {
+      identity: { namespace: "agentplane-visual", name, uid: `set-${name}` },
+      generation: "1",
+      spec: {
+        rules: [
+          {
+            type: "action_auto_approve",
+            policy: { type: "exact_actions", actions: { github: ["get_file_contents"] } },
           },
-        },
+        ],
       },
-    ],
-  },
-  {
-    name: "harness-reviews",
-    generation: 1,
-    refused: null,
-    rules: [
-      {
-        kind: "other",
-        number: 0,
-        type: "action_auto_approve",
-        fields: { policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } } },
-      },
-    ],
-  },
-  {
-    name: "harness-push",
-    generation: 3,
-    refused: null,
-    rules: [
-      {
-        kind: "other",
-        number: 0,
-        type: "action_auto_approve",
-        fields: {
-          policy: {
-            type: "argument_schema",
-            actions: { github: ["push_files"] },
-            argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
-          },
-        },
-      },
-    ],
-  },
-  {
-    name: "harness-edited",
-    generation: 1,
-    refused: "rules[0]: hosts: List should have at least 1 item after validation, not 0",
-    rules: [],
-  },
+    })
+  ),
 ];
 
-function policySet(name: string): PolicySetView {
-  const found = POLICY_SETS.find((candidate) => candidate.name === name);
-  if (!found) throw new Error(`No harness PolicySet ${name}`);
-  return found;
-}
-
-/** A reader's condition on a binding, written at the generation it judged. */
-function verdict(
-  type: string,
-  status: "True" | "False",
-  message: string,
-  observedGeneration: number
-): BindingView["conditions"][number] {
-  return {
-    type,
-    status,
-    reason: status === "True" ? "Valid" : "PolicySetUnavailable",
-    message,
-    observed_generation: observedGeneration,
-  };
-}
-
-/**
- * ready-sandbox's bindings, one of every state a binding mark shows: the Sandbox's own and two others
- * that every reader accepts (one from git, one an operator grant that has since expired), one an operator
- * grant no reader has judged yet, and one a reader refuses for the sets it names.
- */
-const BINDINGS: BindingView[] = [
-  {
-    name: "ready-sandbox-k2m9x",
-    provenance: "sandbox",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: null,
-    conditions: [verdict("ActionsReady", "True", "spec accepted", 1)],
-    // The preset names test-coder alone; harness-reviews was picked at launch.
-    policy_sets: [policySet("test-coder"), policySet("harness-reviews")],
-    missing_policy_sets: [],
-  },
-  {
-    name: "ready-sandbox-github-public",
-    provenance: "git",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: null,
-    conditions: [verdict("EgressReady", "True", "egress rules enforced", 1)],
-    policy_sets: [policySet("github-public")],
-    missing_policy_sets: [],
-  },
-  {
-    name: "ready-sandbox-7q4xk",
-    provenance: "operator",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: ago(2 * HOUR),
-    conditions: [verdict("EgressReady", "True", "egress rules enforced", 1)],
-    policy_sets: [policySet("pypi")],
-    missing_policy_sets: [],
-  },
+const BINDINGS = [
+  { name: "ready-sandbox-k2m9x", source: "sandbox", sets: ["test-coder", "harness-reviews"], state: "True" },
+  { name: "ready-sandbox-github-public", source: "git", sets: ["github-public"], state: "True" },
+  { name: "ready-sandbox-7q4xk", source: "operator", sets: ["pypi"], state: "True", expires: ago(2 * HOUR) },
   {
     name: "ready-sandbox-unjudged-grant",
-    provenance: "operator",
-    generation: 1,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: new Date(NOW + HOUR).toISOString(),
-    conditions: [],
-    policy_sets: [policySet("harness-reviews")],
-    missing_policy_sets: [],
+    source: "operator",
+    sets: ["harness-reviews"],
+    state: null,
+    expires: ago(-HOUR),
   },
   {
     name: "ready-sandbox-push-afternoon",
-    provenance: "operator",
-    generation: 2,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
-    expires_at: new Date(NOW + 3 * HOUR).toISOString(),
-    conditions: [verdict("ActionsReady", "False", "missing PolicySets: harness-release", 2)],
-    policy_sets: [policySet("harness-push"), policySet("harness-edited")],
-    missing_policy_sets: ["harness-release"],
+    source: "operator",
+    sets: ["harness-push", "harness-edited", "harness-release"],
+    state: "False",
+    expires: ago(-3 * HOUR),
   },
+].map(({ name, source, sets, state, expires }) =>
+  create(PolicyBindingSchema, {
+    identity: { namespace: "agentplane-visual", name, uid: `binding-${name}` },
+    generation: 1n,
+    labels: source === "git" ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    ownerReferences:
+      source === "sandbox"
+        ? [
+            {
+              apiVersion: "agentplane.allegedly.works/v1alpha1",
+              kind: "Sandbox",
+              name: "ready-sandbox",
+              uid: "sandbox-uid",
+              controller: true,
+            },
+          ]
+        : [],
+    spec: {
+      subject: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      policySets: sets,
+      ...(expires ? { expiresAt: timestampFromDate(new Date(expires)) } : {}),
+    },
+    status: {
+      conditions: state
+        ? [{ type: "ActionsReady", status: state, reason: "Valid", message: "spec accepted", observedGeneration: 1n }]
+        : [],
+    },
+  })
+);
+
+/** Each identity is named after the state the identities screens show it in. */
+let identities: Identity[] = [
+  { name: "unreferenced-identity", description: "Unreferenced identity: no binding names it", git: false },
+  { name: "git-origin-identity", description: "Git-origin identity, applied by Flux", git: true },
+  { name: "identity-with-an-expiring-binding", description: "Identity with an expiring binding it owns", git: false },
+  { name: "referenced-identity", description: "Referenced identity: an operator binding names it", git: false },
+  {
+    name: "credential-referenced-identity",
+    description: "Credential-referenced identity: a workload credential acts as it",
+    git: false,
+  },
+].map(({ name, description, git }) =>
+  create(IdentitySchema, {
+    identity: { namespace: "agentplane-visual", name, uid: `identity-${name}` },
+    generation: 1n,
+    labels: git ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    spec: { description },
+  })
+);
+
+let identityBindings: PolicyBinding[] = [
+  {
+    name: "git-origin-identity-github-public",
+    identity: "git-origin-identity",
+    source: "git",
+    sets: ["github-public"],
+  },
+  {
+    name: "identity-with-an-expiring-binding-kube-reader",
+    identity: "identity-with-an-expiring-binding",
+    source: "identity",
+    sets: ["kube-reader"],
+    expires: ago(-2 * HOUR),
+  },
+  { name: "referenced-identity-operator-grant", identity: "referenced-identity", source: "operator", sets: ["pypi"] },
+].map(({ name, identity, source, sets, expires }) =>
+  create(PolicyBindingSchema, {
+    identity: { namespace: "agentplane-visual", name, uid: `binding-${name}` },
+    generation: 1n,
+    labels: source === "git" ? { "kustomize.toolkit.fluxcd.io/name": "harness" } : {},
+    ownerReferences:
+      source === "identity"
+        ? [
+            {
+              apiVersion: "agentplane.allegedly.works/v1alpha1",
+              kind: "Identity",
+              name: identity,
+              uid: `identity-${identity}`,
+            },
+          ]
+        : [],
+    spec: {
+      subject: { identity: { name: identity } },
+      policySets: sets,
+      ...(expires ? { expiresAt: timestampFromDate(new Date(expires)) } : {}),
+    },
+    status: {
+      conditions: [
+        { type: "ActionsReady", status: "True", reason: "Valid", message: "spec accepted", observedGeneration: 1n },
+      ],
+    },
+  })
+);
+
+/** The WorkloadCredentials acting as an identity, which the page cannot see but the Policy Service refuses on. */
+const identityCredentials = [
+  { credential: "agentplane-visual/standing-agent", identity: "credential-referenced-identity" },
 ];
+
+/** The Policy Service's DeleteIdentity: its Flux, unowned-binding and credential refusals, then garbage collection. */
+function deleteIdentity(name: string, uid: string | null): unknown {
+  const identity = identities.find((item) => item.identity?.name === name);
+  if (!identity) return undefined;
+  if (identity.identity?.uid !== uid)
+    return Response.json({ code: 10, message: "Identity changed; refresh the identities view" }, { status: 409 });
+  if ("kustomize.toolkit.fluxcd.io/name" in identity.labels)
+    return Response.json({ code: 9, message: "Identity is managed by Flux" }, { status: 400 });
+  const owned = (binding: PolicyBinding): boolean => binding.ownerReferences.some((owner) => owner.uid === uid);
+  const referencing = identityBindings.filter(
+    (binding) => binding.spec?.subject?.identity?.name === name && !owned(binding)
+  );
+  const credentials = identityCredentials.filter((item) => item.identity === name);
+  if (referencing.length || credentials.length)
+    return Response.json(
+      {
+        code: 9,
+        message: "Identity is named by PolicyBindings it does not own or WorkloadCredentials",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.PreconditionFailure",
+            violations: [
+              ...referencing.map((binding) => ({
+                type: "PolicyBinding",
+                subject: binding.identity?.name,
+                description: "names this Identity and is not owned by it",
+              })),
+              ...credentials.map(({ credential }) => ({
+                type: "WorkloadCredential",
+                subject: credential,
+                description: "acts as this Identity",
+              })),
+            ],
+          },
+        ],
+      },
+      { status: 400 }
+    );
+  identities = identities.filter((item) => item !== identity);
+  identityBindings = identityBindings.filter((binding) => !owned(binding));
+  return {};
+}
 
 /** What the Action Service auto-decides for ready-sandbox, from the sets those bindings name. */
-const ACTION_POLICY: ActionPolicyView = {
-  synced: true,
-  auto_approve_if: [
-    {
-      binding: "ready-sandbox-k2m9x",
-      policy_set: "test-coder",
-      source: "rules",
-      index: 0,
-      policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
-    },
-    {
-      binding: "ready-sandbox-k2m9x",
-      policy_set: "test-coder",
-      source: "rules",
-      index: 1,
-      policy: {
-        type: "argument_schema",
-        actions: { github: ["create_issue"] },
-        argument_schema: {
-          properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
-          required: ["owner", "repo"],
+function actionPolicy(namespace: string, name: string) {
+  const policy = (binding: string, policySet: string, index: number, actionNames: string[]) => ({
+    binding,
+    policySet,
+    index,
+    policy: { kind: { case: "exactActions" as const, value: { actions: [{ group: "github", names: actionNames }] } } },
+  });
+  return create(GetActionPolicyResponseSchema, {
+    actionPolicy: {
+      subject: { namespace, name },
+      synced: true,
+      autoApproveIf: [
+        policy("ready-sandbox-k2m9x", "test-coder", 0, ["get_file_contents", "list_commits", "search_code"]),
+        {
+          binding: "ready-sandbox-k2m9x",
+          policySet: "test-coder",
+          index: 1,
+          policy: {
+            kind: {
+              case: "argumentSchema",
+              value: {
+                actions: [{ group: "github", names: ["create_issue"] }],
+                argumentSchema: {
+                  properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
+                  required: ["owner", "repo"],
+                },
+              },
+            },
+          },
         },
-      },
+        policy("ready-sandbox-k2m9x", "harness-reviews", 0, ["pull_request_read", "list_pull_requests"]),
+        {
+          binding: "ready-sandbox-push-afternoon",
+          policySet: "harness-push",
+          index: 0,
+          policy: {
+            kind: {
+              case: "argumentSchema",
+              value: {
+                actions: [{ group: "github", names: ["push_files"] }],
+                argumentSchema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
+              },
+            },
+          },
+        },
+      ],
     },
-    {
-      binding: "ready-sandbox-k2m9x",
-      policy_set: "harness-reviews",
-      source: "rules",
-      index: 0,
-      policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
-    },
-    {
-      binding: "ready-sandbox-push-afternoon",
-      policy_set: "harness-push",
-      source: "rules",
-      index: 0,
-      policy: {
-        type: "argument_schema",
-        actions: { github: ["push_files"] },
-        argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
-      },
-    },
-  ],
-};
-
-const DECISIONS: Decision[] = [
-  {
-    at: ago(9 * 60_000),
-    method: "CONNECT",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: false,
-  },
-  {
-    at: ago(9 * 60_000 - 200),
-    method: "GET",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: true,
-  },
-  {
-    at: ago(7 * 60_000),
-    method: "GET",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: true,
-  },
-  {
-    at: ago(6 * 60_000),
-    method: "GET",
-    host: "api.github.com",
-    port: 443,
-    outcome: "allow",
-    address: "140.82.116.5",
-    reason: null,
-    binding: "ready-sandbox-github-public",
-    policy: "github-public",
-    rule: 0,
-    substituted: true,
-  },
-  {
-    at: ago(5 * 60_000),
-    method: "GET",
-    host: "pypi.org",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-rule",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-  {
-    at: ago(4 * 60_000),
-    method: "GET",
-    host: "pypi.org",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-rule",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-  {
-    at: ago(3 * 60_000),
-    method: "GET",
-    host: "pypi.org",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-rule",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-  {
-    at: ago(60_000),
-    method: "CONNECT",
-    host: "example.invalid",
-    port: 443,
-    outcome: "deny",
-    address: null,
-    reason: "no-binding",
-    binding: null,
-    policy: null,
-    rule: null,
-    substituted: false,
-  },
-];
-
-/** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
-function egressDecisions(): DecisionsSnapshot {
-  if (window.matchMedia("(max-width: 600px)").matches) {
-    return { watching: true, decisions: { detail: "the egress proxy did not answer: connection refused" } };
-  }
-  return { watching: true, decisions: DECISIONS };
+  });
 }
+
+const GITHUB_ADMITTED = {
+  host: "api.github.com",
+  outcome: Decision_Outcome.ALLOW,
+  address: "140.82.116.5",
+  binding: "ready-sandbox-github-public",
+  policy: "github-public",
+  rule: 0,
+} satisfies Omit<DecisionFixture, "at">;
+
+const PYPI_REFUSED = {
+  host: "pypi.org",
+  outcome: Decision_Outcome.DENY,
+  reason: Decision_Reason.NO_RULE,
+} satisfies Omit<DecisionFixture, "at">;
+
+// Oldest first, as the proxy sends the whole retained log.
+const DECISIONS: Decision[] = [
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(9 * 60_000), method: "CONNECT" }),
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(9 * 60_000 - 200), substituted: true }),
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(7 * 60_000), substituted: true }),
+  decisionFixture({ ...GITHUB_ADMITTED, at: ago(6 * 60_000), substituted: true }),
+  decisionFixture({ ...PYPI_REFUSED, at: ago(5 * 60_000) }),
+  decisionFixture({ ...PYPI_REFUSED, at: ago(4 * 60_000) }),
+  decisionFixture({ ...PYPI_REFUSED, at: ago(3 * 60_000) }),
+  decisionFixture({
+    at: ago(60_000),
+    host: "example.invalid",
+    method: "CONNECT",
+    outcome: Decision_Outcome.DENY,
+    reason: Decision_Reason.NO_BINDING,
+  }),
+];
 
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
@@ -617,407 +695,478 @@ const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
 
 const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
 
-function pullRequest(number: number): GitHubSubject {
-  return { pullRequest: { number } };
+// Each fake watch emits the actual generated resource and watch messages.
+function notificationFrames(session: string, kind: string, delta: boolean): unknown[] {
+  const extra = flags.has("notificationExtraEntry") && session === IDLE_THREAD;
+  const badge =
+    session === THREE_UNPROCESSED_THREAD
+      ? { unannouncedCount: 2, pendingAcknowledgementCount: 3 }
+      : session === ONE_UNPROCESSED_THREAD
+        ? { pendingAcknowledgementCount: 1 }
+        : session === DELIVERY_FAILED_THREAD
+          ? { unannouncedCount: 1, pendingAcknowledgementCount: 1 }
+          : undefined;
+  const first = session === IDLE_THREAD;
+  const second = session === UNNAMED_STOPPED_THREAD;
+  const third = session === RUNNING_THREAD;
+  if (kind === "inbox:watch") {
+    const inbox = first
+      ? {
+          id: "inbox-one",
+          sessionId: session,
+          lastCursor: extra ? "10" : "9",
+          acknowledged: "4",
+          covered: "7",
+          latestNotice: { throughCursor: "7", attempted: true, admitted: true },
+          delivery: {
+            unannouncedCount: extra ? 3 : 2,
+            pendingAcknowledgementCount: extra ? 6 : 5,
+            waitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
+            nextWorkAt: ago(-5000),
+          },
+        }
+      : second
+        ? {
+            id: "inbox-two",
+            sessionId: session,
+            lastCursor: "3",
+            acknowledged: "1",
+            covered: "1",
+            delivery: {
+              unannouncedCount: 2,
+              pendingAcknowledgementCount: 2,
+              waitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
+              noticeDueAt: ago(-60000),
+              quietUntil: ago(-60000),
+              maxWaitAt: ago(-120000),
+            },
+          }
+        : third
+          ? {
+              id: "inbox-three",
+              sessionId: session,
+              lastCursor: "2",
+              covered: "2",
+              deliveryError: "runner unavailable",
+              latestNotice: { throughCursor: "2", attempted: true },
+              delivery: { pendingAcknowledgementCount: 2, waitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY" },
+            }
+          : badge
+            ? {
+                id: `inbox-${session}`,
+                sessionId: session,
+                delivery: badge,
+                ...(session === DELIVERY_FAILED_THREAD
+                  ? { deliveryError: "runner unreachable" }
+                  : { latestNotice: { confirmed: true } }),
+              }
+            : undefined;
+    return [
+      toJson(
+        WatchInboxResponseSchema,
+        fromJson(WatchInboxResponseSchema, JSON.parse(JSON.stringify(inbox ? { inbox } : { noInbox: {} })))
+      ),
+    ];
+  }
+  if (kind === "inbox/entries:watch") {
+    const action = (cursor: number, state: string) => ({
+      cursor: String(cursor),
+      createdAt: ago(0),
+      event: { actions: { requestId: ACTION_REQUEST_ID, sequence: cursor } },
+      actionState: `ACTION_STATE_${state}`,
+    });
+    const github = (cursor: number, event: string, actionName: string, conclusion?: string) => ({
+      cursor: String(cursor),
+      createdAt: ago(0),
+      event: { github: { event: `GITHUB_EVENT_NAME_${event}`, action: actionName } },
+      githubConclusion: conclusion,
+    });
+    const entries = first
+      ? [
+          action(5, "DECISION_PENDING"),
+          github(6, "CHECK_RUN", "completed", "success"),
+          github(7, "ISSUE_COMMENT", "created"),
+          action(8, "RUNNING"),
+          action(9, "SUCCEEDED"),
+          ...(extra ? [github(10, "WORKFLOW_RUN", "completed")] : []),
+        ]
+      : second
+        ? [github(2, "CHECK_RUN", "completed", "failure"), github(3, "PULL_REQUEST", "synchronize")]
+        : third
+          ? [action(1, "DECISION_PENDING"), action(2, "RUNNING")]
+          : [];
+    const frame = delta ? { delta: { upserted: entries } } : { snapshot: { entries } };
+    return [
+      toJson(
+        WatchInboxEntriesResponseSchema,
+        fromJson(WatchInboxEntriesResponseSchema, JSON.parse(JSON.stringify(frame)))
+      ),
+    ];
+  }
+  const githubSubscription = (id: string, repository: string, number: number, kind?: string, cancelled = false) => ({
+    id,
+    source: { github: { repository, subject: { pullRequest: { number } } } },
+    cancelled,
+    expiresAt: ago(cancelled ? HOUR : -HOUR),
+    lastSuccessAt: ago(60000),
+    github: {
+      access: [
+        {
+          appId: "42",
+          installationId: "11",
+          repositoryId: "102",
+          lastSuccessAt: ago(60000),
+          ...(kind
+            ? {
+                errorKind: `SOURCE_FAILURE_KIND_${kind}`,
+                error:
+                  kind === "RATE_LIMITED"
+                    ? "GitHub rate limited (HTTP 429)"
+                    : "GitHub App access unavailable (HTTP 403)",
+                errorSince: ago(30000),
+                errorObservedAt: ago(10000),
+                retryAt: ago(-60000),
+              }
+            : {}),
+        },
+      ],
+      subject: { repositoryId: "102", subject: { pullRequest: { number } }, lastSuccessAt: ago(60000) },
+    },
+  });
+  const subscriptions = first
+    ? [
+        {
+          id: "subscription-one",
+          source: { actions: { requestId: ACTION_REQUEST_ID } },
+          expiresAt: ago(-HOUR),
+          lastSuccessAt: ago(60000),
+          nextSourceCheckAt: ago(-30000),
+        },
+        githubSubscription("subscription-two", "agentydragon/ducktape", 42, undefined, true),
+        githubSubscription("subscription-failure-1", "owner/repo", 1, "RATE_LIMITED"),
+        githubSubscription("subscription-failure-2", "owner/repo", 2, "ACCESS_DENIED"),
+      ]
+    : [];
+  const frame = delta ? { delta: { upserted: subscriptions } } : { snapshot: { subscriptions } };
+  return [
+    toJson(
+      WatchSubscriptionsResponseSchema,
+      fromJson(WatchSubscriptionsResponseSchema, JSON.parse(JSON.stringify(frame)))
+    ),
+  ];
 }
 
-/** What the Notification Service reports for a Sandbox's inboxes: one with a notice awaiting confirmation and a
- * subscription in each state, one debouncing, one failing delivery. A suspended Sandbox has none. */
-function notificationStatus(sandbox: string): SandboxNotificationStatus {
-  const failures = ["SOURCE_FAILURE_KIND_RATE_LIMITED", "SOURCE_FAILURE_KIND_ACCESS_DENIED"] as const;
-  const inboxes: InboxStatus[] =
-    sandbox === "ready-sandbox"
-      ? [
-          {
-            inbox: {
-              id: "inbox-one",
-              sessionId: IDLE_THREAD,
-              lastCursor: "9",
-              acknowledged: "4",
-              covered: "7",
-              expiredThrough: "0",
-              retired: false,
-            },
-            subscriptions: [
-              {
-                id: "subscription-one",
-                source: { actions: { requestId: ACTION_REQUEST_ID } },
-                cancelled: false,
-                expiresAt: ago(-HOUR),
-                lastSuccessAt: ago(60000),
-                nextSourceCheckAt: ago(-30000),
-              },
-              {
-                id: "subscription-two",
-                source: { github: { repository: "agentydragon/ducktape", subject: pullRequest(42) } },
-                cancelled: true,
-                expiresAt: ago(HOUR),
-                lastSuccessAt: ago(60000),
-                github: {
-                  access: [
-                    {
-                      appId: "42",
-                      installationId: "11",
-                      repositoryId: "102",
-                      checkedAt: ago(60000),
-                      validUntil: ago(30000),
-                      currentlyValid: false,
-                      lastSuccessAt: ago(60000),
-                    },
-                  ],
-                  subject: { repositoryId: "102", subject: pullRequest(42), lastSuccessAt: ago(60000) },
-                },
-              },
-              ...failures.map((kind, index): SubscriptionStatus => ({
-                id: `subscription-failure-${index + 1}`,
-                source: { github: { repository: "owner/repo", subject: pullRequest(index + 1) } },
-                cancelled: false,
-                expiresAt: ago(-HOUR),
-                lastSuccessAt: ago(60000),
-                github: {
-                  access: [
-                    {
-                      appId: "42",
-                      installationId: "11",
-                      repositoryId: String(100 + index),
-                      checkedAt: ago(10000),
-                      currentlyValid: false,
-                      lastSuccessAt: ago(60000),
-                      errorKind: kind,
-                      errorSince: ago(30000),
-                      errorObservedAt: ago(10000),
-                      error:
-                        kind === "SOURCE_FAILURE_KIND_RATE_LIMITED"
-                          ? "GitHub rate limited (HTTP 429)"
-                          : "GitHub App access unavailable (HTTP 403)",
-                      retryAt: ago(-60000),
-                    },
-                  ],
-                  subject: {
-                    repositoryId: String(100 + index),
-                    subject: pullRequest(index + 1),
-                    lastSuccessAt: ago(60000),
-                  },
-                },
-                nextSourceCheckAt: ago(-60000),
-              })),
-            ],
-            notice: { throughCursor: "7", attempted: true, admitted: true, confirmed: false },
-            unannouncedCount: 2,
-            pendingAcknowledgementCount: 5,
-            pendingEntries: [
-              {
-                cursor: "5",
-                createdAt: ago(30000),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 5 · decision_pending`,
-              },
-              {
-                cursor: "6",
-                createdAt: ago(20000),
-                provider: "github",
-                summary: "GitHub check_run · completed · success",
-              },
-              { cursor: "7", createdAt: ago(10000), provider: "github", summary: "GitHub issue_comment · created" },
-              {
-                cursor: "8",
-                createdAt: ago(5000),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 8 · running`,
-              },
-              {
-                cursor: "9",
-                createdAt: ago(0),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 9 · succeeded`,
-              },
-            ],
-            pendingEntriesMore: false,
-            noticeWaitReason: "NOTICE_WAIT_REASON_AWAITING_CONFIRMATION",
-            nextWorkAt: ago(-5000),
-          },
-          {
-            inbox: {
-              id: "inbox-two",
-              sessionId: "s-2",
-              lastCursor: "3",
-              acknowledged: "1",
-              covered: "1",
-              expiredThrough: "0",
-              retired: false,
-            },
-            subscriptions: [],
-            unannouncedCount: 2,
-            pendingAcknowledgementCount: 2,
-            pendingEntries: [
-              {
-                cursor: "2",
-                createdAt: ago(10000),
-                provider: "github",
-                summary: "GitHub check_run · completed · failure",
-              },
-              { cursor: "3", createdAt: ago(0), provider: "github", summary: "GitHub pull_request · synchronize" },
-            ],
-            pendingEntriesMore: false,
-            noticeDueAt: ago(-60000),
-            quietUntil: ago(-60000),
-            maxWaitAt: ago(-120000),
-            noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
-            nextWorkAt: ago(-60000),
-          },
-          {
-            inbox: {
-              id: "inbox-three",
-              sessionId: "s-3",
-              lastCursor: "2",
-              acknowledged: "0",
-              covered: "2",
-              expiredThrough: "0",
-              retired: false,
-              deliveryError: "runner unavailable",
-            },
-            subscriptions: [
-              {
-                id: "subscription-three",
-                source: { actions: { requestId: ACTION_REQUEST_ID } },
-                cancelled: false,
-                expiresAt: ago(HOUR),
-                error: "source unavailable",
-                nextSourceCheckAt: ago(-60000),
-              },
-            ],
-            notice: { throughCursor: "2", attempted: true, admitted: false, confirmed: false },
-            unannouncedCount: 0,
-            pendingAcknowledgementCount: 2,
-            pendingEntries: [
-              {
-                cursor: "1",
-                createdAt: ago(10000),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 1 · decision_pending`,
-              },
-              {
-                cursor: "2",
-                createdAt: ago(0),
-                provider: "actions",
-                summary: `Action ${ACTION_REQUEST_ID} · event 2 · running`,
-              },
-            ],
-            pendingEntriesMore: false,
-            noticeWaitReason: "NOTICE_WAIT_REASON_DELIVERY_RETRY",
-            nextWorkAt: ago(-5000),
-          },
-        ]
-      : [];
-  return { observedAt: ago(0), inboxes };
+function visualNativeSpec(harness: Harness, sandboxName: string) {
+  const target = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName)?.target;
+  if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+  return create(SessionSpecSchema, {
+    placement: {
+      kind: {
+        case: "environmentHosted",
+        value: { environment: { name: target.name, uid: target.uid }, harness },
+      },
+    },
+    model: harness === Harness.CODEX ? "harness-codex-model" : "harness-claude-model",
+    cwd: "/state/work",
+  });
 }
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
-  {
-    id: IDLE_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(HOUR),
-    name: "Idle thread",
-    archived: false,
-    last_cursor: 14,
-    last_event_at: ago(60_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-  },
-  {
-    id: UNNAMED_STOPPED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(2 * HOUR),
-    name: null,
-    archived: false,
-    last_cursor: 31,
-    last_event_at: ago(90 * 60_000),
-    harness_state: "HARNESS_STATE_STOPPED",
-    feed_status: "active",
-  },
-  {
-    id: RUNNING_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(30 * 60_000),
-    name: "Running thread",
-    archived: false,
-    last_cursor: 23,
-    last_event_at: ago(10_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-    active_turn_id: "t2",
-  },
+  threadView(
+    {
+      threadId: IDLE_THREAD,
+      createdAt: timestampFromDate(new Date(ago(HOUR))),
+      name: "Idle thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 14n,
+      firstEventAt: timestampFromDate(new Date(ago(HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: IDLE_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 14n,
+        harnessState: HarnessState.RUNNING,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: UNNAMED_STOPPED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(2 * HOUR))),
+      archived: false,
+    },
+    {
+      foldedThrough: 31n,
+      firstEventAt: timestampFromDate(new Date(ago(2 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(90 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: UNNAMED_STOPPED_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 31n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: RUNNING_THREAD,
+      createdAt: timestampFromDate(new Date(ago(30 * 60_000))),
+      name: "Running thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 23n,
+      firstEventAt: timestampFromDate(new Date(ago(30 * 60_000))),
+      lastEventAt: timestampFromDate(new Date(ago(10_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: RUNNING_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 23n,
+        harnessState: HarnessState.RUNNING,
+        activeTurnId: "t2",
+      },
+    }
+  ),
 ];
 
 /**
  * The sidebar's cross-sandbox fixture: the three THREADS above and one per notice badge state
  * (all `ready-sandbox`), one each for the pending and suspended sandboxes, one archived, and one whose
- * `sandbox` names no live SandboxView at all -- the struck-through, read-only group.
+ * `sandbox` names no live EnvironmentDescriptor at all -- the struck-through, read-only group.
  */
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
-  {
-    id: THREE_UNPROCESSED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(3 * HOUR),
-    name: "Three unprocessed thread",
-    archived: false,
-    last_cursor: 7,
-    last_event_at: ago(2 * 60_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-  },
-  {
-    id: ONE_UNPROCESSED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(3 * HOUR),
-    name: "One unprocessed thread",
-    archived: false,
-    last_cursor: 7,
-    last_event_at: ago(3 * 60_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-  },
-  {
-    id: DELIVERY_FAILED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(3 * HOUR),
-    name: "Delivery-failed thread",
-    archived: false,
-    last_cursor: 7,
-    last_event_at: ago(4 * 60_000),
-    harness_state: "HARNESS_STATE_STOPPED",
-    feed_status: "active",
-  },
-  {
-    id: "5f1c4a2e-0000-4000-8000-000000000003",
-    sandbox: "pending-sandbox",
-    harness: "HARNESS_CODEX",
-    model: "harness-codex-model",
-    cwd: "/state/work",
-    created_at: ago(5 * 60_000),
-    name: "Pending thread",
-    archived: false,
-    last_cursor: 2,
-    last_event_at: ago(5 * 60_000),
-    harness_state: "HARNESS_STATE_STOPPED",
-  },
-  {
-    id: SUSPENDED_THREAD,
-    sandbox: "suspended-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(47 * HOUR),
-    name: "Suspended thread",
-    archived: false,
-    last_cursor: 9,
-    last_event_at: ago(46 * HOUR),
-    harness_state: "HARNESS_STATE_STOPPED",
-    setup_state: "SETUP_STATE_SUCCEEDED",
-    launch_outcome: "LAUNCH_OUTCOME_STARTED",
-  },
-  {
-    id: "5f1c4a2e-0000-4000-8000-000000000005",
-    sandbox: "deleted-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(72 * HOUR),
-    name: "Read-only thread",
-    archived: false,
-    last_cursor: 18,
-    last_event_at: ago(70 * HOUR),
-    harness_state: "HARNESS_STATE_STOPPED",
-  },
-  {
-    id: "5f1c4a2e-0000-4000-8000-000000000006",
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(96 * HOUR),
-    name: "Archived thread",
-    archived: true,
-    last_cursor: 3,
-    last_event_at: ago(95 * HOUR),
-    harness_state: "HARNESS_STATE_STOPPED",
-  },
+  threadView(
+    {
+      threadId: THREE_UNPROCESSED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      name: "Three unprocessed thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 7n,
+      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(2 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: THREE_UNPROCESSED_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 7n,
+        harnessState: HarnessState.RUNNING,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: ONE_UNPROCESSED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      name: "One unprocessed thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 7n,
+      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(3 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: ONE_UNPROCESSED_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 7n,
+        harnessState: HarnessState.RUNNING,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: DELIVERY_FAILED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      name: "Delivery-failed thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 7n,
+      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(4 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: DELIVERY_FAILED_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 7n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: "5f1c4a2e-0000-4000-8000-000000000003",
+      createdAt: timestampFromDate(new Date(ago(5 * 60_000))),
+      name: "Pending thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 2n,
+      sandbox: { namespace: "agentplane-visual", name: "pending-sandbox" },
+      attached: {
+        sessionId: "5f1c4a2e-0000-4000-8000-000000000003",
+        spec: visualNativeSpec(Harness.CODEX, "pending-sandbox"),
+        lastCursor: 2n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: SUSPENDED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(47 * HOUR))),
+      name: "Suspended thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 9n,
+      firstEventAt: timestampFromDate(new Date(ago(47 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(46 * HOUR))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "suspended-sandbox" },
+      attached: {
+        sessionId: SUSPENDED_THREAD,
+        spec: visualNativeSpec(Harness.CLAUDE, "suspended-sandbox"),
+        lastCursor: 9n,
+        harnessState: HarnessState.STOPPED,
+        setupState: SetupState.SUCCEEDED,
+        launchOutcome: LaunchOutcome.STARTED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: "5f1c4a2e-0000-4000-8000-000000000005",
+      createdAt: timestampFromDate(new Date(ago(72 * HOUR))),
+      name: "Read-only thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 18n,
+      firstEventAt: timestampFromDate(new Date(ago(72 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(70 * HOUR))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "deleted-sandbox" },
+      attached: {
+        sessionId: "5f1c4a2e-0000-4000-8000-000000000005",
+        historicalHarness: Harness.CLAUDE,
+        lastCursor: 18n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: "5f1c4a2e-0000-4000-8000-000000000006",
+      createdAt: timestampFromDate(new Date(ago(96 * HOUR))),
+      name: "Archived thread",
+      archived: true,
+    },
+    {
+      foldedThrough: 3n,
+      firstEventAt: timestampFromDate(new Date(ago(96 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(95 * HOUR))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: "5f1c4a2e-0000-4000-8000-000000000006",
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
+        lastCursor: 3n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
 ];
 
+for (const thread of THREADS_WITH_SANDBOXES) {
+  const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === thread.summary.sandbox?.name);
+  if (sandbox?.target?.uid && thread.summary.sandbox) thread.summary.sandbox.uid = sandbox.target.uid;
+}
+
 function withDormantSession(thread: ThreadView): ThreadView {
-  return thread.id === RUNNING_THREAD
+  return thread.metadata.threadId === RUNNING_THREAD
     ? {
         ...thread,
-        name: "Dormant harness thread",
-        feed_status: "active",
-        harness_state: "HARNESS_STATE_STOPPED",
-        active_turn_id: null,
+        metadata: { ...thread.metadata, name: "Dormant harness thread" },
+        summary: {
+          ...thread.summary,
+          feedStatus: FeedStatus.ACTIVE,
+          attached: { ...thread.summary.attached!, harnessState: HarnessState.STOPPED, activeTurnId: "" },
+        },
       }
     : thread;
 }
 
 /** The `failedTurn` scenarios: the idle thread's history ends in a failed turn, which is also its last completed one. */
 function withFailedTurn(thread: ThreadView): ThreadView {
-  return thread.id === IDLE_THREAD
-    ? { ...thread, name: "Failed-turn thread", last_turn_status: "TURN_STATUS_FAILED" }
+  return thread.metadata.threadId === IDLE_THREAD
+    ? {
+        ...thread,
+        metadata: { ...thread.metadata, name: "Failed-turn thread" },
+        summary: { ...thread.summary, lastTurnStatus: TurnStatus.FAILED },
+      }
     : thread;
 }
 
 function autosuspendCountdown(): void {
-  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === "ready-sandbox");
   if (!sandbox) throw new Error("Missing ready Sandbox fixture");
-  sandbox.idle_suspend_after_seconds = 900;
-  sandbox.idle_suspend_at = ago(-12 * 60_000);
+  sandbox.configuration!.idleSuspendAfter = create(DurationSchema, { seconds: 900n });
+  sandbox.observedState!.idleSuspendAt = timestampFromDate(new Date(ago(-12 * 60_000)));
   threadEntityRows = interleavedRows;
   mapThread = (thread) =>
-    thread.id === IDLE_THREAD
+    thread.metadata.threadId === IDLE_THREAD
       ? {
           ...thread,
-          name: "Idle thread awaiting autosuspend",
-          active_turn_id: null,
-          last_model_activity_at: ago(13 * 60_000 + 25_000),
-          idle_since: ago(13 * 60_000 + 5_000),
+          metadata: { ...thread.metadata, name: "Idle thread awaiting autosuspend" },
+          summary: {
+            ...thread.summary,
+            lastModelActivityAt: timestampFromDate(new Date(ago(13 * 60_000 + 25_000))),
+            idleSince: timestampFromDate(new Date(ago(13 * 60_000 + 5_000))),
+            attached: { ...thread.summary.attached!, activeTurnId: "" },
+          },
         }
       : thread;
 }
 
 function autosuspendBusy(): void {
   autosuspendCountdown();
-  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === "ready-sandbox");
   if (!sandbox) throw new Error("Missing ready Sandbox fixture");
   // Exercise busy facts taking precedence over a retained idle deadline.
-  sandbox.autosuspend_blockers = [
-    { reason: "ActiveTurn", session_id: RUNNING_THREAD },
-    { reason: "Setup", session_id: UNNAMED_STOPPED_THREAD },
-    { reason: "Bootstrap", session_id: null },
+  sandbox.observedState!.autosuspendBlockers = [
+    create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: RUNNING_THREAD }),
+    create(AutosuspendBlockerSchema, { reason: "Setup", sessionId: UNNAMED_STOPPED_THREAD }),
+    create(AutosuspendBlockerSchema, { reason: "Bootstrap" }),
   ];
   const countdownThread = mapThread;
   mapThread = (thread) => {
     const mapped = countdownThread(thread);
-    if (thread.id === IDLE_THREAD) return { ...mapped, name: "Idle thread sharing a busy Sandbox" };
-    if (thread.id === RUNNING_THREAD) return { ...mapped, name: "Session running a turn" };
-    if (thread.id === UNNAMED_STOPPED_THREAD) {
-      return { ...mapped, name: "Session running setup", setup_state: "SETUP_STATE_RUNNING" };
+    if (thread.metadata.threadId === IDLE_THREAD)
+      return { ...mapped, metadata: { ...mapped.metadata, name: "Idle thread sharing a busy Sandbox" } };
+    if (thread.metadata.threadId === RUNNING_THREAD)
+      return { ...mapped, metadata: { ...mapped.metadata, name: "Session running a turn" } };
+    if (thread.metadata.threadId === UNNAMED_STOPPED_THREAD) {
+      return {
+        ...mapped,
+        metadata: { ...mapped.metadata, name: "Session running setup" },
+        summary: { ...mapped.summary, attached: { ...mapped.summary.attached!, setupState: SetupState.RUNNING } },
+      };
     }
     return mapped;
   };
@@ -1025,29 +1174,41 @@ function autosuspendBusy(): void {
 
 function autosuspendStarting(): void {
   autosuspendCountdown();
-  const ready = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  const ready = SANDBOXES.find((candidate) => candidate.target?.name === "ready-sandbox");
   if (!ready) throw new Error("Missing ready Sandbox fixture");
-  SANDBOXES.push({
-    ...ready,
-    name: "starting-sandbox",
-    uid: "0f9c1d2e-0000-4000-8000-000000000077",
-    service_account: { namespace: ready.namespace, name: "starting-sandbox" },
-    phase: "Creating",
-    pod: null,
-    status: null,
-    idle_suspend_at: null,
-    autosuspend_blockers: [],
-  });
+  SANDBOXES.push(
+    Object.assign(clone(EnvironmentDescriptorSchema, ready), {
+      target: { ...ready.target!, name: "starting-sandbox", uid: "0f9c1d2e-0000-4000-8000-000000000077" },
+      executionAccount: create(ServiceAccountIdentitySchema, {
+        account: { namespace: ready.target!.namespace, name: "starting-sandbox" },
+        uid: "starting-account",
+      }),
+      observedState: {
+        ...ready.observedState,
+        phase: SandboxPhase.CREATING,
+        idleSuspendAt: undefined,
+        autosuspendBlockers: [],
+      },
+      kubernetesDiagnostics: { ...ready.kubernetesDiagnostics, pod: undefined, sandboxStatus: {} },
+    })
+  );
   const countdownThread = mapThread;
   mapThread = (thread) => {
     const mapped = countdownThread(thread);
-    return thread.id === IDLE_THREAD
+    return thread.metadata.threadId === IDLE_THREAD
       ? {
           ...mapped,
-          sandbox: "starting-sandbox",
-          name: "Thread waiting for Sandbox startup",
-          harness_state: "HARNESS_STATE_STOPPED",
-          feed_status: "ended",
+          metadata: { ...mapped.metadata, name: "Thread waiting for Sandbox startup" },
+          summary: {
+            ...mapped.summary,
+            sandbox: {
+              ...mapped.summary.sandbox!,
+              name: "starting-sandbox",
+              uid: "0f9c1d2e-0000-4000-8000-000000000077",
+            },
+            feedStatus: FeedStatus.ENDED,
+            attached: { ...mapped.summary.attached!, harnessState: HarnessState.STOPPED },
+          },
         }
       : mapped;
   };
@@ -1080,23 +1241,24 @@ const SSH_EXEC_RESULT = {
   stderr_truncated: false,
 };
 
-const ACTIONS: ActionRequestView[] = [
-  {
+const ACTIONS: ActionRequest[] = [
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000001",
     action: { group: "everything", name: "echo" },
     arguments: { repository: "test-owner/test-repository", token: "test-token" },
     title: "echo the test repository handle back",
     description: "Confirms the fixture connection still reaches the echo Action before the demo run.",
-    idempotency_key: "visual-pending",
+    idempotencyKey: "visual-pending",
     caller: { namespace: "agentplane-visual", name: "test-coder" },
-    state: "decision_pending",
-    version: 1,
-    created_at: ago(3 * 60_000),
-    updated_at: ago(3 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_DECISION_PENDING",
+    version: "1",
+    createdAt: ago(3 * 60_000),
+    updatedAt: ago(3 * 60_000),
     decision: null,
     execution: null,
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000006",
     // The ssh group in MCP_GROUPS: its `exec` Action has widgets of its own (actions/rendering/ssh/exec.tsx).
     action: { group: "ssh", name: "exec" },
@@ -1108,16 +1270,17 @@ const ACTIONS: ActionRequestView[] = [
     },
     title: "restart the test backup service",
     description: "Its last run stopped on a stale lock, which a restart clears.",
-    idempotency_key: "visual-ssh-pending",
+    idempotencyKey: "visual-ssh-pending",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    state: "decision_pending",
-    version: 1,
-    created_at: ago(2 * 60_000),
-    updated_at: ago(2 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_DECISION_PENDING",
+    version: "1",
+    createdAt: ago(2 * 60_000),
+    updatedAt: ago(2 * 60_000),
     decision: null,
     execution: null,
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000007",
     action: { group: "ssh", name: "exec" },
     arguments: {
@@ -1127,27 +1290,26 @@ const ACTIONS: ActionRequestView[] = [
     },
     title: "list the test backup archive",
     description: null,
-    idempotency_key: "visual-ssh-completed",
+    idempotencyKey: "visual-ssh-completed",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    state: "succeeded",
-    version: 4,
-    created_at: ago(5 * 60_000),
-    updated_at: ago(4 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "4",
+    createdAt: ago(5 * 60_000),
+    updatedAt: ago(4 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000007",
-      verdict: "allow",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-allow-ssh",
-      decided_at: ago(4 * 60_000),
+      verdict: "VERDICT_ALLOW",
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: null,
+      },
+      idempotencyKey: "visual-allow-ssh",
+      decidedAt: ago(4 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000007",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       // The whole CallToolResult, as FastMCP answers with the ExecResult: the value as structured
       // content and again as one JSON text block, and the server's info in `_meta`.
       result: {
@@ -1157,40 +1319,39 @@ const ACTIONS: ActionRequestView[] = [
         isError: false,
       },
       error: null,
-      created_at: ago(4 * 60_000),
-      started_at: ago(4 * 60_000 - 500),
-      completed_at: ago(4 * 60_000 - 1_900),
-      reconciled_at: null,
+      createdAt: ago(4 * 60_000),
+      startedAt: ago(4 * 60_000 - 500),
+      completedAt: ago(4 * 60_000 - 1_900),
+      reconciledAt: null,
     },
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000002",
     // An MCP group in MCP_GROUPS below, so its stored result is the tool's whole CallToolResult.
     action: { group: "example_docs", name: "render_diagram" },
     arguments: { path: "docs/test-diagram.mmd" },
     title: "render the test diagram",
     description: null,
-    idempotency_key: "visual-completed",
+    idempotencyKey: "visual-completed",
     caller: { namespace: "test-agentplane", name: "test-workload" },
-    state: "succeeded",
-    version: 4,
-    created_at: ago(40 * 60_000),
-    updated_at: ago(39 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "4",
+    createdAt: ago(40 * 60_000),
+    updatedAt: ago(39 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000002",
-      verdict: "allow",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-allow",
-      decided_at: ago(39 * 60_000),
+      verdict: "VERDICT_ALLOW",
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: null,
+      },
+      idempotencyKey: "visual-allow",
+      decidedAt: ago(39 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000002",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       result: {
         content: [
           { type: "text", text: "Rendered docs/test-diagram.mmd as a 32x32 PNG." },
@@ -1206,144 +1367,147 @@ const ACTIONS: ActionRequestView[] = [
         isError: false,
       },
       error: null,
-      created_at: ago(39 * 60_000),
-      started_at: ago(39 * 60_000 - 500),
-      completed_at: ago(39 * 60_000 - 900),
-      reconciled_at: null,
+      createdAt: ago(39 * 60_000),
+      startedAt: ago(39 * 60_000 - 500),
+      completedAt: ago(39 * 60_000 - 900),
+      reconciledAt: null,
     },
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000003",
     action: { group: "everything", name: "echo" },
     arguments: { repository: "test-owner/other-repository" },
     title: "echo a repository outside the binding",
     description: "Reads test-owner/other-repository, which this workload has no binding for.",
-    idempotency_key: "visual-denied",
+    idempotencyKey: "visual-denied",
     caller: { namespace: "agentplane-visual", name: "test-coder" },
-    state: "denied",
-    version: 2,
-    created_at: ago(80 * 60_000),
-    updated_at: ago(79 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_DENIED",
+    version: "2",
+    createdAt: ago(80 * 60_000),
+    updatedAt: ago(79 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000003",
-      verdict: "deny",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: "Out of scope for this workload's binding.",
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-deny",
-      decided_at: ago(79 * 60_000),
+      verdict: "VERDICT_DENY",
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: "Out of scope for this workload's binding.",
+      },
+      idempotencyKey: "visual-deny",
+      decidedAt: ago(79 * 60_000),
     },
     execution: null,
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000004",
     action: { group: "github", name: "search_code" },
     arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
     title: "search ducktape for auto_allow",
     description: null,
-    idempotency_key: "visual-auto-approved",
+    idempotencyKey: "visual-auto-approved",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    state: "succeeded",
-    version: 3,
-    created_at: ago(15 * 60_000),
-    updated_at: ago(14 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "3",
+    createdAt: ago(15 * 60_000),
+    updatedAt: ago(14 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000004",
-      verdict: "allow",
-      provider: "policy_engine",
-      operator: null,
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      idempotency_key: "visual-policy-allow",
-      decided_at: ago(14 * 60_000),
-      policy_evidence: {
-        bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resource_version: "12345" }],
-        policy_sets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
-        matched: {
-          namespace: "agentplane-visual",
-          policy_set: "fixture_auto_allow",
-          source: "rules",
-          index: 0,
-          type: "exact_actions",
-          repository: null,
+      verdict: "VERDICT_ALLOW",
+      policy: {
+        reasonCode: "REASON_CODE_AUTO_APPROVE",
+        reasonDescription: null,
+        evidence: {
+          bindings: [{ namespace: "agentplane-visual", name: "ready-sandbox-github-public", resourceVersion: "12345" }],
+          policySets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
+          matched: {
+            namespace: "agentplane-visual",
+            policySet: "fixture_auto_allow",
+            source: "POLICY_SOURCE_RULES",
+            index: 0,
+            type: "POLICY_KIND_EXACT_ACTIONS",
+            repository: null,
+          },
         },
       },
+      idempotencyKey: "visual-policy-allow",
+      decidedAt: ago(14 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000004",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       result: { matches: 3 },
       error: null,
-      created_at: ago(14 * 60_000),
-      started_at: ago(14 * 60_000 - 500),
-      completed_at: ago(14 * 60_000 - 900),
-      reconciled_at: null,
+      createdAt: ago(14 * 60_000),
+      startedAt: ago(14 * 60_000 - 500),
+      completedAt: ago(14 * 60_000 - 900),
+      reconciledAt: null,
     },
-  },
-  {
+  }),
+  fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000005",
     // A tool's error answer: the Action succeeded, and the CallToolResult says the tool failed.
     action: { group: "example_notes", name: "get_note" },
     arguments: { note_id: "test-missing-note" },
     title: "read the missing test note",
     description: null,
-    idempotency_key: "visual-tool-error",
+    idempotencyKey: "visual-tool-error",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-    state: "succeeded",
-    version: 4,
-    created_at: ago(10 * 60_000),
-    updated_at: ago(9 * 60_000),
+    callerUid: null,
+    state: "ACTION_STATE_SUCCEEDED",
+    version: "4",
+    createdAt: ago(10 * 60_000),
+    updatedAt: ago(9 * 60_000),
     decision: {
       id: "71000000-0000-4000-8000-000000000005",
-      verdict: "allow",
-      provider: "human_operator",
-      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-      decision_note: null,
-      reason_code: null,
-      reason_description: null,
-      policy_evidence: null,
-      idempotency_key: "visual-allow-tool-error",
-      decided_at: ago(9 * 60_000),
+      verdict: "VERDICT_ALLOW",
+      operator: {
+        operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+        decisionNote: null,
+      },
+      idempotencyKey: "visual-allow-tool-error",
+      decidedAt: ago(9 * 60_000),
     },
     execution: {
       id: "72000000-0000-4000-8000-000000000005",
-      state: "succeeded",
+      state: "EXECUTION_STATE_SUCCEEDED",
       result: { content: [{ type: "text", text: "No note has the id test-missing-note." }], isError: true },
       error: null,
-      created_at: ago(9 * 60_000),
-      started_at: ago(9 * 60_000 - 500),
-      completed_at: ago(9 * 60_000 - 900),
-      reconciled_at: null,
+      createdAt: ago(9 * 60_000),
+      startedAt: ago(9 * 60_000 - 500),
+      completedAt: ago(9 * 60_000 - 900),
+      reconciledAt: null,
     },
-  },
+  }),
 ];
 
 // A single losslessly rendered request, for compact approval screenshots.
-const COMPACT_POD_ACTION: ActionRequestView = {
-  ...ACTIONS[1]!,
-  id: "70000000-0000-4000-8000-000000000009",
-  action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
-  arguments: { namespace: "test-apps", labelSelector: "app=demo", fieldSelector: "status.phase=Running" },
-  title: "inspect running demo pods",
-  description: "Read-only inspection of the demo workload.",
-  idempotency_key: "visual-pods-compact-pending",
+const COMPACT_POD_ACTION = clone(ActionRequestSchema, ACTIONS[1]!);
+COMPACT_POD_ACTION.id = "70000000-0000-4000-8000-000000000009";
+COMPACT_POD_ACTION.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "pods_list_in_namespace" });
+COMPACT_POD_ACTION.arguments = {
+  namespace: "test-apps",
+  labelSelector: "app=demo",
+  fieldSelector: "status.phase=Running",
 };
+COMPACT_POD_ACTION.title = "inspect running demo pods";
+COMPACT_POD_ACTION.description = "Read-only inspection of the demo workload.";
+COMPACT_POD_ACTION.idempotencyKey = "visual-pods-compact-pending";
 
-const COMPACT_RESOURCE_ACTION: ActionRequestView = {
-  ...COMPACT_POD_ACTION,
-  id: "70000000-0000-4000-8000-000000000011",
-  action: { group: "kubernetes_admin", name: "resources_get" },
-  arguments: { apiVersion: "v1", kind: "ConfigMap", namespace: "test-apps", name: "test-demo-config" },
-  title: "read the demo config",
-  description: "Read-only inspection of the demo configuration.",
-  idempotency_key: "visual-resource-compact-pending",
+const COMPACT_RESOURCE_ACTION = clone(ActionRequestSchema, COMPACT_POD_ACTION);
+COMPACT_RESOURCE_ACTION.id = "70000000-0000-4000-8000-000000000011";
+COMPACT_RESOURCE_ACTION.action = create(ActionIdentitySchema, { group: "kubernetes_admin", name: "resources_get" });
+COMPACT_RESOURCE_ACTION.arguments = {
+  apiVersion: "v1",
+  kind: "ConfigMap",
+  namespace: "test-apps",
+  name: "test-demo-config",
 };
+COMPACT_RESOURCE_ACTION.title = "read the demo config";
+COMPACT_RESOURCE_ACTION.description = "Read-only inspection of the demo configuration.";
+COMPACT_RESOURCE_ACTION.idempotencyKey = "visual-resource-compact-pending";
 
-const GMAIL_DRAFT_ACTION: ActionRequestView = {
+const GMAIL_DRAFT_ACTION: ActionRequest = fromJson(ActionRequestSchema, {
   id: "70000000-0000-4000-8000-000000000010",
   action: { group: "gmail", name: "drafts_create" },
   arguments: {
@@ -1355,27 +1519,26 @@ const GMAIL_DRAFT_ACTION: ActionRequestView = {
   },
   title: "prepare the release email",
   description: "Check the recipients and body before approving.",
-  idempotency_key: "visual-gmail-draft-completed",
+  idempotencyKey: "visual-gmail-draft-completed",
   caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
-  state: "succeeded",
-  version: 4,
-  created_at: ago(7 * 60_000),
-  updated_at: ago(6 * 60_000),
+  callerUid: null,
+  state: "ACTION_STATE_SUCCEEDED",
+  version: "4",
+  createdAt: ago(7 * 60_000),
+  updatedAt: ago(6 * 60_000),
   decision: {
     id: "71000000-0000-4000-8000-000000000010",
-    verdict: "allow",
-    provider: "human_operator",
-    operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-    decision_note: null,
-    reason_code: null,
-    reason_description: null,
-    policy_evidence: null,
-    idempotency_key: "visual-allow-gmail-draft",
-    decided_at: ago(6 * 60_000),
+    verdict: "VERDICT_ALLOW",
+    operator: {
+      operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+      decisionNote: null,
+    },
+    idempotencyKey: "visual-allow-gmail-draft",
+    decidedAt: ago(6 * 60_000),
   },
   execution: {
     id: "72000000-0000-4000-8000-000000000010",
-    state: "succeeded",
+    state: "EXECUTION_STATE_SUCCEEDED",
     result: {
       content: [],
       structuredContent: {
@@ -1385,104 +1548,92 @@ const GMAIL_DRAFT_ACTION: ActionRequestView = {
       isError: false,
     },
     error: null,
-    created_at: ago(6 * 60_000),
-    started_at: ago(6 * 60_000 - 500),
-    completed_at: ago(6 * 60_000 - 1_500),
-    reconciled_at: null,
+    createdAt: ago(6 * 60_000),
+    startedAt: ago(6 * 60_000 - 500),
+    completedAt: ago(6 * 60_000 - 1_500),
+    reconciledAt: null,
   },
-};
+});
 
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
 
-function payloadKey(ownerId: string, field: string, generation: string): string {
-  return `${ownerId}:${field}:${generation}`;
+function payloadKey(ownerId: string, field: ThreadPayloadField, generation: string): string {
+  return `${ownerId}:${ThreadPayloadField[field].toLowerCase()}:${generation}`;
 }
 
 function payload(
   ownerCursor: number,
   ownerId: string,
-  field: string,
+  field: ThreadPayloadField,
   body: string,
   revisionCursor = ownerCursor
-): Record<string, string> {
-  const reference = {
-    projection_epoch: CONVERSATION_EPOCH,
-    owner_cursor: String(ownerCursor),
-    owner_id: ownerId,
+): ThreadPayloadReference {
+  const reference = create(ThreadPayloadReferenceSchema, {
+    projectionEpoch: CONVERSATION_EPOCH,
+    ownerCursor: BigInt(ownerCursor),
+    ownerId,
     field,
-    generation: "1",
-    revision_cursor: String(revisionCursor),
-    chunk_count: "1",
-  };
-  payloadBodies.set(payloadKey(ownerId, field, reference.generation), body);
+    generation: BigInt(ownerCursor),
+    revisionCursor: BigInt(revisionCursor),
+    chunkCount: 1n,
+  });
+  payloadBodies.set(payloadKey(ownerId, field, ownerCursor.toString()), body);
   return reference;
 }
 
 function entity(
-  kind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command",
   id: string,
   cursor: number,
-  state: Record<string, unknown>,
-  extra: Record<string, unknown> = {}
+  entity: ThreadEntity["entity"],
+  extra: { threadId?: string } = {}
 ): Record<string, unknown> {
+  const { kind, pending, state } = electricEntityVariant(entity);
   return {
-    thread_id: extra.thread_id ?? THREADS[0].id,
+    thread_id: extra.threadId ?? THREADS[0].metadata.threadId,
     projection_epoch: CONVERSATION_EPOCH,
     entity_kind: kind,
     entity_id: id,
     cursor: String(cursor),
-    revision_cursor: String(extra.revision_cursor ?? cursor),
-    pending: extra.pending ?? false,
-    turn_id: extra.turn_id ?? null,
+    revision_cursor: String(cursor),
+    pending,
     state,
-    text_ref: extra.text_ref ?? null,
-    arguments_ref: extra.arguments_ref ?? null,
-    output_ref: extra.output_ref ?? null,
-    input_ref: extra.input_ref ?? null,
   };
 }
 
 function viewState(
   throughCursor: number,
   activeTurn: string | null,
-  operational: Record<string, unknown> = {}
+  status: ThreadFeedStatus = ThreadFeedStatus.ACTIVE,
+  appliedModel: string | null = "harness-claude-model"
 ): Record<string, unknown> {
-  return entity(
-    "view_state",
-    "current",
-    throughCursor,
-    {
+  return entity("current", throughCursor, {
+    case: "viewState",
+    value: create(ThreadViewStateSchema, {
       controls: {
-        applied_model: "harness-claude-model",
-        applied_reasoning_effort: null,
-        active_turn_id: activeTurn,
-        harness_state: activeTurn === null ? "stopped" : "running",
+        appliedModel: appliedModel ?? undefined,
+        activeTurnId: activeTurn ?? undefined,
+        harnessState: activeTurn === null ? "stopped" : "running",
       },
       operational: {
-        status: "active",
-        last_verified_cursor: String(throughCursor),
-        feed_error: null,
-        ...operational,
+        status,
+        lastVerifiedCursor: BigInt(throughCursor),
       },
-    },
-    { revision_cursor: throughCursor }
-  );
+    }),
+  });
 }
 
-function lifecycle(
-  cursor: number,
-  observation: string,
-  eventValue: Record<string, unknown>,
-  threadId?: string
-): Record<string, unknown> {
+function fixtureEvent(observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
+  return create(EventSchema, { observation });
+}
+
+function lifecycle(cursor: number, event: Event, threadId?: string): Record<string, unknown> {
   return entity(
-    "lifecycle",
-    `${observation}:${cursor}`,
+    String(cursor),
     cursor,
-    { observation, event: eventValue },
-    { thread_id: threadId }
+    { case: "lifecycle", value: create(ThreadLifecycleSchema, { event }) },
+    { threadId }
   );
 }
 
@@ -1503,24 +1654,38 @@ function item(
     threadId?: string;
   } = {}
 ): Record<string, unknown> {
+  const completion =
+    extra.complete === false
+      ? undefined
+      : kind === ItemKind.TOOL_CALL
+        ? {
+            case: "tool" as const,
+            value: create(ThreadItemToolCompletionSchema, { succeeded: extra.failed !== true }),
+          }
+        : { case: "text" as const, value: create(ThreadItemTextCompletionSchema, {}) };
   return entity(
-    "item",
     id,
     cursor,
     {
-      kind,
-      tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
-      tool_succeeded: extra.output === undefined ? null : !extra.failed,
-      recovery: extra.recovery ?? null,
-      recovery_reason: extra.recoveryReason ?? null,
+      case: "item",
+      value: create(ThreadItemSchema, {
+        kind,
+        toolName: extra.tool ?? "",
+        completion,
+        recovery: extra.recovery,
+        recoveryReason: extra.recoveryReason,
+        turnId: extra.turn,
+        textRef: text === null ? undefined : payload(cursor, id, ThreadPayloadField.TEXT, text),
+        argumentsRef:
+          extra.arguments === undefined
+            ? undefined
+            : payload(cursor, id, ThreadPayloadField.ARGUMENTS, extra.arguments),
+        outputRef:
+          extra.output === undefined ? undefined : payload(cursor, id, ThreadPayloadField.OUTPUT, extra.output),
+      }),
     },
     {
-      thread_id: extra.threadId,
-      turn_id: extra.turn ?? "turn-visual",
-      text_ref: text === null ? null : payload(cursor, id, "text", text),
-      arguments_ref: extra.arguments === undefined ? null : payload(cursor, id, "arguments", extra.arguments),
-      output_ref: extra.output === undefined ? null : payload(cursor, id, "output", extra.output),
+      threadId: extra.threadId,
     }
   );
 }
@@ -1528,23 +1693,46 @@ function item(
 function command(
   cursor: number,
   id: string,
-  operation: string,
-  outcome: "pending" | "effected" | "failed" | "noop",
-  reason: string | null = null,
-  text: string | null = null
+  operation: Operation,
+  outcome: ThreadCommandOutcome,
+  options: { reason?: string; text?: string; requestedValue?: string } = {}
 ): Record<string, unknown> {
-  return entity(
-    "command",
-    id,
-    cursor,
-    {
+  return entity(id, cursor, {
+    case: "command",
+    value: create(ThreadCommandSchema, {
       operation,
       outcome,
-      outcome_cursor: outcome === "pending" ? null : String(cursor),
-      outcome_reason: reason,
-      requested_value: null,
+      outcomeCursor: outcome === ThreadCommandOutcome.PENDING ? undefined : BigInt(cursor),
+      outcomeReason: options.reason,
+      requestedValue: options.requestedValue,
+      inputRef:
+        options.text === undefined ? undefined : payload(cursor, id, ThreadPayloadField.COMMAND_INPUT, options.text),
+    }),
+  });
+}
+
+function confirmedInput(
+  cursor: number,
+  entityId: string,
+  harnessMessageId: string,
+  originCommandIds: string[],
+  text: string,
+  { threadId, turnId }: { threadId?: string; turnId?: string } = {}
+): Record<string, unknown> {
+  const ownerId = harnessMessageId || `confirmed:${cursor}`;
+  return entity(
+    entityId,
+    cursor,
+    {
+      case: "confirmedInput",
+      value: create(ThreadConfirmedInputSchema, {
+        harnessMessageId,
+        originCommandIds,
+        turnId,
+        inputRef: payload(cursor, ownerId, ThreadPayloadField.CONFIRMED_INPUT, text),
+      }),
     },
-    { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
+    { threadId }
   );
 }
 
@@ -1560,19 +1748,19 @@ function standardRows(
   longReasoningBody: boolean
 ): Record<string, unknown>[] {
   const suspended = threadId === SUSPENDED_THREAD;
+  const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
+  if (!thread) throw new Error(`Unknown fixture Thread: ${threadId}`);
   const rows = [
-    viewState(34, suspended ? null : "turn-visual", suspended ? { status: "ended" } : {}),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "List the repository files."),
-      }
+    viewState(
+      34,
+      suspended ? null : "turn-visual",
+      suspended ? ThreadFeedStatus.ENDED : ThreadFeedStatus.ACTIVE,
+      thread.summary.attached?.spec?.model
     ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "List the repository files.", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(10, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Read",
@@ -1593,15 +1781,7 @@ function standardRows(
       { threadId }
     ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
-    lifecycle(
-      31,
-      "harness_stderr",
-      toJson(
-        EventSchema,
-        create(EventSchema, { observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } } })
-      ) as Record<string, unknown>,
-      threadId
-    ),
+    lifecycle(31, fixtureEvent({ case: "harnessStderr", value: { text: "warning: fixture stderr" } }), threadId),
     item(34, "m-2", ItemKind.ASSISTANT_TEXT, "Next I will read the focused implementation.", {
       threadId,
       complete: false,
@@ -1634,25 +1814,16 @@ function consecutiveReasoningRows(threadId: string): Record<string, unknown>[] {
 
 function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
   const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
-  const event = toJson(
-    EventSchema,
-    create(EventSchema, {
-      observation: { case: "turnCompleted", value: { turnId: "failed-turn", status: TurnStatus.FAILED, error } },
-    })
-  ) as Record<string, unknown>;
+  const event = fixtureEvent({
+    case: "turnCompleted",
+    value: { turnId: "failed-turn", status: TurnStatus.FAILED, error },
+  });
   const rows = [
     viewState(afterContent ? 8 : 6, null),
-    entity(
-      "confirmed_input",
-      "failed-input",
-      4,
-      { harness_message_id: "failed-input", origin_command_ids: ["input-failed"] },
-      {
-        thread_id: threadId,
-        turn_id: "failed-turn",
-        input_ref: payload(4, "failed-input", "confirmed_input", "Inspect the test repository."),
-      }
-    ),
+    confirmedInput(4, "failed-input", "failed-input", ["input-failed"], "Inspect the test repository.", {
+      threadId,
+      turnId: "failed-turn",
+    }),
     ...(afterContent
       ? [
           item(
@@ -1664,7 +1835,7 @@ function failedRows(threadId: string, afterContent: boolean): Record<string, unk
           ),
         ]
       : []),
-    lifecycle(afterContent ? 8 : 6, "turn_completed", event, threadId),
+    lifecycle(afterContent ? 8 : 6, event, threadId),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
@@ -1688,16 +1859,13 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
         turn: "interleaved-turn",
       }
     ),
-    entity(
-      "confirmed_input",
-      "coalesced-message",
+    confirmedInput(
       10,
-      { harness_message_id: "coalesced-message", origin_command_ids: ["input-B", "input-C"] },
-      {
-        thread_id: threadId,
-        turn_id: "interleaved-turn",
-        input_ref: payload(10, "coalesced-message", "confirmed_input", "Also inspect tests.\nKeep the patch small."),
-      }
+      "coalesced-message",
+      "coalesced-message",
+      ["input-B", "input-C"],
+      "Also inspect tests.\nKeep the patch small.",
+      { threadId, turnId: "interleaved-turn" }
     ),
     item(15, "after-input", ItemKind.ASSISTANT_TEXT, "Continuing with the new model…", {
       threadId,
@@ -1705,16 +1873,10 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
     }),
     lifecycle(
       18,
-      "turn_completed",
-      toJson(
-        EventSchema,
-        create(EventSchema, {
-          observation: {
-            case: "turnCompleted",
-            value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
-          },
-        })
-      ) as Record<string, unknown>,
+      fixtureEvent({
+        case: "turnCompleted",
+        value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
+      }),
       threadId
     ),
   ];
@@ -1723,35 +1885,49 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
 
 /** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
 function commandProgressRows(threadId: string): Record<string, unknown>[] {
-  const model = command(2, "progress-model", "change_model", "pending");
-  const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
-  const noop = command(4, "progress-noop", "change_model", "noop", "Model already selected");
-  const effected = command(5, "progress-effected", "change_model", "effected");
+  const model = command(2, "progress-model", Operation.CHANGE_MODEL, ThreadCommandOutcome.PENDING, {
+    requestedValue: "test-model-next",
+  });
+  const effort = command(3, "progress-effort", Operation.CHANGE_REASONING_EFFORT, ThreadCommandOutcome.FAILED, {
+    reason: "Not supported by harness",
+    requestedValue: "high",
+  });
+  const noop = command(4, "progress-noop", Operation.CHANGE_MODEL, ThreadCommandOutcome.NOOP, {
+    reason: "Model already selected",
+    requestedValue: "current-model",
+  });
+  const effected = command(5, "progress-effected", Operation.CHANGE_MODEL, ThreadCommandOutcome.EFFECTED, {
+    requestedValue: "applied-model",
+  });
   return [
     { ...viewState(5, "t-progress"), thread_id: threadId },
-    { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
-    { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
-    { ...noop, state: { ...(noop.state as object), requested_value: "current-model" } },
-    { ...effected, state: { ...(effected.state as object), requested_value: "applied-model" } },
-    command(9, "progress-applied-input", "submit_input", "effected", null, "Applied input."),
-    command(6, "progress-input", "submit_input", "pending", null, "Please review this change."),
-    command(7, "progress-noop-input", "submit_input", "noop", "Nothing to do", "Already handled."),
+    model,
+    effort,
+    noop,
+    effected,
+    command(9, "progress-applied-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.EFFECTED, {
+      text: "Applied input.",
+    }),
+    command(6, "progress-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
+      text: "Please review this change.",
+    }),
+    command(7, "progress-noop-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.NOOP, {
+      reason: "Nothing to do",
+      text: "Already handled.",
+    }),
   ];
 }
 
 /** Local and remote pending inputs whose payload references are present but bodies are withheld. */
 function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
-  const local = command(
-    15,
-    "locally-retained",
-    "submit_input",
-    "pending",
-    null,
-    "This browser already knows the text it sent."
-  );
-  const remote = command(16, "remote-pending", "submit_input", "pending", null, "This text is still unknown here.");
-  payloadBodies.delete(payloadKey("locally-retained", "command_input", "1"));
-  payloadBodies.delete(payloadKey("remote-pending", "command_input", "1"));
+  const local = command(15, "locally-retained", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
+    text: "This browser already knows the text it sent.",
+  });
+  const remote = command(16, "remote-pending", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
+    text: "This text is still unknown here.",
+  });
+  payloadBodies.delete(payloadKey("locally-retained", ThreadPayloadField.COMMAND_INPUT, "15"));
+  payloadBodies.delete(payloadKey("remote-pending", ThreadPayloadField.COMMAND_INPUT, "16"));
   return [{ ...viewState(16, "t-input-echo"), thread_id: threadId }, local, remote];
 }
 
@@ -1766,7 +1942,7 @@ function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
 function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
   const suspended = threadId === SUSPENDED_THREAD;
   const rows = [
-    viewState(28, suspended ? null : "t2", suspended ? { status: "ended" } : {}),
+    viewState(28, suspended ? null : "t2", suspended ? ThreadFeedStatus.ENDED : ThreadFeedStatus.ACTIVE),
     item(7, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
@@ -1787,33 +1963,35 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       output: "42 passed",
       turn: "t2",
     }),
-    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", outcomes ? "Model unavailable" : null),
+    command(
+      24,
+      "queued-model",
+      Operation.CHANGE_MODEL,
+      outcomes ? ThreadCommandOutcome.FAILED : ThreadCommandOutcome.PENDING,
+      {
+        reason: outcomes ? "Model unavailable" : undefined,
+      }
+    ),
     command(
       25,
       "queued-interrupt",
-      "interrupt_turn",
-      outcomes ? "noop" : "pending",
-      outcomes ? "Target turn already ended" : null
+      Operation.INTERRUPT_TURN,
+      outcomes ? ThreadCommandOutcome.NOOP : ThreadCommandOutcome.PENDING,
+      { reason: outcomes ? "Target turn already ended" : undefined }
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see conversation.tsx's pendingSentMessage.
-    command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
-    command(
-      27,
-      "failed-submit",
-      "submit_input",
-      "failed",
-      "Runner could not start this turn.",
-      "Run the rejected input."
-    ),
-    command(
-      28,
-      "noop-submit",
-      "submit_input",
-      "noop",
-      "The harness was already stopping.",
-      "Run the input that was not applied."
-    ),
+    command(26, "queued-submit", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
+      text: "Continue past the failing test once it lands.",
+    }),
+    command(27, "failed-submit", Operation.SUBMIT_INPUT, ThreadCommandOutcome.FAILED, {
+      reason: "Runner could not start this turn.",
+      text: "Run the rejected input.",
+    }),
+    command(28, "noop-submit", Operation.SUBMIT_INPUT, ThreadCommandOutcome.NOOP, {
+      reason: "The harness was already stopping.",
+      text: "Run the input that was not applied.",
+    }),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
@@ -1895,32 +2073,121 @@ function streamingInterleavedRows(threadId: string): Record<string, unknown>[] {
 /** Three mundane observations that collapse into one comma-joined row, then a prominent one
  * (harness lost) that stands alone, then one final mundane one -- lone, so it groups with nothing. */
 function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
-  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
-    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
   const rows = [
     viewState(50, null),
-    lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
-    lifecycle(20, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(10, fixtureEvent({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
+    lifecycle(20, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
     lifecycle(
       30,
-      "turn_completed",
-      event({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
+      fixtureEvent({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
       threadId
     ),
-    lifecycle(40, "harness_lost", event({ case: "harnessLost", value: {} }), threadId),
-    lifecycle(50, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(40, fixtureEvent({ case: "harnessLost", value: {} }), threadId),
+    lifecycle(50, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
 
+function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
+  if (threadId !== IDLE_THREAD && threadId !== UNNAMED_STOPPED_THREAD) {
+    return [{ ...viewState(80, null), thread_id: threadId }];
+  }
+  const rekey = (row: Record<string, unknown>, id: string) => ({ ...row, entity_id: id });
+  return [
+    { ...viewState(80, null), thread_id: threadId },
+    rekey(lifecycle(1, fixtureEvent({ case: "setupStarted", value: {} }), threadId), "visual-setup"),
+    rekey(
+      lifecycle(
+        2,
+        fixtureEvent({
+          case: "setupOutput",
+          value: { stream: { case: "stdout", value: new TextEncoder().encode("Workspace sync complete\n") } },
+        }),
+        threadId
+      ),
+      "visual-setup-output"
+    ),
+    rekey(
+      lifecycle(3, fixtureEvent({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+      "visual-setup-finished"
+    ),
+    rekey(
+      lifecycle(10, fixtureEvent({ case: "turnStarted", value: { turnId: "visual-turn" } }), threadId),
+      "visual-lifecycle-before"
+    ),
+    rekey(lifecycle(11, fixtureEvent({ case: "harnessStarted", value: {} }), threadId), "visual-harness-before"),
+    confirmedInput(20, "visual-input", "visual-input", [], "Check the short thread after switching.", { threadId }),
+    rekey(
+      lifecycle(
+        30,
+        fixtureEvent({ case: "turnCompleted", value: { turnId: "visual-turn", status: TurnStatus.COMPLETED } }),
+        threadId
+      ),
+      "visual-lifecycle-after"
+    ),
+    rekey(lifecycle(31, fixtureEvent({ case: "harnessStarted", value: {} }), threadId), "visual-harness-after"),
+    item(40, "visual-reasoning", ItemKind.REASONING, "The history has seven compact rows.", { threadId }),
+    item(50, "visual-answer", ItemKind.ASSISTANT_TEXT, "The short thread is ready.", { threadId }),
+    item(60, "visual-tool", ItemKind.TOOL_CALL, null, {
+      threadId,
+      tool: "Read",
+      arguments: '{"path":"notes.txt"}',
+      output: "No additional history is needed.",
+    }),
+  ];
+}
+
+/** Finished long Bash calls amid variable-height messages, matching the browser integration
+ * history's content and virtualizer load. Tests choose geometry and perform every gesture. */
+function collapsibleCommandRows(threadId: string, below: number): Record<string, unknown>[] {
+  let cursor = 0;
+  const message = (prefix: string, index: number) =>
+    item(
+      ++cursor,
+      `${prefix}-${index}`,
+      ItemKind.ASSISTANT_TEXT,
+      `Window message ${String(index).padStart(3, "0")}: ` + "measured variable-height text ".repeat((index % 4) + 1),
+      { threadId }
+    );
+  const rows = [
+    item(++cursor, "retained-prefix", ItemKind.ASSISTANT_TEXT, "Test retained prefix", { threadId }),
+    ...Array.from({ length: 25 }, (_, index) => message("above", index)),
+    ...["a", "b", "c"].map((name) =>
+      item(++cursor, `resize-tool-${name}`, ItemKind.TOOL_CALL, null, {
+        threadId,
+        tool: "Bash",
+        arguments: JSON.stringify({
+          command: Array.from({ length: 24 }, (_, index) => `echo command line ${index}`).join("\n"),
+          description: `Run tool ${name}`,
+        }),
+        output: Array.from({ length: 60 }, (_, index) => `output line ${index}`).join("\n"),
+      })
+    ),
+    ...Array.from({ length: below }, (_, index) => message("below", index)),
+  ];
+  return [{ ...viewState(cursor, null), thread_id: threadId }, ...rows];
+}
+
+function historyProfileRows(threadId: string, rowCount: number): Record<string, unknown>[] {
+  if (!Number.isInteger(rowCount) || rowCount < 1 || rowCount > 5000) {
+    throw new RangeError(`History profile row count must be between 1 and 5000: ${rowCount}`);
+  }
+  return [
+    { ...viewState(rowCount, null), thread_id: threadId },
+    ...Array.from({ length: rowCount }, (_, index) =>
+      item(index + 1, `profile-row-${index}`, ItemKind.ASSISTANT_TEXT, `Profile history row ${index}.`, {
+        threadId,
+        turn: `profile-turn-${index}`,
+      })
+    ),
+  ];
+}
+
 function setupRows(threadId: string, running = false): Record<string, unknown>[] {
-  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
-    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
   const output = (cursor: number, channel: "stdout" | "stderr", text: string) =>
     lifecycle(
       cursor,
-      "setup_output",
-      event({
+      fixtureEvent({
         case: "setupOutput",
         value: { stream: { case: channel, value: new TextEncoder().encode(text) } },
       }),
@@ -1928,7 +2195,7 @@ function setupRows(threadId: string, running = false): Record<string, unknown>[]
     );
   return [
     { ...viewState(7, null), thread_id: threadId },
-    lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId),
+    lifecycle(1, fixtureEvent({ case: "setupStarted", value: {} }), threadId),
     output(2, "stderr", "Cloning into project...\nUpdating files: 10%\r"),
     output(3, "stdout", "Workspace ready\n"),
     output(4, "stderr", "Updating files: 80%\r"),
@@ -1936,8 +2203,8 @@ function setupRows(threadId: string, running = false): Record<string, unknown>[]
     ...(running
       ? []
       : [
-          lifecycle(6, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
-          lifecycle(7, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+          lifecycle(6, fixtureEvent({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+          lifecycle(7, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
         ]),
   ];
 }
@@ -1947,17 +2214,10 @@ function setupRows(threadId: string, running = false): Record<string, unknown>[]
 function codeFenceRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(20, null),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "Add type hints to the greet function."),
-      }
-    ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "Add type hints to the greet function.", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(
       20,
       "m-code",
@@ -2003,17 +2263,10 @@ function standaloneReasoningRows(
         : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "What should we try next?"),
-      }
-    ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "What should we try next?", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(20, "r-solo", ItemKind.REASONING, reasoning, { threadId }),
     item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
   ];
@@ -2043,17 +2296,10 @@ const LONG_SCRIPT = [
 function shellCallRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(60, null),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "Check the containers and the holdings."),
-      }
-    ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "Check the containers and the holdings.", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(10, "claude-bash", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
@@ -2111,6 +2357,7 @@ function unfinishedReasoningRows(threadId: string): Record<string, unknown>[] {
     item(30, "r-running", ItemKind.REASONING, "A step the running turn is still working through.", {
       threadId,
       complete: false,
+      turn: "turn-visual",
     }),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
@@ -2198,12 +2445,21 @@ function recoveryRows(threadId: string, kind: "messages" | "tools" | "quiet"): R
             }
           ),
         ];
-  if (kind === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
+  if (kind === "tools") {
+    const state = fromJson(ThreadItemSchema, rows[0].state as JsonValue);
+    rows[0].state = toJson(
+      ThreadItemSchema,
+      create(ThreadItemSchema, {
+        ...state,
+        outputRef: payload(10, "revised-tool", ThreadPayloadField.OUTPUT, "aborted"),
+      })
+    );
+  }
   return [{ ...viewState(40, null), thread_id: threadId }, ...rows];
 }
 
 let threadEntityRows = (threadId: string): Record<string, unknown>[] =>
-  threadId === THREADS[2].id ? statesRows(threadId) : standardRows(threadId, false, false);
+  threadId === THREADS[2].metadata.threadId ? statesRows(threadId) : standardRows(threadId, false, false);
 
 function realisticRolloutRows(
   threadId: string,
@@ -2215,13 +2471,7 @@ function realisticRolloutRows(
     const turn = `rollout-turn-${entry.turn}`;
     if (entry.kind === "input") {
       if (entry.text === null) throw new Error("Rollout input requires text");
-      return entity(
-        "confirmed_input",
-        id,
-        cursor,
-        { harness_message_id: id, origin_command_ids: [] },
-        { thread_id: threadId, turn_id: turn, input_ref: payload(cursor, id, "confirmed_input", entry.text) }
-      );
+      return confirmedInput(cursor, id, id, [], entry.text, { threadId, turnId: turn });
     }
     let kind: ItemKind;
     switch (entry.kind) {
@@ -2249,13 +2499,19 @@ function realisticRolloutRows(
   return [{ ...viewState(entries.length, null), thread_id: threadId }, ...rows];
 }
 
-function threadScope(threadId: string): Record<string, string> {
+function threadScope(threadId: string): Record<string, unknown> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
-  return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through) };
+  return toJson(
+    ReadThreadEntitiesResponseSchema,
+    create(ReadThreadEntitiesResponseSchema, {
+      projectionEpoch: CONVERSATION_EPOCH,
+      throughCursor: BigInt(String(through)),
+    })
+  ) as Record<string, unknown>;
 }
 
 function rememberPendingInput(): void {
-  const local = new LocalCommands(THREADS[2].id);
+  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2268,7 +2524,7 @@ function rememberPendingInput(): void {
 }
 
 function rememberInputEcho(): void {
-  const local = new LocalCommands(THREADS[2].id);
+  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2282,7 +2538,7 @@ function rememberInputEcho(): void {
 
 function rememberSettledCommands(): void {
   // A settled command shows while the browser that sent it still holds it.
-  const local = new LocalCommands(THREADS[2].id);
+  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "queued-model",
@@ -2298,10 +2554,10 @@ function rememberSettledCommands(): void {
 }
 
 function enableSuspendedSandboxWakeOnMessage(): void {
-  const sandbox = SANDBOXES.find((candidate) => candidate.name === "suspended-sandbox");
+  const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === "suspended-sandbox");
   if (!sandbox) throw new Error("Missing suspended Sandbox fixture");
-  sandbox.wake_on_send = true;
-  sandbox.suspended_by = "Requested";
+  sandbox.configuration!.wakeOnSend = true;
+  sandbox.observedState!.suspendedBy = "Requested";
 }
 
 function rememberDispatch(threadId = RUNNING_THREAD): void {
@@ -2312,16 +2568,17 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
       value: { text: "Continue when the Sandbox is ready." },
     },
   });
-  const local = new LocalCommands(threadId);
+  const local = new LocalCommands(threadId, COMMAND_TARGET);
   local.remember(command);
-  const dispatch: DispatchReceipt = {
+  const dispatch = dispatchFromJson({
     commandId: command.commandId,
     sessionId: threadId,
+    ...COMMAND_TARGET,
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     reason: "sandbox_resuming",
     updatedAt: ago(1_000),
     admission: null,
-  };
+  });
   local.acknowledgeDispatch(command, dispatch);
 }
 
@@ -2339,16 +2596,20 @@ function rememberShortRefusedWake(): void {
   const reason =
     'sandbox_wake_failed: sandboxes.agentplane.allegedly.works "box" is forbidden: User "system:serviceaccount:agentplane-staging:runner-gateway" cannot update resource "sandboxes" in API group "agentplane.allegedly.works" in the namespace "agentplane-staging"';
   queuedReasons.set(command.commandId, reason);
-  const local = new LocalCommands(RUNNING_THREAD);
+  const local = new LocalCommands(RUNNING_THREAD, COMMAND_TARGET);
   local.remember(command);
-  local.acknowledgeDispatch(command, {
-    commandId: command.commandId,
-    sessionId: RUNNING_THREAD,
-    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-    reason,
-    updatedAt: ago(1_000),
-    admission: null,
-  });
+  local.acknowledgeDispatch(
+    command,
+    dispatchFromJson({
+      commandId: command.commandId,
+      sessionId: RUNNING_THREAD,
+      ...COMMAND_TARGET,
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      reason,
+      updatedAt: ago(1_000),
+      admission: null,
+    })
+  );
 }
 
 function rememberFailedDispatch(): void {
@@ -2359,120 +2620,135 @@ function rememberFailedDispatch(): void {
       value: { text: "Please start the Sandbox when capacity is available." },
     },
   });
-  const local = new LocalCommands(RUNNING_THREAD);
+  const local = new LocalCommands(RUNNING_THREAD, COMMAND_TARGET);
   local.remember(command);
-  const dispatch: DispatchReceipt = {
+  const dispatch = dispatchFromJson({
     commandId: command.commandId,
     sessionId: RUNNING_THREAD,
+    ...COMMAND_TARGET,
     state: "DELIVERY_STATE_FAILED",
     reason: "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound",
     updatedAt: ago(1_000),
     admission: null,
-  };
+  });
   local.acknowledgeDispatch(command, dispatch);
 }
 
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
 // lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
 // bearer-only backends that are up or unreachable.
-const MCP_LINKAGES: McpLinkageView[] = [
-  {
-    server_id: "example_docs",
-    server_url: "https://docs-mcp.example.test/mcp",
-    status: "linked",
+const MCP_LINKAGES: McpServerLinkage[] = [
+  create(McpServerLinkageSchema, {
+    serverId: "example_docs",
+    serverUrl: "https://docs-mcp.example.test/mcp",
+    status: McpLinkageStatus.LINKED,
     scopes: ["openid", "offline_access"],
-    refresh_failure: null,
-  },
-  {
-    server_id: "example_cluster",
-    server_url: "https://cluster-mcp.example.test/mcp",
-    status: "expired",
+  }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_cluster",
+    serverUrl: "https://cluster-mcp.example.test/mcp",
+    status: McpLinkageStatus.EXPIRED,
     scopes: ["openid", "email", "profile", "offline_access"],
-    refresh_failure: {
-      action: "retrying",
+    refreshFailure: {
+      action: McpRefreshAction.RETRYING,
       error: "the token endpoint answered HTTP 503 Service Unavailable",
       attempts: 6,
-      retry_at: new Date(NOW + 4 * 60_000).toISOString(),
+      retryAt: fromJson(TimestampSchema, new Date(NOW + 4 * 60_000).toISOString()),
     },
-  },
-  {
-    server_id: "example_calendar",
-    server_url: "https://calendar-mcp.example.test/mcp",
-    status: "degraded",
+  }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_calendar",
+    serverUrl: "https://calendar-mcp.example.test/mcp",
+    status: McpLinkageStatus.DEGRADED,
     scopes: ["openid", "offline_access"],
-    refresh_failure: {
-      action: "reconnect",
+    refreshFailure: {
+      action: McpRefreshAction.RECONNECT,
       error: "the OAuth provider refused the token request: invalid_grant: Token is not active",
       attempts: 1,
-      retry_at: null,
     },
-  },
-  {
-    server_id: "example_pantry",
-    server_url: "https://pantry-mcp.example.test/mcp",
-    status: "unlinked",
+  }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_pantry",
+    serverUrl: "https://pantry-mcp.example.test/mcp",
+    status: McpLinkageStatus.UNLINKED,
     scopes: [],
-    refresh_failure: null,
-  },
+  }),
 ];
 
-type McpFailure = Pick<NonNullable<ActionGroupView["health"]>, "reason" | "detail" | "last_discovery_at" | "failures">;
+type McpFailure = {
+  reason: McpUnavailableReason;
+  detail: string;
+  lastDiscoveryAt: string | undefined;
+  failures: number;
+};
 
 /** An MCP group, available unless `failure` says why it is disconnected. */
-function mcpGroup(key: string, executorDescription: string, failure?: McpFailure): ActionGroupView {
-  return {
+function mcpGroup(key: string, executorDescription: string, failure?: McpFailure): ActionGroup {
+  return create(ActionGroupSchema, {
     key,
     title: key,
     description: `Test MCP backend ${key}.`,
-    executor_kind: "mcp",
-    executor_description: executorDescription,
+    executorKind: ExecutorKind.MCP,
+    executorDescription,
     available: failure === undefined,
     health: failure
-      ? { state: "disconnected", retry_at: new Date(NOW + 20_000).toISOString(), ...failure }
-      : { state: "available", reason: null, detail: null, last_discovery_at: ago(60_000), retry_at: null, failures: 0 },
+      ? create(McpHealthSchema, {
+          state: McpLifecycle.DISCONNECTED,
+          reason: failure.reason,
+          detail: failure.detail,
+          lastDiscoveryAt:
+            failure.lastDiscoveryAt === undefined ? undefined : fromJson(TimestampSchema, failure.lastDiscoveryAt),
+          retryAt: fromJson(TimestampSchema, new Date(NOW + 20_000).toISOString()),
+          failures: failure.failures,
+        })
+      : create(McpHealthSchema, {
+          state: McpLifecycle.AVAILABLE,
+          lastDiscoveryAt: fromJson(TimestampSchema, ago(60_000)),
+        }),
     actions: [],
-    direct_tools: [],
-  };
+    directTools: [],
+  });
 }
 
 const LINKED = "Linked operator account.";
 const BEARER = "Test MCP backend behind a static bearer.";
-const MCP_GROUPS: ActionGroupView[] = [
+const MCP_GROUPS: ActionGroup[] = [
   mcpGroup("example_docs", LINKED),
   mcpGroup("example_cluster", LINKED, {
-    reason: "linkage_unavailable",
+    reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
     detail: `the access token expired at ${ago(2 * HOUR)
       .replace("T", " ")
       .slice(0, 19)} UTC and has not been refreshed`,
-    last_discovery_at: ago(3 * HOUR),
+    lastDiscoveryAt: ago(3 * HOUR),
     failures: 12,
   }),
   mcpGroup("example_calendar", LINKED, {
-    reason: "linkage_unavailable",
+    reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
     detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
-    last_discovery_at: ago(HOUR),
+    lastDiscoveryAt: ago(HOUR),
     failures: 9,
   }),
   mcpGroup("example_pantry", LINKED, {
-    reason: "linkage_unavailable",
+    reason: McpUnavailableReason.LINKAGE_UNAVAILABLE,
     detail: "no account is linked",
-    last_discovery_at: null,
+    lastDiscoveryAt: undefined,
     failures: 4,
   }),
   mcpGroup("example_mail", BEARER, {
-    reason: "connect_failed",
+    reason: McpUnavailableReason.CONNECT_FAILED,
     detail: "RuntimeError: Client failed to connect: All connection attempts failed",
-    last_discovery_at: null,
+    lastDiscoveryAt: undefined,
     failures: 7,
   }),
   mcpGroup("gmail", "Test Gmail action group for Agentplane rendering."),
   mcpGroup("example_notes", BEARER),
   mcpGroup("ssh", BEARER),
 ];
-let receiptActionGroup: ActionGroupView | undefined;
+let receiptActionGroup: ActionGroup | undefined;
 
 /** Switches a test sets on the mock services, before mounting or (`publish`) while a stream is open. */
 type Flag =
+  | "centralSamplerEnabled"
   | "claudePaused"
   | "watchStale"
   | "threadDatabaseDisconnected"
@@ -2480,7 +2756,7 @@ type Flag =
   | "inventoryStreamDropped"
   | "entityStreamDisconnected"
   | "entitySegmentsWithheld"
-  | "syncScopeUnavailable"
+  | "threadScopeUnavailable"
   | "commandAdmissionTimedOut"
   | "pendingActions"
   | "pendingActionOverflow"
@@ -2489,6 +2765,7 @@ type Flag =
   | "pagedActionHistory"
   | "actionGroupsUnavailable"
   | "notificationStatusUnavailable"
+  | "notificationStreamDropped"
   | "notificationExtraEntry"
   | "pushBrowserAdded"
   | "connectionRenamed"
@@ -2496,33 +2773,35 @@ type Flag =
   | "mcpHealthChanged";
 const flags = new Set<Flag>();
 
-function actionGroups(): ActionGroupView[] {
+function actionGroups(): ActionGroup[] {
   return MCP_GROUPS.map((row) =>
     row.key === "example_docs" && flags.has("mcpHealthChanged")
-      ? {
+      ? create(ActionGroupSchema, {
           ...row,
           available: false,
-          health: {
-            state: "disconnected" as const,
-            reason: "connect_failed" as const,
+          health: create(McpHealthSchema, {
+            state: McpLifecycle.DISCONNECTED,
+            reason: McpUnavailableReason.CONNECT_FAILED,
             detail: "Connection refused",
-            last_discovery_at: row.health?.last_discovery_at ?? null,
-            retry_at: new Date(NOW + 20_000).toISOString(),
+            lastDiscoveryAt: row.health?.lastDiscoveryAt,
+            retryAt: fromJson(TimestampSchema, new Date(NOW + 20_000).toISOString()),
             failures: 1,
-          },
-        }
+          }),
+        })
       : row
   );
 }
 
-function mcpLinkages(): McpLinkageView[] {
+function mcpLinkages(): McpServerLinkage[] {
   return MCP_LINKAGES.map((row) =>
-    row.server_id === "example_docs" && flags.has("mcpLinkageChanged") ? { ...row, status: "expired" as const } : row
+    row.serverId === "example_docs" && flags.has("mcpLinkageChanged")
+      ? create(McpServerLinkageSchema, { ...row, status: McpLinkageStatus.EXPIRED })
+      : row
   );
 }
 
-function pendingActions(): ActionRequestView[] {
-  const pending = ACTIONS.filter((request) => request.state === "decision_pending");
+function pendingActions(): ActionRequest[] {
+  const pending = ACTIONS.filter((request) => request.state === ActionState.DECISION_PENDING);
   return previewAction !== null
     ? [previewAction]
     : flags.has("compactPodAction")
@@ -2539,75 +2818,101 @@ function pendingActions(): ActionRequestView[] {
 routes.push(
   [
     "GET",
-    /^\/frontend-config$/,
+    /^\/upstream\/app-config\/v1\/frontend-config$/,
     () => ({
-      trace_search: {
-        grafana_base_url: "https://grafana.test.invalid",
-        tempo_datasource_uid: "tempo-test",
-        deployment_environment: "agentplane-visual-test",
-      },
-      langfuse_search: {
-        base_url: "https://langfuse.test.invalid",
-        project_id: "langfuse-visual-test",
-        sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
-        sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
+      frontendConfig: {
+        traceSearch: {
+          grafanaBaseUrl: "https://grafana.test.invalid",
+          tempoDatasourceUid: "tempo-test",
+          deploymentEnvironment: "agentplane-visual-test",
+        },
+        langfuseSearch: {
+          baseUrl: "https://langfuse.test.invalid",
+          projectId: "langfuse-visual-test",
+          sessionMetadataKey: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
+          sandboxNamespaceMetadataKey: "attributes.agentplane.namespace",
+          sandboxServiceAccountMetadataKey: "attributes.agentplane.service_account",
+        },
       },
     }),
   ],
   [
     "GET",
-    /^\/models$/,
+    /^\/upstream\/app-config\/v1\/models$/,
     () => ({
       models: [
         {
           model: "harness-claude-model",
-          display_name: "Harness Claude Model",
-          reasoning_efforts: TEST_REASONING_EFFORTS,
+          displayName: "Harness Claude Model",
+          reasoningEfforts: TEST_REASONING_EFFORTS,
         },
-        { model: "next-model", display_name: "Next Model", reasoning_efforts: TEST_REASONING_EFFORTS },
+        { model: "next-model", displayName: "Next Model", reasoningEfforts: TEST_REASONING_EFFORTS },
         {
           model: "harness-codex-model",
-          display_name: "Harness Codex Model",
-          reasoning_efforts: TEST_REASONING_EFFORTS,
+          displayName: "Harness Codex Model",
+          reasoningEfforts: TEST_REASONING_EFFORTS,
         },
       ],
-      harnesses: {
-        HARNESS_CLAUDE: flags.has("claudePaused") ? [] : ["harness-claude-model", "next-model"],
-        HARNESS_CODEX: ["harness-codex-model"],
-      },
+      harnesses: [
+        {
+          harness: "HARNESS_CLAUDE",
+          models: flags.has("claudePaused") ? [] : ["harness-claude-model", "next-model"],
+        },
+        { harness: "HARNESS_CODEX", models: ["harness-codex-model"] },
+        ...(flags.has("centralSamplerEnabled")
+          ? [{ harness: "HARNESS_CENTRAL_SAMPLER", models: ["harness-codex-model"] }]
+          : []),
+      ],
     }),
   ],
   [
     "GET",
-    /^\/system\/status$/,
-    () => [
-      { name: "Healthy component", state: "ok", detail: null, checked_at: ago(4000) },
-      { name: "Down component", state: "down", detail: "UNAVAILABLE: connection refused", checked_at: ago(4000) },
-    ],
+    /^\/upstream\/app\/v1\/system\/status$/,
+    () => ({
+      components: [
+        { name: "Healthy component", state: "SYSTEM_COMPONENT_STATE_OK", detail: null, checkedAt: ago(4000) },
+        {
+          name: "Down component",
+          state: "SYSTEM_COMPONENT_STATE_DOWN",
+          detail: "UNAVAILABLE: connection refused",
+          checkedAt: ago(4000),
+        },
+      ],
+    }),
   ],
   [
     "GET",
-    /^\/presets$/,
-    () => [
-      {
-        name: "test-coder",
-        title: "Test coder",
-        template: "runner",
-        policy_sets: [...TEST_CODER_POLICY_SETS],
-        inbox_tags: [],
-        session_defaults: {
-          harness: "HARNESS_CODEX",
-          model: "harness-codex-model",
-          cwd: "/state/workspaces/{session_id}",
-          reasoning_effort: "medium",
-          instructions: "Work on public repositories only.",
+    /^\/upstream\/app-config\/v1\/presets$/,
+    () => ({
+      presets: [
+        {
+          name: "test-coder",
+          title: "Test coder",
+          template: "runner",
+          policySets: [...TEST_CODER_POLICY_SETS],
+          inboxTags: [],
+          sessionDefaults: {
+            harness: "HARNESS_CODEX",
+            model: "harness-codex-model",
+            cwd: "/state/workspaces/{session_id}",
+            reasoningEffort: "medium",
+            instructions: "Work on public repositories only.",
+            setupScript: "",
+          },
+          bootstrap: "mkdir -p /state/workspaces",
         },
-        bootstrap: "mkdir -p /state/workspaces",
-      },
-    ],
+      ],
+    }),
   ],
-  ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
-  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"] })],
+  ["GET", /^\/upstream\/environments\/v1\/environment-templates$/, () => ({ names: ["runner"] })],
+  [
+    "GET",
+    /^\/upstream\/app-config\/v1\/sandbox-form$/,
+    () => ({
+      policySets: [...TEST_CODER_POLICY_SETS, "pypi", "github-public"],
+      newSandboxDefaults: { wakeOnSend: false },
+    }),
+  ],
   [
     "GET",
     /^\/upstream\/actions\/v1\/action-requests:watch$/,
@@ -2644,7 +2949,7 @@ routes.push(
         [mcpLinkagesSnapshotProtoJson(mcpLinkages()), mcpLinkagesSnapshotCompleteProtoJson()],
         () =>
           mcpLinkages()
-            .filter((linkage) => linkage.server_id === "example_docs")
+            .filter((linkage) => linkage.serverId === "example_docs")
             .map(mcpLinkageUpsertProtoJson),
         signal
       );
@@ -2664,15 +2969,22 @@ routes.push(
     (_match, query) => {
       const past = flags.has("gmailDraftHistory")
         ? [GMAIL_DRAFT_ACTION]
-        : ACTIONS.filter((request) => request.state !== "decision_pending");
+        : ACTIONS.filter((request) => request.state !== ActionState.DECISION_PENDING);
       const filtered =
         query.get("includeAutoAllowed") === "false"
-          ? past.filter((request) => !(request.decision?.verdict === "allow" && request.decision.operator === null))
+          ? past.filter(
+              (request) => !(request.decision?.verdict === Verdict.ALLOW && request.decision.decider.case === "policy")
+            )
           : past;
       const page =
         flags.has("pagedActionHistory") && !query.has("cursor")
-          ? { items: filtered.slice(0, 2), next_cursor: "second-page" }
-          : { items: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered, next_cursor: null };
+          ? create(ListActionRequestHistoryResponseSchema, {
+              actionRequests: filtered.slice(0, 2),
+              nextCursor: "second-page",
+            })
+          : create(ListActionRequestHistoryResponseSchema, {
+              actionRequests: flags.has("pagedActionHistory") ? filtered.slice(2) : filtered,
+            });
       return listActionHistoryProtoJson(page);
     },
   ],
@@ -2693,19 +3005,16 @@ routes.push(
   ],
   [
     "GET",
-    /^\/caller-grants\/([^/]+)\/([^/]+)$/,
-    (match) => ({
-      bindings: BINDINGS.map((binding) => ({
-        ...binding,
-        subjects: [{ namespace: match[1], name: match[2] }],
-      })),
-      action_policy: ACTION_POLICY,
-    }),
-  ],
-  [
-    "GET",
     /^\/upstream\/connections\/v1\/operator\/caller-service-accounts$/,
-    () => ({ serviceAccounts: [{ namespace: "agentplane-visual", name: "operator-assistant" }] }),
+    () =>
+      toJson(
+        ListCallerServiceAccountsResponseSchema,
+        create(ListCallerServiceAccountsResponseSchema, {
+          serviceAccounts: [
+            create(ServiceAccountSchema, { namespace: "agentplane-visual", name: "operator-assistant" }),
+          ],
+        })
+      ),
   ],
   // The Settings modal mounts all three tabs at once (Mantine keepMounted), so MCP servers and
   // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
@@ -2760,7 +3069,13 @@ routes.push(
           { snapshot: { connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) } },
           { snapshotComplete: {} },
         ],
-        () => [{ upsert: connectionJson({ ...sampleConnection(), display_name: "Updated OAuth client" }) }],
+        () => [
+          {
+            upsert: connectionJson(
+              create(ConnectionSchema, { ...sampleConnection(), displayName: "Updated OAuth client" })
+            ),
+          },
+        ],
         signal
       ),
   ],
@@ -2775,59 +3090,69 @@ routes.push(
     (match) => {
       const request = ACTIONS.find((item) => item.id === match[1]);
       return request
-        ? decideActionRequestProtoJson({ ...request, state: "allowed", version: 2 })
+        ? decideActionRequestProtoJson(
+            create(ActionRequestSchema, { ...request, state: ActionState.ALLOWED, version: 2n })
+          )
         : Response.json({ code: 5, message: "Action request not found" }, { status: 404 });
     },
   ],
   [
     "GET",
     /^\/sandboxes\/([^/]+)\/runner-status$/,
-    () => ({
-      runner_boot_id: "visual-runner-boot-01",
-      processes: [
-        {
-          process_id: "visual-claude-process-01",
-          pid: 18001,
-          harness: "HARNESS_CLAUDE",
-          state: "PROCESS_STATE_RUNNING",
-          assigned_session_ids: ["ready-session"],
-        },
-      ],
-      sessions: [
-        {
-          session_id: "dormant-session",
-          process_id: null,
-          native_session_id: null,
-          execution_state: "SESSION_EXECUTION_STATE_DORMANT",
-          active_turn_id: null,
-          failure_cursor: null,
-          busy: false,
-        },
-        {
-          session_id: "ready-session",
-          process_id: "visual-claude-process-01",
-          native_session_id: "visual-native-session-01",
-          execution_state: "SESSION_EXECUTION_STATE_READY",
-          active_turn_id: null,
-          failure_cursor: null,
-          busy: false,
-        },
-      ],
-    }),
+    () =>
+      runnerStatusFixture({
+        environmentRuntimeBootId: "visual-runner-boot-01",
+        lifecycle: acknowledgedQuiescingLifecycleFixture({
+          generation: 3n,
+          sessionId: "ready-session",
+          journalSealUid: "visual-incarnation-01",
+          journalSealCursor: 19n,
+          acknowledgementCursor: 18n,
+        }),
+        processes: [
+          {
+            processId: "visual-claude-process-01",
+            pid: 18001n,
+            harness: Harness.CLAUDE,
+            state: ProcessState.RUNNING,
+            assignedSessionIds: ["ready-session"],
+          },
+        ],
+        sessions: [
+          {
+            sessionId: "dormant-session",
+            executionState: SessionExecutionState.DORMANT,
+            busy: false,
+          },
+          {
+            sessionId: "ready-session",
+            processId: "visual-claude-process-01",
+            nativeSessionId: "visual-native-session-01",
+            executionState: SessionExecutionState.READY,
+            busy: false,
+          },
+        ],
+      }),
   ],
   [
     "POST",
     /^\/sandboxes\/([^/]+)\/sessions$/,
-    (match, _query, _signal, body) => {
-      if (!queueOpenResponses || body === undefined) throw new Error("No queued Session Open fixture is configured");
-      const request = JSON.parse(body) as { session_id?: string };
-      if (!request.session_id) throw new Error("Open request has no Session ID");
-      queuedOpenSessionId = request.session_id;
+    (_match, _query, _signal, body) => {
+      if (!queueCreateResponses || body === undefined)
+        throw new Error("No queued Session Create fixture is configured");
+      const request = JSON.parse(body) as { session_id?: string; spec?: JsonValue };
+      if (!request.session_id || !request.spec) throw new Error("Create request has no Session ID or spec");
+      const spec = fromJson(SessionSpecSchema, request.spec);
+      if (spec.placement?.kind.case !== "environmentHosted") {
+        throw new Error("Queued fixture requires native placement");
+      }
+      queuedSessionId = request.session_id;
       return {
         sessionId: request.session_id,
-        sandbox: match[1],
-        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-        reason: "waiting for runner admission",
+        status: { materialization: "SESSION_MATERIALIZATION_WAITING", reason: "waiting for owner" },
+        placement: {
+          environmentHosted: toJson(EnvironmentHostedPlacementSchema, spec.placement.kind.value),
+        },
       };
     },
   ],
@@ -2835,7 +3160,12 @@ routes.push(
     "GET",
     /^\/threads$/,
     (_match, query) => ({
-      threads: THREADS.filter((thread) => !query.has("sandbox") || thread.sandbox === query.get("sandbox")),
+      threads: THREADS.filter(
+        (thread) => !query.has("sandbox") || thread.summary.sandbox?.name === query.get("sandbox")
+      ).map((thread) => ({
+        metadata: toJson(ThreadMetadataSchema, thread.metadata),
+        summary: toJson(SessionSummarySchema, thread.summary),
+      })),
       next_page_token: null,
     }),
   ],
@@ -2843,8 +3173,13 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)$/,
     (match) => {
-      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
-      return thread && mapThread(thread);
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
+      if (!thread) return undefined;
+      const mapped = mapThread(thread);
+      return {
+        metadata: toJson(ThreadMetadataSchema, mapped.metadata),
+        summary: toJson(SessionSummarySchema, mapped.summary),
+      };
     },
   ]
 );
@@ -2852,9 +3187,7 @@ routes.push(
 /** Encode the database-facing Electric row, including PostgreSQL JSONB and bool columns. */
 function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
   const value = { ...row };
-  for (const field of ["state", "text_ref", "arguments_ref", "output_ref", "input_ref"] as const) {
-    if (value[field] !== null) value[field] = JSON.stringify(value[field]);
-  }
+  value.state = JSON.stringify(value.state);
   value.pending = String(value.pending);
   return value;
 }
@@ -2958,60 +3291,59 @@ const OBSERVATION_ENTRIES: Record<string, () => Record<string, unknown>> = {
   "34": () => archivedCompletion(34),
 };
 
-function observationPage(threadId: string) {
-  return {
-    observations: [
-      { cursor: "31", kind: "harness_stderr" },
-      { cursor: "34", kind: "item_completed" },
-    ],
-    next_before_cursor: null,
-    next_after_cursor: null,
-    thread_id: threadId,
-  };
+const OBSERVATIONS = [
+  { cursor: "31", kind: "EVENT_KIND_HARNESS_STDERR" },
+  { cursor: "34", kind: "EVENT_KIND_ITEM_COMPLETED" },
+] as const;
+const SETTLED_RANGES = [
+  { first: 1n, last: 30n },
+  { first: 32n, last: 33n },
+] as const;
+
+function historyObservationPage(query: URLSearchParams) {
+  const after = BigInt(query.get("after_cursor") ?? "0");
+  const beforeValue = query.get("before_cursor");
+  const before = beforeValue === null ? undefined : BigInt(beforeValue);
+  const limit = Number(query.get("limit") ?? "30");
+  const observations = OBSERVATIONS.filter((observation) => {
+    const cursor = BigInt(observation.cursor);
+    return cursor > after && (before === undefined || cursor < before);
+  })
+    .slice(-limit)
+    .map((observation) => ({ cursor: observation.cursor, kind: observation.kind }));
+  const end = before === undefined || before > 34n ? 34n : before - 1n;
+  const settled = SETTLED_RANGES.filter((range) => range.first <= end && range.last > after).map((range) => ({
+    first: range.first.toString(),
+    last: range.last.toString(),
+  }));
+  return { lastCursor: "34", observations, settled };
 }
 
 const CONNECTIONS_WATCH = "/upstream/connections/v1/operator/connections:watch";
 
 function connectionJson(row: Connection): Record<string, unknown> {
-  return {
-    id: row.id,
-    displayName: row.display_name,
-    version: row.version,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    grants: row.grants.map((grant) => ({
-      id: grant.id,
-      connectionId: grant.connection_id,
-      revision: grant.revision,
-      caller: grant.caller,
-      issuer: grant.issuer,
-      clientId: grant.client_id,
-      status: `GRANT_STATUS_${grant.status.toUpperCase()}`,
-      createdAt: grant.created_at,
-      ...(grant.activated_at === null ? {} : { activatedAt: grant.activated_at }),
-      ...(grant.revoked_at === null ? {} : { revokedAt: grant.revoked_at }),
-    })),
-    ...(row.bound_caller === null ? {} : { boundCaller: row.bound_caller }),
-  };
+  return toJson(ConnectionSchema, row) as Record<string, unknown>;
 }
 
 function retiredConnectionRows(): Connection[] {
   const sample = sampleConnection();
   return [
-    {
+    create(ConnectionSchema, {
       ...sample,
       id: "10000000-0000-4000-8000-000000000002",
-      display_name: "Retired research client",
-      bound_caller: null,
-      grants: sample.grants.map((grant) => ({
-        ...grant,
-        id: "20000000-0000-4000-8000-000000000002",
-        connection_id: "10000000-0000-4000-8000-000000000002",
-        caller: { namespace: "agentplane-visual", name: "retired" },
-        status: "revoked",
-        revoked_at: "2026-09-09T12:03:00Z",
-      })),
-    },
+      displayName: "Retired research client",
+      boundCaller: undefined,
+      grants: sample.grants.map((grant) =>
+        create(GrantSchema, {
+          ...grant,
+          id: "20000000-0000-4000-8000-000000000002",
+          connectionId: "10000000-0000-4000-8000-000000000002",
+          caller: create(ServiceAccountSchema, { namespace: "agentplane-visual", name: "retired" }),
+          status: GrantStatus.REVOKED,
+          revokedAt: timestampFromDate(new Date("2026-09-09T12:03:00Z")),
+        })
+      ),
+    }),
   ];
 }
 
@@ -3026,7 +3358,7 @@ routes.push(
             dispatch: {
               commandId,
               sessionId: query.get("filter.sessionId"),
-              sandbox: "pending-sandbox",
+              ...COMMAND_TARGET,
               state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
               reason: queuedReasons.get(commandId) ?? "sandbox_resuming",
               updatedAt: ago(1_000),
@@ -3038,14 +3370,25 @@ routes.push(
       ),
   ],
   [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
-    (match) =>
-      flags.has("syncScopeUnavailable")
-        ? // This persistent service failure is distinct from a retired epoch's 410, which the
+    "POST",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/entities$/,
+    (match, _query, _signal, body) => {
+      if (body === undefined) throw new Error("ReadThreadEntities must use a JSON request body");
+      const request = fromJson(ReadThreadEntitiesRequestSchema, JSON.parse(body) as JsonValue);
+      if (
+        request.projectionEpoch !== "" ||
+        request.window.case !== "range" ||
+        request.window.value.startEntityIndex !== 0n ||
+        request.window.value.limit !== 1
+      ) {
+        throw new Error("scope read must request range 0 with limit 1 at the current projection");
+      }
+      return flags.has("threadScopeUnavailable")
+        ? // A persistent service failure is distinct from a retired epoch's 410, which the
           // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
-        : threadScope(match[1]),
+        : Response.json(threadScope(match[1]));
+    },
   ],
   [
     "GET",
@@ -3062,7 +3405,9 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, _signal, body) => {
       const rows = threadRows(match[1]).map((row) =>
-        flags.has("entitySegmentsWithheld") && row.entity_kind === "view_state" ? { ...row, revision_cursor: "8" } : row
+        flags.has("entitySegmentsWithheld") && row.entity_kind === "view_state"
+          ? { ...row, cursor: "8", revision_cursor: "8" }
+          : row
       );
       return electricSubset(
         entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
@@ -3088,7 +3433,7 @@ routes.push(
         ownerId: params[String(2 * index + 1)],
         generation: params[String(2 * index + 2)],
       })).flatMap(({ ownerId, generation }) => {
-        const text = payloadBodies.get(payloadKey(ownerId, match[2], generation));
+        const text = payloadBodies.get(`${ownerId}:${match[2]}:${generation}`);
         return text === undefined
           ? []
           : [
@@ -3109,235 +3454,451 @@ routes.push(
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/evidence$/,
-    () => ({ observations: [{ observation_cursor: "31", has_native: true }], next_after_cursor: null }),
+    /^\/upstream\/app\/v1\/threads\/([0-9a-f-]+)$/,
+    (match) => {
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
+      return thread === undefined
+        ? Response.json({ detail: "thread not found" }, { status: 404 })
+        : toJson(ThreadMetadataSchema, mapThread(thread).metadata);
+    },
   ],
   [
     "GET",
-    /^\/threads\/([0-9a-f-]+)\/evidence\/([0-9]+)\/frames$/,
-    (_match) => ({
-      frames: [
-        {
-          source_sequence: "31",
-          availability: "present",
-          entry: archivedStderr(31),
-        },
-      ],
-      next_after_sequence: null,
-    }),
+    /^\/upstream\/app\/v1\/threads$/,
+    (_match, query) => {
+      const sandboxUID = query.get("sandbox_uid");
+      const all = THREADS_WITH_SANDBOXES.map(mapThread).filter(
+        (thread) => sandboxUID === null || thread.summary.sandbox?.uid === sandboxUID
+      );
+      const archivedCount = all.filter((thread) => thread.metadata.archived).length;
+      const includeArchived = query.get("include_archived") === "true";
+      const listed = all.filter((thread) => includeArchived || !thread.metadata.archived);
+      const offset = Number(query.get("page_token") ?? "0");
+      const limit = Number(query.get("limit") ?? "50");
+      const threads = listed.slice(offset, offset + limit);
+      return {
+        threads: threads.map((thread) => toJson(ThreadMetadataSchema, thread.metadata)),
+        nextPageToken: offset + threads.length < listed.length ? String(offset + threads.length) : "",
+        archivedCount,
+      };
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/summary$/,
+    (match) => {
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
+      if (thread === undefined) return Response.json({ detail: "session not found" }, { status: 404 });
+      return toJson(SessionSummarySchema, mapThread(thread).summary);
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/sessions:find$/,
+    (_match, query) => {
+      const search = query.get("sandbox_name_contains")?.toLowerCase();
+      return {
+        sessions: THREADS_WITH_SANDBOXES.map(mapThread)
+          .filter((thread) => search === undefined || thread.summary.sandbox?.name.toLowerCase().includes(search))
+          .map((thread) => ({
+            sessionId: thread.metadata.threadId,
+            sandbox: thread.summary.sandbox,
+          })),
+      };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/history\/v1\/sessions:batchGetSummaries$/,
+    (_match, _query, _signal, body) => {
+      const request = body === undefined ? {} : (JSON.parse(body) as { sessionIds?: string[] });
+      const wanted = new Set(request.sessionIds ?? []);
+      return {
+        summaries: THREADS_WITH_SANDBOXES.map(mapThread)
+          .filter((thread) => wanted.has(thread.metadata.threadId))
+          .map((thread) => toJson(SessionSummarySchema, thread.summary)),
+      };
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/observations$/,
+    (_match, query) => historyObservationPage(query),
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/events$/,
+    (_match, query) => {
+      const after = BigInt(query.get("after_cursor") ?? "0");
+      const limit = Number(query.get("limit") ?? "128");
+      const entries = Object.entries(OBSERVATION_ENTRIES)
+        .filter(([cursor]) => BigInt(cursor) > after)
+        .slice(0, limit)
+        .map(([, entry]) => entry());
+      return { lastCursor: "34", entries, settlements: [], removed: [] };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/entity-evidence$/,
+    (_match, _query, _signal, body) => {
+      const request = body === undefined ? {} : (JSON.parse(body) as { afterCursor?: string });
+      return {
+        observations: BigInt(request.afterCursor ?? "0") < 31n ? [{ observationCursor: "31", hasNative: true }] : [],
+      };
+    },
+  ],
+  [
+    "POST",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/native-frames$/,
+    (_match, _query, _signal, body) => {
+      const request =
+        body === undefined ? {} : (JSON.parse(body) as { observationCursor?: string; afterSequence?: string });
+      return {
+        frames:
+          request.observationCursor === "31" && BigInt(request.afterSequence ?? "0") < 31n
+            ? [{ sourceSequence: "31", entry: archivedStderr(31) }]
+            : [],
+      };
+    },
   ],
   // No runner here admits a command, so one the page delivers on load stays unadmitted.
   [
     "POST",
-    /^\/threads\/([0-9a-f-]+)\/(?:submit-input|change-model|change-reasoning-effort|interrupt-turn)$/,
+    /^\/upstream\/dispatcher\/v1\/sessions\/([0-9a-f-]+):(?:submitInput|changeModel|changeReasoningEffort|interruptTurn)$/,
     () =>
       flags.has("commandAdmissionTimedOut")
-        ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
+        ? Response.json({ code: 4, message: "deadline exceeded" }, { status: 504 })
         : UNANSWERED,
-  ],
-  ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
-  [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/observations\/([0-9]+)$/,
-    (match) => ({ cursor: match[2], entry: OBSERVATION_ENTRIES[match[2]]() }),
   ]
 );
 
-const FRESH: WatchHealth = {
-  fresh: true,
-  stale_after_seconds: 900,
-  refreshed_seconds_ago: {
-    sandboxes: 4.2,
-    pods: 3.1,
-    "policybindings.agentplane.allegedly.works": 11.7,
-    "policysets.agentplane.allegedly.works": 8.3,
-  },
-};
-
-/** A watch that has stopped cycling: what the `_stale` scenarios have to show rather than hide. */
-const WEDGED: WatchHealth = {
-  fresh: false,
-  stale_after_seconds: 900,
-  refreshed_seconds_ago: {
-    sandboxes: 2417.4,
-    pods: 2417.4,
-    "policybindings.agentplane.allegedly.works": 11.7,
-    "policysets.agentplane.allegedly.works": 8.3,
-  },
-};
-
-function watch(): WatchHealth {
-  return flags.has("watchStale") ? WEDGED : FRESH;
+/** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
+function liveEvents(url: URL): ServerSentEvent[] {
+  if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
+    return [{ event: "output", data: btoa("guest console output\r\n") }];
+  }
+  throw new Error(`Unexpected event stream route: ${url.pathname}`);
 }
 
-/** Live inventory remains EventSource; Action facade watches and projected threads use fetch streams. */
-class HarnessEventSource extends EventTarget {
-  static readonly sources = new Set<HarnessEventSource>();
-  static publish(pathSuffix: string): void {
-    for (const source of this.sources) {
-      const url = new URL(source.url, "http://harness");
-      if (url.pathname.endsWith(pathSuffix) && source.readyState === this.OPEN) source.serve(url);
-    }
-  }
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 2;
-  readonly url: string;
-  readyState = HarnessEventSource.CONNECTING;
+/** Whether the stream at `url` drops once it has sent its events. */
+function drops(url: URL): boolean {
+  if (url.pathname === "/live/threads") return flags.has("threadStreamDropped");
+  if (url.pathname === "/upstream/environments/v1/environments:watch")
+    return flags.has("inventoryStreamDropped") || flags.has("watchStale");
+  if (/^\/upstream\/notifications\/v1\/sessions\//.test(url.pathname))
+    return (
+      flags.has("notificationStatusUnavailable") ||
+      (url.pathname.endsWith("/inbox:watch") && flags.has("notificationStreamDropped"))
+    );
+  return false;
+}
 
-  constructor(url: string) {
-    super();
-    this.url = url;
-    HarnessEventSource.sources.add(this);
-    // After the view's listeners are attached, which happens right after construction.
-    setTimeout(() => this.serve(new URL(url, "http://harness")), 0);
-  }
+// A dropped stream is not answered again while its drop flag stays set, as on a network that stays
+// down; once the flag is cleared it is served afresh.
+const droppedStreams = new Set<string>();
 
-  private serve(url: URL): void {
-    this.readyState = HarnessEventSource.OPEN;
-    if (url.pathname === "/live/threads") {
-      // The listing the server would push: the newest `limit` matches, then the open thread.
-      const all = THREADS_WITH_SANDBOXES.map(mapThread);
-      const search = url.searchParams.get("search")?.toLowerCase();
-      const limit = Number(url.searchParams.get("limit"));
-      const matching = all.filter(
-        (thread) =>
-          (url.searchParams.get("include_archived") === "true" || !thread.archived) &&
-          (search === undefined ||
-            (thread.name ?? "").toLowerCase().includes(search) ||
-            thread.sandbox.toLowerCase().includes(search))
+routes.unshift([
+  "GET",
+  /^\/(live\/.+|upstream\/notifications\/v1\/sessions\/[^/]+\/(?:inbox:watch|inbox\/entries:watch|subscriptions:watch)|sandboxes\/[^/]+\/console\/stream)$/,
+  (match, query, signal) => {
+    const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
+    const key = `${url.pathname}${url.search}`;
+    const drop = drops(url);
+    if (!drop) droppedStreams.delete(key);
+    else if (droppedStreams.has(key)) return UNANSWERED;
+    else droppedStreams.add(key);
+    const notice = url.pathname.match(
+      /^\/upstream\/notifications\/v1\/sessions\/([^/]+)\/(inbox:watch|inbox\/entries:watch|subscriptions:watch)$/
+    );
+    if (notice) {
+      const session = decodeURIComponent(notice[1]);
+      return liveNdjsonWatch(
+        url.pathname,
+        flags.has("notificationStatusUnavailable") ? [] : notificationFrames(session, notice[2], false),
+        () => notificationFrames(session, notice[2], true),
+        signal,
+        drop
       );
-      const listed = matching.slice(0, limit);
-      const open = all.find((thread) => thread.id === url.searchParams.get("open_thread"));
-      const snapshot: ThreadsSnapshot = {
-        sandboxes: SANDBOXES,
-        threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
-        more: matching.length > limit,
-        archived_count: all.filter((thread) => thread.archived).length,
-        updates_connected: !flags.has("threadDatabaseDisconnected"),
-        watch: watch(),
-      };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (flags.has("threadStreamDropped")) this.drop();
-      return;
     }
-    if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(egressDecisions()) }));
-      return;
-    }
-    if (url.pathname === "/live/sandboxes") {
-      const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (flags.has("inventoryStreamDropped")) this.drop();
-      return;
-    }
-    if (url.pathname === "/threads/notices/stream") {
-      const states: Record<string, Partial<InboxNoticeState>> = {
-        [THREE_UNPROCESSED_THREAD]: {
-          queued: 2,
-          unacknowledged: 1,
-          notice: "NOTICE_PROGRESS_CONFIRMED",
-          noticeWaitReason: "NOTICE_WAIT_REASON_DEBOUNCING",
-          eligibleAt: ago(-90_000),
-        },
-        [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "NOTICE_PROGRESS_CONFIRMED" },
-        [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "NOTICE_PROGRESS_ATTEMPTED", error: "runner unreachable" },
-      };
-      const inboxes = url.searchParams
-        .getAll("thread_id")
-        .filter((session) => session in states)
-        .map((session): InboxNoticeState => ({
-          inboxId: `inbox-${session}`,
-          sessionId: session,
-          queued: 0,
-          unacknowledged: 0,
-          ...states[session],
-        }));
-      const snapshot: SessionNoticeStates = { observedAt: ago(0), inboxes };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
-      if (flags.has("threadStreamDropped")) this.drop();
-      return;
-    }
-    const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
-    const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
-    if (notification) {
-      if (flags.has("notificationStatusUnavailable")) {
-        this.drop();
-        return;
-      }
-      const snapshot = notificationStatus(notification[1]);
-      const first = snapshot.inboxes[0];
-      if (flags.has("notificationExtraEntry") && first) {
-        first.inbox.lastCursor = "10";
-        first.unannouncedCount += 1;
-        first.pendingAcknowledgementCount += 1;
-        first.pendingEntries.push({
-          cursor: "10",
-          createdAt: ago(0),
-          provider: "github",
-          summary: "GitHub workflow_run · completed",
-        });
-      }
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      return;
-    }
-    if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
-      this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
-      return;
-    }
-    if (sandbox !== null) {
-      const snapshot: SandboxSnapshot = {
-        sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
-        bindings: BINDINGS,
-        action_policy: ACTION_POLICY,
-        threads: THREADS,
-        updates_connected: !flags.has("threadDatabaseDisconnected"),
-        watch: watch(),
-      };
-      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      return;
-    }
-    throw new Error(`Unexpected EventSource route: ${url.pathname}`);
-  }
+    return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
+  },
+]);
 
-  private drop(): void {
-    this.readyState = HarnessEventSource.CONNECTING;
-    this.dispatchEvent(new Event("error"));
-  }
+routes.unshift([
+  "GET",
+  /^\/upstream\/environments\/v1\/environments\/([^/]+)\/([^/]+):watch$/,
+  (match, query, signal) => {
+    const frames = (): unknown[] => {
+      const environment = SANDBOXES.find(
+        (item) =>
+          item.target?.namespace === decodeURIComponent(match[1]) &&
+          item.target.name === decodeURIComponent(match[2]) &&
+          item.target.uid === query.get("target.uid")
+      );
+      return environment ? [{ environment: toJson(EnvironmentDescriptorSchema, environment) }] : [];
+    };
+    return liveNdjsonWatch(match[0], frames(), frames, signal, flags.has("watchStale"));
+  },
+]);
 
-  close(): void {
-    HarnessEventSource.sources.delete(this);
-    this.readyState = HarnessEventSource.CLOSED;
-  }
-}
+routes.unshift([
+  "GET",
+  /^\/upstream\/environments\/v1\/environments:watch$/,
+  (_match, _query, signal) => {
+    const snapshot = [
+      { snapshot: { environments: SANDBOXES.map((sandbox) => toJson(EnvironmentDescriptorSchema, sandbox)) } },
+      { snapshotComplete: {} },
+    ];
+    let previous = new Map(
+      SANDBOXES.map((sandbox) => [
+        sandbox.target!.name,
+        { uid: sandbox.target!.uid, namespace: sandbox.target!.namespace },
+      ])
+    );
+    const updates = (): unknown[] => {
+      const current = new Map(
+        SANDBOXES.map((sandbox) => [
+          sandbox.target!.name,
+          { uid: sandbox.target!.uid, namespace: sandbox.target!.namespace },
+        ])
+      );
+      const removals = Array.from(previous, ([name, old]) =>
+        current.get(name)?.uid === old.uid ? null : { removed: { namespace: old.namespace, name, uid: old.uid } }
+      ).filter((frame) => frame !== null);
+      previous = current;
+      return [...removals, ...SANDBOXES.map((sandbox) => ({ upsert: toJson(EnvironmentDescriptorSchema, sandbox) }))];
+    };
+    return liveNdjsonWatch(
+      "/upstream/environments/v1/environments:watch",
+      snapshot,
+      updates,
+      signal,
+      flags.has("inventoryStreamDropped") || flags.has("watchStale")
+    );
+  },
+]);
 
-window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/egress\/v1\/decisions:watch$/,
+    (_match, _query, signal) =>
+      window.matchMedia("(max-width: 600px)").matches
+        ? Response.json({ code: 14, message: "the egress proxy did not answer: connection refused" }, { status: 503 })
+        : ndjsonWatch(
+            [
+              toJson(
+                WatchDecisionsResponseSchema,
+                create(WatchDecisionsResponseSchema, {
+                  frame: { case: "snapshot", value: { decisions: DECISIONS } },
+                })
+              ),
+            ],
+            signal
+          ),
+  ],
+  [
+    "GET",
+    /^\/upstream\/egress\/v1\/credentials:watch$/,
+    (_match, _query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            WatchCredentialsResponseSchema,
+            create(WatchCredentialsResponseSchema, {
+              frame: {
+                case: "snapshot",
+                value: {
+                  credentials: [
+                    {
+                      name: "harness-github-pat",
+                      uid: "credential-uid",
+                      description: "GitHub API access",
+                      targets: [{ method: 2, header: "Authorization", scheme: "Bearer" }],
+                    },
+                    {
+                      name: "harness-kube-token",
+                      uid: "credential-kube-uid",
+                      description: "Kubernetes API access as kube-reader",
+                      targets: [{ method: 2, header: "Authorization", scheme: "Bearer" }],
+                      kubernetesServiceAccount: { namespace: "agentplane-visual", name: "kube-reader" },
+                    },
+                  ],
+                },
+              },
+            })
+          ),
+          toJson(
+            WatchCredentialsResponseSchema,
+            create(WatchCredentialsResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      ),
+  ],
+  [
+    "GET",
+    /^\/upstream\/policy\/v1\/policy-bindings:watch$/,
+    (_match, query, signal) => {
+      const subject = { namespace: query.get("subject.namespace") ?? "", name: query.get("subject.name") ?? "" };
+      const identity = query.get("identity");
+      const bindings =
+        query.get("everyIdentity") === "true"
+          ? identityBindings
+          : identity !== null
+            ? identityBindings.filter((item) => item.spec?.subject?.identity?.name === identity)
+            : BINDINGS.map((item) => clone(PolicyBindingSchema, item)).map((item) => {
+                item.spec!.subject = create(SubjectSchema, subject);
+                return item;
+              });
+      return ndjsonWatch(
+        [
+          toJson(
+            WatchPolicyBindingsResponseSchema,
+            create(WatchPolicyBindingsResponseSchema, { frame: { case: "snapshot", value: { bindings } } })
+          ),
+          toJson(
+            WatchPolicyBindingsResponseSchema,
+            create(WatchPolicyBindingsResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      );
+    },
+  ],
+  [
+    "GET",
+    /^\/upstream\/policy\/v1\/identities:watch$/,
+    (_match, _query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            WatchIdentitiesResponseSchema,
+            create(WatchIdentitiesResponseSchema, { frame: { case: "snapshot", value: { identities } } })
+          ),
+          toJson(
+            WatchIdentitiesResponseSchema,
+            create(WatchIdentitiesResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      ),
+  ],
+  [
+    "DELETE",
+    /^\/upstream\/policy\/v1\/identities\/agentplane-visual\/([^/]+)$/,
+    (match, query) => deleteIdentity(decodeURIComponent(match[1]!), query.get("uid")),
+  ],
+  [
+    "GET",
+    /^\/upstream\/policy\/v1\/policy-sets:watch$/,
+    (_match, _query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            WatchPolicySetsResponseSchema,
+            create(WatchPolicySetsResponseSchema, { frame: { case: "snapshot", value: { policySets: POLICY_SETS } } })
+          ),
+          toJson(
+            WatchPolicySetsResponseSchema,
+            create(WatchPolicySetsResponseSchema, { frame: { case: "snapshotComplete", value: {} } })
+          ),
+        ],
+        signal
+      ),
+  ]
+);
+
+routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/actions\/v1\/action-policy:watch$/,
+    (_match, query, signal) =>
+      ndjsonWatch(
+        [
+          toJson(
+            GetActionPolicyResponseSchema,
+            actionPolicy(query.get("subject.namespace") ?? "", query.get("subject.name") ?? "")
+          ),
+        ],
+        signal
+      ),
+  ],
+  [
+    "GET",
+    /^\/upstream\/app\/v1\/threads:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        "/upstream/app/v1/threads:watch",
+        [{ changed: {}, updatesConnected: !flags.has("threadDatabaseDisconnected") }],
+        () => [{ changed: {}, updatesConnected: !flags.has("threadDatabaseDisconnected") }],
+        signal,
+        flags.has("threadStreamDropped")
+      ),
+  ],
+  [
+    "GET",
+    /^\/upstream\/history\/v1\/session-summaries:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        "/upstream/history/v1/session-summaries:watch",
+        [
+          toJson(
+            WatchSessionSummariesResponseSchema,
+            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
+          ),
+        ],
+        () => [
+          toJson(
+            WatchSessionSummariesResponseSchema,
+            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
+          ),
+        ],
+        signal,
+        flags.has("threadStreamDropped")
+      ),
+  ]
+);
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
-let previewAction: ActionRequestView | null = null;
-let queueOpenResponses = false;
-let queuedOpenSessionId: string | null = null;
+let previewAction: ActionRequest | null = null;
+let queueCreateResponses = false;
+let queuedSessionId: string | null = null;
 
 function projectQueuedSession(): void {
-  if (!queuedOpenSessionId) throw new Error("No queued Session Open to project");
-  const sessionId = queuedOpenSessionId;
+  if (!queuedSessionId) throw new Error("No queued Session Create to project");
+  const sessionId = queuedSessionId;
   const source = THREADS[0];
   if (!source) throw new Error("No Session fixture to copy");
-  const projected: ThreadView = {
-    ...source,
-    id: sessionId,
-    name: "Queued opening thread",
-    created_at: ago(0),
-    last_cursor: 0,
-    last_event_at: ago(0),
-    harness_state: "HARNESS_STATE_STOPPED",
-    feed_status: "active",
-  };
+  const sourceAttached = source.summary.attached;
+  if (!sourceAttached) throw new Error("Queued Session source has no attachment");
+  const projected = threadView(
+    {
+      ...source.metadata,
+      threadId: sessionId,
+      name: "Waiting Session thread",
+      createdAt: timestampFromDate(new Date(ago(0))),
+    },
+    {
+      ...source.summary,
+      sessionId,
+      foldedThrough: 0n,
+      lastEventAt: timestampFromDate(new Date(ago(0))),
+      feedStatus: FeedStatus.ACTIVE,
+      attached: {
+        ...create(AttachedSchema, sourceAttached),
+        sessionId,
+        lastCursor: 0n,
+        harnessState: HarnessState.STOPPED,
+        activeTurnId: "",
+      },
+    }
+  );
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
-  HarnessEventSource.publish("/live/sandboxes/ready-sandbox");
-  HarnessEventSource.publish("/live/threads");
+  publishStreams("/upstream/app/v1/threads:watch");
+  publishStreams("/upstream/history/v1/session-summaries:watch");
 }
 
 function mount(element: ReactNode): void {
@@ -3353,22 +3914,44 @@ const visualHarness = {
     mount(<App />);
   },
   asVmSandbox(name: string): void {
-    const sandbox = SANDBOXES.find((candidate) => candidate.name === name);
-    if (!sandbox?.pod) throw new Error(`Sandbox ${name} has no running Pod fixture`);
-    sandbox.pod.owner_references = [
-      {
-        api_version: "kubevirt.io/v1",
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === name);
+    if (!sandbox?.kubernetesDiagnostics?.pod) throw new Error(`Sandbox ${name} has no running Pod fixture`);
+    sandbox.kubernetesDiagnostics.pod.ownerReferences = [
+      create(OwnerReferenceSchema, {
+        apiVersion: "kubevirt.io/v1",
         kind: "VirtualMachineInstance",
         name,
-        uid: `${sandbox.uid}-vmi`,
+        uid: `${sandbox.target!.uid}-vmi`,
         controller: true,
-      },
+      }),
     ];
   },
   nameThread(threadId: string, name: string): void {
-    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
-    thread.name = name;
+    thread.metadata.name = name;
+  },
+  centralSamplerOnSandbox(threadId: string, sandboxName: string): void {
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
+    if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
+    const target = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName)?.target;
+    if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+    const spec = thread.summary.attached?.spec;
+    if (!spec) throw new Error(`Thread fixture ${threadId} has no attached Session spec`);
+    thread.summary.sandbox = create(SandboxRefSchema, {
+      namespace: target.namespace,
+      name: target.name,
+      uid: target.uid,
+    });
+    spec.placement = create(SessionPlacementSchema, {
+      kind: {
+        case: "centralSamplerV1",
+        value: create(CentralSamplerV1PlacementSchema, {
+          executorEnvironment: { name: target.name, uid: target.uid },
+        }),
+      },
+    });
+    spec.model = "harness-codex-model";
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
@@ -3381,8 +3964,8 @@ const visualHarness = {
   autosuspendStarting,
   addProvisioningSandbox,
   addSuspendedSandboxes,
-  queueOpenResponse(): void {
-    queueOpenResponses = true;
+  queueCreateResponse(): void {
+    queueCreateResponses = true;
   },
   projectQueuedSession,
   set(flag: Flag, on = true): void {
@@ -3392,8 +3975,7 @@ const visualHarness = {
   /** Sets `flag` and serves the open streams whose path ends in `pathSuffix` again. */
   publish(flag: Flag, pathSuffix: string): void {
     flags.add(flag);
-    HarnessEventSource.publish(pathSuffix);
-    publishNdjsonWatch(pathSuffix);
+    publishStreams(pathSuffix);
   },
   ageOutage(milliseconds: number): void {
     streamRegistry.now = () => Date.now() + milliseconds;
@@ -3403,46 +3985,44 @@ const visualHarness = {
       Array.from(renderers.keys(), (name) => `${group}.${name}`)
     ).flat();
   },
-  showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
-    previewAction = {
-      ...COMPACT_POD_ACTION,
-      action,
-      arguments: args,
-      title:
-        action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
-          ? "inspect running demo pods"
-          : `review ${action.name.replaceAll("_", " ")}`,
-      description: "Check the exact call before approving.",
-    };
+  showActionPreview(action: { group: string; name: string }, args: NonNullable<ActionRequest["arguments"]>): void {
+    const preview = clone(ActionRequestSchema, COMPACT_POD_ACTION);
+    preview.action = create(ActionIdentitySchema, action);
+    preview.arguments = args;
+    preview.title =
+      action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
+        ? "inspect running demo pods"
+        : `review ${action.name.replaceAll("_", " ")}`;
+    preview.description = "Check the exact call before approving.";
+    previewAction = preview;
   },
   showActionResult(
-    action: ActionRequestView["action"],
-    args: ActionRequestView["arguments"],
-    result: NonNullable<ActionRequestView["execution"]>["result"]
+    action: { group: string; name: string },
+    args: NonNullable<ActionRequest["arguments"]>,
+    result: JsonValue
   ): void {
-    ACTIONS[2]!.action = action;
+    ACTIONS[2]!.action = create(ActionIdentitySchema, action);
     ACTIONS[2]!.arguments = args;
     ACTIONS[2]!.title = `Review ${action.name} result`;
-    ACTIONS[2]!.execution!.result = result;
+    ACTIONS[2]!.execution!.result = fromJson(ValueSchema, result);
   },
   showActionReceipt(
-    action: ActionRequestView["action"],
-    args: ActionRequestView["arguments"],
-    result: NonNullable<ActionRequestView["execution"]>["result"]
+    action: { group: string; name: string },
+    args: NonNullable<ActionRequest["arguments"]>,
+    result: JsonValue
   ): void {
     receiptActionGroup =
       action.group === "sandbox" || MCP_GROUPS.some((group) => group.key === action.group)
         ? undefined
         : mcpGroup(action.group, "Test MCP backend for the receipt renderer.");
-    const receipt = ACTIONS[2]!;
-    ACTIONS.splice(0, ACTIONS.length, {
-      ...receipt,
-      action,
-      arguments: args,
-      title: "Long action text",
-      description: null,
-      execution: { ...receipt.execution!, result },
-    });
+    const receipt = clone(ActionRequestSchema, ACTIONS[2]!);
+    receipt.action = create(ActionIdentitySchema, action);
+    receipt.arguments = args;
+    receipt.title = "Long action text";
+    receipt.description = undefined;
+    if (receipt.execution === undefined) throw new Error("Receipt fixture has no Execution.");
+    receipt.execution.result = fromJson(ValueSchema, result);
+    ACTIONS.splice(0, ACTIONS.length, receipt);
   },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
@@ -3464,12 +4044,12 @@ const visualHarness = {
       stdout: "review result: visible start \u202Ereversed\u202C, joined\u200Bword, and control\u001Bmarker",
       stderr: "stderr contains a zero-width\u200B separator and U+202E bidi override\u202C\n",
     };
-    ACTIONS[2]!.execution!.result = {
+    ACTIONS[2]!.execution!.result = fromJson(ValueSchema, {
       _meta: { "io.modelcontextprotocol/serverInfo": { name: "ssh-mcp", version: "4.0.3" } },
       content: [{ type: "text", text: JSON.stringify(result) }],
       structuredContent: result,
       isError: false,
-    };
+    });
   },
   recovery(kind: "messages" | "tools" | "quiet"): void {
     threadEntityRows = (id) => recoveryRows(id, kind);
@@ -3485,6 +4065,27 @@ const visualHarness = {
   interleavedEvents(): void {
     threadEntityRows = interleavedRows;
   },
+  shortThreadSwitchHistory(): void {
+    mapThread = (thread) =>
+      thread.metadata.threadId === IDLE_THREAD
+        ? { ...thread, metadata: { ...thread.metadata, name: "Short thread arriving" } }
+        : thread;
+    threadEntityRows = shortThreadSwitchRows;
+  },
+  historyProfile(rowCount: number): void {
+    const rowsByThread = new Map<string, Record<string, unknown>[]>();
+    threadEntityRows = (threadId) => {
+      let rows = rowsByThread.get(threadId);
+      if (!rows) {
+        rows = historyProfileRows(threadId, rowCount);
+        rowsByThread.set(threadId, rows);
+      }
+      return rows;
+    };
+  },
+  rememberHistoryRowHeight(threadId: string, width: number, key: string, height: number): void {
+    rememberRowHeight(threadId, width, key, height);
+  },
   lifecycleGroup(): void {
     threadEntityRows = lifecycleGroupRows;
   },
@@ -3493,6 +4094,12 @@ const visualHarness = {
   },
   threadSetupRunning(): void {
     threadEntityRows = (id) => setupRows(id, true);
+  },
+  collapsibleCommandHistory(): void {
+    threadEntityRows = (id) => collapsibleCommandRows(id, 8);
+  },
+  midThreadCommandHistory(): void {
+    threadEntityRows = (id) => collapsibleCommandRows(id, 40);
   },
   shellCalls(): void {
     threadEntityRows = shellCallRows;
@@ -3510,7 +4117,8 @@ const visualHarness = {
     threadEntityRows = (id) => standaloneReasoningRows(id, longPreview, codeFence, longBody);
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
-    threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+    threadEntityRows = (id) =>
+      id === THREADS[2].metadata.threadId ? statesRows(id) : standardRows(id, longPreview, longBody);
   },
   consecutiveReasoningHistory(): void {
     threadEntityRows = consecutiveReasoningRows;
@@ -3536,26 +4144,38 @@ const visualHarness = {
   rememberFailedDispatch,
   completedRollout(): void {
     mapThread = (thread) =>
-      thread.id === IDLE_THREAD
+      thread.metadata.threadId === IDLE_THREAD
         ? {
             ...thread,
-            name: "Completed diagnostic run",
-            harness: "HARNESS_CODEX",
-            active_turn_id: null,
-            last_turn_status: "TURN_STATUS_COMPLETED",
+            metadata: { ...thread.metadata, name: "Completed diagnostic run" },
+            summary: {
+              ...thread.summary,
+              lastTurnStatus: TurnStatus.COMPLETED,
+              attached: {
+                ...thread.summary.attached!,
+                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
+                activeTurnId: "",
+              },
+            },
           }
         : thread;
     threadEntityRows = (id) => realisticRolloutRows(id, rollout);
   },
   reportedRollout(): void {
     mapThread = (thread) =>
-      thread.id === IDLE_THREAD
+      thread.metadata.threadId === IDLE_THREAD
         ? {
             ...thread,
-            name: "Reported thread excerpt",
-            harness: "HARNESS_CODEX",
-            active_turn_id: null,
-            last_turn_status: "TURN_STATUS_COMPLETED",
+            metadata: { ...thread.metadata, name: "Reported thread excerpt" },
+            summary: {
+              ...thread.summary,
+              lastTurnStatus: TurnStatus.COMPLETED,
+              attached: {
+                ...thread.summary.attached!,
+                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
+                activeTurnId: "",
+              },
+            },
           }
         : thread;
     threadEntityRows = (id) => realisticRolloutRows(id, reportedRollout);

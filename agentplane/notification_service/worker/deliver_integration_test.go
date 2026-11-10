@@ -40,8 +40,8 @@ func (h *harness) attempted(t *testing.T, claim store.Claim, notice store.Notice
 
 func submissionOf(notice store.Notice) *dispatcherpb.SubmitInputRequest {
 	return &dispatcherpb.SubmitInputRequest{
-		Sandbox: testSandbox, SandboxUid: testSandboxUID,
-		SessionId: testSession, CommandId: notice.CommandID.String(), Text: notice.Text,
+		ExpectedSandboxUid: testSandboxUID,
+		SessionId:          testSession, CommandId: notice.CommandID.String(), Text: notice.Text,
 	}
 }
 

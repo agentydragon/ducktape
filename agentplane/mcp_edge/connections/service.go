@@ -9,11 +9,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,8 +29,8 @@ type Gate interface {
 	// Recheck verifies the call's bearer again. It fails, with the status the call ends with, once the bearer no
 	// longer proves the operator the call was admitted as.
 	Recheck(ctx context.Context) error
-	// Draining is closed once the service stops accepting work.
-	Draining() <-chan struct{}
+	// DrainingContext is cancelled once the service stops accepting work.
+	DrainingContext() context.Context
 }
 
 // Service is the ConnectionService server.
@@ -96,15 +97,15 @@ func displayName(name string) (string, error) {
 	return trimmed, nil
 }
 
-func parseAccount(field string, account *sandboxes.ServiceAccount) (auth.Account, error) {
+func parseAccount(field string, account *identitypb.ServiceAccount) (auth.Account, error) {
 	if account.GetNamespace() == "" || account.GetName() == "" {
 		return auth.Account{}, invalid("%s must set both namespace and name", field)
 	}
 	return auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
 }
 
-func serviceAccount(account auth.Account) *sandboxes.ServiceAccount {
-	return &sandboxes.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
+func serviceAccount(account auth.Account) *identitypb.ServiceAccount {
+	return &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
 }
 
 func timestamp(t *time.Time) *timestamppb.Timestamp {

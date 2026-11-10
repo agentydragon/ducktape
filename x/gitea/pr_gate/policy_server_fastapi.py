@@ -217,7 +217,7 @@ async def metrics() -> Response:
 
 
 # To run:
-#   uvicorn gitea_pr_gate.policy_server_fastapi:app --host 127.0.0.1 --port 9099
+#   uvicorn x.gitea.pr_gate.policy_server_fastapi:app --host 127.0.0.1 --port 9099
 
 
 # Optional: global exception handlers for catch-all upstream errors

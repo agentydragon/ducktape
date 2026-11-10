@@ -1,339 +1,208 @@
-"""Human-readable CLI rendering — mirrors the GNOME extension popup bars."""
+"""Human-readable CLI rendering for subscription and API credit data."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal
 
-from aiquota.models import (
-    AllQuotas,
-    ExtraSpend,
-    FetchSuccess,
-    PaidCredits,
-    PrepaidBalance,
-    PrepaidBalanceAvailable,
-    QuotaWindow,
-    SuccessfulProviderFetch,
-)
-from aiquota.pace import compute_pace, is_exhausted
+from rich.text import Text
+
+from aiquota.models import AllQuotas
 from aiquota.render.format import (
-    display_used_percent,
     format_age,
     format_burn,
-    format_duration,
-    format_known_reset_credit_expiries,
-    format_pace,
-    format_pace_forecast,
+    format_deadline,
     format_peak_schedule,
-    format_prepaid_balance,
-    format_window_label,
+    format_reset_credit_summary,
 )
-from aiquota.render.view_model import ProviderView, to_view
+from aiquota.render.view_model import (
+    AllQuotasView,
+    BalanceView,
+    GrantView,
+    ProviderView,
+    WindowView,
+    show_reset_credits,
+    to_view,
+)
+
+_API_PROVIDERS = {"openai_platform", "anthropic_platform"}
+_TINTS = {"cool": "blue", "ok": "white", "warn": "yellow", "hot": "red", "unknown": "white", "stale": "yellow"}
 
 
-def render(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None) -> str:
-    """`tz` defaults to system local; tests pin it so snapshots hold on any machine."""
+def render(quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None, *, details: bool = False) -> str:
+    """Plain text for snapshots and non-interactive callers."""
+    return render_text(quotas, now, tz, details=details).plain
+
+
+def render_text(
+    quotas: AllQuotas, now: datetime | None = None, tz: tzinfo | None = None, *, details: bool = False
+) -> Text:
+    """Apply shared view tints to terminal rows; Rich disables color when redirected."""
     render_time = now or datetime.now(UTC)
-    view = to_view(quotas, render_time)
-    widths = _column_widths(view.providers, render_time)
-    return "\n".join(_render_provider(pv, render_time, widths, tz) for pv in view.providers)
+    return render_view(to_view(quotas, render_time), render_time, tz, details=details)
+
+
+def render_view(
+    view: AllQuotasView, now: datetime | None = None, tz: tzinfo | None = None, *, details: bool = False
+) -> Text:
+    render_time = now or view.presentation_at or datetime.now(UTC)
+    providers = sorted(view.providers, key=lambda provider: provider.provider in _API_PROVIDERS)
+    widths = _column_widths(providers)
+    subscriptions = [provider for provider in providers if provider.provider not in _API_PROVIDERS]
+    api_balances = [provider for provider in providers if provider.provider in _API_PROVIDERS]
+    blocks = []
+    if subscriptions and api_balances:
+        for heading, group in (("Subscriptions", subscriptions), ("API balances", api_balances)):
+            section = Text(f"{heading}\n\n")
+            section.append(_render_providers(group, render_time, tz, details, widths))
+            blocks.append(section)
+    else:
+        blocks.append(_render_providers(providers, render_time, tz, details, widths))
+    if view.connection_error is not None:
+        if view.providers:
+            age = format_age((render_time - view.fetched_at).total_seconds())
+            offline = Text(f"Offline · cached snapshot from {age} ago")
+        else:
+            offline = Text("Offline · no cached observations")
+        if details:
+            offline.append(f"\n  connection error: {view.connection_error}")
+        blocks.insert(0, offline)
+    return Text("\n\n").join(blocks)
 
 
 @dataclass(frozen=True)
 class _ColumnWidths:
-    reset: int = 0
-    pace: int = 0
+    label: int
+    reset: int
 
 
-@dataclass(frozen=True)
-class _WindowRow:
-    label: str
-    used: str
-    reset: str
-    pace: str | None
-    forecast: str | None
+def _render_providers(
+    providers: list[ProviderView], now: datetime, tz: tzinfo | None, details: bool, widths: _ColumnWidths
+) -> Text:
+    return Text("\n\n").join(_render_provider(provider, now, tz, details, widths) for provider in providers)
 
 
-def _render_provider(pv: ProviderView, now: datetime, widths: _ColumnWidths, tz: tzinfo | None) -> str:
-    out_result = pv.last_output.result
-    error = out_result.error if not isinstance(out_result, FetchSuccess) else None
-
-    (
-        windows,
-        extra,
-        paid_credits,
-        reset_credits,
-        reset_credit_expiries,
-        reset_credit_expiry_lookup_failed,
-        stale_age,
-    ) = _effective_windows(pv, now)
-    credit_line = _format_paid_credits(paid_credits, pv.paid_credits_active)
-    prepaid_balance, prepaid_stale_age = _effective_prepaid_balance(pv, now)
-    prepaid_balance_line = _format_prepaid_balance(prepaid_balance, prepaid_stale_age)
-
-    if error and not windows:
-        return (
-            _header(
-                pv.provider,
-                error,
-                pv.last_output.fetched_at,
-                now,
-                reset_credits,
-                reset_credit_expiries,
-                reset_credit_expiry_lookup_failed,
-                stale_age,
-                tz,
-            )
-            + (f"  {credit_line}" if credit_line else "")
-            + (f"\n  {prepaid_balance_line}" if prepaid_balance_line else "")
-        )
-
-    if pv.currently_over_plan or pv.paid_credits_active:
-        # Mirror the GNOME popup's text-only active-extra view: while burning,
-        # bars are noise, but both reset countdowns still matter.
-        lines = [
-            f"{_provider_label(pv.provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)}  "
-            f"{credit_line if pv.paid_credits_active else _format_extra_active(extra)}"
-        ]
-        if prepaid_balance_line:
-            lines.append(f"  {prepaid_balance_line}")
-        lines.append(_active_windows_line(windows))
-        lines.extend(_burn_lines(pv, now, tz))
-        return "\n".join(lines)
-
-    lines = [
-        _header(
-            pv.provider,
-            error,
-            pv.last_output.fetched_at,
-            now,
-            reset_credits,
-            reset_credit_expiries,
-            reset_credit_expiry_lookup_failed,
-            stale_age,
-            tz,
-        )
-    ]
-    if credit_line:
-        lines.append(f"  {credit_line}")
-    if prepaid_balance_line:
-        lines.append(f"  {prepaid_balance_line}")
-    lines.extend(_burn_lines(pv, now, tz))
-    lines.extend(_format_window_line(_window_row(window), widths) for window in windows)
-    # Prepaid still has room, but the user incurred billable spend earlier in the
-    # billing month. Surface it so the monthly bill doesn't sneak up. Built as a
-    # value rather than a flag so `extra`'s narrowing survives into the call.
-    extra_line = (
-        f"  {_format_extra_informational(extra)}" if pv.extra_status == "informational" and extra is not None else None
+def _column_widths(providers: list[ProviderView]) -> _ColumnWidths:
+    windows = [window for provider in providers for window in provider.display_windows]
+    return _ColumnWidths(
+        label=max((len(window.label) for window in windows), default=0),
+        reset=max((len(window.reset) for window in windows), default=0),
     )
-    if extra_line is not None:
-        lines.append(extra_line)
-    if not windows and extra_line is None and prepaid_balance_line is None:
-        # Gate on "nothing substantive was reported", not on line count — the
-        # burn schedule adds lines without saying anything about quota.
-        lines.append("  no data")
-    return "\n".join(lines)
 
 
-def _effective_prepaid_balance(pv: ProviderView, now: datetime) -> tuple[PrepaidBalance | None, str | None]:
-    out_result = pv.last_output.result
-    if isinstance(out_result, FetchSuccess) and out_result.prepaid_balance is not None:
-        return out_result.prepaid_balance, None
-    if pv.last_success is not None and pv.last_success.result.prepaid_balance is not None:
-        stale_age = format_age((now - pv.last_success.fetched_at).total_seconds())
-        return pv.last_success.result.prepaid_balance, stale_age
-    return None, None
+def _render_provider(pv: ProviderView, now: datetime, tz: tzinfo | None, details: bool, widths: _ColumnWidths) -> Text:
+    lines = [Text(pv.label or pv.provider)]
+    result = pv.display.result
+    substantive = bool(
+        pv.display_windows
+        or pv.balances
+        or pv.grants
+        or pv.monthly_extra_spend is not None
+        or (result is not None and (result.available_reset_credits or 0) > 0)
+    )
+
+    if pv.stale_since is not None:
+        age = format_age((now - pv.stale_since).total_seconds())
+        lines.append(Text(f"  Stale data · last observed {age} ago", style="yellow"))
+    if pv.error_summary is not None:
+        error_line = f"  {pv.error_summary}"
+        if substantive:
+            error_line += " · showing available data"
+        lines.append(Text(error_line, style="red"))
+        if details and pv.error_detail is not None:
+            lines.append(Text(f"    error: {pv.error_detail}"))
+
+    if pv.status is not None:
+        urgent = pv.stale_since is None and not any(window.reset_pending for window in pv.display_windows)
+        lines.append(Text(f"  {pv.status}", style="red" if urgent else "yellow"))
+
+    lines.extend(_credit_lines(pv, now, tz, details))
+
+    if (
+        result is not None
+        and result.available_reset_credits is not None
+        and show_reset_credits(result.available_reset_credits, pv.display_windows, details=details)
+    ):
+        summary = format_reset_credit_summary(
+            result.available_reset_credits,
+            result.available_reset_credit_expiries,
+            result.reset_credit_expiry_lookup_failed,
+            now,
+            tz,
+            details=details,
+        )
+        lines.append(Text(f"  Banked resets: {summary}"))
+
+    if pv.burn is not None and substantive:
+        lines.append(Text(f"  {format_burn(pv.burn, now, tz)}"))
+        if details:
+            schedule = format_peak_schedule(pv.burn, tz)
+            if schedule:
+                lines.append(Text(f"    {schedule}"))
+
+    extra = pv.monthly_extra_spend
+    if extra is not None:
+        lines.append(
+            Text(
+                f"  Extra spend this month: {_usd(extra.used_usd)} of {_usd(extra.monthly_limit_usd, whole=True)} limit"
+            )
+        )
+
+    if pv.display_windows:
+        lines.extend(
+            Text(_format_window_line(window, widths, details), style=_TINTS[window.tint])
+            for window in pv.display_windows
+        )
+    elif not substantive and pv.error_summary is None:
+        lines.append(Text("  No quota or credit data available"))
+
+    return Text("\n").join(lines)
 
 
-def _burn_lines(pv: ProviderView, now: datetime, tz: tzinfo | None) -> list[str]:
-    if pv.burn is None:
-        return []
-    lines = [f"  {format_burn(pv.burn, now, tz)}"]
-    schedule = format_peak_schedule(pv.burn, tz)
-    if schedule:
-        lines.append(f"    {schedule}")
+def _credit_lines(pv: ProviderView, now: datetime, tz: tzinfo | None, details: bool) -> list[Text]:
+    groups = list(dict.fromkeys([row.group for row in pv.balances] + [row.group for row in pv.grants]))
+    lines: list[Text] = []
+    for group in groups:
+        if group is not None:
+            lines.append(Text(f"  {group}"))
+        indent = "    " if group is not None else "  "
+        lines.extend(_balance_line(balance, indent, now, details) for balance in pv.balances if balance.group == group)
+        lines.extend(_grant_line(grant, indent, now, tz, details) for grant in pv.grants if grant.group == group)
     return lines
 
 
-def _effective_windows(
-    pv: ProviderView, now: datetime
-) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str | None]:
-    out_result = pv.last_output.result
-    # If the latest call gave us nothing usable, fall back to the prior
-    # successful snapshot — stale-but-real numbers beat "no data".
-    if isinstance(out_result, FetchSuccess) and (
-        out_result.windows
-        or out_result.available_reset_credits is not None
-        or out_result.paid_credits is not None
-        or out_result.prepaid_balance is not None
-    ):
-        return (
-            [window for window in out_result.windows if window.display],
-            out_result.extra_spend,
-            out_result.paid_credits,
-            out_result.available_reset_credits,
-            out_result.available_reset_credit_expiries,
-            out_result.reset_credit_expiry_lookup_failed,
-            None,
-        )
-    if pv.last_success is not None:
-        return _stale_windows(pv.last_success, now)
-    return [], None, None, None, [], False, None
-
-
-def _column_widths(providers: list[ProviderView], now: datetime) -> _ColumnWidths:
-    rows: list[_WindowRow] = []
-    for pv in providers:
-        if pv.currently_over_plan or pv.paid_credits_active:
-            continue
-        windows, _, _, _, _, _, _ = _effective_windows(pv, now)
-        rows.extend(_window_row(window) for window in windows)
-    return _ColumnWidths(
-        reset=max((len(row.reset) for row in rows), default=0),
-        pace=max((len(row.pace) for row in rows if row.pace), default=0),
-    )
-
-
-def _stale_windows(
-    snap: SuccessfulProviderFetch, now: datetime
-) -> tuple[list[QuotaWindow], ExtraSpend | None, PaidCredits | None, int | None, list[datetime], bool, str]:
-    return (
-        [_refreshed_window(window, now) for window in snap.result.windows if window.display],
-        snap.result.extra_spend,
-        snap.result.paid_credits,
-        snap.result.available_reset_credits,
-        snap.result.available_reset_credit_expiries,
-        snap.result.reset_credit_expiry_lookup_failed,
-        format_age((now - snap.fetched_at).total_seconds()),
-    )
-
-
-def _refreshed_window(w: QuotaWindow, now: datetime) -> QuotaWindow:
-    # Snapshot's reset_seconds was correct at snapshot time; recompute from
-    # reset_at so the countdown shown to the user reflects "now".
-    if w.reset_at is None:
-        return w
-    return w.model_copy(update={"reset_seconds": max(0.0, (w.reset_at - now).total_seconds())})
-
-
-def _header(
-    provider: str,
-    error: str | None,
-    checked_at: datetime,
-    now: datetime,
-    reset_credits: int | None,
-    reset_credit_expiries: list[datetime],
-    reset_credit_expiry_lookup_failed: bool,
-    stale_age: str | None,
-    tz: tzinfo | None,
-) -> str:
-    parts = [_provider_label(provider, reset_credits, reset_credit_expiries, tz, reset_credit_expiry_lookup_failed)]
-    if error is None:
-        if stale_age is not None:
-            parts.append(f"(stale {stale_age})")
-        return "  ".join(parts)
-    checked_age = format_age((now - checked_at).total_seconds())
-    prefix = "last refresh failed" if stale_age is not None else "check failed"
-    parts.append(f"{prefix} {checked_age} ago: {error}")
-    if stale_age is not None:
-        parts.append(f"(stale {stale_age})")
-    return "  ".join(parts)
-
-
-def _provider_label(
-    provider: str,
-    reset_credits: int | None,
-    reset_credit_expiries: list[datetime],
-    tz: tzinfo | None,
-    reset_credit_expiry_lookup_failed: bool,
-) -> str:
-    if reset_credits is None:
-        return provider
-    noun = "reset" if reset_credits == 1 else "resets"
-    label = f"{provider} · {reset_credits} banked {noun}"
-    if reset_credit_expiry_lookup_failed:
-        return f"{label} · expiry dates unavailable"
-    if expiries := format_known_reset_credit_expiries(reset_credit_expiries, tz):
-        return f"{label} · known expiries: {expiries}"
-    return label
-
-
-def _format_extra_active(extra: ExtraSpend | None) -> str:
-    # `⚡` flags "paying above subscription right now" — louder than just a number.
-    if extra is None:
-        return "⚡ OVER PLAN"
-    pct = round(extra.utilization)
-    return f"⚡ OVER PLAN — extra ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) this month"
-
-
-def _format_extra_informational(extra: ExtraSpend) -> str:
-    pct = round(extra.utilization)
-    return f"extra: ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) spent this month"
-
-
-def _format_paid_credits(credits: PaidCredits | None, active: bool) -> str | None:
-    if credits is None:
-        return None
-    if credits.unlimited:
-        balance = "unlimited credits"
-    elif credits.balance is None:
-        balance = "credits available"
-    else:
-        try:
-            amount = Decimal(credits.balance)
-        except InvalidOperation:
-            return "credits available"
-        if not amount.is_finite():
-            return "credits available"
-        balance = f"{amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,} credits left"
-    return f"⚡ using paid credits · {balance}" if active else balance
-
-
-def _format_prepaid_balance(balance: PrepaidBalance | None, stale_age: str | None = None) -> str | None:
-    if balance is None:
-        return None
-    if not isinstance(balance, PrepaidBalanceAvailable):
-        line = "Claude prepaid balance unavailable"
-    else:
-        line = f"Claude prepaid balance · {format_prepaid_balance(balance)}"
-    if stale_age is not None:
-        line += f" (stale {stale_age})"
+def _balance_line(balance: BalanceView, indent: str, now: datetime, details: bool) -> Text:
+    stale = f" · stale {format_age((now - balance.stale_since).total_seconds())}" if balance.stale_since else ""
+    line = Text(f"{indent}{balance.label}: {balance.value}{stale}")
+    if details and balance.error is not None:
+        line.append(f"\n{indent}  error: {balance.error}")
     return line
 
 
-def _active_windows_line(windows: list[QuotaWindow]) -> str:
-    return "  " + "  ".join(_active_window_part(window) for window in windows)
+def _grant_line(grant: GrantView, indent: str, now: datetime, tz: tzinfo | None, details: bool) -> Text:
+    line = f"{indent}{grant.label}: {grant.remaining} remaining"
+    if grant.expires_at is None:
+        line += " · expiry unknown"
+    else:
+        line += f" · expires {format_deadline(grant.expires_at, now, tz, details=details)}"
+    scope = (grant.scope_detail or grant.scope) if details else grant.scope
+    if scope:
+        line += f" · scope: {scope}"
+    if grant.status:
+        line += f" · {grant.status}"
+    if details:
+        line += f" · {grant.original} granted"
+    return Text(line)
 
 
-def _active_window_part(window: QuotaWindow) -> str:
-    label = format_window_label(window)
-    return f"{label}: {display_used_percent(window):>3d}% ↻ {format_duration(window.reset_seconds)}"
+def _usd(amount: float, *, whole: bool = False) -> str:
+    precision = ",.0f" if whole else ",.2f"
+    return f"${format(Decimal(str(amount)), precision)}"
 
 
-def _window_row(w: QuotaWindow) -> _WindowRow:
-    used = f"{display_used_percent(w):>3d}%"
-    if is_exhausted(w):
-        return _WindowRow(
-            label=format_window_label(w),
-            used=used,
-            reset=format_duration(w.reset_seconds),
-            pace=None,
-            forecast="exhausted",
-        )
-    pace = compute_pace(w)
-    pace_str = format_pace(pace)
-    return _WindowRow(
-        label=format_window_label(w),
-        used=used,
-        reset=format_duration(w.reset_seconds),
-        pace=f"Δ{pace_str}" if pace_str else None,
-        forecast=format_pace_forecast(pace, w.reset_seconds),
-    )
-
-
-def _format_window_line(row: _WindowRow, widths: _ColumnWidths) -> str:
-    parts = [f"{row.label}: {row.used}", f"↻ {row.reset:<{widths.reset}}"]
-    if row.pace:
-        parts.append(f"{row.pace:<{widths.pace}}" if row.forecast else row.pace)
-    if row.forecast:
-        parts.append(row.forecast)
-    return ("  " + "  ".join(parts)).rstrip()
+def _format_window_line(window: WindowView, widths: _ColumnWidths, details: bool) -> str:
+    line = f"  {window.label:<{widths.label}}: {window.used:>3}% used  ↻ {window.reset:<{widths.reset}}"
+    if window.forecast:
+        line += f"  {window.forecast}"
+    if details and window.pace:
+        line += f"  pace {window.pace}"
+    return line.rstrip()

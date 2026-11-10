@@ -17,6 +17,7 @@ from pydantic import SecretStr
 from aiquota.cache import QuotaCache
 from aiquota.config import Config, RemoteAPISettings
 from aiquota.desktop import BASE_RETRY_SECONDS, QuotaDaemon, SSEProtocolError, _bounded_error
+from aiquota.models import AllQuotas
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
 
@@ -34,11 +35,15 @@ def view_payload() -> dict[str, object]:
         "providers": [
             {
                 "provider": "codex",
+                "display": {"source": "current", "observed_at": fetch["fetched_at"], "result": fetch["result"]},
                 "last_output": fetch,
                 "last_success": fetch,
                 "currently_over_plan": True,
                 "extra_status": "active",
                 "paid_credits_active": False,
+                "display_windows": [],
+                "summary_tint": "unknown",
+                "summary_index": None,
                 "burn": {
                     "in_peak": True,
                     "multiplier": 2,
@@ -125,6 +130,29 @@ async def test_view_event_updates_dbus_and_raw_offline_cache(tmp_path: Path) -> 
             len(message) >= 5 and message[2] == "ViewChanged" and message[4] == [raw_json]
             for message in recorder.messages
         )
+    finally:
+        await daemon.http.aclose()
+
+
+async def test_presentation_only_events_do_not_rewrite_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = QuotaCache(tmp_path / "quotas.json")
+    daemon = QuotaDaemon(Config(remote_api=RemoteAPISettings(url="https://example.test")), cache=cache)
+    writes: list[AllQuotas] = []
+    original_write = cache.write
+
+    def record_write(quotas: AllQuotas) -> None:
+        writes.append(quotas)
+        original_write(quotas)
+
+    monkeypatch.setattr(cache, "write", record_write)
+    try:
+        payload = view_payload()
+        assert daemon.accept_event(ServerSentEvent(event="view", data=json.dumps(payload)))
+        providers = cast(list[dict[str, object]], payload["providers"])
+        providers[0]["summary_tint"] = "warn"
+        assert daemon.accept_event(ServerSentEvent(event="view", data=json.dumps(payload)))
+        assert len(writes) == 1
+        assert json.loads(daemon.view_json)["providers"][0]["summary_tint"] == "warn"
     finally:
         await daemon.http.aclose()
 

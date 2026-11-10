@@ -7,6 +7,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "vitest_config")
+load("//devinfra/python:defs.bzl", "py_test")
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # Link npm packages for this workspace member.
@@ -58,6 +59,7 @@ filegroup(
         ":node_modules/react",
         ":node_modules/react-dom",
         ":node_modules/tailwindcss",
+        "//:node_modules/@tanstack/react-query",
         "//props/frontend/src/lib:schema",
     ],
 )
@@ -108,8 +110,10 @@ ts_library(
         ":node_modules/@mantine/notifications",
         ":node_modules/@types/react",
         ":node_modules/react",
+        "//:node_modules/@tanstack/react-query",
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:RunTriggerModal",
+        "//props/frontend/src/lib:queryClient",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
@@ -155,11 +159,56 @@ js_binary(
         ":node_modules/esbuild",
         ":node_modules/esbuild-plugin-tailwindcss",
         ":node_modules/tailwindcss",
+        ":typed_lint_srcs",
         "//props/backend:backend_cli",
         "//props/frontend/src/lib:schema",
+        "//util/frontend:typed_lint_srcs",
     ],
     entry_point = "dev.mjs",
-    no_copy_to_bin = ["//props/backend:backend_cli"],
+    env = {
+        "PROPS_BACKEND_CLI_RLOCATION": "$(rlocationpath //props/backend:backend_cli)",
+    },
+    # Keep workspace sources linked so esbuild observes edits during `bazel run`.
+    no_copy_to_bin = [
+        "index.html",
+        ":typed_lint_srcs",
+        "//props/backend:backend_cli",
+        "//util/frontend:typed_lint_srcs",
+    ],
+)
+
+py_test(
+    name = "test_dev_server",
+    srcs = ["test_dev_server.py"],
+    data = [":dev"],
+    env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
+    deps = [
+        "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "//props:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_dev_server_integration",
+    size = "medium",  # Cold imports, PostgreSQL image load and launcher startup; debug/dev_server_integration_budget.md.
+    srcs = ["test_dev_server_integration.py"],
+    data = [":dev"],
+    env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "//props:conftest",
+        "//props/db:database",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 # ============================================================
@@ -215,6 +264,7 @@ ts_library(
         ":node_modules/react",
         ":node_modules/react-dom",
         ":node_modules/react-router",
+        "//:node_modules/@tanstack/react-query",
         "//props/frontend/src/components:DefinitionDetail",
         "//props/frontend/src/components:FileViewer",
         "//props/frontend/src/components:LLMRequestViewer",
@@ -223,6 +273,7 @@ ts_library(
         "//props/frontend/src/components/stats:CoverageHeatmap",
         "//props/frontend/src/components/stats:DistributionChart",
         "//props/frontend/src/components/stats:OccurrenceStats",
+        "//props/frontend/src/lib:queryClient",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/pages:SnapshotDetailPage",
     ],
@@ -287,8 +338,8 @@ py_visual_test(
     harness = ":harness_js",
     shard_count = 4,
     test_deps = [
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -307,7 +358,7 @@ py_visual_test(
     page_url = "http://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
-        "//util/testing:visual_capture",
+        "//util/testing/frontend_visual:capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

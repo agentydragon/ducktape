@@ -4,8 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ComponentStatus } from "./api/schema";
-import { api } from "./client";
+import { create } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+
+import { SystemComponentState, SystemComponentStatusSchema } from "../app_service_pb";
+import type { CheckedComponentStatus } from "./system_status_client";
+import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -22,17 +26,18 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-const HEALTHY: ComponentStatus = {
-  name: "Healthy component",
-  state: "ok",
-  detail: null,
-  checked_at: "2026-01-01T00:00:00Z",
+const CHECKED_AT = timestampFromDate(new Date("2026-01-01T00:00:00Z"));
+const HEALTHY: CheckedComponentStatus = {
+  ...create(SystemComponentStatusSchema, { name: "Healthy component", state: SystemComponentState.OK }),
+  checkedAt: CHECKED_AT,
 };
-const DOWN: ComponentStatus = {
-  name: "Down component",
-  state: "down",
-  detail: "UNAVAILABLE: test connection refused",
-  checked_at: "2026-01-01T00:00:00Z",
+const DOWN: CheckedComponentStatus = {
+  ...create(SystemComponentStatusSchema, {
+    name: "Down component",
+    state: SystemComponentState.DOWN,
+    detail: "UNAVAILABLE: test connection refused",
+  }),
+  checkedAt: CHECKED_AT,
 };
 
 async function render(): Promise<HTMLDivElement> {
@@ -50,10 +55,10 @@ async function render(): Promise<HTMLDivElement> {
   return container;
 }
 
-/** `api.GET` answering its successive calls with the given lists. */
-function answer(...lists: ComponentStatus[][]) {
-  const get = vi.spyOn(api, "GET");
-  for (const data of lists) get.mockResolvedValueOnce({ data, response: new Response() } as never);
+/** `getSystemStatus` answering its successive calls with the given lists. */
+function answer(...lists: CheckedComponentStatus[][]) {
+  const get = vi.spyOn(systemStatusClient, "getSystemStatus");
+  for (const data of lists) get.mockResolvedValueOnce(data);
   return get;
 }
 
@@ -83,10 +88,7 @@ it("asks again every 15 seconds and shows the newer answer", async () => {
 });
 
 it("reports a failed read instead of an empty list", async () => {
-  vi.spyOn(api, "GET").mockResolvedValue({
-    error: { detail: "test upstream unavailable" },
-    response: new Response(null, { status: 503 }),
-  } as never);
+  vi.spyOn(systemStatusClient, "getSystemStatus").mockRejectedValue(new Error("test upstream unavailable"));
   const container = await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("test upstream unavailable");
 });

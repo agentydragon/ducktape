@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: gaffer-repo-fetch-pat
+    namespace: ducktape-flux
+type: Opaque
+stringData:
+    github_token: ENC[AES256_GCM,data:yGt2/9IJ55ZuaGWauMMNojbR+oljyKPga/kk0KYu2auDNhstxkYn8kvrXRoJJ2DoWTb+yl00Spbkj/17cTEFr+MXEcYcxdKFurDVrEDs+7D8QsHWj+qQOO9KCfcT,iv:9aB8VNG4ReE/l6P3VcYEj3uJp1tUWScAGeiZ3AKB19c=,tag:hjX7VSfHSVIS7rqZ20VeLg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQMUk4WnZGTGsrLzZUUjEr
+            TWNBSCsweVJGKzUvZFBtdFlEdVZjR2MwYUhBClB4OGptUDRvTkxjZndoM1kycVVI
+            dGVlRnBORitoK0pzeGwwdGVnMWJOeVkKLS0tIHZXbjJweVk5SjlybjVVaUdmUWFN
+            Z21UZWRCUHFYVE5tZFFicklmMGxBT28KAQg8vqXeiWW9nA/VYv/CcuDLWa0WjFAg
+            INZNpNW73Yig3nQy7SfEDGxkR0xAW+3qXV50VbhsxMSxcE0COfQxvA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBBWDM4aFYzaWhWcDJRZ0pK
+            V3pyd0NUUTREZEdNQVlEcm15UXUzellyWUJrClZqd2NWOWE2cWJUMlZ5MHo5U3pt
+            cWQrMm1hclB4Z0tKRkZMNHFqTk8wZncKLS0tIFlsZUJ5TThqUEtBMVVhVGtKRjZD
+            akEzL1BhcEs1SHljUmMvaEpVbkpNdVUKCrDhi4ajUpYSZ15ihfAn9cxem/DoJ28p
+            wL9tPdjxQM6gh8Xva022q106rvcXfcVVc4BDVNkXjMWmnWpGUw4ePg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-30T10:57:01Z"
+    mac: ENC[AES256_GCM,data:IbkoJMTueyH2hOluV0uU0HBsxufolizyyOdRx5MXJtm0XqZLAnj4Z/QefpL6xL+MonEfDKyfo7T51A+TwaJYw+E5baSFmomTYLJzf5am6LPnTECHHsEnaDrbc89GHU88fCxi3zox5wGfyVV0UIxpPt04QXA6fHA8jWdJbyvscg8=,iv:eK9ThXw435Ip7dZp49AxDMeUWtNX1gEwaTvSJyrkDFY=,tag:PD/Rz1IJuyZz9r4+NnGdyA==,type:str]
+    version: 3.13.3

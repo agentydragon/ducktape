@@ -19,20 +19,20 @@ import (
 	"testing"
 	"time"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	_ "github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth" // its name, auth, is go-sdk's
+	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth" // its name, auth, is go-sdk's
 )
 
 var integrationDatabase *postgres.Database
@@ -100,7 +100,7 @@ func (testGate) Operator(ctx context.Context) (string, string) {
 
 func (testGate) Recheck(context.Context) error { return nil }
 
-func (testGate) Draining() <-chan struct{} { return nil }
+func (testGate) DrainingContext() context.Context { return context.Background() }
 
 // as is a call context of the operator, bounded by callDeadline.
 func as(t *testing.T, subject string) context.Context {
@@ -342,11 +342,16 @@ type harness struct {
 
 func start(t *testing.T, configure ...func(*Config)) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	return startWithResource(t, func(server *Server) http.Handler {
+		return auth.RequireBearerToken(server.VerifyBearer, &auth.RequireBearerTokenOptions{
+			ResourceMetadataURL: server.ResourceMetadataURL(),
+		})(whoami())
+	}, configure...)
+}
+
+func startWithResource(t *testing.T, resource func(*Server) http.Handler, configure ...func(*Config)) *harness {
+	t.Helper()
+	db := postgres.Open(t, integrationDatabase.Clone(t))
 	h := &harness{
 		db: db, callers: &testCallers{accounts: []workloadauth.Account{callerAccount, otherAccount}},
 		upstream: newFakeUpstream(t), documents: newDocumentServer(t),
@@ -370,13 +375,13 @@ func start(t *testing.T, configure ...func(*Config)) *harness {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if h.server, err = New(ctx, config, db, store); err != nil {
+	server, err := New(ctx, config, db, store)
+	if err != nil {
 		t.Fatal(err)
 	}
+	h.server = server
 	mux := http.NewServeMux()
-	mux.Handle(resourcePath, auth.RequireBearerToken(h.server.VerifyBearer, &auth.RequireBearerTokenOptions{
-		ResourceMetadataURL: h.server.ResourceMetadataURL(),
-	})(whoami()))
+	mux.Handle(resourcePath, resource(h.server))
 	mux.Handle("/", h.server.Handler())
 	listener.Config.Handler = mux
 	listener.Start()
@@ -476,7 +481,7 @@ const consentPrefix = testConsentURL + "/#/connection-enrollments/"
 // newConnection allows a new Connection bound to the account.
 func newConnection(account workloadauth.Account) *pb.EnrollmentAllow {
 	return &pb.EnrollmentAllow{
-		ServiceAccount: &sandboxes.ServiceAccount{Namespace: account.Namespace, Name: account.Name},
+		ServiceAccount: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name},
 		Connection: &pb.EnrollmentAllow_NewConnection{
 			NewConnection: &pb.NewConnection{DisplayName: "test-connection"},
 		},

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "atuin-user-provisioner"
 _JOB = "user-provisioner"
@@ -19,7 +19,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name="atuin-user-password").key("user_password")
 _SCRIPT_CONFIG_MAP = "user-provisioner-script"
 _SCRIPT_DIR = "/scripts"
-_SCRIPT = get_required_path(own_repo_rlocation("cluster/cdk8s/atuin/provision.py")).read_text()
+_SCRIPT = (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/atuin/provision.py").read_text()
 
 
 def chart(app: App) -> Chart:

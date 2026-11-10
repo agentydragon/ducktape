@@ -30,7 +30,7 @@ TSCONFIG = "//haku/console/frontend:tsconfig"
 # Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
 # Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
 ts_library(
-    name = "variant",
+    name = "vocabulary",
     srcs = ["vocabulary.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
@@ -42,7 +42,7 @@ ts_library(
 )
 
 # A request-side registry entry (the tool's zod arguments schema + a renderer over its parsed
-# value) plus the definePreview/renderPreview helpers. Leaf like :variant, so index.tsx and
+# value) plus the definePreview/renderPreview helpers. Leaf like :vocabulary, so index.tsx and
 # every widget import it without a cycle.
 # Leaf: no imports at all, so both the React widget registry and the React-free action registry
 # can key off the same server ids.
@@ -97,7 +97,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":variant",
+        ":vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -113,7 +113,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":variant",
+        ":vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -134,7 +134,7 @@ ts_library(
     deps = [
         ":entry",
         ":result_entry",
-        ":variant",
+        ":vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -151,7 +151,7 @@ ts_library(
         ":entry",
         ":result_entry",
         ":server_ids",
-        ":variant",
+        ":vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
@@ -213,7 +213,7 @@ haku_vitest_test(
     srcs = ["vocabulary.test.ts"],
     isolated_typecheck = True,
     deps = [
-        ":variant",
+        ":vocabulary",
         "//:node_modules/vitest",
     ],
 )

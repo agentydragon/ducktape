@@ -2,13 +2,15 @@
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
+use analysis_model::DepKind;
 use std::collections::BTreeMap;
 
-use analysis::{DepKind, DependencyGraphReport, ModuleId};
+use analysis::{DependencyGraphInput, DependencyGraphReport, ModuleId};
 use report_fixtures::{
     active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
     promoted_dependency_edge, residual_source_unit, singleton_graph,
 };
+use spec::ModulePath;
 
 use crate::propose::{ModuleProposal, propose};
 use crate::quotient::testing::{
@@ -18,6 +20,53 @@ use crate::quotient::{
     ClassId, CycleClassSet, CycleEvidence, QuotientGraph, SeedContractionRejected, SourceUnitIndex,
     SpecModuleGroup, build_seed_quotient, greedy_merge_to_convergence,
 };
+
+fn graph_input(report: &DependencyGraphReport) -> DependencyGraphInput {
+    DependencyGraphInput::from_report(report.clone()).unwrap()
+}
+
+fn build_seed_quotient_from_report(
+    report: &DependencyGraphReport,
+    atomic_groups: &[analysis::AtomicGroupReport],
+    spec_modules: &[SpecModuleGroup],
+    cap_lines: usize,
+) -> (QuotientGraph, Vec<SeedContractionRejected>) {
+    let input = graph_input(report);
+    build_seed_quotient(&input, atomic_groups, spec_modules, cap_lines)
+}
+
+fn quotient_with_partition(
+    report: &DependencyGraphReport,
+    cap_lines: usize,
+    groups: &[PartitionGroup],
+) -> (QuotientGraph, Vec<ClassId>) {
+    let input = graph_input(report);
+    QuotientGraph::from_graph_with_partition(&input, cap_lines, groups)
+}
+
+fn quotient_with_assignment(
+    report: &DependencyGraphReport,
+    cap_lines: usize,
+    source_unit_modules: &[ModuleId],
+    residual_module: ModuleId,
+) -> anyhow::Result<QuotientGraph> {
+    let input = graph_input(report);
+    QuotientGraph::from_graph_with_realizable_assignment(
+        &input,
+        cap_lines,
+        source_unit_modules,
+        residual_module,
+    )
+}
+
+fn propose_report(
+    report: &DependencyGraphReport,
+    active_claims: &BTreeMap<String, ModulePath>,
+    size_cap_lines: usize,
+) -> anyhow::Result<crate::propose::ProposalsReport> {
+    let input = graph_input(report);
+    propose(&input, active_claims, size_cap_lines)
+}
 
 fn spec_module(module_id: &str, source_units: &[&str]) -> SpecModuleGroup {
     SpecModuleGroup {
@@ -72,14 +121,14 @@ fn original_home_merge_rejects_remote_tdz() {
         spec_module("ui/m6", &["unit:4"]),
     ];
     let (mut q, _) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
+        build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &spec, 10_000);
     assert!(q.realizability_verdict().is_realizable());
     let left = q.class_of(q.source_unit_index_of("unit:3").unwrap());
     let right = q.class_of(q.source_unit_index_of("unit:7").unwrap());
     assert!(q.merge_preserves_invariants(left, right));
     let mut post = q.realizability_assignment().clone();
-    let target = post.of(analysis::SourceUnitId(7));
-    post.set(analysis::SourceUnitId(3), target);
+    let target = post.of(source_identity::SourceUnitId(7));
+    post.set(source_identity::SourceUnitId(3), target);
     let post_verdict = gate::check_realizability(q.dependency_graph(), &post);
     let index = gate::RealizabilityIndex::from_assignment(
         q.dependency_graph(),
@@ -88,7 +137,7 @@ fn original_home_merge_rejects_remote_tdz() {
     assert_eq!(
         index.verdict_after_moving_source_units(
             q.dependency_graph(),
-            &[analysis::SourceUnitId(3)],
+            &[source_identity::SourceUnitId(3)],
             target
         ),
         post_verdict,
@@ -116,51 +165,35 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
         vec![],
     );
     let assignments = [ModuleId(1), ModuleId(2), ModuleId(0), ModuleId(3)];
-    let mut q = QuotientGraph::from_report_with_realizable_assignment(
-        &report,
-        9,
-        &assignments,
-        ModuleId(0),
-    )
-    .unwrap();
+    let mut q = quotient_with_assignment(&report, 9, &assignments, ModuleId(0)).unwrap();
     assert!(!q.contract_if_preserving(ClassId(0), ClassId(0)));
     assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
     assert_eq!(q.class_of(SourceUnitIndex(1)), ClassId(1));
 
-    let mut q = QuotientGraph::from_report_with_realizable_assignment(
-        &report,
-        14,
-        &assignments,
-        ModuleId(0),
-    )
-    .unwrap();
+    let mut q = quotient_with_assignment(&report, 14, &assignments, ModuleId(0)).unwrap();
     let classes = [ClassId(0), ClassId(1), ClassId(2)];
     assert!(!q.contract_group_if_preserving(&classes));
     assert_eq!(
-        q.realizability_assignment().of(analysis::SourceUnitId(0)),
+        q.realizability_assignment()
+            .of(source_identity::SourceUnitId(0)),
         assignments[0]
     );
     assert_eq!(q.class_of(SourceUnitIndex(0)), ClassId(0));
 
-    let mut q = QuotientGraph::from_report_with_realizable_assignment(
-        &report,
-        15,
-        &assignments,
-        ModuleId(0),
-    )
-    .unwrap();
+    let mut q = quotient_with_assignment(&report, 15, &assignments, ModuleId(0)).unwrap();
     assert!(q.contract_group_if_preserving(&classes));
     for source_unit in 0..3 {
         assert_eq!(q.class_of(SourceUnitIndex(source_unit)), ClassId(0));
         assert_eq!(
             q.realizability_assignment()
-                .of(analysis::SourceUnitId(source_unit)),
+                .of(source_identity::SourceUnitId(source_unit)),
             ModuleId(0)
         );
     }
     assert_eq!(q.class_of(SourceUnitIndex(3)), ClassId(3));
     assert_eq!(
-        q.realizability_assignment().of(analysis::SourceUnitId(3)),
+        q.realizability_assignment()
+            .of(source_identity::SourceUnitId(3)),
         assignments[3]
     );
     assert!(q.realizability_verdict().is_realizable());
@@ -196,7 +229,7 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
         spec_module("mod_beta", &["unit:b1", "unit:b2"]),
     ];
     let (q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
+        build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &spec, 10_000);
 
     // Exactly one of the two contractions must be rejected. The
     // canonical order is mod_alpha first (lex), so mod_alpha
@@ -283,7 +316,7 @@ fn seed_co_locates_constraining_cycle_atomic_group() {
         vec![],
     );
     let (q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &[], 10_000).unwrap();
+        build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &[], 10_000);
     assert!(
         rejected.is_empty(),
         "atomic-group contractions internal to the residual module are \
@@ -311,8 +344,7 @@ fn merge_cannot_hide_an_existing_entry_dependency() {
     ];
     let report = singleton_graph(vec![x.clone(), r.clone(), h.clone()], edges);
     let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
+    let (mut q, group_ids) = quotient_with_partition(&report, 10_000, &groups);
     let cx = group_ids[0];
     let ch = q.class_of(q.source_unit_index_of("unit:h").unwrap());
 
@@ -376,7 +408,7 @@ fn post_seed_reports_each_unrealizable_scc_in_source_unit_id_order() {
     let report = graph_of(source_units.to_vec(), edges, atomic_groups, vec![]);
 
     let (_q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
+        build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &spec, 10_000);
 
     let scc = |source_unit_ids: [&str; 2], classes: [usize; 2]| {
         let source_unit_ids = source_unit_ids.map(String::from).to_vec();
@@ -410,7 +442,7 @@ fn post_seed_reports_each_unrealizable_scc_in_source_unit_id_order() {
 // mergeability rules govern whether greedy may extend a module with an
 // orphan, merge existing modules, or stop.
 //
-// All fixtures below use `from_report_with_partition`, the
+// All fixtures below use `from_graph_with_partition`, the
 // constructor that takes per-group metadata (lines + the
 // pre-existing-module bit). SourceUnits not in any group remain singletons
 // with their per-owner residual flag derived from the report.
@@ -440,8 +472,7 @@ fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
     );
 
     let groups = vec![module_group(vec![0])];
-    let (mut q, group_ids) =
-        QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
+    let (mut q, group_ids) = quotient_with_partition(&report, 10_000, &groups);
     let contractions = greedy_merge_to_convergence(&mut q);
 
     assert_eq!(contractions.len(), 1, "got: {contractions:?}");
@@ -469,7 +500,7 @@ fn greedy_terminates_at_convergence() {
     );
 
     let groups = vec![module_group(vec![0])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
+    let (mut q, _) = quotient_with_partition(&report, 10_000, &groups);
     let before = q.iter_classes().count();
     let contractions = greedy_merge_to_convergence(&mut q);
     let after = q.iter_classes().count();
@@ -528,7 +559,7 @@ fn greedy_merges_three_clusters_until_the_size_cap() {
         // over the cap.
         (40, 1, vec![vec!["unit:a"], vec!["unit:b", "unit:c"]]),
     ] {
-        let (mut q, _) = QuotientGraph::from_report_with_partition(&report, cap, &groups).unwrap();
+        let (mut q, _) = quotient_with_partition(&report, cap, &groups);
         let contractions = greedy_merge_to_convergence(&mut q);
         assert_eq!(
             contractions.len(),
@@ -572,7 +603,7 @@ fn greedy_resolves_realizability_cycle_by_merging() {
         vec![],
     );
     let groups = vec![module_group(vec![0]), module_group(vec![1])];
-    let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
+    let (mut q, _) = quotient_with_partition(&report, 10_000, &groups);
     let contractions = greedy_merge_to_convergence(&mut q);
     assert_eq!(
         contractions.len(),
@@ -625,7 +656,7 @@ fn merge_absorbs_residual_source_unit_with_only_intra_deps() {
         ],
         vec![],
     );
-    let result = propose(
+    let result = propose_report(
         &report,
         &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
         10_000,
@@ -718,7 +749,7 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     );
     let spec = vec![spec_module("mod_alpha", &["unit:foo"])];
     let (q, rejected) =
-        build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
+        build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &spec, 10_000);
 
     let reachability_rejections: Vec<&SeedContractionRejected> = rejected
         .iter()
@@ -762,7 +793,7 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
     }
 
     // `propose` surfaces the seed rejections, cycle evidence included.
-    let proposed = propose(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
+    let proposed = propose_report(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
     assert_eq!(proposed.seed_rejections, rejected);
 }
 
@@ -786,7 +817,8 @@ fn dependency_graph_and_assignment_from_spec(
     spec: &[SpecModuleGroup],
 ) -> (analysis::DependencyGraph, analysis::ModuleAssignment) {
     use std::collections::HashMap;
-    let dependency_graph = analysis::DependencyGraph::from_report(report).unwrap();
+    let input = graph_input(report);
+    let dependency_graph = input.graph().clone();
     let source_unit_index: HashMap<&str, usize> = report
         .nodes
         .iter()
@@ -864,7 +896,7 @@ fn planner_and_materializer_agree_on_corpus() {
                     "edge:0",
                     "unit:a",
                     "unit:b",
-                    analysis::DepKind::EagerUse,
+                    analysis_model::DepKind::EagerUse,
                     true,
                 )],
             ),
@@ -919,35 +951,35 @@ fn planner_and_materializer_agree_on_corpus() {
                         "edge:entry_mediator",
                         "unit:entry",
                         "unit:mediator_init",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:mediator_dep",
                         "unit:mediator_helper",
                         "unit:dep_value",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                     dependency_edge(
                         "edge:mediator_intra",
                         "unit:mediator_init",
                         "unit:mediator_helper",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:dependent_dep",
                         "unit:cross_value",
                         "unit:dep_value",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:dep_back",
                         "unit:lazy_reader",
                         "unit:cross_value",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                 ],
@@ -976,14 +1008,14 @@ fn planner_and_materializer_agree_on_corpus() {
                         "edge:fwd",
                         "unit:a1",
                         "unit:b1",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:back",
                         "unit:b1",
                         "unit:a1",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                 ],
@@ -1011,14 +1043,14 @@ fn planner_and_materializer_agree_on_corpus() {
                         "edge:0",
                         "unit:alpha",
                         "unit:beta",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                     dependency_edge(
                         "edge:1",
                         "unit:beta",
                         "unit:alpha",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                 ],
@@ -1039,13 +1071,12 @@ fn planner_and_materializer_agree_on_corpus() {
         let materializer_unrealizable = !verdict.is_realizable();
 
         // Planner-side.
-        let (_q, rejected) = build_seed_quotient(
+        let (_q, rejected) = build_seed_quotient_from_report(
             &case.report,
             &case.report.atomic_graph.nodes,
             &case.spec,
             10_000,
-        )
-        .unwrap();
+        );
         let planner_has_rejection = !rejected.is_empty();
 
         assert_eq!(
@@ -1087,8 +1118,9 @@ fn build_fixture(
     groups: &[PartitionGroup],
     cap_lines: usize,
 ) -> (QuotientGraph, QuotientGraph) {
-    let (q_a, _) = QuotientGraph::from_report_with_partition(report, cap_lines, groups).unwrap();
-    let (q_b, _) = QuotientGraph::from_report_with_partition(report, cap_lines, groups).unwrap();
+    let input = graph_input(report);
+    let (q_a, _) = QuotientGraph::from_graph_with_partition(&input, cap_lines, groups);
+    let (q_b, _) = QuotientGraph::from_graph_with_partition(&input, cap_lines, groups);
     (q_a, q_b)
 }
 
@@ -1242,7 +1274,7 @@ fn lazy_pq_greedy_matches_full_scan_greedy_on_corpus() {
 
 #[test]
 fn gate_bypassing_assignment_cycle_surfaces_and_recovers() {
-    // `from_report_with_partition` bypasses the contraction gate: a
+    // `from_graph_with_partition` bypasses the contraction gate: a
     // group that closes a module-graph cycle is legal input. Shape:
     // a → b → c (owner constraining edges), group {a, c}. Contracting
     // a and c yields the module cycle {a,c} → b → {a,c}. The kernel
@@ -1263,15 +1295,14 @@ fn gate_bypassing_assignment_cycle_surfaces_and_recovers() {
             dependency_edge("edge:1", "unit:b", "unit:c", DepKind::EagerUse, true),
         ],
     );
-    let (mut q, group_classes) = QuotientGraph::from_report_with_partition(
+    let (mut q, group_classes) = quotient_with_partition(
         &report,
         10_000,
         &[PartitionGroup {
             source_unit_idxs: vec![SourceUnitIndex(0), SourceUnitIndex(2)],
             is_pre_existing_module: false,
         }],
-    )
-    .unwrap();
+    );
     let merged = group_classes[0];
     let b_class = q.class_of(SourceUnitIndex(1));
     assert_eq!(q.class_of(SourceUnitIndex(0)), merged);

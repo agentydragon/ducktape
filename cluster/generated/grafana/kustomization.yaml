@@ -6,6 +6,6 @@ configMapGenerator:
   - name: aiquota-history-dashboard
     namespace: monitoring
     files:
-      - dashboard.json
+      - aiquota-history.json
 configurations:
   - kustomizeconfig

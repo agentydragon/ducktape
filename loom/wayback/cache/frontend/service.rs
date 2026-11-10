@@ -44,10 +44,6 @@ impl ArchiveInputService {
         self
     }
 
-    pub async fn handle_path(&self, path: &str) -> ArchiveResponse {
-        self.handle_request(path, None).await
-    }
-
     pub async fn handle_request(&self, path: &str, query: Option<&str>) -> ArchiveResponse {
         if let Some(request) = parse_metadata_request(path, query) {
             return self.handle_metadata(request).await;

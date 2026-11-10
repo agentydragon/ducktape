@@ -7,6 +7,13 @@
 **LiteRT-LM patch status rechecked**: 2026-09-13 against package version
 `0.17.0` (the current PyPI release checked, and the version pinned below).
 
+**Retirement update (2026-09-17)**: the old IPEX/Ollama container described in
+these June experiments was removed. The current
+[Arc module](../../../../nix/nixos/hosts/rugged/local_llm_arc.nix) configures upstream
+Ollama/Vulkan; the IPEX results below are historical. NPU driver evidence and the
+separate disabled llama.cpp service's acceptance boundary are in
+[the driver investigation](../../../../cluster/docs/inference/rugged_npu_driver.md).
+
 ## Takeaways
 
 - Google does have its own runtime path: **LiteRT-LM**. Its direct CLI and
@@ -25,7 +32,7 @@
   and `stop`.
 - **Ollama is supported, but not Google's only or primary edge runtime**. It is
   useful as a local API/server interface. Upstream `ollama-vulkan` 0.30.5 from
-  `nixpkgs-master` now runs beside the older rugged IPEX/Ollama service.
+  `nixpkgs-master` ran beside the older IPEX/Ollama service during the June experiments.
 - **OpenVINO on Linux is working on this machine**, but Gemma 4 is not usable on
   the existing llama.cpp OpenVINO/NPU image yet. The model loads and offloads to
   OpenVINO, then fails on prompt compute with a tensor shape mismatch.
@@ -109,8 +116,6 @@ Practical next sequence:
   to `litert_lm.Engine(...)`.
 - <../../../../nix/home/hosts/rugged.nix> puts `ducktapePackages.litert-lm` on rugged's
   user PATH and enables the rugged-only OpenCode provider.
-- <../../../../nix/nixos/hosts/rugged/local_llm_arc.nix> keeps the old IPEX/Ollama
-  container on `127.0.0.1:11434`, pinned by digest instead of mutable `latest`.
 - The same NixOS module runs upstream `ollama-vulkan` from `nixpkgs-master` on
   `127.0.0.1:11436`, with separate model storage under
   `/var/lib/local-llm/ollama-upstream`.
@@ -367,7 +372,7 @@ layer backed by llama.cpp/ggml-style runtimes. For Gemma 4 here, that means
 GGUF/QAT model artifacts and Ollama's Vulkan backend rather than Google's
 `.litertlm` format.
 
-The existing rugged service is the IPEX-LLM Ollama container from
+The June rugged service was the IPEX-LLM Ollama container then declared in
 <../../../../nix/nixos/hosts/rugged/local_llm_arc.nix>:
 
 ```bash
@@ -381,7 +386,7 @@ Pinned nixpkgs had Ollama `0.21.1`; nixpkgs master had `0.30.5`; upstream
 GitHub latest was `v0.30.6` at the time tested. Rugged now has a dedicated
 `nixpkgs-master` flake input wired through
 <../../../../nix/nixos/hosts/rugged/local_llm_arc.nix>. It runs upstream `ollama-vulkan` on
-`127.0.0.1:11436`, beside the IPEX/Ollama service on `127.0.0.1:11434`.
+`127.0.0.1:11436`; the June comparison also had IPEX/Ollama on `127.0.0.1:11434`.
 
 After `nix flake update` on 2026-06-05 local, refreshed `nixpkgs` still had
 Ollama `0.21.1` and refreshed `nixpkgs-unstable` had Ollama `0.24.0`. A
@@ -533,7 +538,7 @@ not attempted on this 30GiB machine.
 
 ## OpenVINO NPU
 
-The existing Linux OpenVINO path is the Docker image from <llm_npu.md>:
+The June Linux OpenVINO experiment used the Docker image recorded in <llm_npu.md>:
 `llama-openvino:server`.
 
 The downloaded Ollama QAT GGUF was reused directly:

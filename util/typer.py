@@ -9,14 +9,7 @@ from typing import Any
 
 
 def async_run(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator to run an async Typer command via asyncio.run (DRY).
-
-    Usage:
-        @app.command()
-        @async_run
-        async def cmd_example(...) -> None:
-            await some_async_operation()
-    """
+    """Run an async Typer command via asyncio.run; apply below @app.command()."""
 
     @functools.wraps(fn)
     def _wrapper(*args, **kwargs):

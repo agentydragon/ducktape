@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output, merge
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, merge
 from devinfra.ci.image_registry import Registry
 from devinfra.ci.plan_image_pushes import (
     Decision,
@@ -16,7 +16,7 @@ from devinfra.ci.plan_image_pushes import (
     matrix_include,
     plan,
 )
-from util.crane import Crane
+from devinfra.oci.crane import Crane
 
 BIN = "bazel-out/k8-fastbuild/bin"
 
@@ -130,6 +130,12 @@ def test_changed_digest_is_pushed() -> None:
     assert matrix_include([decision]) == [
         {"image_name": "airlock", "image": "//airlock:image", "test_target": "//airlock/...", "registry": "ghcr"}
     ]
+
+
+def test_an_image_whose_gate_push_ci_already_failed_gets_no_job() -> None:
+    decision = decide(image(test="//airlock:test"), {"airlock": "sha256:new"}, FakeCrane({}))
+    assert decision.needs_push
+    assert matrix_include([decision], blocked_tests={"//airlock:test"}) == []
 
 
 def test_the_matrix_serializes_the_registry_as_the_name_the_workflow_compares() -> None:

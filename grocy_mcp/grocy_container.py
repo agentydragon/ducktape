@@ -14,8 +14,8 @@ from opentelemetry import trace
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import grocy
-from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -143,9 +143,9 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -
 @contextmanager
 def run_grocy_container(*, data_dir: Path | None = None) -> Generator[DockerContainer]:
     """Run a fresh Grocy container with auth disabled; yield it once ready."""
-    load_oci_image(grocy.IMAGE)
+    image_ref = load_oci_image(grocy.LAYOUT_RLOCATION)
     with grocy_custom_init_dir() as init_dir:
-        container = DockerContainer(grocy.IMAGE.tag)
+        container = DockerContainer(image_ref)
         configure_grocy_container(container, init_dir=init_dir, data_dir=data_dir)
         with container:
             wait_for_grocy_ready(container)

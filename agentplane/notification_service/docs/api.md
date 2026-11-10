@@ -1,32 +1,60 @@
 # Notification Service API
 
-The workload API is defined by [`notifications.proto`](../notifications.proto); its HTTP form is
-served at `/openapi.json`. The operator API is defined separately by
-[`notifications_operator.proto`](../notifications_operator.proto). Setup and configuration belong
-in the [service README](../README.md); internal delivery and storage design is in
-[architecture](architecture.md).
+The API is defined by [`notifications.proto`](../notifications.proto). Its HTTP annotations generate the App
+browser facade under `/upstream/notifications`; the Notification Service itself serves workload calls over gRPC only.
+The App facade rejects request fields absent from the protobuf contract. Setup and configuration belong in the
+[service README](../README.md); internal delivery and storage design is in [architecture](architecture.md).
 
 ## Agent API
 
-Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
-audience. Owner authority is the verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
-(namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
+The route and JSON examples below describe the App browser facade; agents use the `agentplane notifications` CLI,
+which calls native gRPC directly. Sandbox calls present the Runner SVID through the service-owned TLS
+listener and opaque proxy tunnel. The service verifies the certificate chain, explicit clientAuth EKU and
+validity, then checks that the leaf names the live Sandbox and its current accepted runner credential.
+It resolves the principal to that Sandbox's controlled ServiceAccount namespace, name and UID; caller
+headers cannot select another account. Backend workloads retain Pod-bound ServiceAccount tokens with
+the configured audience. Owner authority and resource authorization are unchanged. Subscription creation
+addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
+Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
+It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
+`central_sampler_v1`. Both currently resolve to the existing Sandbox-backed destination. Central
+sampler V1 remains tied to that exact Sandbox identity and does not support optional attachments or
+environment-free Sessions.
+An absent Dispatcher Session is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
+cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
+service resolves the Session placement and checks the sender's scoped grant against its exact Sandbox.
+Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
+A ServiceAccount recreated under the same name also sees none of its predecessor's inboxes,
+subscriptions or sent-message receipts. Missing original owner UIDs stay inaccessible to workloads
+unless the exact Dispatcher Session establishes them; retained operator reads remain available.
+Action sources require a nonempty recorded `caller_uid` matching the inbox owner. Missing Action
+provenance refuses new subscriptions and stops source reads without discarding retained entries.
+The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
+Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
+retained History data remain subject to their current retention rules. A missing or replaced
+Sandbox does not retire an existing inbox or cancel its subscriptions. Its sources continue
+to be read while the Dispatcher still proves its exact owner identity; runner notice delivery waits
+for the exact original Sandbox UID. Unknown or inconsistent owner identity pauses both.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
   GitHub starts after the latest committed webhook at creation.
+  Resolving the Session retains the existing internal destination and creation snapshot; persisted
+  subscriptions, inbox cursors and notices remain intact.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the account's qualified session inboxes.
-- `GET /v1/inboxes/{id}/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
-  metadata, and the latest notice's admission/confirmation state. Payloads are stored provider event
-  snapshots, not fetched at read time or promoted to operator instructions.
-- `PUT /v1/inboxes/{id}/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
+- `GET /v1/sessions/{session_id}/inbox/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
+  metadata, and the latest notice's admission/confirmation state. The configured app account may inspect
+  retained entries by Session ID through its authenticated operator facade, including after the original
+  Sandbox disappears. It cannot acknowledge or retire them. Payloads are stored provider event snapshots,
+  not fetched at read time or promoted to operator instructions.
+- `PUT /v1/sessions/{session_id}/inbox/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
-- `DELETE /v1/inboxes/{id}`: explicit retirement; no future matching, messages or delivery. An already
+- `DELETE /v1/sessions/{session_id}/inbox`: explicit retirement; no future matching, messages or delivery. An already
   submitted runner command cannot be withdrawn. Missing endpoints or transient lookup failures are not retirement.
 - `POST /v1/messages`, `GET /v1/messages/{id}`: send a message to a Session's inbox, and follow one the caller
   sent ([Messages](#messages)).
@@ -38,12 +66,11 @@ reusing it after cancellation returns that cancelled subscription rather than cr
 
 Subscription creation and views use a `source` that is a oneof: `actions` or `github`. The common envelope
 owns destination, session, idempotency, and lifetime. Actions owns its request ID and starting sequence.
-The HTTP form of the gRPC-Gateway writes JSON field names in camelCase and 64-bit integers as strings, and
-accepts either spelling in requests ([`notifications.proto`](../notifications.proto) is the contract):
+The App facade maps the annotated `/v1/...` routes under `/upstream/notifications`; it writes JSON field names
+in camelCase and 64-bit integers as strings, and accepts either spelling in requests (`notifications.proto` is the contract):
 
 ```json
 {
-  "destinationRef": { "namespace": "agentplane-staging", "name": "sandbox-name", "uid": "sandbox-uid" },
   "sessionId": "session-id",
   "idempotencyKey": "follow-action",
   "source": {
@@ -98,14 +125,17 @@ A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service w
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
 acknowledgement, and runner notices remain provider-neutral.
 
-Agent workflows are served through [`/llms.txt`](agents/llms.txt). Notices identify the inbox
-and its preparation-time acknowledgement/coverage cursors; reading and acknowledging the inbox
+Agent workflows are bundled with the CLI and described in the [workflow guide](agents/llms.txt). Notices
+identify the inbox and its preparation-time acknowledgement/coverage cursors; reading and acknowledging the inbox
 remain explicit client operations. A retried notice retains its original text.
 
 ## Messages
 
 A workload sends a message to a Session's inbox when a `session_inbox_access` rule of a PolicySet bound to its
-ServiceAccount allows `send_message` to the Session's Sandbox. A rule targets Sandboxes of its PolicySet's
+ServiceAccount or Identity allows `send_message` to the Session's Sandbox. No rule is needed between Sessions of
+one Identity: a workload whose credential names an Identity sends to any Session the Dispatcher recorded as
+executing as that same Identity incarnation (name and UID; an Identity recreated under the name is another
+sender), and such a send needs no current permission view. A rule targets Sandboxes of its PolicySet's
 namespace by name, optionally pinned to one incarnation by `uid`, by inbox tag (`inboxTags`), or all of them with
 `allSandboxes`; grants combine additively. A target without `uid` follows a Sandbox deleted and recreated under its
 name. A tag target matches the Sandbox's `spec.inboxTags` as the service reads it at acceptance, so removing the tag
@@ -114,17 +144,20 @@ refuses sends as `UNAVAILABLE` until its permission view is initialized, or whil
 A grant or revocation takes effect on each replica as that replica observes it. Revocation stops new sends
 only; accepted messages stay in the inbox. The recipient needs no subscription or consent of its own.
 
-A send names the Sandbox (namespace and name; `uid` optional) and the Session ID, as a subscription does. The
-service pins the UID of the Sandbox it finds and refuses a missing Sandbox, one outside its namespace or another
-incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages; its
+A send names only the Session ID. The service resolves its Dispatcher Session and pins the exact Sandbox UID;
+a missing Session record or replaced Sandbox returns `NOT_FOUND`, and a Session without a usable placement returns `UNAVAILABLE`.
+A suspended Sandbox accepts messages; its
 notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
 service. The inbox belongs to the Sandbox ServiceAccount for that Session. Creating a recipient inbox
-requires retained Session history associated with that Sandbox; missing or unrelated history returns
-`NOT_FOUND`. This association checks the Sandbox name, so a Session of a deleted predecessor with
-the same name can pass. Sending to an existing inbox does not repeat the history check.
+requires retained Session history whose Sandbox namespace, name and nonempty immutable UID all match the
+current Sandbox; missing history, a missing History UID, or a different Sandbox incarnation returns
+`NOT_FOUND`. This prevents a Session written by a deleted predecessor from opening an inbox for a new
+Sandbox with the same name. An already-existing inbox is keyed by destination UID and Session ID, so a
+replacement Sandbox has a different inbox; sends to an existing inbox do not repeat the History check.
 
 A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
-purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; its payload
+purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; for an
+Identity sender, `sender` names the Sandbox it sent from and `sender_identity` the Identity incarnation. Its payload
 is the `body` and the optional `from_session`, the sender's unverified label for the Session it writes from. The
 idempotency key is unique per sender within the inbox: an identical retry answers with the accepted message,
 also after its payload expired, and other content under the key is `ALREADY_EXISTS`. Bodies are UTF-8, at most
@@ -146,8 +179,9 @@ Notice admission and harness confirmation are distinct states, and neither prove
 handled the entries. Unacknowledged entries do not cause repeated reminders. Notification delivery
 does not promise exactly-once native execution.
 
-Provider payloads expire after 30 days while their event identities remain deduplicated.
-`expired_through` reports the resulting prefix gap without advancing acknowledgement. Retired
+Acknowledged provider payloads and message bodies expire after 30 days while event identities
+remain deduplicated. Unacknowledged contents stay readable while the inbox is active, including
+when its destination is unavailable. `expired_through` reports the resulting prefix gap. Retired
 inboxes are purged after 30 days. After purge, a new explicit subscription can establish a fresh
 inbox; there is no implicit routing to a successor Sandbox or Session.
 
@@ -257,29 +291,23 @@ after restart, and clear the error on success. No client-side resubscription or 
 needed for this recovery. Webhook deliveries GitHub never successfully submitted are outside that
 guarantee. A changed installation/repository identity requires explicit subscription recreation.
 
-## Operator notification diagnostics
+## Session inbox diagnostics
 
-`NotificationsOperator` is a gRPC-only, read-only API for the configured
-`operator_reader_account` in the service's namespace, using a Pod-bound token with the service's
-audience. The service exposes no HTTP routes for this API. It returns no provider
-payloads, idempotency keys or notice text and grants no agent inbox authority.
+`GetInbox` and `WatchInbox` identify the inbox by Session ID and report its notice and delivery
+state. `WatchInboxEntries` reports at most 100 retained, unacknowledged entry identities and safe
+lifecycle fields; it never returns provider payloads. `WatchSubscriptions` reports subscription
+state. Each watch starts with current state; entry and subscription watches then send changes.
+A missing inbox is a state, since inboxes are created lazily. Reconnecting starts from fresh state.
+Watches send heartbeats and revalidate authorization; they do not end on a fixed lease. Reading
+never acknowledges entries. Workloads can read their own Sandbox incarnation's inbox; the
+configured `operator_reader_account` can inspect Session diagnostics in the namespace but cannot
+read full inbox payloads or mutate another account's inbox.
 
-- `WatchSandboxNotifications` takes namespace, Sandbox name and current UID. It reports inboxes
-  (including retired ones), subscriptions, source failures, entry counts and latest notice state.
-- `WatchSessionNotices` takes at most 200 Session IDs. It reports non-retired inboxes in the
-  caller's namespace: `queued` entries not yet covered by a notice, `unacknowledged` covered
-  entries, latest notice progress/error, wait reason and estimated `eligible_at` while debouncing.
-
-Streams open with a snapshot and send another when displayed state changes, including changes
-at debounce or subscription-expiry deadlines. A snapshot differing only in `observed_at` is not
-sent. Reconnecting starts from a fresh snapshot; streams do not replay historical updates.
-Reading acknowledges nothing. Planned renewal emits `reconnect_required`; bare EOF is a failure.
-
-Sandbox snapshots expose `unannounced_count` beyond covered, acknowledged and expired cursors;
-`pending_acknowledgement_count` includes covered entries still awaiting acknowledgement.
-`notice_due_at`, `quiet_until` and `max_wait_at` apply while waiting on debounce. Awaiting
-confirmation or retrying a delivery instead exposes that wait reason. `next_work_at` and
-`next_source_check_at` are scheduling observations, not promises of notice delivery.
+A Session has at most one inbox. The database migration refuses existing collisions rather than
+choosing or discarding records; reconcile any collisions before admitting writes with the new schema.
+`unannounced_count` excludes covered, acknowledged and expired entries; `pending_acknowledgement_count`
+includes covered entries still awaiting acknowledgement. Debounce deadlines and next scheduled work
+are observations, not promises of notice delivery.
 
 PR observations retain GitHub's lifecycle states `OPEN`, `CLOSED` (without merging), and `MERGED`
 separately from mergeability states `MERGEABLE`, `CONFLICTING`, and `UNKNOWN`. Only open PRs generate
@@ -295,7 +323,7 @@ a positive result also needs a test-commit request, in addition to the PR reques
 
 ## Current source-processing observations
 
-Subscription reads and operator snapshots expose `last_success_at`, `error_kind`, `error`,
+Subscription reads and Session watches expose `last_success_at`, `error_kind`, `error`,
 `error_since`, and `error_observed_at`. Failure kinds are `rate_limited`, `unavailable`,
 `access_denied`, `source_changed`, and `processing_error`. Success clears the failure fields and
 advances `last_success_at`, which is null before the first successful processing pass.

@@ -19,15 +19,14 @@ from textwrap import dedent
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from loom.wayback.proxy import fake_ia
+from devinfra.oci.oci import load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from loom.wayback.proxy import fake_ia, wayback_proxy_image
 from third_party.containers import python_3_14_slim
-from util.bazel.runfiles import get_required_path
-from util.oci import OciImage, load_oci_image
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", "wayback-proxy:latest")
-COMPOSE_RLOCATION = "_main/loom/wayback/proxy/compose.yaml"
+COMPOSE_RLOCATION = "ducktape/loom/wayback/proxy/compose.yaml"
 
 
 @dataclass(frozen=True)
@@ -60,14 +59,16 @@ async def fake_upstream_port() -> AsyncIterator[int]:
 
 @pytest.fixture
 async def compose_stack(fake_upstream_port: int) -> AsyncIterator[ComposeStack]:
-    load_oci_image(WAYBACK_PROXY_IMAGE)
-    load_oci_image(python_3_14_slim.IMAGE)
-    compose_file = get_required_path(COMPOSE_RLOCATION)
+    proxy_image = load_oci_image(wayback_proxy_image.LAYOUT_RLOCATION)
+    agent_image = load_oci_image(python_3_14_slim.LAYOUT_RLOCATION)
+    compose_file = Runfiles.CreateOrRaise().root() / COMPOSE_RLOCATION
     project = f"wayback-e2e-{uuid.uuid4().hex[:8]}"
     stack = ComposeStack(
         base_args=("docker", "compose", "-f", str(compose_file), "-p", project),
         env={
             **os.environ,
+            "WAYBACK_PROXY_IMAGE": proxy_image,
+            "WAYBACK_AGENT_IMAGE": agent_image,
             "WAYBACK_AS_OF": str(fake_ia.AS_OF),
             "WAYBACK_UPSTREAM": f"http://host.docker.internal:{fake_upstream_port}",
         },

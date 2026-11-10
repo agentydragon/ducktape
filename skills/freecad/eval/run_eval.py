@@ -15,18 +15,18 @@ import time
 from pathlib import Path
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, UserMessage, query
+from python.runfiles import Runfiles
 
+from devinfra.oci.oci import load_oci_image
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from skills.eval_infra.skill_staging import stage_skill
+from skills.freecad.eval import freecad_test_image
 from skills.freecad.freecad_skill_spec import SPEC as FREECAD_SKILL_SPEC
-from util.bazel.runfiles import get_required_path
-from util.oci import OciImage, load_oci_image
 
 logger = logging.getLogger(__name__)
 
-FREECAD_TEST = OciImage("_main/skills/freecad/eval/freecad_test.rloc", "freecad-test:pinned")
-TASK_MD = "_main/skills/freecad/eval/baseplate/TASK.md"
-DOCKER_LAUNCHER = "_main/mcp_infra/exec/docker_launcher"
+TASK_MD = "ducktape/skills/freecad/eval/baseplate/TASK.md"
+DOCKER_LAUNCHER = "ducktape/mcp_infra/exec/docker_launcher"
 
 CONTAINER_WORKSPACE = Path("/workspace")
 CONTAINER_SKILL_DIR = Path("/skill")
@@ -53,7 +53,7 @@ for any script that needs GUI/TechDraw rendering.
 
 async def run(output_dir: Path, model: str) -> None:
     logger.info("Loading FreeCAD Docker image")
-    tag = load_oci_image(FREECAD_TEST)
+    tag = load_oci_image(freecad_test_image.LAYOUT_RLOCATION)
     logger.info("Image loaded: %s", tag)
 
     workspace = output_dir / "workspace"
@@ -70,10 +70,11 @@ async def run(output_dir: Path, model: str) -> None:
     skill_content_dir = staged.files_path
     logger.info("Skill files staged at %s", skill_content_dir)
 
-    task_text = get_required_path(TASK_MD).read_text()
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    task_text = (runfiles_root / TASK_MD).read_text()
     user_prompt = f"{staged.md_text}\n\n---\n\n{task_text}"
 
-    launcher_binary = str(get_required_path(DOCKER_LAUNCHER))
+    launcher_binary = str(runfiles_root / DOCKER_LAUNCHER)
     config_json = ContainerExecServerConfig(
         image=tag,
         working_dir=CONTAINER_WORKSPACE,

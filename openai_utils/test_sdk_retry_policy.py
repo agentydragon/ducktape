@@ -14,7 +14,7 @@ import pytest_bazel
 
 from openai_utils.client_factory import get_async_openai
 from openai_utils.errors import ContextLengthExceededError
-from openai_utils.model import BoundOpenAIModel, ResponsesRequest
+from openai_utils.model import ResponsesModel, ResponsesRequest
 from openai_utils.requests import create_chat_completion
 
 
@@ -31,49 +31,33 @@ async def _client(transport: httpx2.MockTransport) -> AsyncIterator[openai.Async
             yield client
 
 
-async def test_chat_rate_limit_uses_three_total_attempts() -> None:
-    attempts = 0
-
-    def respond(_request: httpx2.Request) -> httpx2.Response:
-        nonlocal attempts
-        attempts += 1
-        return httpx2.Response(
-            429, json={"error": {"message": "rate limited", "type": "rate_limit_error", "code": "rate_limit_exceeded"}}
-        )
-
-    async with _client(httpx2.MockTransport(respond)) as client:
-        assert client.max_retries == 2
-        with pytest.raises(openai.RateLimitError):
-            await create_chat_completion(client, {"model": "test", "messages": []})
-
-    assert attempts == 3
-
-
-async def test_chat_server_error_uses_three_total_attempts() -> None:
-    attempts = 0
-
-    def respond(_request: httpx2.Request) -> httpx2.Response:
-        nonlocal attempts
-        attempts += 1
-        return httpx2.Response(503, json={"error": {"message": "unavailable", "type": "server_error"}})
-
-    async with _client(httpx2.MockTransport(respond)) as client:
-        with pytest.raises(openai.InternalServerError):
-            await create_chat_completion(client, {"model": "test", "messages": []})
-
-    assert attempts == 3
-
-
-async def test_chat_connection_error_uses_three_total_attempts() -> None:
+@pytest.mark.parametrize(
+    ("status_code", "error", "exception_type"),
+    [
+        (
+            429,
+            {"message": "rate limited", "type": "rate_limit_error", "code": "rate_limit_exceeded"},
+            openai.RateLimitError,
+        ),
+        (503, {"message": "unavailable", "type": "server_error"}, openai.InternalServerError),
+        (None, {}, openai.APIConnectionError),
+    ],
+)
+async def test_chat_transient_errors_use_three_total_attempts(
+    status_code: int | None, error: dict[str, str], exception_type: type[openai.APIError]
+) -> None:
     attempts = 0
 
     def respond(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         attempts += 1
-        raise httpx2.ConnectError("connection failed", request=request)
+        if status_code is None:
+            raise httpx2.ConnectError("connection failed", request=request)
+        return httpx2.Response(status_code, json={"error": error})
 
     async with _client(httpx2.MockTransport(respond)) as client:
-        with pytest.raises(openai.APIConnectionError):
+        assert client.max_retries == 2
+        with pytest.raises(exception_type):
             await create_chat_completion(client, {"model": "test", "messages": []})
 
     assert attempts == 3
@@ -100,9 +84,9 @@ async def test_context_length_error_translates_without_retry() -> None:
         )
 
     async with _client(httpx2.MockTransport(respond)) as client:
-        model = BoundOpenAIModel(client=client, model="test")
+        model = ResponsesModel(client=client, model="test")
         with pytest.raises(ContextLengthExceededError):
-            await model.responses_create(ResponsesRequest(input="too long"))
+            await model.sample(model.prepare(ResponsesRequest(input="too long")))
 
     assert attempts == 1
 

@@ -16,7 +16,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from cluster.cdk8s import headlamp, hubble_ui, kubectl_passthrough_mcp, proxmox_proxy
+from cluster.cdk8s import headlamp, hubble_ui, kubectl_passthrough_mcp, langfuse, proxmox_proxy, website
 
 # Owner modules are aliased by component: several share a name such as `app`.
 from cluster.cdk8s.atuin import server as atuin_server
@@ -24,14 +24,12 @@ from cluster.cdk8s.authentik import app as authentik_app
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo_app
 from cluster.cdk8s.grocy import app as grocy_app
-from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.matrix import matrix
 from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
 from cluster.cdk8s.nix_cache import attic
 from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.service_ref import ServiceRef
-from cluster.cdk8s.website import website
 from model_catalog.catalog import OLLAMA_GPT_OSS_20B_128K
 
 DB_URI_ENV = "GATUS_DB_URI"
@@ -154,7 +152,7 @@ def _endpoints() -> list[Endpoint]:
         Endpoint(
             name="Langfuse",
             group=Group.AI,
-            url=f"{_in_cluster(langfuse_app.WEB)}/api/public/health",
+            url=f"{_in_cluster(langfuse.WEB)}/api/public/health",
             interval="60s",
             conditions=[_STATUS_OK],
         ),

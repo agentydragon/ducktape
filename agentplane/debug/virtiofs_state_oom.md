@@ -135,7 +135,7 @@ performed in this investigation.
 
 ## Next bounded experiment
 
-Use the existing isolated [RBE k3s VM fixture](../system_tests/k3s/README.md#vm-sandboxes), with
+Use the existing isolated [RBE k3s VM fixture](../system_tests/deployment/README.md#vm-sandboxes), with
 production's pinned KubeVirt launcher and a disposable filesystem state claim. This shell has
 neither `/dev/kvm` nor `/dev/fuse`; do not reproduce on the affected VM. The RBE fixture supports
 TCG guests. Confirm that the KubeVirt-generated daemon retains its memory limit even though the

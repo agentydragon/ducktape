@@ -4,8 +4,6 @@
 //!
 //! * Enumerate emitted-module `*.yaml` files under a spec's
 //!   `modules/` root.
-//! * Deserialize the spec-root `binding_patches.yaml` stream for
-//!   non-emitting binding edits.
 //! * Deserialize each file's body via the canonical `ModuleFile`
 //!   shape (members + anonymous statements).
 //! * Deserialize flat transform specs through their canonical typed schema.
@@ -21,10 +19,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use selector_outcome::SelectorKind;
 
 use spec::{
-    AnonymousStatementSelector, BindingSourceKind, Member, MemberSelectorSpec, ModulePath,
+    AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, ModulePath,
     SourceMatchClaim, TransformSpec, is_residual_namespace_path,
 };
 
@@ -70,13 +68,6 @@ pub fn coalesce_source_match_claims(module: &mut ModuleFile) {
         }
     }
     module.source_matches = grouped;
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BindingPatchesFile {
-    #[serde(default)]
-    pub members: Vec<Member>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -126,19 +117,30 @@ pub fn module_path_from_file(path: &Path, root: &Path) -> String {
         .to_string()
 }
 
-pub fn default_binding_patches_path(modules_root: &Path) -> PathBuf {
-    modules_root
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("binding_patches.yaml")
-}
-
 pub fn collect_module_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     collect_module_files_into(root, &mut out)?;
     out.sort();
     graph_provenance::record_yaml_membership(root, &out)?;
     Ok(out)
+}
+
+/// Writing through one alias can change an untouched module's claims, and
+/// deleting a source can strand another alias.
+pub fn ensure_unaliased_module_tree(root: &Path) -> Result<()> {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        anyhow::ensure!(
+            !kind.is_symlink(),
+            "module tree does not support symlink entries: {}",
+            entry.path().display()
+        );
+        if kind.is_dir() {
+            ensure_unaliased_module_tree(&entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn collect_module_files_into(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -166,21 +168,16 @@ pub fn read_flat_transform_spec(path: &Path) -> Result<TransformSpec> {
         .with_context(|| format!("parsing {}", path.display()))
 }
 
-fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
-    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
-        .with_context(|| format!("parsing {}", path.display()))
-}
-
 pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
     let mut claims = ModuleClaims::default();
     for member in module.members {
-        let selector = member.selector.selected()?;
+        let selector = member.selector.validate()?;
         let name = match (&member.name, &selector) {
             (Some(name), _) => name.clone(),
             (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
             (None, _) => anyhow::bail!(
-                "member using {} requires name",
-                selector.selector_kind_label()
+                "{} requires name",
+                SelectorKind::from(&selector).origin(None)
             ),
         };
         if let MemberSelectorSpec::Binding(binding) = &selector {
@@ -202,33 +199,9 @@ pub fn read_module_claims(path: &Path) -> Result<ModuleClaims> {
     module_claims(read_module_file(path)?)
 }
 
-pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
-    let path = default_binding_patches_path(modules_root);
-    if !path.exists() {
-        graph_provenance::record_absent(&path)?;
-        return Ok(Vec::new());
-    }
-    let members = read_binding_patches_file(&path)?.members;
-    for (index, member) in members.iter().enumerate() {
-        let selector = member.selector.selected().with_context(|| {
-            format!(
-                "{}: member {index} requires exactly one binding selector",
-                path.display()
-            )
-        })?;
-        anyhow::ensure!(
-            matches!(selector, MemberSelectorSpec::Binding(_)),
-            "{}: member {index} requires a binding selector",
-            path.display(),
-        );
-    }
-    Ok(members)
-}
-
 /// Every chunk-top binding name claimed by an emitted `*.yaml`
 /// file's `selector.binding.name`, mapped to the module path that
-/// owns it. Binding patches are not included because they don't
-/// materialize as modules.
+/// owns it.
 ///
 /// Excludes:
 ///
@@ -251,7 +224,11 @@ pub fn load_active_claims(modules_root: &Path) -> Result<BTreeMap<String, Module
         let module_path = ModulePath::parse(&raw_path, "")
             .with_context(|| format!("module path from {}", path.display()))?;
         for member in read_module_file(&path)?.members {
-            let Some(binding) = member.selector.binding else {
+            let MemberSelectorSpec::Binding(binding) = member
+                .selector
+                .validate()
+                .with_context(|| format!("member selector in {}", path.display()))?
+            else {
                 continue;
             };
             if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {

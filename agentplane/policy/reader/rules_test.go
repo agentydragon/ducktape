@@ -8,6 +8,7 @@ import (
 	"time"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,33 +42,29 @@ func TestRelistRemovesNamesThatVanishedWhileTheWatchWasDown(t *testing.T) {
 	})
 }
 
-func TestAKindThatStopsCompletingCyclesGoesStale(t *testing.T) {
+func TestAKindWhoseRequestsFailIsUnavailableUntilItsWatchResumes(t *testing.T) {
 	f := newFixture(t)
 	f.start()
-	f.eventually("every kind to complete a watch period", func() bool {
-		status := f.freshness.Status(time.Now())
-		for _, kind := range []Kind{PolicySets, PolicyBindings} {
-			// A completed cycle is at least a period old by the time it is recorded; the seed is not.
-			if age, recorded := status.Ages[kind]; !recorded || age > time.Since(f.started)-watchPeriod/2 {
-				return false
-			}
-		}
-		return status.Synced && status.Available
-	})
+	f.eventually("the first sync", f.health.Available)
 
-	// Its watches stop returning while the rest of the API server stays healthy.
-	f.faults.hold(PolicySets)
-	var status Status
+	// Its requests fail while the rest of the API server stays healthy, and its open watch is cut, so
+	// client-go's next request for it fails.
+	restore := f.faults.fail(PolicySets)
+	f.faults.sever(PolicySets)
+	var status watchhealth.Status
 	f.eventually("the view to turn unavailable", func() bool {
-		status = f.freshness.Status(time.Now())
+		status = f.health.Status()
 		return !status.Available
 	})
-	if !status.Synced || status.Ages[PolicySets] <= status.StaleAfter {
-		t.Errorf("unavailable because of something else than the wedged kind: %+v", status)
+	if _, failing := status.Failing[PolicySets]; !status.Synced || !failing {
+		t.Errorf("unavailable because of something else than the failing kind: %+v", status)
 	}
-	if status.Ages[PolicyBindings] > status.StaleAfter {
-		t.Errorf("policybindings went stale although its watches kept returning: %+v", status)
+	if _, failing := status.Failing[PolicyBindings]; failing {
+		t.Errorf("policybindings failed although its requests kept succeeding: %+v", status)
 	}
+
+	restore()
+	f.eventually("the view to recover once its requests succeed again", f.health.Available)
 }
 
 func TestTheConditionFollowsTheSetsABindingNames(t *testing.T) {
@@ -177,4 +174,58 @@ func TestTheConditionIsNotRewrittenWhenUnchanged(t *testing.T) {
 	if got := f.faults.patchCount("test-first"); got != written {
 		t.Errorf("a binding already carrying its condition was written %d more times", got-written)
 	}
+}
+
+func TestAnIdentityBindingAnswersOnlyALookupOfItsLiveIdentity(t *testing.T) {
+	f := newFixture(t)
+	f.create(f.policySet("test-set", testRule()))
+	agent := f.identity("test-agent")
+	f.create(agent)
+	f.create(f.policyBinding("test-account-grant", "test-set"))
+	identityGrant := f.policyBinding("test-identity-grant", "test-set")
+	identityGrant.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: agent.Name}}
+	f.create(identityGrant)
+	f.start()
+	live := Identity{Name: agent.Name, UID: agent.UID}
+	f.eventually("the identity binding to grant", func() bool {
+		return slices.Equal(grantedBindings(f.index.Grants(live)), []string{"test-identity-grant"})
+	})
+
+	// Neither kind of lookup finds the other kind's binding.
+	if got := grantedBindings(f.index.Grants(subject)); !slices.Equal(got, []string{"test-account-grant"}) {
+		t.Errorf("a ServiceAccount lookup found %v", got)
+	}
+	// A ServiceAccount whose name is the Identity's is still not the Identity.
+	if got := f.index.Bindings(ServiceAccount{Namespace: f.namespace, Name: agent.Name}); len(got) != 0 {
+		t.Errorf("a ServiceAccount lookup by the Identity's name found %+v", got)
+	}
+	if got := f.index.Bindings(live); len(got) != 1 || got[0].Binding.Name != "test-identity-grant" || got[0].Rules() != 1 {
+		t.Errorf("Bindings of the Identity = %+v", got)
+	}
+	if got := f.index.Grants(Identity{Name: agent.Name}); len(got) != 0 {
+		t.Errorf("a lookup naming no UID found %v", grantedBindings(got))
+	}
+
+	f.remove(agent)
+	f.eventually("the deleted Identity to grant nothing", func() bool { return len(f.index.Grants(live)) == 0 })
+
+	// A same-named Identity is another incarnation: what the deleted one's UID could do, it still
+	// cannot, while the new one's UID holds the binding that names the name.
+	recreated := f.identity(agent.Name)
+	f.create(recreated)
+	f.eventually("the recreated Identity to grant", func() bool {
+		return slices.Equal(grantedBindings(f.index.Grants(Identity{Name: recreated.Name, UID: recreated.UID})), []string{"test-identity-grant"})
+	})
+	if got := f.index.Grants(live); len(got) != 0 {
+		t.Errorf("the deleted incarnation inherited %v from the recreated one", grantedBindings(got))
+	}
+}
+
+// grantedBindings is the names of the bindings among grants.
+func grantedBindings(grants []Grant[[]string]) []string {
+	var names []string
+	for _, grant := range grants {
+		names = append(names, grant.Binding)
+	}
+	return names
 }

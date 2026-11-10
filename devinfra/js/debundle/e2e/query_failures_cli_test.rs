@@ -1,6 +1,6 @@
 //! Runtime failures from read-only top-level queries remain machine-readable.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::Value;
 use std::fs;
 
@@ -121,4 +121,59 @@ fn top_level_query_runtime_failures_are_structured_in_json_formats() {
     assert_eq!(mismatch["kind"], "graph_compatibility");
     assert_eq!(mismatch["action"], "rejected");
     assert_eq!(mismatch["mismatch"]["reason"], "file");
+}
+
+#[test]
+fn graph_queries_reject_the_same_unresolved_dependency_endpoint() {
+    let fixture = GraphFixture::new("const alpha = 1;\nconst beta = alpha + 1;\n", &[]);
+    let mut graph = fixture.dependency_graph();
+    graph
+        .edges
+        .first_mut()
+        .expect("real dependency edge")
+        .target = "unit:missing".to_owned();
+    report_io::write_json_gzip(&fixture.graph, &graph).unwrap();
+
+    // Even queries presenting a saved projection load the same checked input.
+    // A dangling source edge must not silently disappear from an operation's
+    // private topology projection.
+    let queries: &[&[&str]] = &[
+        &["describe", "unit:0"],
+        &["inspect-source", "--id", "unit:0"],
+        &["graph-summary"],
+        &["atoms"],
+        &["coverage"],
+        &["scc"],
+        &["cluster", "alpha"],
+    ];
+    for query in queries {
+        let mut args = query.to_vec();
+        args.extend(["--format", "json"]);
+        assert_structured_failure(
+            fixture.command(&args),
+            "json",
+            "query_failed",
+            "references source-unit ID unit:missing",
+        );
+    }
+}
+
+#[test]
+fn describing_a_saved_atomic_group_with_an_unknown_member_fails_cleanly() {
+    let fixture = GraphFixture::new("const alpha = 1;\n", &[]);
+    let mut graph = fixture.dependency_graph();
+    let group = graph
+        .atomic_graph
+        .nodes
+        .first_mut()
+        .expect("real atomic group");
+    let group_id = group.id.clone();
+    group.source_unit_ids.push("unit:missing".to_owned());
+    report_io::write_json_gzip(&fixture.graph, &graph).unwrap();
+    assert_structured_failure(
+        fixture.command(&["describe", &group_id, "--format", "json"]),
+        "json",
+        "query_failed",
+        "unit:missing",
+    );
 }

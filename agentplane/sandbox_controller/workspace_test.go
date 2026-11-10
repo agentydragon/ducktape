@@ -151,6 +151,12 @@ func TestWorkspaceChangeRefusesResumeAndRetainsClaimAndHaltedVM(t *testing.T) {
 func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing.T) {
 	template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 	r, c := newReconciler(t, true, template)
+	// This reconcile requests the runner credential and waits for it. Install the injected failure
+	// only once the issued credential lets the next reconcile reach workspace binding.
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	issueCredential(t, c, sandboxKey)
 	failure := errors.New("controller interrupted before binding persistence")
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {

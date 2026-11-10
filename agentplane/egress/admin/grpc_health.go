@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -16,24 +15,23 @@ const LivenessService = "livez"
 // wants the verdict alone. It admits every caller, because the kubelet sends no bearer; GetHealth is
 // the authenticated call that carries the facts.
 //
-// The empty service is readiness: SERVING while the index is complete and still moving. The
+// The empty service is readiness: SERVING while the index has synced and no kind is failing. The
 // `livez` service is liveness: SERVING while the process answers, whatever the index says, so a
 // recoverable watch outage never restarts it. Watch is not served.
 type Probes struct {
 	healthpb.UnimplementedHealthServer
 	index Index
-	clock func() time.Time
 }
 
-func NewProbes(index Index, clock func() time.Time) *Probes {
-	return &Probes{index: index, clock: clock}
+func NewProbes(index Index) *Probes {
+	return &Probes{index: index}
 }
 
 func (p *Probes) Check(_ context.Context, request *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	var serving bool
 	switch request.GetService() {
 	case "":
-		serving = p.index.Status(p.clock()).Available
+		serving = p.index.Status().Available
 	case LivenessService:
 		serving = true
 	default:

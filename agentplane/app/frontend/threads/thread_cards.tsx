@@ -1,23 +1,39 @@
-import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
+import { Alert, Badge, Box, Button, Group, Stack, Text, type MantineColor } from "@mantine/core";
+import { Operation } from "../../../proto/command_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type CSSProperties, type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ThreadCommandOutcome,
+  type ThreadEntity,
+  type ThreadItem,
+  type ThreadPayloadReference,
+} from "../../../history_service/history_service_pb";
 
-import { ClampedBlock, lineCount } from "../clamped_block";
 import { InlineCode } from "../../../../util/frontend/code_block";
-import { DisclosureBody, DisclosureCard } from "../disclosure";
+import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
+import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
 import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
-import { HighlightedText } from "../json_view";
+import { HighlightedText } from "../../../../util/frontend/json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
+import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
+import { TextBlock } from "../../../../util/frontend/transcript/text_block";
 import { RawSwitch } from "../raw_switch";
 import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
-import { RetainedDisclosure, useRetainedDisclosure } from "./retained_disclosures";
-import { StepLine, type StepMark } from "./step_line";
-import { useThreadSync, type Payload, type PayloadRef, type ThreadEntity } from "./thread_sync";
+import { StepLine, type StepMark } from "../../../../util/frontend/transcript/step_line";
+import { useThreadSync, type Payload } from "./thread_sync";
 
-type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
+function inputReference(entity: ThreadEntity): ThreadPayloadReference | null {
+  switch (entity.entity.case) {
+    case "confirmedInput":
+    case "command":
+      return entity.entity.value.inputRef ?? null;
+    default:
+      return null;
+  }
+}
 
 /** How a body renders: the agent's prose (assistant text, reasoning) as Markdown, tool arguments and
  * output as code (highlighted when it is JSON), and the operator's own input verbatim, as typed. */
@@ -30,7 +46,7 @@ export function Body({
   fallbackText,
   onBodyLoaded,
 }: {
-  reference: PayloadRef | null;
+  reference: ThreadPayloadReference | null;
   format: BodyFormat;
   streaming?: boolean;
   fallbackText?: string;
@@ -61,7 +77,7 @@ function PayloadText({
   fallbackText,
   onBodyLoaded,
 }: {
-  reference: PayloadRef;
+  reference: ThreadPayloadReference;
   format: BodyFormat;
   streaming: boolean;
   fallbackText?: string;
@@ -82,13 +98,13 @@ function PayloadView({
   fallbackText,
   onBodyLoaded,
 }: {
-  reference: PayloadRef;
+  reference: ThreadPayloadReference;
   children: (body: string) => ReactNode;
   fallbackText?: string;
   onBodyLoaded?: () => void;
 }): JSX.Element {
   const { body, error, retry } = useThreadSync().usePayload(reference);
-  const loadedReference = `${reference.projection_epoch}:${reference.owner_id}:${reference.field}:${reference.generation}:${reference.revision_cursor}`;
+  const loadedReference = `${reference.projectionEpoch}:${reference.ownerId}:${reference.field}:${reference.generation}:${reference.revisionCursor}`;
   const reportedLoadedReference = useRef<string | null>(null);
   useEffect(() => {
     if (body !== null && reportedLoadedReference.current !== loadedReference) {
@@ -123,7 +139,7 @@ function OptionalPayload({
   reference,
   children,
 }: {
-  reference: PayloadRef | null;
+  reference: ThreadPayloadReference | null;
   children: (payload: Payload | null) => ReactNode;
 }): JSX.Element {
   return reference ? <LoadedPayload reference={reference}>{children}</LoadedPayload> : <>{children(null)}</>;
@@ -133,7 +149,7 @@ function LoadedPayload({
   reference,
   children,
 }: {
-  reference: PayloadRef;
+  reference: ThreadPayloadReference;
   children: (payload: Payload) => ReactNode;
 }): JSX.Element {
   return <>{children(useThreadSync().usePayload(reference))}</>;
@@ -156,14 +172,6 @@ function FormattedBody({
     case "text":
       return <VerbatimText text={body} />;
   }
-}
-
-export function VerbatimText({ text }: { text: string }): JSX.Element {
-  return (
-    <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-      {text}
-    </Text>
-  );
 }
 
 /** The operator's input, including provisional sends. Progress and action sit in the
@@ -194,56 +202,57 @@ export function UserInputBubble({
 }): JSX.Element {
   return (
     <Stack gap="xs" style={{ width: "100%" }}>
-      <Group
-        className="agentplane-user-message-row"
-        justify="flex-end"
-        align="flex-start"
-        gap="xs"
-        wrap="nowrap"
-        style={{ width: "100%" }}
-        data-command-id={commandId ?? entity?.entityId}
+      <UserMessage
+        rowAttributes={{ "data-command-id": commandId ?? entity?.entityId }}
+        bubbleAttributes={{
+          className: "transcript-inspection-owner",
+          "data-message-phase": phase,
+          "data-has-action": action ? "true" : undefined,
+          "data-has-aside": progress || action ? "true" : undefined,
+        }}
+        pending={pending}
+        aside={
+          progress || action ? (
+            <>
+              {progress}
+              {action && (
+                <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
+                  {action.label}
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
+        overlay={entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
       >
-        {(progress || action) && (
-          <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
-            {progress}
-            {action && (
-              <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>
-                {action.label}
-              </Button>
-            )}
-          </Stack>
-        )}
-        <Paper
-          className="agentplane-user-bubble agentplane-evidence-owner"
-          data-message-phase={phase}
-          data-has-action={action ? "true" : undefined}
-          data-has-aside={progress || action ? "true" : undefined}
-          p="sm"
-          style={pending ? { fontStyle: "italic", opacity: 0.6 } : undefined}
-        >
-          {entity && <EvidenceToggle entity={entity} placement={progress || action ? "overlay" : "bubble"} />}
-          {entity ? (
-            <Body
-              reference={entity.inputRef}
-              format="text"
-              fallbackText={fallbackText}
-              onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
-            />
-          ) : text !== undefined ? (
-            <VerbatimText text={text} />
-          ) : null}
-        </Paper>
-      </Group>
+        {entity ? (
+          <Body
+            reference={inputReference(entity)}
+            format="text"
+            fallbackText={fallbackText}
+            onBodyLoaded={fallbackText === undefined ? undefined : onFallbackLoaded}
+          />
+        ) : text !== undefined ? (
+          <VerbatimText text={text} />
+        ) : null}
+      </UserMessage>
       {entity && threadId && <EvidencePanel threadId={threadId} entity={entity} />}
     </Stack>
   );
 }
 
-function payloadDisclosureId(reference: PayloadRef): string {
-  return `${reference.projection_epoch}:${reference.owner_id}:${reference.field}`;
+function payloadDisclosureId(reference: ThreadPayloadReference): string {
+  return `${reference.projectionEpoch}:${reference.ownerId}:${reference.field}`;
 }
 
-function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; format: BodyFormat }): JSX.Element {
+function LazyBody({
+  label,
+  ...body
+}: {
+  label: string;
+  reference: ThreadPayloadReference;
+  format: BodyFormat;
+}): JSX.Element {
   const id = payloadDisclosureId(body.reference);
   return (
     <RetainedDisclosure id={id} summary={label}>
@@ -264,7 +273,7 @@ function ReasoningPreview({
   onOverflowChange,
   summaryAside,
 }: {
-  reference: PayloadRef;
+  reference: ThreadPayloadReference;
   /** How the step stands, shown on its title while it is folded. */
   mark: StepMark | undefined;
   /** The same, as badges, once it is open. */
@@ -280,7 +289,7 @@ function ReasoningPreview({
 
   useLayoutEffect(() => {
     const element = preview.current;
-    const content = element?.querySelector<HTMLElement>(".agentplane-markdown--single-line");
+    const content = element?.querySelector<HTMLElement>(".ui-markdown--single-line");
     if (body === null || !element || !content) {
       onOverflowChange(false);
       return;
@@ -341,7 +350,7 @@ function ReasoningPreview({
       summaryAside={summaryAside}
       aside={
         error && (
-          <button className="agentplane-step-retry" onClick={retry} type="button">
+          <button className="agentplane-tool-retry" onClick={retry} type="button">
             Retry
           </button>
         )
@@ -365,21 +374,20 @@ function ReasoningPreview({
  * eventual bubble rather than as a command awaiting an outcome. */
 export function pendingSentMessage(entity: ThreadEntity): boolean {
   return (
-    entity.entityKind === "command" &&
-    "outcome" in entity.state &&
-    entity.state.operation === "submit_input" &&
-    entity.state.outcome === "pending"
+    entity.entity.case === "command" &&
+    entity.entity.value.operation === Operation.SUBMIT_INPUT &&
+    entity.entity.value.outcome === ThreadCommandOutcome.PENDING
   );
 }
 
 /** What a recovery leaves unsaid about whether an item's content is in the model's context. */
-function RecoveryNotes({ state, tool }: { state: ItemState; tool: boolean }): JSX.Element {
+function RecoveryNotes({ state, tool }: { state: ThreadItem; tool: boolean }): JSX.Element {
   return (
     <>
       {state.recovery === RecoveryDisposition.UNKNOWN && (
         <Text size="sm" c="dimmed" mb="xs" style={{ overflowWrap: "anywhere" }}>
           Whether this content remains in the model&apos;s context could not be determined.
-          {state.recovery_reason && ` ${state.recovery_reason}`}
+          {state.recoveryReason && ` ${state.recoveryReason}`}
         </Text>
       )}
       {state.recovery === RecoveryDisposition.REVISED && (
@@ -406,7 +414,7 @@ function DiscardedCard({ id, summary, children }: { id: string; summary: string;
           </Text>
         }
       >
-        <Stack gap={0} className="agentplane-evidence-owner">
+        <Stack gap={0} className="transcript-inspection-owner">
           {children}
         </Stack>
       </RetainedDisclosure>
@@ -475,30 +483,35 @@ function ShellCallControls({
 function ToolCard({
   threadId,
   entity,
-  state,
+  item,
   live,
   discardedId,
 }: {
   threadId: string;
   entity: ThreadEntity;
-  state: ItemState;
+  item: ThreadItem;
   live: boolean;
   discardedId: string | null;
 }): JSX.Element {
-  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:tool`;
+  const textRef = item.textRef ?? null;
+  const argumentsRef = item.argumentsRef ?? null;
+  const outputRef = item.outputRef ?? null;
+  const unfinished = item.completion.case === undefined;
+  const toolSucceeded = item.completion.case === "tool" ? item.completion.value.succeeded : undefined;
+  const recovery = item.recovery;
+  const id = `${entity.projectionEpoch}:${entity.entity.case}:${entity.entityId}:tool`;
   const [open, setOpen] = useRetainedDisclosure(id);
   const [raw, setRaw] = useRetainedDisclosure(`${id}:raw`);
   const input = useRetainedDisclosure(`${id}:input`);
   const output = useRetainedDisclosure(`${id}:output`);
   const outputDisclosure = useRetainedDisclosure(`${id}:output:disclosure`, true);
-  const disclosable =
-    entity.argumentsRef !== null || entity.outputRef !== null || entity.textRef !== null || state.recovery !== null;
+  const disclosable = argumentsRef !== null || outputRef !== null || textRef !== null || recovery !== undefined;
   const opened = open && disclosable;
   // How a folded line shows what the badges below show once it is open.
   const mark: StepMark | undefined =
-    state.tool_succeeded === false
+    toolSucceeded === false
       ? "failed"
-      : state.completion === null && state.recovery === null
+      : unfinished && recovery === undefined
         ? live
           ? "streaming"
           : "incomplete"
@@ -507,19 +520,19 @@ function ToolCard({
   // draw its one-line summary (`PayloadShape.want` fetches whole bodies); a bounded summary computed in
   // the thread projection would spare a folded row the fetch.
   return (
-    <OptionalPayload reference={entity.argumentsRef}>
+    <OptionalPayload reference={argumentsRef}>
       {(args) => {
         const argumentsBody = args?.body ?? null;
-        const call = argumentsBody === null ? null : parseShellCall(state.tool_name, argumentsBody);
+        const call = argumentsBody === null ? null : parseShellCall(item.toolName, argumentsBody);
         const detail = (
           <Stack gap={0}>
-            {(state.recovery === RecoveryDisposition.UNKNOWN ||
-              state.recovery === RecoveryDisposition.REVISED ||
-              entity.textRef ||
+            {(recovery === RecoveryDisposition.UNKNOWN ||
+              recovery === RecoveryDisposition.REVISED ||
+              textRef ||
               (args && argumentsBody === null)) && (
               <DisclosureBody>
-                <RecoveryNotes state={state} tool />
-                {entity.textRef && <Body reference={entity.textRef} format="markdown" />}
+                <RecoveryNotes state={item} tool />
+                {textRef && <Body reference={textRef} format="markdown" />}
                 {args && argumentsBody === null && (
                   <Text c="dimmed" aria-busy={!args.error}>
                     Loading complete revision…
@@ -531,27 +544,18 @@ function ToolCard({
               (call && !raw ? (
                 <ShellCommandView command={call.command} notes={call.notes} expansion={input} />
               ) : (
-                <div>
-                  <ClampedBlock
-                    maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
-                    lines={lineCount(argumentsBody)}
-                    label="Arguments"
-                    header={
-                      <Text size="sm" c="dimmed">
-                        Arguments
-                      </Text>
-                    }
-                    expansion={input}
-                  >
-                    <HighlightedText text={argumentsBody} />
-                  </ClampedBlock>
-                </div>
+                <TextBlock
+                  label="Arguments"
+                  text={argumentsBody}
+                  expansion={input}
+                  maxHeightRem={SHELL_COMMAND_MAX_HEIGHT_REM}
+                />
               ))}
-            {entity.outputRef && (
-              <PayloadView reference={entity.outputRef}>
+            {outputRef && (
+              <PayloadView reference={outputRef}>
                 {(text) => (
                   <OutputBlock
-                    name={state.recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
+                    name={recovery === RecoveryDisposition.REVISED ? "Continuation output" : "Output"}
                     text={text}
                     raw={raw}
                     expansion={output}
@@ -564,7 +568,7 @@ function ToolCard({
         );
         if (discardedId !== null) {
           return (
-            <DiscardedCard id={discardedId} summary={`${state.tool_name || "Tool"}: discarded context`}>
+            <DiscardedCard id={discardedId} summary={`${item.toolName || "Tool"}: discarded context`}>
               <DisclosureBody>
                 <Text size="sm" c="dimmed">
                   Discarded context does not undo tool side effects or change its recorded execution outcome.
@@ -576,7 +580,7 @@ function ToolCard({
                       call={call}
                       raw={raw}
                       onRawChange={setRaw}
-                      hasOutput={entity.outputRef !== null}
+                      hasOutput={outputRef !== null}
                       fullWidth={false}
                     >
                       <EvidenceToggle entity={entity} placement="inline" />
@@ -594,9 +598,9 @@ function ToolCard({
           );
         }
         return (
-          <DisclosureCard open={opened} className="agentplane-evidence-owner">
+          <DisclosureCard open={opened} className="transcript-inspection-owner">
             <StepLine
-              title={call?.label ?? (state.tool_name || "tool")}
+              title={call?.label ?? (item.toolName || "tool")}
               mark={opened ? undefined : mark}
               preview={
                 args &&
@@ -615,15 +619,13 @@ function ToolCard({
               trailing={itemStatus([entity], live, !opened, opened)}
               aside={
                 args?.error && (
-                  <button className="agentplane-step-retry" onClick={args.retry} type="button">
+                  <button className="agentplane-tool-retry" onClick={args.retry} type="button">
                     Retry
                   </button>
                 )
               }
               controls={
-                call && (
-                  <ShellCallControls call={call} raw={raw} onRawChange={setRaw} hasOutput={entity.outputRef !== null} />
-                )
+                call && <ShellCallControls call={call} raw={raw} onRawChange={setRaw} hasOutput={outputRef !== null} />
               }
               summaryAside={<EvidenceToggle entity={entity} placement="inline" />}
               expandable={disclosable}
@@ -653,18 +655,17 @@ export function EntityCard({
   fallbackText?: string;
   onFallbackLoaded?: () => void;
 }): JSX.Element {
+  const item = entity.entity.case === "item" ? entity.entity.value : undefined;
   // Computed unconditionally (hooks can't follow the entity-kind branches below): null, and so
   // always closed, for anything but a reasoning step with a body to disclose.
-  const reasoningTextRef = "kind" in entity.state && entity.state.kind === ItemKind.REASONING ? entity.textRef : null;
+  const reasoningTextRef = item?.kind === ItemKind.REASONING ? (item.textRef ?? null) : null;
   const [reasoningOpen, setReasoningOpen] = useRetainedDisclosure(
     reasoningTextRef && payloadDisclosureId(reasoningTextRef)
   );
   const [reasoningOverflows, setReasoningOverflows] = useState(false);
   const discardedId =
-    "kind" in entity.state && entity.state.recovery === RecoveryDisposition.ABSENT
-      ? `${entity.projectionEpoch}:${entity.entityId}:discarded`
-      : null;
-  if (entity.entityKind === "confirmed_input") {
+    item?.recovery === RecoveryDisposition.ABSENT ? `${entity.projectionEpoch}:${entity.entityId}:discarded` : null;
+  if (entity.entity.case === "confirmedInput") {
     return (
       <UserInputBubble
         threadId={threadId}
@@ -688,17 +689,20 @@ export function EntityCard({
       />
     );
   }
-  if (entity.entityKind === "lifecycle" && "observation" in entity.state) {
-    const { label, prominent, diagnostic } = lifecyclePresentation(entity.state.observation, entity.state.event);
+  if (entity.entity.case === "lifecycle") {
+    const event = entity.entity.value.event;
+    const { label, prominent, diagnostic } = event
+      ? lifecyclePresentation(event)
+      : { label: "Unknown lifecycle event", prominent: false, diagnostic: null };
     const wrapped = { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
     if (!prominent) {
       return (
-        <Stack gap={0} className="agentplane-evidence-owner">
+        <Stack gap={0} className="transcript-inspection-owner">
           <Text c="dimmed">{label}</Text>
           <EvidenceToggle
             entity={entity}
             placement="overlay"
-            style={{ "--agentplane-evidence-overlay-inset": "0px" } as CSSProperties}
+            style={{ "--transcript-inspection-overlay-inset": "0px" } as CSSProperties}
           />
           {diagnostic && (
             <Text c="dimmed" style={wrapped}>
@@ -710,11 +714,11 @@ export function EntityCard({
       );
     }
     return (
-      <Alert color="red" role="alert" className="agentplane-evidence-owner">
+      <Alert color="red" role="alert" className="transcript-inspection-owner">
         <EvidenceToggle
           entity={entity}
           placement="overlay"
-          style={{ "--agentplane-evidence-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
+          style={{ "--transcript-inspection-overlay-inset": "var(--mantine-spacing-xs)" } as CSSProperties}
         />
         <Text size="sm" style={wrapped}>
           <Text span fw={700} c="var(--alert-color)">
@@ -726,36 +730,29 @@ export function EntityCard({
       </Alert>
     );
   }
-  if (entity.entityKind === "command" || entity.entityKind === "view_state") return <></>;
-  if (!("kind" in entity.state)) return <></>;
-  if (entity.state.kind === ItemKind.TOOL_CALL) {
-    return <ToolCard threadId={threadId} entity={entity} state={entity.state} live={live} discardedId={discardedId} />;
+  if (entity.entity.case === "command" || entity.entity.case === "viewState" || !item) return <></>;
+  if (item.kind === ItemKind.TOOL_CALL) {
+    return <ToolCard threadId={threadId} entity={entity} item={item} live={live} discardedId={discardedId} />;
   }
-  const reasoning = entity.state.kind === ItemKind.REASONING;
+  const reasoning = item.kind === ItemKind.REASONING;
+  const textRef = item.textRef ?? null;
+  const unfinished = item.completion.case === undefined;
+  const recovery = item.recovery;
   // A reasoning step that is still unfinished shows it on its title, as a tool call does; only a
   // recovery, which the title has no mark for, still takes a row of badges above it.
   const reasoningMark: StepMark | undefined =
-    reasoning && entity.state.completion === null && entity.state.recovery === null
-      ? live
-        ? "streaming"
-        : "incomplete"
-      : undefined;
-  const streamingText =
-    entity.state.kind === ItemKind.ASSISTANT_TEXT &&
-    entity.state.completion === null &&
-    entity.state.recovery === null &&
-    live;
+    reasoning && unfinished && recovery === undefined ? (live ? "streaming" : "incomplete") : undefined;
+  const streamingText = item.kind === ItemKind.ASSISTANT_TEXT && unfinished && recovery === undefined && live;
   const status = itemStatus([entity], live);
   const evidenceToggleInReasoningStep = reasoningTextRef !== null && discardedId === null;
   const recoveryDetails = (
     <>
-      {status &&
-        ((!reasoning && entity.state.completion === null && !streamingText) || entity.state.recovery !== null) && (
-          <Group gap="xs" mb="xs">
-            {status}
-          </Group>
-        )}
-      <RecoveryNotes state={entity.state} tool={false} />
+      {status && ((!reasoning && unfinished && !streamingText) || recovery !== undefined) && (
+        <Group gap="xs" mb="xs">
+          {status}
+        </Group>
+      )}
+      <RecoveryNotes state={item} tool={false} />
     </>
   );
   const body = (
@@ -763,10 +760,10 @@ export function EntityCard({
       {!evidenceToggleInReasoningStep && <EvidenceToggle entity={entity} placement="overlay" />}
       {discardedId !== null ? <DisclosureBody>{recoveryDetails}</DisclosureBody> : recoveryDetails}
       {reasoning ? (
-        entity.textRef ? (
+        textRef ? (
           discardedId === null ? (
             <ReasoningPreview
-              reference={entity.textRef}
+              reference={textRef}
               mark={reasoningMark}
               status={itemStatus([entity], live, false, true)}
               open={reasoningOpen}
@@ -778,7 +775,7 @@ export function EntityCard({
               }
             />
           ) : (
-            <LazyBody label="Reasoning" reference={entity.textRef} format="markdown" />
+            <LazyBody label="Reasoning" reference={textRef} format="markdown" />
           )
         ) : (
           <Text size="sm" c="dimmed">
@@ -786,13 +783,13 @@ export function EntityCard({
           </Text>
         )
       ) : (
-        entity.textRef &&
+        textRef &&
         (discardedId !== null ? (
           <DisclosureBody>
-            <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+            <Body reference={textRef} format="markdown" streaming={streamingText} />
           </DisclosureBody>
         ) : (
-          <Body reference={entity.textRef} format="markdown" streaming={streamingText} />
+          <Body reference={textRef} format="markdown" streaming={streamingText} />
         ))
       )}
       <EvidencePanel threadId={threadId} entity={entity} />
@@ -811,11 +808,11 @@ export function EntityCard({
   // line.
   if (reasoning)
     return (
-      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="agentplane-evidence-owner">
+      <DisclosureCard open={reasoningOpen && reasoningOverflows} className="transcript-inspection-owner">
         {body}
       </DisclosureCard>
     );
-  return <Box className="agentplane-evidence-owner">{body}</Box>;
+  return <Box className="transcript-inspection-owner">{body}</Box>;
 }
 
 interface StatusBadge {
@@ -831,15 +828,22 @@ function isShellCall(toolName: string): boolean {
 /** A badge says how items differ from the ordinary case -- ran to completion, still in the model's
  * context, no failure -- which wears none. */
 function statusBadges(items: ThreadEntity[], live: boolean, titleMarked: boolean): StatusBadge[] {
-  const states = items.flatMap((item) => ("kind" in item.state ? [item.state] : []));
+  const states = items.flatMap((entity) => (entity.entity.case === "item" ? [entity.entity.value] : []));
   const badges: StatusBadge[] = [
-    ...(!titleMarked && states.some((state) => state.completion === null && state.recovery === null)
+    ...(!titleMarked && states.some((state) => state.completion.case === undefined && state.recovery === undefined)
       ? [{ label: live ? "Streaming" : "Incomplete" }]
       : []),
-    ...(states.some((state) => state.completion === null && state.recovery !== null) ? [{ label: "Interrupted" }] : []),
-    ...states.flatMap((state) => (state.recovery === null ? [] : (recoveryBadge(state.recovery) ?? []))),
+    ...(states.some((state) => state.completion.case === undefined && state.recovery !== undefined)
+      ? [{ label: "Interrupted" }]
+      : []),
+    ...states.flatMap((state) => (state.recovery === undefined ? [] : (recoveryBadge(state.recovery) ?? []))),
     ...(!titleMarked &&
-    states.some((state) => state.tool_succeeded === false && !(items.length > 1 && isShellCall(state.tool_name)))
+    states.some(
+      (state) =>
+        state.completion.case === "tool" &&
+        !state.completion.value.succeeded &&
+        !(items.length > 1 && isShellCall(state.toolName))
+    )
       ? [{ label: "Failed", color: "red" }]
       : []),
   ];

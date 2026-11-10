@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -45,7 +44,7 @@ func TestActionTextUsesGeneratedProtoJSON(t *testing.T) {
 		t.Fatalf("action detail = %q, error %v", action, err)
 	}
 
-	policy, err := policyText(json.RawMessage(`{"subject":{"namespace":"test","name":"agent"},"synced":true,"bindings":[{"name":"binding","expiresAt":"2026-01-02T03:04:05Z","policySets":[{"name":"set","generation":"1"}]}],"autoApproveIf":[{"binding":"binding","policySet":"set","source":"POLICY_SOURCE_RULES","index":0,"policy":{"exactActions":{"actions":{"test-group":{"values":["echo"]}}}}}]}`))
+	policy, err := policyText(json.RawMessage(`{"subject":{"namespace":"test","name":"agent"},"synced":true,"bindings":[{"name":"binding","expiresAt":"2026-01-02T03:04:05Z","policySets":[{"name":"set","generation":"1"}]}],"autoApproveIf":[{"binding":"binding","policySet":"set","source":"POLICY_SOURCE_RULES","index":0,"policy":{"exactActions":{"actions":[{"group":"test-group","names":["echo"]}]}}}]}`))
 	wantPolicy := "subject test/agent  synced true\nbinding binding  sets set  expires 2026-01-02T03:04:05Z\nauto-approve set#0  exact_actions  test-group/echo"
 	if err != nil || policy != wantPolicy {
 		t.Fatalf("policy text = %q, error %v; want %q", policy, err, wantPolicy)
@@ -57,7 +56,7 @@ func TestActionTextUsesGeneratedProtoJSON(t *testing.T) {
 	}
 }
 
-func TestActionGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
+func TestGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
 	cases := []struct {
 		origin string
 		want   string
@@ -77,7 +76,7 @@ func TestActionGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := actionGRPCTarget(parsed, "AGENTPLANE_ACTIONS_URL")
+			got, err := grpcTarget(parsed, "AGENTPLANE_ACTIONS_URL")
 			if tc.bad {
 				if err == nil {
 					t.Fatalf("target = %q; want invalid origin", got)
@@ -228,16 +227,6 @@ func TestJSONOutputIsGeneratedProtoJSON(t *testing.T) {
 	got := jsonLines(t, stdout)
 	if code != 0 || len(got) != 2 || got[0]["id"] != "test-request-one" || got[0]["state"] != "ACTION_STATE_SUCCEEDED" {
 		t.Errorf("exit %d, output %v; want the generated ActionRequest objects", code, got)
-	}
-}
-
-func TestUnaryJSONOutputIsOneValue(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, _ seen) {
-		reply(w, 200, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
-	})
-	code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if code != 0 || strings.TrimSpace(stdout) != `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}` {
-		t.Errorf("exit %d, stdout %q", code, stdout)
 	}
 }
 
@@ -394,19 +383,6 @@ func TestActionBaseURLRejectsAPathBeforeCallingTheService(t *testing.T) {
 	code, stdout, stderr := invoke(env, "actions", "groups")
 	if code != exitUsage || stdout != "" || fake.count("ListActionGroups") != 0 || !strings.Contains(stderr, "must not include a path") {
 		t.Errorf("exit %d, stdout %q, stderr %q, calls %+v", code, stdout, stderr, fake.callLog())
-	}
-}
-
-func TestLegacyHTTPConfigurationStillWorksForEgress(t *testing.T) {
-	f := newFake(t, func(w http.ResponseWriter, _ *http.Request, request seen) {
-		if request.path != "/v1/rules" {
-			t.Errorf("path = %q", request.path)
-		}
-		reply(w, 200, `{"subject":{"namespace":"test-ns","name":"test-sa"},"policies":[]}`)
-	})
-	code, _, _ := invoke(egressEnv(f.URL), "egress", "rules", "--json")
-	if code != 0 || len(f.requests(http.MethodGet)) != 1 {
-		t.Errorf("exit %d after %d requests", code, f.count())
 	}
 }
 

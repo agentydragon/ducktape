@@ -1,14 +1,13 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -16,7 +15,6 @@ py_library(
 py_library(
     name = "peak_windows",
     srcs = ["peak_windows.py"],
-    imports = [".."],
     visibility = ["//aiquota:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -24,7 +22,6 @@ py_library(
 py_library(
     name = "pace",
     srcs = ["pace.py"],
-    imports = [".."],
     visibility = ["//aiquota:__subpackages__"],
     deps = [":models"],
 )
@@ -32,18 +29,21 @@ py_library(
 py_library(
     name = "cache",
     srcs = ["cache.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
         ":models",
         ":remote",
+        "//aiquota/providers:anthropic_platform_lib",
         "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:cli_proxy_lib",
         "//aiquota/providers:client",
         "//aiquota/providers:codex_lib",
+        "//aiquota/providers:openai_platform_lib",
         "//aiquota/providers:zai_lib",
+        "//aiquota/render:view_model_lib",
+        "@pypi//httpx",
         "@pypi//platformdirs",
     ],
 )
@@ -51,10 +51,9 @@ py_library(
 py_library(
     name = "remote",
     srcs = ["remote.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":models",
+        "//aiquota/render:view_model_lib",
         "@pypi//httpx",
     ],
 )
@@ -62,11 +61,12 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "//aiquota/providers:anthropic_platform_lib",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:codex_lib",
+        "//aiquota/providers:openai_platform_lib",
         "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
         "@pypi//pydantic",
@@ -76,13 +76,12 @@ py_library(
 py_library(
     name = "cli_lib",
     srcs = ["cli.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":config",
         "//aiquota/render:human_lib",
         "//aiquota/render:tmux_lib",
-        "//aiquota/render:view_model_lib",
+        "@pypi//rich",
         "@pypi//typer",
     ],
 )
@@ -90,7 +89,6 @@ py_library(
 py_library(
     name = "desktop_lib",
     srcs = ["desktop.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":config",
@@ -107,11 +105,11 @@ py_library(
 py_test(
     name = "test_desktop",
     srcs = ["test_desktop.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":config",
         ":desktop_lib",
+        ":models",
         "//:conftest",
         "@pypi//dbus_next",
         "@pypi//httpx",
@@ -133,16 +131,13 @@ py_binary(
 py_library(
     name = "api",
     srcs = ["api.py"],
-    imports = [".."],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cache",
-        ":clickhouse",
         ":config",
         ":models",
         "//aiquota/providers:base",
         "//aiquota/render:view_model_lib",
-        "//util/bazel:runfiles",
         "@pypi//authlib",
         # keep: the pinned Gazelle parser does not accept api.py's Python 3.14 syntax.
         "@pypi//anyio",
@@ -153,8 +148,6 @@ py_library(
         "@pypi//itsdangerous",
         "@pypi//prometheus_client",
         "@pypi//starlette",
-        "@pypi//uvicorn",
-        ":settings",
     ],
 )
 
@@ -165,9 +158,9 @@ py_library(
     data = ["schema.sql"],
     deps = [
         ":models",
-        "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//sqlparse",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -182,30 +175,48 @@ py_binary(
     ],
 )
 
+py_library(
+    name = "server_main",
+    srcs = ["server_main.py"],
+    data = ["//aiquota/frontend:bundle"],
+    deps = [
+        ":api",
+        ":clickhouse",
+        ":config",
+        ":settings",
+        "@pypi//uvicorn",
+    ],
+)
+
 py_binary(
     name = "server",
-    # keep: the SPA aiquota.api mounts from runfiles; no module imports it.
-    data = ["//aiquota/frontend:bundle"],
     imports = [".."],
-    main_module = "aiquota.api",
+    main_module = "aiquota.server_main",
     visibility = ["//visibility:public"],
-    deps = [":api"],
+    deps = [":server_main"],
 )
 
 aspect_py_binary(
     name = "server_bin",
-    data = ["//aiquota/frontend:bundle"],
-    main = "api.py",
-    deps = [":api"],
+    main = "server_main.py",
+    deps = [":server_main"],
 )
 
-# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+# Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.
 py_binary(
     name = "export_schema_bin",
     imports = [".."],
     main_module = "aiquota.export_schema",
     visibility = ["//aiquota/frontend:__pkg__"],
     deps = [":export_schema"],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//aiquota/frontend:__pkg__"],
 )
 
 py_image_layer(
@@ -236,7 +247,6 @@ oci_load(
 py_test(
     name = "test_models",
     srcs = ["test_models.py"],
-    imports = [".."],
     deps = [
         ":models",
         "//:conftest",
@@ -249,7 +259,6 @@ py_test(
 py_test(
     name = "test_peak_windows",
     srcs = ["test_peak_windows.py"],
-    imports = [".."],
     deps = [
         ":peak_windows",
         "//:conftest",
@@ -261,7 +270,6 @@ py_test(
 py_test(
     name = "test_pace",
     srcs = ["test_pace.py"],
-    imports = [".."],
     deps = [
         ":models",
         ":pace",
@@ -273,12 +281,12 @@ py_test(
 py_test(
     name = "test_cache",
     srcs = ["test_cache.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":models",
         "//:conftest",
         "//aiquota/providers:base",
+        "//aiquota/render:view_model_lib",
         "@pypi//pytest_bazel",
     ],
 )
@@ -286,11 +294,10 @@ py_test(
 py_test(
     name = "test_remote",
     srcs = ["test_remote.py"],
-    imports = [".."],
     deps = [
-        ":models",
         ":remote",
         "//:conftest",
+        "//aiquota/render:view_model_lib",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//respx",
@@ -300,7 +307,6 @@ py_test(
 py_test(
     name = "test_config",
     srcs = ["test_config.py"],
-    imports = [".."],
     deps = [
         ":config",
         "//:conftest",
@@ -312,13 +318,14 @@ py_test(
 py_test(
     name = "test_api",
     srcs = ["test_api.py"],
-    imports = [".."],
     deps = [
         ":api",
         ":config",
         ":models",
+        ":server_main",
         ":settings",
         "//:conftest",
+        "//aiquota/providers:claude_lib",
         "//aiquota/render:view_model_lib",
         "//util/testing:asgi",
         "@pypi//httpx",
@@ -331,7 +338,6 @@ py_test(
 py_test(
     name = "test_clickhouse",
     srcs = ["test_clickhouse.py"],
-    imports = [".."],
     deps = [
         ":api",
         ":clickhouse",
@@ -396,5 +402,20 @@ py_library(
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli_lib",
+        ":config",
+        ":models",
+        "//:conftest",
+        "//aiquota/render:view_model_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
     ],
 )

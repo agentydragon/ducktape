@@ -43,9 +43,11 @@ class GmailInbox:
             self.console.print(f"[dim]Fetching {len(uncached_ids)} messages (batch size {batch_size})...[/dim]")
 
         if uncached_ids:
-            fetched = self.client.get_messages_batch(uncached_ids, batch_size=batch_size)
+            fetched, errors = self.client.get_messages_batch(uncached_ids, batch_size=batch_size)
             for msg in fetched:
                 self._full_cache[msg.id] = msg
+            if errors:
+                raise RuntimeError(f"Failed to fetch Gmail messages: {errors}")
 
         return [self._full_cache[mid] for mid in message_ids if mid in self._full_cache]
 
@@ -61,29 +63,8 @@ class GmailInbox:
         if not message_ids:
             return []
 
-        # Check both caches - if in full cache, we can derive metadata
-        uncached_ids = [mid for mid in message_ids if mid not in self._metadata_cache and mid not in self._full_cache]
-
-        if self.show_progress and uncached_ids:
-            self.console.print(
-                f"[dim]Fetching {len(uncached_ids)} messages metadata (batch size {batch_size})...[/dim]"
-            )
-
-        if uncached_ids:
-            fetched = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
-            for msg in fetched:
-                self._metadata_cache[msg.id] = msg
-
-        # Return from either cache (prefer metadata cache, but can use full cache)
-        result = []
-        for mid in message_ids:
-            if mid in self._metadata_cache:
-                result.append(self._metadata_cache[mid])
-            elif mid in self._full_cache:
-                # Derive metadata from full email - create GmailMessageWithHeaders-like object
-                # For now, just skip - the planner should have it from metadata cache
-                pass
-        return result
+        self.ensure_metadata_cached(message_ids, batch_size=batch_size)
+        return [self._metadata_cache[mid] for mid in message_ids]
 
     def ensure_metadata_cached(self, message_ids: Iterable[str], batch_size: int = 50) -> None:
         uncached_ids = [mid for mid in message_ids if mid not in self._metadata_cache]
@@ -93,15 +74,16 @@ class GmailInbox:
         if self.show_progress:
             self.console.print(f"[dim]Fetching metadata for {len(uncached_ids)} messages...[/dim]")
 
-        fetched = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
+        fetched, errors = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
         for msg in fetched:
             self._metadata_cache[msg.id] = msg
+        if errors:
+            raise RuntimeError(f"Failed to fetch Gmail message metadata: {errors}")
 
     def get_metadata(self, message_id: str) -> GmailMessageWithHeaders:
         """Raises if not cached - call ensure_metadata_cached first."""
         if metadata := self._metadata_cache.get(message_id):
             return metadata
         if message_id in self._full_cache:
-            # Fallback: derive metadata from full message if available
             raise RuntimeError(f"Metadata for message {message_id} not in metadata cache; available in full cache only")
         raise RuntimeError(f"Metadata for message {message_id} not in cache - call ensure_metadata_cached first")

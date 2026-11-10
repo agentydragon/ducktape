@@ -1,0 +1,80 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(
+    [
+        "0001_initial_archive.py",
+        "0002_codex_titles.py",
+        "0003_session_kind.py",
+        "0004_claude_title_projection.py",
+        "0005_codex_title_candidates.py",
+        "0006_file_version_imports.py",
+    ],
+    visibility = ["//x/ai_session_archive/migrations:__pkg__"],
+)
+
+filegroup(
+    name = "files",
+    srcs = [
+        "0001_initial_archive.py",
+        "0002_codex_titles.py",
+        "0003_session_kind.py",
+        "0004_claude_title_projection.py",
+        "0005_codex_title_candidates.py",
+        "0006_file_version_imports.py",
+    ],
+    visibility = ["//x/ai_session_archive/migrations:__pkg__"],
+)
+
+py_library(
+    name = "0002_codex_titles",
+    srcs = ["0002_codex_titles.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0001_initial_archive",
+    srcs = ["0001_initial_archive.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0003_session_kind",
+    srcs = ["0003_session_kind.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0004_claude_title_projection",
+    srcs = ["0004_claude_title_projection.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0005_codex_title_candidates",
+    srcs = ["0005_codex_title_candidates.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0006_file_version_imports",
+    srcs = ["0006_file_version_imports.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

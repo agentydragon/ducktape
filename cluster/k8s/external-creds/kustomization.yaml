@@ -11,6 +11,7 @@ resources:
   - brave-search-api-key.sops.yaml
   - coinbase-api-credentials.sops.yaml
   - buildbuddy-api-key.sops.yaml
+  - gaffer-repo-fetch-pat.sops.yaml
   - gemini.sops.yaml
   - github-agentydragon-agent.sops.yaml
   - github-agentydragon-2.sops.yaml

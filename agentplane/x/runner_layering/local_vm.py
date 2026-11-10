@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import TextIO
 
 import httpx
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from agentplane.x.runner_layering import tools_rootfs
 
 
 def _put(client: httpx.Client, path: str, body: dict[str, object], output: list[str]) -> None:
@@ -35,10 +36,8 @@ def _read_console(stream: TextIO, output: list[str], lines: queue.Queue[str]) ->
         lines.put(line)
 
 
-def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
+def extract_oci_rootfs(layout: Path, destination: Path) -> None:
     """Expand the layers from a Bazel OCI layout into a temporary filesystem tree."""
-    reference = get_required_path(own_repo_rlocation(rloc_file))
-    layout = get_required_path(reference.read_text().strip())
     index = json.loads((layout / "index.json").read_text())
     (descriptor,) = index["manifests"]
     manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
@@ -88,14 +87,18 @@ def _probe_claude_on_host(claude_binary: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--kernel", type=Path)
+    parser.add_argument("--kernel-rlocation", help=argparse.SUPPRESS)
     parser.add_argument("--timeout-seconds", type=float, default=20)
     args = parser.parse_args()
-    kernel = args.kernel or get_required_path("firecracker_vmlinux_6_1_128/file/vmlinux-6.1.128")
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    if args.kernel is None and args.kernel_rlocation is None:
+        parser.error("provide --kernel or run this probe with Bazel")
+    kernel = args.kernel or runfiles_root / args.kernel_rlocation
     if not kernel.is_file():
         raise SystemExit(f"kernel image is not available: {kernel}")
 
-    initramfs = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/base-initramfs.cpio"))
-    firecracker_layer = get_required_path(own_repo_rlocation("devinfra/firecracker/firecracker_layer.tar"))
+    initramfs = runfiles_root / "ducktape/agentplane/x/runner_layering/base-initramfs.cpio"
+    firecracker_layer = runfiles_root / "ducktape/devinfra/x/firecracker/firecracker_layer.tar"
 
     with tempfile.TemporaryDirectory(prefix="agentplane-runner-layering-") as directory:
         root = Path(directory)
@@ -103,7 +106,7 @@ def main() -> None:
         harness_root = root / "harness-root"
         tools_root.mkdir()
         harness_root.mkdir()
-        _extract_oci_rootfs("agentplane/x/runner_layering/tools_rootfs.rloc", tools_root)
+        extract_oci_rootfs(runfiles_root / tools_rootfs.LAYOUT_RLOCATION, tools_root)
         for relative in ("opt", "home/agent/.codex", "home/agent/.claude", "workspace", "tmp", "proc"):
             (tools_root / relative).mkdir(parents=True, exist_ok=True)
 
@@ -115,7 +118,7 @@ def main() -> None:
         for runfile, relative in harness_files:
             destination = harness_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(get_required_path(runfile), destination)
+            shutil.copyfile(runfiles_root / runfile, destination)
             destination.chmod(0o555)
             if runfile == "claude_code_cli_linux_x64/claude":
                 _probe_claude_on_host(destination)

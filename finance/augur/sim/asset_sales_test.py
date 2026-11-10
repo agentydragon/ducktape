@@ -14,7 +14,7 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy import sleeves
 from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
-from finance.augur.sim.external_series import compile_series, materialize_external_series
+from finance.augur.sim.external_series import compile_series, materialize_sampled_exogenous
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -405,7 +405,8 @@ def test_gbm_sales_diverge_and_same_seed_reproduces_all_cash() -> None:
 
     def drawn(rollout_count: int) -> Situation:
         """One seed per path, drawn from the situation's own series model rather than a stipulated curve."""
-        paths = materialize_external_series(bundle, rollout_seeds=tuple(range(rollout_count)), horizon_months=6)
+        sampled = bundle.sample(rollout_seeds=tuple(range(rollout_count)), horizon_months=6)
+        paths = materialize_sampled_exogenous(sampled)
         return Situation(
             series=compile_series(paths, rollout_count=rollout_count, horizon_months=6, currency=USD),
             rollout_count=rollout_count,

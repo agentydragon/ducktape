@@ -32,7 +32,7 @@ py_test(
     deps = [
         ":isolated_edit",
         "//:conftest",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",

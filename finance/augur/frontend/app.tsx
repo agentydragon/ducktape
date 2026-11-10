@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { fetchAugurCalibrationInfo, fetchAugurCatalog, fetchAugurDeployment, fetchAugurSettings } from "./client";
 
@@ -155,7 +156,7 @@ function CalibrationAppSurface({
             <SharedControls
               rolloutCount={rolloutCount}
               onChangeRolloutCount={onChangeRolloutCount}
-              maxRolloutCount={bootstrap.maxRolloutSamples}
+              maxRolloutCount={bootstrap.max_rollout_samples}
               model={model}
               onChangeModel={onChangeModel}
               models={bootstrap.models}
@@ -174,7 +175,7 @@ function CalibrationAppSurface({
 }
 
 // Mounted once bootstrap has loaded so the shared defaults (which depend on bootstrap fields like
-// `maxRolloutSamples` and `models`) are available at state-init time. Owns the cross-tab
+// `max_rollout_samples` and `models`) are available at state-init time. Owns the cross-tab
 // state — the active tab plus shared controls — and hands it to whichever workspace is active.
 function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deployment: Deployment | null }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
@@ -304,10 +305,13 @@ function ProductProjectionAppShell() {
 }
 
 export default function AugurApp() {
+  const [queryClient] = useState(() => new QueryClient());
   return (
-    <MantineProvider defaultColorScheme="auto">
-      <Notifications position="top-right" />
-      <ProductProjectionAppShell />
-    </MantineProvider>
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider defaultColorScheme="auto">
+        <Notifications position="top-right" />
+        <ProductProjectionAppShell />
+      </MantineProvider>
+    </QueryClientProvider>
   );
 }

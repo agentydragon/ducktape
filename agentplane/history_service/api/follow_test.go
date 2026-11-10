@@ -3,7 +3,10 @@ package api
 import (
 	"context"
 	"io"
+	"net"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,9 +15,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -302,7 +309,7 @@ func TestFollowSessionDoesNotRepeatCaughtUpForAnIdleRefresh(t *testing.T) {
 	sessionID, _ := server.record(t)
 	stream := &recordedFollowStream{ctx: t.Context()}
 	call := &followCall{
-		service: server.service, stream: stream, sessionID: sessionID,
+		service: server.service, reader: server.service.reader, stream: stream, sessionID: sessionID,
 		request: &historypb.FollowSessionRequest{Follow: true},
 	}
 	if err := call.catchUp(t.Context(), true); err != nil {
@@ -402,7 +409,7 @@ func TestFollowSessionBoundsAWriteTheCallerDoesNotRead(t *testing.T) {
 	t.Cleanup(func() { close(stream.release) })
 	failed := make(chan error, 1)
 	go func() {
-		failed <- sendWithin(stream, 10*time.Millisecond, &historypb.FollowSessionResponse{})
+		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.FollowSessionResponse{})
 	}()
 	select {
 	case err := <-failed:
@@ -411,6 +418,138 @@ func TestFollowSessionBoundsAWriteTheCallerDoesNotRead(t *testing.T) {
 		}
 	case <-time.After(callDeadline):
 		t.Fatal("the FollowSession write was not given up on")
+	}
+}
+
+type leaseBlockedFollowStream struct {
+	grpc.ServerStream
+	ctx           context.Context
+	initialCaught chan struct{}
+	writeStarted  chan struct{}
+	writeFinished chan struct{}
+	release       chan struct{}
+	releaseOnce   sync.Once
+	sends         atomic.Int64
+}
+
+type admissionContextHealth struct {
+	healthpb.UnimplementedHealthServer
+	captured chan context.Context
+	release  chan struct{}
+}
+
+func (s admissionContextHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	s.captured <- ctx
+	<-s.release
+	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+}
+
+// directAdmissionContext captures a context from an RPC held behind the real shared auth middleware.
+func directAdmissionContext(t *testing.T) context.Context {
+	t.Helper()
+	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := admissionContextHealth{captured: make(chan context.Context, 1), release: make(chan struct{})}
+	server := grpc.NewServer(auth.Methods{
+		healthpb.Health_Check_FullMethodName: auth.ReviewedServiceAccount(resolver),
+	}.ServerOptions(0)...)
+	healthpb.RegisterHealthServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		server.Stop()
+		t.Fatal(err)
+	}
+	callContext, cancel := context.WithCancel(t.Context())
+	callContext = metadata.AppendToOutgoingContext(callContext, "authorization", "Bearer "+readerToken)
+	go func() { _, _ = healthpb.NewHealthClient(connection).Check(callContext, &healthpb.HealthCheckRequest{}) }()
+	var once sync.Once
+	cleanup := func() {
+		cancel()
+		once.Do(func() { close(service.release) })
+		server.Stop()
+		_ = connection.Close()
+	}
+	t.Cleanup(cleanup)
+	select {
+	case admitted := <-service.captured:
+		return admitted
+	case <-time.After(5 * time.Second):
+		cleanup()
+		t.Fatal("shared auth middleware did not admit the direct fixture call")
+		return nil
+	}
+}
+
+func (s *leaseBlockedFollowStream) Context() context.Context { return s.ctx }
+
+func (s *leaseBlockedFollowStream) Send(response *historypb.FollowSessionResponse) error {
+	s.sends.Add(1)
+	switch {
+	case response.GetCaughtUp() != nil:
+		select {
+		case <-s.initialCaught:
+		default:
+			close(s.initialCaught)
+		}
+	case response.GetEntries() != nil:
+		close(s.writeStarted)
+		<-s.release
+		close(s.writeFinished)
+	}
+	return nil
+}
+
+func (s *leaseBlockedFollowStream) releaseWrite() { s.releaseOnce.Do(func() { close(s.release) }) }
+
+func TestFollowSessionDoesNotReconnectAfterAWriteIsCanceledByItsLease(t *testing.T) {
+	server := newServer(t, 2*time.Second)
+	sessionID, _ := server.record(t)
+	ctx := directAdmissionContext(t)
+	stream := &leaseBlockedFollowStream{
+		ctx: ctx, initialCaught: make(chan struct{}), writeStarted: make(chan struct{}),
+		writeFinished: make(chan struct{}), release: make(chan struct{}),
+	}
+	t.Cleanup(stream.releaseWrite)
+	done := make(chan error, 1)
+	go func() {
+		done <- server.service.FollowSession(&historypb.FollowSessionRequest{
+			SessionId: sessionID.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0}, Follow: true,
+		}, stream)
+	}()
+	select {
+	case <-stream.initialCaught:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FollowSession did not send its opening caught_up frame")
+	}
+	appendFollowEntries(t, server, sessionID, testEntry(1))
+	select {
+	case <-stream.writeStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FollowSession did not start writing the entry frame")
+	}
+	select {
+	case err := <-done:
+		if got := status.Code(err); got != codes.DeadlineExceeded {
+			t.Fatalf("FollowSession error = %v, want DeadlineExceeded after its lease", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lease did not return FollowSession while its Send was blocked")
+	}
+	if got := stream.sends.Load(); got != 2 {
+		t.Fatalf("Send calls = %d, want only opening caught_up and the blocked entry frame", got)
+	}
+	stream.releaseWrite()
+	select {
+	case <-stream.writeFinished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fake blocked Send did not return after cleanup release")
 	}
 }
 

@@ -1,15 +1,18 @@
 //! Fresh, conditional ablation of one authored chunk-export contract at a time.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, File, OpenOptions};
+use std::path::{Path, PathBuf};
+use transform_command::TransformArgs;
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
-use graph_provenance::{CurrentRoots, GraphProvenance};
+use graph_provenance::{CurrentRoots, GraphProvenance, sha256};
 use peel::OutputFormat;
-use pipeline::{TransformArgs, load_transform_spec_source, run_transform_probe};
-use serde::Serialize;
-use sha2::{Digest, Sha256};
-use spec::{ChunkExportPurity, RetainedCallbackSignature, TransformSpec};
+use pipeline::{ContractAudit, ContractProbeOutcome, load_transform_spec_source};
+use serde::{Deserialize, Serialize};
+use spec::{ChunkExportPurity, RetainedCallbackSignature};
+use tempfile::NamedTempFile;
 
 use crate::{emit_report, print_section};
 
@@ -37,6 +40,12 @@ pub(super) struct AuditContractsArgs {
     /// Maximum number of independent removal probes; must be positive.
     #[arg(long)]
     max_probes: usize,
+    /// Create a new exact-input checkpoint; refuse an existing file.
+    #[arg(long, conflicts_with = "resume_from")]
+    checkpoint: Option<PathBuf>,
+    /// Resume and update an existing checkpoint after fresh baseline validation.
+    #[arg(long, conflicts_with = "checkpoint")]
+    resume_from: Option<PathBuf>,
     #[arg(long, value_enum)]
     format: Option<OutputFormat>,
 }
@@ -45,7 +54,7 @@ fn parse_signature(value: &str) -> Result<RetainedCallbackSignature, String> {
     serde_json::from_str(value).map_err(|error| error.to_string())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[value(rename_all = "snake_case")]
 enum ContractKind {
@@ -66,7 +75,7 @@ enum ContractKind {
     NamespaceIndependentMembers,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 struct ContractTarget {
     policy_key: String,
     kind: ContractKind,
@@ -77,7 +86,7 @@ struct ContractTarget {
     signature: Option<RetainedCallbackSignature>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ProbeVerdict {
     RemovableUnderRemainingAssumptions,
@@ -86,7 +95,19 @@ enum ProbeVerdict {
     BudgetSkipped,
 }
 
-#[derive(Debug, Serialize)]
+impl ProbeVerdict {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::RemovableUnderRemainingAssumptions => "removable_under_remaining_assumptions",
+            Self::FailedFullAcceptance => "failed_full_acceptance",
+            Self::Inconclusive => "inconclusive",
+            Self::BudgetSkipped => "budget_skipped",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ProbeResult {
     target: ContractTarget,
     verdict: ProbeVerdict,
@@ -108,12 +129,201 @@ struct AuditReport {
     results: Vec<ProbeResult>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuditSelection {
+    policy_key: String,
+    kinds: BTreeSet<ContractKind>,
+    export: Option<String>,
+    member: Option<String>,
+    signature: Option<RetainedCallbackSignature>,
+}
+
+impl AuditSelection {
+    fn from_args(args: &AuditContractsArgs) -> Self {
+        Self {
+            policy_key: args.policy_key.clone(),
+            kinds: if args.kind.is_empty() {
+                ContractKind::value_variants().iter().copied().collect()
+            } else {
+                args.kind.iter().copied().collect()
+            },
+            export: args.export.clone(),
+            member: args.member.clone(),
+            signature: args.signature.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuditCheckpoint {
+    provenance: GraphProvenance,
+    selection: AuditSelection,
+    results: Vec<ProbeResult>,
+}
+
+struct CheckpointSession {
+    path: PathBuf,
+    // Keep this stable sidecar inode locked while replacing the checkpoint itself.
+    _lock: File,
+    record: Option<AuditCheckpoint>,
+}
+
+impl CheckpointSession {
+    fn open(args: &AuditContractsArgs) -> Result<Option<Self>> {
+        let Some(path) = args.checkpoint.as_ref().or(args.resume_from.as_ref()) else {
+            return Ok(None);
+        };
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let parent = fs::canonicalize(parent)
+            .with_context(|| format!("checkpoint directory {}", parent.display()))?;
+        let name = path
+            .file_name()
+            .context("checkpoint requires a file name")?;
+        let path = parent.join(name);
+        let mut lock_name = name.to_os_string();
+        lock_name.push(".lock");
+        let lock_path = parent.join(lock_name);
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| format!("opening checkpoint lock {}", lock_path.display()))?;
+        lock.try_lock()
+            .with_context(|| format!("checkpoint is locked: {}", path.display()))?;
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(error).with_context(|| format!("checkpoint {}", path.display()));
+            }
+        };
+        let record = if args.resume_from.is_some() {
+            ensure!(
+                metadata.is_some_and(|m| m.is_file()),
+                "resume checkpoint must be a regular file: {}",
+                path.display()
+            );
+            Some(
+                serde_json::from_reader(File::open(&path)?)
+                    .with_context(|| format!("reading checkpoint {}", path.display()))?,
+            )
+        } else {
+            ensure!(
+                metadata.is_none(),
+                "checkpoint already exists: {}",
+                path.display()
+            );
+            None
+        };
+        Ok(Some(Self {
+            path,
+            _lock: lock,
+            record,
+        }))
+    }
+
+    fn initialize(
+        &mut self,
+        provenance: &GraphProvenance,
+        selection: AuditSelection,
+        targets: &[ContractTarget],
+    ) -> Result<()> {
+        if let Some(record) = &self.record {
+            ensure!(
+                &record.provenance == provenance,
+                "checkpoint input identity differs from fresh baseline"
+            );
+            ensure!(
+                record.selection == selection,
+                "checkpoint audit selection differs"
+            );
+            let mut seen = BTreeSet::new();
+            for result in &record.results {
+                ensure!(
+                    targets.contains(&result.target),
+                    "checkpoint contains an unselected target"
+                );
+                ensure!(
+                    seen.insert(&result.target),
+                    "checkpoint contains duplicate targets"
+                );
+                ensure!(
+                    !matches!(result.verdict, ProbeVerdict::BudgetSkipped),
+                    "checkpoint must not store budget skips"
+                );
+            }
+        } else {
+            self.record = Some(AuditCheckpoint {
+                provenance: provenance.clone(),
+                selection,
+                results: Vec::new(),
+            });
+            self.write(true)?;
+        }
+        Ok(())
+    }
+
+    fn reusable(&self, target: &ContractTarget) -> Option<&ProbeResult> {
+        self.record.as_ref()?.results.iter().find(|result| {
+            &result.target == target
+                && matches!(
+                    result.verdict,
+                    ProbeVerdict::RemovableUnderRemainingAssumptions
+                        | ProbeVerdict::FailedFullAcceptance
+                )
+        })
+    }
+
+    fn save(&mut self, result: &ProbeResult) -> Result<()> {
+        if matches!(
+            result.verdict,
+            ProbeVerdict::Inconclusive | ProbeVerdict::BudgetSkipped
+        ) {
+            return Ok(());
+        }
+        let record = self
+            .record
+            .as_mut()
+            .expect("checkpoint initialized after baseline");
+        record.results.retain(|saved| saved.target != result.target);
+        record.results.push(result.clone());
+        record
+            .results
+            .sort_by(|left, right| left.target.cmp(&right.target));
+        self.write(false)
+    }
+
+    fn write(&self, create: bool) -> Result<()> {
+        let mut temp =
+            NamedTempFile::new_in(self.path.parent().expect("canonical checkpoint parent"))?;
+        serde_json::to_writer(
+            temp.as_file_mut(),
+            self.record.as_ref().expect("checkpoint initialized"),
+        )?;
+        if create {
+            temp.persist_noclobber(&self.path)
+        } else {
+            temp.persist(&self.path)
+        }
+        .with_context(|| format!("replacing checkpoint {}", self.path.display()))?;
+        Ok(())
+    }
+}
+
 pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
     ensure!(args.max_probes > 0, "--max-probes must be positive");
     ensure!(
         !args.transform.dry_run && !args.transform.fail_fast,
         "audit-contracts always runs a dry-run full acceptance probe; omit --dry-run and --fail-fast"
     );
+    let mut checkpoint = CheckpointSession::open(&args)?;
     let cli = args.transform.clone().resolve()?;
     let spec = load_transform_spec_source(&cli.spec_source)?;
     let policy = spec
@@ -131,11 +341,28 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         "contract selection matched no contracts"
     );
 
-    let mut baseline_provenance = None;
-    run_transform_probe(&cli, &spec, |_| Ok(()), &mut baseline_provenance)
-        .context("baseline full acceptance failed; no removal probes were run")?;
-    let baseline_provenance =
-        baseline_provenance.context("baseline recorded no input provenance")?;
+    let eligible = targets.len().min(args.max_probes);
+    eprintln!("audit-progress baseline start eligible={eligible} completed=0");
+    let audit = match ContractAudit::prepare(&cli, &spec) {
+        Ok(audit) => audit,
+        Err(error) => {
+            eprintln!(
+                "audit-progress baseline complete eligible={eligible} completed=0 verdict=failed"
+            );
+            return Err(error)
+                .context("baseline full acceptance failed; no removal probes were run");
+        }
+    };
+    eprintln!("audit-progress baseline complete eligible={eligible} completed=0 verdict=passed");
+    let baseline_provenance = audit.provenance();
+
+    if let Some(checkpoint) = &mut checkpoint {
+        checkpoint.initialize(
+            baseline_provenance,
+            AuditSelection::from_args(&args),
+            &targets,
+        )?;
+    }
 
     let mut results = Vec::with_capacity(targets.len());
     for (index, target) in targets.into_iter().enumerate() {
@@ -147,40 +374,55 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
             });
             continue;
         }
-        baseline_provenance
-            .verify(&CurrentRoots::default())
-            .context("audit inputs changed after baseline")?;
-        let mut probe_provenance = None;
-        let outcome = run_transform_probe(
-            &cli,
-            &spec,
-            |candidate| remove_one(candidate, &target),
-            &mut probe_provenance,
-        );
-        if let Some(provenance) = &probe_provenance {
-            ensure!(
-                same_inputs(&baseline_provenance, provenance),
-                "audit inputs changed between baseline and probe"
+        let ordinal = index + 1;
+        if let Some(saved) = checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.reusable(&target))
+        {
+            baseline_provenance
+                .verify(&CurrentRoots::default())
+                .context("audit inputs changed after baseline")?;
+            eprintln!(
+                "audit-progress probe reused ordinal={ordinal}/{eligible} completed={ordinal} verdict={} target={target:?}",
+                saved.verdict.label()
             );
+            results.push(saved.clone());
+            continue;
         }
-        let (verdict, error) = match outcome {
-            Ok(()) => (ProbeVerdict::RemovableUnderRemainingAssumptions, None),
-            Err(error)
-                if probe_provenance.is_some()
-                    && !error.chain().any(|cause| cause.is::<std::io::Error>()) =>
-            {
-                (
-                    ProbeVerdict::FailedFullAcceptance,
-                    Some(format!("{error:#}")),
-                )
+        eprintln!(
+            "audit-progress probe start ordinal={ordinal}/{eligible} completed={index} target={target:?}"
+        );
+        let mut contracts = spec.chunk_export_purity.clone();
+        remove_one(&mut contracts, &target)?;
+        let (verdict, error) = match audit.probe(contracts)? {
+            ContractProbeOutcome::Accepted => {
+                (ProbeVerdict::RemovableUnderRemainingAssumptions, None)
             }
-            Err(error) => (ProbeVerdict::Inconclusive, Some(format!("{error:#}"))),
+            ContractProbeOutcome::Rejected(error) => (
+                ProbeVerdict::FailedFullAcceptance,
+                Some(format!("{error:#}")),
+            ),
+            ContractProbeOutcome::Inconclusive(error) => {
+                (ProbeVerdict::Inconclusive, Some(format!("{error:#}")))
+            }
         };
-        results.push(ProbeResult {
+        eprintln!(
+            "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict={} target={target:?}",
+            ordinal,
+            verdict.label()
+        );
+        let result = ProbeResult {
             target,
             verdict,
             error,
-        });
+        };
+        if let Some(checkpoint) = &mut checkpoint {
+            baseline_provenance
+                .verify(&CurrentRoots::default())
+                .context("audit inputs changed before checkpoint update")?;
+            checkpoint.save(&result)?;
+        }
+        results.push(result);
     }
     baseline_provenance
         .verify(&CurrentRoots::default())
@@ -190,13 +432,9 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         .filter(|result| !matches!(result.verdict, ProbeVerdict::BudgetSkipped))
         .count();
     let budget_skipped = results.len() - independently_probed;
-    let fingerprint = Sha256::digest(serde_json::to_vec(&baseline_provenance)?);
     let report = AuditReport {
         policy_key: args.policy_key,
-        input_provenance_sha256: fingerprint
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        input_provenance_sha256: sha256(&serde_json::to_vec(baseline_provenance)?),
         source_markers: policy.source_markers.clone(),
         baseline: "passed",
         scope: "each target removed separately for this exact source, spec, and assignment; all other author contracts and runtime assumptions remain; passing targets are not jointly removable or independently inferred",
@@ -209,10 +447,6 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
     } else {
         emit_report(args.format, &report, render_text, "writing contract audit")
     }
-}
-
-fn same_inputs(left: &GraphProvenance, right: &GraphProvenance) -> bool {
-    left == right
 }
 
 fn render_text(report: &AuditReport, out: &mut String) {
@@ -332,9 +566,11 @@ fn select_targets(
         .collect())
 }
 
-fn remove_one(spec: &mut TransformSpec, target: &ContractTarget) -> Result<()> {
-    let policy = spec
-        .chunk_export_purity
+fn remove_one(
+    contracts: &mut BTreeMap<String, ChunkExportPurity>,
+    target: &ContractTarget,
+) -> Result<()> {
+    let policy = contracts
         .get_mut(&target.policy_key)
         .context("selected policy disappeared")?;
     let removed = match target.kind {

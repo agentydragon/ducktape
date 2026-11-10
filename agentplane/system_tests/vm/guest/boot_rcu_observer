@@ -1,0 +1,53 @@
+#!/usr/bin/busybox sh
+# Opt-in, read-only boot samples. Build each capped record off-tty, then emit it
+# in one dd block so another serial writer cannot land inside a sample field.
+set -u
+export PATH=/usr/bin:/usr/sbin
+busybox=${AGENTPLANE_BOOT_RCU_BUSYBOX:-/usr/bin/busybox}
+if [ "${AGENTPLANE_BOOT_RCU_SAMPLES+x}" = x ]; then
+	sample_limit=$AGENTPLANE_BOOT_RCU_SAMPLES
+else
+	sample_limit=120
+	cmdline_path=${AGENTPLANE_BOOT_RCU_CMDLINE_PATH:-/proc/cmdline}
+	cmdline=$("$busybox" head -c 4096 "$cmdline_path" 2>/dev/null || true)
+	case " $cmdline " in
+		*" agentplane.boot-rcu-observe-window=360 "*) sample_limit=360 ;;
+	esac
+fi
+sample_interval=${AGENTPLANE_BOOT_RCU_INTERVAL:-1}
+sample_root=${AGENTPLANE_BOOT_RCU_TMPDIR:-/run}
+sample_dir=$("$busybox" mktemp -d "$sample_root/agentplane-boot-rcu.XXXXXX") || exit 1
+sample_file=$sample_dir/sample
+trap '"$busybox" rm -rf "$sample_dir"' EXIT
+sample=0
+while [ "$sample" -lt "$sample_limit" ]; do
+	{
+		# A leading newline separates this record from an earlier partial
+		# console line. Every field and end marker belong to one tty write.
+		printf '\nAGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=%s\n' "$sample"
+		printf 'UPTIME '
+		"$busybox" head -c 64 /proc/uptime 2>/dev/null || printf 'unavailable\n'
+		printf '\nINTERRUPTS\n'
+		"$busybox" awk 'NR == 1 || $1 ~ /^(LOC:|RES:|CAL:|0:|9:)$/' /proc/interrupts 2>/dev/null | "$busybox" head -c 384
+		printf '\nSOFTIRQS\n'
+		"$busybox" awk 'NR == 1 || $1 ~ /^(TIMER:|RCU:|SCHED:)$/' /proc/softirqs 2>/dev/null | "$busybox" head -c 256
+		printf '\nPID1_WCHAN '
+		"$busybox" head -c 128 /proc/1/wchan 2>/dev/null || printf 'unavailable'
+		printf '\nPID1_STACK\n'
+		"$busybox" head -c 768 /proc/1/stack 2>/dev/null || printf 'unavailable\n'
+		printf '\nPID1_SYSCALL '
+		"$busybox" head -c 128 /proc/1/syscall 2>/dev/null || printf 'unavailable'
+		printf '\nAGENTPLANE_BOOT_RCU_SAMPLE_END seq=%s\n' "$sample"
+	} > "$sample_file"
+	# If this ever grows beyond the one-block bound, preserve an explicit
+	# error and end marker instead of silently losing the record's end.
+	sample_bytes=$("$busybox" wc -c < "$sample_file")
+	if [ "$sample_bytes" -gt 2048 ]; then
+		printf '\nAGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=%s\nAGENTPLANE_BOOT_RCU_SAMPLE_ERROR oversize=%s\nAGENTPLANE_BOOT_RCU_SAMPLE_END seq=%s\n' "$sample" "$sample_bytes" "$sample" > "$sample_file"
+	fi
+	"$busybox" dd if="$sample_file" bs=2048 count=1 2>/dev/null || exit 1
+	sample=$((sample + 1))
+	"$busybox" sleep "$sample_interval"
+done
+printf '\nAGENTPLANE_BOOT_RCU_OBSERVER_COMPLETE samples=%s\n' "$sample" > "$sample_file"
+"$busybox" dd if="$sample_file" bs=2048 count=1 2>/dev/null || exit 1

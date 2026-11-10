@@ -5,7 +5,7 @@ py_library(
     name = "find_orphans",
     srcs = ["find_orphans.py"],
     deps = [
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//pathspec",
         "@pypi//pygit2",
     ],
@@ -24,7 +24,7 @@ py_test(
     deps = [
         ":find_orphans",
         "//:conftest",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//pytest_bazel",
     ],
 )

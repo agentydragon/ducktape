@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -35,17 +38,14 @@ const (
 
 var traceContext = propagation.TraceContext{}
 
-// Init configures an OTLP/gRPC trace exporter using the standard OTEL_* environment variables.
-// serviceName is used when OTEL_SERVICE_NAME is absent. Shutdown is idempotent and flushes spans.
-func Init(ctx context.Context, serviceName string) (func(), error) {
+// Init configures the standard OTEL_* trace exporters. serviceName is used when OTEL_SERVICE_NAME
+// is absent. resourceAttributes identify this process and are attached to every exported span.
+// Shutdown is idempotent and flushes spans.
+func Init(ctx context.Context, serviceName string, resourceAttributes ...attribute.KeyValue) (func(), error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_SDK_DISABLED")), "true") {
 		return func() {}, nil
 	}
 
-	exporter, err := otlptracegrpc.New(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
-	}
 	name := os.Getenv("OTEL_SERVICE_NAME")
 	if name == "" {
 		name = serviceName
@@ -54,31 +54,121 @@ func Init(ctx context.Context, serviceName string) (func(), error) {
 		ctx,
 		resource.WithFromEnv(),
 		resource.WithTelemetrySDK(),
-		resource.WithAttributes(attribute.String("service.name", name)),
+		resource.WithAttributes(append(
+			[]attribute.KeyValue{attribute.String("service.name", name), attribute.Int("process.pid", os.Getpid())},
+			resourceAttributes...,
+		)...),
 	)
 	if err != nil {
-		_ = exporter.Shutdown(context.Background())
 		return nil, fmt.Errorf("create trace resource: %w", err)
 	}
 	sampler, err := configuredSampler()
 	if err != nil {
-		_ = exporter.Shutdown(context.Background())
 		return nil, err
 	}
-	provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter), sdktrace.WithResource(res), sdktrace.WithSampler(sampler))
+	exporterNames, explicitlySet := os.LookupEnv("OTEL_TRACES_EXPORTER")
+	if !explicitlySet {
+		exporterNames = "otlp"
+	}
+	exporters := make([]sdktrace.SpanExporter, 0, 2)
+	if !slices.ContainsFunc(strings.Split(exporterNames, ","), func(name string) bool {
+		return strings.EqualFold(strings.TrimSpace(name), "none")
+	}) {
+		seen := make(map[string]struct{})
+		for _, rawName := range strings.Split(exporterNames, ",") {
+			exporterName := strings.ToLower(strings.TrimSpace(rawName))
+			if _, ok := seen[exporterName]; ok {
+				continue
+			}
+			seen[exporterName] = struct{}{}
+			switch exporterName {
+			case "otlp":
+				exporter, exportErr := newOTLPExporter(ctx)
+				if exportErr != nil {
+					shutdownExporters(exporters)
+					return nil, exportErr
+				}
+				exporters = append(exporters, exporter)
+			case "console":
+				exporter, exportErr := stdouttrace.New()
+				if exportErr != nil {
+					shutdownExporters(exporters)
+					return nil, fmt.Errorf("create console trace exporter: %w", exportErr)
+				}
+				exporters = append(exporters, exporter)
+			default:
+				shutdownExporters(exporters)
+				return nil, fmt.Errorf("unsupported OTEL_TRACES_EXPORTER value %q", exporterName)
+			}
+		}
+	}
+	providerOptions := []sdktrace.TracerProviderOption{sdktrace.WithResource(res), sdktrace.WithSampler(sampler)}
+	for _, exporter := range exporters {
+		providerOptions = append(providerOptions, sdktrace.WithBatcher(exporter))
+	}
+	provider := sdktrace.NewTracerProvider(providerOptions...)
+	metricProvider, err := newMeterProvider(ctx, res)
+	if err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		_ = provider.Shutdown(shutdownCtx)
+		return nil, err
+	}
 	otel.SetTracerProvider(provider)
+	if metricProvider != nil {
+		otel.SetMeterProvider(metricProvider)
+	}
 	otel.SetTextMapPropagator(traceContext)
 
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			if metricProvider != nil {
+				metricShutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+				if err := metricProvider.Shutdown(metricShutdownCtx); err != nil {
+					slog.Warn("OpenTelemetry metric shutdown failed", "error", err)
+				}
+				cancel()
+			}
+			traceShutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
-			if err := provider.Shutdown(shutdownCtx); err != nil {
+			if err := provider.Shutdown(traceShutdownCtx); err != nil {
 				slog.Warn("OpenTelemetry trace shutdown failed", "error", err)
 			}
 		})
 	}, nil
+}
+
+func newOTLPExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+	protocol := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
+	if protocol == "" {
+		protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+	}
+	if protocol == "" {
+		protocol = "http/protobuf"
+	}
+	switch strings.ToLower(protocol) {
+	case "grpc":
+		exporter, err := otlptracegrpc.New(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
+		}
+		return exporter, nil
+	case "http/protobuf":
+		exporter, err := otlptracehttp.New(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
+		}
+		return exporter, nil
+	default:
+		return nil, fmt.Errorf("unsupported OTEL_EXPORTER_OTLP_TRACES_PROTOCOL/OTEL_EXPORTER_OTLP_PROTOCOL value %q", protocol)
+	}
+}
+
+func shutdownExporters(exporters []sdktrace.SpanExporter) {
+	for _, exporter := range exporters {
+		_ = exporter.Shutdown(context.Background())
+	}
 }
 
 func configuredSampler() (sdktrace.Sampler, error) {

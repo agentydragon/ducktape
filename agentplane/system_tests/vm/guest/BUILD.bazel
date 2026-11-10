@@ -1,0 +1,435 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/erofs:defs.bzl", "erofs_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
+# initramfs, and an erofs root disk holding systemd and both harnesses. Shared production systemd
+# units supervise the runner from the VM suite's runner disk.
+
+package(
+    default_testonly = True,
+    default_visibility = [
+        "//agentplane/system_tests/firecracker/guest:__pkg__",
+        "//agentplane/system_tests/firecracker/kernel:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
+)
+
+py_library(
+    name = "boot_files",
+    srcs = ["boot_files.py"],
+    deps = ["//devinfra/cpio:cpio_tool"],
+)
+
+py_binary(
+    name = "boot_files_bin",
+    main_module = "agentplane.system_tests.vm.guest.boot_files",
+    deps = [":boot_files"],
+)
+
+genrule(
+    name = "boot_files_gen",
+    srcs = [
+        "initramfs_init",
+        "@trixie_vm_guest//busybox-static:data",
+        "@vm_guest_kernel_deb//file",
+    ],
+    outs = [
+        "vmlinuz",
+        "initramfs.cpio",
+    ],
+    cmd = " ".join([
+        "$(execpath :boot_files_bin)",
+        "$(execpath @vm_guest_kernel_deb//file)",
+        "$(execpath @trixie_vm_guest//busybox-static:data)",
+        "$(execpath initramfs_init)",
+        "$(execpath vmlinuz)",
+        "$(execpath initramfs.cpio)",
+    ]),
+    tools = [":boot_files_bin"],
+)
+
+# KubeVirt's kernel boot container: qemu reads the kernel and initramfs as uid 107.
+pkg_tar(
+    name = "boot_tar",
+    srcs = [
+        "initramfs.cpio",
+        "vmlinuz",
+    ],
+    mode = "0644",
+    package_dir = "/boot",
+)
+
+oci_image(
+    name = "boot_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":boot_tar"],
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
+    ],
+)
+
+py_binary(
+    name = "hwdb_bin",
+    main_module = "agentplane.system_tests.vm.guest.hwdb",
+    deps = [":hwdb"],
+)
+
+genrule(
+    name = "hwdb_gen",
+    srcs = ["@trixie_vm_guest//:flat"],
+    outs = ["hwdb.bin"],
+    cmd = "$(execpath :hwdb_bin) $(execpath @trixie_vm_guest//:flat) $@",
+    tools = [":hwdb_bin"],
+)
+
+# A vendor database with no /etc overrides lets systemd skip its boot-time rebuild before udevd.
+pkg_tar(
+    name = "root_hwdb",
+    srcs = ["hwdb.bin"],
+    mode = "0644",
+    package_dir = "/usr/lib/udev",
+)
+
+pkg_tar(
+    name = "root_etc",
+    srcs = [
+        "acpid.conf",
+        "fstab",
+        "group",
+        "hosts",
+        "machine-id",
+        "passwd",
+    ],
+    mode = "0644",
+    package_dir = "/etc",
+)
+
+pkg_tar(
+    name = "root_tmpfiles",
+    srcs = ["agentplane-environment-runtime.conf"],
+    mode = "0644",
+    package_dir = "/etc/tmpfiles.d",
+)
+
+pkg_tar(
+    name = "root_journald",
+    srcs = ["journald.conf"],
+    mode = "0644",
+    package_dir = "/etc/systemd/journald.conf.d",
+)
+
+pkg_files(
+    name = "root_acpi_file",
+    srcs = ["acpi_poweroff"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"acpi_poweroff": "poweroff"},
+)
+
+pkg_tar(
+    name = "root_acpi",
+    srcs = [":root_acpi_file"],
+    package_dir = "/etc/acpi",
+)
+
+pkg_files(
+    name = "root_init_file",
+    srcs = [
+        "agentplane-boot-evidence",
+        "agentplane-boot-evidence-monitor",
+        "boot_rcu_observer",
+        "cgroup_observer",
+        "cgroup_pilot_probe",
+        "cgroup_pilot_trace.awk",
+        "delegated_cgroup_stress",
+        "delegated_cgroup_stress_helpers",
+        "environment_runtime_start",
+        "guest_prepare",
+        "shutdown_complete",
+        "shutdown_sysrq",
+        "shutdown_watchdog",
+        "shutdown_watchdog_children",
+        "startup_profile",
+        "supervision_check",
+        "synthetic_slice_probe",
+        "workspace_prepare",
+        "//agentplane/env/images:home_prepare",
+    ],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {
+        "//agentplane/env/images:home_prepare": "agentplane-home-prepare",
+        "cgroup_observer": "agentplane-cgroup-observer",
+        "boot_rcu_observer": "agentplane-boot-rcu-observer",
+        "cgroup_pilot_probe": "agentplane-cgroup-pilot-probe",
+        "delegated_cgroup_stress": "agentplane-delegated-cgroup-stress",
+        "delegated_cgroup_stress_helpers": "agentplane-delegated-cgroup-stress-helpers",
+        "cgroup_pilot_trace.awk": "agentplane-cgroup-pilot-trace.awk",
+        "guest_prepare": "agentplane-guest-prepare",
+        "environment_runtime_start": "agentplane-environment-runtime-start",
+        "startup_profile": "agentplane-startup-profile",
+        "synthetic_slice_probe": "agentplane-synthetic-slice-probe",
+        "shutdown_complete": "agentplane-shutdown-complete",
+        "shutdown_sysrq": "agentplane-shutdown-sysrq",
+        "shutdown_watchdog": "agentplane-shutdown-watchdog",
+        "shutdown_watchdog_children": "agentplane-shutdown-watchdog-children",
+        "supervision_check": "agentplane-supervision-check",
+        "workspace_prepare": "agentplane-workspace-prepare",
+    },
+)
+
+pkg_tar(
+    name = "root_init",
+    srcs = [":root_init_file"],
+    package_dir = "/usr/sbin",
+)
+
+pkg_files(
+    name = "root_systemd_files",
+    srcs = [
+        "agentplane-acpi.service",
+        "agentplane-boot-device-monitor.service",
+        "agentplane-boot-evidence.service",
+        "agentplane-boot-rcu-observer.service",
+        "agentplane-cgroup-observer.service",
+        "agentplane-cgroup-pilot-probe.service",
+        "agentplane-cgroup-pilot-probe.timer",
+        "agentplane-cgroup-pilot-resident.service",
+        "agentplane-cgroup-stress-probe.service",
+        "agentplane-cgroup-stress-probe.timer",
+        "agentplane-cgroup-stress-resident.service",
+        "agentplane-delegated-cgroup-stress.service",
+        "agentplane-delegated-cgroup-stress.timer",
+        "agentplane-guest-prepare.service",
+        "agentplane-home-prepare.service",
+        "agentplane-journal-console.service",
+        "agentplane-shutdown-proof.service",
+        "agentplane-shutdown-watchdog.service",
+        "agentplane-startup-profile.service",
+        "agentplane-synthetic-slice-payload.service",
+        "agentplane-synthetic-slice-probe.service",
+        "agentplane-synthetic-slice-probe.timer",
+        "agentplane-workspace.service",
+        "environment-runtime-guest.conf",
+        "journal-state.conf",
+        "pilot.slice",
+        "stress.slice",
+    ],
+    attributes = pkg_attributes(mode = "0644"),
+    renames = {
+        "environment-runtime-guest.conf": "agentplane-environment-runtime.service.d/guest.conf",
+        "journal-state.conf": "systemd-journal-flush.service.d/state.conf",
+    },
+)
+
+pkg_tar(
+    name = "root_systemd",
+    srcs = [":root_systemd_files"],
+    package_dir = "/etc/systemd/system",
+    symlinks = {
+        "default.target": "/usr/lib/systemd/system/multi-user.target",
+        "getty.target": "/dev/null",
+        "sysinit.target.wants/agentplane-boot-device-monitor.service": "../agentplane-boot-device-monitor.service",
+        "sysinit.target.wants/agentplane-boot-rcu-observer.service": "../agentplane-boot-rcu-observer.service",
+        "sysinit.target.wants/agentplane-journal-console.service": "../agentplane-journal-console.service",
+        "sysinit.target.wants/agentplane-shutdown-watchdog.service": "../agentplane-shutdown-watchdog.service",
+        "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",
+        "multi-user.target.wants/agentplane-environment-runtime.service": "/usr/lib/systemd/system/agentplane-environment-runtime.service",
+        "multi-user.target.wants/agentplane-boot-evidence.service": "../agentplane-boot-evidence.service",
+        "multi-user.target.wants/agentplane-shutdown-proof.service": "../agentplane-shutdown-proof.service",
+        "multi-user.target.wants/agentplane-startup-profile.service": "../agentplane-startup-profile.service",
+        "timers.target.wants/agentplane-cgroup-pilot-probe.timer": "../agentplane-cgroup-pilot-probe.timer",
+        "timers.target.wants/agentplane-cgroup-stress-probe.timer": "../agentplane-cgroup-stress-probe.timer",
+        "timers.target.wants/agentplane-delegated-cgroup-stress.timer": "../agentplane-delegated-cgroup-stress.timer",
+        "timers.target.wants/agentplane-synthetic-slice-probe.timer": "../agentplane-synthetic-slice-probe.timer",
+        "systemd-firstboot.service": "/dev/null",
+        "systemd-logind.service": "/dev/null",
+    },
+)
+
+pkg_tar(
+    name = "root_shared_systemd",
+    srcs = [
+        "//agentplane/env/images/systemd:agentplane.slice",
+        "//agentplane/env/images/systemd:agentplane-environment-runtime.service",
+        "//agentplane/env/images/systemd:agentplane-executors.slice",
+        "//agentplane/env/images/systemd:agentplane-workloads.slice",
+    ],
+    mode = "0644",
+    package_dir = "/usr/lib/systemd/system",
+)
+
+pkg_tar(
+    name = "root_resource_limits",
+    srcs = ["//agentplane/env/images/systemd:apply-resource-limits"],
+    mode = "0755",
+    package_dir = "/usr/libexec/agentplane",
+)
+
+# Apply the fixture's /var links after the flattened Debian package directories.
+# Journald writes through the state virtiofs; /var/run uses the same /run as systemd.
+pkg_tar(
+    name = "root_var_links",
+    symlinks = {
+        "var/log/journal": "/state/systemd-journal",
+        "var/run": "/run",
+    },
+)
+
+# Debian's packages are /usr-merged; ELF interpreters and the init path name the top-level links. The
+# runner runs bootstrap scripts with /bin/sh.
+pkg_tar(
+    name = "root_tar_base",
+    empty_dirs = [
+        "dev",
+        "proc",
+        "root",
+        "run",
+        "state",
+        "sys",
+        "tmp",
+        "var/lib",
+    ],
+    symlinks = {
+        "bin": "usr/bin",
+        "lib": "usr/lib",
+        "lib64": "usr/lib64",
+        "sbin": "usr/sbin",
+        "usr/bin/sh": "busybox",
+        "var/lock": "/run/lock",
+    },
+    deps = [
+        ":root_acpi",
+        ":root_etc",
+        ":root_hwdb",
+        ":root_init",
+        ":root_journald",
+        ":root_resource_limits",
+        ":root_shared_systemd",
+        ":root_systemd",
+        ":root_tmpfiles",
+        "//agentplane/system_tests/deployment:runner_claude_harness",
+        "//agentplane/system_tests/deployment:runner_codex_harness",
+        "@trixie_vm_guest//:flat",
+    ],
+)
+
+pkg_tar(
+    name = "root_tar",
+    deps = [
+        ":root_tar_base",
+        ":root_var_links",
+    ],
+)
+
+erofs_image(
+    name = "root_erofs",
+    out = "root.img",
+    compress_lz4 = True,
+    tar = ":root_tar",
+    volume_label = "guest",
+)
+
+pkg_tar(
+    name = "root_profile_tar_base",
+    deps = [
+        ":root_tar",
+        "@trixie_vm_perf//:flat",
+    ],
+)
+
+pkg_tar(
+    name = "root_profile_tar",
+    deps = [
+        ":root_profile_tar_base",
+        ":root_var_links",
+    ],
+)
+
+erofs_image(
+    name = "root_profile_erofs",
+    out = "root-profile.img",
+    compress_lz4 = True,
+    tar = ":root_profile_tar",
+    volume_label = "guest",
+)
+
+py_test(
+    name = "root_layout_test",
+    srcs = ["root_layout_test.py"],
+    data = [
+        ":agentplane-environment-runtime.conf",
+        ":fstab",
+        ":root_erofs",
+        ":root_profile_erofs",
+        "//agentplane/env/images:vm_guest_contract.json",
+        "//devinfra/erofs:erofs_tool_bin",
+        "@trixie_erofs_utils//:flat",
+    ],
+    env = {
+        "EROFS_CLOSURE_RLOCATION": "$(rlocationpath @trixie_erofs_utils//:flat)",
+        "EROFS_TOOL_RLOCATION": "$(rlocationpath //devinfra/erofs:erofs_tool_bin)",
+        "ROOT_IMAGE_RLOCATION": "$(rlocationpath :root_erofs)",
+        "ROOT_PROFILE_IMAGE_RLOCATION": "$(rlocationpath :root_profile_erofs)",
+        "FSTAB_RLOCATION": "$(rlocationpath :fstab)",
+        "RUNTIME_TMPFILES_RLOCATION": "$(rlocationpath :agentplane-environment-runtime.conf)",
+        "VM_GUEST_CONTRACT_RLOCATION": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)",
+    },
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# KubeVirt's qemu reads the containerDisk as uid 107.
+pkg_tar(
+    name = "root_disk",
+    srcs = [":root_erofs"],
+    mode = "0644",
+    owner = "107.107",
+    package_dir = "/disk",
+)
+
+oci_image(
+    name = "root_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":root_disk"],
+    user = "107:107",
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
+    ],
+)
+
+pkg_tar(
+    name = "root_profile_disk",
+    srcs = [":root_profile_erofs"],
+    mode = "0644",
+    owner = "107.107",
+    package_dir = "/disk",
+)
+
+oci_image(
+    name = "root_profile_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":root_profile_disk"],
+    user = "107:107",
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
+)
+
+py_library(
+    name = "hwdb",
+    srcs = ["hwdb.py"],
+)

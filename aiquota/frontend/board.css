@@ -2,61 +2,31 @@
  * The quota board's styles, written to survive being dropped into someone else's stylesheet:
  * every class is `aiquota-` prefixed, there are no bare element selectors, and the palette is
  * scoped to `.aiquota-scope` rather than `:root`, so embedding this cannot restyle the host or
- * redefine its tokens. The Haku Console imports it beside its own (haku/console/frontend).
+ * redefine its tokens.
  *
  * One tint variable per card drives the dot, the spine and the meter fill, so a provider's
- * urgency is stated once (in pace.ts) and shown consistently. Tints keep the GNOME extension's
+ * urgency is computed in the view model and shown consistently. Tints keep the GNOME extension's
  * vocabulary — cool / ok / warn / hot / unknown / stale / error — because the panel icon and
  * this board are read as the same signal.
  */
+/* Theme tokens come from the embedding MantineProvider, including its chosen color scheme. */
 .aiquota-scope {
-  --aiquota-surface: #ffffff;
-  --aiquota-surface-sunken: #eef0f4;
-  --aiquota-border: #dfe3ea;
-  --aiquota-bg: #f6f7f9;
-  --aiquota-text: #10141c;
-  --aiquota-muted: #5d6779;
-  --aiquota-accent: #0d8f7c;
-  --aiquota-track: #e2e6ee;
-  --aiquota-tick: #7c8798;
-
-  --aiquota-cool: #2f7fd4;
-  --aiquota-ok: #0d8f7c;
-  --aiquota-warn: #b8860b;
-  --aiquota-hot: #d92b36;
-  --aiquota-unknown: #8b95a6;
-  --aiquota-stale: #8b95a6;
-  --aiquota-error: #d92b36;
-
-  --aiquota-shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px rgb(16 20 28 / 4%);
-}
-
-/*
- * The console mounts this under Mantine's `defaultColorScheme="auto"`, which follows the same
- * system preference, so host and board never disagree about the theme.
- */
-@media (prefers-color-scheme: dark) {
-  .aiquota-scope {
-    --aiquota-surface: #171d28;
-    --aiquota-surface-sunken: #131922;
-    --aiquota-border: #2a3140;
-    --aiquota-bg: #0e121a;
-    --aiquota-text: #e8ecf2;
-    --aiquota-muted: #97a2b6;
-    --aiquota-accent: #71d4c2;
-    --aiquota-track: #2b3445;
-    --aiquota-tick: #8492a8;
-
-    --aiquota-cool: #5ea8f0;
-    --aiquota-ok: #71d4c2;
-    --aiquota-warn: #f4c95d;
-    --aiquota-hot: #fb7185;
-    --aiquota-unknown: #78849a;
-    --aiquota-stale: #78849a;
-    --aiquota-error: #fb7185;
-
-    --aiquota-shadow: none;
-  }
+  --aiquota-surface: var(--mantine-color-body);
+  --aiquota-surface-sunken: var(--mantine-color-default-hover);
+  --aiquota-border: var(--mantine-color-default-border);
+  --aiquota-bg: var(--mantine-color-body);
+  --aiquota-text: var(--mantine-color-text);
+  --aiquota-muted: var(--mantine-color-dimmed);
+  --aiquota-accent: var(--mantine-primary-color-filled);
+  --aiquota-track: var(--mantine-color-gray-light);
+  --aiquota-tick: var(--mantine-color-dimmed);
+  --aiquota-cool: var(--mantine-color-blue-text);
+  --aiquota-ok: var(--mantine-color-text);
+  --aiquota-warn: var(--mantine-color-yellow-text);
+  --aiquota-hot: var(--mantine-color-red-text);
+  --aiquota-unknown: var(--mantine-color-dimmed);
+  --aiquota-stale: var(--mantine-color-dimmed);
+  --aiquota-error: var(--mantine-color-red-text);
 }
 
 .aiquota-tint-cool {
@@ -89,8 +59,31 @@
 
 .aiquota-board {
   color: var(--aiquota-text);
-  /* Cards size to their own content: a provider that collapsed to one line should not leave a
-     card's worth of empty space because a neighbour has two windows. */
+  display: grid;
+  gap: 18px;
+}
+
+.aiquota-board-help {
+  color: var(--aiquota-muted);
+  font-size: 0.76rem;
+  margin: 0;
+}
+
+.aiquota-provider-group {
+  display: grid;
+  gap: 10px;
+}
+
+.aiquota-group-title {
+  color: var(--aiquota-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.aiquota-provider-grid {
   align-items: start;
   display: grid;
   gap: 16px;
@@ -98,13 +91,6 @@
 }
 
 .aiquota-card {
-  --aiquota-tint: var(--aiquota-unknown);
-
-  background: var(--aiquota-surface);
-  border: 1px solid var(--aiquota-border);
-  border-radius: 14px;
-  box-shadow: var(--aiquota-shadow);
-  padding: 16px 18px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -160,28 +146,151 @@
   margin-left: auto;
 }
 
-.aiquota-badge {
-  border-radius: 99px;
-  font-size: 0.7rem;
-  font-weight: 650;
-  padding: 3px 8px;
-  white-space: nowrap;
-}
-
-.aiquota-badge-stale {
-  background: color-mix(in srgb, var(--aiquota-warn) 18%, transparent);
-  color: var(--aiquota-warn);
-}
-
-.aiquota-badge-error {
-  background: color-mix(in srgb, var(--aiquota-hot) 16%, transparent);
-  color: var(--aiquota-hot);
-}
-
 .aiquota-error {
   color: var(--aiquota-error);
   font-size: 0.8rem;
   margin: 0;
+}
+
+.aiquota-error-details,
+.aiquota-details {
+  color: var(--aiquota-muted);
+  font-size: 0.73rem;
+}
+
+.aiquota-error-details summary,
+.aiquota-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.aiquota-error-details pre {
+  background: var(--aiquota-surface-sunken);
+  border-radius: 6px;
+  color: var(--aiquota-text);
+  font:
+    0.72rem/1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  margin: 6px 0 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.aiquota-source-error {
+  background: color-mix(in srgb, var(--aiquota-hot) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aiquota-hot) 24%, transparent);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.aiquota-source-error p {
+  color: var(--aiquota-error);
+  font-size: 0.8rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.aiquota-status-row {
+  background: color-mix(in srgb, var(--aiquota-warn) 12%, transparent);
+  border-radius: 8px;
+  color: var(--aiquota-text);
+  font-size: 0.8rem;
+  font-weight: 650;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.aiquota-status-urgent {
+  background: color-mix(in srgb, var(--aiquota-hot) 12%, transparent);
+}
+
+.aiquota-extra-usage {
+  background: var(--aiquota-surface-sunken);
+  border-radius: 8px;
+  color: var(--aiquota-muted);
+  font-size: 0.78rem;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.aiquota-readings {
+  display: grid;
+  gap: 8px;
+}
+
+.aiquota-reading-group {
+  display: grid;
+  gap: 5px;
+}
+
+.aiquota-reading-group-title {
+  color: var(--aiquota-muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.aiquota-reading-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.aiquota-reading-row {
+  align-items: baseline;
+  column-gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 4px 0;
+}
+
+.aiquota-reading-row dt {
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.aiquota-reading-row dd {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  margin: 0;
+  text-align: right;
+}
+
+.aiquota-reading-note,
+.aiquota-reading-row > .aiquota-details,
+.aiquota-reading-row > .aiquota-error-details {
+  grid-column: 1 / -1;
+}
+
+.aiquota-reading-note {
+  color: var(--aiquota-muted);
+  font-size: 0.7rem;
+}
+
+.aiquota-detail-list {
+  display: grid;
+  gap: 3px 8px;
+  grid-template-columns: auto 1fr;
+  margin: 6px 0 0;
+}
+
+.aiquota-detail-list dt {
+  color: var(--aiquota-muted);
+}
+
+.aiquota-detail-list dd {
+  color: var(--aiquota-text);
+  margin: 0;
+  text-align: right;
 }
 
 .aiquota-aside,

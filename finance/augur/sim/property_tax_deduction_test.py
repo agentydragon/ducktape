@@ -18,7 +18,6 @@ from more_itertools import one
 
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Posting
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
@@ -28,13 +27,14 @@ from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, Parcel, PrimaryResidence, ScheduledPurchase
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
 from finance.augur.sim.world import World
 
@@ -133,21 +133,7 @@ def run(cap: int) -> Rollout:
         income_category=ORDINARY_INCOME,
         deduction_category=None,
     )
-    household = ClaimPayer(ALICE)
-    session = ActionSession({0: world}, ALICE)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
+    batch = finish(ActionSession({0: world}, ALICE), each(ClaimPayer(ALICE).decide))
     rollout = one(batch.rollouts)
     assert rollout.stop is None
     return rollout

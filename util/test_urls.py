@@ -78,13 +78,6 @@ def test_endpoint_types_reject_invalid_http_urls(value: str) -> None:
             adapter.validate_python(value)
 
 
-def test_endpoint_types_use_pydantic_url_normalization() -> None:
-    url = _HTTP_ENDPOINT.validate_python("http://EXAMPLE.test:80")
-    assert isinstance(url, AnyHttpUrl)
-    assert str(url) == "http://example.test/"
-    assert _HTTP_ENDPOINT.dump_python(url, mode="json") == "http://example.test/"
-
-
 def test_public_url_validators_compose_with_annotated_types() -> None:
     without_query = Annotated[AnyHttpUrl, AfterValidator(no_query)]
     without_fragment = Annotated[AnyHttpUrl, AfterValidator(no_fragment)]

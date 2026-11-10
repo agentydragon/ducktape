@@ -1,4 +1,4 @@
-import type { Period, Rule, SpendTransactionsView, SustainabilityView } from "./api/schema";
+import type { Period, Rule, SpendTransactionsView, SustainabilityView } from "./schema";
 
 export type SustainabilityPortfolio = SustainabilityView["portfolio"];
 export type SustainabilitySource = SustainabilityPortfolio["sources"][number];

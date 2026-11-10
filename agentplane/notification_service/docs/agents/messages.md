@@ -1,34 +1,22 @@
 # Message another Session
 
-Commands are `agentplane notifications send` and `message`; routes and schemas are in
-[OpenAPI](/openapi.json).
+Use `agentplane notifications send` and `message` for these operations. The App browser facade is separate from the workload CLI.
 
 ## Send
 
-You may send only to the Sandboxes a `session_inbox_access` rule bound to your ServiceAccount allows
-`send_message` to. Without one the send fails `PERMISSION_DENIED`; ask whoever grants your access.
+You may send to any Session that runs as your own Identity, and otherwise only to the Sandboxes a
+`session_inbox_access` rule bound to your ServiceAccount or Identity allows `send_message` to. Without one
+the send fails `PERMISSION_DENIED`; ask whoever grants your access.
 
 ```bash
-agentplane notifications send THEIR_NAMESPACE/THEIR_SANDBOX THEIR_SESSION_ID --body 'The change is ready for review.'
+agentplane notifications send THEIR_SESSION_ID --body 'The change is ready for review.'
 ```
 
 `--body-file FILE` takes longer text, `-` from stdin. The command names your own Session from
-`AGENTPLANE_DESTINATION` as `fromSession`; `--from-session` replaces it. Without the command,
-`POST /v1/messages`:
-
-```json
-{
-  "destinationRef": { "namespace": "THEIR_NAMESPACE", "name": "THEIR_SANDBOX" },
-  "sessionId": "THEIR_SESSION_ID",
-  "idempotencyKey": "review-request-1",
-  "body": "The change is ready for review.",
-  "fromSession": "YOUR_SESSION_ID"
-}
-```
-
-Use the Sandbox and Session you were given; nothing lists other agents' Sessions. Add `uid` to
-`destinationRef` (`--uid`) to reach only that incarnation; without it the message goes to the Sandbox
-of that name now, and the answer carries its UID. The body is plain text, 32 KiB at most unless the
+`AGENTPLANE_SESSION_ID` as `fromSession`; `--from-session` replaces it. Use the Session ID you were given; nothing lists other agents' Sessions. The service resolves the
+Session's current exact Sandbox target through its Dispatcher Session and pins the UID in the answer.
+For `central_sampler_v1` this is its fixed `executor_environment`; Central sampler V1 still requires
+that Sandbox-backed target. The body is plain text, 32 KiB at most unless the
 platform says otherwise. `fromSession` lets the recipient answer you; it is optional and nothing
 verifies it.
 
@@ -36,21 +24,22 @@ Retry a failed or uncertain send with the identical body and key: a send already
 with the same message. The key reused for another body fails `ALREADY_EXISTS`. The command prints the
 key it generated on stderr; pass it back as `--key`. Keep the returned `message.id`.
 
-`NOT_FOUND` means no such Sandbox, another incarnation than the `uid` given, or a Session the platform
-has no record of in that Sandbox; a Session is recorded once it has run. `UNAVAILABLE` is temporary:
+`NOT_FOUND` means no Dispatcher Session, a replaced Sandbox, or no matching History record for the
+exact Sandbox incarnation. The logical Session record can exist before its placement owner or History
+records it. `UNAVAILABLE` is temporary:
 retry later with the same key. `RESOURCE_EXHAUSTED` means too many of your messages in that inbox (128
 by default) await acknowledgement: wait for the recipient to catch up rather than sending more.
 
 ## Follow a message
 
-`agentplane notifications message ID` (`GET /v1/messages/{id}`) answers for your own messages, with
+`agentplane notifications message ID` answers for your own messages, with
 independent facts:
 
 - `covered`: a notice named the message to the recipient Session. It says nothing of whether the agent
   read it.
 - `acknowledged`: the recipient acknowledged its inbox through the message, which acknowledges every
   earlier entry too. It never means the recipient did what you asked.
-- `inboxRetired`: the recipient's inbox was retired, as when its Sandbox was deleted. A message no notice
+- `inboxRetired`: the recipient's inbox was explicitly retired. A message no notice
   covered will never be noticed.
 
 A suspended Sandbox accepts messages, and the notice is prepared, so `covered` turns true, but the recipient

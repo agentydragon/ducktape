@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -104,29 +103,24 @@ func policyText(raw json.RawMessage) (string, error) {
 	for _, entry := range policy.GetAutoApproveIf() {
 		var actions []string
 		var policyType string
-		var actionNames map[string]*action_servicepb.StringList
+		var groups []*action_servicepb.GroupActions
 		switch value := entry.GetPolicy().GetKind().(type) {
 		case *action_servicepb.Policy_ExactActions:
-			policyType, actionNames = "exact_actions", value.ExactActions.GetActions()
+			policyType, groups = "exact_actions", value.ExactActions.GetActions()
 		case *action_servicepb.Policy_ArgumentSchema:
-			policyType, actionNames = "argument_schema", value.ArgumentSchema.GetActions()
+			policyType, groups = "argument_schema", value.ArgumentSchema.GetActions()
 		case *action_servicepb.Policy_GithubRepository:
-			policyType, actionNames = "github_repository", value.GithubRepository.GetActions()
+			policyType, groups = "github_repository", value.GithubRepository.GetActions()
 		case *action_servicepb.Policy_GithubPublicRepository:
-			policyType, actionNames = "github_public_repository", value.GithubPublicRepository.GetActions()
+			policyType, groups = "github_public_repository", value.GithubPublicRepository.GetActions()
 		case *action_servicepb.Policy_HomeAssistantEntityControl:
-			policyType, actionNames = "home_assistant_entity_control", value.HomeAssistantEntityControl.GetActions()
+			policyType, groups = "home_assistant_entity_control", value.HomeAssistantEntityControl.GetActions()
 		default:
 			return "", invalidResponse("policy entry %q has no policy kind", entry.GetPolicySet())
 		}
-		groups := make([]string, 0, len(actionNames))
-		for group := range actionNames {
-			groups = append(groups, group)
-		}
-		sort.Strings(groups)
 		for _, group := range groups {
-			for _, name := range actionNames[group].GetValues() {
-				actions = append(actions, group+"/"+name)
+			for _, name := range group.GetNames() {
+				actions = append(actions, group.GetGroup()+"/"+name)
 			}
 		}
 		lines = append(lines, fields(fmt.Sprintf("auto-approve %s#%d", entry.GetPolicySet(), entry.GetIndex()), policyType, strings.Join(actions, ",")))
@@ -142,11 +136,15 @@ func receiptLine(raw json.RawMessage) (string, error) {
 	state := actionEnumText(r.GetState().String(), "ACTION_STATE_")
 	line := fields(r.GetId(), state, r.GetAction().GetGroup()+"/"+r.GetAction().GetName(), strconv.Quote(r.GetTitle()))
 	if decision := r.GetDecision(); decision != nil {
-		for _, reason := range []*string{decision.DecisionNote, decision.ReasonDescription} {
-			if reason != nil {
-				line += "  decision: " + strconv.Quote(*reason)
-				break
-			}
+		var reason *string
+		switch decider := decision.GetDecider().(type) {
+		case *action_servicepb.Decision_Operator:
+			reason = decider.Operator.DecisionNote
+		case *action_servicepb.Decision_Policy:
+			reason = decider.Policy.ReasonDescription
+		}
+		if reason != nil {
+			line += "  decision: " + strconv.Quote(*reason)
 		}
 	}
 	if execution := r.GetExecution(); execution != nil && execution.GetError() != nil {
@@ -223,10 +221,13 @@ func rulesText(raw json.RawMessage) (string, error) {
 		Values []string `json:"values"`
 	}
 	rules, err := decode[struct {
-		Subject struct {
+		Subject *struct {
 			Namespace string `json:"namespace"`
 			Name      string `json:"name"`
 		} `json:"subject"`
+		Identity *struct {
+			Name string `json:"name"`
+		} `json:"identity"`
 		Policies []struct {
 			Name  string `json:"name"`
 			Rules []struct {
@@ -235,6 +236,7 @@ func rulesText(raw json.RawMessage) (string, error) {
 				Paths      *list    `json:"paths"`
 				Credential *struct {
 					Name        string             `json:"name"`
+					Description string             `json:"description"`
 					Placeholder string             `json:"placeholder"`
 					Targets     []credentialTarget `json:"targets"`
 				} `json:"credential"`
@@ -250,7 +252,16 @@ func rulesText(raw json.RawMessage) (string, error) {
 		}
 		return strings.Join(values.Values, ",")
 	}
-	lines := []string{fmt.Sprintf("subject %s/%s", rules.Subject.Namespace, rules.Subject.Name)}
+	var caller string
+	switch {
+	case rules.Subject != nil:
+		caller = fmt.Sprintf("subject %s/%s", rules.Subject.Namespace, rules.Subject.Name)
+	case rules.Identity != nil:
+		caller = "identity " + rules.Identity.Name
+	default:
+		return "", invalidResponse("rules name no caller")
+	}
+	lines := []string{caller}
 	for _, policy := range rules.Policies {
 		for _, rule := range policy.Rules {
 			line := fields(policy.Name, strings.Join(rule.Hosts, ","), orAny(rule.Methods), orAny(rule.Paths))
@@ -260,6 +271,9 @@ func rulesText(raw json.RawMessage) (string, error) {
 					presented[i] = place.presenting(credential.Placeholder)
 				}
 				line += fmt.Sprintf("  credential %s: send %s", credential.Name, strings.Join(presented, "  or  "))
+				if credential.Description != "" {
+					line += "  " + credential.Description
+				}
 			}
 			lines = append(lines, line)
 		}

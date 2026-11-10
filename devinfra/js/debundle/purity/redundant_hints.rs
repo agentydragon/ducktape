@@ -38,7 +38,7 @@ pub enum RedundantPurityReason {
 /// One redundant `pure_members: [<prop>]` entry — the
 /// `<binding>.<prop>(args)` call would already classify pure
 /// without the spec hint (e.g. the receiver is `Array` and the
-/// property is `isArray`, already covered by `PURE_STATIC_CALLS`).
+/// property is `isArray`, whose builtin row admits any operands).
 /// Surfaced so spec authors can prune the redundant entry.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RedundantPureMemberHint {
@@ -50,10 +50,10 @@ pub struct RedundantPureMemberHint {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RedundantPureMemberReason {
-    /// `(<binding>, <prop>)` is already in `PURE_STATIC_CALLS` AND
-    /// `<binding>` is a whitelist receiver name (e.g. `Array`,
-    /// `Number`) — the call classifies pure on its own with no
-    /// `pure_members` annotation. The hint is a no-op.
+    /// `<binding>.<prop>` names an intrinsic whose builtin row admits
+    /// any operands (e.g. `Array.isArray`) — the call classifies pure on
+    /// its own with no `pure_members` annotation. The hint is a no-op.
+    /// The wire name predates the builtin table.
     WhitelistedStaticCall,
 }
 
@@ -110,21 +110,14 @@ fn redundant_reason(graph: &ChunkCodeGraph, name: &str) -> Option<RedundantPurit
 }
 
 /// Walk `declared_pure_members` and flag entries the analyzer would
-/// classify pure without the hint. Currently the only auto-pure path
-/// for member calls is the `PURE_STATIC_CALLS` whitelist for
-/// `(WHITELIST_RECEIVERS, prop)` pairs — so an entry like
-/// `pure_members: [isArray]` on a binding named `Array` is a no-op
-/// (`Array.isArray(...)` is already in `PURE_STATIC_CALLS`).
+/// classify pure without the hint: a member of an unshadowed intrinsic
+/// whose builtin row admits any operands, so an entry like
+/// `pure_members: [isArray]` on a binding named `Array` is a no-op.
 ///
-/// The `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admission rule has
-/// per-callsite argument-shape gates — without inspecting every
-/// callsite for `<binding>.<prop>(...)` arg shapes, we can't claim
-/// the spec hint is a no-op (the hint covers ALL arg shapes, while
-/// the whitelist only covers plain-data args). To stay sound under
-/// the "report only confirmed-redundant" contract, we don't flag
-/// `pure_members: [entries|keys|values|freeze|fromEntries]` on
-/// `Object` here. Spec authors can drop them manually once they've
-/// verified every callsite uses a plain-data arg.
+/// Rows that constrain their operands (`Object.keys` needs a plain-data
+/// argument) are not reported: the hint covers every call shape, while the
+/// row covers only some, and proving every callsite's shape is out of scope
+/// under the "report only confirmed-redundant" contract.
 pub(crate) fn detect_redundant_pure_member_hints(
     declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
     shadowed: &BTreeSet<&'static str>,
@@ -134,21 +127,9 @@ pub(crate) fn detect_redundant_pure_member_hints(
         if shadowed.contains(binding.as_str()) {
             continue;
         }
-        // Only whitelist-receiver bindings can ride on
-        // `PURE_STATIC_CALLS`. A user-named binding (e.g. a vendor
-        // namespace `b`) doesn't reach the whitelist regardless of
-        // shadowing — so the hint is load-bearing there.
-        let recv = WHITELIST_RECEIVERS
-            .iter()
-            .copied()
-            .find(|r| *r == binding.as_str());
-        let Some(recv) = recv else {
-            continue;
-        };
         for prop in props {
-            if PURE_STATIC_CALLS
-                .iter()
-                .any(|(r, p)| *r == recv && *p == prop.as_str())
+            if builtins::lookup(binding, Some(prop), Invocation::Call)
+                .is_some_and(admits_any_operands)
             {
                 out.push(RedundantPureMemberHint {
                     binding_name: binding.clone(),

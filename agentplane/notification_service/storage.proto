@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package agentplane.notification_service.storage;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/notification_service/storagepb";
+
+// SubscriptionCreation is the immutable typed configuration a subscription was created with.
+// Its discriminator and idempotency key live in relational columns.
+message SubscriptionCreation {
+  DestinationRef destination_ref = 1;
+  string session_id = 2;
+  int64 lifetime_days = 3;
+
+  oneof source {
+    ActionsSource actions = 4;
+    GitHubSource github = 5;
+  }
+}
+
+message DestinationRef {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
+
+message ActionsSource {
+  bytes request_id = 1;
+  int64 after_sequence = 2;
+}
+
+message GitHubSource {
+  string repository = 1;
+  oneof subject {
+    PullRequest pull_request = 2;
+    Issue issue = 3;
+    Branch branch = 4;
+    Commit commit = 5;
+  }
+  repeated EventFilter events = 6;
+}
+
+message PullRequest {
+  int64 number = 1;
+}
+
+message Issue {
+  int64 number = 1;
+}
+
+message Branch {
+  string name = 1;
+}
+
+message Commit {
+  string sha = 1;
+}
+
+message EventFilter {
+  string event = 1;
+  repeated string actions = 2;
+}

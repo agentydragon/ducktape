@@ -1,10 +1,17 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
-use crate::facts::value_flow::{ValueOrigin, static_prop as static_string_prop};
+use super::world::WorldScope;
+use crate::facts::abstract_domain::builtins::IterationRow;
+use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::value_flow::static_prop as static_string_prop;
+use analysis_model::PrimKinds;
+use imbl::{OrdMap, OrdSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-use swc_common::Span;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ops::Bound::{Excluded, Unbounded};
+use std::sync::{Arc, Weak};
+use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
 pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
@@ -23,10 +30,120 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
     })
 }
 
-pub(super) type Values = BTreeSet<AbstractValue>;
-pub(super) type Context = BTreeMap<Id, Values>;
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Values(OrdSet<AbstractValue>);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+impl Hash for Values {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.len().hash(state);
+        for value in self.iter() {
+            value.hash(state);
+        }
+    }
+}
+
+impl Values {
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(super) fn first(&self) -> Option<&AbstractValue> {
+        self.0.get_min()
+    }
+
+    pub(super) fn insert(&mut self, value: AbstractValue) -> bool {
+        self.0.insert(value).is_none()
+    }
+
+    /// Insert the values not already present and report whether any was.
+    /// A probe copies nothing, while a persistent insert copies its path even
+    /// for a present value.
+    pub(super) fn extend_absent<'v>(
+        &mut self,
+        values: impl IntoIterator<Item = &'v AbstractValue>,
+    ) -> bool {
+        let absent: Vec<_> = values
+            .into_iter()
+            .filter(|value| !self.0.contains(*value))
+            .cloned()
+            .collect();
+        let changed = !absent.is_empty();
+        self.0.extend(absent);
+        changed
+    }
+
+    pub(super) fn remove(&mut self, value: &AbstractValue) -> bool {
+        self.0.remove(value).is_some()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub(super) fn is_disjoint(&self, other: &Self) -> bool {
+        self.iter().all(|value| !other.contains(value))
+    }
+}
+
+/// A transient value set as a sorted, deduplicated vector: the elements and
+/// iteration order of the `Values` the same items would build, without
+/// persistent-set insertion. For inputs that are only iterated.
+pub(super) fn ordered_values(
+    values: impl IntoIterator<Item = AbstractValue>,
+) -> Vec<AbstractValue> {
+    let mut values: Vec<_> = values.into_iter().collect();
+    values.sort_unstable();
+    values.dedup();
+    values
+}
+
+impl std::ops::Deref for Values {
+    type Target = OrdSet<AbstractValue>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Extend<AbstractValue> for Values {
+    fn extend<T: IntoIterator<Item = AbstractValue>>(&mut self, values: T) {
+        self.0.extend(values);
+    }
+}
+
+impl FromIterator<AbstractValue> for Values {
+    fn from_iter<T: IntoIterator<Item = AbstractValue>>(values: T) -> Self {
+        Self(values.into_iter().collect())
+    }
+}
+
+impl<const N: usize> From<[AbstractValue; N]> for Values {
+    fn from(values: [AbstractValue; N]) -> Self {
+        values.into_iter().collect()
+    }
+}
+
+impl IntoIterator for Values {
+    type Item = AbstractValue;
+    type IntoIter = <OrdSet<AbstractValue> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Values {
+    type Item = &'a AbstractValue;
+    type IntoIter = <&'a OrdSet<AbstractValue> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+pub(super) type Context = OrdMap<Id, Values>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct CallSite {
     start: u32,
     end: u32,
@@ -38,6 +155,29 @@ impl From<Span> for CallSite {
             start: span.lo.0,
             end: span.hi.0,
         }
+    }
+}
+
+impl AbstractValue {
+    pub(super) const UNDEFINED: Self = Self::Value(Value::Prim(PrimKinds::UNDEFINED));
+    /// A primitive of untracked type.
+    pub(super) const PRIMITIVE: Self = Self::Value(Value::Prim(PrimKinds::ANY));
+
+    /// Whether this value is a primitive. `Top` and `Unavailable` are
+    /// excluded: either can represent a non-primitive result or a throwing
+    /// evaluation.
+    pub(super) fn is_primitive(&self) -> bool {
+        matches!(self, Self::Value(Value::Prim(_)))
+    }
+}
+
+impl CallSite {
+    pub(super) fn allocation_id(self) -> u32 {
+        self.start
+    }
+
+    pub(super) fn source_span(self) -> Span {
+        Span::new(BytePos(self.start), BytePos(self.end))
     }
 }
 
@@ -54,9 +194,121 @@ impl<T> Captured<T> {
     pub(super) fn with_identity(identity: usize, values: Arc<T>) -> Self {
         Self { identity, values }
     }
+
+    pub(super) fn cache_identity(&self) -> usize {
+        self.identity
+    }
 }
 
-pub(super) type CapturedContext = Captured<Context>;
+/// Canonical descriptions stay interned while an actual value or semantic
+/// root owns them. The table itself never keeps their payloads alive.
+pub(super) struct CaptureInterner<T> {
+    buckets: BTreeMap<u64, Vec<WeakCapture<T>>>,
+    next_identity: usize,
+    sweep_after: Option<u64>,
+}
+
+struct WeakCapture<T> {
+    identity: usize,
+    values: Weak<T>,
+}
+
+impl<T> Default for CaptureInterner<T> {
+    fn default() -> Self {
+        Self {
+            buckets: BTreeMap::new(),
+            next_identity: 0,
+            sweep_after: None,
+        }
+    }
+}
+
+impl<T: Eq + Hash> CaptureInterner<T> {
+    pub(super) fn intern(&mut self, description: T) -> Captured<T> {
+        let mut hash = DefaultHasher::new();
+        description.hash(&mut hash);
+        let bucket = self.buckets.entry(hash.finish()).or_default();
+        bucket.retain(|entry| entry.values.strong_count() != 0);
+        for entry in bucket.iter() {
+            if let Some(values) = entry.values.upgrade()
+                && values.as_ref() == &description
+            {
+                return Captured::with_identity(entry.identity, values);
+            }
+        }
+        let identity = self.next_identity;
+        self.next_identity = identity.checked_add(1).expect("capture identity exhausted");
+        let values = Arc::new(description);
+        bucket.push(WeakCapture {
+            identity,
+            values: Arc::downgrade(&values),
+        });
+        Captured::with_identity(identity, values)
+    }
+
+    /// Payloads drop with their last strong owner. Retire a bounded batch of
+    /// dead table entries too, without scanning all live captures per owner.
+    pub(super) fn sweep_dead(&mut self) {
+        const BATCH: usize = 64;
+        let lower = self.sweep_after.map_or(Unbounded, Excluded);
+        let keys: Vec<_> = self
+            .buckets
+            .range((lower, Unbounded))
+            .map(|(&key, _)| key)
+            .take(BATCH)
+            .collect();
+        for key in &keys {
+            let bucket = self.buckets.get_mut(key).expect("collected bucket");
+            bucket.retain(|entry| entry.values.strong_count() != 0);
+            if bucket.is_empty() {
+                self.buckets.remove(key);
+            }
+        }
+        self.sweep_after = keys.last().copied();
+    }
+}
+
+impl<T> Hash for Captured<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identity.hash(state);
+    }
+}
+
+/// One instantiated lexical cell, not a source binding or structural cache key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct LexicalCellId(pub(super) usize);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct LexicalCaptures {
+    pub(super) snapshots: Context,
+    pub(super) cells: OrdMap<Id, LexicalCellId>,
+    /// Source containment only, never a trusted receiver or instance identity.
+    pub(super) home_object: Option<u32>,
+}
+
+impl Hash for LexicalCaptures {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.snapshots.len().hash(state);
+        for (binding, values) in &self.snapshots {
+            binding.hash(state);
+            values.hash(state);
+        }
+        self.home_object.hash(state);
+        self.cells.len().hash(state);
+        for (binding, cell) in &self.cells {
+            binding.hash(state);
+            cell.hash(state);
+        }
+    }
+}
+
+impl LexicalCaptures {
+    pub(super) fn is_empty(&self) -> bool {
+        self.snapshots.is_empty() && self.cells.is_empty() && self.home_object.is_none()
+    }
+}
+
+pub(super) type CapturedContext = Captured<LexicalCaptures>;
 
 impl<T> PartialEq for Captured<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -78,58 +330,134 @@ impl<T> Ord for Captured<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum RetainedResultKind {
+    Factory,
+    Constructor,
+}
+
+/// Query ownership, not a stable provider or runtime allocation identity. These
+/// opaque values become argument positions and never enter importer state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct ProviderScopeId(u64);
+
+impl ProviderScopeId {
+    pub(super) fn fresh() -> Option<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            next.checked_add(1)
+        })
+        .ok()
+        .map(Self)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum ProviderInput {
+    Argument(usize),
+    Capture(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct SymbolicInputId {
+    pub(super) scope: ProviderScopeId,
+    pub(super) input: ProviderInput,
+}
+
+/// A callable's function allocation in one world. The scope keeps an
+/// isolated provider query's closures apart from the application's, even when
+/// both create the same source callable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct HeapAddress {
+    pub(super) scope: WorldScope,
+    pub(super) callable: u32,
+}
+
+/// Provenance of a local class capability; neither variant proves allocation identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum InstanceOrigin {
+    Constructed,
+    Projected,
+}
+
+/// The interpreter's values: the shared lattice plus carriers for the
+/// callable and heap summaries the lattice does not express yet.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum AbstractValue {
-    Origin(ValueOrigin),
-    Closure(u32, CapturedContext),
+    Value(Value),
+    /// Unknown kind/capabilities; only forwarding, storing and returning this
+    /// query-local input is covered. It proves no shape or native identity.
+    SymbolicInput(SymbolicInputId),
+    /// A function object: its callable's address in the creating world and
+    /// the lexical captures it retains.
+    Closure(HeapAddress, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
     ClassMembers(u32),
-    /// A constructed local class instance retains its class methods and the
-    /// callback values stored by its proven constructor.
-    Instance(u32, Captured<Values>),
+    /// A constructed local class instance, or an opaque value read from one,
+    /// retains its class methods and constructor argument capabilities. Only
+    /// Constructed proves the value itself has the class's instance kind.
+    /// Neither origin identifies a unique runtime allocation.
+    Instance(u32, Captured<Values>, InstanceOrigin),
     CallbackFactory,
     InlineCallbackFactory,
-    /// A fresh opaque return value retaining callbacks without publishing them.
+    /// An opaque returned capability retaining live input values. Its capture
+    /// identity is only an abstract cache key: it proves no runtime equality,
+    /// fresh allocation, object shape or privacy of the retained inputs.
     DeferredCallbacks(Captured<Values>),
+    /// An audited factory's ordinary graph or a constructor's instance graph.
+    /// Factory inputs require Factory provenance. This admission capability
+    /// is revocable on exposure or mutation; its capture key is not a runtime
+    /// allocation identity. Member projection and invocation remain opaque.
+    AuditedRetainedResult(RetainedResultKind, Captured<Values>),
+    /// Exact own-descriptor entries captured from one source-proved ordinary
+    /// object at a native call site. The executor may apply the certificate
+    /// through the paired defineProperties call; all other uses keep the
+    /// carrier opaque.
+    OwnDescriptorMap(CallSite),
+    /// A foreign source factory's deferred object graph. Provider captures are
+    /// retained in its imported summary; using this token activates the full
+    /// conservative importer binding/callback pool, never foreign SWC IDs.
+    ForeignDeferredRecord,
     ObjectAssign,
     /// Array constructor/prototype capability obtained from a proven array.
     ArrayIntrinsic,
     GlobalObject,
-    Undefined,
-    NonCallable,
-    /// Evaluating an expression throws before producing a value (for example,
-    /// a lexical binding read in its temporal dead zone).
-    Unavailable,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ArrayIterationMethod {
-    ForEach,
-    Filter,
-    Map,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct ArrayIteration {
-    pub(super) method: ArrayIterationMethod,
+    pub(super) row: &'static IterationRow,
     pub(super) source: ValueExpr,
     pub(super) callback: ValueExpr,
+    /// `reduce`'s initial accumulator.
+    pub(super) initial: Option<ValueExpr>,
     pub(super) result: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct ArrayElement {
-    pub(super) spread: bool,
+    pub(super) spread: Option<swc_common::Span>,
     pub(super) value: ValueExpr,
 }
 
 /// Slot values are an ordered overapproximation. The ordinary Object origin
 /// remains the identity used by every mutation, publication and taint lane.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct DenseArray {
     pub(super) slots: Vec<Values>,
+}
+
+/// Result of transferring the ordinary Array iterator over a settled dense
+/// array at one interpreter prefix. Operation adapters check their own
+/// iterator-protocol premises; this transfer supplies the exact receiver and
+/// ordered heap slots. Operand evaluation keeps possible throws in its
+/// existing `Unavailable` path; a transfer refuses any non-singleton value.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum DenseArrayIterationTransfer {
+    Refused,
+    Yielded { source: u32, slots: Vec<Values> },
 }
 
 #[derive(Debug, Clone)]
@@ -140,30 +468,187 @@ pub(super) struct FromEntriesMappedProof {
     pub(super) object_intrinsic: Id,
 }
 
-/// A fresh, private Vite/Rollup style facade. Both intrinsic calls return the
-/// same ordinary object; its stored callable fields remain reachable if the
-/// facade is later published or consumed.
-pub(super) struct FrozenNamespaceProof {
-    pub(super) freeze_site: CallSite,
-    pub(super) define_site: CallSite,
-    pub(super) stored_bindings: BTreeSet<Id>,
+/// Ordered literal definitions keep accessor payloads distinct from data values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LiteralPropertyKind {
+    Data,
+    Method,
+    Getter,
+    Setter,
+    Opaque,
 }
 
 #[derive(Debug, Clone)]
+pub(super) enum PropertyDefinition<T> {
+    Data { name: Option<String>, value: T },
+    Method { name: Option<String>, value: T },
+    Getter { name: Option<String>, value: T },
+    Setter { name: Option<String>, value: T },
+    Opaque { name: Option<String>, value: T },
+}
+
+impl<T> PropertyDefinition<T> {
+    pub(super) fn kind(&self) -> LiteralPropertyKind {
+        match self {
+            Self::Data { .. } => LiteralPropertyKind::Data,
+            Self::Method { .. } => LiteralPropertyKind::Method,
+            Self::Getter { .. } => LiteralPropertyKind::Getter,
+            Self::Setter { .. } => LiteralPropertyKind::Setter,
+            Self::Opaque { .. } => LiteralPropertyKind::Opaque,
+        }
+    }
+    pub(super) fn new(kind: LiteralPropertyKind, name: Option<String>, value: T) -> Self {
+        match kind {
+            LiteralPropertyKind::Data => Self::Data { name, value },
+            LiteralPropertyKind::Method => Self::Method { name, value },
+            LiteralPropertyKind::Getter => Self::Getter { name, value },
+            LiteralPropertyKind::Setter => Self::Setter { name, value },
+            LiteralPropertyKind::Opaque => Self::Opaque { name, value },
+        }
+    }
+    pub(super) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Data { name, .. }
+            | Self::Method { name, .. }
+            | Self::Getter { name, .. }
+            | Self::Setter { name, .. }
+            | Self::Opaque { name, .. } => name.as_deref(),
+        }
+    }
+    pub(super) fn value(&self) -> &T {
+        match self {
+            Self::Data { value, .. }
+            | Self::Method { value, .. }
+            | Self::Getter { value, .. }
+            | Self::Setter { value, .. }
+            | Self::Opaque { value, .. } => value,
+        }
+    }
+}
+
+/// Syntax-only shape of one statically named own property. Evaluated values
+/// stay in the executor's ordinary object identity store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum OwnPropertyDescriptorSyntax {
+    Data,
+    Accessor {
+        getter: Option<u32>,
+        setter: Option<u32>,
+    },
+}
+
+/// Source-ordered string properties of one supported ordinary object literal.
+/// The map carries descriptor syntax; `creation_order` preserves insertion
+/// order for ECMAScript own-key enumeration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct OwnPropertyShape {
+    pub(super) properties: BTreeMap<String, OwnPropertyDescriptorSyntax>,
+    pub(super) creation_order: Vec<String>,
+}
+
+/// Returns ECMAScript's own string-key order for a source-ordered ordinary
+/// object shape: array-index keys numerically first, followed by other string
+/// keys in their original insertion order. `BTreeMap` order is never a proxy
+/// for JavaScript property order.
+pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<String> {
+    let mut indices = Vec::new();
+    let mut strings = Vec::new();
+    let mut seen = BTreeSet::new();
+    for name in creation_order {
+        if !seen.insert(name.as_str()) {
+            continue;
+        }
+        if let Some(index) = canonical_array_index(name) {
+            indices.push((index, name.clone()));
+        } else {
+            strings.push(name.clone());
+        }
+    }
+    indices.sort_unstable_by_key(|(index, _)| *index);
+    indices
+        .into_iter()
+        .map(|(_, name)| name)
+        .chain(strings)
+        .collect()
+}
+
+/// Whether a property name has the canonical spelling and range of an ECMAScript
+/// array index. `u32::MAX` is reserved and is not an array index.
+pub(super) fn canonical_array_index(name: &str) -> Option<u32> {
+    name.parse::<u32>()
+        .ok()
+        .filter(|index| *index != u32::MAX && index.to_string() == name)
+}
+
+/// How a member read names its property.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum MemberKey {
+    /// `object.name`.
+    Static,
+    /// `object[expression]`; the identifier when the expression is one.
+    Computed(Option<Id>),
+}
+
+impl MemberKey {
+    pub(super) fn of(property: &MemberProp) -> Self {
+        match property {
+            MemberProp::Ident(_) => Self::Static,
+            MemberProp::Computed(key) => match key.expr.unwrap_parens() {
+                Expr::Ident(binding) => Self::Computed(Some(binding.to_id())),
+                _ => Self::Computed(None),
+            },
+            MemberProp::PrivateName(_) => Self::Computed(None),
+        }
+    }
+
+    pub(super) fn is_static(&self) -> bool {
+        *self == Self::Static
+    }
+
+    /// A literal index needs no key evaluation. Computed identifiers and
+    /// other dynamic keys cannot use the present own-data read proof.
+    pub(super) fn supports_own_data_read(&self, property: &str) -> bool {
+        matches!(self, Self::Static)
+            || (matches!(self, Self::Computed(None)) && canonical_array_index(property).is_some())
+    }
+}
+
+// Lowered syntax is immutable. Cloned facts share recursive children while
+// each evaluation keeps its own interpreter state.
+#[derive(Debug, Clone)]
 pub(super) enum ValueExpr {
     Binding(Id),
-    Origin(ValueOrigin),
-    ObjectLiteral(u32, Vec<(Option<String>, Self)>),
+    /// A source allocation site. RegExp literals use this form but do not
+    /// imply ordinary own properties, prototype methods, or protocol behavior.
+    Alloc(Kind, u32),
+    ObjectLiteral(u32, Arc<[(Option<String>, Self)]>),
     Undefined,
-    NonCallable,
-    Member(Box<Self>, Option<String>, bool),
-    Call(Box<Self>, Vec<Self>, CallSite),
-    New(Box<Self>, Vec<Self>, CallSite),
+    /// A primitive of the given types: a literal, a template, or a value
+    /// known only to be primitive.
+    NonCallable(PrimKinds),
+    Member(Arc<Self>, Option<String>, MemberKey, CallSite),
+    Call(Arc<Self>, Arc<[Self]>, CallSite),
+    New(Arc<Self>, Arc<[Self]>, CallSite),
+    /// Source spelling of `Object.getPrototypeOf([][Symbol.iterator]())`.
+    /// Native identity remains conditional on Object, Array, and Symbol.
+    ArrayIteratorPrototype(Arc<Self>),
+    /// Source spelling of `Object.getPrototypeOf(new Set()[Symbol.iterator]())`.
+    /// Its path is conditional on the Set constructor and iterator protocol.
+    SetIteratorPrototype(Arc<Self>),
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
-    Primitive(Vec<Self>),
-    Alternatives(Vec<Self>),
+    Primitive(Arc<[Self]>),
+    /// Both strict equality operators produce an unknown Boolean without coercion.
+    StrictEquality(Arc<Self>, Arc<Self>),
+    Sequence(Arc<[Self]>),
+    LogicalNot(Arc<Self>),
+    Void(Arc<Self>),
+    Conditional {
+        test: Arc<Self>,
+        alternatives: Arc<[Self; 2]>,
+    },
+    Alternatives(Arc<[Self]>),
     Unknown,
 }
 
@@ -174,9 +659,33 @@ pub(super) struct ClassValueFacts {
     pub(super) default_has_instance: bool,
     pub(super) static_fields: BTreeMap<String, ValueExpr>,
     pub(super) super_class: Option<ValueExpr>,
+    pub(super) lexical_heritage: Option<LexicalClassHeritage>,
     pub(super) opaque_instance: bool,
     pub(super) opaque_static: bool,
     pub(super) allocation_without_user_code: bool,
+}
+
+/// The complete canonical heritage expression is one lexical read. Lowered
+/// values alone cannot establish this: a sequence or assignment can retain
+/// its final binding while erasing earlier evaluation.
+#[derive(Debug, Clone)]
+pub(super) struct LexicalClassHeritage {
+    binding: Id,
+}
+
+impl LexicalClassHeritage {
+    pub(super) fn collect(expression: &Expr) -> Option<Self> {
+        let Expr::Ident(binding) = expression.unwrap_parens() else {
+            return None;
+        };
+        Some(Self {
+            binding: binding.to_id(),
+        })
+    }
+
+    pub(super) fn binding(&self) -> &Id {
+        &self.binding
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ClassSurface {
@@ -195,44 +704,200 @@ pub(super) struct NamespaceValueFacts {
     unstable_class_bindings: BTreeSet<Id>,
 }
 
+fn array_iterator_prototype_expression(call: &CallExpr) -> bool {
+    let Callee::Expr(outer_callee) = &call.callee else {
+        return false;
+    };
+    let Expr::Member(outer_member) = outer_callee.unwrap_parens() else {
+        return false;
+    };
+    if !matches!(outer_member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
+        || !matches!(&outer_member.prop, MemberProp::Ident(id) if id.sym == "getPrototypeOf")
+    {
+        return false;
+    }
+    let [argument] = call.args.as_slice() else {
+        return false;
+    };
+    if argument.spread.is_some() {
+        return false;
+    }
+    let Expr::Call(iterator_call) = argument.expr.unwrap_parens() else {
+        return false;
+    };
+    if !iterator_call.args.is_empty() {
+        return false;
+    }
+    let Callee::Expr(iterator_callee) = &iterator_call.callee else {
+        return false;
+    };
+    let Expr::Member(iterator_member) = iterator_callee.unwrap_parens() else {
+        return false;
+    };
+    let Expr::Array(array) = iterator_member.obj.unwrap_parens() else {
+        return false;
+    };
+    if !array.elems.is_empty() {
+        return false;
+    }
+    matches!(&iterator_member.prop, MemberProp::Computed(key)
+        if matches!(key.expr.unwrap_parens(), Expr::Member(symbol)
+            if matches!(symbol.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Symbol")
+                && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
+}
+
+fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
+    let Callee::Expr(outer_callee) = &call.callee else {
+        return false;
+    };
+    let Expr::Member(outer_member) = outer_callee.unwrap_parens() else {
+        return false;
+    };
+    if !matches!(outer_member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
+        || !matches!(&outer_member.prop, MemberProp::Ident(id) if id.sym == "getPrototypeOf")
+    {
+        return false;
+    }
+    let [argument] = call.args.as_slice() else {
+        return false;
+    };
+    if argument.spread.is_some() {
+        return false;
+    }
+    let Expr::Call(iterator_call) = argument.expr.unwrap_parens() else {
+        return false;
+    };
+    if !iterator_call.args.is_empty() {
+        return false;
+    }
+    let Callee::Expr(iterator_callee) = &iterator_call.callee else {
+        return false;
+    };
+    let Expr::Member(iterator_member) = iterator_callee.unwrap_parens() else {
+        return false;
+    };
+    let Expr::New(set) = iterator_member.obj.unwrap_parens() else {
+        return false;
+    };
+    if !matches!(set.callee.unwrap_parens(), Expr::Ident(id) if id.sym == "Set")
+        || !set.args.as_deref().is_none_or(|args| args.is_empty())
+    {
+        return false;
+    }
+    matches!(&iterator_member.prop, MemberProp::Computed(key)
+        if matches!(key.expr.unwrap_parens(), Expr::Member(symbol)
+            if matches!(symbol.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Symbol")
+                && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
+}
+
 impl ValueExpr {
+    /// Possible returned values; the conditional test is evaluated separately.
+    pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
+        match self {
+            Self::Alternatives(values) => Some(values),
+            Self::Sequence(values) => Some(&values[values.len().saturating_sub(1)..]),
+            Self::Conditional { alternatives, .. } => Some(alternatives.as_slice()),
+            _ => None,
+        }
+    }
+
     pub(super) fn from_expr(expr: &Expr) -> Self {
+        Self::from_expr_with_coverage(expr).0
+    }
+
+    /// Preserve coverage in the same recursive lowering that produces values.
+    /// This is syntax coverage only; input access and runtime transfer evidence
+    /// are required before any allocation-only judgment may be issued.
+    pub(super) fn from_expr_with_coverage(expr: &Expr) -> (Self, bool) {
+        let mut covered = true;
+        let value = Self::lower(expr, &mut covered);
+        (value, covered)
+    }
+
+    fn lower(expr: &Expr, covered: &mut bool) -> Self {
+        if !matches!(
+            expr.unwrap_parens(),
+            Expr::Ident(_)
+                | Expr::Object(_)
+                | Expr::Array(_)
+                | Expr::Cond(_)
+                | Expr::Seq(_)
+                | Expr::Lit(
+                    Lit::Str(_)
+                        | Lit::Num(_)
+                        | Lit::Bool(_)
+                        | Lit::Null(_)
+                        | Lit::BigInt(_)
+                        | Lit::Regex(_)
+                )
+        ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
+            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
+            && !matches!(expr.unwrap_parens(), Expr::Unary(unary)
+                if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang))
+        {
+            *covered = false;
+        }
         match expr.unwrap_parens() {
             Expr::Ident(ident) => Self::Binding(ident.to_id()),
-            Expr::Fn(function) => Self::Origin(ValueOrigin::Function(function.function.span.lo.0)),
-            Expr::Arrow(arrow) => Self::Origin(ValueOrigin::Function(arrow.span.lo.0)),
-            Expr::Class(class) => Self::Origin(ValueOrigin::Class(class.class.span.lo.0)),
+            Expr::Fn(function) => Self::Alloc(Kind::Function, function.function.span.lo.0),
+            Expr::Arrow(arrow) => Self::Alloc(Kind::Function, arrow.span.lo.0),
+            Expr::Class(class) => Self::Alloc(Kind::Class, class.class.span.lo.0),
             Expr::Object(object) => Self::ObjectLiteral(
                 object.span.lo.0,
                 object
                     .props
                     .iter()
                     .map(|property| match property {
-                        PropOrSpread::Spread(spread) => (None, Self::from_expr(&spread.expr)),
+                        PropOrSpread::Spread(spread) => {
+                            *covered = false;
+                            (None, Self::lower(&spread.expr, covered))
+                        }
                         PropOrSpread::Prop(property) => match property.as_ref() {
-                            Prop::KeyValue(pair) => (
-                                object_data_property_name(&pair.key),
-                                Self::from_expr(&pair.value),
-                            ),
+                            Prop::KeyValue(pair) => {
+                                if !matches!(
+                                    pair.key,
+                                    PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+                                ) || static_property_name(&pair.key).as_deref()
+                                    == Some("__proto__")
+                                {
+                                    *covered = false;
+                                }
+                                (
+                                    object_data_property_name(&pair.key),
+                                    Self::lower(&pair.value, covered),
+                                )
+                            }
                             Prop::Shorthand(ident) => {
                                 (Some(ident.sym.to_string()), Self::Binding(ident.to_id()))
                             }
-                            Prop::Assign(assign) => (
-                                Some(assign.key.sym.to_string()),
-                                Self::from_expr(&assign.value),
-                            ),
-                            Prop::Method(method) => (
-                                static_property_name(&method.key),
-                                Self::Origin(ValueOrigin::Function(method.function.span.lo.0)),
-                            ),
-                            Prop::Getter(getter) => (
-                                static_property_name(&getter.key),
-                                Self::Origin(ValueOrigin::Function(getter.function.span.lo.0)),
-                            ),
-                            Prop::Setter(setter) => (
-                                static_property_name(&setter.key),
-                                Self::Origin(ValueOrigin::Function(setter.function.span.lo.0)),
-                            ),
+                            Prop::Assign(assign) => {
+                                *covered = false;
+                                (
+                                    Some(assign.key.sym.to_string()),
+                                    Self::lower(&assign.value, covered),
+                                )
+                            }
+                            Prop::Method(method) => {
+                                *covered = false;
+                                (
+                                    static_property_name(&method.key),
+                                    Self::Alloc(Kind::Function, method.function.span.lo.0),
+                                )
+                            }
+                            Prop::Getter(getter) => {
+                                *covered = false;
+                                (
+                                    static_property_name(&getter.key),
+                                    Self::Alloc(Kind::Function, getter.function.span.lo.0),
+                                )
+                            }
+                            Prop::Setter(setter) => {
+                                *covered = false;
+                                (
+                                    static_property_name(&setter.key),
+                                    Self::Alloc(Kind::Function, setter.function.span.lo.0),
+                                )
+                            }
                         },
                     })
                     .collect(),
@@ -242,42 +907,55 @@ impl ValueExpr {
                 array
                     .elems
                     .iter()
-                    .flatten()
-                    .map(|element| (None, Self::from_expr(&element.expr)))
+                    .filter_map(|element| {
+                        let Some(element) = element else {
+                            *covered = false;
+                            return None;
+                        };
+                        if element.spread.is_some() {
+                            *covered = false;
+                        }
+                        Some((None, Self::lower(&element.expr, covered)))
+                    })
                     .collect(),
             ),
             Expr::Member(member) => Self::Member(
-                Box::new(Self::from_expr(&member.obj)),
+                Arc::new(Self::lower(&member.obj, covered)),
                 static_prop(&member.prop),
-                matches!(member.prop, MemberProp::Ident(_)),
+                MemberKey::of(&member.prop),
+                member.span.into(),
             ),
             Expr::OptChain(chain) => match chain.base.as_ref() {
                 OptChainBase::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                     // Keep a known local call's returned callable reachable.
                     // The undefined alternative overapproximates optional
                     // short-circuiting without dropping the invocation path.
-                    Self::Alternatives(vec![
-                        Self::Undefined,
-                        // Preserve the prior unknown publication capability;
-                        // timing precision must not admit namespace contracts.
-                        Self::Unknown,
-                        Self::Call(
-                            Box::new(Self::from_expr(&call.callee)),
-                            call.args
-                                .iter()
-                                .map(|arg| Self::from_expr(&arg.expr))
-                                .collect(),
-                            call.span.into(),
-                        ),
-                    ])
+                    Self::Alternatives(
+                        [
+                            Self::Undefined,
+                            // Preserve the prior unknown publication capability;
+                            // timing precision must not admit namespace contracts.
+                            Self::Unknown,
+                            Self::Call(
+                                Arc::new(Self::lower(&call.callee, covered)),
+                                call.args
+                                    .iter()
+                                    .map(|arg| Self::lower(&arg.expr, covered))
+                                    .collect(),
+                                call.span.into(),
+                            ),
+                        ]
+                        .into(),
+                    )
                 }
                 OptChainBase::Member(member) => {
                     let mut options = vec![
                         Self::Undefined,
                         Self::Member(
-                            Box::new(Self::from_expr(&member.obj)),
+                            Arc::new(Self::lower(&member.obj, covered)),
                             static_prop(&member.prop),
-                            matches!(member.prop, MemberProp::Ident(_)),
+                            MemberKey::of(&member.prop),
+                            member.span.into(),
                         ),
                     ];
                     if !matches!(member.obj.unwrap_parens(), Expr::Ident(_))
@@ -285,18 +963,44 @@ impl ValueExpr {
                     {
                         options.push(Self::Unknown);
                     }
-                    Self::Alternatives(options)
+                    Self::Alternatives(options.into())
                 }
                 // Spread calls have no modeled result shape.
                 _ => Self::Unknown,
             },
+            Expr::Call(call) if array_iterator_prototype_expression(call) => {
+                let Callee::Expr(callee) = &call.callee else {
+                    unreachable!("recognized iterator-prototype expression is an ordinary call")
+                };
+                Self::ArrayIteratorPrototype(Arc::new(Self::Call(
+                    Arc::new(Self::lower(callee, covered)),
+                    call.args
+                        .iter()
+                        .map(|argument| Self::lower(&argument.expr, covered))
+                        .collect(),
+                    call.span.into(),
+                )))
+            }
+            Expr::Call(call) if set_iterator_prototype_expression(call) => {
+                let Callee::Expr(callee) = &call.callee else {
+                    unreachable!("recognized iterator-prototype expression is an ordinary call")
+                };
+                Self::SetIteratorPrototype(Arc::new(Self::Call(
+                    Arc::new(Self::lower(callee, covered)),
+                    call.args
+                        .iter()
+                        .map(|argument| Self::lower(&argument.expr, covered))
+                        .collect(),
+                    call.span.into(),
+                )))
+            }
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                 match &call.callee {
                     Callee::Expr(callee) => Self::Call(
-                        Box::new(Self::from_expr(callee)),
+                        Arc::new(Self::lower(callee, covered)),
                         call.args
                             .iter()
-                            .map(|arg| Self::from_expr(&arg.expr))
+                            .map(|arg| Self::lower(&arg.expr, covered))
                             .collect(),
                         call.span.into(),
                     ),
@@ -312,45 +1016,86 @@ impl ValueExpr {
                     .all(|arg| arg.spread.is_none()) =>
             {
                 Self::New(
-                    Box::new(Self::from_expr(&new_expr.callee)),
+                    Arc::new(Self::lower(&new_expr.callee, covered)),
                     new_expr
                         .args
                         .as_deref()
                         .unwrap_or_default()
                         .iter()
-                        .map(|arg| Self::from_expr(&arg.expr))
+                        .map(|arg| Self::lower(&arg.expr, covered))
                         .collect(),
                     new_expr.span.into(),
                 )
             }
-            Expr::Cond(cond) => Self::Alternatives(vec![
-                Self::from_expr(&cond.cons),
-                Self::from_expr(&cond.alt),
-            ]),
+            Expr::Cond(cond) => Self::Conditional {
+                test: Arc::new(Self::lower(&cond.test, covered)),
+                alternatives: Arc::new([
+                    Self::lower(&cond.cons, covered),
+                    Self::lower(&cond.alt, covered),
+                ]),
+            },
+            Expr::Bin(bin) if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq) => {
+                Self::StrictEquality(
+                    Arc::new(Self::lower(&bin.left, covered)),
+                    Arc::new(Self::lower(&bin.right, covered)),
+                )
+            }
             Expr::Bin(bin)
                 if matches!(
                     bin.op,
                     BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
                 ) =>
             {
-                Self::Alternatives(vec![
-                    Self::from_expr(&bin.left),
-                    Self::from_expr(&bin.right),
-                ])
+                Self::Alternatives(
+                    [
+                        Self::lower(&bin.left, covered),
+                        Self::lower(&bin.right, covered),
+                    ]
+                    .into(),
+                )
             }
-            Expr::Bin(bin) => Self::Primitive(vec![
-                Self::from_expr(&bin.left),
-                Self::from_expr(&bin.right),
-            ]),
-            Expr::Unary(unary) => Self::Primitive(vec![Self::from_expr(&unary.arg)]),
-            Expr::Update(update) => Self::Primitive(vec![Self::from_expr(&update.arg)]),
-            Expr::Seq(seq) => seq
-                .exprs
-                .last()
-                .map_or(Self::Unknown, |expr| Self::from_expr(expr)),
-            Expr::Assign(assign) => Self::from_expr(&assign.right),
-            Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Vec::new()),
-            Expr::Lit(_) | Expr::Tpl(_) => Self::NonCallable,
+            Expr::Bin(bin) => Self::Primitive(
+                [
+                    Self::lower(&bin.left, covered),
+                    Self::lower(&bin.right, covered),
+                ]
+                .into(),
+            ),
+            Expr::Unary(unary) if unary.op == UnaryOp::Void => {
+                Self::Void(Arc::new(Self::lower(&unary.arg, covered)))
+            }
+            Expr::Unary(unary) if unary.op == UnaryOp::Bang => {
+                Self::LogicalNot(Arc::new(Self::lower(&unary.arg, covered)))
+            }
+            Expr::Unary(unary) => Self::Primitive([Self::lower(&unary.arg, covered)].into()),
+            Expr::Update(update) => Self::Primitive([Self::lower(&update.arg, covered)].into()),
+            Expr::Seq(seq) => {
+                let mut sequence_covered = true;
+                let expressions: Vec<_> = seq
+                    .exprs
+                    .iter()
+                    .map(|expression| Self::lower(expression, &mut sequence_covered))
+                    .collect();
+                *covered &= sequence_covered;
+                if sequence_covered {
+                    Self::Sequence(expressions.into())
+                } else {
+                    // Uncovered calls/writes are executed by the indexed
+                    // timing path. Do not replay them to reconstruct a value.
+                    expressions.into_iter().last().unwrap_or(Self::Unknown)
+                }
+            }
+            Expr::Assign(assign) => Self::lower(&assign.right, covered),
+            Expr::Lit(Lit::Regex(regex)) => Self::Alloc(Kind::RegExp, regex.span.lo.0),
+            Expr::Lit(literal) => Self::NonCallable(match literal {
+                Lit::Str(_) => PrimKinds::STRING,
+                Lit::Num(_) => PrimKinds::NUMBER,
+                Lit::Bool(_) => PrimKinds::BOOLEAN,
+                Lit::Null(_) => PrimKinds::NULL,
+                Lit::BigInt(_) => PrimKinds::BIGINT,
+                Lit::Regex(_) | Lit::JSXText(_) => PrimKinds::ANY,
+            }),
+            Expr::Tpl(_) => Self::NonCallable(PrimKinds::STRING),
             _ => Self::Unknown,
         }
     }
@@ -360,29 +1105,43 @@ impl ValueExpr {
             Self::Binding(id) => {
                 result.insert(id.clone());
             }
-            Self::Member(object, _, _) => object.bindings(result),
+            Self::ArrayIteratorPrototype(expression)
+            | Self::SetIteratorPrototype(expression)
+            | Self::LogicalNot(expression)
+            | Self::Void(expression) => expression.bindings(result),
+            Self::StrictEquality(left, right) => {
+                left.bindings(result);
+                right.bindings(result);
+            }
+            Self::Conditional { test, alternatives } => {
+                test.bindings(result);
+                for alternative in alternatives.iter() {
+                    alternative.bindings(result);
+                }
+            }
+            Self::Member(object, _, _, _) => object.bindings(result),
             Self::Call(callee, args, _) | Self::New(callee, args, _) => {
                 callee.bindings(result);
-                for arg in args {
+                for arg in args.iter() {
                     arg.bindings(result);
                 }
             }
-            Self::Alternatives(options) => {
-                for option in options {
+            Self::Alternatives(options) | Self::Sequence(options) => {
+                for option in options.iter() {
                     option.bindings(result);
                 }
             }
             Self::Primitive(operands) => {
-                for operand in operands {
+                for operand in operands.iter() {
                     operand.bindings(result);
                 }
             }
             Self::ObjectLiteral(_, properties) => {
-                for (_, value) in properties {
+                for (_, value) in properties.iter() {
                     value.bindings(result);
                 }
             }
-            Self::Origin(_) | Self::Undefined | Self::NonCallable | Self::Unknown => {}
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) | Self::Unknown => {}
         }
     }
 
@@ -393,14 +1152,21 @@ impl ValueExpr {
     pub(super) fn carries_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
             Self::Binding(binding) => binding == id || aliases.contains(binding),
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.carries_namespace(id, aliases)
+            }
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Primitive(_) => false,
-            Self::Alternatives(options) => options
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
+                false
+            }
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| value.carries_namespace(id, aliases)),
-            Self::Member(object, _, _) => {
+            Self::Member(object, _, _, _) => {
                 matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || object.carries_namespace(id, aliases)
@@ -420,12 +1186,12 @@ impl ValueExpr {
             // namespace. Sinks still handle unknown receivers and
             // publications conservatively below.
             Self::Unknown => false,
-            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
         }
     }
 
     fn is_direct_namespace_member_callee(callee: &Self, id: &Id) -> bool {
-        matches!(callee, Self::Member(object, Some(_), true)
+        matches!(callee, Self::Member(object, Some(_), MemberKey::Static, _)
             if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id))
     }
 
@@ -459,11 +1225,11 @@ impl ValueExpr {
         visiting: &mut BTreeSet<Id>,
     ) -> bool {
         match self {
-            Self::ObjectLiteral(_, _) | Self::Origin(ValueOrigin::Function(_)) => false,
+            Self::ObjectLiteral(_, _) | Self::Alloc(Kind::Function, _) => false,
             // Class metadata may contain a namespace path, including a
             // self-referential static initializer. Keep the existing
             // conservative class-surface fallback.
-            Self::Origin(ValueOrigin::Class(_)) => self.may_publish_namespace(id, aliases, facts),
+            Self::Alloc(Kind::Class, _) => self.may_publish_namespace(id, aliases, facts),
             Self::Binding(binding) => {
                 if binding == id
                     || aliases.contains(binding)
@@ -485,10 +1251,12 @@ impl ValueExpr {
                 visiting.remove(binding);
                 possible
             }
-            Self::Alternatives(values) => values
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| value.may_equal_namespace(id, aliases, facts, visiting)),
-            Self::Member(object, Some(property), true) => {
+            Self::Member(object, Some(property), MemberKey::Static, _) => {
                 if let Some(value) = facts.own_data_member(object, property, id, aliases) {
                     value.may_equal_namespace(id, aliases, facts, visiting)
                 } else {
@@ -509,7 +1277,18 @@ impl ValueExpr {
     ) -> bool {
         match self {
             Self::Unknown => true,
-            Self::Primitive(_) => false,
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.may_publish_namespace_inner(
+                    id,
+                    aliases,
+                    facts,
+                    visiting_bindings,
+                    visiting_classes,
+                )
+            }
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
+                false
+            }
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -519,19 +1298,23 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }),
-            Self::Alternatives(options) => options.iter().any(|value| {
-                value.may_publish_namespace_inner(
-                    id,
-                    aliases,
-                    facts,
-                    visiting_bindings,
-                    visiting_classes,
-                )
-            }),
-            Self::Member(object, property, is_static) => {
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .any(|value| {
+                    value.may_publish_namespace_inner(
+                        id,
+                        aliases,
+                        facts,
+                        visiting_bindings,
+                        visiting_classes,
+                    )
+                }),
+            Self::Member(object, property, is_static, _) => {
                 let projected = property
                     .as_deref()
-                    .filter(|_| *is_static)
+                    .filter(|_| is_static.is_static())
                     .and_then(|property| facts.own_data_member(object, property, id, aliases));
                 projected.unwrap_or(object).may_publish_namespace_inner(
                     id,
@@ -616,10 +1399,10 @@ impl ValueExpr {
                     false
                 }
             }
-            Self::Origin(ValueOrigin::Class(_)) => {
+            Self::Alloc(Kind::Class, _) => {
                 facts.class_may_publish(self, id, aliases, visiting_bindings, visiting_classes)
             }
-            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
         }
     }
 
@@ -634,27 +1417,61 @@ impl ValueExpr {
         receiver_aliases: &BTreeSet<Id>,
         facts: &NamespaceValueFacts,
     ) -> bool {
+        self.may_be_namespace_mutation_receiver_with_alias_query(
+            id,
+            aliases,
+            &mut |binding| receiver_aliases.contains(binding),
+            facts,
+        )
+    }
+
+    pub(super) fn may_be_namespace_mutation_receiver_with_alias_query(
+        &self,
+        id: &Id,
+        aliases: &BTreeSet<Id>,
+        receiver_alias: &mut impl FnMut(&Id) -> bool,
+        facts: &NamespaceValueFacts,
+    ) -> bool {
         match self {
             Self::Binding(binding) => {
-                binding == id || aliases.contains(binding) || receiver_aliases.contains(binding)
+                binding == id || aliases.contains(binding) || receiver_alias(binding)
             }
-            Self::Primitive(_) => false,
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.may_be_namespace_mutation_receiver_with_alias_query(
+                    id,
+                    aliases,
+                    receiver_alias,
+                    facts,
+                )
+            }
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
+                false
+            }
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Alternatives(options) => options.iter().any(|value| {
-                value.may_be_namespace_mutation_receiver(id, aliases, receiver_aliases, facts)
-            }),
-            Self::Member(object, property, is_static) => {
-                if let Some(value) = property
-                    .as_deref()
-                    .filter(|_| *is_static)
-                    .and_then(|property| facts.own_data_member(object, property, id, aliases))
-                {
-                    return value.may_be_namespace_mutation_receiver(
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .any(|value| {
+                    value.may_be_namespace_mutation_receiver_with_alias_query(
                         id,
                         aliases,
-                        receiver_aliases,
+                        receiver_alias,
+                        facts,
+                    )
+                }),
+            Self::Member(object, property, is_static, _) => {
+                if let Some(value) = property
+                    .as_deref()
+                    .filter(|_| is_static.is_static())
+                    .and_then(|property| facts.own_data_member(object, property, id, aliases))
+                {
+                    return value.may_be_namespace_mutation_receiver_with_alias_query(
+                        id,
+                        aliases,
+                        receiver_alias,
                         facts,
                     );
                 }
@@ -666,10 +1483,10 @@ impl ValueExpr {
                 matches!(object.as_ref(), Self::Call(callee, _, _)
                     if Self::is_direct_namespace_member_callee(callee, id))
                     || matches!(object.as_ref(), Self::Unknown | Self::New(..))
-                    || object.may_be_namespace_mutation_receiver(
+                    || object.may_be_namespace_mutation_receiver_with_alias_query(
                         id,
                         aliases,
-                        receiver_aliases,
+                        receiver_alias,
                         facts,
                     )
             }
@@ -679,7 +1496,7 @@ impl ValueExpr {
                     || !Self::is_direct_namespace_member_callee(callee, id)
             }
             Self::New(..) | Self::Unknown => true,
-            Self::Origin(_) | Self::Undefined | Self::NonCallable => false,
+            Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
         }
     }
 
@@ -696,7 +1513,7 @@ impl ValueExpr {
         match self {
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(name, value)| {
                 let direct_member_value = name.is_some()
-                    && matches!(value, Self::Member(object, Some(_), true)
+                    && matches!(value, Self::Member(object, Some(_), MemberKey::Static, _)
                         if matches!(object.as_ref(), Self::Binding(namespace) if namespace == id));
                 !direct_member_value
                     && value.may_publish_namespace_in_factory_result(id, aliases, facts)
@@ -711,22 +1528,45 @@ pub(super) fn infer_namespace_aliases(
     assignments: &[&(Id, ValueExpr)],
     facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
-    let mut aliases = BTreeSet::new();
-    loop {
-        let mut changed = false;
-        for assignment in assignments {
-            let (target, value) = *assignment;
-            if target != namespace
-                && value.may_equal_namespace(namespace, &aliases, facts, &mut BTreeSet::new())
-                && aliases.insert(target.clone())
-            {
-                changed = true;
+    use crate::inference::{FactContext, IterativeInference, IterativeRules};
+    struct AliasRules<'a> {
+        namespace: &'a Id,
+        assignments: &'a [&'a (Id, ValueExpr)],
+        facts: &'a NamespaceValueFacts,
+    }
+    impl IterativeRules for AliasRules<'_> {
+        type Key = ();
+        type Fact = BTreeSet<Id>;
+        type Rule = usize;
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+            let (target, value) = self.assignments[*rule];
+            if target == self.namespace {
+                return;
+            }
+            let is_alias = context.read(()).is_some_and(|aliases| {
+                value.may_equal_namespace(self.namespace, aliases, self.facts, &mut BTreeSet::new())
+            });
+            if is_alias {
+                context.propose((), BTreeSet::from([target.clone()]));
             }
         }
-        if !changed {
-            return aliases;
+        fn merge(_: &(), current: &mut BTreeSet<Id>, contribution: BTreeSet<Id>) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
         }
     }
+    let mut inference = IterativeInference::new(AliasRules {
+        namespace,
+        assignments,
+        facts,
+    });
+    inference.seed((), BTreeSet::new());
+    inference
+        .solve(0..assignments.len())
+        .into_values()
+        .remove(&())
+        .expect("alias seed")
 }
 
 impl NamespaceValueFacts {
@@ -822,7 +1662,7 @@ impl NamespaceValueFacts {
 
     fn may_be_local_class_value(&self, value: &ValueExpr, visiting: &mut BTreeSet<Id>) -> bool {
         match value {
-            ValueExpr::Origin(ValueOrigin::Class(_)) => true,
+            ValueExpr::Alloc(Kind::Class, _) => true,
             ValueExpr::Binding(binding) => {
                 if !visiting.insert(binding.clone()) {
                     return false;
@@ -835,10 +1675,12 @@ impl NamespaceValueFacts {
                 visiting.remove(binding);
                 result
             }
-            ValueExpr::Alternatives(values) => values
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
+                .result_alternatives()
+                .expect("alternative expression")
                 .iter()
                 .any(|value| self.may_be_local_class_value(value, visiting)),
-            ValueExpr::Member(object, _, _) => {
+            ValueExpr::Member(object, _, _, _) => {
                 self.resolve_class(object, &mut BTreeSet::new()).is_some()
                     || self.may_be_local_class_value(object, visiting)
             }
@@ -852,7 +1694,7 @@ impl NamespaceValueFacts {
         visiting: &mut BTreeSet<Id>,
     ) -> Option<(u32, ClassSurface)> {
         match value {
-            ValueExpr::Origin(ValueOrigin::Class(span)) => Some((*span, ClassSurface::Constructor)),
+            ValueExpr::Alloc(Kind::Class, span) => Some((*span, ClassSurface::Constructor)),
             ValueExpr::Binding(binding) => {
                 if !visiting.insert(binding.clone()) {
                     return None;
@@ -899,7 +1741,7 @@ impl NamespaceValueFacts {
                         return true;
                     };
                     self.class_may_publish(
-                        &ValueExpr::Origin(ValueOrigin::Class(base_span)),
+                        &ValueExpr::Alloc(Kind::Class, base_span),
                         id,
                         aliases,
                         visiting_bindings,

@@ -1,1 +1,134 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
 package(default_testonly = True)
+
+py_library(
+    name = "context",
+    srcs = ["context.py"],
+    data = [
+        "assets/chromium_font_preferences.json",
+        "assets/disable_animations.css",
+        ":frozen_clock_js",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/testing/browser:launcher",
+        "@pypi//playwright",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+js_library(
+    name = "frozen_clock_js",
+    srcs = ["assets/frozen_clock.js"],
+)
+
+py_test(
+    name = "test_context",
+    srcs = ["test_context.py"],
+    data = ["//util:playwright"],
+    tags = ["visual"],
+    deps = [
+        ":context",
+        "//:conftest",
+        "//util:playwright",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "page_capture",
+    srcs = ["page_capture.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//playwright"],
+)
+
+py_test(
+    name = "test_page_capture",
+    srcs = ["test_page_capture.py"],
+    deps = [
+        ":page_capture",
+        "//:conftest",
+        "//util:playwright",
+        "@pypi//pillow",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "capture",
+    srcs = ["capture.py"],
+    data = [
+        ":capture_diagnostics_js",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":context",
+        ":page_capture",
+        ":viewports",
+        "//devinfra/testing:output_writer",
+        "@pypi//more_itertools",
+        "@pypi//playwright",
+        "@pypi//pydantic",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+js_library(
+    name = "capture_diagnostics_js",
+    srcs = ["assets/capture_diagnostics.js"],
+)
+
+js_library(
+    name = "capture_diagnostics_fixture_js",
+    srcs = ["assets/capture_diagnostics_fixture.js"],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":capture",
+        ":page_capture",
+        ":viewports",
+        "//devinfra/testing:output_writer",
+        "//devinfra/testing:pytest_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_capture",
+    srcs = ["test_capture.py"],
+    data = [
+        ":capture_diagnostics_fixture_js",
+    ],
+    deps = [
+        ":capture",
+        ":viewports",
+        "//:conftest",
+        "//devinfra/testing:output_records",
+        "//devinfra/testing:output_writer",
+        "//util:playwright",
+        "//util/testing/frontend_visual:fixtures",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "viewports",
+    srcs = ["viewports.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//playwright"],
+)

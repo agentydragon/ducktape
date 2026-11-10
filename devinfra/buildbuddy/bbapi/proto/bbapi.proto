@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package ducktape.bbapi;
+
+import "proto/build_event_stream.proto";
+
+option go_package = "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto";
+
+// CLI context around a file advertised by the build event stream.
+message Artifact {
+  build_event_stream.BuildEventId id = 1;
+  string kind = 2;
+  string output_group = 3;
+  build_event_stream.File file = 4;
+  build_event_stream.TestSummary test_summary = 5;
+  build_event_stream.TestStatus status = 6;
+  string invocation_id = 7;
+}
+
+message ToolLog {
+  string invocation_id = 1;
+  build_event_stream.File file = 2;
+}
+
+// Proto3 scalars lose the distinction between missing and explicitly zero JSON
+// counts. Record that evidence alongside the original upstream payload.
+message TestSummaryRecord {
+  build_event_stream.BuildEventId.TestSummaryId id = 1;
+  build_event_stream.TestSummary summary = 2;
+  bool attempt_count_present = 3;
+  bool cached_count_present = 4;
+}
+
+// A message preserves unknown versus a reported empty argument list.
+message Arguments {
+  repeated string values = 1;
+}
+
+// A resolved CLI view. BES message fields retain their upstream definitions.
+message InvocationExport {
+  repeated Artifact outputs = 1;
+  map<string, build_event_stream.TestStatus> test_status = 2;
+  repeated TestSummaryRecord test_summaries = 3;
+  bool finished = 4;
+  bool successful = 5;
+  optional string command = 6;
+  Arguments requested_patterns = 7;
+  Arguments explicit_cmd_line = 8;
+  optional string commit_sha = 9;
+}

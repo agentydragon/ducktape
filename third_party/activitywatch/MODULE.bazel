@@ -111,6 +111,14 @@ aw_crate.annotation(
     crate = "aw-server",
     repositories = ["aw_server_crates"],
 )
+
+# Rocket's export! macros put the compiler PID into generated names. Separate
+# metadata/object compilations then produce incompatible crate identities.
+aw_crate.annotation(
+    crate = "rocket",
+    disable_pipelining = True,
+    repositories = ["aw_server_crates"],
+)
 use_repo(aw_crate, "aw_server_crates")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")

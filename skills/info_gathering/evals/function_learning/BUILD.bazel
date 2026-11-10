@@ -32,7 +32,7 @@ py_library(
     deps = [
         ":functions",
         "//skills/eval_infra:eval_prompt",
-        "//util/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -142,7 +142,7 @@ py_library(
 #         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
 #         "//skills/info_gathering/evals:replay_client",
 #         "//third_party/containers:python_3_14_slim",
-#         "//util:oci",
+#         "//devinfra/oci:oci",
 #         "@pypi//agent_framework_anthropic",
 #         "@pypi//agent_framework_claude",
 #         "@pypi//agent_framework_core",

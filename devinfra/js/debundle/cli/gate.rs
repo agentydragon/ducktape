@@ -11,7 +11,7 @@
 //!
 //! - `gate list` — one line per blocking SCC (id, modules count, cut size).
 //! - `gate describe <id>` — full picture: modules list, cut, and
-//!   **recomputed evidence**, sourced from `dependency_graph.json` plus
+//!   **recomputed evidence**, sourced from `dependency_graph.json.gz` plus
 //!   the SCC's module set. Same per-binding-pair render as the
 //!   per-rejection stderr summary.
 //! - `gate cut <id>` — just the cut edges (already in the trimmed
@@ -25,14 +25,20 @@
 //! arbitrary cycles, of which a single SCC can contain exponentially
 //! many.
 
-use source_identity::SourceUnitOrdinal;
+use analysis_model::DepKind;
+use graph_provenance::CurrentRoots;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use ::gate::{BlockingSccEntry, CycleEdge};
+use ::gate::{
+    AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
+    render_explanations,
+};
 use analysis::{
-    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyGraphReport,
-    EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
+    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
+    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
+    SourceUnitReport,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -51,16 +57,13 @@ pub struct GateArgs {
 enum GateCommand {
     /// List every blocking SCC. One row per entry in `cycles.json`.
     ///
-    /// A missing `cycles.json` is the clean state — the pipeline and
-    /// the edit gate write it only on rejection, and a passing edit
-    /// gate clears a stale one — so it reports zero blocking SCCs
-    /// (`[]`) and exits 0, distinct from a present-but-malformed file
-    /// (which errors).
+    /// A missing `cycles.json` loads as zero entries. It means the current
+    /// assignment is clean only when the corresponding report set completed.
     List(GateListArgs),
     /// Full picture for one blocking SCC: modules, cut, recomputed evidence.
     ///
     /// The per-edge evidence is recomputed on demand from
-    /// `dependency_graph.json` and the SCC's module set — the same
+    /// `dependency_graph.json.gz` and the SCC's module set — the same
     /// per-binding-pair blame view the realizability gate emits to
     /// stderr at rejection time.
     Describe(GateDescribeArgs),
@@ -80,7 +83,7 @@ enum GateCommand {
 /// keeps the two files in non-standard locations.
 #[derive(Debug, Clone, ClapArgs)]
 pub struct GateCommonArgs {
-    /// Path to `dependency_graph.json` (debundler analysis output).
+    /// Path to `dependency_graph.json.gz` (debundler analysis output).
     #[arg(
         long = "graph",
         env = "DEBUNDLE_GRAPH",
@@ -103,11 +106,17 @@ impl GateCommonArgs {
             .dependency_graph_path
             .as_deref()
             .context("--graph or --cycles is required")?;
-        Ok(graph
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(output_layout::CYCLES_REPORT))
+        Ok(sibling_cycles_path(graph))
     }
+}
+
+/// The default `cycles.json` location: the sibling of `dependency_graph.json.gz`
+/// in the per-chunk report layout.
+pub(crate) fn sibling_cycles_path(graph: &Path) -> PathBuf {
+    graph
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(output_layout::CYCLES_REPORT)
 }
 
 #[derive(Debug, ClapArgs)]
@@ -128,6 +137,14 @@ pub struct GateDescribeArgs {
 
     #[command(flatten)]
     pub common: GateCommonArgs,
+
+    /// Module spec root for runnable sequenced-source inspection commands.
+    #[arg(long, requires = "source_root")]
+    pub modules: Option<PathBuf>,
+
+    /// Source snapshot root for runnable sequenced-source inspection commands.
+    #[arg(long = "source-root", requires = "modules")]
+    pub source_root: Option<PathBuf>,
 
     /// Restrict the recomputed evidence to edges that touch this
     /// binding (either source or target). Useful for narrowing a
@@ -161,7 +178,7 @@ pub struct GateDiagnoseArgs {
     /// Binding whose constraining promoted callback dependencies to inspect.
     pub binding: String,
 
-    /// Path to `dependency_graph.json`.
+    /// Path to `dependency_graph.json.gz`.
     #[arg(long, required = true)]
     pub graph: PathBuf,
 
@@ -186,21 +203,14 @@ pub struct GateDiagnoseArgs {
     pub format: Option<peel::OutputFormat>,
 }
 
-/// Root paths that the command used to produce a diagnosis should forward to
-/// its generated `inspect-source` command. Consumers that do not run from a
-/// relocated bundle environment pass the empty default.
-#[derive(Debug, Clone, Default)]
-pub struct InspectionRoots {
-    pub spec_root: Option<PathBuf>,
-    pub graph_source_root: Option<PathBuf>,
-    pub graph_package_roots: BTreeMap<String, PathBuf>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct GateListEntry {
     pub id: usize,
     pub module_count: usize,
     pub cut_count: usize,
+    /// The stored [`BlockingSccEntry::rejection`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<BlockingRejection>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -211,18 +221,31 @@ pub struct GateListReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct GateDescribeReport {
     pub id: usize,
+    /// The stored [`BlockingSccEntry::rejection`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<BlockingRejection>,
     pub modules: Vec<ModulePath>,
     pub cut: Vec<CycleEdge>,
     /// Every constraining cross-module edge inside the SCC,
-    /// recomputed from `dependency_graph.json` + `modules` (the wire
-    /// entry carries only `modules` + `cut`).
+    /// recomputed from `dependency_graph.json.gz` + `modules` (the wire
+    /// entry carries only `modules` + `cut`). Edges a `commuting_statements`
+    /// premise made inert are listed in `inert_commuting_edges` instead.
     pub evidence: Vec<CycleEdge>,
+    /// The stored [`BlockingSccEntry::inert_commuting_edges`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inert_commuting_edges: Vec<CycleEdge>,
+    /// Commands keyed by the exact impure source unit stored on sequencing edges.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sequenced_source_inspections: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GateCutReport {
     pub id: usize,
     pub cut: Vec<CycleEdge>,
+    /// The stored [`BlockingSccEntry::inert_commuting_edges`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inert_commuting_edges: Vec<CycleEdge>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -239,30 +262,19 @@ pub struct GateDiagnoseReport {
     pub traces: Vec<GateDiagnoseTrace>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum GateDiagnoseStatus {
     InconclusiveNoSupportedPromotedDependency,
     LocalSupportedWitnessFound,
     InconclusiveForSupportedGuardFamily,
 }
 
-impl GateDiagnoseStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::InconclusiveNoSupportedPromotedDependency => {
-                "inconclusive_no_supported_promoted_dependency"
-            }
-            Self::LocalSupportedWitnessFound => "local_supported_witness_found",
-            Self::InconclusiveForSupportedGuardFamily => "inconclusive_for_supported_guard_family",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateDiagnoseCoverageScope {
-    CallbackFactoryNamespaceWritesOnly,
+    CallbackFactoryNamespaceWritesAndCallArguments,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -314,6 +326,7 @@ pub enum GateDiagnoseEdgeRole {
 pub enum GateDiagnoseCoverage {
     SupportedNamespaceMemberWrite,
     SupportedNamespaceDynamicPropertyWrite,
+    SupportedNamespaceCallArgument,
     InconclusiveUnsupportedGuard,
     InconclusiveNoSupportedCallbackFactoryBarrier,
     InconclusiveAmbiguousCallbackFactoryBarrierLink,
@@ -321,8 +334,9 @@ pub enum GateDiagnoseCoverage {
     InconclusiveCallbackArgumentSourceMismatch,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum GateDiagnoseGuardCode {
     NoSupportedCallbackFactoryBarrier,
     AmbiguousCallbackFactoryBarrierLink,
@@ -330,21 +344,8 @@ pub enum GateDiagnoseGuardCode {
     CallbackArgumentSourceMismatch,
     NamespaceMemberWrite,
     NamespaceDynamicPropertyWrite,
+    NamespaceCallArgument,
     UnsupportedGuard,
-}
-
-impl GateDiagnoseGuardCode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::NoSupportedCallbackFactoryBarrier => "no_supported_callback_factory_barrier",
-            Self::AmbiguousCallbackFactoryBarrierLink => "ambiguous_callback_factory_barrier_link",
-            Self::CallbackArgumentSourceUnresolved => "callback_argument_source_unresolved",
-            Self::CallbackArgumentSourceMismatch => "callback_argument_source_mismatch",
-            Self::NamespaceMemberWrite => "namespace_member_write",
-            Self::NamespaceDynamicPropertyWrite => "namespace_dynamic_property_write",
-            Self::UnsupportedGuard => "unsupported_guard",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -361,7 +362,14 @@ pub struct GateDiagnoseGuard {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct GateDiagnoseWitness {
+#[serde(untagged)]
+pub enum GateDiagnoseWitness {
+    Write(GateDiagnoseWriteWitness),
+    CallArgument(GateDiagnoseCallArgumentWitness),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseWriteWitness {
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -373,22 +381,36 @@ pub struct GateDiagnoseWitness {
     pub inspection_command: String,
 }
 
-pub fn run_gate_cli(args: GateArgs, inspection_roots: InspectionRoots) -> Result<()> {
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseCallArgumentWitness {
+    pub source_unit: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<analysis::SourceLocation>,
+    pub namespace_binding: Atom,
+    pub call_span_start: u32,
+    pub call_span_end: u32,
+    pub argument_index: usize,
+    pub opaque_call: bool,
+    pub witness_selection: GateDiagnoseWitnessSelection,
+    pub inspection_command: String,
+}
+
+pub fn run_gate_cli(args: GateArgs, inspection_roots: CurrentRoots) -> Result<()> {
     match args.command {
         GateCommand::List(a) => run_list(a),
-        GateCommand::Describe(a) => run_describe(a),
+        GateCommand::Describe(a) => run_describe(a, inspection_roots),
         GateCommand::Cut(a) => run_cut(a),
         GateCommand::Diagnose(a) => run_diagnose(a, inspection_roots),
     }
 }
 
-fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Result<()> {
-    let graph = crate::load_dependency_graph_report(&args.graph)?;
+fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: CurrentRoots) -> Result<()> {
+    let graph = DependencyGraphInput::read(&args.graph)?;
     let limit = args.limit.unwrap_or(5);
     if limit == 0 && !args.all {
         anyhow::bail!("--limit must be greater than zero; use --all for exhaustive output");
     }
-    let (returned, total_count, has_supported_write) = diagnose_binding(
+    let (returned, total_count, has_supported_witness) = diagnose_binding(
         &graph,
         &args,
         &inspection_roots,
@@ -406,12 +428,12 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
         },
         query_status: if total_count == 0 {
             GateDiagnoseStatus::InconclusiveNoSupportedPromotedDependency
-        } else if has_supported_write {
+        } else if has_supported_witness {
             GateDiagnoseStatus::LocalSupportedWitnessFound
         } else {
             GateDiagnoseStatus::InconclusiveForSupportedGuardFamily
         },
-        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceWritesOnly,
+        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceWritesAndCallArguments,
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
@@ -420,23 +442,20 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
 }
 
 fn diagnose_binding(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     args: &GateDiagnoseArgs,
-    inspection_roots: &InspectionRoots,
+    inspection_roots: &CurrentRoots,
     limit: Option<usize>,
 ) -> Result<(Vec<GateDiagnoseTrace>, usize, bool)> {
-    let node_by_id: HashMap<&str, _> = graph
-        .nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node))
-        .collect();
+    let graph = input.report();
+    let dependency_graph = input.graph();
     let module_by_key: HashMap<&ModuleKey, _> = graph
         .quotient
         .nodes
         .iter()
         .map(|module| (&module.key, module))
         .collect();
-    let target_ids: BTreeSet<&str> = graph
+    let target_ids: BTreeSet<_> = graph
         .nodes
         .iter()
         .filter(|node| {
@@ -444,31 +463,39 @@ fn diagnose_binding(
                 .iter()
                 .any(|binding| binding.binding.as_ref() == args.binding)
         })
-        .map(|node| node.id.as_str())
+        .filter_map(|node| input.source_unit_id(&node.id))
         .collect();
-    let mut promoted = graph
-        .edges
+    let mut promoted = target_ids
         .iter()
-        .filter(|edge| {
-            edge.constrains_init_order
-                && target_ids.contains(edge.target.as_str())
-                && edge
+        .flat_map(|target| dependency_graph.in_edges_of(*target).iter().copied())
+        .filter(|edge_id| {
+            let edge = dependency_graph.edge(*edge_id);
+            let report_edge = input.edge_report(*edge_id);
+            edge.reason.constrains_init_order()
+                && report_edge
                     .binding
                     .as_ref()
-                    .is_some_and(|b| b.as_ref() == args.binding)
-                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
+                    .is_some_and(|binding| binding.as_ref() == args.binding)
+                && matches!(
+                    &report_edge.role,
+                    Some(EdgeRoleReport::PromotedAtInit { .. })
+                )
         })
-        .collect::<Vec<_>>();
-    promoted.sort_by(|a, b| a.id.cmp(&b.id));
+        .collect::<Vec<DependencyEdgeId>>();
+    promoted.sort_by(|left, right| {
+        input
+            .edge_report(*left)
+            .id
+            .cmp(&input.edge_report(*right).id)
+    });
 
     let mut traces = Vec::new();
     let mut total_count = 0;
-    let mut has_supported_write = false;
-    for edge in promoted {
-        let target = node_by_id
-            .get(edge.target.as_str())
-            .copied()
-            .with_context(|| format!("edge {} has missing target {}", edge.id, edge.target))?;
+    let mut has_supported_witness = false;
+    for edge_id in promoted {
+        let topology_edge = dependency_graph.edge(edge_id);
+        let edge = input.edge_report(edge_id);
+        let target = input.source_unit_report(topology_edge.to);
         let target_module = module_by_key
             .get(&target.destination)
             .copied()
@@ -480,12 +507,9 @@ fn diagnose_binding(
             })?
             .path
             .clone();
-        let call_site = node_by_id
-            .get(edge.source.as_str())
-            .copied()
-            .with_context(|| format!("edge {} has missing source {}", edge.id, edge.source))?;
-        let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = edge.role.as_ref() else {
-            unreachable!("filtered promoted role")
+        let call_site = input.source_unit_report(topology_edge.from);
+        let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = &edge.role else {
+            unreachable!("filtered promoted report role")
         };
 
         if call_site.callback_factory_barriers.is_empty() {
@@ -545,11 +569,12 @@ fn diagnose_binding(
                         .iter()
                         .any(|source| source.source_unit == *callee_source_unit)
                 });
-        has_supported_write |= callback_link == Some(true)
+        has_supported_witness |= callback_link == Some(true)
             && matches!(
                 &barrier.rejection,
                 CallbackFactoryRejectionReport::NamespaceMemberWrite { .. }
                     | CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite { .. }
+                    | CallbackFactoryRejectionReport::NamespaceCallArgument { .. }
             );
 
         // Summary status describes all matching promoted edges, including rows
@@ -608,7 +633,7 @@ fn diagnose_binding(
             first_rejected_guard: GateDiagnoseGuard { code, witness },
         });
     }
-    Ok((traces, total_count, has_supported_write))
+    Ok((traces, total_count, has_supported_witness))
 }
 
 fn dependency_report(
@@ -631,12 +656,39 @@ fn dependency_report(
 fn diagnose_barrier_witness(
     barrier: &CallbackFactoryBarrierReport,
     args: &GateDiagnoseArgs,
-    inspection_roots: &InspectionRoots,
+    inspection_roots: &CurrentRoots,
 ) -> Result<(
     GateDiagnoseCoverage,
     GateDiagnoseGuardCode,
     Option<GateDiagnoseWitness>,
 )> {
+    if let CallbackFactoryRejectionReport::NamespaceCallArgument { witness } = &barrier.rejection {
+        return Ok((
+            GateDiagnoseCoverage::SupportedNamespaceCallArgument,
+            GateDiagnoseGuardCode::NamespaceCallArgument,
+            Some(GateDiagnoseWitness::CallArgument(
+                GateDiagnoseCallArgumentWitness {
+                    source_unit: witness.source_unit.clone(),
+                    statement_ordinal: witness.statement_ordinal,
+                    source_location: witness.source_location.clone(),
+                    namespace_binding: witness.namespace_binding.clone(),
+                    call_span_start: witness.call_span_start,
+                    call_span_end: witness.call_span_end,
+                    argument_index: witness.argument_index,
+                    opaque_call: witness.opaque_call,
+                    witness_selection:
+                        GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
+                    inspection_command: inspection_command(
+                        &witness.source_unit,
+                        &args.graph,
+                        &args.modules,
+                        &args.source_root,
+                        inspection_roots,
+                    )?,
+                },
+            )),
+        ));
+    }
     let (coverage, code, witness) = match &barrier.rejection {
         CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => (
             GateDiagnoseCoverage::SupportedNamespaceMemberWrite,
@@ -655,11 +707,14 @@ fn diagnose_barrier_witness(
                 None,
             ));
         }
+        CallbackFactoryRejectionReport::NamespaceCallArgument { .. } => {
+            unreachable!("handled above")
+        }
     };
     Ok((
         coverage,
         code,
-        Some(GateDiagnoseWitness {
+        Some(GateDiagnoseWitness::Write(GateDiagnoseWriteWitness {
             source_unit: witness.source_unit.clone(),
             statement_ordinal: witness.statement_ordinal,
             source_location: witness.source_location.clone(),
@@ -674,7 +729,7 @@ fn diagnose_barrier_witness(
                 &args.source_root,
                 inspection_roots,
             )?,
-        }),
+        })),
     ))
 }
 
@@ -683,7 +738,7 @@ fn inspection_command(
     graph: &Path,
     modules: &Path,
     source_root: &Path,
-    inspection_roots: &InspectionRoots,
+    inspection_roots: &CurrentRoots,
 ) -> Result<String> {
     let graph = std::fs::canonicalize(graph).context("resolving --graph for inspection command")?;
     let modules =
@@ -692,60 +747,60 @@ fn inspection_command(
         .context("resolving --source-root for inspection command")?;
     let executable = std::env::current_exe()
         .context("resolving running debundle executable for inspection command")?;
-    Ok(format!(
-        "{}{}inspect-source --id {} --graph {} --modules {} --source-root {} --format json",
-        shell_quote(&executable.display().to_string()),
-        inspection_root_args(inspection_roots),
-        shell_quote(source_unit),
-        shell_quote(&graph.display().to_string()),
-        shell_quote(&modules.display().to_string()),
-        shell_quote(&source_root.display().to_string()),
-    ))
+    let mut argv = vec![executable.display().to_string()];
+    argv.extend(inspection_root_args(inspection_roots));
+    argv.extend([
+        "inspect-source".to_owned(),
+        "--id".to_owned(),
+        source_unit.to_owned(),
+        "--graph".to_owned(),
+        graph.display().to_string(),
+        "--modules".to_owned(),
+        modules.display().to_string(),
+        "--source-root".to_owned(),
+        source_root.display().to_string(),
+        "--format".to_owned(),
+        "json".to_owned(),
+    ]);
+    shlex::try_join(argv.iter().map(String::as_str))
+        .context("inspection command argument cannot be represented in a POSIX shell command")
 }
 
-fn inspection_root_args(roots: &InspectionRoots) -> String {
+/// The root flags the diagnosing command ran with, forwarded so the generated
+/// `inspect-source` command verifies the graph against the same inputs.
+fn inspection_root_args(roots: &CurrentRoots) -> Vec<String> {
     let mut args = Vec::new();
-    if let Some(spec_root) = &roots.spec_root {
-        args.push(format!(
-            "--spec-root {}",
-            shell_quote(&spec_root.display().to_string())
-        ));
+    if let Some(spec_root) = &roots.spec {
+        args.extend(["--spec-root".to_owned(), spec_root.display().to_string()]);
     }
-    if let Some(graph_source_root) = &roots.graph_source_root {
-        args.push(format!(
-            "--graph-source-root {}",
-            shell_quote(&graph_source_root.display().to_string())
-        ));
+    if let Some(graph_source_root) = &roots.source {
+        args.extend([
+            "--graph-source-root".to_owned(),
+            graph_source_root.display().to_string(),
+        ]);
     }
-    for (package, path) in &roots.graph_package_roots {
-        args.push(format!(
-            "--graph-package-root {}",
-            shell_quote(&format!("{}={}", package, path.display()))
-        ));
+    for (package, path) in &roots.packages {
+        args.extend([
+            "--graph-package-root".to_owned(),
+            format!("{}={}", package, path.display()),
+        ]);
     }
-    if args.is_empty() {
-        " ".to_owned()
-    } else {
-        format!(" {} ", args.join(" "))
-    }
-}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+    args
 }
 
 #[cfg(test)]
 mod inspection_command_tests {
-    use super::{InspectionRoots, inspection_root_args};
+    use super::inspection_root_args;
+    use graph_provenance::CurrentRoots;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[test]
-    fn inspection_roots_are_shell_quoted_with_spaces_and_sorted_package_roots() {
-        let roots = InspectionRoots {
-            spec_root: Some(PathBuf::from("spec root")),
-            graph_source_root: Some(PathBuf::from("graph source root")),
-            graph_package_roots: BTreeMap::from([
+    fn inspection_roots_keep_spaced_paths_whole_and_sort_package_roots() {
+        let roots = CurrentRoots {
+            spec: Some(PathBuf::from("spec root")),
+            source: Some(PathBuf::from("graph source root")),
+            packages: BTreeMap::from([
                 ("package one".to_owned(), PathBuf::from("package root one")),
                 ("package two".to_owned(), PathBuf::from("package root two")),
             ]),
@@ -753,13 +808,18 @@ mod inspection_command_tests {
 
         assert_eq!(
             inspection_root_args(&roots),
-            concat!(
-                " --spec-root 'spec root' --graph-source-root 'graph source root' ",
-                "--graph-package-root 'package one=package root one' ",
-                "--graph-package-root 'package two=package root two' ",
-            )
+            [
+                "--spec-root",
+                "spec root",
+                "--graph-source-root",
+                "graph source root",
+                "--graph-package-root",
+                "package one=package root one",
+                "--graph-package-root",
+                "package two=package root two",
+            ]
         );
-        assert_eq!(inspection_root_args(&InspectionRoots::default()), " ");
+        assert!(inspection_root_args(&CurrentRoots::default()).is_empty());
     }
 }
 
@@ -771,7 +831,7 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
         report.total_count,
         if report.truncated { " (truncated)" } else { "" },
     ));
-    out.push_str(&format!("  status: {}\n", report.query_status.as_str()));
+    out.push_str(&format!("  status: {}\n", report.query_status));
     for trace in &report.traces {
         out.push_str(&format!(
             "  {} in {} <- {} via {} [{}]\n",
@@ -779,7 +839,7 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
             trace.ownership_target.module,
             trace.constraining_dependency.source_unit,
             trace.constraining_dependency.callee_source_unit,
-            trace.first_rejected_guard.code.as_str(),
+            trace.first_rejected_guard.code,
         ));
         if let Some(contract) = &trace.matched_contract {
             out.push_str(&format!(
@@ -791,31 +851,47 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
             ));
         }
         if let Some(witness) = &trace.first_rejected_guard.witness {
-            out.push_str(&format!(
-                "    write {}.{} at {:?}; inspect: {}\n",
-                witness.receiver_binding,
-                witness.property.as_deref().unwrap_or("<unknown>"),
-                witness.source_location,
-                witness.inspection_command,
-            ));
+            match witness {
+                GateDiagnoseWitness::Write(witness) => out.push_str(&format!(
+                    "    write {}.{} at {:?}; inspect: {}\n",
+                    witness.receiver_binding,
+                    witness.property.as_deref().unwrap_or("<unknown>"),
+                    witness.source_location,
+                    witness.inspection_command,
+                )),
+                GateDiagnoseWitness::CallArgument(witness) => out.push_str(&format!(
+                    "    namespace {} passed at argument {} of call span {}..{}{}; inspect: {}\n",
+                    witness.namespace_binding,
+                    witness.argument_index,
+                    witness.call_span_start,
+                    witness.call_span_end,
+                    if witness.opaque_call {
+                        " (opaque call target)"
+                    } else {
+                        ""
+                    },
+                    witness.inspection_command,
+                )),
+            }
         }
     }
 }
 
 fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
-    let path = common.resolved_cycles_path()?;
-    // The pipeline writes `cycles.json` only when the gate rejects, so
-    // its absence is the clean state: zero blocking SCCs. Returning an
-    // empty list (rather than a read error) makes `gate list` on a
-    // realizable spec print `[]` / "0 blocking SCC(s)" and exit 0,
-    // distinguishable from a present-but-malformed file (which still
-    // errors below). `gate describe` / `gate cut` then report
-    // "no blocking SCC with id N (found 0 entries)" for any id.
+    load_blocking_sccs(&common.resolved_cycles_path()?)
+}
+
+/// The blocking SCCs in a `cycles.json`; an absent file loads as empty.
+pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
+    // The pipeline and edit gate write `cycles.json` whenever the current
+    // assignment has blocking SCCs. An absent file still loads as empty, but
+    // callers can treat that as a clean result only for a complete current
+    // report set. A present-but-malformed file remains an error below.
     if !path.exists() {
         return Ok(Vec::new());
     }
     let text =
-        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&text)
         .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
 }
@@ -829,6 +905,7 @@ fn run_list(args: GateListArgs) -> Result<()> {
                 id: e.id,
                 module_count: e.modules.len(),
                 cut_count: e.cut.len(),
+                rejection: e.rejection,
             })
             .collect(),
     };
@@ -843,9 +920,25 @@ fn render_list_text(report: &GateListReport, out: &mut String) {
     out.push_str(&format!("{} blocking SCC(s)\n", report.blocking_sccs.len()));
     for entry in &report.blocking_sccs {
         out.push_str(&format!(
-            "  {}  modules={}  cut={}\n",
-            entry.id, entry.module_count, entry.cut_count,
+            "  {}  modules={}  cut={}{}\n",
+            entry.id,
+            entry.module_count,
+            entry.cut_count,
+            rejection_label(entry.rejection),
         ));
+    }
+}
+
+/// Text label for a stored rejection kind; empty for reports that predate it.
+fn rejection_label(rejection: Option<BlockingRejection>) -> &'static str {
+    match rejection {
+        Some(BlockingRejection::MutualConstrainingCycle) => "  [pass 1: mutual constraining cycle]",
+        Some(BlockingRejection::EsmEvaluationTdz) => "  [pass 2: ESM evaluation TDZ]",
+        Some(BlockingRejection::TdzAfterCollapsingPassOne) => {
+            "  [pass 2, conditional: after collapsing the pass-1 SCCs]"
+        }
+        Some(BlockingRejection::Unrecognized) => "  [unrecognized rejection kind]",
+        None => "",
     }
 }
 
@@ -858,10 +951,10 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
     })
 }
 
-fn run_describe(args: GateDescribeArgs) -> Result<()> {
+fn run_describe(args: GateDescribeArgs, inspection_roots: CurrentRoots) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
-    let graph = crate::load_dependency_graph_report(
+    let graph = DependencyGraphInput::read(
         args.common
             .dependency_graph_path
             .as_deref()
@@ -869,15 +962,41 @@ fn run_describe(args: GateDescribeArgs) -> Result<()> {
     )?;
 
     let mut evidence = recompute_evidence(&graph, &entry.modules)?;
+    // Inert edges never constrain; the stored entry lists them apart.
+    evidence.retain(|e| e.commuting_premise.is_none());
     if let Some(binding) = &args.binding {
         evidence.retain(|e| edge_touches_binding(e, binding));
     }
 
+    let mut sequenced_source_inspections = BTreeMap::new();
+    if let (Some(modules), Some(source_root)) = (&args.modules, &args.source_root) {
+        let graph_path = args
+            .common
+            .dependency_graph_path
+            .as_deref()
+            .expect("describe requires graph");
+        for edge in entry.cut.iter().chain(evidence.iter()) {
+            if let Some(cause) = &edge.sequenced_source_unit {
+                sequenced_source_inspections
+                    .entry(cause.source_unit_id.clone())
+                    .or_insert(inspection_command(
+                        &cause.source_unit_id,
+                        graph_path,
+                        modules,
+                        source_root,
+                        &inspection_roots,
+                    )?);
+            }
+        }
+    }
     let report = GateDescribeReport {
         id: entry.id,
+        rejection: entry.rejection,
         modules: entry.modules.clone(),
         cut: entry.cut.clone(),
         evidence,
+        inert_commuting_edges: entry.inert_commuting_edges.clone(),
+        sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
     peel::print_report(&report, format, render_describe_text)
@@ -886,11 +1005,12 @@ fn run_describe(args: GateDescribeArgs) -> Result<()> {
 
 fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     out.push_str(&format!(
-        "blocking SCC #{}: {} module(s), cut of {}, {} evidence edge(s).\n",
+        "blocking SCC #{}: {} module(s), cut of {}, {} evidence edge(s){}.\n",
         report.id,
         report.modules.len(),
         report.cut.len(),
         report.evidence.len(),
+        rejection_label(report.rejection),
     ));
 
     if !report.modules.is_empty() {
@@ -906,35 +1026,38 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
             render_edge(edge, out);
         }
     }
+    render_inert_edges(&report.inert_commuting_edges, out);
+
+    for (source_unit, command) in &report.sequenced_source_inspections {
+        out.push_str(&format!(
+            "  inspect impure initializer {source_unit}: {command}\n"
+        ));
+    }
 
     if !report.evidence.is_empty() {
         // Group evidence by binding-pair blame key, same shape as
         // `render_cycle_summary`'s stderr block. Anonymous endpoints
         // fall back to `<anon stmt #ord>` / `<side-effect>` so every
         // row has a stable label.
-        let mut groups: BTreeMap<BlamePairKey, BlamePairAgg> = BTreeMap::new();
+        let mut groups: BTreeMap<BlamePairKey, Vec<&CycleEdge>> = BTreeMap::new();
         for edge in &report.evidence {
-            let key = BlamePairKey::of(edge);
-            let agg = groups.entry(key).or_insert(BlamePairAgg {
-                kind: edge.kind,
-                count: 0,
-            });
-            agg.count += 1;
+            groups.entry(BlamePairKey::of(edge)).or_default().push(edge);
         }
-        let mut ranked: Vec<(BlamePairKey, BlamePairAgg)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(&b.0)));
+        let mut ranked: Vec<(BlamePairKey, Vec<&CycleEdge>)> = groups.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
 
-        out.push_str("  evidence (grouped by binding pair):\n");
-        for (key, agg) in &ranked {
+        out.push_str("  evidence (grouped by binding pair, then why each edge constrains):\n");
+        for (key, edges) in &ranked {
             out.push_str(&format!(
                 "    {n:>4}x  {fb} ({fm})  --{k}-->  {tb} ({tm})\n",
-                n = agg.count,
+                n = edges.len(),
                 fb = key.from_label,
                 fm = key.from,
-                k = agg.kind.diagnostic_label(),
+                k = edges[0].kind.diagnostic_label(),
                 tb = key.to_label,
                 tm = key.to,
             ));
+            render_explanations(edges, out);
         }
     }
 }
@@ -945,6 +1068,7 @@ fn run_cut(args: GateCutArgs) -> Result<()> {
     let report = GateCutReport {
         id: entry.id,
         cut: entry.cut.clone(),
+        inert_commuting_edges: entry.inert_commuting_edges.clone(),
     };
     let format = peel::OutputFormat::resolve(args.format);
     if peel::print_ndjson_list(&report.cut, format)? {
@@ -960,6 +1084,23 @@ fn render_cut_text(report: &GateCutReport, out: &mut String) {
         report.cut.len(),
     ));
     for edge in &report.cut {
+        render_edge(edge, out);
+    }
+    render_inert_edges(&report.inert_commuting_edges, out);
+}
+
+/// The SCC's inert `sequenced` edges (a `commuting_statements` premise made
+/// them inert; never in the cut), each as a [`render_edge`] row whose
+/// `inert:` line names the premise.
+fn render_inert_edges(edges: &[CycleEdge], out: &mut String) {
+    if edges.is_empty() {
+        return;
+    }
+    out.push_str(&format!(
+        "  inert ({} sequenced edge(s) a commuting_statements premise made inert; never in the cut):\n",
+        edges.len(),
+    ));
+    for edge in edges {
         render_edge(edge, out);
     }
 }
@@ -980,9 +1121,25 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
         tm = edge.to,
         ord = edge.statement_ordinal.0,
     ));
-    if let Some(cause) = &edge.sequenced_source_unit
-        && let Purity::NotPure { reasons } = &cause.purity
-    {
+    if let Some(explanation) = &edge.explanation {
+        out.push_str(&format!("      why: {explanation}\n"));
+    }
+    if let Some(premise) = &edge.commuting_premise {
+        out.push_str(&format!("      inert: made inert by premise {premise}\n"));
+    }
+    let target_cause = match &edge.explanation {
+        Some(CutEdgeExplanation::Sequenced {
+            target_source_unit, ..
+        }) => target_source_unit.as_deref(),
+        _ => None,
+    };
+    for cause in edge.sequenced_source_unit.iter().chain(target_cause) {
+        if let Some(heap_frontier) = &cause.heap_frontier {
+            out.push_str(&format!("      heap frontier: {heap_frontier}\n"));
+        }
+        let Purity::NotPure { reasons } = &cause.purity else {
+            continue;
+        };
         for reason in reasons {
             let binding = if cause.binding_names.is_empty() {
                 cause.source_unit_id.clone()
@@ -1009,13 +1166,14 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
                 })
                 .unwrap_or_else(|| "<location unavailable>".to_string());
             out.push_str(&format!(
-                "      impure initializer `{binding}` at {location}: {}{}\n",
-                reason.rule.as_str(),
+                "      impure initializer `{binding}` at {location}: {}{}{}\n",
+                reason.rule,
                 reason
                     .detail
                     .as_deref()
                     .map(|detail| format!(" ({detail})"))
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                incomplete_execution_suffix(cause),
             ));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("        {guidance}\n"));
@@ -1029,7 +1187,7 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
         || edge.from_binding.as_ref().map(|a| a.as_ref()) == Some(binding)
 }
 
-/// Reconstruct diagnostic context for an SCC from `dependency_graph.json`.
+/// Reconstruct diagnostic context for an SCC from `dependency_graph.json.gz`.
 /// Unlike gate validation, this includes lazy edges as well as constraining
 /// edges. Preserve the report projection: omit intra-module/outside-SCC edges
 /// and promoted edges whose callee is in another module; dedup sequencing by
@@ -1042,11 +1200,14 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 ///
 /// `cycles.json` uses canonical [`ModulePath`]s; resolve each source unit's interned
 /// destination [`ModuleKey`] through the report's module table. A missing table
-/// entry is malformed and errors; edges with absent source units are skipped.
+/// entry is malformed and errors; `DependencyGraphInput` rejects edges with absent
+/// source units before the diagnostic projection runs.
 fn recompute_evidence(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     modules: &[ModulePath],
 ) -> Result<Vec<CycleEdge>> {
+    let graph = input.report();
+    let dependency_graph = input.graph();
     // Module table: interned key -> canonical path.
     let path_by_key: HashMap<&ModuleKey, &ModulePath> = graph
         .quotient
@@ -1056,10 +1217,10 @@ fn recompute_evidence(
         .collect();
     // SourceUnit id -> report node and canonical destination. Reuse this index for
     // source labels and sequencing causes instead of scanning nodes per edge.
-    let source_units: HashMap<&str, _> = graph
-        .nodes
-        .iter()
-        .map(|n| {
+    let source_units: HashMap<SourceUnitId, _> = dependency_graph
+        .iter_nodes()
+        .map(|node| {
+            let n = input.source_unit_report(node.id);
             let path = path_by_key.get(&n.destination).copied().ok_or_else(|| {
                 anyhow::anyhow!(
                     "source unit {} has destination {} with no module-table entry",
@@ -1067,7 +1228,7 @@ fn recompute_evidence(
                     n.destination
                 )
             })?;
-            Ok((n.id.as_str(), (n, path)))
+            Ok((node.id, (n, path)))
         })
         .collect::<Result<_>>()?;
     // Statement ordinal -> first declared binding of any source unit
@@ -1087,13 +1248,10 @@ fn recompute_evidence(
 
     let mut out = Vec::new();
     let mut seen_sequenced_pairs: BTreeSet<(&ModulePath, &ModulePath)> = BTreeSet::new();
-    for edge in &graph.edges {
-        let Some(&(source, from_mod)) = source_units.get(edge.source.as_str()) else {
-            continue;
-        };
-        let Some(&(_, to_mod)) = source_units.get(edge.target.as_str()) else {
-            continue;
-        };
+    for topology_edge in dependency_graph.iter_edges() {
+        let edge = input.edge_report(topology_edge.id);
+        let (source, from_mod) = source_units[&topology_edge.from];
+        let (target, to_mod) = source_units[&topology_edge.to];
         if from_mod == to_mod {
             // Intra-module edges cannot explain a module-quotient cycle.
             continue;
@@ -1104,13 +1262,14 @@ fn recompute_evidence(
         // Preserve the diagnostic projection's lenient promotion policy:
         // cross-module callees are represented by the direct caller->callee
         // edge, not the manufactured caller->target edge.
-        if let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = &edge.role
-            && let Some(&(_, callee_mod)) = source_units.get(callee_source_unit.as_str())
+        if let EdgeRole::PromotedAtInit { callee_source_unit } = topology_edge.reason.role()
+            && let Some(&(_, callee_mod)) = source_units.get(&callee_source_unit)
             && callee_mod != from_mod
         {
             continue;
         }
-        if matches!(edge.edge_kind, DepKind::Sequenced) {
+        let edge_kind = topology_edge.reason.kind();
+        if matches!(edge_kind, DepKind::Sequenced) {
             // Mirror `chunk_constraining_module_edges`'s sequenced-edge
             // dedup: collapse parallel sequenced edges between the same
             // module pair into one evidence row.
@@ -1119,32 +1278,96 @@ fn recompute_evidence(
             }
         }
         let from_binding = from_binding_by_ordinal
-            .get(&edge.statement_ordinal)
+            .get(&topology_edge.reason.statement_ordinal())
             .cloned()
             .or_else(|| source.declared_bindings.first().map(|b| b.binding.clone()));
+        let explanation = match edge_kind {
+            DepKind::EagerUse => {
+                let position = match edge.role.as_ref() {
+                    None => AtInitReadPosition::Direct,
+                    Some(EdgeRoleReport::PromotedAtInit { callee_source_unit })
+                        if callee_source_unit == &edge.source =>
+                    {
+                        AtInitReadPosition::UnresolvedAtInitCall
+                    }
+                    Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) => {
+                        AtInitReadPosition::PromotedAtInit {
+                            callee_source_unit: callee_source_unit.clone(),
+                            callee_binding: input
+                                .source_unit_id(callee_source_unit)
+                                .and_then(|id| source_units.get(&id))
+                                .and_then(|(callee, _)| callee.declared_bindings.first())
+                                .map(|binding| binding.binding.clone()),
+                        }
+                    }
+                };
+                Some(CutEdgeExplanation::AtInitRead { position })
+            }
+            DepKind::Sequenced => {
+                edge.sequenced_cause
+                    .clone()
+                    .map(|cause| CutEdgeExplanation::Sequenced {
+                        cause,
+                        target_source_unit: impure_source_unit_cause(target).map(Box::new),
+                    })
+            }
+            _ => None,
+        };
         out.push(CycleEdge {
             from: from_mod.clone(),
             to: to_mod.clone(),
-            statement_ordinal: edge.statement_ordinal,
+            from_source_unit_id: edge.source.clone(),
+            to_source_unit_id: edge.target.clone(),
+            statement_ordinal: topology_edge.reason.statement_ordinal(),
             binding: edge.binding.clone(),
             from_binding,
-            kind: edge.edge_kind,
-            sequenced_source_unit: (edge.edge_kind == DepKind::Sequenced
-                && matches!(&source.purity, Purity::NotPure { .. }))
-            .then(|| SequencedSourceUnitCause {
-                source_unit_id: source.id.clone(),
-                binding_names: source
-                    .declared_bindings
-                    .iter()
-                    .map(|binding| binding.binding.clone())
-                    .collect(),
-                source_location: source.source_location.clone(),
-                purity: source.purity.clone(),
-            }),
+            kind: edge_kind,
+            sequenced_source_unit: (edge_kind == DepKind::Sequenced)
+                .then(|| impure_source_unit_cause(source))
+                .flatten(),
+            explanation,
+            commuting_premise: edge.commuting_premise.clone(),
         });
     }
     CycleEdge::sort_for_report(&mut out);
     Ok(out)
+}
+
+/// Marks a statement whose sequencing edges are the conservative flood
+/// of an incomplete synchronous execution.
+fn incomplete_execution_suffix(cause: &SequencedSourceUnitCause) -> &'static str {
+    match cause.synchronous_execution_complete {
+        Some(false) => "; synchronous execution incomplete",
+        _ => "",
+    }
+}
+
+/// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`
+/// over a `dependency_graph.json.gz` node. Pure nodes are included when their
+/// report carries non-empty heap evidence.
+fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUnitCause> {
+    let heap_frontier = node
+        .synchronous_execution
+        .as_ref()
+        .and_then(|execution| execution.heap_frontier.clone());
+    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
+        return None;
+    }
+    Some(SequencedSourceUnitCause {
+        source_unit_id: node.id.clone(),
+        binding_names: node
+            .declared_bindings
+            .iter()
+            .map(|binding| binding.binding.clone())
+            .collect(),
+        source_location: node.source_location.clone(),
+        purity: node.purity.clone(),
+        synchronous_execution_complete: node
+            .synchronous_execution
+            .as_ref()
+            .map(|execution| execution.complete),
+        heap_frontier,
+    })
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1172,10 +1395,4 @@ impl BlamePairKey {
             to_label,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct BlamePairAgg {
-    kind: DepKind,
-    count: usize,
 }

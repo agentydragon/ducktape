@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import struct
-from pathlib import Path
 
 import pytest
 import pytest_bazel
 from jinja2 import Environment
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.ollama.patch_qwen38_template import (
     NEW_BRANCH,
@@ -17,11 +17,11 @@ from cluster.cdk8s.ollama.patch_qwen38_template import (
     Reader,
     replace_template,
 )
-from util.bazel.runfiles import get_required_path
 
 
-def _template_path() -> Path:
-    return get_required_path("_main/cluster/cdk8s/ollama/qwen38-chat-template.jinja")
+@pytest.fixture(scope="module")
+def replacement(runfiles: Runfiles) -> bytes:
+    return (runfiles.root() / "ducktape/cluster/cdk8s/ollama/qwen38-chat-template.jinja").read_bytes()
 
 
 def _string(value: bytes) -> bytes:
@@ -54,8 +54,7 @@ def _gguf(original_template: bytes) -> tuple[bytes, bytes]:
     return header + bytes((-len(header)) % 64) + payload, payload
 
 
-def test_changes_only_chat_template_and_realigns_tensor_data() -> None:
-    replacement = _template_path().read_bytes()
+def test_changes_only_chat_template_and_realigns_tensor_data(replacement: bytes) -> None:
     source, payload = _gguf(_source_template(replacement))
     patched = replace_template(source, replacement)
     assert patched.endswith(payload)
@@ -66,8 +65,7 @@ def test_changes_only_chat_template_and_realigns_tensor_data() -> None:
     assert len(patched) % 64 == len(payload) % 64
 
 
-def test_refuses_any_other_template_change() -> None:
-    replacement = _template_path().read_bytes()
+def test_refuses_any_other_template_change(replacement: bytes) -> None:
     source, _ = _gguf(_source_template(replacement))
     with pytest.raises(ValueError, match="replacement changes more"):
         replace_template(source, replacement + b"extra")
@@ -82,8 +80,8 @@ def test_rejects_truncated_metadata() -> None:
     "roles",
     [["system", "developer", "user"], ["system", "user", "system", "user"], ["system", "user", "developer", "user"]],
 )
-def test_template_preserves_instruction_position(roles: list[str]) -> None:
-    template = _template_path().read_text()
+def test_template_preserves_instruction_position(replacement: bytes, roles: list[str]) -> None:
+    template = replacement.decode()
     messages = [{"role": role, "content": f"part-{index}"} for index, role in enumerate(roles)]
     rendered = (
         Environment()

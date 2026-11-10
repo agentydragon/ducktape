@@ -13,7 +13,6 @@ startup_env_script: devinfra/secrets/web_env.sh
 idle_watchdog: false
 
 env_exports: |
-  export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   # Nix devtools win over /opt/node22 (see the web profile for the rationale).
   export PATH="/usr/local/bin:${PATH}"
   # Materialize Haku's kubeconfig, not claude-web's: read the haku JWT and

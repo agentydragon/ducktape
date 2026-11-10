@@ -86,6 +86,8 @@ pub enum WriteScope {
     FlatSpec { spec: PathBuf },
     /// Tree transforms write into their explicitly selected output root.
     TreeOutput { root: PathBuf },
+    /// Explicit report-only output; canonical validation still runs.
+    PipelineReports { root: PathBuf },
     /// A spec authoring command may update YAML below this module tree.
     ModuleTree { root: PathBuf },
     /// The CLI writes this invocation record before dispatching the command.
@@ -103,6 +105,9 @@ pub enum WriteScope {
     },
     /// `snapshot create` writes a self-contained snapshot at this destination.
     WorkerSnapshot { destination: PathBuf },
+    /// An authoring command writes a draft for review at this path, never
+    /// into the spec.
+    Draft { path: PathBuf },
 }
 
 /// Common, typed record for the effective command inputs and requested work.
@@ -210,6 +215,9 @@ fn resolved_arguments(nodes: &[CommandNode<'_>]) -> Result<Vec<ResolvedArgument>
     for node in nodes {
         for argument in node.command.get_arguments() {
             let name = argument.get_id().as_str();
+            if transform_command::is_inactive_transform_default(node.matches, name) {
+                continue;
+            }
             if matches!(
                 name,
                 "print_invocation" | "invocation_out" | "help" | "version"
@@ -469,6 +477,11 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
             InvocationMode::DiagnosticSnapshotRead
         }
         [gate, verb] if gate == "gate" && verb == "describe" => InvocationMode::GraphSnapshotRead,
+        // Reads a saved graph and its rejection report, but its product is
+        // a draft the author reviews: analysis, not a snapshot view.
+        [spec, propose] if spec == "spec" && propose == "propose-commutations" => {
+            InvocationMode::ReadOnlyAnalysis
+        }
         _ if has_argument(arguments, "dependency_graph_path")
             || has_argument(arguments, "graph") =>
         {
@@ -565,7 +578,9 @@ fn classify_write_scope(
         return scopes;
     }
     if command == ["run"] {
-        if flag_value(arguments, "dry_run") {
+        if let Some(root) = get_path(&["reports_only"]) {
+            scopes.push(WriteScope::PipelineReports { root });
+        } else if flag_value(arguments, "dry_run") {
             scopes.push(WriteScope::ConditionalPipelineReports {
                 spec: get_path(&["spec", "tree_config"]),
                 output_root: get_path(&["out_root"]),
@@ -599,6 +614,11 @@ fn classify_write_scope(
     {
         scopes.push(WriteScope::WorkerSnapshot { destination });
     }
+    if command == ["spec", "propose-commutations"]
+        && let Some(path) = get_path(&["out_path"])
+    {
+        scopes.push(WriteScope::Draft { path });
+    }
     scopes
 }
 
@@ -626,6 +646,9 @@ fn is_path_argument(name: &str, env: Option<&OsStr>) -> bool {
             | "modules"
             | "modules_root"
             | "out_root"
+            | "ownership_subset"
+            | "reports_only"
+            | "analysis"
             | "packages_root"
             | "path"
             | "paths"

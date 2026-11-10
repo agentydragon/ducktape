@@ -75,9 +75,9 @@ py_test(
         "//:conftest",
         "//agentplane/native:conftest",
         "//agentplane/native/testing:async_process",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -88,8 +88,8 @@ py_library(
     deps = [
         "//agentplane/native/claude/testing:harness",
         "//agentplane/native/claude/testing:messages",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

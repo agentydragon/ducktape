@@ -7,17 +7,13 @@ allowlisting every registry CDN.
 
 ## Architecture
 
-| Concern           | Choice                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Registry          | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                                                                                                                                        |
-| Durable content   | SeaweedFS S3 `registry-cache` bucket, a `PrivateBucket` rendered in this unit — manifests + blobs                                                                                                                                                                                                                                                                                                                           |
-| Dedupe index      | `oci-cache-valkey` `RedisReplication` (Zot `cacheDriver: redis`, `remoteCache`)                                                                                                                                                                                                                                                                                                                                             |
-| Local state       | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                                                                                                                                                                                                                                   |
-| Placement         | Zot is unpinned; Valkey is operator-managed on OVH HDD node-local storage (`piraeus-hdd-local`). Valkey holds rebuildable cache metadata/dedupe state; losing it is acceptable, but expect brief cache misses and possible Zot restart/Valkey flush for stale metadb entries.                                                                                                                                               |
-| S3 credentials    | `registry-cache` Bucket and S3Credentials live in `oci-cache`; the operator generates `registry-cache-s3-credentials` there and Zot reads it as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                                                                                                                                                                                                 |
-| Metrics           | Zot Prometheus metrics at `/metrics`, scraped by Alloy into Mimir through the namespace-local `ServiceMonitor`                                                                                                                                                                                                                                                                                                              |
-| Internal exposure | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
-| Public exposure   | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
+| Concern             | Choice                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registry            | Zot (`ghcr.io/project-zot/zot-linux-amd64`, full image — needs the `sync` extension)                                                                                                                                                                                                                                                                                                                                        |
+| Content and indexes | `zot-cache` PVC on `piraeus-hdd-2` (100 GiB, two replicas); Zot uses local BoltDB and filesystem hard links for deduplication. `Recreate` keeps a single writer; Zot runs in `hil-ovh`, where the class permits access to its replicas.                                                                                                                                                                                     |
+| Metrics             | Zot Prometheus metrics at `/metrics`, scraped by Alloy into Mimir through the namespace-local `ServiceMonitor`                                                                                                                                                                                                                                                                                                              |
+| Internal exposure   | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
+| Public exposure     | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
 
 Upstreams are addressed **by path prefix** (Zot `sync` `stripPrefix`); the endpoint
 is plain HTTP on port 80, so clients need an `http://` endpoint / insecure-registry config:
@@ -47,8 +43,8 @@ that fallback is intentionally not a reliable path through the egress fence.
 ## Consumers
 
 - **haku-ci dind** pulls Docker Hub base images via `--registry-mirror` (see
-  `cluster/cdk8s/haku_ci/runner.py`); the Docker Hub FQDNs are consequently dropped
-  from the `haku-egress-proxy` allowlist. ghcr/quay aren't mirrored through haku-ci yet,
+  `cluster/cdk8s/haku_ci/runner.py`), so haku-ci's egress PolicySet (`haku-ci-build-fetch`)
+  holds no Docker Hub host. ghcr/quay aren't mirrored through haku-ci yet,
   but this is intentionally downprioritized while Haku image builds move to Bazel
   `rules_oci`: the remaining haku-ci Dockerfile path uses Docker Hub bases, which are
   already covered.
@@ -57,9 +53,9 @@ that fallback is intentionally not a reliable path through the egress fence.
 
 Time/count-based, **not** a hard byte cap. A cached tag is kept if pulled within the
 last 30d (`pulledWithin: 720h`) **or** among the 20 most-recently-pulled per repo;
-everything else ages out and `gc` reclaims its blobs from S3. Tune `pulledWithin` /
+everything else ages out and `gc` reclaims its blobs from the filesystem. Tune `pulledWithin` /
 `mostRecentlyPulledCount` in `config.json` to your storage budget. Never add a
-SeaweedFS bucket-lifecycle rule under Zot — deleting blobs out from under the registry
+external deletion policy under Zot — deleting blobs out from under the registry
 corrupts manifests.
 
 ## Node-level pull-through (not yet wired)
@@ -86,10 +82,10 @@ deferred because Talos machine-config changes reboot nodes.
    `credentialsFile` to Zot's `sync` config keyed by `registry-1.docker.io` with a Docker
    Hub username + PAT. Anonymous pull-through works without it.
 
-4. **Haku dind allowlist — ghcr/quay (deferred).** Docker Hub already routes through the
-   mirror (see Consumers above). Dropping `ghcr.io` + `pkg-containers.githubusercontent.com`
-   from the haku-egress-proxy fence (`cluster/cdk8s/egress_fences.py`) would require
-   haku-ci's dind to mirror ghcr too,
+4. **Haku dind — ghcr/quay (deferred).** Docker Hub already routes through the
+   mirror (see Consumers above). haku-ci's egress PolicySet holds no ghcr/quay host (none was
+   pulled in the 2026-11-08/09 audit), so a build that needs one either gets the host added or
+   has haku-ci's dind mirror ghcr too,
    which classic dockerd can't — enable Docker's containerd image store + `hosts.toml`, or
    move to buildkit. The mirror side already works (`/v2/ghcr/... → 200`), but this is not
    worth doing unless post-`rules_oci` haku-ci still has frequent or painful ghcr/quay pulls.
@@ -108,9 +104,7 @@ in Zot's log; tag reads back). Getting here took three fixes on top of the initi
 backwards), and a `seaweedfs-s3` gateway restart so it loaded the `registry-cache` identity
 (see the SeaweedFS S3 identity RCA in `../../docs/lessons_learned/`).
 
-Smoke test (use a **fresh** tag — an image pulled during the pre-fix window can be stuck in
-Zot's metadb as "already synced"; clear with `kubectl -n oci-cache rollout restart
-deploy/zot` + a Valkey flush):
+Smoke test (use a fresh tag to exercise pull-through):
 
 ```bash
 kubectl -n oci-cache run probe --rm -it --image=curlimages/curl --restart=Never -- \
@@ -125,22 +119,6 @@ Root-mirror validation for haku-ci's dockerd path:
 ```bash
 kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
   docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
-```
-
-Valkey storage cutovers are destructive but rebuildable. The `RedisReplication` owns the
-StatefulSet, while the StatefulSet-created PVCs are standalone objects. If the
-`volumeClaimTemplate` storage class changes, Flux updates the `RedisReplication`, but the
-existing StatefulSet/PVCs keep their original storage class. Roll it by deleting the
-operator-owned StatefulSet, deleting the old PVCs, waiting for the PVC deletion to finish,
-and then letting the operator recreate the StatefulSet. If the operator recreates the
-StatefulSet before the old PVCs finish terminating, it can reattach those old PVC names;
-delete the StatefulSet again so the pending PVC deletion completes and the next creation
-gets fresh claims from the updated template. Afterward verify:
-
-```bash
-kubectl -n oci-cache get sts,pod,pvc -l app=oci-cache-valkey -o wide
-kubectl -n oci-cache exec oci-cache-valkey-0 -c oci-cache-valkey -- \
-  redis-cli -p 6379 INFO replication
 ```
 
 This path was last checked with haku-state's push-triggered `validate-state` workflow after

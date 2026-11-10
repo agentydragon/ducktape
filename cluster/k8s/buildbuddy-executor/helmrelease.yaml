@@ -1,0 +1,158 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: buildbuddy-executor
+  labels:
+    # The OCI executor needs privilege to create its isolated action containers.
+    # Actions receive /dev/kvm through executor.oci.devices, not privileged mode.
+    pod-security.kubernetes.io/enforce: privileged
+
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: buildbuddy
+  namespace: buildbuddy-executor
+spec:
+  interval: 24h
+  url: https://helm.buildbuddy.io
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: buildbuddy-executor
+  namespace: buildbuddy-executor
+spec:
+  interval: 15m
+  timeout: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: buildbuddy-executor
+      version: "0.0.485"
+      sourceRef:
+        kind: HelmRepository
+        name: buildbuddy
+        namespace: buildbuddy-executor
+  valuesFrom:
+    - kind: Secret
+      name: buildbuddy-api-key
+      valuesKey: api-key
+      targetPath: config.executor.api_key
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: buildbuddy-executor
+            patch: |
+              - op: add
+                path: /spec/template/spec/automountServiceAccountToken
+                value: false
+  values:
+    # Keep Helm reconciling: suspend leaves pods running. Quote zero because the
+    # chart's `default 1` replaces numeric zero with one replica.
+    replicas: "0"
+    poolName: wyrm2-kvm
+    strategy:
+      type: Recreate
+    resources:
+      requests:
+        cpu: 2
+        memory: 4Gi
+        ephemeral-storage: 10Gi
+        devices.kubevirt.io/kvm: "1"
+      limits:
+        cpu: 4
+        memory: 8Gi
+        ephemeral-storage: 30Gi
+        devices.kubevirt.io/kvm: "1"
+    nodeSelector:
+      kubernetes.io/hostname: wyrm2
+    config:
+      executor:
+        app_target: "grpcs://remote.buildbuddy.io:443"
+        enable_oci: true
+        child_cgroups_enabled: true
+        child_cgroups_move_tini: true
+        local_cache_size_bytes: 8000000000
+        oci:
+          devices:
+            - path: /dev/kvm
+              type: c
+              major: 10
+              minor: 232
+              # os.FileMode is decimal; 438 = 0666.
+              filemode: 438
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: buildbuddy-vm-driver
+  namespace: buildbuddy-executor
+spec:
+  suspend: true
+  interval: 15m
+  timeout: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: buildbuddy-executor
+      version: "0.0.485"
+      sourceRef:
+        kind: HelmRepository
+        name: buildbuddy
+        namespace: buildbuddy-executor
+  valuesFrom:
+    - kind: Secret
+      name: buildbuddy-api-key
+      valuesKey: api-key
+      targetPath: config.executor.api_key
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: buildbuddy-vm-driver-buildbuddy-executor
+            patch: |
+              - op: add
+                path: /spec/template/spec/automountServiceAccountToken
+                value: false
+  values:
+    replicas: 1
+    poolName: wyrm2-vm-tests
+    strategy:
+      type: Recreate
+    resources:
+      requests:
+        cpu: 4
+        memory: 8Gi
+        ephemeral-storage: 10Gi
+        devices.kubevirt.io/kvm: "1"
+      limits:
+        cpu: 4
+        memory: 8Gi
+        ephemeral-storage: 30Gi
+        devices.kubevirt.io/kvm: "1"
+    nodeSelector:
+      kubernetes.io/hostname: wyrm2
+    config:
+      executor:
+        app_target: "grpcs://remote.buildbuddy.io:443"
+        enable_oci: false
+        enable_firecracker: true
+        enable_bare_runner: false
+        default_isolation_type: firecracker
+        child_cgroups_enabled: true
+        child_cgroups_move_tini: true
+        max_concurrent_tasks: 1
+        local_cache_size_bytes: 8000000000
+        oci:
+          enable_cgroup_memory_limit: true

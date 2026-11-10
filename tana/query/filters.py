@@ -11,7 +11,6 @@ from tana.query.nodes import get_field_values, is_in_deleted_nodes
 def filter_nodes(
     store: TanaGraph, predicate: Callable[[BaseNode], bool], *, skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
-    """Filter nodes in a TanaGraph based on a predicate function."""
     for node in store.values():
         if skip_trash and node.is_trash:
             continue
@@ -43,7 +42,6 @@ def filter_by_field_value(
     skip_trash: bool = True,
     skip_deleted: bool = True,
 ) -> Iterator[BaseNode]:
-    """Filter nodes by field values."""
 
     def matches_criteria(node: BaseNode) -> bool:
         values = set(get_field_values(node, field_name, store))
@@ -60,29 +58,15 @@ def filter_by_field_value(
 
 
 def filter_open_issues(store: TanaGraph) -> Iterator[NodeId]:
-    """
-    Find all nodes with #issue tag where Status is not Done/Cancelled/Shelved.
-
-    This is a specialized filter for issue tracking.
-
-    Args:
-        store: The graph to search
-
-    Yields:
-        Node IDs of open issues
-    """
-    # First filter by issue tag
+    """Yield #issue nodes with Status other than Done/Cancelled/Shelved; omit nodes without Status."""
     issue_nodes = filter_by_tag(store, "issue")
 
-    # Then filter by status
     for node in issue_nodes:
         status_values = list(get_field_values(node, "Status", store))
 
-        # Skip if no status field
         if not status_values:
             continue
 
-        # Check if Status is Done, Cancelled, or Shelved
         if {status.lower() for status in status_values} & {"done", "cancelled", "shelved"}:
             continue
 

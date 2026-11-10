@@ -10,10 +10,24 @@ from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
+from agentplane.workload_auth.listener import Listener
+
+
+class APIServer(BaseModel):
+    """An API server the proxy acts on by ServiceAccount impersonation."""
+
+    model_config = SettingsConfigDict(extra="forbid")
+
+    host: str = Field(min_length=1, description="The host requests to this API server name.")
+    port: int = Field(ge=1, le=65535, description="The port requests to this API server name.")
+    token_file: Path = Field(
+        description="File holding the proxy's own bearer for this API server, read on every request that "
+        "substitutes it so a kubelet-rotated token is used from the next request on."
+    )
 
 
 class Settings(BaseModel):
@@ -33,10 +47,14 @@ class Settings(BaseModel):
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
         "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
-    listen_address: str = Field(default="0.0.0.0:8888", description="Proxy listener address the sidecars relay to.")
+    tls_passthrough_targets: list[str] = Field(
+        default_factory=list,
+        description="Exact service authorities carried as opaque TLS; each destination verifies its caller.",
+    )
+    forward: Listener = Field(description="The one forward listener, transport and accepted hop credentials.")
     admin_listen_address: str = Field(
         default="0.0.0.0:8081",
-        description="Admin listener address serving gRPC health and, when configured, the EgressAdmin API.",
+        description="Shared gRPC listener address serving rules, health and, when configured, EgressAdmin.",
     )
     admin_grpc_audience: str | None = Field(
         default=None,
@@ -48,9 +66,6 @@ class Settings(BaseModel):
         min_length=1,
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
     )
-    agent_api_listen_address: str = Field(
-        default="0.0.0.0:8082", description="Agent-facing listener address serving /v1/rules."
-    )
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     upstream_ca_file: Path | None = Field(
@@ -60,23 +75,32 @@ class Settings(BaseModel):
         "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
-    token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
-        description="Every audience a rule may substitute a sidecar's projected token for, the API server's "
-        "among them. Reviewing the list here is what decides which destinations this proxy will spend a "
+        description="Every audience a rule may substitute a sidecar's projected token for. Reviewing "
+        "the list here is what decides which destinations this proxy will spend a "
         "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels
 
-    resync_seconds: int = Field(default=300, ge=2, le=86400, description="Watch lifetime in whole seconds.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)
     decision_queue_size: int = Field(default=2000, ge=1, le=100000)
     decision_batch_size: int = Field(default=100, ge=1, le=1000)
+    local_api_server: APIServer | None = Field(
+        default=None,
+        description="The `local` API server kubernetesServiceAccount credentials act on. Unset, every such "
+        "credential is unavailable. The proxy's RBAC, not this setting, bounds which accounts it may impersonate.",
+    )
     exempt_networks: list[IPv4Network | IPv6Network] = Field(
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
     )
+
+    @model_validator(mode="after")
+    def require_tls(self) -> Settings:
+        if self.forward.tls is None:
+            raise ValueError("forward listener requires TLS")
+        return self

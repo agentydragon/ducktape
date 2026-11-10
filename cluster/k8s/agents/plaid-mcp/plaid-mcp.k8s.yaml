@@ -5,3 +5,1486 @@ metadata:
     goldilocks.fairwinds.com/enabled: "false"
   name: plaid-mcp
 spec: {}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config
+  namespace: plaid-mcp
+data:
+  PLAID_MCP_INVESTMENT_TRANSACTION_DAYS: "730"
+  PLAID_MCP_PLAID_ENV: production
+  PLAID_MCP_PUBLIC_BASE_URL: https://plaid-mcp.allegedly.works
+  PLAID_MCP_TRANSACTION_DAYS: "730"
+  PLAID_MCP_WEBHOOK_URL: https://plaid-mcp.allegedly.works/webhooks/plaid
+immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-mcp
+  namespace: plaid-mcp
+imagePullSecrets:
+  - name: forgejo-images-creds
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-manager
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secret-manager
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: secret-manager
+subjects:
+  - kind: ServiceAccount
+    name: plaid-mcp
+    namespace: plaid-mcp
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-link-oidc-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-link-oidc-reader
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-link-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-link-oidc-reader
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-link-oidc-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-link-oidc-reader
+    namespace: plaid-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-plaid-link-oidc-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - plaid-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-link-oidc-reader
+      remoteNamespace: authentik
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-link-oidc-config
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-link-oidc-config
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-plaid-link-oidc-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: plaid-link-oidc-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction syncs, with the daily Cron catching up the mirror.
+  labels:
+    app.kubernetes.io/name: plaid-mcp
+  name: plaid-mcp
+  namespace: plaid-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plaid-mcp
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: PLAID_MCP_PLAID_ENV
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_MCP_PLAID_ENV
+                  name: config
+            - name: PLAID_MCP_PUBLIC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_MCP_PUBLIC_BASE_URL
+                  name: config
+            - name: PLAID_MCP_WEBHOOK_URL
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_MCP_WEBHOOK_URL
+                  name: config
+            - name: PLAID_MCP_TRANSACTION_DAYS
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_MCP_TRANSACTION_DAYS
+                  name: config
+            - name: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
+                  name: config
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: plaid-mcp-db-app
+            - name: PLAID_MCP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: plaid-client-credentials
+            - name: PLAID_MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: plaid-client-credentials
+            - name: PLAID_MCP_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/plaid-link/
+            - name: PLAID_MCP_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: plaid-link-oidc-config
+            - name: PLAID_MCP_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: plaid-link-oidc-config
+            - name: PLAID_MCP_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session_secret
+                  name: plaid-link-oidc-config
+          image: git.allegedly.works/ducktape-ci/plaid-mcp-server:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          name: plaid-web
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: plaid-mcp
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Daily catch-up sync for transactions, accounts, holdings and liabilities. Transaction history uses Plaid cursors; no real-time balance endpoint calls.
+  name: sync
+  namespace: plaid-mcp
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: plaid-mcp-sync
+        spec:
+          automountServiceAccountToken: true
+          containers:
+            - env:
+                - name: PLAID_MCP_PLAID_ENV
+                  valueFrom:
+                    configMapKeyRef:
+                      key: PLAID_MCP_PLAID_ENV
+                      name: config
+                - name: PLAID_MCP_PUBLIC_BASE_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      key: PLAID_MCP_PUBLIC_BASE_URL
+                      name: config
+                - name: PLAID_MCP_WEBHOOK_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      key: PLAID_MCP_WEBHOOK_URL
+                      name: config
+                - name: PLAID_MCP_TRANSACTION_DAYS
+                  valueFrom:
+                    configMapKeyRef:
+                      key: PLAID_MCP_TRANSACTION_DAYS
+                      name: config
+                - name: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
+                  valueFrom:
+                    configMapKeyRef:
+                      key: PLAID_MCP_INVESTMENT_TRANSACTION_DAYS
+                      name: config
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: plaid-mcp-db-app
+                - name: PLAID_MCP_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      key: client_id
+                      name: plaid-client-credentials
+                - name: PLAID_MCP_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      key: client_secret
+                      name: plaid-client-credentials
+              image: git.allegedly.works/ducktape-ci/plaid-mcp-sync:unset
+              imagePullPolicy: Always
+              name: sync
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 1000
+                runAsNonRoot: true
+                runAsUser: 1000
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: plaid-mcp
+  schedule: 17 0 * * *
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: plaid-mcp
+  name: plaid-mcp
+  namespace: plaid-mcp
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: plaid-mcp
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: Plaid Link UI; browser access authenticates with Authentik OIDC.
+  name: plaid-mcp
+  namespace: plaid-mcp
+spec:
+  hostnames:
+    - plaid-mcp.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: plaid-mcp
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Default-deny ingress for plaid-mcp pods. Only the cluster Gateway can reach the public Link UI and Plaid webhook routes.
+  name: ingress
+  namespace: plaid-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-mcp
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-finance-diagnostics-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - endpoints
+      - events
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - statefulsets
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+      - cronjobs
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - clusters
+    verbs:
+      - get
+      - list
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: plaid-mcp-db-readonly-generator
+  namespace: plaid-mcp
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-mcp-db-readonly
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: plaid-mcp-db-readonly-generator
+  refreshInterval: 8760h
+  target:
+    name: plaid-mcp-db-readonly
+    template:
+      data:
+        DATABASE_URL: postgresql://plaid_ro:{{ .password }}@plaid-mcp-db-rw.plaid-mcp.svc:5432/plaidmcp
+        dbname: plaidmcp
+        host: plaid-mcp-db-rw.plaid-mcp.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: plaid_ro
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: plaid-mcp-db-spend-generator
+  namespace: plaid-mcp
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-mcp-db-spend
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: plaid-mcp-db-spend-generator
+  refreshInterval: 8760h
+  target:
+    name: plaid-mcp-db-spend
+    template:
+      data:
+        DATABASE_URL: postgresql://plaid_spend:{{ .password }}@plaid-mcp-db-rw.plaid-mcp.svc:5432/plaidmcp
+        dbname: plaidmcp
+        host: plaid-mcp-db-rw.plaid-mcp.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: plaid_spend
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-mcp-db-readonly-reader
+  namespace: haku-sandbox
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-sandbox-plaid-mcp-db-readonly-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-mcp-db-readonly
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-sandbox-plaid-mcp-db-readonly-reader
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-sandbox-plaid-mcp-db-readonly-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-mcp-db-readonly-reader
+    namespace: haku-sandbox
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-haku-sandbox-plaid-mcp-db-readonly-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - haku-sandbox
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-mcp-db-readonly-reader
+      remoteNamespace: plaid-mcp
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-mcp-db-readonly
+  namespace: haku-sandbox
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-mcp-db-readonly
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-haku-sandbox-plaid-mcp-db-readonly-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: plaid-mcp-db-readonly
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: CNPG Postgres mirror for Plaid link metadata, webhook queue state, and Plaid-shaped financial data.
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: plaidmcp
+      owner: plaidmcp
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  managed:
+    roles:
+      - comment: Read-only SQL access to the Plaid mirror; ESO copies the secret into the haku-sandbox namespace.
+        ensure: present
+        login: true
+        name: plaid_ro
+        passwordSecret:
+          name: plaid-mcp-db-readonly
+      - comment: Read-only runtime role for plaid-spend.
+        ensure: present
+        login: true
+        name: plaid_spend
+        passwordSecret:
+          name: plaid-mcp-db-spend
+  monitoring:
+    enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: plaid-mcp-db
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    resizeInUseVolumes: false
+    size: 5Gi
+    storageClass: piraeus-ssd-local
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for plaid-mcp/plaid-mcp-db.
+  name: plaid-mcp-db-backups
+  namespace: plaid-mcp
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: plaid-mcp-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: plaid-mcp-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for plaid-mcp/plaid-mcp-db.
+  name: plaid-mcp-db-backups
+  namespace: plaid-mcp
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: plaid-mcp-db-backups
+  namespace: plaid-mcp
+spec:
+  identityRef:
+    name: plaid-mcp-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: plaid-mcp-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for plaid-mcp/plaid-mcp-db base backups and WAL.
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://plaid-mcp-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: plaid-mcp-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: plaid-mcp-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: plaid-mcp-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 34 1 * * *
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Allow the one-shot readonly-role provisioner to resolve and connect to the Plaid CNPG primary.
+  name: db-readonly-provisioner-egress
+  namespace: plaid-mcp
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: plaid-mcp-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app: plaid-mcp-db-readonly-provisioner
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: db-readonly-provisioner
+  namespace: plaid-mcp
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: plaid-mcp-db-readonly-provisioner
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - |
+              set -euo pipefail
+              for attempt in $(seq 1 60); do
+                role_count=$(psql --tuples-only --no-align --quiet -c "SELECT count(*) FROM pg_roles WHERE rolname IN ('plaid_ro', 'plaid_spend')" 2>/dev/null || true)
+                if [[ "$role_count" == 2 ]]; then break; fi
+                if [[ "$attempt" == 60 ]]; then echo 'CNPG did not create Plaid read roles' >&2; exit 1; fi
+                sleep 2
+              done
+              exec psql --set=ON_ERROR_STOP=1 -f /sql/readonly-role.sql
+          command:
+            - /bin/bash
+            - -c
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: plaid-mcp-db-app
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: plaid-mcp-db-app
+            - name: PGHOST
+              value: plaid-mcp-db-rw.plaid-mcp.svc
+            - name: PGDATABASE
+              value: plaidmcp
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+          name: psql
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /sql
+              name: sql
+              readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: plaid-mcp-db-readonly-sql
+          name: sql
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: plaid-pgweb-auth
+  namespace: plaid-mcp
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-pgweb-auth
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: plaid-pgweb-auth
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: plaid-pgweb-auth
+    template:
+      data:
+        password: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: pgweb over the Plaid sync database as the read-only plaid_ro role, for sandboxes that reach it through the agentplane-staging egress proxy.
+  labels:
+    app.kubernetes.io/name: plaid-pgweb
+  name: plaid-pgweb
+  namespace: plaid-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-pgweb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plaid-pgweb
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --readonly
+            - --no-ssh
+            - --no-idle-timeout
+            - --query-timeout=60
+            - --skip-open
+          env:
+            - name: PGWEB_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: DATABASE_URL
+                  name: plaid-mcp-db-readonly
+            - name: PGWEB_LOCK_SESSION
+              value: "true"
+            - name: PGWEB_AUTH_USER
+              value: plaid
+            - name: PGWEB_AUTH_PASS
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: plaid-pgweb-auth
+          image: ghcr.io/sosedoff/pgweb:0.17.0@sha256:a5256d416e2e8b92d69a4459058e3eca33a9f075d8325491644411d0bc3bd70b
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            tcpSocket:
+              port: 8081
+          name: pgweb
+          ports:
+            - containerPort: 8081
+              name: http
+              protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            tcpSocket:
+              port: 8081
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: plaid-pgweb
+  name: plaid-pgweb
+  namespace: plaid-mcp
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8081
+  selector:
+    app.kubernetes.io/name: plaid-pgweb
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Default-deny for plaid-pgweb pods. Only the agentplane-staging egress proxy may reach pgweb, and pgweb reaches only DNS and the Plaid CNPG cluster.
+  name: plaid-pgweb
+  namespace: plaid-mcp
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: plaid-mcp-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-pgweb
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plaid-spend-config
+  namespace: plaid-mcp
+data:
+  PLAID_SPEND_API_OIDC_CLIENT_ID: plaid-spend-desktop
+  PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
+  PLAID_SPEND_API_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
+  PLAID_SPEND_API_OIDC_JWKS_URI: https://auth.allegedly.works/application/o/plaid-spend-desktop/jwks/
+  PLAID_SPEND_CONFIG_PATH: /etc/plaid-spend/spend-policy.yaml
+  PLAID_SPEND_WEB_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-web/
+  PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
+immutable: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-spend-finance-config-reader
+  namespace: plaid-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-policy
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-spend-web-oidc-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-spend-web-oidc-reader
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-web-oidc-config
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-web-oidc-reader
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-web-oidc-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-spend-web-oidc-reader
+    namespace: plaid-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-plaid-spend-web-oidc-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - plaid-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-spend-web-oidc-reader
+      remoteNamespace: authentik
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-spend-web-oidc-config
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-spend-web-oidc-config
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-plaid-spend-web-oidc-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: plaid-spend-web-oidc-config
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-spend-policy-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: plaid-spend-policy-reader
+  namespace: finance-spend-config
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - plaid-spend-policy
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: plaid-spend-policy-reader
+  namespace: finance-spend-config
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: plaid-spend-policy-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: plaid-spend-policy-reader
+    namespace: plaid-mcp
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-plaid-spend-policy-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - plaid-mcp
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: plaid-spend-policy-reader
+      remoteNamespace: finance-spend-config
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-spend-policy
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: plaid-spend-policy
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-plaid-spend-policy-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Delete
+    name: plaid-spend-policy
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-creds-reader
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: coinbase-api-credentials
+  namespace: plaid-mcp
+spec:
+  data:
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_key
+      secretKey: api_key
+    - remoteRef:
+        key: coinbase-api-credentials
+        property: api_secret
+      secretKey: api_secret
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: coinbase-api-credentials
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: plaid-spend
+  namespace: plaid-mcp
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Plaid Spend serves its Authentik-protected browser UI and desktop API from the same configured card view and subscribes to committed plaid_spend_changed invalidations.
+  labels:
+    app.kubernetes.io/name: plaid-spend
+  name: plaid-spend
+  namespace: plaid-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-spend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plaid-spend
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: PLAID_SPEND_CONFIG_PATH
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_CONFIG_PATH
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_API_OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_API_OIDC_ISSUER
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_API_OIDC_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_API_OIDC_CLIENT_ID
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_API_OIDC_JWKS_URI
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_API_OIDC_JWKS_URI
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_WEB_OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_WEB_OIDC_ISSUER
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  key: PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL
+                  name: plaid-spend-config
+            - name: PLAID_SPEND_WEB_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: plaid-spend-web-oidc-config
+            - name: PLAID_SPEND_WEB_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: plaid-spend-web-oidc-config
+            - name: PLAID_SPEND_WEB_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session_secret
+                  name: plaid-spend-web-oidc-config
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: DATABASE_URL
+                  name: plaid-mcp-db-spend
+            - name: PLAID_SPEND_COINBASE__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api_key
+                  name: coinbase-api-credentials
+                  optional: true
+            - name: PLAID_SPEND_COINBASE__API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: api_secret
+                  name: coinbase-api-credentials
+                  optional: true
+          image: git.allegedly.works/ducktape-ci/plaid-spend:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          name: plaid-spend
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - mountPath: /etc/plaid-spend
+              name: config
+              readOnly: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: plaid-spend
+      volumes:
+        - name: config
+          secret:
+            secretName: plaid-spend-policy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: plaid-spend
+  name: plaid-spend
+  namespace: plaid-mcp
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: plaid-spend
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    description: Authentik-authenticated web view and desktop API for Plaid card spend.
+  name: plaid-spend
+  namespace: plaid-mcp
+spec:
+  hostnames:
+    - plaid-spend.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: plaid-spend
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Only the cluster Gateway may reach the Plaid spend API. Outbound access is limited to the Plaid database, the Authentik Gateway, and Coinbase HTTPS.
+  name: plaid-spend-ingress
+  namespace: plaid-mcp
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: plaid-mcp-db
+            k8s:io.kubernetes.pod.namespace: plaid-mcp
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toFQDNs:
+        - matchName: api.coinbase.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.coinbase.com
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-spend
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

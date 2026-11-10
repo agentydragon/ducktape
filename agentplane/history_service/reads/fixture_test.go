@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -30,14 +31,10 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	history := storage.NewStore(db, false)
 	return fixture{
-		db: db, history: history, reader: &Reader{DB: db, History: history},
+		db: db, history: history, reader: &Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
 		projector: &projection.Projector{DB: db, History: history, Epoch: testEpoch, PageSize: testPageSize},
 	}
 }
@@ -47,8 +44,8 @@ func newFixture(t *testing.T) fixture {
 func (f fixture) session(t *testing.T, history *storage.Store, sandbox string, entries ...*eventlogpb.EventEntry) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	writer := storage.Writer{Namespace: "test-sandbox-namespace", Name: sandbox, UID: "test-runner-account-uid"}
-	if _, err := history.BindWriter(t.Context(), sessionID, writer, ""); err != nil {
+	writer := storage.ServiceAccountWriter{Namespace: "test-sandbox-namespace", Name: sandbox, UID: "test-runner-account-uid"}
+	if _, err := history.BindWriter(t.Context(), sessionID, writer, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec("INSERT INTO thread_history_summary (thread_id) VALUES ($1)", sessionID); err != nil {

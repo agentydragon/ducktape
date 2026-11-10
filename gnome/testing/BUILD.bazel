@@ -1,0 +1,54 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    data = [":fake_daemon_js"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/testing:output_writer",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//pillow",
+        "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "fake_daemon",
+    srcs = ["fake_daemon.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":session",
+        "//devinfra/testing:undeclared_outputs",
+    ],
+)
+
+py_test(
+    name = "test_failure_cleanup",
+    srcs = ["test_failure_cleanup.py"],
+    deps = [
+        ":fake_daemon",
+        ":session",
+        "//:conftest",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+js_library(
+    name = "fake_daemon_js",
+    srcs = ["fake-daemon.js"],
+    visibility = ["//visibility:public"],
+)
+
+eslint_test(
+    name = "fake_daemon_lint",
+    srcs = [":fake_daemon_js"],
+)

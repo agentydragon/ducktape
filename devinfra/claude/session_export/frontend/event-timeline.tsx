@@ -1,7 +1,7 @@
 import { useId, useState, type JSX } from "react";
 import { Box, Button, Text } from "@mantine/core";
 
-import type { Event } from "./api/schema";
+import type { Event } from "./schema";
 import { EventInspector, eventKind } from "./event-inspector";
 
 export type EventTimelineItem = {

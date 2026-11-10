@@ -24,6 +24,7 @@ class GoProcess:
     process: asyncio.subprocess.Process
     stderr: Path
     health_port: int
+    health_credentials: grpc.ChannelCredentials | None = None
 
     def terminate(self) -> None:
         self.process.terminate()
@@ -31,7 +32,12 @@ class GoProcess:
     async def health(self, *, serving: bool) -> None:
         """Until the readiness verdict on the gRPC health listener is `serving`; fails at once if the process died."""
         expected = health_pb2.HealthCheckResponse.SERVING if serving else health_pb2.HealthCheckResponse.NOT_SERVING
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{self.health_port}") as channel:
+        channel = (
+            grpc.aio.secure_channel(f"localhost:{self.health_port}", self.health_credentials)
+            if self.health_credentials is not None
+            else grpc.aio.insecure_channel(f"127.0.0.1:{self.health_port}")
+        )
+        async with channel:
             stub = health_pb2_grpc.HealthStub(channel)
             async for attempt in AsyncRetrying(stop=stop_after_delay(20), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
@@ -52,6 +58,7 @@ async def go_process(
     health_port: int,
     grace_s: float,
     pass_fds: Sequence[int] = (),
+    health_credentials: grpc.ChannelCredentials | None = None,
 ) -> AsyncIterator[GoProcess]:
     """`binary` with only `env` and inherited descriptors, once it reports SERVING on `health_port`."""
     with stderr.open("wb") as log:
@@ -60,7 +67,7 @@ async def go_process(
         process = await asyncio.create_subprocess_exec(
             binary, env=process_env, stdout=log, stderr=log, pass_fds=tuple(pass_fds)
         )
-    running = GoProcess(process, stderr, health_port)
+    running = GoProcess(process, stderr, health_port, health_credentials)
     try:
         await running.health(serving=True)
         yield running

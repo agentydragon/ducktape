@@ -30,31 +30,23 @@ from pathlib import Path
 
 import numpy as np
 
-from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.x.models.macro_var import MacroVarFit
-from finance.augur.x.models.structural_macro import StructuralMacroFittedDefaults
-from finance.augur.x.models.structural_macro_fit import MacroFitWindow, fit_structural_macro_defaults
+from finance.augur.x.models.structural_macro_fit import (
+    LONG_RECORD_MACRO_SOURCES,
+    MacroFitWindow,
+    fit_macro_var_for_window,
+    macro_fit_sources,
+)
 from finance.evidence import sources
 
 logger = logging.getLogger(__name__)
 
 STATE_NAMES = ("short_rate", "term_spread", "inflation")
 
-# Everything `fit_structural_macro_defaults` reads on EITHER window, so one fetch serves both
-# fits. It fits three blocks, not just the macro VAR: the equity marginal and the rate beta run
-# whichever window is chosen, which is why the French and VFINX sources are here too.
+# All source series used by either macro window, so one fetch serves both fits.
 EVIDENCE = tuple(
-    dict.fromkeys(
-        (
-            *MACRO_HISTORY_SOURCES,
-            sources.FRED_FEDFUNDS,
-            sources.FRED_GS10,
-            sources.FRED_CPI,
-            sources.FRENCH_FACTORS,
-            sources.YAHOO_VFINX,
-        )
-    )
+    dict.fromkeys((*LONG_RECORD_MACRO_SOURCES, sources.FRED_FEDFUNDS, sources.FRED_GS10, sources.FRED_CPI))
 )
 
 
@@ -91,15 +83,15 @@ def stationary_sigma(fit: MacroVarFit) -> list[float]:
     return [float(value) for value in np.sqrt(np.diag(state))]
 
 
-def describe(label: str, fitted: StructuralMacroFittedDefaults, fit: MacroVarFit) -> str:
+def describe(window: MacroFitWindow, fit: MacroVarFit) -> str:
     sigmas = stationary_sigma(fit)
     shocks = np.sqrt(
         np.diag(np.asarray(fit.shock_cholesky, dtype=float) @ np.asarray(fit.shock_cholesky, dtype=float).T)
     )
     lines = [
-        f"{label}",
-        f"  span            {fit.first_month} .. {fit.latest_month}  ({fitted.macro_state_fit.sample_months} months)",
-        f"  sources         {fitted.macro_state_fit.source}",
+        str(window),
+        f"  span            {fit.first_month} .. {fit.latest_month}  ({fit.sample_months} months)",
+        f"  sources         {','.join(source.provenance_label for source in macro_fit_sources(window))}",
         f"  persistence     spectral radius {spectral_radius(fit.transition):.4f}",
     ]
     lines.extend(
@@ -109,28 +101,10 @@ def describe(label: str, fitted: StructuralMacroFittedDefaults, fit: MacroVarFit
     return "\n".join(lines)
 
 
-async def compare_windows() -> dict[MacroFitWindow, StructuralMacroFittedDefaults]:
+async def compare_windows() -> dict[MacroFitWindow, MacroVarFit]:
     """Fit both windows off one evidence snapshot, so a difference cannot be a fetch difference."""
 
     with tempfile.TemporaryDirectory() as directory:
         evidence_dir = Path(directory)
         await snapshot_evidence(evidence_dir, EVIDENCE)
-        return {window: fit_structural_macro_defaults(evidence_dir, macro_window=window) for window in MacroFitWindow}
-
-
-def fitted_var(fitted: StructuralMacroFittedDefaults) -> MacroVarFit:
-    """The VAR as the simulator would ship it.
-
-    Read back off the provider spec rather than kept from the fitter, so what is compared is what
-    a run would actually sample from, not an intermediate the spec might not preserve.
-    """
-
-    return MacroVarFit(
-        intercept=fitted.macro_state.intercept,
-        transition=fitted.macro_state.transition,
-        shock_cholesky=fitted.macro_state.shock_cholesky,
-        latest_state=fitted.macro_state.initial_state,
-        first_month=fitted.macro_state_fit.first_month,
-        latest_month=fitted.macro_state_fit.last_month,
-        sample_months=fitted.macro_state_fit.sample_months,
-    )
+        return {window: fit_macro_var_for_window(evidence_dir, macro_window=window) for window in MacroFitWindow}

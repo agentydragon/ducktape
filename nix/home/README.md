@@ -23,15 +23,7 @@ This directory follows a pattern separating **generic modules** from **personal 
 
 ### Generic Modules (`programs/`)
 
-Generic home-manager-style modules that follow upstream conventions and could potentially be contributed to nixpkgs. See <programs/README.md> for details.
-
-- **No personal configuration embedded** - modules expose options, personal integrations provide values
-- **Upstream-compatible conventions** - follow nixpkgs `programs.*` patterns
-- **Well-documented options** - clear descriptions, examples, and type definitions
-
-Current modules:
-
-- `gemini-cli.nix` - Declarative configuration for Gemini CLI
+See [`programs/README.md`](programs/README.md) for generic module design principles, current modules, and their usage.
 
 ### Personal Integrations (root `*.nix` files)
 

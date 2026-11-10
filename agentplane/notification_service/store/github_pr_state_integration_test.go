@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/google/uuid"
 )
 
 func prStateObservationEntries(t *testing.T, entries []Entry) []Entry {
@@ -71,15 +71,6 @@ func lifecycleDelivery(g githubFixture, number int64, state model.GitHubPullRequ
 	return ingest
 }
 
-func hasSubscription(entry Entry, id uuid.UUID) bool {
-	for _, subscriptionID := range entry.SubscriptionIDs {
-		if subscriptionID == id {
-			return true
-		}
-	}
-	return false
-}
-
 func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubscribers(t *testing.T) {
 	for _, webhookFirst := range []bool{true, false} {
 		name := "poll first"
@@ -114,7 +105,7 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			if len(entries) != 1 {
 				t.Fatalf("shared inbox review observations = %d, want one", len(entries))
 			}
-			if !hasSubscription(entries[0], first.ID) || !hasSubscription(entries[0], second.ID) {
+			if !slices.Contains(entries[0].SubscriptionIDs, first.ID) || !slices.Contains(entries[0].SubscriptionIDs, second.ID) {
 				t.Errorf("shared observation subscriptions = %v, want both subscribers", entries[0].SubscriptionIDs)
 			}
 			var payload model.GitHubReviewObservation
@@ -126,7 +117,7 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			}
 			if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
 				ON e.inbox_id = $1 AND e.cursor = m.cursor WHERE m.subscription_id = $2
-				AND e.event->>'provider' = 'github' AND e.event->>'event' = 'pull_request_review'`, g.inbox, first.ID); got != 0 {
+				AND e.identity_provider = 'github' AND e.github_event = 'pull_request_review'`, g.inbox, first.ID); got != 0 {
 				t.Errorf("normalized raw review matches = %d, want zero", got)
 			}
 
@@ -185,12 +176,12 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 		}
 		if review.State == model.ReviewDismissed {
 			dismissedCount++
-			if !hasSubscription(entry, dismissed.ID) || hasSubscription(entry, submitted.ID) {
+			if !slices.Contains(entry.SubscriptionIDs, dismissed.ID) || slices.Contains(entry.SubscriptionIDs, submitted.ID) {
 				t.Errorf("dismissed transition subscriptions = %v, want dismissed-only", entry.SubscriptionIDs)
 			}
 		} else if review.State == model.ReviewApproved {
 			submittedCount++
-			if !hasSubscription(entry, submitted.ID) || hasSubscription(entry, dismissed.ID) {
+			if !slices.Contains(entry.SubscriptionIDs, submitted.ID) || slices.Contains(entry.SubscriptionIDs, dismissed.ID) {
 				t.Errorf("submitted transition subscriptions = %v, want submitted-only", entry.SubscriptionIDs)
 			}
 		}
@@ -256,7 +247,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
 		ON e.inbox_id = $1 AND e.cursor = m.cursor WHERE m.subscription_id = $2
-		AND e.event->>'provider' = 'github' AND e.event->>'event' = 'pull_request'`, closed.InboxID, closed.ID); got != 0 {
+		AND e.identity_provider = 'github' AND e.github_event = 'pull_request'`, closed.InboxID, closed.ID); got != 0 {
 		t.Errorf("covered closed raw webhook matches = %d, want zero", got)
 	}
 
@@ -279,7 +270,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
 		ON e.inbox_id = $1 AND e.cursor = m.cursor WHERE m.subscription_id = $2
-		AND e.event->>'provider' = 'github' AND e.event->>'event' = 'pull_request'`, reopened.InboxID, reopened.ID); got != 1 {
+		AND e.identity_provider = 'github' AND e.github_event = 'pull_request'`, reopened.InboxID, reopened.ID); got != 1 {
 		t.Errorf("uncovered reopened raw actions = %d, want one", got)
 	}
 }

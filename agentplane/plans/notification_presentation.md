@@ -2,9 +2,10 @@
 
 Status: open, unscheduled. The [task DAG](task_dag.md#notification_presentation--compact-notification-rendering)
 tracks the dependencies. The metadata's carriage (`SESSION_INPUT_METADATA`) is the operator's lean,
-not a settled decision: typed provenance must travel through Session Dispatcher to the matching
-Runner input RPC and be echoed into the Event that journals the input. The Dispatcher owns durable
-command records ([queue contract](../runner_gateway/dispatcher/README.md)).
+not a settled decision: typed provenance travels through Session Dispatcher to the Session owner
+and is echoed into History. For native Sessions that owner is the Runner; for central Sessions the
+central sampler should similarly pass metadata through to History (operator direction, 2026-11-04)
+without requiring an Environment. The Dispatcher owns durable command records ([queue contract](../runner_gateway/dispatcher/README.md)).
 
 ## Goal and boundaries
 
@@ -12,11 +13,12 @@ Give user inputs typed metadata that the harness and model never see. Initially,
 Notification Service notices so the frontend can render them compactly, with full text available
 on expansion. The agent continues receiving the existing actionable notice text.
 
-- Session Dispatcher must authenticate the producer and pass verified provenance to the Runner.
+- Session Dispatcher must authenticate the producer and pass verified provenance to the Session owner.
 - Notification Service owns subscriptions, inboxes, entries and delivery bookkeeping, and supplies
   the notice reference.
-- Runners journal the metadata with the input and stay responsible for execution and canonical
-  admission/confirmation evidence. Claude/Codex integrations do not interpret it.
+- The native Runner journals the metadata with the input. For a central Session, the sampler passes
+  it through to History with the input. Each owner remains responsible for its own admission and
+  confirmation evidence. Metadata is not passed to the model or interpreted by Claude/Codex.
 - The integration app consumes authorized history and renders annotations. No backend depends on
   app tables, availability or identity.
 
@@ -51,8 +53,8 @@ read APIs must enforce session access and return only authorized fields.
 
 ## History and read path
 
-The echoed metadata is part of the journalled input, so it survives replay, inbox expiry and
-subscription cancellation without cross-service joins or a live inbox. A repeated command ID with
+The echoed metadata is retained with the canonical input in History, so it survives replay, inbox
+expiry and subscription cancellation without cross-service joins or a live inbox. A repeated command ID with
 different metadata must conflict, not overwrite.
 
 The Thread fold joins annotations to messages through
@@ -79,12 +81,14 @@ status and edges:
 
 1. `SESSION_INPUT_METADATA`: add typed annotations and producer authorization.
 2. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
-   producer integration after the metadata extension exists.
+   producer integration after the metadata extension exists. `CENTRAL_SESSION_INPUT_METADATA`
+   separately adds central-sampler passthrough after central Sessions without Environments exist.
 3. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
 
 Tests cover ordinary input, restricted provenance, destination authorization, identical/conflicting
 retries (including concurrent requests), pending/rejected inputs, replay and mixed-origin
-coalescing. Keep metadata out of what the harness receives; keep historical annotations after inbox
+coalescing. Cover native and central owner paths when each is implemented, including central Sessions
+without an Environment. Keep metadata out of what the harness receives; keep historical annotations after inbox
 expiry. Exercise backend integration without the app. Add frontend visual coverage and one bounded
 real-notice demonstration with unchanged agent-facing text. No provider-outage injection or repeated
 harness matrix is needed; rendering must not acknowledge the inbox.

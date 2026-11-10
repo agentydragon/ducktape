@@ -3,68 +3,70 @@
 //! `ChunkCodeGraph` indexes a chunk's top-level bindings; the
 //! `classify_*` functions answer "does evaluating this expression /
 //! statement fire observable user code?" against that index, the
-//! whitelist tables, and the spec author's declared-purity hints.
+//! builtin summary table, and the spec author's declared-purity hints.
 //!
 //! The module is split by responsibility; submodules share the imports
 //! and crate-internal items re-exported below via `pub(crate) use`, so
 //! each submodule only needs `use super::*;`:
 //!
-//! - `code_graph` — `ChunkCodeGraph` / `ChunkBinding`, the chunk-top
-//!   function call-graph + SCC purity fixpoint, and the function-body
-//!   purity walk (`classify_function_body` / `BodyPurityCollector`).
+//! - `code_graph` — `ChunkCodeGraph` / `ChunkBinding`, stable function
+//!   identities, and the canonical function-body purity walk.
+//! - `effect_inference` — typed body-completion and growing-effect facts for
+//!   local and cross-module recursive call obligations.
 //! - `redundant_hints` — `RedundantPurity*` / `RedundantPureMember*`
 //!   types and the load-bearing-hint detectors.
-//! - `plain_data` — plain-data / plain-array / primitive-const /
-//!   fluent-const binding collection and the escape/write scanners.
-//! - `ts_enum_iife` — recognition of the TypeScript-emit enum IIFE
-//!   plain-object shape.
+//! - `fluent` — the closure of author-trusted fluent roots over chunk-top
+//!   `const` chains.
+//! - `ts_enum_iife` — the TypeScript-emit enum IIFE as a pre-purity
+//!   admission shape (heap `PlainData` and the initializer's own purity).
 //! - `purity_type` — the `Purity` / `PurityReason` / `PurityRule`
 //!   verdict types.
 //! - `classifier` — `classify_expr_purity` and its expression /
-//!   member / call / fluent-chain / property recursion, plus
-//!   `classify_var_decl_purity` and `class_has_static_observable`.
-//! - `builtin_calls` — `new`-expression, iterable-arg, and
-//!   `Object.*` builtin admission helpers and the result-primitive /
-//!   safe-key predicates.
+//!   member / call / `new` / fluent-chain / property recursion,
+//!   `classify_var_decl_purity`, `classify_class_static_purity`, and the
+//!   result-primitive / safe-key predicates.
+//! - `native_rows` — the purity projection of builtin summary rows.
+//! - `order_dependent_reads` — reads of cells whose writers the reading
+//!   chunk's dependency graph cannot order.
 
+pub(crate) use crate::analysis_inputs::ProofDependencies;
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) use petgraph::algo::tarjan_scc;
-pub(crate) use petgraph::graphmap::DiGraphMap;
 pub(crate) use serde::{Deserialize, Serialize};
 pub(crate) use swc_common::{Span, Spanned};
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
-pub(crate) use crate::SourceLocation;
+pub(crate) use crate::execution_evidence::{SourceLocation, SourceLocator};
 pub(crate) use crate::facts::TopLevelItemView;
-
-mod whitelists;
-
-pub(crate) use whitelists::{
-    PLAIN_DATA_HOSTILE_BUILTINS, PURE_BUILTIN_NEW_ARRAY_ITERABLE, PURE_BUILTIN_NEW_NO_ARGS,
-    PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS, PURE_BUILTIN_NEW_STRING_LITERAL_ARG, PURE_GLOBAL_CALLS,
-    PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS, PURE_OBJECT_CALLS_ON_PLAIN_DATA, PURE_STATIC_CALLS,
-    PURE_STATIC_FUNCTION_REFS, PURE_STATIC_PROPS,
+pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
+pub(crate) use crate::facts::abstract_domain::effect::{
+    CoerceSite, Effect, HavocCause, InvokeSite,
 };
-pub(crate) use whitelists::{SHADOW_TRACKED_GLOBALS, WHITELIST_RECEIVERS};
+pub(crate) use crate::facts::abstract_domain::primitive::{binary_throws, evaluate};
 
-mod builtin_calls;
 mod classifier;
 mod code_graph;
+mod effect_inference;
+mod fluent;
 mod fresh_record;
-mod plain_data;
+mod native_rows;
+mod order_dependent_reads;
 mod purity_type;
 mod redundant_hints;
+pub mod saved;
 mod ts_enum_iife;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
-pub(crate) use builtin_calls::*;
 pub(crate) use classifier::*;
 pub(crate) use code_graph::*;
+pub(crate) use effect_inference::*;
+pub(crate) use fluent::*;
 pub(crate) use fresh_record::*;
-pub(crate) use plain_data::*;
+pub(crate) use native_rows::*;
+pub(crate) use order_dependent_reads::*;
+pub(crate) use purity_type::Effects;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
 

@@ -1,9 +1,55 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
-import type { SandboxView } from "./api/schema";
+import { durationMs } from "@bufbuild/protobuf/wkt";
+import {
+  SandboxPhase,
+  OperatingMode,
+  ReadinessState,
+  type EnvironmentDescriptor,
+} from "../../environments/v1/environment_service_pb";
+
 import { durationLabel } from "./format_time";
 import type { SandboxStatusKind } from "./status_mark";
 
 type RawObject = Record<string, unknown>;
+
+/** The controller's lifecycle phase, normalized without deriving it from the requested operating mode. */
+export function sandboxPhase(sandbox: EnvironmentDescriptor): string {
+  switch (sandbox.observedState?.phase) {
+    case SandboxPhase.UNSPECIFIED:
+      return "Unspecified";
+    case SandboxPhase.CREATING:
+      return "Creating";
+    case SandboxPhase.RUNNING:
+      return "Running";
+    case SandboxPhase.SUSPENDING:
+      return "Suspending";
+    case SandboxPhase.SUSPENDED:
+      return "Suspended";
+    case SandboxPhase.QUIESCING:
+      return "Quiescing";
+    case SandboxPhase.TEARING_DOWN:
+      return "Tearing down";
+    default:
+      return "Unspecified";
+  }
+}
+
+export function sandboxOperatingMode(sandbox: EnvironmentDescriptor): string | null {
+  switch (sandbox.observedState?.operatingMode) {
+    case OperatingMode.RUNNING:
+      return "Running";
+    case OperatingMode.SUSPENDED:
+      return "Suspended";
+    default:
+      return null;
+  }
+}
+
+/** Converts a present protobuf Duration to seconds while keeping absent and zero durations distinct. */
+export function sandboxIdleSuspendAfterSeconds(sandbox: EnvironmentDescriptor): number | null {
+  const duration = sandbox.configuration?.idleSuspendAfter;
+  return duration === undefined ? null : durationMs(duration) / 1000;
+}
 
 export interface RawCondition {
   type: string;
@@ -61,47 +107,52 @@ export function rawConditions(status: RawObject | null | undefined): RawConditio
   });
 }
 
-export function podPhase(sandbox: SandboxView): string | null {
-  return rawString(sandbox.pod?.status?.phase);
+export function podPhase(sandbox: EnvironmentDescriptor): string | null {
+  return rawString(rawObject(sandbox.kubernetesDiagnostics?.pod?.status)?.phase);
 }
 
-export function podIp(sandbox: SandboxView): string | null {
-  return rawString(sandbox.pod?.status?.podIP);
+export function podIp(sandbox: EnvironmentDescriptor): string | null {
+  return rawString(rawObject(sandbox.kubernetesDiagnostics?.pod?.status)?.podIP);
 }
 
 /** Whether the current Sandbox incarnation is the VMI-backed Pod whose serial console is available. */
-export function hasVmConsole(sandbox: SandboxView | null): boolean {
+export function hasVmConsole(sandbox: EnvironmentDescriptor | null): boolean {
   return (
-    sandbox?.pod?.owner_references.some(
+    (sandbox ? sandbox.kubernetesDiagnostics?.pod?.ownerReferences : null)?.some(
       (owner) =>
-        owner.controller && owner.kind === "VirtualMachineInstance" && owner.api_version.startsWith("kubevirt.io/")
+        owner.controller && owner.kind === "VirtualMachineInstance" && owner.apiVersion.startsWith("kubevirt.io/")
     ) ?? false
   );
 }
 
-/** The Sandbox Controller's reported running mode and `Ready` condition; no caller reads into the incarnation. */
-export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
+export function sandboxReady(sandbox: EnvironmentDescriptor | null | undefined): boolean {
   return (
-    sandbox?.operating_mode === "Running" &&
-    rawConditions(rawObject(sandbox.status)).some((c) => c.type === "Ready" && c.status === "True")
+    sandbox?.observedState?.operatingMode === OperatingMode.RUNNING &&
+    sandbox.observedState?.readiness?.state === ReadinessState.READY
   );
 }
 
-export function sandboxSuspended(sandbox: SandboxView | null | undefined): boolean {
-  return sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended";
+export function sandboxSuspended(sandbox: EnvironmentDescriptor | null | undefined): boolean {
+  return (
+    sandbox !== null &&
+    sandbox !== undefined &&
+    sandboxPhase(sandbox) === "Suspended" &&
+    sandboxOperatingMode(sandbox) === "Suspended"
+  );
 }
 
-export function sandboxStarting(sandbox: SandboxView): boolean {
+export function sandboxStarting(sandbox: EnvironmentDescriptor): boolean {
   return (
-    sandbox.operating_mode === "Running" &&
-    ["Creating", "Running"].includes(sandbox.phase) &&
+    sandboxOperatingMode(sandbox) === "Running" &&
+    ["Creating", "Running"].includes(sandboxPhase(sandbox)) &&
     sandboxSummary(sandbox).kind === "pending"
   );
 }
 
 /** Why a Sandbox is suspended, as the views word it; null while it runs and until the controller reports. */
-export function suspensionReason(sandbox: SandboxView): "idle" | "on request" | null {
-  switch (sandbox.suspended_by) {
+export function suspensionReason(sandbox: EnvironmentDescriptor): "idle" | "on request" | null {
+  const suspendedBy = sandbox.observedState?.suspendedBy;
+  switch (suspendedBy) {
     case "Idle":
       return "idle";
     case "Requested":
@@ -111,22 +162,27 @@ export function suspensionReason(sandbox: SandboxView): "idle" | "on request" | 
   }
 }
 
-export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
+export function sandboxSummary(sandbox: EnvironmentDescriptor): { label: string; kind: SandboxStatusKind } {
+  const phase = sandboxPhase(sandbox);
+  const pod = sandbox.kubernetesDiagnostics?.pod;
   const reason = suspensionReason(sandbox);
   const withReason = (label: string): string => (reason === null ? label : `${label} (${reason})`);
-  if (sandbox.phase === "Unspecified") return { label: "Status unknown", kind: "pending" };
-  if (sandbox.phase === "Tearing down") return { label: "Deleting", kind: "gone" };
-  if (sandbox.phase === "Quiescing") return { label: "Quiescing", kind: "pending" };
-  if (sandbox.phase === "Suspending") return { label: withReason("Suspending"), kind: "pending" };
-  if (sandbox.phase === "Suspended") return { label: withReason("Suspended"), kind: "suspended" };
+  if (phase === "Unspecified") return { label: "Status unknown", kind: "pending" };
+  if (phase === "Tearing down") return { label: "Deleting", kind: "gone" };
+  if (phase === "Quiescing") return { label: "Quiescing", kind: "pending" };
+  if (phase === "Suspending") return { label: withReason("Suspending"), kind: "pending" };
+  if (phase === "Suspended") return { label: withReason("Suspended"), kind: "suspended" };
   // Neutral nouns: a VM Sandbox has no Pod of its own to name here. The tooltip carries the Pod's phase.
-  if (!sandbox.pod) return { label: "Not started", kind: "pending" };
-  if (sandbox.pod.deleting) return { label: "Shutting down", kind: "gone" };
+  if (!pod) return { label: "Not started", kind: "pending" };
+  if (pod.deleting) return { label: "Shutting down", kind: "gone" };
   if (sandboxReady(sandbox)) return { label: "Ready", kind: "ready" };
-  const phase = podPhase(sandbox);
-  if (phase === "Failed") return { label: "Failed", kind: "failed" };
-  if (phase === "Succeeded") return { label: "Exited", kind: "gone" };
-  return { label: phase === "Running" ? "Not ready" : phase ? "Starting" : "Status unknown", kind: "pending" };
+  const currentPodPhase = podPhase(sandbox);
+  if (currentPodPhase === "Failed") return { label: "Failed", kind: "failed" };
+  if (currentPodPhase === "Succeeded") return { label: "Exited", kind: "gone" };
+  return {
+    label: currentPodPhase === "Running" ? "Not ready" : currentPodPhase ? "Starting" : "Status unknown",
+    kind: "pending",
+  };
 }
 
 function containerState(
@@ -186,22 +242,28 @@ function conditionLine(condition: RawCondition): string {
     .join(" · ");
 }
 
-export function sandboxStatusDetail(sandbox: SandboxView): string {
+export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
   const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
   const reason = suspensionReason(sandbox);
+  const idleSuspendAfterSeconds = sandboxIdleSuspendAfterSeconds(sandbox);
+  const pod = sandbox.kubernetesDiagnostics?.pod;
   if (reason !== null) {
     lines.push(
-      reason === "idle" && sandbox.idle_suspend_after_seconds
-        ? `Suspended because its runner was idle for ${durationLabel(sandbox.idle_suspend_after_seconds)}`
+      reason === "idle" && idleSuspendAfterSeconds
+        ? `Suspended because its runner was idle for ${durationLabel(idleSuspendAfterSeconds)}`
         : `Suspended ${reason}`
     );
   }
-  lines.push(...rawConditions(sandbox.status).map((condition) => `Sandbox condition · ${conditionLine(condition)}`));
-  if (sandbox.pod) {
-    const status = sandbox.pod.status;
-    lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${sandbox.pod.deleting ? " · deleting" : ""}`);
-    const controllers = sandbox.pod.owner_references.filter((owner) => owner.controller);
-    if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.uid) {
+  lines.push(
+    ...rawConditions(rawObject(sandbox.kubernetesDiagnostics?.sandboxStatus)).map(
+      (condition) => `Sandbox condition · ${conditionLine(condition)}`
+    )
+  );
+  if (pod) {
+    const status = pod.status;
+    lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${pod.deleting ? " · deleting" : ""}`);
+    const controllers = pod.ownerReferences.filter((owner) => owner.controller);
+    if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.target?.uid) {
       lines.push("Pod controller identity does not match this Sandbox");
     }
     lines.push(...rawConditions(status).map((condition) => `Pod condition · ${conditionLine(condition)}`));

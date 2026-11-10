@@ -1,6 +1,6 @@
 """Static OpenClaw's Agentplane egress attachment.
 
-Only the relay holds the Pod-bound token. Credential values stay in the gateway's
+Only the relay holds the workload SVID. Credential values stay in the gateway's
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
@@ -10,7 +10,6 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
-from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
@@ -20,11 +19,13 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.egress.platform_routes import PlatformRoute, PlatformRoutes
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, egress
+from cluster.cdk8s.agentplane import actions, egress, platform_routes
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
+from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -37,7 +38,11 @@ from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 NAMESPACE = "public-coder-agent"
 LABELS = {"app.kubernetes.io/name": NAMESPACE}
 SERVICE_ACCOUNT = "openclaw"
+OPENCLAW = StandingCaller(
+    ServiceAccountRef(namespace=NAMESPACE, name=SERVICE_ACCOUNT), identity="public-coder-openclaw"
+)
 GATEWAY = egress.proxy("agentplane-staging")
+RULES_ROUTE = platform_routes.egress_rules("agentplane-staging")
 CA_BUNDLE_NAME = "agentplane-egress-ca"
 POLICY = "public-coder-openclaw"
 GITHUB_CREDENTIAL = "github-pat"
@@ -45,8 +50,14 @@ CLICKHOUSE_CREDENTIAL = "public-coder-clickhouse"
 AIQUOTA_CREDENTIAL = "aiquota-read"
 BRAVE_CREDENTIAL = "brave-search"
 MATRIX_CREDENTIAL = "public-coder-matrix"
-TOKEN_VOLUME = "agentplane-egress-token"
-_TOKEN_DIR = "/var/run/agentplane-egress"
+# The standing record's Secret (cluster/cdk8s/haku/ui_egress.py renders Haku's), named after the
+# Deployment. Nothing renders this one while the Deployment is at zero replicas: reviving it needs
+# that record and `public-coder-agent` in staging's `standing_workload_namespaces` first.
+SVID_SECRET = "svid-public-coder-agent"
+SVID_VOLUME = "agentplane-svid"
+_SVID_DIR = Path("/var/run/agentplane-svid")
+_TRUST_VOLUME = "agentplane-egress-ca"
+_TRUST_DIR = Path("/etc/agentplane-egress-ca")
 SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 _SETTINGS_CONFIG_MAP = "openclaw-egress-sidecar"
 _SETTINGS_VOLUME = "egress-sidecar-settings"
@@ -56,13 +67,29 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
     settings = sidecar_config.Settings(
-        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, token_file=Path(_TOKEN_DIR) / "token"
+        proxy=sidecar_config.Proxy(
+            address=f"{GATEWAY.fqdn}:{GATEWAY.pod_port}",
+            transport=sidecar_config.TLSProxyTransport(
+                ca_file=_TRUST_DIR / egress.CA_BUNDLE_KEY,
+                auth=sidecar_config.SpiffeProxyAuth(cert_file=_SVID_DIR / "tls.crt", key_file=_SVID_DIR / "tls.key"),
+            ),
+        ),
+        platform_routes=PlatformRoutes(
+            listen_address=RULES_ROUTE.local_target,
+            routes={
+                RULES_ROUTE.name: PlatformRoute(
+                    service_prefixes=RULES_ROUTE.service_prefixes,
+                    upstream=f"{RULES_ROUTE.service.fqdn}:{RULES_ROUTE.service.pod_port}",
+                    transport=RULES_ROUTE.transport,
+                )
+            },
+        ),
     )
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        content=yaml_config(settings),
+        content=yaml_config(settings.model_dump(mode="json", exclude_none=True)),
         path=_SETTINGS_PATH,
     ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
 
@@ -90,28 +117,23 @@ def relay_container(settings: PodWiring) -> k8s.Container:
             timeout_seconds=1,
             failure_threshold=1,
         ),
-        volume_mounts=[k8s.VolumeMount(name=TOKEN_VOLUME, mount_path=_TOKEN_DIR, read_only=True), settings.mount],
+        volume_mounts=[
+            k8s.VolumeMount(name=SVID_VOLUME, mount_path=str(_SVID_DIR), read_only=True),
+            k8s.VolumeMount(name=_TRUST_VOLUME, mount_path=str(_TRUST_DIR), read_only=True),
+            settings.mount,
+        ],
     )
 
 
-def token_volume() -> k8s.Volume:
-    return k8s.Volume(
-        name=TOKEN_VOLUME,
-        projected=k8s.ProjectedVolumeSource(
-            default_mode=0o440,
-            sources=[
-                k8s.VolumeProjection(
-                    service_account_token=k8s.ServiceAccountTokenProjection(
-                        audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
-                    )
-                )
-            ],
-        ),
-    )
+def relay_volumes() -> list[k8s.Volume]:
+    return [
+        k8s.Volume(name=SVID_VOLUME, secret=k8s.SecretVolumeSource(secret_name=SVID_SECRET, default_mode=0o440)),
+        k8s.Volume(name=_TRUST_VOLUME, config_map=k8s.ConfigMapVolumeSource(name=CA_BUNDLE_NAME)),
+    ]
 
 
 def add_gateway_resources(
-    scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount
+    scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount, identity_catalog: bool
 ) -> None:
     """Copy canonical credentials into Agentplane's isolated store through exact-secret stores."""
     scope = Construct(scope, "public-coder-openclaw-egress")
@@ -190,14 +212,6 @@ def add_gateway_resources(
                 paths=["/_matrix/client/v3/login"],
                 credential_ref=PolicySetSpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
             ),
-            # Discovery only, not the broader basic policy's LLM/Actions/Kubernetes grants.
-            Rule.egress(
-                hosts=[GATEWAY.fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.GET],
-                paths=["/v1/rules", "/openapi.json"],
-                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
             Rule.egress(
                 hosts=[actions.service("agentplane-staging").fqdn],
                 cluster_internal=True,
@@ -219,7 +233,7 @@ def add_gateway_resources(
         scope,
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
+        subject=OPENCLAW.subject(identity_catalog=identity_catalog),
         policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
     )
     NetworkPolicy(

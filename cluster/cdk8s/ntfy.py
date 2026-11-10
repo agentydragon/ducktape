@@ -34,7 +34,8 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces, pod_policy
+from cluster.cdk8s import namespaces, pod_policy
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
@@ -56,7 +57,7 @@ SERVICE = ServiceRef(
     port=Port(name="http", number=2586),
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
-DATABASE = cnpg.PostgresRef.generated(name="ntfy-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="ntfy-db", namespace=NAMESPACE)
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
@@ -146,17 +147,17 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
 
 
 def _database(scope: Construct) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         scope,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="2Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb(NAME),
+        initdb=cluster.same_owner_initdb(NAME),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 class Ntfy(Construct):

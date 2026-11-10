@@ -98,6 +98,17 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
+      - ai-session-archive-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resourceNames:
       - airlock-oidc-config
     resources:
       - secrets
@@ -289,6 +300,84 @@ kind: RoleBinding
 metadata:
   name: rolebindingc8666f97fbfa68c6cff3b5e8b380c38946a7b9c77a
   namespace: study-casino
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-sso-providers
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-sso-providers
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-sso-providers
+  namespace: quest-diagnostics
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - quest-diagnostics-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8666f97fbfa68c6cff3b5e8b380c38946a7b9c77a
+  namespace: quest-diagnostics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: opentofu-sso-providers
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: opentofu-sso-providers
+    namespace: crossplane-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opentofu-sso-providers
+  namespace: platform-sessions
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - platform-sessions-oidc
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebindingc8666f97fbfa68c6cff3b5e8b380c38946a7b9c77a
+  namespace: platform-sessions
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -614,13 +703,10 @@ spec:
         agentplane_mcp_origin = "https://agentplane-actions-staging.allegedly.works"
         agentplane_mcp_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_mcp.slug}/"
         agentplane_mcp_oauth = {
-          config_url                  = "${local.agentplane_mcp_issuer}.well-known/openid-configuration"
           upstream_client_id          = authentik_provider_oauth2.agentplane_mcp.client_id
           upstream_client_secret_file = "/etc/agentplane-mcp/client-secret"
           base_url                    = local.agentplane_mcp_origin
           integration_app_url         = "https://agentplane-staging.allegedly.works"
-          jwt_signing_key_file        = "/etc/agentplane-mcp/jwt-signing-key"
-          encryption_key_file         = "/etc/agentplane-mcp/encryption-key"
           upstream_issuer             = local.agentplane_mcp_issuer
           upstream_subject            = data.authentik_user.agentydragon.uuid
           # The Actions provider issues `sub_mode = "hashed_user_id"` tokens, whose subject is the
@@ -734,6 +820,80 @@ spec:
         }
       }
 
+      # The session archive browser uses the same owner-only Authentik login boundary as the
+      # application API, and also checks the immutable numeric subject in its own OIDC middleware.
+      resource "random_password" "ai_session_archive_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "authentik_provider_oauth2" "ai_session_archive" {
+        name               = "ai-session-archive-oidc"
+        client_id          = "ai-session-archive"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        sub_mode                   = "user_id"
+        access_token_validity      = "hours=1"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = "https://ai-session-archive.allegedly.works/auth/callback"
+            redirect_uri_type = "authorization"
+          }
+        ]
+      }
+
+      resource "authentik_application" "ai_session_archive" {
+        name              = "AI session archive"
+        slug              = "ai-session-archive"
+        protocol_provider = authentik_provider_oauth2.ai_session_archive.id
+        meta_description  = "Browse archived workstation AI sessions"
+        meta_launch_url   = "https://ai-session-archive.allegedly.works/"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "ai_session_archive_owner_only" {
+        target = authentik_application.ai_session_archive.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      # Reflect the generated OIDC credentials into the workload namespace. The app also pins the
+      # allowed numeric subject, so application authorization remains owner-only if provider policy changes.
+      resource "kubernetes_secret" "ai_session_archive_oidc" {
+        metadata {
+          name      = "ai-session-archive-oidc"
+          namespace = "authentik"
+          annotations = {
+            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "session-backup"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "session-backup"
+          }
+        }
+
+        data = {
+          AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/ai-session-archive/"
+          AI_SESSION_ARCHIVE_OIDC_CLIENT_ID       = authentik_provider_oauth2.ai_session_archive.client_id
+          AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.ai_session_archive.client_secret
+          AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET  = random_password.ai_session_archive_session_secret.result
+          AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
+        }
+      }
+
       # Airlock — server-side OIDC login for the OAuth credential broker.
       # The backend exchanges the authorization code and signs an HttpOnly session
       # cookie; the browser never receives Authentik access or ID tokens.
@@ -803,7 +963,7 @@ spec:
       # Authentik login: the app owns the OIDC code exchange and keeps only a signed, short-lived cookie.
       # The page pairs a Claude OAuth grant, so it is scoped to the account owner only, twice: this
       # application's policy binding and the allowed `sub` the app itself checks.
-      # cluster/cdk8s/claude_session_sync/app.py consumes the Secret below and spells the same origin.
+      # cluster/cdk8s/claude_session_sync.py consumes the Secret below and spells the same origin.
 
       resource "random_password" "claude_session_sync_session_secret" {
         length  = 64
@@ -1712,6 +1872,96 @@ spec:
         }
       }
 
+      resource "random_password" "platform_sessions_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "authentik_provider_oauth2" "platform_sessions" {
+        name               = "platform-sessions-oidc"
+        client_id          = "platform-sessions"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        sub_mode                   = "user_id"
+        access_token_validity      = "hours=1"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [{
+          matching_mode     = "strict"
+          url               = "https://platform-sessions.allegedly.works/auth/callback"
+          redirect_uri_type = "authorization"
+        }]
+      }
+
+      resource "authentik_application" "platform_sessions" {
+        name              = "Platform sessions"
+        slug              = "platform-sessions"
+        protocol_provider = authentik_provider_oauth2.platform_sessions.id
+        meta_description  = "OpenAI, Anthropic, and Quest session status"
+        meta_launch_url   = "https://platform-sessions.allegedly.works/"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "platform_sessions_owner" {
+        target = authentik_application.platform_sessions.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "platform_sessions_oidc" {
+        metadata {
+          name      = "platform-sessions-oidc"
+          namespace = "platform-sessions"
+        }
+        data = {
+          PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/platform-sessions/"
+          PLATFORM_SESSIONS_CLIENT_ID       = authentik_provider_oauth2.platform_sessions.client_id
+          PLATFORM_SESSIONS_CLIENT_SECRET   = authentik_provider_oauth2.platform_sessions.client_secret
+          PLATFORM_SESSIONS_SESSION_SECRET  = random_password.platform_sessions_session_secret.result
+          PLATFORM_SESSIONS_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
+        }
+      }
+
+      moved {
+        from = random_password.openai_platform_session_secret
+        to   = random_password.platform_sessions_session_secret
+      }
+
+      moved {
+        from = authentik_provider_oauth2.openai_platform
+        to   = authentik_provider_oauth2.platform_sessions
+      }
+
+      moved {
+        from = authentik_application.openai_platform
+        to   = authentik_application.platform_sessions
+      }
+
+      moved {
+        from = authentik_policy_binding.openai_platform_owner
+        to   = authentik_policy_binding.platform_sessions_owner
+      }
+
+      # The old namespace is retired by gaffer-private. Avoid deleting its Secret after
+      # the workspace has moved its Kubernetes permissions to the new namespace.
+      removed {
+        from = kubernetes_secret.openai_platform_oidc
+        lifecycle {
+          destroy = false
+        }
+      }
+
       # Props — OIDC login for the eval dashboard (props.allegedly.works)
       #
       # The props backend is the OIDC relying party (authlib + session cookie); see
@@ -1785,6 +2035,70 @@ spec:
           client-id      = authentik_provider_oauth2.props.client_id
           client-secret  = authentik_provider_oauth2.props.client_secret
           session-secret = random_password.props_session_secret.result
+        }
+      }
+
+      # Quest's status page handles OIDC itself; the client and signed-session keys
+      # are scoped to its namespace. The Authentik binding and app both admit only
+      # the account owner.
+      resource "random_password" "quest_diagnostics_session_secret" {
+        length  = 64
+        special = false
+      }
+
+      resource "authentik_provider_oauth2" "quest_diagnostics" {
+        name               = "quest-diagnostics-oidc"
+        client_id          = "quest-diagnostics"
+        client_type        = "confidential"
+        grant_types        = ["authorization_code"]
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+        sub_mode                   = "user_id"
+        access_token_validity      = "hours=1"
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+        ]
+
+        allowed_redirect_uris = [{
+          matching_mode     = "strict"
+          url               = "https://quest.allegedly.works/auth/callback"
+          redirect_uri_type = "authorization"
+        }]
+      }
+
+      resource "authentik_application" "quest_diagnostics" {
+        name              = "Quest appointments"
+        slug              = "quest-diagnostics"
+        protocol_provider = authentik_provider_oauth2.quest_diagnostics.id
+        meta_description  = "Quest appointment session status"
+        meta_launch_url   = "https://quest.allegedly.works/"
+        open_in_new_tab   = true
+      }
+
+      resource "authentik_policy_binding" "quest_diagnostics_owner" {
+        target = authentik_application.quest_diagnostics.uuid
+        user   = tonumber(authentik_user.agentydragon.id)
+        order  = 0
+      }
+
+      resource "kubernetes_secret" "quest_diagnostics_oidc" {
+        metadata {
+          name      = "quest-diagnostics-oidc"
+          namespace = "quest-diagnostics"
+        }
+        data = {
+          QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/quest-diagnostics/"
+          QUEST_OIDC_CLIENT_ID       = authentik_provider_oauth2.quest_diagnostics.client_id
+          QUEST_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.quest_diagnostics.client_secret
+          QUEST_OIDC_SESSION_SECRET  = random_password.quest_diagnostics_session_secret.result
+          QUEST_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
         }
       }
 

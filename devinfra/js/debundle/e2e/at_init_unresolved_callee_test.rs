@@ -8,7 +8,9 @@
 //! (following initializer read chains); the gate-accepted-but-TDZ shapes
 //! below close a constraining cycle and are rejected.
 
-use analysis::{DepKind, EdgeRoleReport};
+use analysis::EdgeRoleReport;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 /// `const g = readB; const r = g();` — the alias `g` is a VarDecl, not a

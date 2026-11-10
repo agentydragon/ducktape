@@ -1,27 +1,42 @@
 use super::*;
+use crate::facts::abstract_domain::builtins::member_call_row;
+use crate::facts::abstract_domain::heap::sees_only_element;
 
+/// Plain-array roots an at-init statement iterates only through
+/// `%Array.prototype%` `forEach`/`map`/`filter` with call-free callbacks
+/// that run no user code on the elements, so nothing reachable through the
+/// array runs and the array adds nothing to the statement's fallback reach.
+/// `settled` is what each plain-array binding the statement reads holds at
+/// its program point (`SynchronousCalls::settled_array_elements`).
 pub(crate) fn safe_plain_array_at_init_fallback_sources(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     graph: &ChunkCodeGraph,
+    settled: &BTreeMap<Id, SettledElements>,
 ) -> BTreeSet<Id> {
+    let arrays = PlainArrays {
+        graph,
+        settled,
+        mentions: root_mentions(item),
+    };
     let mut out = BTreeSet::new();
     if let Some(var) = var_decl_of_item(item) {
         for decl in &var.decls {
             let Some(init) = decl.init.as_deref() else {
                 continue;
             };
-            if let Some(root) = object_from_entries_plain_array_chain_root(init, shadowed, graph) {
+            if let Some(root) = object_from_entries_plain_array_chain_root(init, shadowed, &arrays)
+            {
                 out.insert(root);
             }
-            if let Some(root) = plain_array_map_filter_chain_root(init, graph) {
-                out.insert(root);
+            if let Some(stage) = plain_array_chain(init, Consumer::Values, &arrays) {
+                out.insert(stage.root);
             }
-            collect_array_literal_plain_array_spread_roots(init, graph, &mut out);
+            collect_array_literal_plain_array_spread_roots(init, &arrays, &mut out);
         }
     }
     if let ModuleItem::Stmt(Stmt::Expr(expr)) = item
-        && let Some(root) = plain_array_for_each_root(&expr.expr, graph)
+        && let Some(root) = plain_array_for_each_root(&expr.expr, &arrays)
     {
         out.insert(root);
     }
@@ -31,7 +46,7 @@ pub(crate) fn safe_plain_array_at_init_fallback_sources(
 fn object_from_entries_plain_array_chain_root(
     expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    graph: &ChunkCodeGraph,
+    graph: &PlainArrays<'_>,
 ) -> Option<Id> {
     let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
@@ -52,12 +67,12 @@ fn object_from_entries_plain_array_chain_root(
     ) {
         return None;
     }
-    plain_array_map_filter_chain_root(&call.args[0].expr, graph)
+    plain_array_chain(&call.args[0].expr, Consumer::Entries, graph).map(|stage| stage.root)
 }
 
 fn collect_array_literal_plain_array_spread_roots(
     expr: &Expr,
-    graph: &ChunkCodeGraph,
+    graph: &PlainArrays<'_>,
     out: &mut BTreeSet<Id>,
 ) {
     let Expr::Array(array) = expr.unwrap_parens() else {
@@ -65,41 +80,86 @@ fn collect_array_literal_plain_array_spread_roots(
     };
     for elem in array.elems.iter().flatten() {
         if elem.spread.is_some()
-            && let Some(root) = plain_array_map_filter_chain_root(&elem.expr, graph)
+            && let Some(stage) = plain_array_chain(&elem.expr, Consumer::Values, graph)
         {
-            out.insert(root);
+            out.insert(stage.root);
         }
     }
 }
 
-fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
-    let Expr::Call(call) = expr.unwrap_parens() else {
-        return None;
-    };
-    if call.args.len() != 1 || call.args[0].spread.is_some() {
-        return None;
-    }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
-        return None;
-    };
-    if !matches!(&member.prop, MemberProp::Ident(prop) if prop.sym.as_ref() == "forEach")
-        || !callback_has_no_sync_invocation(&call.args[0].expr)
-    {
-        return None;
-    }
-    match member.obj.as_ref().unwrap_parens() {
-        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
-        _ => None,
+/// How the elements a chain produces are consumed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Consumer {
+    /// Stored or iterated by identity (an array spread, a binding).
+    Values,
+    /// `Object.fromEntries`: `[[Get]]` of `"0"` and `"1"` on each element,
+    /// then `ToPropertyKey` of the first.
+    Entries,
+}
+
+/// The plain-array bindings a statement can admit, and what each holds where
+/// the statement starts.
+struct PlainArrays<'a> {
+    graph: &'a ChunkCodeGraph,
+    settled: &'a BTreeMap<Id, SettledElements>,
+    /// How many times the statement names each identifier.
+    mentions: BTreeMap<Id, usize>,
+}
+
+impl PlainArrays<'_> {
+    /// The elements a chain rooted at `root` reads, when it is a plain array.
+    /// Object elements count only when the chain is the statement's one
+    /// mention of the root: no other part of the statement reaches them.
+    fn elements(&self, root: &Ident) -> Option<Elements> {
+        let id = root.to_id();
+        if !self.graph.is_plain_array(root.sym.as_ref()) {
+            return None;
+        }
+        Some(match self.settled.get(&id) {
+            Some(SettledElements::Primitive) => Elements::Primitive,
+            Some(SettledElements::Records { shared_keys })
+                if self.mentions.get(&id) == Some(&1) =>
+            {
+                Elements::Records(shared_keys.clone())
+            }
+            _ if self.graph.is_primitive_element_array(root.sym.as_ref()) => Elements::Primitive,
+            _ => Elements::Opaque,
+        })
     }
 }
 
-fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
-    let Expr::Call(call) = expr.unwrap_parens() else {
-        return None;
-    };
+fn root_mentions(item: &ModuleItem) -> BTreeMap<Id, usize> {
+    struct Mentions(BTreeMap<Id, usize>);
+    impl Visit for Mentions {
+        fn visit_ident(&mut self, ident: &Ident) {
+            *self.0.entry(ident.to_id()).or_default() += 1;
+        }
+    }
+    let mut mentions = Mentions(BTreeMap::new());
+    item.visit_with(&mut mentions);
+    mentions.0
+}
+
+/// What a chain stage knows about the elements reaching it.
+#[derive(Clone, PartialEq, Eq)]
+enum Elements {
+    Primitive,
+    /// Plain-data records, each holding a primitive under every one of the
+    /// keys as an own property.
+    Records(BTreeSet<String>),
+    Opaque,
+}
+
+/// A plain-array chain: its root binding and what the elements reaching this
+/// point are.
+struct Stage {
+    root: Id,
+    elements: Elements,
+}
+
+/// The stage `call` reads its elements from: a plain-array binding, or the
+/// result of an earlier admitted stage.
+fn receiver_stage(call: &CallExpr, method: &[&str], graph: &PlainArrays<'_>) -> Option<Stage> {
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
@@ -109,17 +169,335 @@ fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Opt
     let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
     };
-    if !matches!(
-        &member.prop,
-        MemberProp::Ident(prop) if matches!(prop.sym.as_ref(), "filter" | "map")
-    ) || !callback_has_no_sync_invocation(&call.args[0].expr)
+    if !matches!(&member.prop, MemberProp::Ident(prop) if method.contains(&prop.sym.as_ref()))
+        || !callback_has_no_sync_invocation(&call.args[0].expr)
+        || !sees_only_element(&call.args[0].expr)
     {
         return None;
     }
     match member.obj.as_ref().unwrap_parens() {
-        Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
-        other => plain_array_map_filter_chain_root(other, graph),
+        Expr::Ident(recv) => Some(Stage {
+            root: recv.to_id(),
+            elements: graph.elements(recv)?,
+        }),
+        other => plain_array_chain(other, Consumer::Values, graph),
     }
+}
+
+fn plain_array_for_each_root(expr: &Expr, graph: &PlainArrays<'_>) -> Option<Id> {
+    let Expr::Call(call) = expr.unwrap_parens() else {
+        return None;
+    };
+    let input = receiver_stage(call, &["forEach"], graph)?;
+    callback_is_silent_on_elements(&call.args[0].expr, &input.elements, Use::Value)
+        .then_some(input.root)
+}
+
+/// A `map`/`filter` chain over a plain array whose callbacks, and the
+/// chain's `consumer`, run no user code on the elements.
+fn plain_array_chain(expr: &Expr, consumer: Consumer, graph: &PlainArrays<'_>) -> Option<Stage> {
+    let Expr::Call(call) = expr.unwrap_parens() else {
+        return None;
+    };
+    let input = receiver_stage(call, &["filter", "map"], graph)?;
+    let callback = &call.args[0].expr;
+    let filter = matches!(
+        &call.callee,
+        Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Member(member)
+            if matches!(&member.prop, MemberProp::Ident(prop) if prop.sym.as_ref() == "filter"))
+    );
+    let silent = if filter {
+        // `filter` passes elements through: an entry read needs them primitive.
+        callback_is_silent_on_elements(callback, &input.elements, Use::Value)
+            && (consumer == Consumer::Values || input.elements == Elements::Primitive)
+    } else {
+        let returned = match consumer {
+            Consumer::Values => Use::Value,
+            Consumer::Entries => Use::Entry,
+        };
+        callback_is_silent_on_elements(callback, &input.elements, returned)
+    };
+    silent.then_some(Stage {
+        root: input.root,
+        elements: if filter {
+            input.elements
+        } else {
+            Elements::Opaque
+        },
+    })
+}
+
+/// How an expression's value is consumed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Use {
+    /// Stored, returned, compared with `===`/`!==`, or tested by
+    /// `ToBoolean`: no user code runs.
+    Value,
+    /// Converted (`ToPrimitive`, `ToPropertyKey`, `ToNumber`, iteration) or
+    /// used as a member receiver: an object's hooks or accessors may run.
+    Coerce,
+    /// An `Object.fromEntries` entry: `[[Get]]` of `"0"` and `"1"`, then
+    /// `ToPropertyKey` of the first.
+    Entry,
+}
+
+/// Whether a call-free element callback runs no user code on the elements
+/// it receives. Primitive elements make every step silent under A11;
+/// otherwise each element-derived value may only be stored, returned,
+/// compared strictly or tested for truthiness. A record element's own key,
+/// read statically, is a primitive and may be used any way.
+fn callback_is_silent_on_elements(callback: &Expr, elements: &Elements, returned: Use) -> bool {
+    let record_keys = match elements {
+        Elements::Primitive => return true,
+        Elements::Records(keys) => keys.clone(),
+        Elements::Opaque => BTreeSet::new(),
+    };
+    let (params, body): (Vec<&Pat>, ElementCallbackBody<'_>) = match callback.unwrap_parens() {
+        Expr::Arrow(arrow) => (
+            arrow.params.iter().collect(),
+            match arrow.body.as_ref() {
+                ArrowFunctionBody::Expr(expr) => ElementCallbackBody::Expr(expr),
+                ArrowFunctionBody::FunctionBody(body) => ElementCallbackBody::Stmts(&body.stmts),
+            },
+        ),
+        Expr::Fn(function) => match &function.function.body {
+            Some(body) => (
+                function
+                    .function
+                    .params
+                    .iter()
+                    .map(|param| &param.pat)
+                    .collect(),
+                ElementCallbackBody::Stmts(&body.stmts),
+            ),
+            None => return false,
+        },
+        _ => return false,
+    };
+    // `sees_only_element` limited the parameters to `(element, index)`;
+    // the index is a Number. A destructured element reads its members.
+    let element = match params.first() {
+        Some(Pat::Ident(element)) => Some(element.id.sym.to_string()),
+        Some(_) => return false,
+        None => None,
+    };
+    let check = ElementUses {
+        element,
+        returned,
+        record_keys,
+    };
+    match body {
+        ElementCallbackBody::Expr(expr) => check.expr(expr, returned),
+        ElementCallbackBody::Stmts(stmts) => check.stmts(stmts),
+    }
+}
+
+enum ElementCallbackBody<'a> {
+    Expr(&'a Expr),
+    Stmts(&'a [Stmt]),
+}
+
+/// Checks every use of one element-callback parameter. A same-named inner
+/// binding counts as the element, which only rejects more.
+struct ElementUses {
+    element: Option<String>,
+    returned: Use,
+    /// Own keys of every record element: a static read of one is a
+    /// primitive, so it runs no accessor and converts silently.
+    record_keys: BTreeSet<String>,
+}
+
+impl ElementUses {
+    fn is_element_name(&self, name: &str) -> bool {
+        self.element.as_deref() == Some(name)
+    }
+
+    fn is_element(&self, ident: &Ident) -> bool {
+        self.is_element_name(ident.sym.as_ref())
+    }
+
+    fn is_element_binding(&self, binding: &Id) -> bool {
+        self.is_element_name(binding.0.as_ref())
+    }
+
+    fn mentions_element<N: VisitWith<ElementMention>>(&self, node: &N) -> bool {
+        let mut mention = ElementMention {
+            element: self.element.clone(),
+            found: false,
+        };
+        node.visit_with(&mut mention);
+        mention.found
+    }
+
+    fn stmts(&self, stmts: &[Stmt]) -> bool {
+        stmts.iter().all(|stmt| self.stmt(stmt))
+    }
+
+    fn stmt(&self, stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Expr(statement) => self.expr(&statement.expr, Use::Value),
+            Stmt::Return(statement) => statement
+                .arg
+                .as_deref()
+                .is_none_or(|arg| self.expr(arg, self.returned)),
+            Stmt::If(statement) => {
+                self.expr(&statement.test, Use::Value)
+                    && self.stmt(&statement.cons)
+                    && statement.alt.as_deref().is_none_or(|alt| self.stmt(alt))
+            }
+            Stmt::Block(block) => self.stmts(&block.stmts),
+            Stmt::Empty(_) => true,
+            Stmt::Decl(Decl::Var(var)) => var.decls.iter().all(|decl| {
+                matches!(decl.name, Pat::Ident(_))
+                    && decl
+                        .init
+                        .as_deref()
+                        .is_none_or(|init| self.expr(init, Use::Coerce))
+            }),
+            other => !self.mentions_element(other),
+        }
+    }
+
+    fn expr(&self, expr: &Expr, used: Use) -> bool {
+        match expr.unwrap_parens() {
+            Expr::Ident(ident) => !self.is_element(ident) || used == Use::Value,
+            Expr::Array(array) if used == Use::Entry => match array.elems.as_slice() {
+                [Some(key), Some(value)] if key.spread.is_none() && value.spread.is_none() => {
+                    self.expr(&key.expr, Use::Coerce) && self.expr(&value.expr, Use::Value)
+                }
+                _ => !self.mentions_element(array),
+            },
+            other if used == Use::Entry => !self.mentions_element(other),
+            Expr::Lit(_) | Expr::This(_) => true,
+            // Not invoked: the callback is call-free.
+            Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_) => true,
+            Expr::Tpl(template) => template
+                .exprs
+                .iter()
+                .all(|expr| self.expr(expr, Use::Coerce)),
+            Expr::Array(array) => array.elems.iter().flatten().all(|element| {
+                self.expr(
+                    &element.expr,
+                    if element.spread.is_some() {
+                        Use::Coerce
+                    } else {
+                        Use::Value
+                    },
+                )
+            }),
+            Expr::Object(object) => object.props.iter().all(|prop| match prop {
+                PropOrSpread::Spread(spread) => self.expr(&spread.expr, Use::Coerce),
+                PropOrSpread::Prop(prop) => match prop.as_ref() {
+                    Prop::Shorthand(ident) => !self.is_element(ident) || used == Use::Value,
+                    Prop::KeyValue(kv) => {
+                        self.prop_name(&kv.key) && self.expr(&kv.value, Use::Value)
+                    }
+                    Prop::Getter(getter) => self.prop_name(&getter.key),
+                    Prop::Setter(setter) => self.prop_name(&setter.key),
+                    Prop::Method(method) => self.prop_name(&method.key),
+                    Prop::Assign(_) => false,
+                },
+            }),
+            Expr::Member(member) => self.member(member),
+            Expr::OptChain(chain) => match chain.base.as_ref() {
+                OptChainBase::Member(member) => self.member(member),
+                OptChainBase::Call(_) => false,
+            },
+            Expr::Bin(binary) => match binary.op {
+                BinaryOp::EqEqEq | BinaryOp::NotEqEq => {
+                    self.expr(&binary.left, Use::Value) && self.expr(&binary.right, Use::Value)
+                }
+                // `ToBoolean` runs no user code; the result is an operand.
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing => {
+                    self.expr(&binary.left, used) && self.expr(&binary.right, used)
+                }
+                _ => self.expr(&binary.left, Use::Coerce) && self.expr(&binary.right, Use::Coerce),
+            },
+            Expr::Unary(unary) => match unary.op {
+                UnaryOp::Bang | UnaryOp::TypeOf | UnaryOp::Void => {
+                    self.expr(&unary.arg, Use::Value)
+                }
+                UnaryOp::Minus | UnaryOp::Plus | UnaryOp::Tilde | UnaryOp::Delete => {
+                    self.expr(&unary.arg, Use::Coerce)
+                }
+            },
+            Expr::Update(update) => self.expr(&update.arg, Use::Coerce),
+            Expr::Cond(cond) => {
+                self.expr(&cond.test, Use::Value)
+                    && self.expr(&cond.cons, used)
+                    && self.expr(&cond.alt, used)
+            }
+            Expr::Seq(sequence) => sequence.exprs.split_last().is_some_and(|(last, rest)| {
+                rest.iter().all(|expr| self.expr(expr, Use::Value)) && self.expr(last, used)
+            }),
+            Expr::Assign(assign) => {
+                // Binding an element-derived value to a name loses track of
+                // it, and a compound operator converts both operands.
+                let right = if assign.op == AssignOp::Assign
+                    && matches!(
+                        binding_targets::simple_write_target(&assign.left),
+                        Some(binding_targets::SimpleWriteTarget::Member(_))
+                    ) {
+                    Use::Value
+                } else {
+                    Use::Coerce
+                };
+                let left = match binding_targets::simple_write_target(&assign.left) {
+                    Some(binding_targets::SimpleWriteTarget::Member(member)) => self.member(member),
+                    Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
+                        !self.is_element_binding(&binding)
+                    }
+                    None => !self.mentions_element(&assign.left),
+                };
+                left && self.expr(&assign.right, right)
+            }
+            other => !self.mentions_element(other),
+        }
+    }
+
+    /// A member read or write target: its receiver may run accessors, and a
+    /// computed key runs `ToPropertyKey`.
+    fn member(&self, member: &MemberExpr) -> bool {
+        if self.record_member(member) {
+            return true;
+        }
+        self.expr(
+            binding_targets::transparent_target_expr(&member.obj),
+            Use::Coerce,
+        ) && match &member.prop {
+            MemberProp::Computed(key) => self.expr(&key.expr, Use::Coerce),
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => true,
+        }
+    }
+
+    /// A static read of an own key of every record element.
+    fn record_member(&self, member: &MemberExpr) -> bool {
+        matches!(member.obj.unwrap_parens(), Expr::Ident(receiver) if self.is_element(receiver))
+            && matches!(&member.prop, MemberProp::Ident(key) if self.record_keys.contains(key.sym.as_ref()))
+    }
+
+    fn prop_name(&self, name: &PropName) -> bool {
+        match name {
+            PropName::Computed(key) => self.expr(&key.expr, Use::Coerce),
+            _ => true,
+        }
+    }
+}
+
+/// Whether a node reads the element parameter outside nested functions.
+struct ElementMention {
+    element: Option<String>,
+    found: bool,
+}
+
+impl Visit for ElementMention {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.found |= self.element.as_deref() == Some(ident.sym.as_ref());
+    }
+
+    fn visit_function(&mut self, _: &Function) {}
+    fn visit_arrow_expr(&mut self, _: &ArrowExpr) {}
+    fn visit_class(&mut self, _: &Class) {}
 }
 
 fn callback_has_no_sync_invocation(expr: &Expr) -> bool {
@@ -170,6 +548,7 @@ impl Visit for SyncInvocationFinder {
 struct OpaqueAtInitCallFinder<'a> {
     shadowed: &'a BTreeSet<&'static str>,
     hints: &'a AnalysisInputs,
+    native_facts: &'a ValidatedNativeOperationFacts,
     graph: &'a ChunkCodeGraph,
     found: bool,
     lazy_depth: u32,
@@ -192,6 +571,15 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
         }
         if self.lazy_depth == 0 {
             let opaque = match expr {
+                Expr::Call(call) if self.native_facts.symbol_literal_proof(call).is_some() => false,
+                Expr::New(construction)
+                    if self
+                        .native_facts
+                        .empty_native_constructor_proof(construction)
+                        .is_some() =>
+                {
+                    false
+                }
                 Expr::Call(_) | Expr::New(_) => !classify_expr_purity(
                     expr,
                     self.shadowed,
@@ -240,11 +628,13 @@ pub(crate) fn has_opaque_at_init_call(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
+    native_facts: &ValidatedNativeOperationFacts,
     graph: &ChunkCodeGraph,
 ) -> bool {
     let mut finder = OpaqueAtInitCallFinder {
         shadowed,
         hints,
+        native_facts,
         graph,
         found: false,
         lazy_depth: 0,
@@ -281,38 +671,10 @@ pub(crate) fn no_sync_member_argument_fallback_sources(
     collector.sources
 }
 
-pub(crate) fn is_static_event_listener_registration(callee: &Expr, args: &[ExprOrSpread]) -> bool {
-    args.len() >= 2
-        && args
-            .first()
-            .is_some_and(|arg| is_static_event_name(&arg.expr))
-        && expr_is_add_event_listener_member(callee)
-}
-
-fn is_static_event_name(expr: &Expr) -> bool {
-    match expr.unwrap_parens() {
-        Expr::Lit(Lit::Str(_)) => true,
-        Expr::Tpl(Tpl { exprs, .. }) => exprs.is_empty(),
-        _ => false,
-    }
-}
-
-fn expr_is_add_event_listener_member(expr: &Expr) -> bool {
-    match expr.unwrap_parens() {
-        Expr::Member(member) => member_is_add_event_listener(member),
-        Expr::OptChain(opt) => match opt.base.as_ref() {
-            OptChainBase::Member(member) => member_is_add_event_listener(member),
-            OptChainBase::Call(_) => false,
-        },
-        _ => false,
-    }
-}
-
-fn member_is_add_event_listener(member: &MemberExpr) -> bool {
-    matches!(
-        &member.prop,
-        MemberProp::Ident(prop) if prop.sym.as_ref() == "addEventListener"
-    )
+/// Whether a builtin member row covers the call and invokes none of its
+/// arguments synchronously.
+pub(crate) fn member_row_invokes_no_argument(callee: &Expr, args: &[ExprOrSpread]) -> bool {
+    member_call_row(callee, args).is_some_and(|row| row.invokes.is_empty())
 }
 
 pub(crate) fn is_no_sync_callback_member_call(
@@ -502,7 +864,7 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
             Callee::Expr(callee) => match callee.unwrap_parens() {
                 Expr::Ident(_) => {}
                 _ if self.node_has_inline_fn(node)
-                    && !is_static_event_listener_registration(callee, &node.args)
+                    && !member_row_invokes_no_argument(callee, &node.args)
                     && !self.is_no_sync_callback_member_call(node) =>
                 {
                     self.found = true;
@@ -517,7 +879,7 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
 
     fn visit_opt_call(&mut self, node: &OptCall) {
         if self.node_has_inline_fn(node)
-            && !is_static_event_listener_registration(&node.callee, &node.args)
+            && !member_row_invokes_no_argument(&node.callee, &node.args)
         {
             self.found = true;
             return;

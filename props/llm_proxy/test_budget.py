@@ -13,15 +13,22 @@ import pytest_bazel
 from fastapi import HTTPException
 
 from props.core.agent_types import CriticTypeConfig
+from props.db.async_database import AsyncDatabase
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.llm_proxy.routes import _check_budget
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
 
-def test_budget_allows_under_budget(synced_db: Database) -> None:
-    """Request under budget should pass without raising."""
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget_usd", [10.0, 0.0], ids=["positive-budget", "zero-budget"])
+async def test_budget_allows_no_spend(synced_db: Database, budget_usd: float) -> None:
+    """No spend is allowed with a positive budget and at the zero-budget boundary."""
     run_id = uuid4()
     with synced_db.session() as session:
         ensure_fake_agent_definitions(session)
@@ -32,17 +39,17 @@ def test_budget_allows_under_budget(synced_db: Database) -> None:
                 model=BUDGET_TEST_MODEL,
                 type_config=CriticTypeConfig(example=TRAIN_EXAMPLE),
                 status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=10.0,
+                budget_usd=budget_usd,
             )
         )
         session.commit()
 
-    # No requests logged yet — budget should be fine
-    with synced_db.session() as session:
-        _check_budget(session, run_id, budget_usd=10.0)
+    async with AsyncDatabase(synced_db.config) as db, db.session() as session:
+        await _check_budget(session, run_id, budget_usd=budget_usd)
 
 
-def test_budget_rejects_over_budget(synced_db: Database) -> None:
+@pytest.mark.asyncio
+async def test_budget_rejects_over_budget(synced_db: Database) -> None:
     """Request over budget should raise HTTPException(429)."""
     run_id = uuid4()
     with synced_db.session() as session:
@@ -74,14 +81,16 @@ def test_budget_rejects_over_budget(synced_db: Database) -> None:
         )
         session.commit()
 
-    with synced_db.session() as session:
-        with pytest.raises(HTTPException) as exc_info:
-            _check_budget(session, run_id, budget_usd=0.01)
+    async with AsyncDatabase(synced_db.config) as db:
+        async with db.session() as session:
+            with pytest.raises(HTTPException) as exc_info:
+                await _check_budget(session, run_id, budget_usd=0.01)
         assert exc_info.value.status_code == 429
         assert "Budget exceeded" in exc_info.value.detail
 
 
-def test_budget_includes_child_run_costs(synced_db: Database) -> None:
+@pytest.mark.asyncio
+async def test_budget_includes_child_run_costs(synced_db: Database) -> None:
     """Budget check should include costs from child (descendant) runs."""
     parent_id = uuid4()
     child_id = uuid4()
@@ -129,32 +138,11 @@ def test_budget_includes_child_run_costs(synced_db: Database) -> None:
         session.commit()
 
     # Parent budget check should see child's costs
-    with synced_db.session() as session:
-        with pytest.raises(HTTPException) as exc_info:
-            _check_budget(session, parent_id, budget_usd=0.10)
+    async with AsyncDatabase(synced_db.config) as db:
+        async with db.session() as session:
+            with pytest.raises(HTTPException) as exc_info:
+                await _check_budget(session, parent_id, budget_usd=0.10)
         assert exc_info.value.status_code == 429
-
-
-def test_budget_allows_zero_cost_with_zero_budget(synced_db: Database) -> None:
-    """Zero-cost calls (e.g. local models) should be allowed even with budget_usd=0."""
-    run_id = uuid4()
-    with synced_db.session() as session:
-        ensure_fake_agent_definitions(session)
-        session.add(
-            AgentRun(
-                agent_run_id=run_id,
-                image_digest=FAKE_CRITIC_DIGEST,
-                model=BUDGET_TEST_MODEL,
-                type_config=CriticTypeConfig(example=TRAIN_EXAMPLE),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=0.0,
-            )
-        )
-        session.commit()
-
-    # No costs incurred — zero spent against zero budget should pass
-    with synced_db.session() as session:
-        _check_budget(session, run_id, budget_usd=0.0)
 
 
 if __name__ == "__main__":

@@ -3,9 +3,9 @@ import { type JSX, useMemo } from "react";
 import { z } from "zod";
 import { parseAllDocuments } from "yaml";
 
-import { looksLikeJson } from "../json_view";
 import { JsonBlock, TextBlock } from "../text_block";
 import { parsedJson } from "../parsed_json";
+import { looksLikeJson } from "../../../../util/frontend/transcript/text_block";
 
 /** One block of a `CallToolResult`'s `content`, in the MCP wire shape of the kinds this view
  * draws. `unrecognized` holds any other block as stored: audio, a binary resource, an image whose

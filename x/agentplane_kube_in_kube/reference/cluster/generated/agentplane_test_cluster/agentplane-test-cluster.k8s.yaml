@@ -1,0 +1,437 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+  name: agentplane-test-cluster
+spec: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    description: K3s server settings and its in-cluster OCI mirrors.
+  name: agentplane-test-cluster-k3s-config
+  namespace: agentplane-test-cluster
+data:
+  00-shared-security.yaml: |
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicy
+    metadata:
+      annotations:
+        description: Restricts per-run tenant ServiceAccounts to namespaced writes in their three allocated namespaces.
+      name: agentplane-test-cluster-inner-security-tenant-namespace-fence
+    spec:
+      failurePolicy: Fail
+      matchConditions:
+        - expression: request.userInfo.username.startsWith('system:serviceaccount:ap-test-')
+          name: tenant-service-account
+      matchConstraints:
+        excludeResourceRules:
+          - apiGroups:
+              - authentication.k8s.io
+            apiVersions:
+              - v1
+            operations:
+              - CREATE
+            resources:
+              - tokenreviews
+              - selfsubjectreviews
+            scope: "*"
+          - apiGroups:
+              - authorization.k8s.io
+            apiVersions:
+              - v1
+            operations:
+              - CREATE
+            resources:
+              - subjectaccessreviews
+              - localsubjectaccessreviews
+              - selfsubjectaccessreviews
+              - selfsubjectrulesreviews
+            scope: "*"
+        matchPolicy: Equivalent
+        resourceRules:
+          - apiGroups:
+              - "*"
+            apiVersions:
+              - "*"
+            operations:
+              - CREATE
+              - UPDATE
+              - DELETE
+              - CONNECT
+            resources:
+              - "*/*"
+            scope: "*"
+      validations:
+        - expression: request.userInfo.username.matches('^system:serviceaccount:ap-test-[0-9a-f]{32}(-credentials|-monitoring)?:[^:]+$') && has(request.namespace) && request.namespace in [request.userInfo.username.split(':')[2].substring(0, 40), request.userInfo.username.split(':')[2].substring(0, 40) + '-credentials', request.userInfo.username.split(':')[2].substring(0, 40) + '-monitoring'] && !(request.resource.group == '' && request.resource.resource == 'namespaces')
+          message: Tenant ServiceAccounts may only write namespaced resources in their tenant namespaces.
+    ---
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicyBinding
+    metadata:
+      name: agentplane-test-cluster-inner-security-tenant-namespace-fence
+    spec:
+      policyName: agentplane-test-cluster-inner-security-tenant-namespace-fence
+      validationActions:
+        - Deny
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: agentplane-test-namespace-cleanup
+    rules:
+      - apiGroups:
+          - ""
+        resources:
+          - namespaces
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: agentplane-test-namespace-cleanup
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: agentplane-test-namespace-cleanup
+    subjects:
+      - kind: ServiceAccount
+        name: kyverno-cleanup-controller
+        namespace: kyverno
+    ---
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicy
+    metadata:
+      name: agentplane-test-cluster-tenant-vm-fence-virtualmachines
+    spec:
+      failurePolicy: Fail
+      matchConstraints:
+        matchPolicy: Equivalent
+        resourceRules:
+          - apiGroups:
+              - kubevirt.io
+            apiVersions:
+              - v1
+            operations:
+              - CREATE
+              - UPDATE
+            resources:
+              - virtualmachines
+            scope: Namespaced
+      validations:
+        - expression: (!has(object.metadata.annotations) || object.metadata.annotations.all(key, !key.startsWith('hooks.kubevirt.io/'))) && (!has(object.spec.template.spec.volumes) || !object.spec.template.spec.volumes.exists(volume, has(volume.hostDisk) || has(volume.serviceAccount))) && (!has(object.spec.template.spec.domain.devices.hostDevices) || size(object.spec.template.spec.domain.devices.hostDevices) == 0) && (!has(object.spec.template.spec.domain.devices.gpus) || size(object.spec.template.spec.domain.devices.gpus) == 0) && !has(object.spec.template.spec.domain.devices.clientPassthrough) && (!has(object.spec.template.metadata.annotations) || object.spec.template.metadata.annotations.all(key, !key.startsWith('hooks.kubevirt.io/')))
+          message: Tenant VM specifications may not use host devices, guest service accounts, or KubeVirt hooks.
+    ---
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicyBinding
+    metadata:
+      name: agentplane-test-cluster-tenant-vm-fence-virtualmachines
+    spec:
+      matchResources:
+        namespaceSelector:
+          matchLabels:
+            agentplane-test-cluster.allegedly.works/tenant: "true"
+      policyName: agentplane-test-cluster-tenant-vm-fence-virtualmachines
+      validationActions:
+        - Deny
+    ---
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicy
+    metadata:
+      name: agentplane-test-cluster-tenant-vm-fence-virtualmachineinstances
+    spec:
+      failurePolicy: Fail
+      matchConstraints:
+        matchPolicy: Equivalent
+        resourceRules:
+          - apiGroups:
+              - kubevirt.io
+            apiVersions:
+              - v1
+            operations:
+              - CREATE
+              - UPDATE
+            resources:
+              - virtualmachineinstances
+            scope: Namespaced
+      validations:
+        - expression: (!has(object.metadata.annotations) || object.metadata.annotations.all(key, !key.startsWith('hooks.kubevirt.io/'))) && (!has(object.spec.volumes) || !object.spec.volumes.exists(volume, has(volume.hostDisk) || has(volume.serviceAccount))) && (!has(object.spec.domain.devices.hostDevices) || size(object.spec.domain.devices.hostDevices) == 0) && (!has(object.spec.domain.devices.gpus) || size(object.spec.domain.devices.gpus) == 0) && !has(object.spec.domain.devices.clientPassthrough)
+          message: Tenant VM specifications may not use host devices, guest service accounts, or KubeVirt hooks.
+    ---
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingAdmissionPolicyBinding
+    metadata:
+      name: agentplane-test-cluster-tenant-vm-fence-virtualmachineinstances
+    spec:
+      matchResources:
+        namespaceSelector:
+          matchLabels:
+            agentplane-test-cluster.allegedly.works/tenant: "true"
+      policyName: agentplane-test-cluster-tenant-vm-fence-virtualmachineinstances
+      validationActions:
+        - Deny
+  config.yaml: |
+    node-name: shared-test-node
+    data-dir: /var/lib/rancher/k3s
+    write-kubeconfig: /etc/rancher/k3s/k3s.yaml
+    write-kubeconfig-mode: "0600"
+    tls-san:
+      - api.agentplane-test-cluster.svc
+      - api.agentplane-test-cluster.svc.cluster.local
+    cluster-cidr: 10.80.0.0/16
+    service-cidr: 10.81.0.0/16
+    flannel-backend: host-gw
+    disable:
+      - traefik
+      - metrics-server
+      - servicelb
+    disable-network-policy: false
+    disable-default-registry-endpoint: true
+    kube-apiserver-arg:
+      - feature-gates=ImageVolume=true
+    kubelet-arg:
+      - cgroup-driver=cgroupfs
+      - cgroup-root=/workloads
+      - feature-gates=ImageVolume=true
+  registries.yaml: |
+    mirrors:
+      docker.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: docker-hub/$1
+      ghcr.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: ghcr/$1
+      quay.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: quay/$1
+      registry.k8s.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: k8s/$1
+      gcr.io:
+        endpoint:
+          - http://oci-cache.oci-cache.svc.cluster.local
+        rewrite:
+          ^(.*)$: gcr/$1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    description: Persistent K3s data, kubelet state, logs, and CNI state.
+  name: agentplane-test-cluster
+  namespace: agentplane-test-cluster
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 80Gi
+  storageClassName: piraeus-ssd-local
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: agentplane-test-cluster
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: The trusted privileged K3s node for Agentplane system tests.
+  labels:
+    app.kubernetes.io/name: agentplane-test-cluster
+  name: agentplane-test-cluster
+  namespace: agentplane-test-cluster
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-test-cluster
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-test-cluster
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - image: git.allegedly.works/ducktape-ci/agentplane-test-node:unset
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - /opt/agentplane-test-cluster/bootstrap
+          name: node
+          ports:
+            - containerPort: 6443
+              name: https
+              protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+                - /bin/k3s
+                - kubectl
+                - --kubeconfig
+                - /etc/rancher/k3s/k3s.yaml
+                - get
+                - --raw=/readyz
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "8"
+              devices.kubevirt.io/kvm: 1
+              ephemeral-storage: 4Gi
+              memory: 24Gi
+            requests:
+              cpu: "4"
+              devices.kubevirt.io/kvm: 1
+              ephemeral-storage: 2Gi
+              memory: 12Gi
+          securityContext:
+            allowPrivilegeEscalation: true
+            privileged: true
+            runAsGroup: 0
+            runAsUser: 0
+          startupProbe:
+            exec:
+              command:
+                - /bin/k3s
+                - kubectl
+                - --kubeconfig
+                - /etc/rancher/k3s/k3s.yaml
+                - get
+                - --raw=/readyz
+            failureThreshold: 60
+            periodSeconds: 5
+            timeoutSeconds: 5
+          volumeMounts:
+            - mountPath: /etc/rancher/k3s/config.yaml
+              name: k3s-config
+              readOnly: true
+              subPath: config.yaml
+            - mountPath: /etc/rancher/k3s/registries.yaml
+              name: k3s-config
+              readOnly: true
+              subPath: registries.yaml
+            - mountPath: /var/lib/rancher/k3s/server/manifests/00-shared-security.yaml
+              name: k3s-config
+              readOnly: true
+              subPath: 00-shared-security.yaml
+            - mountPath: /var/lib/rancher/k3s
+              name: data
+              subPath: data
+            - mountPath: /var/lib/kubelet
+              name: data
+              subPath: kubelet
+            - mountPath: /var/log
+              name: data
+              subPath: logs
+            - mountPath: /var/lib/cni
+              name: data
+              subPath: cni
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: agentplane-test-cluster-k3s-config
+          name: k3s-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: agentplane-test-cluster
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: ClusterIP endpoint for the inner Kubernetes API over authenticated TLS.
+  name: api
+  namespace: agentplane-test-cluster
+spec:
+  ports:
+    - name: https
+      port: 6443
+      protocol: TCP
+      targetPort: 6443
+  selector:
+    app.kubernetes.io/name: agentplane-test-cluster
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Limits the K3s node to executor API ingress, cluster DNS, and Zot pulls.
+  name: agentplane-test-cluster-network-policy
+  namespace: agentplane-test-cluster
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: zot
+            k8s:io.kubernetes.pod.namespace: oci-cache
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-test-cluster
+      k8s:io.kubernetes.pod.namespace: agentplane-test-cluster
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: buildbuddy-executor
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP

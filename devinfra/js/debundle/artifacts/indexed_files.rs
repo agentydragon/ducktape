@@ -1,8 +1,9 @@
 //! File/index ownership shared by the source and emission phases.
 
 use anyhow::{Result, bail};
+use source_identity::ChunkId;
 
-use super::{ArtifactIndexes, ChunkBundle, ChunkId, named_manifest_imports};
+use super::{ArtifactIndexes, ChunkBundle, named_manifest_imports};
 
 /// Paths and manifest inputs whose changes invalidate `ArtifactIndexes`.
 #[derive(PartialEq, Eq)]
@@ -66,6 +67,7 @@ impl ChunkBundle {
 /// from. Body-only mutations go through [`IndexedFiles::update_file_bodies`],
 /// which checks that their indexed layout is unchanged. This makes it a type
 /// error to keep a separate mutable artifact with stale indexes.
+#[derive(Clone)]
 pub(super) struct IndexedFiles {
     artifact: ChunkBundle,
     indexes: ArtifactIndexes,
@@ -89,6 +91,17 @@ impl IndexedFiles {
 
     pub(super) fn into_artifact(self) -> ChunkBundle {
         self.artifact
+    }
+
+    /// Drop syntax retained only for source analysis at the emission boundary.
+    /// This changes storage representation only; indexed paths stay identical.
+    pub(super) fn release_analysis_asts(mut self) -> Self {
+        for chunk in &mut self.artifact.chunks {
+            for file in &mut chunk.js.files {
+                file.release_analysis_ast();
+            }
+        }
+        self
     }
 
     /// Mutate AST bodies without changing the indexed file layout. The

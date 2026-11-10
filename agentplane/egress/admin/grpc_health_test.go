@@ -3,15 +3,16 @@ package admin
 import (
 	"context"
 	"testing"
-	"time"
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
@@ -31,24 +32,23 @@ func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 		want    *egressadminpb.GetHealthResponse
 	}{
 		{"healthy", healthyIndex(), counters, &egressadminpb.GetHealthResponse{
-			Ready: true, Synced: true, DecisionHistory: wantCounters, StaleAfterSeconds: 900,
-			RefreshedSecondsAgo: map[string]float64{"secrets": 0},
+			Ready: true, Synced: true, DecisionHistory: wantCounters,
 		}},
-		{"stale", staleIndex(), counters, &egressadminpb.GetHealthResponse{
-			Synced: true, DecisionHistory: wantCounters, StaleAfterSeconds: 900,
-			RefreshedSecondsAgo: map[string]float64{"secrets": 1200},
-		}},
-		{"ages rounded to tenths", rounded(), fakeHistory{}, &egressadminpb.GetHealthResponse{
-			Ready: true, Synced: true, DecisionHistory: &egressadminpb.DecisionHistoryHealth{}, StaleAfterSeconds: 900,
-			RefreshedSecondsAgo: map[string]float64{"secrets": 1.2},
+		{"failing", failingIndex(), counters, &egressadminpb.GetHealthResponse{
+			Synced: true, DecisionHistory: wantCounters,
+			Failing: []*egressadminpb.KindFailure{
+				{Kind: egressadminpb.KindFailure_KIND_POLICY_SETS, Error: "test-failure", Since: timestamppb.New(started)},
+				{Kind: egressadminpb.KindFailure_KIND_SECRETS, Error: "test-failure", Since: timestamppb.New(started)},
+				{Kind: egressadminpb.KindFailure_KIND_UNKNOWN, Error: "test-failure", Since: timestamppb.New(started)},
+			},
 		}},
 		// No write has succeeded or failed yet, which is not the same as the latest having failed.
 		{"draining before any write", drainingIndex(), fakeHistory{}, &egressadminpb.GetHealthResponse{
-			Synced: true, Draining: true, DecisionHistory: &egressadminpb.DecisionHistoryHealth{}, StaleAfterSeconds: 60,
+			Synced: true, Draining: true, DecisionHistory: &egressadminpb.DecisionHistoryHealth{},
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			client, _ := serveGRPC(t, ServiceOptions{HistoryHealth: test.history, Index: test.index, Clock: clockAtStart})
+			client, _ := serveGRPC(t, ServiceOptions{HistoryHealth: test.history, Index: test.index})
 
 			response, err := client.GetHealth(bearing(readerToken), &egressadminpb.GetHealthRequest{})
 			if err != nil {
@@ -61,12 +61,6 @@ func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 	}
 }
 
-func rounded() fakeIndex {
-	index := healthyIndex()
-	index.Ages = map[reader.Kind]time.Duration{policy.Secrets: 1234 * time.Millisecond}
-	return index
-}
-
 func TestProbesReportReadinessAndLivenessSeparately(t *testing.T) {
 	serving, notServing := healthpb.HealthCheckResponse_SERVING, healthpb.HealthCheckResponse_NOT_SERVING
 	for _, test := range []struct {
@@ -75,11 +69,11 @@ func TestProbesReportReadinessAndLivenessSeparately(t *testing.T) {
 		healthz, livez healthpb.HealthCheckResponse_ServingStatus
 	}{
 		{"healthy", healthyIndex(), serving, serving},
-		{"stale", staleIndex(), notServing, serving},
+		{"failing", failingIndex(), notServing, serving},
 		{"draining", drainingIndex(), notServing, serving},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			probes := NewProbes(test.index, clockAtStart)
+			probes := NewProbes(test.index)
 
 			for service, want := range map[string]healthpb.HealthCheckResponse_ServingStatus{"": test.healthz, LivenessService: test.livez} {
 				response, err := probes.Check(context.Background(), &healthpb.HealthCheckRequest{Service: service})
@@ -92,9 +86,21 @@ func TestProbesReportReadinessAndLivenessSeparately(t *testing.T) {
 }
 
 func TestProbesRefuseAServiceTheyDoNotKnow(t *testing.T) {
-	_, err := NewProbes(healthyIndex(), clockAtStart).Check(context.Background(), &healthpb.HealthCheckRequest{Service: "test-unknown"})
+	_, err := NewProbes(healthyIndex()).Check(context.Background(), &healthpb.HealthCheckRequest{Service: "test-unknown"})
 
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("got %v, want NotFound", err)
+	}
+}
+
+func TestKindOfNamesWatchedKindsAndAnUnnamedOneAsUnknown(t *testing.T) {
+	for kind, want := range map[watchhealth.Kind]egressadminpb.KindFailure_Kind{
+		reader.PolicySets:  egressadminpb.KindFailure_KIND_POLICY_SETS,
+		policy.Credentials: egressadminpb.KindFailure_KIND_EGRESS_CREDENTIALS,
+		"test-unnamed":     egressadminpb.KindFailure_KIND_UNKNOWN,
+	} {
+		if got := kindOf(kind); got != want {
+			t.Errorf("kindOf(%q) = %v, want %v", kind, got, want)
+		}
 	}
 }

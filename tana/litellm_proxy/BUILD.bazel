@@ -141,6 +141,7 @@ py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
     deps = [
+        ":conftest",
         ":provider",
         "//:conftest",
         "@pypi//pytest",
@@ -152,6 +153,8 @@ py_test(
 
 py_test(
     name = "test_proxy_runtime",
+    # Full LiteLLM/SDK imports, both HTTP protocols, and pytest GC approach the small budget.
+    size = "medium",
     srcs = ["test_proxy_runtime.py"],
     data = [
         "testdata/custom_provider.yaml",
@@ -159,13 +162,18 @@ py_test(
         ":server_bin",
     ],
     deps = [
+        ":conftest",
+        ":custom_handler",
         ":provider",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//util/testing:asgi",
+        "@pypi//anthropic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//httpx",
         "@pypi_tana_litellm_proxy//litellm",
         "@pypi_tana_litellm_proxy//openai",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -209,4 +217,14 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["tana-litellm-proxy:latest"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi_tana_litellm_proxy//litellm",
+    ],
 )

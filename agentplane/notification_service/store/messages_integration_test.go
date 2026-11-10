@@ -19,17 +19,17 @@ func messageQuotas() Quotas {
 
 // message is a message from sender to the fixture owner's Sandbox, for the Session body names.
 func (f fixture) message(sender model.ServiceAccount, key, text string) Message {
-	creation := body(key)
+	creation := f.body(key)
 	return Message{
-		Sender: sender, Recipient: f.owner, DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
+		Sender: AccountSender{Account: sender, UID: "test-sender-uid"}, Recipient: f.incarnation(), DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
 		IdempotencyKey: key, Body: text,
 	}
 }
 
 func (f fixture) openInbox(t *testing.T) {
 	t.Helper()
-	creation := body("unused")
-	if err := f.OpenInbox(t.Context(), f.owner, creation.DestinationRef, creation.SessionID); err != nil {
+	creation := f.body("unused")
+	if err := f.OpenInbox(t.Context(), f.incarnation(), creation.DestinationRef, creation.SessionID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -45,7 +45,7 @@ func (f fixture) send(t *testing.T, message Message) SentMessage {
 
 func (f fixture) sentMessage(t *testing.T, sender model.ServiceAccount, id uuid.UUID) SentMessage {
 	t.Helper()
-	sent, err := f.SentMessage(t.Context(), sender, id)
+	sent, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "test-sender-uid"}, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		sender model.ServiceAccount
 		id     uuid.UUID
 	}{"the recipient": {f.owner, sent.ID}, "another account": {newOwner(), sent.ID}, "an unknown ID": {sender, uuid.New()}} {
-		if _, err := f.SentMessage(t.Context(), lookup.sender, lookup.id); !errors.Is(err, ErrNotFound) {
+		if _, err := f.SentMessage(t.Context(), AccountSender{Account: lookup.sender, UID: "test-sender-uid"}, lookup.id); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
 		}
 	}
@@ -138,7 +138,7 @@ func TestARetiredInboxTakesNoNewMessageAndItsPurgeEndsTheReceipts(t *testing.T) 
 
 	f.exec(t, `UPDATE inbox SET updated_at = now() - interval '31 days' WHERE id = $1`, inbox.ID)
 	f.cleanAll(t)
-	if _, err := f.SentMessage(t.Context(), sender, sent.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "test-sender-uid"}, sent.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v after the purge, want ErrNotFound", err)
 	}
 }
@@ -189,13 +189,13 @@ func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
 	quotas := messageQuotas()
 	quotas.EntriesPerInbox = 1
 	f := newFixture(t, quotas)
-	subscription := f.subscribe(t, body("subscription"))
+	subscription := f.subscribe(t, f.body("subscription"))
 	sender := newOwner()
 	f.send(t, f.message(sender, "first", "test body"))
 	f.send(t, f.message(sender, "second", "test body"))
 	f.addEvents(t, subscription, 1, 1)
 	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID,
-		model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 2}, `{}`), EntriesPerInbox, 1)
+		model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 2}, payloadOf(model.ActionsEvent{Sequence: 2})), EntriesPerInbox, 1)
 }
 
 func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
@@ -203,7 +203,67 @@ func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 	f.openInbox(t)
 	f.send(t, f.message(newOwner(), "at-ceiling", strings.Repeat("é", MessageBodyCeiling/2)))
 	_, err := f.Send(t.Context(), f.message(newOwner(), "beyond-ceiling", strings.Repeat("é", MessageBodyCeiling/2)+"x"))
-	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling" {
-		t.Fatalf("error = %v, want the body ceiling's constraint", err)
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_bytes" {
+		t.Fatalf("error = %v, want the native body ceiling's constraint", err)
+	}
+}
+
+func TestMessageSenderUIDFencesReceiptsAndUncertainRetries(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	sender := newOwner()
+	message := f.message(sender, "exact-sender", "one message")
+	sent := f.send(t, message)
+	if _, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "replacement-sender-uid"}, sent.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement receipt = %v", err)
+	}
+	retry := message
+	retry.Sender = AccountSender{Account: sender, UID: "replacement-sender-uid"}
+	if _, err := f.Send(t.Context(), retry); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replacement retry = %v", err)
+	}
+	f.exec(t, `UPDATE message SET sender_uid = NULL WHERE id = $1`, sent.ID)
+	if _, err := f.Send(t.Context(), message); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown original identity retry = %v", err)
+	}
+	if _, err := f.SentMessage(t.Context(), AccountSender{Account: sender, UID: "test-sender-uid"}, sent.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown sender receipt = %v", err)
+	}
+	f.send(t, f.message(sender, "second", "second message"))
+	_, err := f.Send(t.Context(), f.message(sender, "overflow", "third message"))
+	requireQuota(t, err, UnacknowledgedMessagesPerSender, 2)
+	page, err := f.Read(t.Context(), f.incarnation(), f.recipientInbox(t).ID, 0, 10)
+	if err != nil || len(page.Entries) != 2 {
+		t.Fatalf("retained entries = %+v, %v", page.Entries, err)
+	}
+}
+
+func TestAnIdentitySendersMessageNamesItsIdentityToTheRecipientAndOnlyItFollows(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	identity := model.Identity{Name: "test-sender-identity", UID: "test-sender-identity-uid"}
+	sandbox := model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender-sandbox"}
+	message := f.message(newOwner(), "as-identity", "Sent as an Identity.")
+	message.Sender = IdentitySender{Identity: identity, Sandbox: sandbox}
+	sent := f.send(t, message)
+	page := f.read(t, f.recipientInbox(t).ID, 0)
+	if len(page.Entries) != 1 {
+		t.Fatalf("%d entries, want 1", len(page.Entries))
+	}
+	want := model.MessageEvent{MessageID: sent.ID, Sender: sandbox, SenderIdentity: &identity}
+	if got, ok := page.Entries[0].Event.(model.MessageEvent); !ok || got.MessageID != want.MessageID || got.Sender != want.Sender ||
+		got.SenderIdentity == nil || *got.SenderIdentity != identity {
+		t.Fatalf("entry event = %+v, want %+v", page.Entries[0].Event, want)
+	}
+	if _, err := f.SentMessage(t.Context(), message.Sender, sent.ID); err != nil {
+		t.Fatalf("the Identity follows its message: %v", err)
+	}
+	for name, sender := range map[string]Sender{
+		"another incarnation":   IdentitySender{Identity: model.Identity{Name: identity.Name, UID: "test-successor-uid"}, Sandbox: sandbox},
+		"the Sandbox's account": AccountSender{Account: sandbox, UID: "test-sender-uid"},
+	} {
+		if _, err := f.SentMessage(t.Context(), sender, sent.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
+		}
 	}
 }

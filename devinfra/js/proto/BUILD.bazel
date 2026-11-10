@@ -1,0 +1,28 @@
+load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@aspect_rules_js//js:proto.bzl", "js_proto_toolchain")
+
+directory_path(
+    name = "protoc_gen_es_entry",
+    directory = "//:node_modules/@bufbuild/protoc-gen-es/dir",
+    path = "bin/protoc-gen-es",
+)
+
+js_binary(
+    name = "protoc_gen_es",
+    data = ["//:node_modules/@bufbuild/protoc-gen-es"],
+    entry_point = ":protoc_gen_es_entry",
+)
+
+js_proto_toolchain(
+    name = "protobuf_es",
+    out_dts_extension = "_pb.d.ts",
+    out_js_extension = "_pb.js",
+    plugin_bin = ":protoc_gen_es",
+    plugin_name = "es",
+    plugin_options = [
+        "keep_empty_files=true",
+        "target=js+dts",
+    ],
+    runtime = "//:node_modules/@bufbuild/protobuf",
+)

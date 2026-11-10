@@ -1,6 +1,6 @@
 ---
 name: ci_reliability
-description: Quantify CI flakiness and recurring failures from GitHub Actions and BuildBuddy, diagnose specific culprits, inspect fragile test patterns, and publish an evidence-backed HTML reliability report. Use for flaky-test audits, retry/recovery analysis, and measuring whether reliability fixes helped; use ci_latency for feedback-time analysis.
+description: Quantify CI flakiness and recurring failures, trace their mechanisms through test internals, fixtures and infrastructure, and test coverage-preserving repairs. Publish evidence-backed reliability reports; use ci_latency for feedback-time analysis.
 ---
 
 # CI reliability and flakiness
@@ -10,9 +10,15 @@ denominators, concrete culprits, and prioritized fixes. A red build is not by it
 a flaky test. Distinguish observed intermittent outcomes, sustained regressions,
 infrastructure failures, and source patterns that are only hypotheses.
 
+Test implementations and architecture are in scope: synchronization, fixtures,
+setup/teardown, shared resources, target structure, parallelism, execution placement
+and environment lifecycle.
+Follow important failures to whatever depth produces a useful repair; failure
+rankings, log signatures and successful retries are starting points, not diagnoses.
+
 ## Continue the previous investigation
 
-Fetch the canonical [ci-reports branch](https://github.com/agentydragon/ducktape/tree/ci-reports)
+Fetch the canonical [gh-pages branch](https://github.com/agentydragon/ducktape/tree/gh-pages)
 into an isolated worktree. Read the complete `reliability/index.html`, its
 `manifest.json`, and relevant `evidence.json` records before selecting a new sample.
 If the first report is still under review, inspect its PR and label it unmerged.
@@ -47,9 +53,110 @@ revisions; BuildBuddy supplies invocation, target, shard, and attempt outcomes.
 - Use invocation details or checkout/job evidence for the actual tested full SHA.
   A PR head and its synthetic merge commit are not interchangeable.
 
-BuildBuddy's flake statistics are useful leads. Report the service's heuristic
-separately from independently verified recoveries and document its sample window.
-Unavailable historical logs limit diagnosis; they do not erase recorded outcomes.
+### Query BuildBuddy's Flakes APIs
+
+Use `GetTargetStats` to discover candidates and `GetTargetFlakeSamples` to inspect
+the important candidates, alongside ordinary failure history and non-green merges.
+The corresponding CLI commands are:
+
+```bash
+bbapi target stats --repo https://github.com/agentydragon/ducktape --json > target-stats.json
+bbapi target flakes "$TARGET_LABEL" --repo https://github.com/agentydragon/ducktape --json > flake-samples.json
+```
+
+Select the canonical repository explicitly. Local `file://` checkout URLs and
+forks have separate histories; automatic repo detection or a remembered UI
+selection can query the wrong one. Verify the organization, recorded repository,
+branch and time filters before interpreting an empty response. A missing branch
+name in recorded invocations cannot match `devel`. These APIs default to seven
+days when no window is supplied; use supported CLI filters or the RPC's
+`started_after`/`started_before` fields for a different window, and record it.
+Follow sample `nextPageToken` values; one page is not a complete sample set.
+
+Keep Bazel-reported `FLAKY` verdicts separate from BuildBuddy's `likely_flaky_runs`
+heuristic: an isolated failure/timeout bracketed by passing runs of the target.
+That heuristic does not require the same commit or configuration and excludes
+cached rows. It can miss repeated failures and does not establish a cause.
+Check whether CI target tracking includes the relevant invocations (`ROLE=CI`
+and target tracking enabled); this repository deliberately excludes PR invocations
+from that mainline tracker, so reconcile the results with GitHub PR checks and
+exact target histories. Report API candidates separately from independently
+verified recoveries. Unavailable historical logs limit diagnosis; they do not
+erase recorded outcomes.
+
+### Find PRs merged without green checks
+
+Enumerate PRs merged during the window, including those opened earlier, and find
+ones merged while required checks were failing, timed out, cancelled or still
+pending. In this repository, the owner sometimes force-merges because of flakes:
+these are priority discovery leads even when the PR or mainline is now green.
+
+For a complete merged-PR census, partition the UTC observation window by day and
+compare each exact required CheckRun name's latest visible timestamps with the PR's
+`mergedAt`:
+
+```bash
+python3 scripts/merge_census.py "$REPO" "$SINCE" "$UNTIL" "$OUT/merged-pr-census.json" \
+  --gate "bazel-ci / Test & Build" \
+  --gate "Pre-commit checks" \
+  --gate "Build artifacts + imports check"
+```
+
+The command cross-checks each day against both GitHub search and the PR listing,
+and fails if either reaches the 1,000-result search cap or returns an incomplete
+partition. Its classifications are candidates based on the current rollup; the
+tool explicitly marks historical attempts incomplete because a later rerun can
+hide the check state visible at merge.
+
+Reconstruct check state **at merge time** from the PR's merged head, merge
+timestamp, associated check/status and workflow-attempt history, and the actual
+tested revisions. A later passing rerun must not erase a failure or pending check
+at merge. Keep synthetic merge runs and PR heads correctly associated; record
+missing historical state as unknown. Current rollups alone cannot establish what
+was green when the PR merged. Call a merge an explicit bypass/force-merge only
+when timeline/audit evidence or owner commentary supports it.
+
+Inspect the failed targets and logs, bypass explanations and PR discussion for
+each candidate. Correlate with same-source fresh recoveries and recurring failure
+signatures, then investigate the mechanism. A non-green merge is evidence of
+operator friction and a strong flake lead, not proof that the failure was flaky
+rather than a source regression, infrastructure fault or an unrelated gate.
+Report this candidate population separately from verified flakes and recoveries,
+with PR links, merge-time check states and the diagnosis or visibility limit.
+
+### Verify cache exposure and physical executions
+
+Do not infer an uncached test run from target-history `startTime` versus invocation
+creation time. A cached result can be indexed with a start time after the current
+invocation was created. Query the exact target in each child Bazel invocation:
+
+```bash
+bbapi target "$INVOCATION_ID" --label "$TARGET_LABEL" --json > target.json
+bbapi execution "$INVOCATION_ID" --json > executions.json
+```
+
+In the target response, inspect
+`targetGroups[].targets[].testSummary.totalRunCount` and
+`totalNumCached`, along with `testResultEvents[].testResult.executionInfo.strategy`.
+When the summary is present, report cached runs and non-cached runs separately;
+the latter is `totalRunCount - totalNumCached`. A missing target, summary, or
+cache field is unknown unless another response field confirms the cache result.
+The protobuf JSON encoder omits scalar `totalNumCached` when it has the default
+value of zero. For example, when `totalRunCount` is present and every matching
+test-result event has strategy `remote`, record the omitted cache count as zero
+and cite the strategy as confirmation; do not mark it unknown solely because
+the zero-valued field is absent. Conversely, do not silently coerce an absent
+field to zero when result-event coverage or strategy is incomplete. Never infer
+cache state from timestamps.
+
+Keep three counts distinct: target verdicts, cached versus non-cached test runs,
+and unique physical RBE execution IDs. A non-cached run is not automatically a
+unique physical execution: action sharing or merging can link work across
+invocations. Match exact target labels and deduplicate the execution IDs returned
+by `bbapi execution`; leave physical exposure unknown when no matching execution
+row exists. A cached pass is a recorded result, not a fresh execution or a same-
+source recovery. Preserve the invocation ID, target, tested SHA, configuration,
+cache fields, and execution IDs with the evidence.
 
 ## Quantify without overstating
 
@@ -98,6 +205,74 @@ and cleanup ordering. Explain a concrete failure mechanism and location for each
 finding. Keep source-only risks separate from observed incidents; a grep match
 does not establish causality or frequency.
 
+### Follow the failure mechanism through the test
+
+For each important failure cluster, reconstruct a causal timeline from a failure
+and comparable pass. Trace the relevant fixture lifetimes, subprocesses, service
+events, assertions and cleanup, following dependencies until the competing causes
+can be distinguished. Identify the violated invariant and ordering or resource
+condition that permits it. A timeout, idle period or racy-looking source pattern
+does not by itself identify the cause.
+
+When the test emits spans, inspect the exact failed physical attempt's trace
+before adding diagnostics. Consult the component's tracing documentation or
+producer code for artifact formats, clocks and execution lifetimes. Use the
+execution system's artifact tooling (`buildbuddy_api` for BuildBuddy) to retrieve
+the failing result and a comparable pass; retain each artifact's tested source,
+target, and shard/run/attempt.
+Find the earliest causal span/event, then correlate it with native, service and
+guest logs to distinguish a slow producer, a late observer and queueing from the
+final timeout. Do not sum nested or parallel spans: they are wall-time intervals,
+not CPU or native-command durations. Account for host clock skew and tracing/export
+overhead; use a real profiler if CPU or off-CPU time remains unexplained. The trace
+helps explain the failure, while the test result/log establishes its verdict.
+
+Inspect sleep/poll loops, read/subscribe gaps, wrong-stage readiness, stale reads,
+shared mutable state, resource/port ownership, leaked processes and teardown that
+overlaps the next case. Distinguish a slow producer from a late observer and an
+application race from a harness race or infrastructure failure. Investigate
+why a retry changes the outcome, including caches, retained state, execution order,
+random seeds and external dependencies; do not assume independent attempts.
+
+Evaluate changes to the test and harness as well as the application: event-driven
+predicate waits, explicit happens-before relationships, fixture scope and ownership,
+isolation, setup/cleanup ordering, target boundaries and safe concurrency. Preserve
+the tested contract, failure sensitivity and real integration boundaries. Longer
+sleeps/timeouts, more retries, weaker assertions, serialization, mocks and disabling
+coverage are not equivalent repairs without evidence and explicit tradeoffs.
+
+Derive architectural repairs from the violated invariant and the conditions that
+permit the failure. Consider which changes to ownership, lifetime, decomposition,
+placement or isolation could make that invariant easier to maintain. Justify
+concrete candidates from the inspected system; past interventions are evidence
+under their recorded conditions, not default solutions. Scope rejected experiments
+to those conditions unless the failure mechanism supports a broader conclusion.
+
+When a proposal redistributes work or changes retained/shared state, identify the
+affected failure domains and test the relevant concurrency, reset/invalidation,
+tested-input identity, resource ownership, cancellation, cleanup and recovery
+conditions. Verify result-cache and retry semantics against any external state.
+Distinguish fresh physical attempts, retained-state executions and cached verdicts
+where applicable. Preserve the required lifecycle coverage and make any coverage
+or scheduling change explicit. Include contention, admission and recovery costs
+when assessing the proposal's feedback time under representative load.
+
+When feasible, use a bounded isolated reproduction and candidate repair, retaining
+the failing conditions. Exercise the relevant scheduling/order/resource variation
+with fresh uncached executions and record actual exposure and failures before and
+after. Use controlled scheduling or fault injection when it reproduces the race
+more decisively than repetitions. A passing rerun alone does not validate a repair;
+when the failure cannot be reproduced, label the change a candidate and state what
+evidence is missing. Check latency/resource effects so reliability is not bought
+with unexplained waiting or reduced coverage.
+
+Continue available source/runtime investigation until there is a supported
+mechanism and concrete repair, a rejected hypothesis, or a specific visibility or
+resource boundary and next discriminating observation. Scale depth to decision
+value; a flake ranking or "inspect fixture races" is not a finished diagnosis of
+the major failures. Include the source location, causal evidence, preserved
+coverage, reproduction/validation result and remaining uncertainty in the report.
+
 Before adding diagnostics, inspect pytest captured logs, existing service logging,
 and undeclared test outputs. Prefer enabling standard logs and reusing an existing
 failure artifact fixture. Add only the missing command IDs, cursors, phase/progress,
@@ -115,18 +290,13 @@ monitoring unless a schedule was actually configured.
 
 ## Publish the reliability snapshot
 
-Write a standalone, readable HTML report with frequencies, evidence links, diagnoses,
-fragile-pattern hypotheses, recommendations, and coverage limitations. Make the
-observation window and source SHA easy to find. Use semantic sections/tables and
-purposeful charts; do not wrap a Markdown report in a preformatted block. Visually
-inspect desktop/mobile rendering and exercise any filters before publication.
+Apply the shared [reporting and publication contract](references/reporting.md)
+when authoring or publishing this report. Include failure frequencies, evidence
+links, diagnoses, fragile-pattern hypotheses, prioritized recommendations and
+coverage limits. Exercise any report filters before publication.
 
-Keep compact reviewed measurements and provenance in `evidence.json`. Full API
-payloads, logs, credentials, and profiles stay local. Preserve still-relevant prior
-findings with commit-pinned links rather than copying every historical report.
-
-Both skills package `devinfra/ci/reports/publish.py` as `scripts/publish.py`. From the
-inspected source checkout, with the reports worktree at `$HISTORY`, run:
+Set `$SKILL_DIR` to this installed skill's directory. From the inspected
+source checkout, with the reports worktree at `$HISTORY`, run:
 
 ```bash
 python3 "$SKILL_DIR/scripts/publish.py" --kind reliability --source "$DEVEL_SHA" \
@@ -134,17 +304,5 @@ python3 "$SKILL_DIR/scripts/publish.py" --kind reliability --source "$DEVEL_SHA"
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY"
 ```
 
-Set `$SKILL_DIR` to this installed skill's directory. The publisher copies reviewed
-HTML; it does not generate or validate the analysis. Keep exactly one snapshot in
-`reliability/`: `index.html`, `evidence.json`, `manifest.json`, and optional
-`attribution.json`. Omit attribution unless actually measured. Publication removes
-stale attribution only in this directory. Preserve `latency/`, root navigation,
-and `.gitattributes` (which marks evidence JSON as generated).
-
-Open the report PR against `ci-reports`, never `devel`. Fetch the branch again before
-publishing; compare windows within `reliability/` and do not replace a newer snapshot
-with an older one. Integrate concurrent latency changes without overwriting them.
-Git history holds previous snapshots; do not add dated run trees or force-push
-history. Skill/tool changes belong in a separate source PR to devel. This branch
-does not deploy GitHub Pages: give repository/download links without claiming a
-hosted report. State what remains unknown and the next observation that could resolve it.
+This skill owns `reliability/` and keeps the remaining unknowns and the next
+useful observation in its report.

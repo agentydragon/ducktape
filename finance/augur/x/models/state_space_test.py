@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -16,6 +15,7 @@ from finance.augur.model.conditioning import (
     ObservationUnits,
 )
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
+from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
@@ -27,6 +27,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.x.models.state_space import (
+    StateSpaceModel,
     StateSpaceModelArtifact,
     StateSpacePrivateEquityEventPrior,
     StateSpaceProviderConfig,
@@ -35,6 +36,17 @@ from finance.augur.x.models.state_space import (
 from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityScalePrior
 
 PRIVATE_COMPANY_A = IssuerId("private_company_a")
+
+
+def test_historical_state_space_fit_rejects_a_missing_calendar_month() -> None:
+    historical = HistoricalSeries(
+        series_names=(InflationKey(),),
+        levels=np.array([[1.0], [1.01], [1.03], [1.04]]),
+        months=("2025-08", "2025-09", "2025-11", "2025-12"),
+    )
+
+    with pytest.raises(ValueError, match="requires consecutive calendar months"):
+        StateSpaceModel.fit(historical, latest_observations={})
 
 
 def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Path) -> None:
@@ -63,10 +75,7 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
     assert sampled.private_equity.issuer_bool_matrix(
         "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=3
     ).shape == (2, 4)
-    source_manifest = cast(dict[str, Any], sampled.provenance["source_manifest"])
-    prior_manifest = cast(dict[str, Any], sampled.provenance["prior_manifest"])
-    assert source_manifest["source_ids"] == ["fixture:public"]
-    assert prior_manifest["kind"] == "fixture"
+    assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
 
 
 def test_state_space_conditioning_changes_sampled_paths(tmp_path: Path) -> None:
@@ -204,7 +213,6 @@ def _artifact(
     cov = np.diag([0.04**2, 0.003**2, 0.2**2, 0.01**2, 0.006**2, 0.08**2])
     return StateSpaceModelArtifact(
         factor_names=factors,
-        trained_through_month="2026-04",
         latest_observations=latest,
         monthly_log_return_mu=mu,
         monthly_log_return_cov=tuple(tuple(float(value) for value in row) for row in cov),
@@ -222,8 +230,6 @@ def _artifact(
                 monthly_log_drift_penalty=0.08,
             )
         },
-        source_manifest={"source_ids": ("fixture:public",)},
-        prior_manifest={"kind": "fixture"},
     )
 
 

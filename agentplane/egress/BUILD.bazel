@@ -1,3 +1,4 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -9,23 +10,11 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
-    name = "decisions",
-    srcs = ["decisions.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "decisions_client",
-    srcs = ["decisions_client.py"],
-    deps = [
-        ":decisions",
-        "//agentplane:subjects",
-        "//agentplane/egress:egress_admin_pb2",
-        "//agentplane/egress:egress_admin_pb2_grpc",
-        "//agentplane/grpc:calls",
-        "//agentplane/proto:sandboxes_pb2",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
+    name = "kubernetes_audience",
+    srcs = ["kubernetes_audience.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
     ],
 )
 
@@ -59,34 +48,44 @@ py_test(
     srcs = ["test_proxy.py"],
     data = [
         "//agentplane/egress/cmd:egress-proxy",
-        "//agentplane/egress/history_migrations/cmd:egress-history-migrate",
         "//agentplane/egress/sidecar:egress-sidecar",
     ],
     requires_docker = True,
+    # Unsharded, devel's 20 cases already took 5m of medium's 300s (bbapi target history, 2026-11-09).
+    shard_count = 2,
     deps = [
         ":conftest",
+        ":platform_routes",
         ":resources",
         ":settings",
+        ":sidecar_config",
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane:subjects",
+        "//agentplane/egress:egress_rules_pb2",
+        "//agentplane/egress:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
+        "//agentplane/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
-        "//util:kubernetes",
+        "//agentplane/workload_auth:listener",
         "//util:net",
         "@pypi//aiohttp",
+        "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
@@ -114,11 +113,25 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
         ":platform_routes",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_sidecar_config",
+    srcs = ["test_sidecar_config.py"],
+    deps = [
+        ":conftest",
+        ":sidecar_config",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -132,6 +145,8 @@ py_test(
         ":sidecar_config",
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
+        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/testing:tls",
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//pytest",
@@ -148,6 +163,7 @@ py_library(
     ],
     deps = [
         "//agentplane:log_levels",
+        "//agentplane/workload_auth:listener",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
@@ -159,6 +175,7 @@ py_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = ["@pypi//pydantic"],
 )
@@ -170,8 +187,10 @@ py_test(
     deps = [
         ":conftest",
         ":platform_routes",
+        ":sidecar_config",
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
+        "//agentplane/testing:tls",
         "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -182,14 +201,20 @@ proto_library(
     name = "egress_admin_proto",
     srcs = ["egress_admin.proto"],
     deps = [
-        "//agentplane/proto:sandboxes_proto",
+        ":egress_rules_proto",
+        "//agentplane/proto:identity_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
 
 py_proto_library_with_mypy_stubs(
     name = "egress_admin_pb2",
-    deps = [":egress_admin_proto"],
+    deps = [
+        ":egress_admin_proto",
+        "@googleapis//google/api:annotations_proto",
+    ],
 )
 
 py_grpc_service_library(
@@ -202,9 +227,20 @@ proto_library(
     name = "egress_rules_proto",
     srcs = ["egress_rules.proto"],
     deps = [
-        "//agentplane/proto:sandboxes_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//agentplane/proto:identity_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "egress_rules_pb2",
+    deps = [":egress_rules_proto"],
+)
+
+py_grpc_service_library(
+    name = "egress_rules_pb2_grpc",
+    async_only = True,
+    proto = ":egress_rules_proto",
+    py_proto = ":egress_rules_pb2",
 )
 
 go_proto_library(
@@ -212,10 +248,16 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb",
     proto = ":egress_admin_proto",
-    deps = ["//agentplane/proto:sandboxes_go_proto"],
+    deps = [
+        ":egress_rules_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
 )
 
 go_proto_library(
@@ -223,13 +265,35 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb",
     proto = ":egress_rules_proto",
     deps = [
-        "//agentplane/proto:sandboxes_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
+        "//agentplane/proto:identity_go_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "egress_rules_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":egress_rules_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/proto:identity_pb",
+    ],
+)
+
+ts_proto_library(
+    name = "egress_admin_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":egress_admin_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":egress_rules_pb",
+        "//agentplane/proto:identity_pb",
+        "//google/api:annotations_pb",
     ],
 )
 
@@ -250,7 +314,6 @@ py_test(
         ":conftest",
         ":rule_client",
         "//:conftest",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -12,7 +12,7 @@ import asyncio
 import logging
 import subprocess
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from pathlib import Path
@@ -21,6 +21,8 @@ from typing import Any
 from dbus_fast import BusType, DBusError, Message, MessageType, Variant
 from dbus_fast.aio import MessageBus
 from pydantic import BaseModel
+
+from cpap.gateway.restore import DEFAULT_SSID, DEFAULT_WIFI_PASSWORD, RestoreError, restore_card
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,7 @@ class NMDeviceType(IntEnum):
 
 class NMActiveConnectionState(IntEnum):
     ACTIVATED = 2
+    DEACTIVATED = 4
 
 
 # NM_SETTINGS_ADD_CONNECTION2_FLAG_IN_MEMORY: the PSK never reaches the guest's disk.
@@ -57,6 +60,7 @@ class State(StrEnum):
     CONNECTED = "connected"
     # The card's AP is in the scan but not associated: retry the connection.
     CARD_VISIBLE = "card-visible"
+    CARD_RESET = "card-reset"
     # The radio sees other networks but not the card. Expected while the CPAP travels.
     CARD_AWAY = "card-away"
     # No WiFi device, or a scan that sees no network at all: the adapter is wedged.
@@ -78,6 +82,14 @@ class Observation:
     # Scan results; empty for a deaf radio. Not taken when there is no interface or the
     # card is already connected.
     ssids: frozenset[str]
+    default_card_visible: bool = False
+
+
+@dataclass(frozen=True)
+class AccessPoint:
+    path: str
+    ssid: str
+    bssid: str
 
 
 @dataclass(frozen=True)
@@ -96,6 +108,11 @@ class ConnectCard:
 
 
 @dataclass(frozen=True)
+class RestoreCard:
+    pass
+
+
+@dataclass(frozen=True)
 class ReloadDriver:
     pass
 
@@ -105,7 +122,7 @@ class ReauthorizeAdapter:
     pass
 
 
-Action = StartProxy | StopProxy | ConnectCard | ReloadDriver | ReauthorizeAdapter
+Action = StartProxy | StopProxy | ConnectCard | RestoreCard | ReloadDriver | ReauthorizeAdapter
 
 
 def classify(observation: Observation, card_ssid: str) -> State:
@@ -115,6 +132,8 @@ def classify(observation: Observation, card_ssid: str) -> State:
         return State.CONNECTED
     if card_ssid in observation.ssids:
         return State.CARD_VISIBLE
+    if observation.default_card_visible:
+        return State.CARD_RESET
     if observation.ssids:
         return State.CARD_AWAY
     return State.RADIO_DEAF
@@ -127,6 +146,12 @@ def plan(state: State, previous: HealthState) -> tuple[HealthState, list[Action]
         return HealthState(state=state), [StopProxy(), ConnectCard()]
     if state == State.CARD_AWAY:
         return HealthState(state=state), [StopProxy()]
+    if state == State.CARD_RESET:
+        failures = previous.consecutive_failures + 1 if previous.state == state else 1
+        return HealthState(state=state, consecutive_failures=failures), [
+            StopProxy(),
+            *([RestoreCard()] if failures % ESCALATION_INTERVAL == 1 else []),
+        ]
     failures = previous.consecutive_failures + 1
     actions: list[Action] = [StopProxy()]
     if failures % ESCALATION_INTERVAL == 0:
@@ -207,6 +232,8 @@ class Gateway:
     card_ssid: str
     connection: str
     psk_file: Path
+    admin_password_file: Path
+    card_mac: str
     proxy_unit: str
     driver: str
     vendor_id: str
@@ -252,9 +279,20 @@ class Gateway:
             and await self.bus.get(NM, active, NM_ACTIVE, "State") == NMActiveConnectionState.ACTIVATED
         ):
             return Observation(wifi_iface=iface, card_connected=True, ssids=frozenset())
-        return Observation(wifi_iface=iface, card_connected=False, ssids=await self.scan(device))
+        access_points = await self.scan(device)
+        return Observation(
+            wifi_iface=iface,
+            card_connected=False,
+            ssids=frozenset(ap.ssid for ap in access_points if ap.ssid),
+            default_card_visible=self.default_card(access_points) is not None,
+        )
 
-    async def scan(self, device: str) -> frozenset[str]:
+    def default_card(self, access_points: Sequence[AccessPoint]) -> AccessPoint | None:
+        return next(
+            (ap for ap in access_points if ap.ssid == DEFAULT_SSID and ap.bssid.upper() == self.card_mac.upper()), None
+        )
+
+    async def scan(self, device: str) -> list[AccessPoint]:
         """SSIDs from a fresh scan; empty when the scan does not complete."""
         scanned = asyncio.Event()
 
@@ -282,12 +320,102 @@ class Gateway:
                 await scanned.wait()
         except TimeoutError:
             logger.warning("WiFi scan did not complete within %ds", SCAN_TIMEOUT_SECONDS)
-            return frozenset()
+            return []
         finally:
             self.bus.bus.remove_message_handler(on_message)
         [access_points] = await self.bus.call(NM, device, NM_WIRELESS, "GetAllAccessPoints")
-        ssids = [bytes(await self.bus.get(NM, ap, f"{NM}.AccessPoint", "Ssid")) for ap in access_points]
-        return frozenset(ssid.decode(errors="replace") for ssid in ssids if ssid)
+        return await self.read_access_points(access_points)
+
+    async def read_access_points(self, paths: Sequence[str]) -> list[AccessPoint]:
+        return [
+            AccessPoint(
+                path=path,
+                ssid=bytes(await self.bus.get(NM, path, f"{NM}.AccessPoint", "Ssid")).decode(errors="replace"),
+                bssid=await self.bus.get(NM, path, f"{NM}.AccessPoint", "HwAddress"),
+            )
+            for path in paths
+        ]
+
+    async def wait_for_connection(self, active: str) -> None:
+        if await self.bus.get(NM, active, NM_ACTIVE, "State") == NMActiveConnectionState.ACTIVATED:
+            return
+        changed = asyncio.Event()
+
+        def on_message(message: Message) -> None:
+            if message.path == active and message.interface == NM_ACTIVE and message.member == "StateChanged":
+                changed.set()
+
+        rule = f"type='signal',interface='{NM_ACTIVE}',member='StateChanged',path='{active}'"
+        await self.bus.call(
+            "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "AddMatch", "s", [rule]
+        )
+        self.bus.bus.add_message_handler(on_message)
+        try:
+            async with asyncio.timeout(30):
+                while True:
+                    changed.clear()
+                    state = await self.bus.get(NM, active, NM_ACTIVE, "State")
+                    if state == NMActiveConnectionState.ACTIVATED:
+                        return
+                    if state == NMActiveConnectionState.DEACTIVATED:
+                        raise RestoreError("factory WiFi association failed")
+                    await changed.wait()
+        finally:
+            self.bus.bus.remove_message_handler(on_message)
+            await self.bus.call(
+                "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RemoveMatch", "s", [rule]
+            )
+
+    @asynccontextmanager
+    async def factory_connection(self, device: str) -> AsyncIterator[None]:
+        [paths] = await self.bus.call(NM, device, NM_WIRELESS, "GetAllAccessPoints")
+        ap = self.default_card(await self.read_access_points(paths))
+        if ap is None:
+            raise RestoreError("default card is no longer visible")
+        name = f"{self.connection}-factory-recovery"
+        [profiles] = await self.bus.call(NM, NM_SETTINGS_PATH, f"{NM}.Settings", "ListConnections")
+        for profile in profiles:
+            [existing] = await self.bus.call(NM, profile, f"{NM}.Settings.Connection", "GetSettings")
+            if existing["connection"]["id"].value == name:
+                await self.bus.call(NM, profile, f"{NM}.Settings.Connection", "Delete")
+        settings = card_connection_settings(name, DEFAULT_SSID, DEFAULT_WIFI_PASSWORD)
+        settings["connection"]["autoconnect"] = Variant("b", False)
+        settings["802-11-wireless"]["bssid"] = Variant("ay", bytes.fromhex(self.card_mac.replace(":", "")))
+        profile, _ = await self.bus.call(
+            NM,
+            NM_SETTINGS_PATH,
+            f"{NM}.Settings",
+            "AddConnection2",
+            "a{sa{sv}}ua{sv}",
+            [settings, NM_ADD_CONNECTION_IN_MEMORY, {}],
+        )
+        active = None
+        try:
+            [active] = await self.bus.call(NM, NM_PATH, NM, "ActivateConnection", "ooo", [profile, device, ap.path])
+            await self.wait_for_connection(active)
+            yield
+        finally:
+            if active is not None:
+                # Applying the card settings disconnects this connection first.
+                with suppress(DBusError):
+                    await self.bus.call(NM, NM_PATH, NM, "DeactivateConnection", "o", [active])
+            await self.bus.call(NM, profile, f"{NM}.Settings.Connection", "Delete")
+
+    async def restore_card_settings(self, device: str, connection: str) -> None:
+        try:
+            async with self.factory_connection(device):
+                await asyncio.to_thread(
+                    restore_card,
+                    base_url="http://192.168.4.1",
+                    expected_mac=self.card_mac,
+                    ssid=self.card_ssid,
+                    wifi_password=self.psk_file.read_text().strip(),
+                    admin_password=self.admin_password_file.read_text().strip(),
+                )
+            logger.info("restored card SSID and stored WiFi/admin credentials")
+        except (RestoreError, DBusError, TimeoutError, OSError) as error:
+            logger.warning("card settings recovery failed (%s)", type(error).__name__)
+        await self.bus.call(NM, NM_PATH, NM, "ActivateConnection", "ooo", [connection, device, "/"])
 
     async def apply(self, action: Action, state: HealthState, device: str | None, connection: str) -> None:
         match action:
@@ -316,6 +444,9 @@ class Gateway:
                 except DBusError as e:
                     # Fails while the card is out of range or still booting; the next check retries.
                     logger.warning("activating %s failed: %s", self.connection, e.text)
+            case RestoreCard():
+                assert device is not None
+                await self.restore_card_settings(device, connection)
             case ReloadDriver():
                 self._log_adapters()
                 logger.info("%s for %d checks; reloading %s", state.state, state.consecutive_failures, self.driver)
@@ -385,6 +516,8 @@ async def async_main(args: argparse.Namespace) -> None:
             card_ssid=args.card_ssid,
             connection=args.connection,
             psk_file=args.psk_file,
+            admin_password_file=args.admin_password_file,
+            card_mac=args.card_mac,
             proxy_unit=args.proxy_unit,
             driver=args.driver,
             vendor_id=vendor_id,
@@ -398,6 +531,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--card-ssid", required=True)
     parser.add_argument("--psk-file", required=True, type=Path, help="the card's WPA passphrase")
+    parser.add_argument("--admin-password-file", required=True, type=Path)
+    parser.add_argument("--card-mac", required=True, help="the card's colon-separated WiFi MAC address")
     parser.add_argument("--connection", required=True, help="NetworkManager profile name for the card")
     parser.add_argument("--proxy-unit", required=True, help="systemd unit bridging the card")
     parser.add_argument("--driver", required=True, help="kernel module for the adapter")

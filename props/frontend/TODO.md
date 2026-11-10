@@ -10,7 +10,6 @@
 
 - [ ] Replace client-server polling with WebSocket for live updates
 - [ ] Consolidate active runs display (currently in 2 places)
-- [ ] "Trigger validation runs" as popup modal instead of inline form
 - [ ] Launch optimization/improvement runs with live events display
 - [ ] Live events streaming on run detail view
 - [ ] Full status string display with elliptization

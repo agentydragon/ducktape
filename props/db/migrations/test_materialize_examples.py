@@ -1,5 +1,6 @@
-"""PG 18 restricts search_path during CREATE MATERIALIZED VIEW, which the materialize_examples migration works
-around (root cause: props/debug/pg18_matview_inlining.md).
+"""PG 18 restricts `search_path` during CREATE MATERIALIZED VIEW.
+
+This module verifies the function-level workaround used by the migration.
 """
 
 from collections.abc import Generator
@@ -10,6 +11,10 @@ from sqlalchemy import Engine, create_engine, text
 
 from props.db.config import DatabaseConfig
 from util.testing.postgres import DatabaseNames, create_temporary_database
+
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 @pytest.fixture

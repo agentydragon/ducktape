@@ -35,7 +35,15 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
-from finance.plaid.spend.models import AlertState, AnalysisCategoryView, SpendTransactionRow
+from finance.plaid.spend.models import (
+    AlertState,
+    AllowanceTransactionEffect,
+    AnalysisCategoryView,
+    CardStatementEffect,
+    SpendTransaction,
+    SpendTransactionRow,
+    StatementReason,
+)
 from finance.plaid.spend.portfolio_models import (
     HoldingValueCorrection,
     PlaidSourcePolicy,
@@ -46,6 +54,7 @@ from finance.plaid.spend.portfolio_models import (
 )
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.sustainability import SustainabilityDisplay, SustainabilityPolicy
+from finance.plaid.spend.transaction_views import summarize_excluded_flows
 
 
 def excluded_row(
@@ -57,29 +66,32 @@ def excluded_row(
     category: str | None = "transfer",
 ) -> SpendTransactionRow:
     return SpendTransactionRow(
-        date=date(2026, 1, 1),
-        account_label="Example account",
-        name="Synthetic flow",
-        merchant_name=None,
-        amount_minor_units=amount,
-        currency=currency,
-        pending=pending,
-        allowance_in_scope=True,
-        disposition=disposition,
-        allowance_minor_units=0,
-        pace_effects=[],
-        statement_minor_units=None,
-        statement_reason=None,
-        pfc_primary=None,
-        pfc_detailed=None,
-        merchant_category_code=None,
-        category=AnalysisCategoryView(id=category, label=category.title(), color="#64748B") if category else None,
+        transaction=SpendTransaction(
+            date=date(2026, 1, 1),
+            account_label="Example account",
+            name="Synthetic flow",
+            merchant_name=None,
+            amount_minor_units=amount,
+            currency=currency,
+            pending=pending,
+            pfc_primary=None,
+            pfc_detailed=None,
+            merchant_category_code=None,
+        ),
+        allowance=AllowanceTransactionEffect(
+            in_scope=True,
+            disposition=disposition,
+            amount_minor_units=0,
+            pace_effects=[],
+            category=AnalysisCategoryView(id=category, label=category.title(), color="#64748B") if category else None,
+        ),
+        statement=CardStatementEffect(amount_minor_units=None, reason=None),
     )
 
 
 def test_excluded_flows_keep_directions_and_currencies_separate() -> None:
     rows = [excluded_row(500), excluded_row(-500), excluded_row(0, pending=True), excluded_row(700, currency="EUR")]
-    groups = service.summarize_excluded_flows(rows)
+    groups = summarize_excluded_flows(rows)
     assert [
         (g.currency, g.debit_minor_units, g.credit_minor_units, g.transaction_count, g.pending_count) for g in groups
     ] == [("EUR", 700, 0, 1, 0), ("USD", 500, 500, 3, 1)]
@@ -88,11 +100,11 @@ def test_excluded_flows_keep_directions_and_currencies_separate() -> None:
 
 @pytest.mark.parametrize("disposition", [value for value in Disposition if value != Disposition.EXCLUDED] + [None])
 def test_excluded_flows_ignore_other_dispositions(disposition: Disposition | None) -> None:
-    assert service.summarize_excluded_flows([excluded_row(500, disposition=disposition)]) == []
+    assert summarize_excluded_flows([excluded_row(500, disposition=disposition)]) == []
 
 
 def test_excluded_flows_keep_categories_and_uncategorized_rows() -> None:
-    groups = service.summarize_excluded_flows(
+    groups = summarize_excluded_flows(
         [excluded_row(100), excluded_row(200, category="tax"), excluded_row(-50, category=None)]
     )
     assert [(g.category.id, g.debit_minor_units, g.credit_minor_units) for g in groups] == [
@@ -100,7 +112,7 @@ def test_excluded_flows_keep_categories_and_uncategorized_rows() -> None:
         ("transfer", 100, 0),
         ("uncategorized", 0, 50),
     ]
-    assert service.summarize_excluded_flows([]) == []
+    assert summarize_excluded_flows([]) == []
 
 
 @pytest_asyncio.fixture
@@ -242,20 +254,58 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         view = await service.read_view()
+        history = await service.read_pace_history()
         transactions = await service.read_transactions(period=PeriodId.CREDIT_CYCLE)
         rolling = await service.read_transactions(period=PeriodId.ROLLING_30D)
     assert view.allowance is not None
+    assert history is not None
+    assert history.status == Status.ACTIVE
+    history_7d = next(window for window in history.windows if window.period_id == PeriodId.ROLLING_7D)
+    view_7d = next(period for period in view.allowance.recorded_pace_periods if period.period.id == PeriodId.ROLLING_7D)
+    assert history_7d.points[-1].observed_daily_minor_units == view_7d.observed_daily_minor_units
+    assert history.windows[1].points[-1].observed_daily_minor_units is None
     assert view.allowance.posted_minor_units == 2_200
     assert view.allowance.pending_minor_units == 0
     assert view.cards[0].posted_minor_units == 2_600  # original posting dates: 11 + 9 + 6
     assert view.cards[0].pending_minor_units == 0  # posted replacement supersedes pending
     assert transactions.summary.net_allowance_spend_minor_units == 2_200
-    assert all(row.date == today for row in transactions.rows)
-    late_post = next(row for row in transactions.rows if row.amount_minor_units == 700)
-    assert late_post.plaid_date == today + timedelta(days=2)
+    assert all(row.transaction.date == today for row in transactions.rows)
+    late_post = next(row for row in transactions.rows if row.transaction.amount_minor_units == 700)
+    assert late_post.transaction.plaid_date == today + timedelta(days=2)
+    late_post_json = late_post.model_dump(mode="json")
+    assert set(late_post_json) == {"transaction", "allowance", "statement"}
+    assert set(late_post_json["transaction"]) == {
+        "date",
+        "plaid_date",
+        "account_label",
+        "name",
+        "merchant_name",
+        "amount_minor_units",
+        "currency",
+        "pending",
+        "pfc_primary",
+        "pfc_detailed",
+        "merchant_category_code",
+        "counterparties",
+        "details",
+    }
+    assert set(late_post_json["allowance"]) == {
+        "in_scope",
+        "disposition",
+        "rule_number",
+        "rule",
+        "reversal_pair",
+        "effective_kind",
+        "amount_minor_units",
+        "pace_effects",
+        "category",
+    }
+    assert set(late_post_json["statement"]) == {"amount_minor_units", "reason"}
+    assert late_post_json["allowance"]["in_scope"] is True
+    assert late_post_json["statement"] == {"amount_minor_units": 0, "reason": StatementReason.OUTSIDE_CYCLE}
     assert rolling.summary.net_allowance_spend_minor_units == 2_200
     assert len(rolling.rows) == 5
-    assert min(row.date for row in rolling.rows) == activation - timedelta(days=1)
+    assert min(row.transaction.date for row in rolling.rows) == activation - timedelta(days=1)
 
 
 async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
@@ -351,6 +401,7 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     )
     async with service.lifespan():
         view = await service.read_view()
+        transactions = await service.read_transactions(period=PeriodId.ROLLING_30D)
     cards = {card.account_id: card for card in view.cards}
     first, empty = cards["card-first"], cards["card-empty"]
     assert first.statement_period.kind == "provisional"
@@ -362,6 +413,13 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     assert first.alert_state == AlertState.UNAVAILABLE
     assert empty.statement_period.kind == "unavailable"
     assert empty.spend_minor_units is None
+    new_transaction = next(row for row in transactions.rows if row.transaction.amount_minor_units == 1_200).model_dump(
+        mode="json"
+    )
+    assert set(new_transaction) == {"transaction", "allowance", "statement"}
+    assert new_transaction["allowance"]["in_scope"] is False
+    assert new_transaction["allowance"]["disposition"] is None
+    assert new_transaction["statement"] == {"amount_minor_units": 1_200, "reason": StatementReason.COUNTED}
 
 
 def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
@@ -463,10 +521,20 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         result = await service.read_view()
         assert result.allowance is not None
         assert result.allowance.available_minor_units == 8_800
+        assert result.allowance.daily_reference_minor_units == 329
+        history = await service.read_pace_history()
+        assert history is not None
+        assert history.status == Status.ACTIVE
+        assert all(point.observed_daily_minor_units is None for window in history.windows for point in window.points)
         await connection.execute("UPDATE public.links SET status = 'removed' WHERE item_id = 'item-checking'")
         unavailable = (await service.read_view()).allowance
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
+        assert unavailable.daily_reference_minor_units == 329
+        history = await service.read_pace_history()
+        assert history is not None
+        assert history.status == Status.UNAVAILABLE
+        assert history.windows == []
         await connection.execute(
             "UPDATE public.links SET status = 'active', last_synced_at = $1 WHERE item_id = 'item-checking'",
             now - timedelta(days=4),
@@ -474,6 +542,11 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         unavailable = (await service.read_view()).allowance
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
+        assert unavailable.daily_reference_minor_units == 329
+        history = await service.read_pace_history()
+        assert history is not None
+        assert history.status == Status.UNAVAILABLE
+        assert history.windows == []
 
 
 async def test_prior_purchases_are_queried_for_pace_but_not_balance(
@@ -499,7 +572,10 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         allowance = (await service.read_view()).allowance
+        transactions = await service.read_transactions(period=PeriodId.ROLLING_30D)
     assert allowance is not None
+    assert transactions.rows
+    assert all(row.statement.amount_minor_units is None and row.statement.reason is None for row in transactions.rows)
     assert allowance.available_minor_units == 10_000
     observed = {report.period.id: report.observed_daily_minor_units for report in allowance.recorded_pace_periods}
     assert observed[PeriodId.ROLLING_7D] == 1_000
@@ -552,14 +628,14 @@ async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
     assert view.allowance.note is None
     assert view.cards[0].posted_minor_units == 1_000  # Statement still sees the actual -80 credit and +90 debit.
     assert len(transactions.rows) == 2  # Original is outside the displayed period, but still reconciled.
-    credit = next(row for row in transactions.rows if row.amount_minor_units < 0)
-    assert credit.disposition == Disposition.REVERSED
-    assert credit.reversal_pair == pair
-    assert credit.effective_kind == Kind.EXCLUDED
-    assert credit.rule is not None
-    assert credit.rule.kind == Kind.FLEXIBLE
-    assert credit.statement_minor_units == -8_000
-    assert credit.allowance_minor_units == 0
+    credit = next(row for row in transactions.rows if row.transaction.amount_minor_units < 0)
+    assert credit.allowance.disposition == Disposition.REVERSED
+    assert credit.allowance.reversal_pair == pair
+    assert credit.allowance.effective_kind == Kind.EXCLUDED
+    assert credit.allowance.rule is not None
+    assert credit.allowance.rule.kind == Kind.FLEXIBLE
+    assert credit.statement.amount_minor_units == -8_000
+    assert credit.allowance.amount_minor_units == 0
     configuration = spend_service.read_configuration()
     assert configuration.allowance is not None
     assert configuration.allowance.reversal_pairs == [pair]
@@ -635,7 +711,7 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
         _sustainability_configuration(now.date(), "synthetic-spending-account"),
         dashboard_url="https://spend.example.test",
     )
-    monkeypatch.setattr(spend_service, "_require_portfolio_sessions", object)
+    monkeypatch.setattr(spend_service, "_require_read_sessions", object)
     attempts = 0
 
     async def read_portfolio(
@@ -784,7 +860,7 @@ async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
     async with spend_service.lifespan():
         view = await spend_service._read_current_portfolio(now)
         revoked_view = await service.read_portfolio(
-            spend_service._require_portfolio_sessions(),
+            spend_service._require_read_sessions(),
             PortfolioPolicy(
                 sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["revoked-portfolio-account"]))
             ),
@@ -993,6 +1069,51 @@ async def test_read_sustainability_fails_closed_for_unusable_spending_source(
     else:
         assert result.covered_days == 0
         assert result.spending_minor_units == 0
+
+
+async def test_detached_spending_account_makes_allowance_and_sustainability_unavailable(
+    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime.now(UTC)
+    zone = ZoneInfo("America/Los_Angeles")
+    today = now.astimezone(zone).date()
+    account_id = "synthetic-detached-spending-account"
+    item_id = "synthetic-detached-spending-item"
+    transaction_id = "synthetic-retained-detached-purchase"
+    await add_link(connection, item_id, synced=now)
+    await add_account(connection, account_id, item_id, type="credit")
+    await add_account(connection, "synthetic-current-sibling-account", item_id, type="depository")
+    await add_transaction(
+        connection, account_id, item_id, transaction_id, today - timedelta(days=1), Decimal("25.00"), category="FIXED"
+    )
+    await connection.execute("UPDATE public.accounts SET detached_at = $2 WHERE account_id = $1", account_id, now)
+    await connection.execute("UPDATE public.links SET accounts_observed_at = $2 WHERE item_id = $1", item_id, now)
+    service = SpendService(
+        postgres_url, _sustainability_configuration(today, account_id), dashboard_url="https://spend.example.test"
+    )
+
+    async def read_portfolio(_now: datetime) -> PortfolioView:
+        return _synthetic_portfolio()
+
+    monkeypatch.setattr(service, "_read_current_portfolio", read_portfolio)
+    async with service.lifespan():
+        allowance = (await service.read_view()).allowance
+        sustainability = await service.read_sustainability()
+
+    retained = await connection.fetchrow(
+        "SELECT amount, removed FROM public.transactions WHERE transaction_id = $1", transaction_id
+    )
+    assert allowance is not None
+    assert allowance.status == Status.UNAVAILABLE
+    assert allowance.available_minor_units is None
+    assert allowance.forecast.projected_cycle_end_minor_units is None
+    assert sustainability.status == "unavailable"
+    assert sustainability.annualized_spending_minor_units is None
+    assert sustainability.spending_minor_units == 0
+    assert "Spending account coverage or sync freshness is unavailable." in sustainability.issues
+    assert retained is not None
+    assert retained["amount"] == Decimal("25.00")
+    assert retained["removed"] is False
 
 
 class _ConnectedRequest:

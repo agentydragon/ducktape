@@ -1,5 +1,5 @@
 """Generates agentplane-staging's `app-config` ConfigMap's `config.yaml`
-content -- agentplane/app/settings.py's `AppSettingsConfig`, mounted by the Deployment. See
+content -- agentplane/app/settings.py's complete static `Settings`, mounted by the Deployment. See
 model_catalog/catalog.py for the model-name scheme.
 """
 
@@ -7,48 +7,44 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
-from agentplane.runner.harness import Harness
+from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
+from agentplane.env.runtime.harness import Harness
+from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from cluster.cdk8s import agent_access_profiles
+from cluster.cdk8s.agentplane import kubernetes_account_ref
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
     GITHUB_IDENTITY_READS_SET,
-    GITHUB_READS_SET,
-    GMAIL_READS_SET,
-    GOOGLE_CALENDAR_READS_SET,
-    GROCY_SF_READS_SET,
-    HOME_ASSISTANT_READS_SET,
-    KUBERNETES_INSPECTION_READS_SET,
+    HAKU_SHARED_ACTION_SETS,
+    HAKU_SHARED_CORE_POLICIES,
+    HAKU_SHARED_GITHUB_POLICIES,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
-    TANA_READS_SET,
+    coinbase_egress_rules,
 )
-from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
+from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runtime_catalog, settings
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
-    DEFAULT_POLICIES,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
-    ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
-    FORGEJO_HAKU_POLICY,
-    GOOGLE_READONLY_POLICY,
-    HAKU_MAILBOX_POLICY,
+    PLAID_PGWEB_CREDENTIAL,
 )
-from cluster.cdk8s.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 from util.urls import HttpEndpointUrl
@@ -69,19 +65,7 @@ _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_set
 # inspection) plus sandbox use and the GitHub identity read, and Haku's one write: rerunning failed
 # jobs on a ducktape CI run. Nothing here is a new grant -- each set's own auto-approval rule was
 # reviewed for the connector principals, and every other write stays on the human path.
-HAKU_ACTION_POLICY_SETS = (
-    GITHUB_READS_SET,
-    GITHUB_IDENTITY_READS_SET,
-    SANDBOX_SELF_SET,
-    HOME_ASSISTANT_READS_SET,
-    GMAIL_READS_SET,
-    GOOGLE_CALENDAR_READS_SET,
-    TANA_READS_SET,
-    GROCY_SF_READS_SET,
-    SSH_READS_SET,
-    KUBERNETES_INSPECTION_READS_SET,
-    DUCKTAPE_PR_FAILED_JOBS_SET,
-)
+HAKU_ACTION_POLICY_SETS = (*HAKU_SHARED_ACTION_SETS, DUCKTAPE_PR_FAILED_JOBS_SET)
 
 # Inbox groups and the presets that launch into them (operator, 2026-10-21 07:51 UTC). A group's Sandboxes carry
 # its inbox tag and hold its `send_to` PolicySet, so they may message one another.
@@ -97,6 +81,36 @@ def send_to(group: str) -> str:
     return f"send-to-{group}"
 
 
+def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
+    """The non-Kubernetes rules of the assignable sets that have any, by set name. In the identity
+    catalog these are the sets that stay `PolicySet`s; the rest are only `KubernetesRoleSet`s."""
+    return {
+        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
+            credential=PLAID_PGWEB_CREDENTIAL
+        ),
+    }
+
+
+def preset_role_sets(preset: str) -> list[str]:
+    """In the identity catalog, the role sets granted to `preset`'s own Kubernetes account: those its
+    launch grants today, plus cluster diagnostics, so the account covers the shared one's reads."""
+    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
+    return list(dict.fromkeys([*sets, agent_access_profiles.CLUSTER_DIAGNOSTICS_POLICY]))
+
+
+def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
+    """The assignable sets a `preset` launch binds. In the identity catalog a launch binds only their
+    `PolicySet` halves and the use set of the preset's own Kubernetes account."""
+    sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
+    if not identity_catalog:
+        return sets
+    return [
+        *(name for name in sets if name in assignable_set_egress_rules()),
+        kubernetes_account_ref.account(namespace, preset).credential_name,
+    ]
+
+
 def config(
     *,
     namespace: str,
@@ -104,14 +118,29 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
-) -> AppSettingsConfig:
+    runtime: Catalog | None = None,
+    central_sampler_enabled: bool = False,
+    app_origin: str,
+    oidc_issuer: str,
+    electric_url: HttpEndpointUrl,
+    identity_catalog: bool,
+) -> Settings:
+    if runtime is None:
+        runtime = runtime_catalog(
+            models, templates=(sandbox_template,), central_sampler_enabled=central_sampler_enabled
+        )
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
         models=models,
+        runtime_catalog=runtime,
+        central_sampler_enabled=central_sampler_enabled,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         connection_service_url=connection_service_url,
+        app_origin=app_origin,
+        oidc_issuer=oidc_issuer,
+        electric_url=electric_url,
         public_coder_policy_sets=[
             COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,
@@ -119,9 +148,8 @@ def config(
             # Its boxes run as the Sandbox's own ServiceAccount, so they hold its egress, the write-capable
             # agentydragon-agent GitHub token included, and nothing more (operator, 2026-10-24).
             SANDBOX_SELF_SET,
-            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
+            *_launch_sets("public-coder", namespace=namespace, identity_catalog=identity_catalog),
         ],
-        default_policy_sets=set(DEFAULT_POLICIES),
         frontend_config=FrontendConfig(
             trace_search=TraceSearchSettings(
                 grafana_base_url=AnyHttpUrl(GRAFANA_BASE_URL),
@@ -144,13 +172,13 @@ def config(
     #
     # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
     # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.
-    # Agentplane's Codex picker offers only the wider 256K Qwen route.
+    # Agentplane offers Qwen through the central sampler with standard Responses and JSON exec.
     # TODO(#9121): consider switching Haku back to a Claude default after validating the
-    # Antigravity routes and their quotas in Agentplane. Existing Haku Threads stay on Codex
-    # either way: a Thread cannot move to a model with a different configured context window.
+    # Antigravity routes and their quotas in Agentplane. Existing Haku Threads retain
+    # their existing harness; this preset affects new sessions only.
     cfg.thread_presets[_THREAD_PRESET_HAKU_CODEX] = ThreadPreset(
         title="Haku",
-        harness=Harness.CODEX,
+        harness=Harness.CENTRAL_SAMPLER,
         model=OLLAMA_QWEN_IQ4XS_256K.openai.id,
         cwd="/state/workspaces/{session_id}/haku-state",
         reasoning_effort="medium",
@@ -181,20 +209,13 @@ def config(
         # caller/ServiceAccount stamps it.
         policy_sets=[
             BASIC_POLICY,
-            FORGEJO_HAKU_POLICY,
-            PACKAGES_POLICY,
-            GOOGLE_READONLY_POLICY,
-            ACTIVITYWATCH_READ_POLICY,
-            AIQUOTA_READ_POLICY,
-            HAKU_MAILBOX_POLICY,
-            GITHUB_CLONE_POLICY,
-            GITHUB_AGENTYDRAGON_AGENT_POLICY,
-            GITHUB_ACTIONS_LOGS_POLICY,
+            *HAKU_SHARED_CORE_POLICIES,
+            *HAKU_SHARED_GITHUB_POLICIES,
             # Bound at launch rather than by a static account: a managed runner Pod runs as its own
             # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
             # and the preset is the only thing that decides what this Haku may do without the operator.
             *HAKU_ACTION_POLICY_SETS,
-            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["haku"]),
+            *_launch_sets("haku", namespace=namespace, identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_HAKU_CODEX,
         # Each new Thread gets its own haku-state and ducktape checkout.
@@ -228,7 +249,7 @@ def config(
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
             GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
-            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
+            *_launch_sets("finance-agent", namespace=namespace, identity_catalog=identity_catalog),
         ],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
     )

@@ -8,50 +8,56 @@ rather than restating the math.
 
 A cross-node pod packet is encapsulated twice, nested:
 
-| Layer        | Carries                      | Adds          | Device MTU |
-| ------------ | ---------------------------- | ------------- | ---------- |
-| pod          | application traffic          | —             | 1370       |
-| Cilium VXLAN | the pod packet               | +50           | —          |
-| `nebula1`    | the VXLAN packet (encrypted) | +60 (AES-GCM) | 1420       |
-| `eno1`       | the Nebula packet (UDP 4242) | —             | 1500       |
+| Layer        | Carries                      | Adds          | Device / packet MTU                              |
+| ------------ | ---------------------------- | ------------- | ------------------------------------------------ |
+| workload pod | application traffic          | —             | `eth0` 1420; host route to remote pod CIDRs 1370 |
+| Cilium VXLAN | the pod packet               | +50           | `cilium_vxlan` 1420 (outer packet)               |
+| `nebula1`    | the VXLAN packet (encrypted) | +60 (AES-GCM) | 1420                                             |
+| `eno1`       | the Nebula packet (UDP 4242) | —             | 1500 on the two tested IPv4 OVH public paths     |
 
 Cilium VXLAN tunnels pod traffic to each remote node's **InternalIP**, which is its
 **Nebula `10.42.x` address** — so VXLAN rides _inside_ Nebula, which rides on `eno1`.
-The encapsulations **stack** (nested); they do not run in parallel. OVH same-`/24`
-peers have no L2 adjacency, so `eno1` traffic to a neighbour hairpins through the
-`.254` gateway (see below).
+The encapsulations **stack** (nested); they do not run in parallel. The tested
+same-`/24` OVH public path hairpins through the `.254` gateway (see below).
 
 ## Routing: OVH same-subnet hairpin
 
-OVH dedicated servers have **no L2 adjacency** to other servers in the same public
-`/24` — the gateway (`.254`) sits outside the host's subnet and all peer traffic is
-routed (hairpinned) through it. `kimsufi_eno1_peer_routes` (in `ovh-nodes.tf`) adds a
-static `/32` route to each same-`/24` peer via `.254`. This underlay carries the
-Nebula mesh. vRack (real private L2) is **not** available on Kimsufi/Eco lines.
+The tested OVH public IPv4 paths include cross-`/24` traffic and same-`/24` peer
+traffic routed through the `.254` gateway. `kimsufi_eno1_peer_routes` (in
+`ovh-nodes.tf`) adds a static `/32` route to each same-`/24` peer via `.254`. This
+underlay carries the Nebula mesh. vRack (real private L2) is **not** available on
+Kimsufi/Eco lines.
 
 ## MTU stack
 
-| Layer           | MTU      | Note                                                    |
-| --------------- | -------- | ------------------------------------------------------- |
-| `eno1` underlay | **1500** | Measured ceiling; no jumbo (vRack-only, not on Kimsufi) |
-| `nebula1` tun   | **1420** | `nebula.tf` `tun.mtu`; `1420 + 60 = 1480` (20 B margin) |
-| Cilium `MTU`    | **1420** | = the underlay (`nebula1`) MTU — see gotcha below       |
-| cross-node pod  | **1370** | Cilium derives `1420 − 50` (VXLAN); `1370 + 50 = 1420`  |
+| Layer                          | MTU      | Note                                                                |
+| ------------------------------ | -------- | ------------------------------------------------------------------- |
+| `eno1` underlay                | **1500** | IPv4 packets passed at this size on two tested OVH public paths     |
+| `nebula1` tun                  | **1420** | `nebula.tf` `tun.mtu`; `1420 + 60 = 1480` under the measured 1500   |
+| Cilium `MTU`                   | **1420** | Device value; Cilium subtracts VXLAN overhead for remote pod routes |
+| workload pod `eth0`            | **1420** | Interface MTU                                                       |
+| host route to remote pod CIDRs | **1370** | Cilium derives `1420 − 50` (VXLAN); adding 50 gives 1420            |
 
-Full-size cross-node pod packet, end to end:
-`pod 1370 + VXLAN 50 = 1420` (fits `nebula1` exactly) `+ Nebula 60 = 1480` (fits
-`eno1` 1500, 20-byte margin). **Zero fragmentation.**
+Configured cross-node path arithmetic:
+`route 1370 + VXLAN 50 = 1420` (fits `nebula1`) `+ Nebula 60 = 1480` (20 bytes
+under the measured `eno1` MTU of 1500). The underlay measurement was two OVH
+public IPv4 paths from `ovh-ns103656`: DF pings passed with 1472-byte payloads to
+`ovh-ns104963` across `/24`s and `ovh-ns103711` through the `.254` hairpin. This
+supports the configured overhead arithmetic for those paths; it is not an
+end-to-end PMTU or zero-fragmentation guarantee for every route.
 
-### ⚠️ Cilium `MTU` is the UNDERLAY MTU, not the pod MTU
+### ⚠️ Cilium `MTU` is the UNDERLAY MTU, not the cross-node pod route MTU
 
-Cilium's `MTU` Helm value sets the underlay-device MTU (the `cilium_*`
-interfaces) and subtracts the 50-byte VXLAN overhead itself for the pod route
-MTU. So:
+Cilium's `MTU` Helm value sets the tunnel/device MTU (the `cilium_*` interfaces)
+and subtracts the 50-byte VXLAN overhead itself for host routes to remote pod
+CIDRs. The workload pod interface MTU is 1420; host routes to remote pod CIDRs
+have MTU 1370. So:
 
 - Set `MTU` to the **device Cilium tunnels over** = `nebula1` = **1420** —
-  pods get `1420 − 50 = 1370`.
-- Setting `MTU: 1370` (the desired pod MTU) is **wrong** — it yields a **1320** pod
-  MTU (measured 2026-06-08). This mistake cost a wrong rollout; see the debug note.
+  Cilium installs remote-pod host routes at `1420 − 50 = 1370`.
+- Setting `MTU: 1370` (trying to target a 1370 remote-pod path) is **wrong** —
+  Cilium subtracts VXLAN overhead again. The 2026-06-08 pod-to-pod DF ladder
+  measured a **1320** ceiling.
 
 ### Encapsulation overheads (measured)
 
@@ -59,8 +65,9 @@ MTU. So:
   tcpdump: a 1300-byte inner packet → 1360 on the wire.
 - **Cilium VXLAN = 50 bytes** (Cilium's `EncapOverhead` for VXLAN).
 
-Hard max for this stack: `nebula1 = 1440`, `MTU = 1440` → pod 1390 (exact-fit,
-`1440 + 60 = 1500`). We keep a 20-byte underlay margin at `nebula1 = 1420`.
+Theoretical maximum for a 1500-byte IPv4 underlay: `nebula1 = 1440`,
+`MTU = 1440` → host routes to remote pod CIDRs at 1390, with `1440 + 60 = 1500`.
+We keep a 20-byte underlay margin at `nebula1 = 1420`.
 
 ## Config locations
 
@@ -168,7 +175,9 @@ Recheck any production Services opted in since enablement.
 
 ## Caveat: roaming nodes
 
-A single global Cilium `MTU` assumes a 1500 underlay. `rugged` (roaming laptop on
+A 1420 Nebula TUN MTU plus 60 bytes of measured IPv4 Nebula overhead yields a
+1480-byte outer IP packet, within the 1500-byte MTU observed on the two tested OVH
+IPv4 paths above. Other paths can be smaller: `rugged` (roaming laptop on
 cellular) has a historically smaller **Cilium-over-Nebula** usable path (see
 `cluster/debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`). That result
 includes both overlays; it is not a direct-Fi or native-IPv6 measurement. The
@@ -201,6 +210,5 @@ reconciles the same kernel route outside Nebula.
 
 ## References
 
-- Measurements + the 2026-06-08 incident: `cluster/debug/2026-06-08-nebula-vxlan-mtu/`
 - Earlier cross-node MTU loss postmortem: `cluster/docs/lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md`
 - Uppercase-`MTU` Helm-key gotcha: `cluster/docs/troubleshooting.md` § "MTU Case Sensitivity"

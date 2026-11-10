@@ -245,14 +245,7 @@ def main():
                     domains.append(domain)
 
     # Deduplicate while preserving order
-    seen = set()
-    unique_domains = []
-    for domain in domains:
-        normalized = domain.lower().strip()
-        if normalized not in seen and normalized:
-            seen.add(normalized)
-            unique_domains.append(normalized)
-    domains = unique_domains
+    domains = list(dict.fromkeys(normalized for domain in domains if (normalized := domain.lower().strip())))
 
     if not domains:
         parser.print_help()

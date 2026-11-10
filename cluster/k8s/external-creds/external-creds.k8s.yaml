@@ -331,6 +331,36 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: gaffer-repo-fetch-pat-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - gaffer-repo-fetch-pat
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gaffer-repo-fetch-pat-flux-system-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gaffer-repo-fetch-pat-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: llm-gemini-reader
   namespace: ducktape-flux
 rules:

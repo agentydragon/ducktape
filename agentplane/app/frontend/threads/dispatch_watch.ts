@@ -1,4 +1,4 @@
-import { dispatchReceipt } from "./client";
+import { dispatchFromJson } from "./client";
 import { followWatch } from "../watch_stream";
 import type { LocalCommands } from "./local_commands";
 
@@ -21,19 +21,21 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
       try {
         const frame = result as { dispatch?: unknown; caughtUp?: unknown };
         if (frame.dispatch !== undefined) {
-          const receipt = dispatchReceipt(frame.dispatch);
+          const receipt = dispatchFromJson(frame.dispatch);
           held.add(receipt.commandId);
           store.updateDispatch(receipt.commandId, receipt);
         } else if (frame.caughtUp !== undefined) {
           // The Dispatcher deletes a Sandbox's rows with it.
           for (const commandId of asked.filter((id) => !held.has(id)))
-            store.updateDispatch(commandId, {
+            store.updateDispatch(
               commandId,
-              sessionId,
-              state: "DELIVERY_STATE_UNKNOWN",
-              reason: "sandbox_deleted",
-              admission: null,
-            });
+              dispatchFromJson({
+                commandId,
+                sessionId,
+                state: "DELIVERY_STATE_UNKNOWN",
+                reason: "sandbox_deleted",
+              })
+            );
         }
       } catch (reason) {
         console.warn("a dispatch frame could not be applied", reason);

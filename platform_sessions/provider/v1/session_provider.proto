@@ -1,0 +1,311 @@
+syntax = "proto3";
+
+package platform_sessions.provider.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// Control-plane operations for a provider process. A process can serve one or more configured
+// instances of one provider. Provider routes themselves use the separate private HTTP data plane.
+service SessionProviderControl {
+  // Returns process identity, all configured instances, their capabilities and accepted
+  // session-import formats. This reads local configuration and does not contact upstreams.
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
+
+  // Returns locally known durable session state. This does not contact the upstream or imply that
+  // the session is currently usable; callers use Probe for a fresh verification.
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // Installs a provider-specific exported session candidate. Candidate bytes are write-only:
+  // implementations must never echo them in any result, status snapshot, log, or metric.
+  // This operation can exchange or rotate upstream credentials. A caller that loses the response
+  // after dispatch must not replay the request automatically; it must reconnect and inspect the
+  // local snapshot, preserving OUTCOME_UNKNOWN if the provider cannot establish what happened.
+  rpc ImportSession(ImportSessionRequest) returns (ImportSessionResponse);
+
+  // Performs one provider-defined session verification. A successful result means the provider
+  // confirmed authentication, not merely that an HTTP request succeeded. A probe may rotate
+  // credentials, which the provider must persist before returning a completed result.
+  // A caller must not automatically repeat a call whose outcome was lost after dispatch.
+  rpc Probe(ProbeRequest) returns (ProbeResponse);
+
+  // Verifies a candidate without installing it or changing the installed session snapshot. This
+  // preserves the owner API's separate verify-before-install operation. It can still perform an
+  // upstream request, so a lost response is ambiguous and callers must not replay automatically.
+  rpc VerifyCandidate(VerifyCandidateRequest) returns (VerifyCandidateResponse);
+}
+
+message InstanceRef {
+  // Stable provider identifier, such as "blueshield".
+  string provider_id = 1;
+  // Stable configured instance identifier within this provider process.
+  string instance_id = 2;
+}
+
+message GetInfoRequest {}
+
+message GetInfoResponse {
+  // Stable process-level identity and the complete set of currently configured instances.
+  ProviderInfo provider = 1;
+}
+
+message ProviderInfo {
+  string provider_id = 1;
+  string display_name = 2;
+  // Build or implementation version, for diagnostics only.
+  string version = 3;
+  repeated ProviderInstanceInfo instances = 4;
+}
+
+message ProviderInstanceInfo {
+  string instance_id = 1;
+  reserved 2;
+  reserved "routes";
+  // Origin-relative HTTP data-plane path serving this instance's OpenAPI document, when available.
+  optional string openapi_document_path = 3;
+  repeated SessionImportFormat accepted_session_import_formats = 4;
+  // Whether this instance can verify an export candidate without installing it.
+  bool supports_candidate_verification = 5;
+  // Provider-authored owner guidance for exporting and importing a session. Text is presentation
+  // only and must not contain credentials, upstream response bodies, or member data.
+  repeated ExportInstruction instructions = 6;
+}
+
+message ExportInstruction {
+  // Owner guidance for exporting a session.
+  string text = 1;
+  // Optional export command for the owner to copy. The service must never execute it.
+  optional string command = 2;
+}
+
+message SessionImportFormat {
+  // MIME type of the submitted candidate bytes, such as application/json.
+  string media_type = 1;
+  // Provider-defined format version. It is explicit so a format evolution is not guessed.
+  string version = 2;
+}
+
+message GetSessionRequest {
+  InstanceRef instance = 1;
+}
+
+message GetSessionResponse {
+  InstanceRef instance = 1;
+  SessionSnapshot snapshot = 2;
+}
+
+// Snapshot of durable, locally known state. It is not a lease, fencing token, or promise that a
+// remote session remains valid beyond the time of the last successful verification.
+message SessionSnapshot {
+  // UNSPECIFIED is invalid; callers must treat unknown future states conservatively.
+  SessionState state = 1;
+  // Time at which the provider last changed this locally known state. May be absent for
+  // STORAGE_ERROR when the provider cannot read the state or its transition time.
+  google.protobuf.Timestamp state_changed_at = 2;
+  // Absent until this process has completed a probe. A failed RPC transport is not a completed
+  // probe and therefore does not create a ProbeResult.
+  ProbeResult last_probe = 3;
+  // Most recent successful authentication verification, even if a later probe failed.
+  google.protobuf.Timestamp last_verified_at = 4;
+  // Time at which the current session candidate was durably imported, when known.
+  google.protobuf.Timestamp imported_at = 5;
+  // Optional provider-authored owner guidance. It is presentation only; typed state and probe
+  // results remain authoritative. Never put credentials, upstream bodies, or member data here.
+  OwnerPresentation owner_presentation = 6;
+}
+
+message OwnerPresentation {
+  // Owner-facing status text.
+  string message = 1;
+  // Optional owner-facing help text.
+  optional string help = 2;
+}
+
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+  SESSION_STATE_NO_SESSION = 1;
+  SESSION_STATE_UNVERIFIED = 2;
+  SESSION_STATE_VERIFIED = 3;
+  SESSION_STATE_REAUTHENTICATION_REQUIRED = 4;
+  SESSION_STATE_CHALLENGE_REQUIRED = 5;
+  // Use when an ambiguous upstream interaction may have changed credentials and local state
+  // cannot establish which session is current. Do not infer that retrying is safe.
+  SESSION_STATE_OUTCOME_UNKNOWN = 6;
+  // The provider could not read its local session state. This does not mean no session exists.
+  SESSION_STATE_STORAGE_ERROR = 7;
+}
+
+message ImportSessionRequest {
+  InstanceRef instance = 1;
+  // All fields are required. An undeclared but complete format or a well-formed candidate rejected
+  // by the provider uses the typed CandidateRejected result. An invalid request envelope uses the
+  // INVALID_ARGUMENT gRPC status.
+  string media_type = 2;
+  string format_version = 3;
+  // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
+  // errors, or telemetry.
+  bytes candidate = 4;
+}
+
+message ImportSessionResponse {
+  InstanceRef instance = 1;
+  // A nonzero outcome is required. Unknown future values must not be treated as success.
+  ImportOutcome outcome = 3;
+  CandidateRejected rejected = 11;
+  UpstreamUnavailable upstream_unavailable = 14;
+  OperationOutcomeUnknown outcome_unknown = 15;
+  ImportFailure failure = 16;
+  reserved 10, 12, 13;
+  reserved "installed", "reauthentication_required", "challenge_required";
+}
+
+enum ImportOutcome {
+  IMPORT_OUTCOME_UNSPECIFIED = 0;
+  IMPORT_OUTCOME_INSTALLED = 1;
+  IMPORT_OUTCOME_REJECTED = 2;
+  IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED = 3;
+  IMPORT_OUTCOME_CHALLENGE_REQUIRED = 4;
+  IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE = 5;
+  IMPORT_OUTCOME_UNKNOWN = 6;
+  IMPORT_OUTCOME_FAILURE = 7;
+}
+
+// A definite import failure. An operation with unresolved credential rotation must instead
+// return OperationOutcomeUnknown. Never include response bodies or member data.
+message ImportFailure {
+  ImportFailureReason reason = 1;
+  // Present only for UPSTREAM_HTTP_ERROR and restricted to HTTP status codes 100 through 599.
+  optional uint32 upstream_http_status = 2;
+}
+
+enum ImportFailureReason {
+  IMPORT_FAILURE_REASON_UNSPECIFIED = 0;
+  IMPORT_FAILURE_REASON_INVALID_RESPONSE = 1;
+  IMPORT_FAILURE_REASON_UPSTREAM_HTTP_ERROR = 2;
+  IMPORT_FAILURE_REASON_STORAGE_ERROR = 3;
+}
+
+message CandidateRejected {
+  CandidateRejectionReason reason = 1;
+}
+
+enum CandidateRejectionReason {
+  CANDIDATE_REJECTION_REASON_UNSPECIFIED = 0;
+  CANDIDATE_REJECTION_REASON_UNSUPPORTED_FORMAT = 1;
+  CANDIDATE_REJECTION_REASON_MALFORMED = 2;
+  CANDIDATE_REJECTION_REASON_NOT_ACCEPTED = 3;
+}
+
+message ProbeRequest {
+  InstanceRef instance = 1;
+  // Required. PROBE_SOURCE_UNSPECIFIED is invalid.
+  ProbeSource source = 2;
+}
+
+enum ProbeSource {
+  PROBE_SOURCE_UNSPECIFIED = 0;
+  // Started by the provider's configured background schedule.
+  PROBE_SOURCE_SCHEDULED = 1;
+  // Started by an explicit gateway or operator request.
+  PROBE_SOURCE_MANUAL = 2;
+}
+
+message ProbeResponse {
+  InstanceRef instance = 1;
+  ProbeResult result = 2;
+}
+
+message VerifyCandidateRequest {
+  InstanceRef instance = 1;
+  string media_type = 2;
+  string format_version = 3;
+  // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
+  // errors, or telemetry.
+  bytes candidate = 4;
+}
+
+message VerifyCandidateResponse {
+  InstanceRef instance = 1;
+  reserved 16;
+  reserved "unsupported";
+  // This result concerns only the candidate; it does not change installed-session state.
+  VerifyOutcome outcome = 3;
+  CandidateRejected rejected = 11;
+  UpstreamUnavailable upstream_unavailable = 14;
+  OperationOutcomeUnknown outcome_unknown = 15;
+  reserved 10, 12, 13;
+  reserved "verified", "reauthentication_required", "challenge_required";
+}
+
+enum VerifyOutcome {
+  VERIFY_OUTCOME_UNSPECIFIED = 0;
+  VERIFY_OUTCOME_VERIFIED = 1;
+  VERIFY_OUTCOME_REJECTED = 2;
+  VERIFY_OUTCOME_REAUTHENTICATION_REQUIRED = 3;
+  VERIFY_OUTCOME_CHALLENGE_REQUIRED = 4;
+  VERIFY_OUTCOME_UPSTREAM_UNAVAILABLE = 5;
+  VERIFY_OUTCOME_UNKNOWN = 6;
+}
+
+message ProbeResult {
+  google.protobuf.Timestamp completed_at = 1;
+  ProbeSource source = 2;
+  // A transport error is not a completed probe and must never trigger automatic replay.
+  ProbeOutcome outcome = 3;
+  UpstreamUnavailable upstream_unavailable = 13;
+  OperationOutcomeUnknown outcome_unknown = 14;
+  ProbeFailure failure = 16;
+  reserved 10, 11, 12, 15;
+  reserved "verified", "reauthentication_required", "challenge_required", "no_session";
+}
+
+enum ProbeOutcome {
+  PROBE_OUTCOME_UNSPECIFIED = 0;
+  PROBE_OUTCOME_VERIFIED = 1;
+  PROBE_OUTCOME_REAUTHENTICATION_REQUIRED = 2;
+  PROBE_OUTCOME_CHALLENGE_REQUIRED = 3;
+  PROBE_OUTCOME_UPSTREAM_UNAVAILABLE = 4;
+  PROBE_OUTCOME_UNKNOWN = 5;
+  PROBE_OUTCOME_NO_SESSION = 6;
+  PROBE_OUTCOME_FAILURE = 7;
+}
+
+message ProbeFailure {
+  ProbeFailureReason reason = 1;
+}
+
+// Bounded, non-sensitive categories for completed checks that cannot be reported as verified.
+// Use OperationOutcomeUnknown when a possibly credential-rotating upstream call has an ambiguous
+// outcome; do not collapse that case into one of these failure categories.
+enum ProbeFailureReason {
+  PROBE_FAILURE_REASON_UNSPECIFIED = 0;
+  PROBE_FAILURE_REASON_INVALID_RESPONSE = 1;
+  PROBE_FAILURE_REASON_UPSTREAM_HTTP_ERROR = 2;
+  PROBE_FAILURE_REASON_STORAGE_ERROR = 3;
+  PROBE_FAILURE_REASON_SUPERSEDED = 4;
+  PROBE_FAILURE_REASON_PROVIDER_INTERNAL = 5;
+}
+
+message UpstreamUnavailable {
+  // Providers may return this only when no credential-changing effect is unresolved. If the
+  // upstream may have processed the request and credential rotation is uncertain, use
+  // OperationOutcomeUnknown. This optional guidance does not authorize request replay.
+  google.protobuf.Duration retry_after = 1;
+}
+
+message OperationOutcomeUnknown {
+  // True when an upstream request may have rotated credentials before its outcome was lost.
+  bool credential_rotation_may_have_occurred = 1;
+  // Optional sanitized diagnostic; this does not make retrying safe.
+  UnknownOutcomeReason reason = 2;
+  // Present only for UPSTREAM_HTTP_ERROR and restricted to HTTP status codes 100 through 599.
+  optional uint32 upstream_http_status = 3;
+}
+
+enum UnknownOutcomeReason {
+  UNKNOWN_OUTCOME_REASON_UNSPECIFIED = 0;
+  UNKNOWN_OUTCOME_REASON_TIMEOUT = 1;
+  UNKNOWN_OUTCOME_REASON_UPSTREAM_UNREACHABLE = 2;
+  UNKNOWN_OUTCOME_REASON_INVALID_RESPONSE = 3;
+  UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR = 4;
+}

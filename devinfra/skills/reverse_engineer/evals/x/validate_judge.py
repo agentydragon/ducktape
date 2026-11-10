@@ -39,7 +39,11 @@ def main() -> None:
     parser.add_argument("--case", choices=sorted(_CASES), required=True, help="Which validation case to run.")
     args = parser.parse_args()
 
-    run_eval(args=args, log_subdir=f"validate_judge_logs/{args.case}", task_factory=_CASES[args.case])
+    run_eval(
+        args=args,
+        log_subdir=f"validate_judge_logs/{args.case}",
+        task_factory=lambda: _CASES[args.case](judge_model=args.model),
+    )
 
 
 if __name__ == "__main__":

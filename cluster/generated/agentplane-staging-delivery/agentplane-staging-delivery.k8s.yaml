@@ -1,25 +1,4 @@
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: runner-gateway-settings
-  namespace: agentplane-staging
-data:
-  settings.yaml: |
-    dispatcher_callers:
-      - agentplane-staging/actions
-      - agentplane-staging/app
-      - agentplane-staging/notifications
-    gateway_callers:
-      - agentplane-staging/app
-      - agentplane-staging/notifications
-      - agentplane-staging/runner-gateway
-    wake_callers:
-      - agentplane-staging/actions
-      - agentplane-staging/app
-      - agentplane-staging/notifications
-immutable: false
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: runner-gateway
@@ -59,18 +38,18 @@ spec:
         - env:
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
               value: agentplane-staging
-            - name: AGENTPLANE_RUNNER_GATEWAY_LISTEN_ADDRESS
-              value: 0.0.0.0:8080
-            - name: AGENTPLANE_RUNNER_GATEWAY_HTTP_LISTEN_ADDRESS
-              value: 0.0.0.0:8081
+            - name: AGENTPLANE_RUNNER_GATEWAY_POLICY_NAMESPACE
+              value: agentplane-staging
             - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
               value: /var/run/secrets/agentplane-runner-gateway/token
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
               value: session-dispatcher
             - name: AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE
               value: agentplane-runner-gateway
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_AUDIENCE
-              value: agentplane-runner-control
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
+              value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: AGENTPLANE_RUNNER_GATEWAY_KUBERNETES_CLIENT_QPS
+              value: "-1"
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
               value: agentplane-staging/sandbox-controller
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
@@ -99,25 +78,38 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
+            exec:
+              command:
+                - /healthprobe
+                - --target
+                - 127.0.0.1:8080
+                - --ca-file
+                - /run/agentplane/workload-trust/ca-certificates.crt
+                - --server-uri
+                - spiffe://agentplane/session-dispatcher
             failureThreshold: 3
-            grpc:
-              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 30
+            timeoutSeconds: 5
           name: runner-gateway
           ports:
             - containerPort: 8080
               name: grpc
               protocol: TCP
-            - containerPort: 8081
-              name: http
-              protocol: TCP
           readinessProbe:
+            exec:
+              command:
+                - /healthprobe
+                - --target
+                - 127.0.0.1:8080
+                - --ca-file
+                - /run/agentplane/workload-trust/ca-certificates.crt
+                - --server-uri
+                - spiffe://agentplane/session-dispatcher
             failureThreshold: 3
-            grpc:
-              port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
+            timeoutSeconds: 5
           resources:
             limits:
               memory: 1024Mi
@@ -132,9 +124,32 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
+          startupProbe:
+            exec:
+              command:
+                - /healthprobe
+                - --target
+                - 127.0.0.1:8080
+                - --ca-file
+                - /run/agentplane/workload-trust/ca-certificates.crt
+                - --server-uri
+                - spiffe://agentplane/session-dispatcher
+            failureThreshold: 60
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 5
           volumeMounts:
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
+            - mountPath: /run/agentplane/workload-trust
+              name: workload-trust
+              readOnly: true
             - mountPath: /etc/agentplane-runner-gateway/settings
               name: configmap-runner-gateway-settings
+              readOnly: true
+            - mountPath: /run/agentplane/runner-tls
+              name: runner-tls
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-runner-gateway
               name: runner-gateway-token
@@ -143,30 +158,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-session-dispatcher
-          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset
-          imagePullPolicy: Always
-          name: migrate
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 25m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Always
@@ -183,9 +174,31 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       volumes:
+        - name: workload-tls
+          secret:
+            secretName: runner-gateway-workload-tls
+        - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-trust
         - configMap:
             name: runner-gateway-settings
           name: configmap-runner-gateway-settings
+        - name: runner-tls
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: tls.crt
+                      path: tls.crt
+                    - key: tls.key
+                      path: tls.key
+                  name: agentplane-runner-gateway-tls
+              - configMap:
+                  items:
+                    - key: ca-certificates.crt
+                      path: ca.crt
+                  name: agentplane-workload-ca-bundle
         - name: runner-gateway-token
           projected:
             sources:
@@ -193,6 +206,10 @@ spec:
                   audience: agentplane-runner-gateway
                   expirationSeconds: 3600
                   path: token
+              - serviceAccountToken:
+                  audience: central-sampler
+                  expirationSeconds: 3600
+                  path: central-sampler
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -204,6 +221,257 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: runner-gateway
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: runner-gateway-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: runner-gateway-workload-tls
+  uris:
+    - spiffe://agentplane/session-dispatcher
+  usages:
+    - digital signature
+    - server auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runner-gateway-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    dispatcher_callers:
+      - agentplane-staging/actions
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+    environment_readers:
+      - agentplane-staging/app
+    environment_managers:
+      - agentplane-staging/app
+    environment_launchers:
+      - agentplane-staging/actions
+    environment_default_policy_sets:
+      - basic
+      - inference-experiments
+    gateway_callers:
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+      - agentplane-staging/runner-gateway
+    runner_security:
+      mode: mtls
+      tls:
+        cert_file: /run/agentplane/runner-tls/tls.crt
+        key_file: /run/agentplane/runner-tls/tls.key
+        ca_file: /run/agentplane/runner-tls/ca.crt
+    gateway_tls:
+      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+      server_uri: spiffe://agentplane/session-dispatcher
+    rpc:
+      listen_address: 0.0.0.0:8080
+      tls:
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+      auth:
+        - mode: kubernetes_bearer
+          audiences:
+            - agentplane-runner-gateway
+            - session-dispatcher
+        - mode: spiffe
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    central_sampler:
+      target: central-sampler.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
+    executor_callers:
+      - agentplane-staging/central-sampler
+    runtime_catalog:
+      models:
+        models:
+          - model: antigravity/ant-messages/claude-opus-4-6-thinking
+            display_name: Claude Opus 4.6 (Thinking) — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/claude-sonnet-4-6
+            display_name: Claude Sonnet 4.6 (Thinking) — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/gemini-3-flash
+            display_name: Gemini 3 Flash — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/gemini-3.5-flash-lite
+            display_name: Gemini 3.5 Flash-Lite — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: antigravity/ant-messages/gemini-3.8-flash-high
+            display_name: Gemini 3.8 Flash (High) — Google Antigravity
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: chatgpt-sub/oai-responses/gpt-6-astra
+            display_name: GPT-6 Astra — ChatGPT
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: chatgpt-sub/oai-responses/gpt-6-luna
+            display_name: GPT-6 Luna — ChatGPT
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: chatgpt-sub/oai-responses/gpt-6.1-sol
+            display_name: GPT-6.1 Sol — ChatGPT
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+            display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+          - model: ollama/oai-chat/gpt-oss-20b-128k
+            display_name: GPT-OSS 20B (128K) — cluster Ollama
+            reasoning_efforts: []
+          - model: ollama/oai-chat/gpt-oss-120b-128k
+            display_name: GPT-OSS 120B (128K) — cluster Ollama
+            reasoning_efforts: []
+          - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+            display_name: Gemma 4 31B (128K) — cluster Ollama
+            reasoning_efforts: []
+          - model: anthropic-api/ant-messages/claude-opus-5-5
+            display_name: Opus 5.5 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: anthropic-api/ant-messages/claude-sonnet-5-5
+            display_name: Sonnet 5.5 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: anthropic-api/ant-messages/claude-haiku-5-5
+            display_name: Haiku 5.5 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+          - model: anthropic-api/ant-messages/claude-fable-5-1
+            display_name: Fable 5.1 — Anthropic API
+            reasoning_efforts:
+              - low
+              - medium
+              - high
+              - xhigh
+              - max
+        harnesses:
+          HARNESS_CLAUDE:
+            - antigravity/ant-messages/claude-opus-4-6-thinking
+            - antigravity/ant-messages/claude-sonnet-4-6
+            - antigravity/ant-messages/gemini-3-flash
+            - antigravity/ant-messages/gemini-3.5-flash-lite
+            - antigravity/ant-messages/gemini-3.8-flash-high
+          HARNESS_CODEX:
+            - chatgpt-sub/oai-responses/gpt-6-astra
+            - chatgpt-sub/oai-responses/gpt-6-luna
+            - chatgpt-sub/oai-responses/gpt-6.1-sol
+            - antigravity/ant-messages/claude-opus-4-6-thinking
+            - antigravity/ant-messages/claude-sonnet-4-6
+            - antigravity/ant-messages/gemini-3-flash
+            - antigravity/ant-messages/gemini-3.5-flash-lite
+            - antigravity/ant-messages/gemini-3.8-flash-high
+            - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+            - ollama/oai-chat/gpt-oss-20b-128k
+            - ollama/oai-chat/gpt-oss-120b-128k
+            - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          HARNESS_CENTRAL_SAMPLER:
+            - chatgpt-sub/oai-responses/gpt-6-astra
+            - chatgpt-sub/oai-responses/gpt-6-luna
+            - chatgpt-sub/oai-responses/gpt-6.1-sol
+            - antigravity/ant-messages/claude-opus-4-6-thinking
+            - antigravity/ant-messages/claude-sonnet-4-6
+            - antigravity/ant-messages/gemini-3-flash
+            - antigravity/ant-messages/gemini-3.5-flash-lite
+            - antigravity/ant-messages/gemini-3.8-flash-high
+            - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+            - ollama/oai-chat/gpt-oss-20b-128k
+            - ollama/oai-chat/gpt-oss-120b-128k
+            - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+            - anthropic-api/ant-messages/claude-opus-5-5
+            - anthropic-api/ant-messages/claude-sonnet-5-5
+            - anthropic-api/ant-messages/claude-haiku-5-5
+            - anthropic-api/ant-messages/claude-fable-5-1
+      templates:
+        environment-tools:
+          workspace_root: /state/workspaces
+          workspace_provenance: DEPLOYMENT_CONFIG
+          workspace_root_enforced: false
+          creates_missing_cwd: true
+        environment-vm:
+          workspace_root: /state/workspaces
+          workspace_provenance: DEPLOYMENT_CONFIG
+          workspace_root_enforced: true
+          creates_missing_cwd: true
+    wake_callers:
+      - agentplane-staging/actions
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+    operator_callers:
+      - agentplane-staging/app
+    delegation:
+      actor: agentplane-staging/actions
+      caller_namespaces:
+        - agentplane-staging
+      methods:
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
+        - /agentplane.environments.v1.EnvironmentService/ListEnvironments
+        - /agentplane.environments.v1.EnvironmentService/GetEnvironment
+        - /agentplane.environments.v1.EnvironmentService/WatchEnvironment
+        - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
+immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -246,6 +514,30 @@ rules:
       - list
       - watch
   - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - sandboxes
@@ -253,7 +545,35 @@ rules:
       - get
       - list
       - watch
+      - create
       - patch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -287,39 +607,6 @@ subjects:
     kind: ServiceAccount
     name: runner-gateway
     namespace: agentplane-staging
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: agentplane-runner-control
-  namespace: agentplane-staging
-spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's control stream to the Runner Gateway. It conveys no other authority.
-  source:
-    projectedWorkloadToken:
-      audience: agentplane-runner-control
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: runner-control
-  namespace: agentplane-staging
-spec:
-  rules:
-    - clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
-      hosts:
-        - runner-gateway.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.runner_gateway.RunnerControl/Connect
-      type: egress
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -356,6 +643,22 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-environment-runtime
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: runner-gateway
@@ -386,6 +689,22 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: central-sampler
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: sandbox-controller
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -400,8 +719,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-            - port: "8081"
-              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: notifications
@@ -409,8 +726,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-            - port: "8081"
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
@@ -420,32 +735,3 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-            - port: "8081"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: runner-gateway-runner-control-proxy
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress

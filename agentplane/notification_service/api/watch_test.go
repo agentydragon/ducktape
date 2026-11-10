@@ -1,233 +1,212 @@
 package api
 
 import (
+	"context"
 	"io"
 	"testing"
 	"time"
 
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 )
 
-type sandboxWatch = grpc.ServerStreamingClient[operatorpb.WatchSandboxNotificationsResponse]
+type inboxWatch = grpc.ServerStreamingClient[pb.WatchInboxResponse]
 
-type noticeWatch = grpc.ServerStreamingClient[operatorpb.WatchSessionNoticesResponse]
-
-func (s testServer) watchSandbox(t *testing.T) sandboxWatch {
+func (s testServer) watchInbox(t *testing.T, session string) inboxWatch {
 	t.Helper()
-	stream, err := s.operator.WatchSandboxNotifications(bearing(t, operatorToken), sandboxWatchRequest(sandboxUID))
+	stream, err := s.client.WatchInbox(bearing(t, operatorToken), &pb.WatchInboxRequest{SessionId: session})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return stream
 }
 
-func (s testServer) watchNotices(t *testing.T, sessionIDs ...string) noticeWatch {
+func untilInbox(t *testing.T, stream inboxWatch, want func(*pb.Inbox) bool) *pb.Inbox {
 	t.Helper()
-	stream, err := s.operator.WatchSessionNotices(bearing(t, operatorToken), &operatorpb.WatchSessionNoticesRequest{SessionIds: sessionIDs})
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("watch ended before expected state: %v", err)
+		}
+		if inbox := response.GetInbox(); inbox != nil && want(inbox) {
+			return inbox
+		}
+	}
+}
+
+func TestInboxWatchOpensAndFollowsCommittedChanges(t *testing.T) {
+	s := newServer(t)
+	stream := s.watchInbox(t, testSession)
+	first, err := stream.Recv()
+	if err != nil || first.GetNoInbox() == nil {
+		t.Fatalf("initial state = %v, %v", first, err)
+	}
+	sub := s.subscribe(t, "stream")
+	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetId() == sub.GetInboxId() })
+	s.record(t, sub, 1)
+	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetDelivery().GetPendingAcknowledgementCount() == 1 })
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+		t.Fatal(err)
+	}
+	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetAcknowledged() == 1 })
+	if _, err := s.client.RetireInbox(bearing(t, sandboxToken), &pb.RetireInboxRequest{SessionId: testSession}); err != nil {
+		t.Fatal(err)
+	}
+	retired := untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetRetired() })
+	if retired.GetDelivery().GetWaitReason() != pb.NoticeWaitReason_NOTICE_WAIT_REASON_RETIRED {
+		t.Fatalf("retired: %v", retired)
+	}
+}
+
+func TestInboxWatchUpdatesWhenDebounceFallsDue(t *testing.T) {
+	s := newServer(t, func(c *serverConfig) { c.debounce = store.Debounce{Quiet: 2 * time.Second, MaxWait: 4 * time.Second} })
+	sub := s.subscribe(t, "due")
+	s.record(t, sub, 1)
+	stream := s.watchInbox(t, testSession)
+	untilInbox(t, stream, func(i *pb.Inbox) bool {
+		return i.GetDelivery().GetWaitReason() == pb.NoticeWaitReason_NOTICE_WAIT_REASON_DEBOUNCING
+	})
+	untilInbox(t, stream, func(i *pb.Inbox) bool {
+		return i.GetDelivery().GetWaitReason() == pb.NoticeWaitReason_NOTICE_WAIT_REASON_READY
+	})
+}
+
+func TestSubscriptionWatchUpdatesWhenExpiryFallsDue(t *testing.T) {
+	s := newServer(t)
+	sub := s.subscribe(t, "expires")
+	s.exec(t, `UPDATE subscription SET expires_at = $2 WHERE id = $1`, sub.GetId(), time.Now().Add(2*time.Second))
+	stream, err := s.client.WatchSubscriptions(bearing(t, operatorToken), &pb.WatchSubscriptionsRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return stream
-}
-
-// untilSandbox receives snapshots until one shows what the condition wants. A commit that changes several rows
-// can be shown in steps, so a test waits for the state it expects rather than for a count of frames.
-func untilSandbox(t *testing.T, stream sandboxWatch, wanted func(*operatorpb.SandboxNotificationStatus) bool) *operatorpb.SandboxNotificationStatus {
-	t.Helper()
+	first, err := stream.Recv()
+	if err != nil || len(first.GetSnapshot().GetSubscriptions()) != 1 || first.GetSnapshot().GetSubscriptions()[0].GetExpired() {
+		t.Fatalf("initial = %v, %v", first, err)
+	}
 	for {
-		response, err := stream.Recv()
+		frame, err := stream.Recv()
 		if err != nil {
-			t.Fatalf("the watch ended before it showed the state: %v", err)
+			t.Fatal(err)
 		}
-		if response.GetSnapshot() == nil {
-			t.Fatalf("want a snapshot, received %v", response)
-		}
-		if wanted(response.GetSnapshot()) {
-			return response.GetSnapshot()
+		if delta := frame.GetDelta(); delta != nil && len(delta.GetUpserted()) == 1 && delta.GetUpserted()[0].GetExpired() {
+			break
 		}
 	}
-}
-
-func untilNotices(t *testing.T, stream noticeWatch, wanted func(*operatorpb.SessionNoticeStates) bool) *operatorpb.SessionNoticeStates {
-	t.Helper()
-	for {
-		response, err := stream.Recv()
-		if err != nil {
-			t.Fatalf("the watch ended before it showed the state: %v", err)
-		}
-		if response.GetSnapshot() == nil {
-			t.Fatalf("want a snapshot, received %v", response)
-		}
-		if wanted(response.GetSnapshot()) {
-			return response.GetSnapshot()
-		}
-	}
-}
-
-func wantSandboxReconnectAndCleanEnd(t *testing.T, stream sandboxWatch) {
-	t.Helper()
-	if response, err := stream.Recv(); err != nil || response.GetReconnectRequired() == nil {
-		t.Fatalf("want reconnect_required, received %v, %v", response, err)
-	}
-	if _, err := stream.Recv(); err != io.EOF {
-		t.Fatalf("want the watch to end cleanly, received %v", err)
-	}
-}
-
-func wantNoticesReconnectAndCleanEnd(t *testing.T, stream noticeWatch) {
-	t.Helper()
-	if response, err := stream.Recv(); err != nil || response.GetReconnectRequired() == nil {
-		t.Fatalf("want reconnect_required, received %v, %v", response, err)
-	}
-	if _, err := stream.Recv(); err != io.EOF {
-		t.Fatalf("want the watch to end cleanly, received %v", err)
-	}
-}
-
-func TestSandboxWatchOpensWithASnapshotAndFollowsCommittedChanges(t *testing.T) {
-	server := newServer(t)
-	stream := server.watchSandbox(t)
-	opened := untilSandbox(t, stream, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	if len(opened.GetInboxes()) != 0 || opened.GetObservedAt() == nil {
-		t.Fatalf("opening snapshot = %v", opened)
-	}
-
-	subscription := server.subscribe(t, "stream", "stream-session")
-	subscribed := untilSandbox(t, stream, func(s *operatorpb.SandboxNotificationStatus) bool { return len(s.GetInboxes()) == 1 })
-	if inbox := subscribed.GetInboxes()[0]; inbox.GetInbox().GetId() != subscription.GetInboxId() || len(inbox.GetSubscriptions()) != 1 {
-		t.Errorf("subscribed = %v", subscribed)
-	}
-
-	server.record(t, subscription, 1)
-	untilSandbox(t, stream, func(s *operatorpb.SandboxNotificationStatus) bool {
-		return s.GetInboxes()[0].GetPendingAcknowledgementCount() == 1
-	})
-
-	if _, err := server.client.CancelSubscription(bearing(t, sandboxToken), &notificationspb.CancelSubscriptionRequest{SubscriptionId: subscription.GetId()}); err != nil {
-		t.Fatal(err)
-	}
-	untilSandbox(t, stream, func(s *operatorpb.SandboxNotificationStatus) bool {
-		return s.GetInboxes()[0].GetSubscriptions()[0].GetCancelled()
-	})
-
-	if _, err := server.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{InboxId: subscription.GetInboxId()}); err != nil {
-		t.Fatal(err)
-	}
-	retired := untilSandbox(t, stream, func(s *operatorpb.SandboxNotificationStatus) bool { return s.GetInboxes()[0].GetInbox().GetRetired() })
-	if reason := retired.GetInboxes()[0].GetNoticeWaitReason(); reason != operatorpb.NoticeWaitReason_NOTICE_WAIT_REASON_RETIRED {
-		t.Errorf("a retired inbox waits for %v", reason)
-	}
-}
-
-func TestAWakeupThatChangesNothingSendsNoSnapshot(t *testing.T) {
-	server := newServer(t, func(c *serverConfig) { c.lease = 2 * time.Second })
-	stream := server.watchSandbox(t)
-	untilSandbox(t, stream, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	server.exec(t, `SELECT pg_notify($1, '')`, store.WorkChannel)
-	// The wakeup read the same state again, so what follows is the end of the lease and not another snapshot.
-	wantSandboxReconnectAndCleanEnd(t, stream)
-
-	notices := server.watchNotices(t, testSession)
-	untilNotices(t, notices, func(*operatorpb.SessionNoticeStates) bool { return true })
-	server.exec(t, `SELECT pg_notify($1, '')`, store.WorkChannel)
-	wantNoticesReconnectAndCleanEnd(t, notices)
-}
-
-func TestSandboxWatchReadsAgainWhenADebounceFallsDue(t *testing.T) {
-	server := newServer(t, func(c *serverConfig) { c.debounce = store.Debounce{Quiet: 2 * time.Second, MaxWait: 4 * time.Second} })
-	subscription := server.subscribe(t, "due")
-	server.record(t, subscription, 1)
-	stream := server.watchSandbox(t)
-	debouncing := untilSandbox(t, stream, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	if inbox := debouncing.GetInboxes()[0]; inbox.GetNoticeWaitReason() != operatorpb.NoticeWaitReason_NOTICE_WAIT_REASON_DEBOUNCING || inbox.GetNoticeDueAt() == nil {
-		t.Fatalf("the opening snapshot should show the entry debouncing: %v", debouncing)
-	}
-	// Nothing is committed from here on: the notice falls due with the clock.
-	due := untilSandbox(t, stream, func(s *operatorpb.SandboxNotificationStatus) bool {
-		return s.GetInboxes()[0].GetNoticeWaitReason() == operatorpb.NoticeWaitReason_NOTICE_WAIT_REASON_READY
-	})
-	if inbox := due.GetInboxes()[0]; inbox.GetNoticeDueAt() != nil || inbox.GetUnannouncedCount() != 1 {
-		t.Errorf("a notice that is due shows %v", inbox)
-	}
-}
-
-func TestSandboxWatchReadsAgainWhenASubscriptionExpires(t *testing.T) {
-	server := newServer(t)
-	subscription := server.subscribe(t, "expires")
-	server.exec(t, `UPDATE subscription SET expires_at = $2 WHERE id = $1`, subscription.GetId(), time.Now().Add(3*time.Second))
-	stream := server.watchSandbox(t)
-	live := untilSandbox(t, stream, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	expiresAt := live.GetInboxes()[0].GetSubscriptions()[0].GetExpiresAt().AsTime()
-	if !live.GetObservedAt().AsTime().Before(expiresAt) {
-		t.Fatalf("the opening snapshot at %v should show the subscription live until %v", live.GetObservedAt().AsTime(), expiresAt)
-	}
-	// Nothing is committed from here on: the subscription expires with the clock.
-	expired := untilSandbox(t, stream, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	if observed := expired.GetObservedAt().AsTime(); observed.Before(expiresAt) {
-		t.Errorf("a snapshot read at %v, before the subscription expired at %v, was sent as a change", observed, expiresAt)
-	}
-}
-
-func TestSessionNoticeWatchOpensWithTheStatesAndFollowsCommittedChanges(t *testing.T) {
-	server := newServer(t)
-	subscription := server.subscribe(t, "notices", "noticed")
-	stream := server.watchNotices(t, "noticed", "unknown")
-	initial := untilNotices(t, stream, func(*operatorpb.SessionNoticeStates) bool { return true })
-	if len(initial.GetInboxes()) != 1 || initial.GetInboxes()[0].GetQueued() != 0 {
-		t.Fatalf("initial = %v", initial)
-	}
-
-	server.record(t, subscription, 2)
-	queued := untilNotices(t, stream, func(s *operatorpb.SessionNoticeStates) bool { return s.GetInboxes()[0].GetQueued() == 2 })
-	if inbox := queued.GetInboxes()[0]; inbox.GetNoticeWaitReason() != operatorpb.NoticeWaitReason_NOTICE_WAIT_REASON_DEBOUNCING || inbox.GetEligibleAt() == nil {
-		t.Errorf("queued = %v", queued)
-	}
-
-	if _, err := server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: subscription.GetInboxId(), ThroughCursor: 2}); err != nil {
-		t.Fatal(err)
-	}
-	untilNotices(t, stream, func(s *operatorpb.SessionNoticeStates) bool {
-		return s.GetInboxes()[0].GetQueued() == 0 && s.GetInboxes()[0].EligibleAt == nil
-	})
-}
-
-func TestSessionNoticeWatchReadsAgainWhenADebounceFallsDue(t *testing.T) {
-	server := newServer(t, func(c *serverConfig) { c.debounce = store.Debounce{Quiet: 2 * time.Second, MaxWait: 4 * time.Second} })
-	subscription := server.subscribe(t, "notices-due", "noticed")
-	server.record(t, subscription, 1)
-	stream := server.watchNotices(t, "noticed")
-	debouncing := untilNotices(t, stream, func(*operatorpb.SessionNoticeStates) bool { return true })
-	if inbox := debouncing.GetInboxes()[0]; inbox.GetNoticeWaitReason() != operatorpb.NoticeWaitReason_NOTICE_WAIT_REASON_DEBOUNCING || inbox.GetEligibleAt() == nil {
-		t.Fatalf("the opening snapshot should show the entry debouncing: %v", debouncing)
-	}
-	// Nothing is committed from here on: the notice falls due with the clock.
-	due := untilNotices(t, stream, func(*operatorpb.SessionNoticeStates) bool { return true })
-	if inbox := due.GetInboxes()[0]; inbox.GetNoticeWaitReason() != operatorpb.NoticeWaitReason_NOTICE_WAIT_REASON_READY || inbox.GetEligibleAt() != nil || inbox.GetQueued() != 1 {
-		t.Errorf("a notice that is due shows %v", inbox)
-	}
-}
-
-func TestWatchesEndWithReconnectRequiredWhenTheirLeaseEnds(t *testing.T) {
-	server := newServer(t, func(c *serverConfig) { c.lease = time.Second })
-	sandbox := server.watchSandbox(t)
-	untilSandbox(t, sandbox, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	wantSandboxReconnectAndCleanEnd(t, sandbox)
-
-	notices := server.watchNotices(t, testSession)
-	untilNotices(t, notices, func(*operatorpb.SessionNoticeStates) bool { return true })
-	wantNoticesReconnectAndCleanEnd(t, notices)
 }
 
 func TestDrainingEndsOpenWatches(t *testing.T) {
-	server := newServer(t)
-	sandbox := server.watchSandbox(t)
-	untilSandbox(t, sandbox, func(*operatorpb.SandboxNotificationStatus) bool { return true })
-	notices := server.watchNotices(t, testSession)
-	untilNotices(t, notices, func(*operatorpb.SessionNoticeStates) bool { return true })
-	server.operatorService.Drain()
-	wantSandboxReconnectAndCleanEnd(t, sandbox)
-	wantNoticesReconnectAndCleanEnd(t, notices)
+	s := newServer(t)
+	stream := s.watchInbox(t, testSession)
+	if _, err := stream.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	s.notifications.Drain()
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("drain end = %v", err)
+	}
+}
+
+func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
+	s := newServer(t)
+	sub := s.subscribe(t, "entry-stream")
+	stream, err := s.client.WatchInboxEntries(bearing(t, operatorToken), &pb.WatchInboxEntriesRequest{SessionId: testSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := stream.Recv()
+	if err != nil || initial.GetSnapshot() == nil || len(initial.GetSnapshot().GetEntries()) != 0 {
+		t.Fatalf("initial = %v, %v", initial, err)
+	}
+	s.record(t, sub, 1)
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if delta := frame.GetDelta(); delta != nil && len(delta.GetUpserted()) == 1 && delta.GetUpserted()[0].GetCursor() == 1 {
+			break
+		}
+	}
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if delta := frame.GetDelta(); delta != nil && len(delta.GetRemovedCursors()) == 1 && delta.GetRemovedCursors()[0] == 1 {
+			break
+		}
+	}
+}
+
+func TestWorkloadWatchStopsWhenItsSandboxIsRecreated(t *testing.T) {
+	s := newServer(t)
+	sub := s.subscribe(t, "watch-fence")
+	stream, err := s.client.WatchInbox(bearing(t, sandboxToken), &pb.WatchInboxRequest{SessionId: testSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first, err := stream.Recv(); err != nil || first.GetInbox() == nil {
+		t.Fatalf("initial = %v, %v", first, err)
+	}
+	s.recreateSandbox(t)
+	s.record(t, sub, 1)
+	_, err = stream.Recv()
+	requireCode(t, err, codes.NotFound)
+}
+
+type blockedSandboxLookup struct {
+	worker.Sandboxes
+	remaining int
+}
+
+func (r *blockedSandboxLookup) Get(ctx context.Context, name string) (sandboxreader.View, error) {
+	r.remaining--
+	if r.remaining == 0 {
+		<-ctx.Done()
+		return sandboxreader.View{}, ctx.Err()
+	}
+	return r.Sandboxes.Get(ctx, name)
+}
+
+func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		lookup    int
+		firstRead bool
+	}{
+		{name: "initial ownership", lookup: 1},
+		{name: "ownership recheck", lookup: 3, firstRead: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := newServer(t, func(c *serverConfig) { c.requestTimeout = 100 * time.Millisecond })
+			sub := s.subscribe(t, "lookup-timeout")
+			s.notifications.sandboxes = &blockedSandboxLookup{Sandboxes: s.notifications.sandboxes, remaining: test.lookup}
+			// The client deadline bounds a broken service; a backend timeout must end the watch first.
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			stream, err := s.client.WatchInbox(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sandboxToken), &pb.WatchInboxRequest{SessionId: testSession})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.firstRead {
+				if first, err := stream.Recv(); err != nil || first.GetInbox() == nil {
+					t.Fatalf("initial = %v, %v", first, err)
+				}
+				s.record(t, sub, 1)
+			}
+			_, err = stream.Recv()
+			if ctx.Err() != nil {
+				t.Fatal("Sandbox authorization lookup outlived the backend timeout and reached the client deadline")
+			}
+			requireCode(t, err, codes.Unavailable)
+		})
+	}
 }

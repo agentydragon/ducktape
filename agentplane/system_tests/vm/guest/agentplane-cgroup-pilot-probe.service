@@ -1,0 +1,12 @@
+[Unit]
+Description=Opt-in bounded systemd cgroup controller pilot
+ConditionKernelCommandLine=agentplane.cgroup-pilot=1
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/agentplane-cgroup-pilot-probe
+TimeoutStartSec=90s
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0

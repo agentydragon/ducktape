@@ -205,10 +205,67 @@ Kustomization for the Policy Controller's RoleBinding management Role and RoleBi
 does not block the Agentplane app Kustomization. Keep an external delegation while its
 namespace is in the retained cleanup scopes, even if its catalog entry is removed.
 
-Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to namespaced
-RoleBindings. Because the Policy Controller can create ClusterRoleBindings for assignable cluster
-grants, a compromised Policy Controller identity could bind any of its named ClusterRoles cluster-wide
-too. This is a delegation limit of its ServiceAccount's Kubernetes permissions.
+The Policy Controller's exact-name `bind` rules limit which assignable ClusterRoles it can grant,
+but not their subjects. Kubernetes RBAC cannot scope top-level ClusterRoleBinding creation by
+`resourceNames`; the controller's ClusterRoleBinding `create`, `patch`, and `delete` permissions
+are unscoped. A compromised controller identity could therefore bind an assignable ClusterRole to
+any subject and delete any ClusterRoleBinding. Generated names and labels guide normal
+reconciliation; they do not limit this ServiceAccount's authority. This cluster-wide binding
+authority is part of the current trusted-controller boundary.
+
+Putting ClusterRoleBinding writes in a separate controller would isolate the Policy Controller's
+credential, but would not contain compromise of the new writer: it would need the same unscoped
+cluster-wide ClusterRoleBinding `create`, `patch`, and `delete` permissions and the same `bind`
+authority for assignable ClusterRoles. Without an admission guard, a compromised writer could still
+grant those roles to any subject and delete any ClusterRoleBinding. Static bindings avoid a runtime
+writer but give up PolicyBindings' runtime ServiceAccount subjects.
+
+Containment after writer compromise would require admission to check each ClusterRoleBinding's
+subject and role against its PolicyBinding and PolicySets. Expiry deletes the PolicyBinding first;
+the subsequent NotFound reconciliation deletes its native bindings. The cleanup check must therefore
+authorize deletion from ownership data on the old ClusterRoleBinding after its source PolicyBinding
+has disappeared. A `ValidatingAdmissionPolicy` evaluates the admission object and its old object, plus
+an explicitly selected parameter resource; it does not fetch arbitrary related objects. This dynamic
+cross-object check needs a validating webhook or another authoritative server-side source. See
+Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
+
+### Kubernetes accounts
+
+Each Agentplane environment has an accounts namespace, `<namespace>-k8s-accounts`, for
+ServiceAccounts nothing runs as. The egress proxy acts as one by impersonation, and its
+`egress-impersonator` Role there, `impersonate` on `serviceaccounts`, is the whole of that right
+(<../cdk8s/agentplane/kubernetes_accounts.py>; [egress SPEC](../../agentplane/egress/SPEC.md#decision)).
+An agent reaches an account only through an `egress` rule naming the account's
+`kubernetesServiceAccount` `EgressCredential`. The account's roles come from `ServiceAccountGrant`s
+of `KubernetesRoleSet`s, or it is a temporary `ManagedServiceAccount`
+([Policy Controller SPEC](../../agentplane/policy_controller/SPEC.md#serviceaccount-grants)).
+
+**Staging today renders the namespace and the Role but no accounts.** `Environment.identity_catalog`
+is off, so Sandboxes act as their own ServiceAccount, and the assignable `PolicySet`s above carry the
+Kubernetes rules. With the switch on (`staging.environment(identity_catalog=True)`, which the
+manifest and RBAC tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`,
+`haku-agent`, `haku-ui`, `public-coder-openclaw`), each assignable set's Kubernetes rules become a
+same-named `KubernetesRoleSet`, and the catalog adds these accounts. Each is a ServiceAccount, a
+Flux-owned grant, a credential and a one-rule use set `k8s-account-<name>`:
+
+- `shared-diagnostics`, with the `shared-diagnostics` role set. Its use set joins the environment's
+  default sets, the reach `basic` gives through the Sandbox's own ServiceAccount today.
+- One per managed preset (`public-coder`, `finance-agent`, `haku`), holding the role sets that
+  preset's launch grants plus cluster diagnostics, so each agent has one `kubectl` identity
+  (operator, 2026-11-09). A launch binds the preset's use set and the egress halves of its sets.
+- One each for `claude-ai` and `haku-agent`, holding exactly the role sets their bindings grant
+  today.
+
+Sandbox Pods project no ServiceAccount token in either rendering: an agent reaches the API server
+only through the proxy as an account its use set names, and learns the `kubectl --server <host>
+--token <placeholder>` invocation from that credential's description on the rules endpoint. A
+Sandbox with no use rule has no Kubernetes access. Only an Action command box, which runs as its
+caller's ServiceAccount, still carries a Kubernetes-audience token for `basic`'s API server rule.
+
+`cluster/cdk8s/test_agent_rbac.py` checks both renderings, including that the proxy impersonates
+only these accounts, that each holds only its grants, and that no Flux binding's holder gains
+Kubernetes access on the switch.
 
 ### Shared deployment definitions and parity contract
 
@@ -520,8 +577,9 @@ Claude Code web sessions authenticate via an **Authentik-issued OIDC JWT**
 that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
 `AuthenticationConfiguration` maps that claim to
 `oidc-ksbx-groups:kubectl-sandbox-users`, the Group every binding below
-subjects on. JWTs are minted biweekly by the `authentik-jwt-rotation`
-CronJob in the `agents-infra` namespace — see <../cdk8s/authentik_jwt_rotation.py>.
+subjects on. The `authentik-jwt-rotation` CronJob in `agents-infra` checks
+hourly and normally mints when a token has 24 hours or less remaining (about
+every 44 days); see <../cdk8s/authentik/jwt_rotation.py>.
 
 Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
 separate explicit Authentik allowlist for effective groups. The normal provider

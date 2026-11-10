@@ -1,0 +1,123 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        ":security",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/oci_cache:zot",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "security",
+    srcs = ["security.py"],
+    deps = [
+        ":vm_admission",
+        "//agentplane/system_tests/shared_cluster:namespaces",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "vm_admission",
+    srcs = ["vm_admission.py"],
+    deps = [
+        "//agentplane/system_tests/shared_cluster:namespaces",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+genrule(
+    name = "virtualmachine_crd",
+    srcs = ["@kubevirt_crd_validations//file"],
+    outs = ["virtualmachines.kubevirt.io.yaml"],
+    cmd = "$(location //devinfra/k8s:extract_crd_bin) --name virtualmachines.kubevirt.io --version v1 --go-key virtualmachine --wrap-kind VirtualMachine $(location @kubevirt_crd_validations//file) $@",
+    tools = ["//devinfra/k8s:extract_crd_bin"],
+)
+
+genrule(
+    name = "virtualmachineinstance_crd",
+    srcs = ["@kubevirt_crd_validations//file"],
+    outs = ["virtualmachineinstances.kubevirt.io.yaml"],
+    cmd = "$(location //devinfra/k8s:extract_crd_bin) --name virtualmachineinstances.kubevirt.io --version v1 --go-key virtualmachineinstance --wrap-kind VirtualMachineInstance $(location @kubevirt_crd_validations//file) $@",
+    tools = ["//devinfra/k8s:extract_crd_bin"],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_vm_admission",
+    size = "small",
+    srcs = ["test_vm_admission.py"],
+    data = [
+        ":virtualmachine_crd",
+        ":virtualmachineinstance_crd",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "VIRTUALMACHINE_CRD_RLOCATION": "$(rlocationpath :virtualmachine_crd)",
+        "VIRTUALMACHINEINSTANCE_CRD_RLOCATION": "$(rlocationpath :virtualmachineinstance_crd)",
+    },
+    deps = [
+        ":vm_admission",
+        "//:conftest",
+        "//agentplane/system_tests/shared_cluster:namespaces",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_security",
+    srcs = ["test_security.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":security",
+        "//:conftest",
+        "//agentplane/system_tests/shared_cluster:namespaces",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)

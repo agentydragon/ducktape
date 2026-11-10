@@ -17,6 +17,7 @@
 //! (directive rewrites, residual computation, file writes) stays at
 //! those sites.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -24,12 +25,12 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde_json::Value;
 use swc_common::GLOBALS;
-use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
+use swc_ecma_ast::{
+    ExportSpecifier, Id, ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem,
+};
 
 use artifact::paths::{join_module_path, manifest_relative_path};
-use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, get_chunk_entry_path, list_chunk_file_paths,
-};
+use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path, list_chunk_file_paths};
 use binding_targets::module_export_name;
 use js_ast::parse_js_module;
 use spec::{
@@ -82,7 +83,34 @@ pub struct VendorResolutionPlan {
     pub(crate) suppressed: BTreeSet<ChunkId>,
 }
 
+/// Effective emitted identity of one selected bundled replacement export.
+/// The original provider's parsed source remains a separate input.
+pub struct BundledReplacementExportIdentity {
+    pub package: String,
+    pub bundle_path: PathBuf,
+    pub bundle_export: String,
+    pub symbol_kind: PartialSwapKind,
+    pub upstream_export: Option<String>,
+}
+
 impl VendorResolutionPlan {
+    pub fn bundled_replacement_export(
+        &self,
+        chunk: ChunkId,
+        export: &str,
+    ) -> Option<BundledReplacementExportIdentity> {
+        let swap = self.bundled_partial_swaps.get(&chunk)?;
+        let symbol = swap.symbols.get(export)?;
+        let package = swap.resolution.packages.get(&symbol.package)?;
+        Some(BundledReplacementExportIdentity {
+            package: symbol.package.clone(),
+            bundle_path: PathBuf::from(&swap.resolution.bundle.source_path),
+            bundle_export: package.bundle_export.clone(),
+            symbol_kind: symbol.kind,
+            upstream_export: symbol.upstream_export.clone(),
+        })
+    }
+
     pub fn has_boundary_renames(&self) -> bool {
         !self.boundary_renames.is_empty()
     }
@@ -181,33 +209,53 @@ impl VendorResolutionPlan {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
 
-    pub fn affected_chunk_ids(&self) -> BTreeSet<ChunkId> {
-        self.boundary_renames
+    /// Replacement package of every swapped chunk export, by chunk. Facts
+    /// derived from those exports' bundled bodies rest on the swap's
+    /// equivalence promise (SPEC.md § Vendor swap equivalence).
+    pub fn replacement_packages(&self) -> BTreeMap<ChunkId, BTreeMap<String, String>> {
+        let full = self.full_swaps.iter().map(|swap| {
+            (
+                swap.chunk_id,
+                swap.vendor_exports
+                    .iter()
+                    .map(|export| (export.clone(), swap.resolution.package.clone()))
+                    .collect(),
+            )
+        });
+        let partial = self
+            .partial_swaps
             .iter()
-            .map(|plan| plan.chunk_id)
-            .chain(self.full_swaps.iter().map(|swap| swap.chunk_id))
-            .chain(self.partial_swaps.keys().copied())
-            .chain(self.bundled_partial_swaps.keys().copied())
-            .chain(self.suppressed.iter().copied())
-            .collect()
+            .map(|(chunk, plan)| (*chunk, &plan.symbols))
+            .chain(
+                self.bundled_partial_swaps
+                    .iter()
+                    .map(|(chunk, plan)| (*chunk, &plan.symbols)),
+            )
+            .map(|(chunk, symbols)| {
+                (
+                    chunk,
+                    symbols
+                        .iter()
+                        .map(|(export, symbol)| (export.clone(), symbol.package.clone()))
+                        .collect(),
+                )
+            });
+        full.chain(partial).collect()
     }
 
-    /// Whether prepared static edges over-approximate the effective edges of
-    /// this chunk after replacement. Residual pruning only deletes source
-    /// edges. A bundled replacement adds facade -> bundle edges, which cannot
-    /// lead back into the artifact when the bundle is a synchronous ESM leaf.
-    /// Raw package/full swaps have an unindexed dependency closure and cannot
-    /// supply this proof. Boundary renames and suppression add no edges.
-    pub fn preserves_static_import_closure(&self, chunk: ChunkId) -> bool {
-        if self.full_swaps.iter().any(|swap| swap.chunk_id == chunk)
-            || self.partial_swaps.contains_key(&chunk)
-        {
-            return false;
-        }
-        self.bundled_partial_swaps.get(&chunk).is_none_or(|swap| {
-            swap.bundle_runtime.module_kind == artifact::reports::ChunkModuleKind::Esm
-                && !swap.bundle_runtime.has_top_level_await
-                && swap.bundle_runtime.static_requests.is_empty()
+    /// Whether a bundled partial swap's replacement bundle is not a
+    /// synchronous ESM leaf. Its evaluation could then reach code (the
+    /// artifact, a top-level await) the bundled original never did, visibly
+    /// breaking the swap's equivalence promise. Raw packages are unindexed and
+    /// rest on the promise alone.
+    pub fn replacement_bundle_is_open(&self, chunk: ChunkId) -> bool {
+        self.bundled_partial_swaps.get(&chunk).is_some_and(|swap| {
+            !swap
+                .bundle_runtime
+                .module_kind
+                .supports_static_esm_closure()
+                || swap.bundle_runtime.has_top_level_await
+                || !swap.bundle_runtime.static_requests.is_empty()
         })
     }
 
@@ -502,6 +550,10 @@ fn validate_consumer_shapes(
             else {
                 continue;
             };
+            let consumer = format!("{caller_chunk_name}/{file_path}");
+            // Import locals whose references become property reads, which
+            // have no live local-export form.
+            let mut member_read_locals = BTreeMap::<Id, String>::new();
             for item in &ast.module.body {
                 let ModuleItem::ModuleDecl(decl) = item else {
                     continue;
@@ -519,7 +571,6 @@ fn validate_consumer_shapes(
                 ) else {
                     continue;
                 };
-                let consumer = format!("{caller_chunk_name}/{file_path}");
                 // Boundary-renamed names are applied by the pass-through
                 // rewriter (and by lowering's import construction);
                 // suppress files are skipped by both, so a suppress
@@ -552,6 +603,23 @@ fn validate_consumer_shapes(
                 let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
                     continue;
                 };
+                if let ModuleDecl::Import(import) = decl {
+                    for specifier in &import.specifiers {
+                        let ImportSpecifier::Named(named) = specifier else {
+                            continue;
+                        };
+                        let imported = named
+                            .imported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| named.local.sym.to_string());
+                        if swapped.symbols.get(&imported).is_some_and(|symbol| {
+                            !local_export_has_live_rewrite(symbol, swapped.bundled)
+                        }) {
+                            member_read_locals.insert(named.local.to_id(), imported);
+                        }
+                    }
+                }
                 check_consumer_shape_has_live_rewrite(
                     decl,
                     swapped.symbols,
@@ -560,6 +628,57 @@ fn validate_consumer_shapes(
                     &consumer,
                     chunk_table.name(target_chunk_id),
                 )?;
+            }
+            if !member_read_locals.is_empty() {
+                check_local_exports_have_live_rewrite(
+                    &ast.module.body,
+                    &member_read_locals,
+                    &consumer,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether the body rewrite keeps a binding, or a live re-export, for a
+/// local `export { <local> }` of this swapped import: a property of the
+/// default-only facade, or a dotted member path, has neither.
+fn local_export_has_live_rewrite(symbol: &PartialSwapSymbol, bundled: bool) -> bool {
+    match symbol.kind {
+        PartialSwapKind::Namespace | PartialSwapKind::Default => true,
+        PartialSwapKind::Named => !bundled,
+        PartialSwapKind::Member => {
+            !bundled
+                && symbol
+                    .upstream_export
+                    .as_deref()
+                    .is_some_and(|name| !name.contains('.'))
+        }
+    }
+}
+
+fn check_local_exports_have_live_rewrite(
+    body: &[ModuleItem],
+    member_read_locals: &BTreeMap<Id, String>,
+    consumer: &str,
+) -> Result<()> {
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
+            continue;
+        };
+        if export.src.is_some() {
+            continue;
+        }
+        for specifier in &export.specifiers {
+            if let ExportSpecifier::Named(named) = specifier
+                && let ModuleExportName::Ident(orig) = &named.orig
+                && let Some(imported) = member_read_locals.get(&orig.to_id())
+            {
+                bail!(
+                    "partial-swap consumer gate: {consumer} locally exports `{}`, its import of swapped name `{imported}`; the swap reads that symbol as a property of the replacement, which has no live export form",
+                    orig.sym,
+                );
             }
         }
     }

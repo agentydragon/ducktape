@@ -11,8 +11,9 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from python.runfiles import Runfiles
+
 from skills.skill_spec import SkillSpec
-from util.bazel.runfiles import get_required_path
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ class StagedSkill:
 
 def stage_skill(spec: SkillSpec, dest_dir: Path) -> StagedSkill:
     """Extract `spec`'s `.skill` zip into `dest_dir` and return the staged skill."""
-    archive_path = get_required_path(spec.archive_rlocation)
+    archive_path = Runfiles.CreateOrRaise().root() / spec.archive_rlocation
     with zipfile.ZipFile(archive_path) as zf:
         zf.extractall(dest_dir)
     files_path = dest_dir / spec.package_name

@@ -1,0 +1,92 @@
+"""Pytest support and the shared Bazel test platform."""
+
+# gazelle:resolve py _pytest.fixtures @pypi//pytest
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
+
+py_library(
+    name = "bazel_snapshot_extension",
+    srcs = ["bazel_snapshot_extension.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//syrupy",
+    ],
+)
+
+# The PR visuals wheel imports this schema without test-only support.
+py_library(
+    name = "output_records",
+    testonly = False,  # keep
+    srcs = ["output_records.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "output_writer",
+    srcs = ["output_writer.py"],
+    visibility = ["//visibility:public"],
+    deps = [":output_records"],
+)
+
+py_library(
+    name = "pytest_outputs",
+    srcs = ["pytest_outputs.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":output_writer",
+        ":undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "sharding",
+    srcs = ["sharding.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pytest"],
+)
+
+py_library(
+    name = "undeclared_outputs",
+    srcs = ["undeclared_outputs.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_output_protocol",
+    srcs = ["test_output_protocol.py"],
+    deps = [
+        ":output_records",
+        ":output_writer",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sharding",
+    srcs = ["test_sharding.py"],
+    deps = [
+        "//:conftest",
+        "//devinfra/testing:sharding",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_test_output_pytest",
+    srcs = ["test_test_output_pytest.py"],
+    deps = [
+        ":output_writer",
+        ":pytest_outputs",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

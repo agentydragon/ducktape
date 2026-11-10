@@ -77,7 +77,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    description: Claude and Codex subscription quota API via the CLIProxyAPI integration.
+    description: AI subscription quotas and OpenAI Platform credits.
+    secret.reloader.stakater.com/reload: platform-sessions-aiquota-bearer
   labels:
     app.kubernetes.io/name: aiquota
   name: aiquota-api
@@ -114,6 +115,18 @@ spec:
                 secretKeyRef:
                   key: management-password
                   name: cli-proxy-api-management
+            - name: AIQUOTA_OPENAI_PLATFORM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: platform-sessions-aiquota-bearer
+                  optional: true
+            - name: AIQUOTA_ANTHROPIC_PLATFORM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: platform-sessions-aiquota-bearer
+                  optional: true
             - name: AIQUOTA_CLICKHOUSE_URL
               value: http://clickhouse.clickhouse.svc:8123
             - name: AIQUOTA_CLICKHOUSE_DATABASE
@@ -159,6 +172,7 @@ spec:
               scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 20
+            timeoutSeconds: 5
           name: aiquota-api
           ports:
             - containerPort: 8080

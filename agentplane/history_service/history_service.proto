@@ -3,32 +3,52 @@ syntax = "proto3";
 
 package agentplane.history_service;
 
+import "agentplane/proto/command.proto";
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
-import "agentplane/proto/runner.proto";
+import "agentplane/proto/session.proto";
+import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 service HistoryService {
-  rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
+  rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/events"};
+  }
   // Reads committed raw entries, optionally continuing as new entries commit.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
-  rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
+  rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/observations"};
+  }
   // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
-  rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
+  rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}/summary"};
+  }
   // The named Sessions' summaries, in no particular order; a Session with no history is left out.
-  rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse);
+  rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse) {
+    option (google.api.http) = {post: "/v1/sessions:batchGetSummaries" body: "*"};
+  }
   // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
-  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
+  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/entities" body: "*"};
+  }
   // The observations an entity was folded from, and the native harness frames behind each.
-  rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
-  rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
+  rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/entity-evidence" body: "*"};
+  }
+  rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/native-frames" body: "*"};
+  }
   // Every Session written by a Sandbox with a matching name, deleted Sandboxes included, in no
   // particular order.
-  rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse);
+  rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions:find"};
+  }
   // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
   // On request it also names each Session the History Service records.
-  rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
+  rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse) {
+    option (google.api.http) = {get: "/v1/session-summaries:watch"};
+  }
 }
 
 message FollowSessionRequest {
@@ -83,6 +103,8 @@ enum EventKind {
   EVENT_KIND_SETUP_INTERRUPTED = 28;
   EVENT_KIND_HARNESS_LAUNCH_FAILED = 29;
   EVENT_KIND_JOURNAL_REOPENED = 30;
+  EVENT_KIND_BOUNDARY_RECORD = 31;
+  EVENT_KIND_EXECUTION_PROGRESS = 32;
 }
 
 message Entries {
@@ -100,7 +122,8 @@ message FollowSessionResponse {
     SettledDeltas settled = 3;
     // Cleanup correction; later catch-ups may report a removed range below the starting cursor.
     CursorRange removed = 4;
-    // Planned renewal on lease expiry or drain: resume after through_cursor with fresh auth.
+    // Planned renewal when an idle stream's lease expires or the service drains: resume after through_cursor with
+    // fresh auth. If either ends during a write, the stream ends without this frame.
     google.protobuf.Empty reconnect_required = 5;
   }
   // Highest cursor covered by entries or caught_up, including filtered entries. Retain this to
@@ -172,7 +195,8 @@ message ReadSessionObservationsRequest {
 
 message SessionObservation {
   uint64 cursor = 1;
-  string kind = 2;
+  // Unspecified for an entry without an observation.
+  EventKind kind = 2;
 }
 
 message ReadSessionObservationsResponse {
@@ -225,7 +249,7 @@ message SessionSummary {
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
   optional string feed_error = 13;
-  // The Sandbox that wrote the Session; absent until recorded.
+  // The execution Sandbox; the authenticated producer may be a central sampler. Absent until recorded.
   optional SandboxRef sandbox = 14;
   // When the harness last became idle: running with no turn in progress, from the event that
   // ended its last turn or started it. Absent while a turn runs, while the harness is stopped,
@@ -278,8 +302,18 @@ message EntityRange {
   uint32 limit = 2;
 }
 
+enum ThreadEntityKind {
+  THREAD_ENTITY_KIND_UNSPECIFIED = 0;
+  THREAD_ENTITY_KIND_VIEW_STATE = 1;
+  THREAD_ENTITY_KIND_ITEM = 2;
+  THREAD_ENTITY_KIND_CONFIRMED_INPUT = 3;
+  THREAD_ENTITY_KIND_LIFECYCLE = 4;
+  THREAD_ENTITY_KIND_COMMAND = 5;
+}
+
 message EntityKey {
-  string entity_kind = 1;
+  // Unspecified and unrecognized kinds are invalid.
+  ThreadEntityKind entity_kind = 1;
   string entity_id = 2;
 }
 
@@ -296,10 +330,126 @@ message ReadThreadEntitiesResponse {
   repeated ThreadEntity entities = 3;
 }
 
+// PayloadField names the immutable body a Thread entity references.
+enum ThreadPayloadField {
+  THREAD_PAYLOAD_FIELD_UNSPECIFIED = 0;
+  THREAD_PAYLOAD_FIELD_TEXT = 1;
+  THREAD_PAYLOAD_FIELD_ARGUMENTS = 2;
+  THREAD_PAYLOAD_FIELD_OUTPUT = 3;
+  THREAD_PAYLOAD_FIELD_CONFIRMED_INPUT = 4;
+  THREAD_PAYLOAD_FIELD_COMMAND_INPUT = 5;
+}
+
+// The result of a Thread command. PENDING also means the synchronized command row is pending.
+enum ThreadCommandOutcome {
+  THREAD_COMMAND_OUTCOME_UNSPECIFIED = 0;
+  THREAD_COMMAND_OUTCOME_PENDING = 1;
+  THREAD_COMMAND_OUTCOME_EFFECTED = 2;
+  THREAD_COMMAND_OUTCOME_FAILED = 3;
+  THREAD_COMMAND_OUTCOME_NOOP = 4;
+}
+
+enum ThreadFeedStatus {
+  THREAD_FEED_STATUS_UNSPECIFIED = 0;
+  THREAD_FEED_STATUS_ACTIVE = 1;
+  THREAD_FEED_STATUS_ENDED = 2;
+  THREAD_FEED_STATUS_FAILED = 3;
+}
+
+// A reference to an immutable payload revision. ProtoJSON renders each uint64 as a decimal string.
+message ThreadPayloadReference {
+  string projection_epoch = 1;
+  uint64 owner_cursor = 2;
+  string owner_id = 3;
+  ThreadPayloadField field = 4;
+  uint64 revision_cursor = 5;
+  uint64 generation = 6;
+  // How many chunks of the generation this revision spans; a reader renders at most these.
+  uint64 chunk_count = 7;
+}
+
+message ThreadFeedError {
+  optional uint64 cursor = 1;
+  string message = 2;
+}
+
+message ThreadControls {
+  optional string applied_model = 1;
+  optional string applied_reasoning_effort = 2;
+  optional string active_turn_id = 3;
+  optional string harness_state = 4;
+}
+
+// Feed lifecycle has an independent version and does not fabricate a runner cursor.
+message ThreadOperational {
+  ThreadFeedStatus status = 1;
+  uint64 last_verified_cursor = 2;
+  ThreadFeedError feed_error = 3;
+}
+
+message ThreadViewState {
+  ThreadControls controls = 1;
+  ThreadOperational operational = 2;
+}
+
+message ThreadItemTextCompletion {}
+
+message ThreadItemToolCompletion {
+  bool succeeded = 1;
+}
+
+message ThreadItem {
+  agentplane.proto.ItemKind kind = 1;
+  string tool_name = 2;
+  oneof completion {
+    ThreadItemTextCompletion text = 3;
+    ThreadItemToolCompletion tool = 4;
+  }
+  optional agentplane.proto.RecoveryDisposition recovery = 5;
+  optional string recovery_reason = 6;
+  optional string turn_id = 7;
+  ThreadPayloadReference text_ref = 8;
+  ThreadPayloadReference arguments_ref = 9;
+  ThreadPayloadReference output_ref = 10;
+}
+
+message ThreadConfirmedInput {
+  string harness_message_id = 1;
+  repeated string origin_command_ids = 2;
+  optional string turn_id = 3;
+  ThreadPayloadReference input_ref = 4;
+}
+
+// Event's observation oneof carries the lifecycle kind; no duplicate string discriminator is needed.
+message ThreadLifecycle {
+  agentplane.proto.Event event = 1;
+}
+
+message ThreadCommand {
+  agentplane.proto.Operation operation = 1;
+  ThreadCommandOutcome outcome = 2;
+  optional uint64 outcome_cursor = 3;
+  optional string outcome_reason = 4;
+  optional string requested_value = 5;
+  ThreadPayloadReference input_ref = 6;
+}
+
+// The canonical typed contract for the rows that History folds and readers synchronize through
+// Electric. EntityKey names a row by its entity kind and ID.
 message ThreadEntity {
-  uint64 entity_index = 1;
-  // A `ThreadEntityView` JSON document (`agentplane.history_service.fold.views`), the row browsers sync.
-  string view_json = 2;
+  string session_id = 1;
+  string projection_epoch = 2;
+  string entity_id = 3;
+  uint64 entity_index = 4;
+  uint64 cursor = 5;
+  uint64 revision_cursor = 6;
+  oneof entity {
+    ThreadViewState view_state = 10;
+    ThreadItem item = 11;
+    ThreadConfirmedInput confirmed_input = 12;
+    ThreadLifecycle lifecycle = 13;
+    ThreadCommand command = 14;
+  }
 }
 
 message ReadEntityEvidenceRequest {
@@ -333,9 +483,11 @@ message ReadNativeFramesRequest {
 }
 
 message WatchSessionSummariesRequest {
-  // Present: the stream also sends `session_opened` for every Session recorded at a position after
-  // this one, those already recorded first. 0 names every Session. Absent: it names none.
-  optional uint64 opened_after = 1;
+  // Present: the stream also sends `session_recorded` for every Session recorded at a position after
+  // this one, those already recorded first. For a normal caller, positions count only Sessions
+  // visible to its execution principal. Explicit backend-wide readers use the service-wide cursor.
+  // 0 names every visible Session. Absent: it names none.
+  optional uint64 recorded_after = 1;
 }
 
 message WatchSessionSummariesResponse {
@@ -345,17 +497,18 @@ message WatchSessionSummariesResponse {
     google.protobuf.Empty changed = 1;
     // Planned renewal: reconnect with fresh authorization.
     google.protobuf.Empty reconnect_required = 2;
-    // Only for a request with `opened_after`.
-    SessionOpened session_opened = 3;
+    // Only for a request with `recorded_after`.
+    SessionRecorded session_recorded = 3;
   }
   // A successful stream ends with reconnect_required; bare EOF is a failure.
 }
 
 // A Session the History Service recorded, on the runner's first push of it.
-message SessionOpened {
+message SessionRecorded {
   string session_id = 1;
-  // Ascending in recording order, and a position becomes visible only after every lower one, so a
-  // caller that reconnects with the last position it handled misses no Session.
+  // Ascending in recording order within the caller's read scope, and a position becomes visible only
+  // after every lower one in that scope, so a caller reconnecting with the last handled position misses
+  // no visible Session.
   uint64 position = 2;
 }
 

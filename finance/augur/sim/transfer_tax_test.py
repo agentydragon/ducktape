@@ -10,7 +10,6 @@ from more_itertools import one
 
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
@@ -20,9 +19,10 @@ from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, Parcel, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.property_tax import PropertyTaxPolicy
-from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
+from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED
 from finance.augur.sim.world import World
 
@@ -135,21 +135,7 @@ def compose(housing: Housing, policies: tuple[PropertyTaxPolicy, ...] = (POLICY,
 
 
 def run(world: World) -> Rollout:
-    household = ClaimPayer(OWNER)
-    session = ActionSession({0: world}, OWNER)
-    try:
-        batch = session.start()
-        while not isinstance(batch, Finished):
-            batch = session.advance(
-                [
-                    DecisionActions(
-                        decision.rollout_id, decision.observation.month, household.decide(decision.observation)
-                    )
-                    for decision in batch
-                ]
-            )
-    finally:
-        session.close()
+    batch = finish(ActionSession({0: world}, OWNER), each(ClaimPayer(OWNER).decide))
     rollout = one(batch.rollouts)
     assert rollout.stop is None
     return rollout

@@ -1,58 +1,136 @@
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { act } from "react";
 
-import type { ThreadView } from "../../api/schema";
-import type { PayloadRef, ThreadEntity, ThreadState, ThreadSync } from "../thread_sync";
+import {
+  ThreadEntitySchema,
+  ThreadFeedStatus,
+  ThreadPayloadField,
+  ThreadPayloadReferenceSchema,
+  type ThreadEntity,
+  type ThreadPayloadReference,
+  FeedStatus,
+  type SandboxRef,
+  SandboxRefSchema,
+  type SessionSummary,
+  SessionSummarySchema,
+} from "../../../../history_service/history_service_pb";
+import { ThreadMetadataSchema, type ThreadMetadata } from "../../../app_service_pb";
+import {
+  AttachedSchema,
+  type Attached,
+  Harness,
+  HarnessState,
+  LaunchOutcome,
+  SessionPlacementSchema,
+  SessionSpecSchema,
+  SetupState,
+} from "../../../../proto/session_pb";
 
-export const THREAD: ThreadView = {
-  id: "10000000-0000-4000-8000-000000000001",
-  sandbox: "composer-test",
-  harness: "HARNESS_CLAUDE",
-  model: "test-model",
-  cwd: "/test-workspace",
-  created_at: "2026-01-01T00:00:00Z",
-  name: "Test thread",
-  archived: false,
-  last_cursor: 1,
-  last_event_at: null,
-  harness_state: "HARNESS_STATE_RUNNING",
-  reasoning_effort: "low",
+import type { ThreadView } from "../client";
+import type { ThreadState, ThreadSync } from "../thread_sync";
+
+type PartialMessage<T extends { $typeName: string }> = Partial<Omit<T, "$typeName" | "$unknown">>;
+
+export type ThreadViewInit = {
+  metadata?: PartialMessage<ThreadMetadata>;
+  summary?: PartialMessage<Omit<SessionSummary, "attached" | "sandbox">> & {
+    attached?:
+      | (PartialMessage<Omit<Attached, "spec">> & { spec?: MessageInitShape<typeof SessionSpecSchema> | undefined })
+      | undefined;
+    sandbox?: PartialMessage<SandboxRef> | undefined;
+  };
 };
+
+export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {}): ThreadView {
+  const threadId = metadata.threadId ?? summary.sessionId ?? "10000000-0000-4000-8000-000000000001";
+  const sandbox = { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" };
+  const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
+  const spec = {
+    placement: create(SessionPlacementSchema, {
+      kind: {
+        case: "environmentHosted" as const,
+        value: {
+          environment: { name: sandboxInit?.name ?? sandbox.name, uid: sandboxInit?.uid ?? sandbox.uid },
+          harness: Harness.CLAUDE,
+        },
+      },
+    }),
+    model: "test-model",
+    cwd: "/test-workspace",
+    reasoningEffort: "low",
+  };
+  const attachedInit = Object.hasOwn(summary, "attached") ? summary.attached : {};
+  const specInit = attachedInit !== undefined && Object.hasOwn(attachedInit, "spec") ? attachedInit.spec : spec;
+  const attached =
+    attachedInit === undefined
+      ? undefined
+      : create(AttachedSchema, {
+          sessionId: threadId,
+          lastCursor: 1n,
+          harnessState: HarnessState.RUNNING,
+          activeTurnId: "",
+          setupState: SetupState.NOT_REQUIRED,
+          launchOutcome: LaunchOutcome.STARTED,
+          ...attachedInit,
+          spec: specInit === undefined ? undefined : create(SessionSpecSchema, { ...spec, ...specInit }),
+        });
+  const summaryInit = {
+    sessionId: threadId,
+    foldedThrough: 1n,
+    feedStatus: FeedStatus.ACTIVE,
+    ...summary,
+    sandbox: sandboxInit === undefined ? undefined : create(SandboxRefSchema, sandboxInit),
+    attached,
+  };
+  return {
+    metadata: create(ThreadMetadataSchema, {
+      threadId,
+      createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+      archived: false,
+      ...metadata,
+    }),
+    summary: create(SessionSummarySchema, summaryInit),
+  };
+}
+
+export const THREAD: ThreadView = threadView({
+  metadata: { name: "Test thread" },
+  summary: { sandbox: { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" } },
+});
 
 export function viewState({
   harness = "running",
-  status = "active",
+  status = ThreadFeedStatus.ACTIVE,
   model = "test-model",
   activeTurn = null,
 }: {
   harness?: string | null;
-  status?: "active" | "ended" | "failed";
+  status?: ThreadFeedStatus;
   model?: string | null;
   activeTurn?: string | null;
 } = {}): ThreadEntity {
-  return {
-    threadId: THREAD.id,
+  return create(ThreadEntitySchema, {
+    sessionId: THREAD.metadata.threadId,
     projectionEpoch: "test-epoch",
-    entityKind: "view_state",
     entityId: "current",
-    entityIndex: "0",
-    cursor: "1",
-    revisionCursor: "1",
-    pending: false,
-    turnId: null,
-    state: {
-      controls: {
-        applied_model: model,
-        applied_reasoning_effort: null,
-        active_turn_id: activeTurn,
-        harness_state: harness,
+    cursor: 1n,
+    revisionCursor: 1n,
+    entity: {
+      case: "viewState",
+      value: {
+        controls: {
+          appliedModel: model ?? undefined,
+          activeTurnId: activeTurn ?? undefined,
+          harnessState: harness ?? undefined,
+        },
+        operational: {
+          status,
+          lastVerifiedCursor: 1n,
+        },
       },
-      operational: { status, last_verified_cursor: "1", feed_error: null },
     },
-    textRef: null,
-    argumentsRef: null,
-    outputRef: null,
-    inputRef: null,
-  };
+  });
 }
 
 export function threadState({
@@ -87,40 +165,28 @@ export function threadState({
   };
 }
 
-export function reference(ownerId: string, field: PayloadRef["field"]): PayloadRef {
-  return {
-    projection_epoch: "test-epoch",
-    owner_cursor: "1",
-    owner_id: ownerId,
+export function reference(ownerId: string, field: ThreadPayloadField): ThreadPayloadReference {
+  return create(ThreadPayloadReferenceSchema, {
+    projectionEpoch: "test-epoch",
+    ownerCursor: 1n,
+    ownerId,
     field,
-    revision_cursor: "1",
-    generation: "1",
-    chunk_count: "1",
-  };
+    revisionCursor: 1n,
+    generation: 1n,
+    chunkCount: 1n,
+  });
 }
 
-export function entity(
-  entityKind: ThreadEntity["entityKind"],
-  state: ThreadEntity["state"],
-  refs: Partial<Pick<ThreadEntity, "textRef" | "argumentsRef" | "outputRef" | "inputRef">>
-): ThreadEntity {
-  return {
-    threadId: "test-thread",
+export function entity(value: MessageInitShape<typeof ThreadEntitySchema>["entity"]): ThreadEntity {
+  return create(ThreadEntitySchema, {
+    sessionId: "test-thread",
     projectionEpoch: "test-epoch",
-    entityKind,
     entityId: "test-entity",
-    entityIndex: "1",
-    cursor: "1",
-    revisionCursor: "1",
-    pending: false,
-    turnId: null,
-    state,
-    textRef: null,
-    argumentsRef: null,
-    outputRef: null,
-    inputRef: null,
-    ...refs,
-  };
+    entityIndex: 1n,
+    cursor: 1n,
+    revisionCursor: 1n,
+    entity: value,
+  });
 }
 
 /** Serves every body at once, over an empty thread with no command rows, except the `stopped` ones
@@ -135,13 +201,14 @@ export function serving(
     Thread: ({ children }) => <>{children}</>,
     useThread: () => empty,
     useCommandRows: () => [],
-    usePayload: ({ owner_id, field }) => {
-      const key = `${owner_id}:${field}`;
+    usePayload: ({ ownerId, field }) => {
+      const storedField = ThreadPayloadField[field].toLowerCase();
+      const key = `${ownerId}:${storedField}`;
       const retry = stopped.get(key);
       if (retry) return { body: null, error: "test read failure", retry };
       if (loading.has(key)) return { body: null, error: null, retry: () => {} };
       const body = bodies.get(key);
-      if (body === undefined) throw new Error(`test fixture has no ${field} body for ${owner_id}`);
+      if (body === undefined) throw new Error(`test fixture has no ${storedField} body for ${ownerId}`);
       return { body, error: null, retry: () => {} };
     },
   };

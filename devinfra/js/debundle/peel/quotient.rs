@@ -31,13 +31,12 @@
 //! by checking whether a speculative merge's post-merge module `M`
 //! has no clause-2 or clause-3 violation touching `M`.
 //!
-//! The kernel must not reimplement the gate over the JSON
-//! `DependencyGraphReport` adjacency: a constraining-only projection drops
+//! The kernel uses the canonical `DependencyGraph` retained by the validated
+//! `DependencyGraphInput`. A constraining-only projection drops
 //! non-constraining edges and misses asymmetric `(eager forward, lazy
-//! back)` I-cycles that the materializer catches. The kernel
-//! reconstructs an `DependencyGraph` from the report, stores it on the
-//! kernel, and keeps a persistent `gate::RealizabilityIndex` in sync
-//! with its class projection.
+//! back)` I-cycles that the materializer catches. Quotient instances share
+//! that topology and keep a persistent `gate::RealizabilityIndex` in sync
+//! with their own class projection.
 //!
 //! ## Cost of the gate
 //!
@@ -62,17 +61,17 @@
 //! speculative merge delta targets the single post-merge module,
 //! asserted in `realizability_cycles_after_contract`).
 
+use analysis_model::DepKind;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::sync::Arc;
 
-use analysis::{
-    DepKind, DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
-    StatementKind,
-};
+use analysis::{DependencyGraph, DependencyGraphInput, ModuleAssignment, ModuleId, StatementKind};
 use anyhow::Context;
 use gate::{LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
+use source_identity::SourceUnitId;
 
 /// Source-unit report index into the `DependencyGraphReport.nodes` vector. Stable for
 /// the lifetime of one quotient graph.
@@ -218,12 +217,10 @@ struct ClassData {
 /// cross-class constraining edges materialized on demand.
 #[derive(Debug, Clone)]
 pub struct QuotientGraph {
-    /// Typed IR reconstructed from the source report. Used by the
-    /// realizability gate (`gate::check_realizability`). Stored once
-    /// at construction; never mutated.
-    dependency_graph: DependencyGraph,
+    /// Shared canonical topology used by every quotient and gate candidate.
+    dependency_graph: Arc<DependencyGraph>,
     /// Source units whose destination kind is `entry` or `unassigned` are
-    /// `true`. Set by `from_report` from the JSON wire flag (the
+    /// `true`. Set by `from_graph` from the report destination (the
     /// same residual identification `propose.rs` uses). A class made
     /// only of these, and not anchored to a module, projects to the
     /// assignment's residual `ModuleId` for the realizability gate.
@@ -242,16 +239,6 @@ pub struct QuotientGraph {
     /// classes (post-contract) remain in place with empty `members`
     /// to keep IDs stable; queries skip them.
     classes: Vec<ClassData>,
-    /// Constraining-edge source_unit adjacency: `(from_source_unit, to_source_unit)`
-    /// pairs from `DependencyGraphReport.edges` whose
-    /// `constrains_init_order` is true and whose endpoints both
-    /// resolve to known source_units. Source-of-truth for the cycle set.
-    source_unit_constraining_edges: Vec<(SourceUnitIndex, SourceUnitIndex)>,
-    /// **All** source_unit edges, with their weight (from `DepKind`).
-    /// Used by the greedy's coupling metric. Self-loops and
-    /// non-constraining edges are included; `class_cross_edges`
-    /// filters out same-class pairs at query time.
-    source_unit_weighted_edges: Vec<WeightedDependencyEdge>,
     /// Cap on per-class combined lines. Exceeding this is a rejected
     /// merge.
     cap_lines: usize,
@@ -288,16 +275,6 @@ pub struct QuotientGraph {
     /// residual class transitions to non-residual via a contract
     /// that brings in a non-gate-residual member.
     next_module_idx: usize,
-}
-
-/// One source_unit-edge with its `DepKind`-derived weight. Stored on the
-/// kernel so the greedy can evaluate the coupling metric without
-/// re-parsing the input report.
-#[derive(Debug, Clone, Copy)]
-struct WeightedDependencyEdge {
-    from: SourceUnitIndex,
-    to: SourceUnitIndex,
-    weight: u32,
 }
 
 /// `true` if a class projects to the residual `ModuleId`: a class made
@@ -366,7 +343,7 @@ fn edge_weight(kind: DepKind) -> u32 {
         DepKind::LocalEffect => 2,
         // Repeated var sites must be placed together, but their edge is
         // placement-only and carries no additional merge preference.
-        DepKind::CoDeclaration => 1,
+        DepKind::CoDeclaration | DepKind::CoLocation => 1,
     }
 }
 
@@ -392,24 +369,16 @@ pub(super) struct EdgeState {
 }
 
 impl QuotientGraph {
-    /// Build a fresh quotient over `report.nodes`, each source_unit in its
+    /// Build a fresh quotient over `input.report().nodes`, each source_unit in its
     /// own singleton class. `cap_lines` is the size cap consulted by
     /// `merge_preserves_invariants`.
     ///
-    /// The kernel also reconstructs the typed `DependencyGraph` IR via
-    /// `DependencyGraph::from_report` and stashes it for the realizability
-    /// gate. The reconstructed IR carries every edge
-    /// the report listed — constraining and non-constraining alike —
-    /// so the gate sees the same I-graph the materializer does.
-    ///
-    /// The reconstructed graph's per-source_unit `declared` set is empty:
-    /// this kernel only consumes the edge topology + module quotient
-    /// for the gate.
-    pub fn from_report(
-        report: &DependencyGraphReport,
-        cap_lines: usize,
-    ) -> Result<Self, analysis::UnresolvedDependencyEdgeEndpoint> {
-        let dependency_graph = DependencyGraph::from_report(report)?;
+    /// The report supplies stable presentation metadata; topology comes from
+    /// the already validated canonical graph and is shared with other planner
+    /// operations and candidate quotients.
+    pub fn from_graph(input: &DependencyGraphInput, cap_lines: usize) -> Self {
+        let report = input.report();
+        let dependency_graph = input.shared_graph();
         let source_unit_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let source_unit_id_to_index: FxHashMap<String, SourceUnitIndex> = source_unit_ids
             .iter()
@@ -439,32 +408,6 @@ impl QuotientGraph {
             }
         }
 
-        let mut source_unit_constraining_edges: Vec<(SourceUnitIndex, SourceUnitIndex)> =
-            Vec::new();
-        let mut source_unit_weighted_edges: Vec<WeightedDependencyEdge> =
-            Vec::with_capacity(report.edges.len());
-        for edge in &report.edges {
-            // Endpoint resolution can't fail here: the
-            // `DependencyGraph::from_report` call above already errored on
-            // any edge whose endpoint is missing from the node table.
-            let resolve = |endpoint: &str| {
-                source_unit_id_to_index
-                    .get(endpoint)
-                    .copied()
-                    .expect("validated by DependencyGraph::from_report")
-            };
-            let (s, t) = (resolve(&edge.source), resolve(&edge.target));
-            source_unit_weighted_edges.push(WeightedDependencyEdge {
-                from: s,
-                to: t,
-                weight: edge_weight(edge.edge_kind),
-            });
-            if !edge.constrains_init_order || s == t {
-                continue;
-            }
-            source_unit_constraining_edges.push((s, t));
-        }
-
         let (realizability_index, class_module_id, next_module_idx) = project_classes(
             &dependency_graph,
             &source_unit_to_class,
@@ -480,8 +423,6 @@ impl QuotientGraph {
             source_unit_id_to_index,
             source_unit_to_class,
             classes,
-            source_unit_constraining_edges,
-            source_unit_weighted_edges,
             cap_lines,
             out_edges: vec![FxHashMap::default(); num_classes],
             in_neighbors: vec![FxHashSet::default(); num_classes],
@@ -490,7 +431,7 @@ impl QuotientGraph {
             next_module_idx,
         };
         q.rebuild_class_adjacency();
-        Ok(q)
+        q
     }
 
     /// Build a quotient from a complete candidate source_unit assignment that
@@ -502,47 +443,42 @@ impl QuotientGraph {
     /// be the candidate's entry module. Non-residual groups are marked as
     /// anchored modules so residual-only source_units deliberately assigned to a
     /// non-entry fragment stay in that fragment.
-    pub fn from_report_with_realizable_assignment(
-        report: &DependencyGraphReport,
+    pub fn from_graph_with_realizable_assignment(
+        input: &DependencyGraphInput,
         cap_lines: usize,
         source_unit_modules: &[ModuleId],
         residual_module: ModuleId,
     ) -> anyhow::Result<Self> {
+        let report = input.report();
         anyhow::ensure!(
-            source_unit_modules.len() == report.nodes.len(),
+            source_unit_modules.len() == input.graph().num_nodes(),
             "candidate assignment assigns {} source units, but graph has {}",
             source_unit_modules.len(),
-            report.nodes.len()
+            input.graph().num_nodes()
         );
         anyhow::ensure!(
             residual_module == ModuleId(0),
             "candidate residual module must use the entry module identity"
         );
 
-        let dependency_graph = DependencyGraph::from_report(report)
-            .context("reconstructing dependency graph for candidate assignment")?;
+        let dependency_graph = input.graph();
         let assignment = ModuleAssignment::from_assignments(
             source_unit_modules.to_vec(),
             analysis::EntryDestination::from_module_id(residual_module),
         );
-        let verdict = gate::check_realizability(&dependency_graph, &assignment);
+        let verdict = gate::check_realizability(dependency_graph, &assignment);
         anyhow::ensure!(
             verdict.is_realizable(),
             "candidate assignment is not realizable under the shared gate"
         );
 
-        let source_unit_id_to_index: FxHashMap<&str, usize> = report
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(idx, node)| (node.id.as_str(), idx))
-            .collect();
-        let mut source_unit_atomic_group = vec![None::<usize>; report.nodes.len()];
+        let mut source_unit_atomic_group = vec![None::<usize>; input.graph().num_nodes()];
         for (atomic_group_idx, atomic_group) in report.atomic_graph.nodes.iter().enumerate() {
             let mut atomic_group_module = None;
             for source_unit_id in &atomic_group.source_unit_ids {
-                let source_unit_idx = *source_unit_id_to_index
-                    .get(source_unit_id.as_str())
+                let source_unit_idx = input
+                    .source_unit_id(source_unit_id)
+                    .map(|source_unit| source_unit.0)
                     .with_context(|| {
                         format!(
                             "atomic group {} references unknown source unit {source_unit_id}",
@@ -595,8 +531,7 @@ impl QuotientGraph {
                 .push(SourceUnitIndex(source_unit_idx));
         }
 
-        let mut quotient = Self::from_report(report, cap_lines)
-            .context("building quotient for realizable candidate assignment")?;
+        let mut quotient = Self::from_graph(input, cap_lines);
         let mut class_module_id = BTreeMap::new();
         for (module, members) in owners_by_module {
             let survivor = members[0];
@@ -885,7 +820,7 @@ impl QuotientGraph {
     ///
     /// `SameClass` is still rejected (caller error). All other gate
     /// clauses are bypassed; `contract` gates first and then calls
-    /// this, and `testing::from_report_with_partition` uses it to seed
+    /// this, and `testing::from_graph_with_partition` uses it to seed
     /// ungated partitions.
     fn merge_classes_unchecked(
         &mut self,
@@ -1141,8 +1076,8 @@ impl QuotientGraph {
         CycleEvidence { cycles }
     }
 
-    /// Rebuild class-level edge adjacency from scratch.
-    /// O(|source_unit edges|). Called in `from_report`; merges use
+    /// Rebuild class-level edge adjacency from the shared canonical graph.
+    /// O(|source_unit edges|). Called in `from_graph`; merges use
     /// `update_class_adjacency_after_merge`.
     fn rebuild_class_adjacency(&mut self) {
         for slot in &mut self.out_edges {
@@ -1151,22 +1086,9 @@ impl QuotientGraph {
         for slot in &mut self.in_neighbors {
             slot.clear();
         }
-        // Constraining edges: bump constraining_count. Also seeds the
-        // back-pointer in `in_neighbors`. Note constraining edges are
-        // a subset of the source_unit_weighted_edges loop below, which bumps
-        // weighted_count and weighted_sum for *every* source_unit edge
-        // (constraining or not).
-        for &(s, t) in &self.source_unit_constraining_edges {
-            let cs = self.source_unit_to_class[s.0];
-            let ct = self.source_unit_to_class[t.0];
-            if cs == ct {
-                continue;
-            }
-            let entry = self.out_edges[cs.0].entry(ct).or_default();
-            entry.constraining_count += 1;
-            self.in_neighbors[ct.0].insert(cs);
-        }
-        for &edge in &self.source_unit_weighted_edges {
+        // One canonical topology pass retains every edge in the weighted
+        // coupling counts and applies the reason's shared constraint filter.
+        for edge in self.dependency_graph.iter_edges() {
             let cs = self.source_unit_to_class[edge.from.0];
             let ct = self.source_unit_to_class[edge.to.0];
             if cs == ct {
@@ -1174,7 +1096,10 @@ impl QuotientGraph {
             }
             let entry = self.out_edges[cs.0].entry(ct).or_default();
             entry.weighted_count += 1;
-            entry.weighted_sum += edge.weight as u64;
+            entry.weighted_sum += edge_weight(edge.reason.kind()) as u64;
+            if edge.reason.constrains_init_order() {
+                entry.constraining_count += 1;
+            }
             self.in_neighbors[ct.0].insert(cs);
         }
         #[cfg(debug_assertions)]
@@ -1850,13 +1775,12 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> [u8; 33] {
 /// proposals. Each accepted contraction has passed the shared
 /// realizability gate, and modules remain separate from one another.
 pub fn build_same_module_seed_quotient(
-    report: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
-) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedDependencyEdgeEndpoint>
-{
-    let mut q = QuotientGraph::from_report(report, cap_lines)?;
+) -> (QuotientGraph, Vec<SeedContractionRejected>) {
+    let mut q = QuotientGraph::from_graph(input, cap_lines);
     let mut rejected = Vec::<SeedContractionRejected>::new();
 
     // ---- Pass 1: atomic groups. Canonical order: lowest SourceUnitIndex
@@ -1914,7 +1838,7 @@ pub fn build_same_module_seed_quotient(
         }
     }
 
-    Ok((q, rejected))
+    (q, rejected)
 }
 
 /// Apply the seeding protocol: atomic groups first, then spec modules.
@@ -1928,14 +1852,14 @@ pub fn build_same_module_seed_quotient(
 /// members merge into the lowest-`SourceUnitIndex` pivot in `SourceUnitIndex`
 /// order.
 pub fn build_seed_quotient(
-    report: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     atomic_groups: &[analysis::AtomicGroupReport],
     spec_modules: &[SpecModuleGroup],
     cap_lines: usize,
-) -> Result<(QuotientGraph, Vec<SeedContractionRejected>), analysis::UnresolvedDependencyEdgeEndpoint>
-{
+) -> (QuotientGraph, Vec<SeedContractionRejected>) {
     let (mut q, mut rejected) =
-        build_same_module_seed_quotient(report, atomic_groups, spec_modules, cap_lines)?;
+        build_same_module_seed_quotient(input, atomic_groups, spec_modules, cap_lines);
+    let report = input.report();
 
     // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
     //      edge `u → v` whose target atomic group has any residual member,
@@ -2088,7 +2012,7 @@ pub fn build_seed_quotient(
         }));
     }
 
-    Ok((q, rejected))
+    (q, rejected)
 }
 
 /// Contract every other member of `source_units` (sorted) into the first
@@ -2150,7 +2074,7 @@ fn lowest_source_unit_idx<'a>(
 pub(crate) mod testing {
     use super::*;
 
-    /// One input group for `QuotientGraph::from_report_with_partition`.
+    /// One input group for `QuotientGraph::from_graph_with_partition`.
     #[derive(Debug, Clone)]
     pub struct PartitionGroup {
         pub source_unit_idxs: Vec<SourceUnitIndex>,
@@ -2170,7 +2094,7 @@ pub(crate) mod testing {
     }
 
     impl QuotientGraph {
-        /// Build a quotient over `report.nodes` and immediately
+        /// Build a quotient over `input.report().nodes` and immediately
         /// contract each source_unit group into a single class. Unlike
         /// `contract`, this bypasses the realizability gate — the
         /// assignment is taken as authoritative, so tests can seed
@@ -2179,12 +2103,12 @@ pub(crate) mod testing {
         ///
         /// Groups must be pre-coalesced: an source_unit already co-located
         /// with another group's source_units panics.
-        pub fn from_report_with_partition(
-            report: &DependencyGraphReport,
+        pub fn from_graph_with_partition(
+            input: &DependencyGraphInput,
             cap_lines: usize,
             groups: &[PartitionGroup],
-        ) -> Result<(Self, Vec<ClassId>), analysis::UnresolvedDependencyEdgeEndpoint> {
-            let mut q = Self::from_report(report, cap_lines)?;
+        ) -> (Self, Vec<ClassId>) {
+            let mut q = Self::from_graph(input, cap_lines);
             let mut group_class_ids = Vec::with_capacity(groups.len());
             for group in groups {
                 let mut winner: Option<ClassId> = None;
@@ -2218,11 +2142,10 @@ pub(crate) mod testing {
                 &q.classes,
                 &q.gate_residual_source_units,
             );
-            Ok((q, group_class_ids))
+            (q, group_class_ids)
         }
 
-        /// The typed `DependencyGraph` IR reconstructed at construction
-        /// time, for comparing the kernel's verdicts against
+        /// The shared canonical graph, for comparing the kernel's verdicts against
         /// `check_realizability` over an independently projected
         /// assignment.
         pub fn dependency_graph(&self) -> &DependencyGraph {

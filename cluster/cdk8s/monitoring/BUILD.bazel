@@ -1,3 +1,5 @@
+# gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
+load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -20,12 +22,9 @@ py_library(
         "//cluster/cdk8s/authentik:__pkg__",
     ],
     deps = [
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
         "//cluster/cdk8s:terraform",
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -120,10 +119,11 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:telemetry",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -148,19 +148,15 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )
 
 py_library(
     name = "mimir",
     srcs = ["mimir.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":grafana_helmrepository",
         "//cluster/cdk8s:flux",
@@ -194,24 +190,27 @@ py_library(
 )
 
 py_library(
+    name = "grafana_dashboard_inputs",
+    srcs = ["grafana_dashboard_inputs.py"],
+    visibility = ["//grafana/skill:__pkg__"],
+)
+
+py_library(
     name = "grafana_instance",
     srcs = ["grafana_instance.py"],
-    data = [":dashboards"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    data = ["//cluster/cdk8s/monitoring/dashboards"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":grafana_dashboard_inputs",
         ":mimir",
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
@@ -229,18 +228,49 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":grafana_dashboard_inputs",
         ":grafana_instance",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
 )
 
-# `grafana_instance`'s dashboard JSON, also the Grafana skill verifier's candidates.
-filegroup(
-    name = "dashboards",
-    srcs = glob(["dashboards/*.json"]),
-    visibility = ["//cluster/skills/grafana:__pkg__"],
+py_library(
+    name = "aiquota_analytics",
+    srcs = ["aiquota_analytics.py"],
+    data = ["//cluster/cdk8s/monitoring/dashboards:aiquota-history.json"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":grafana_instance",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:grafana_dashboards",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "flux_annotations",
+    srcs = ["flux_annotations.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":grafana_instance",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/grafana_operator:grafana",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_operator_grafana",
+        "//cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount",
+        "@pypi//cdk8s",
+    ],
 )
 
 py_library(
@@ -284,8 +314,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -298,11 +328,12 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":alloy",
         ":loki",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:node_feature_discovery",
         "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -314,20 +345,26 @@ py_test(
     name = "test_rules",
     srcs = ["test_rules.py"],
     data = [
+        "testdata/alloy_roaming_rules.yaml",
         "testdata/disk_usage_rules.yaml",
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+    },
     deps = [
         ":rules",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -339,16 +376,20 @@ py_test(
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+    },
     deps = [
         ":gateway_probe",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -422,16 +463,20 @@ py_test(
     name = "test_home_application_probes",
     srcs = ["test_home_application_probes.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "BLACKBOX_EXPORTER_PIN": BLACKBOX_EXPORTER_IMAGE + "@" + BLACKBOX_EXPORTER_DIGEST,
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
     requires_docker = True,
     deps = [
         ":blackbox_exporter",
         ":home_application_probes",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:blackbox_exporter",
-        "//util:oci",
         "//util/testing:container_logs",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -459,9 +504,9 @@ py_library(
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -489,16 +534,20 @@ py_test(
     name = "test_smokeping",
     srcs = ["test_smokeping.py"],
     data = [
-        "dashboards/home-network-overview.json",
         "testdata/smokeping_rules.yaml",
+        "//cluster/cdk8s/monitoring/dashboards:home-network-overview.json",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+    },
     deps = [
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//cluster/cdk8s:conftest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

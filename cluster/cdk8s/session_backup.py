@@ -24,7 +24,7 @@ from cdk8s_plus_34 import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -36,31 +36,33 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 NAME = NAMESPACE = "session-backup"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 HOSTNAME = "ai-session-backups.allegedly.works"
-_DATA_CLAIM = "session-backup-data"
-_STORAGE_CLASS = "piraeus-ssd-2-autodiskful"
-_REST_SERVER_AUTH = "session-backup-rest-server-auth"
+_HDD_CLAIM = "session-backup-data-hdd"
+REST_SERVER_AUTH_SECRET = "session-backup-rest-server-auth"
+IMPORTER_CREDENTIALS_SECRET = "session-backup-importer-credentials"
+IMPORTER_CREDENTIALS_SOURCE = "session-backup.sops.yaml"
+IMPORTER_CREDENTIALS_PATH = "/run/session-backup/session-backup.yaml"
 _SERVER_PORT = 8000
 _LABELS = {"app.kubernetes.io/name": NAME}
-_SERVER = ServiceRef(
+SERVER = ServiceRef(
     name=NAME, port=Port(name="http", number=_SERVER_PORT), pods=Pods(NAMESPACE, tuple(_LABELS.items()))
 )
+IMPORTER_LABELS = {"app.kubernetes.io/name": "ai-session-archive-importer"}
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.DISABLED)
 
-    claim = PersistentVolumeClaim(
+    hdd_claim = PersistentVolumeClaim(
         chart,
-        "data-claim",
+        "hdd-data-claim",
         metadata=ApiObjectMetadata(
-            name=_DATA_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+            name=_HDD_CLAIM, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         access_modes=[PersistentVolumeAccessMode.READ_WRITE_ONCE],
-        storage_class_name=_STORAGE_CLASS,
+        storage_class_name="piraeus-hdd-2",
         storage=Size.gibibytes(100),
     )
-
     deployment = Deployment(
         chart,
         "rest-server-deployment",
@@ -82,36 +84,36 @@ def chart(app: App) -> Chart:
             "PASSWORD_FILE": EnvValue.from_value("/auth/.htpasswd"),
             "OPTIONS": EnvValue.from_value("--append-only --private-repos"),
         },
-        ports=[_SERVER.port.container_port()],
-        readiness=Probe.from_tcp_socket(port=_SERVER.pod_port),
-        liveness=Probe.from_tcp_socket(port=_SERVER.pod_port, initial_delay_seconds=Duration.seconds(15)),
+        ports=[SERVER.port.container_port()],
+        readiness=Probe.from_tcp_socket(port=SERVER.pod_port),
+        liveness=Probe.from_tcp_socket(port=SERVER.pod_port, initial_delay_seconds=Duration.seconds(15)),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(100), limit=Cpu.millis(500)),
             memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
         ),
         security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
     )
-    auth = Secret.from_secret_name(chart, "rest-server-auth-secret", _REST_SERVER_AUTH)
+    auth = Secret.from_secret_name(chart, "rest-server-auth-secret", REST_SERVER_AUTH_SECRET)
     auth_volume = Volume.from_secret(
         chart, "rest-server-auth-volume", auth, default_mode=0o440, items={".htpasswd": PathMapping(path=".htpasswd")}
     )
     deployment.containers[0].mount("/auth", auth_volume, read_only=True)
-    deployment.containers[0].mount("/data", Volume.from_persistent_volume_claim(chart, "data-volume", claim))
+    deployment.containers[0].mount("/data", Volume.from_persistent_volume_claim(chart, "data-volume", hdd_claim))
     harden(deployment)
 
     Service(
         chart,
         "rest-server-service",
-        metadata=ApiObjectMetadata(name=_SERVER.name, namespace=NAMESPACE, labels=_SERVER.labels),
+        metadata=ApiObjectMetadata(name=SERVER.name, namespace=NAMESPACE, labels=SERVER.labels),
         selector=deployment,
-        ports=[_SERVER.port.service_port()],
+        ports=[SERVER.port.service_port()],
     )
     https_route(
         chart,
         "rest-server-route",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=[HOSTNAME],
-        backend=_SERVER,
+        backend=SERVER,
         hsts=True,
         listener=None,
     )
@@ -119,8 +121,13 @@ def chart(app: App) -> Chart:
         chart,
         "rest-server-network-policy",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        endpoint_selector=_SERVER.pods.selector,
-        ingress=[IngressRule.from_gateway(_SERVER.pod_port)],
+        endpoint_selector=SERVER.pods.selector,
+        ingress=[
+            IngressRule.from_gateway(SERVER.pod_port),
+            IngressRule.from_endpoints(
+                cilium.endpoint_labels(NAMESPACE, IMPORTER_LABELS["app.kubernetes.io/name"]), ports=[SERVER.pod_port]
+            ),
+        ],
         egress_deny=deny_all_egress(),
     )
 

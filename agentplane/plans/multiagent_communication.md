@@ -1,13 +1,36 @@
 # Cross-agent communication and authorization: design space
 
-Status: **messaging shipped (2026-10-21); transcript reads, discovery and launch open.** The send
-rule (`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification
-Service's contract ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed
-requirements and the open design: the read rule and the
-[archive split](#option-authorize-the-archive-apart-from-live-objects), discovery, Session creation
+Status: **messaging and same-principal delegation implemented; broader cross-SA reads, archive
+policy and Sandbox launch open.** The send rule (`session_inbox_access`), inbox tags, peer messages,
+receipts and notices are the Notification Service's contract
+([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed requirements and
+the open design: the read rule and the
+[archive split](#option-authorize-the-archive-apart-from-live-objects), broader delegation
 and Sandbox launch. Gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations);
 the decisions still open are summarized under [cases to resolve](#cases-to-resolve-before-implementation).
-The operator may revisit the service-enforced rule direction if implementation does not work well.
+**Operator clarification, 2026-10-30 PDT:** inbox/history tags are the current cross-SA send/read
+direction and remain revisable. Implementation or prior selection does not make tag-based grouping
+an intrinsic domain requirement. Evaluate it against concrete end-to-end workflows; a change may
+require backend features, refactoring and replanning. Existing enforcement remains authoritative
+until a replacement contract is selected and implemented; this clarification selects no alternative.
+The later Session–Environment separation discussion also reopens the Sandbox as the scope and owner
+of inbox and proposed history grouping; see
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
+The historical Sandbox-scoped examples below do not decide the independent-Session contract.
+
+## Selected first workflow, 2026-10-30 PDT
+
+The [stakeholder priority order](task_dag.md#stakeholder-priorities-2026-10-30-pdt) selects
+Agentplane-level Session spawning at the caller's privilege level, including reuse of its
+environment with separate directories. Starting less-privileged agents can wait. The first
+concrete standing-agent example is daily CI-latency maintenance and fix PRs, with child Sessions
+for delegated work; persistent reactive roles and agents pursuing ongoing goals are both desired.
+
+Same-privilege spawning shipped as the [caller-privilege delegation](session_delegation_workflows.md)
+workflow without settling the complete management/delegation vocabulary or native-child Session
+projection; its natural-agent usability and fresh provisioning remain there. Cross-access
+cooperation remains a product goal; the broader requirements below were not prerequisites for
+same-privilege spawning.
 
 ## Requirements and preferences
 
@@ -130,29 +153,15 @@ claimed to exist by this requirement; the chosen design must explain how the tem
 
 ## Current identity and policy wiring
 
-The [scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to
-retained history and the tentative Session-access rule family; its exact schema and
-administration remain open. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
-already calls for comparing reusable authorization systems rather than inventing a universal broker.
-
-- External MCP OAuth Connections act as an existing labeled SA selected by the operator
-  at enrollment ([Connection authority](../mcp_edge/connections/store.go)). This is an explicit
-  Connection-to-SA mapping, not an automatic one-SA-per-OAuth-client rule. GitOps defines static
-  accounts such as `claude-ai` and their `PolicyBinding`s. Human/operator authentication remains
-  separate from the caller SA.
-- For managed Sandboxes, the app's preset fills concrete `PolicySet` selections. The app writes
-  those selections, plus platform defaults, into `Sandbox.spec.policySets`; the
-  [Sandbox Controller](../sandbox_controller/identity.go) creates the dedicated SA and its
-  Sandbox-owned base `PolicyBinding`. The app can also write additional runtime bindings for
-  operator grants. Presets are defaults, not identities or authority.
-- The same subject-free `PolicySet` and SA-subject `PolicyBinding` CRs apply to static and
-  runtime-created accounts. The Policy Controller expands Kubernetes rules into native
-  RoleBindings/ClusterRoleBindings and deletes expired bindings. Egress and Actions independently
-  watch the CRs and evaluate their own rule types; they do not enforce through those native RBAC
-  bindings. Action policies govern auto-approval; an unmatched request may still receive explicit
-  operator approval.
-- Editing a `PolicySet` changes the rules for all bound accounts as readers reconcile. Changing a
-  preset's selections does not itself rewrite existing Sandboxes' policy bindings.
+Implemented wiring: [policy sets and bindings](../docs/adr_policy_sets.md) (live edits, readers,
+write authority), the Sandbox Controller's [identity](../sandbox_controller/SPEC.md#identity), and
+MCP Connections acting as an operator-selected labeled SA ([MCP edge](../mcp_edge/README.md)), an
+explicit Connection-to-SA mapping rather than one SA per OAuth client. Human/operator
+authentication stays separate from the caller SA. Presets are defaults, not identities or
+authority; changing a preset's selections does not rewrite existing Sandboxes' bindings. The
+[scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to retained
+history. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
+calls for comparing reusable authorization systems rather than inventing a universal broker.
 
 ## Identity, role, address and isolation
 
@@ -211,7 +220,7 @@ Candidate operation families, not an API or policy schema:
 | Correspondence       | Send to a recipient; authorize the reverse direction separately.           |
 | Inbox                | Read received messages; acknowledge handled work; administer the mailbox.  |
 | Control              | Interrupt a specified turn, stop a Session, change model, change effort.   |
-| Provisioning         | Open a Session; create/manage a Sandbox; select bounded configuration.     |
+| Provisioning         | Create a Session; create/manage a Sandbox; select bounded configuration.   |
 | Grant administration | Assign roles, change grants and authorize further delegation.              |
 
 A manager can send work without reading a contributor's transcript. Reading a contributor need not
@@ -288,9 +297,9 @@ Refuse protected operations before initial sync or when required policy data exc
 freshness limit. A watch outage must not permit indefinite use of old grants. Re-evaluate
 authorization and freshness throughout transcript streams, and stop further Event emission when
 the replica observes loss of the required permission or its policy view becomes too stale.
-Independent overlapping grants still apply. Notifications implements this for sends
-([`policy_watch_period_s`](../notification_service/README.md#running-and-deployment)), following the
-egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
+Independent overlapping grants still apply. Notifications implements this for sends (refused while its
+policy informers are unsynced or failing; [README](../notification_service/README.md#running-and-deployment)),
+following the egress informer; History's read rule reuses `policy/reader`. No global replica-acknowledgement
 barrier is required for v1.
 
 ### Alternatives if the tentative direction needs revision
@@ -364,12 +373,12 @@ already divide by the service that enforces them:
 | Targets are named as | live Sandboxes: direct, inbox tags, `allSandboxes`  | the Sandbox as History recorded it: namespace, name, UID once kept, history tags |
 | Lasts as long as     | the Sandbox                                         | the history                                                                      |
 
-Today History checks only that the caller is one of its configured `reader_accounts` (staging: the
-app and Notifications), then serves any Session by ID; there is no per-Session or per-Sandbox check,
-and a workload ServiceAccount is refused (`api/service.go`, `workload_auth/go/auth`). Writes are
-fenced separately: the ingress binds a Session to its first pushing ServiceAccount (namespace, name,
-UID) and refuses any other (`ingress/ingress.go`). The archive therefore already holds an identity of its
-own for every history bound to a writer, which is what the split would build on.
+History admits reviewed ServiceAccounts and scopes ordinary direct and delegated reads to the
+Session's retained execution principal (namespace, name and UID). Configured, Pod-bound backend
+readers can read all Sessions. Broader cross-principal archive grants remain a separate decision.
+Writes are fenced independently: ingress retains and checks the writer and execution principal
+(`api/service.go`, `ingress/ingress.go`). The archive therefore already holds identities of its own
+which a broader archive policy could use.
 
 **What it would mean.**
 
@@ -438,7 +447,7 @@ Still open:
 - The longer-term intent is wake-on-message by default, with suspension and resume transparent to
   users and agents. V1 keeps per-Sandbox `spec.wakeOnSend`, Dispatcher's wake allowlist and operator
   lifecycle controls; messaging and history grants imply no lifecycle edits
-  ([lifecycle authorization](task_freezer.md#sandbox_lifecycle_authorization_design--delegated-lifecycle-controls)).
+  ([lifecycle authorization](../runner_gateway/environments/lifecycle/SPEC.md#authority)).
   Per-source wake switches and moving notice timing into Dispatcher are
   [deferred](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership).
 - A2A, MCP and other facades can expose the same contract later without changing the SA and
@@ -477,9 +486,9 @@ a known Session address need not have enumeration permission. Keep live runner s
 Session identity/history and a standing recipient directory distinct; listing Sessions does not
 grant arbitrary Kubernetes inventory access.
 
-Opening Sessions in an agent's own Sandbox is a desired early use case. Define what “own” means,
+Creating Sessions in an agent's own Sandbox is a desired early use case. Define what “own” means,
 allowed models/settings, quota, setup authority, creator visibility and revocation. It adds no
-isolation from co-resident Sessions. Launch-and-open can compose grants without implicitly granting
+isolation from co-resident Sessions. Launch-and-create can compose grants without implicitly granting
 history reads, unrestricted messaging or grant administration.
 
 Sandbox creation must bound the effective authority, not only the chosen template: images, mounts,

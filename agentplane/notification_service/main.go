@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -18,29 +18,33 @@ import (
 	"time"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
-	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
+	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -53,6 +57,7 @@ import (
 )
 
 const (
+	migrationOnlyDatabaseURLEnv = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
 	// readHeaderTimeout bounds a request's headers. There is no other server timeout: the operator's watches
@@ -75,11 +80,10 @@ type kubeDeps struct {
 }
 
 func inClusterDeps() (kubeDeps, error) {
-	kubeConfig, err := rest.InClusterConfig()
+	kubeConfig, err := kubeclient.Config("")
 	if err != nil {
 		return kubeDeps{}, err
 	}
-	kubeConfig.WrapTransport = observability.WrapHTTPTransport(kubeConfig.WrapTransport)
 	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
 	// client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
@@ -100,16 +104,24 @@ func inClusterDeps() (kubeDeps, error) {
 
 // run serves on the configured address, authenticating callers with the cluster's TokenReview API.
 func run(ctx context.Context, c config) error {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+		return fmt.Errorf("migrate Notification Service database: %w", err)
+	}
 	deps, err := inClusterDeps()
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	grpcListener, err := netlistener.Open(c.RPC.ListenAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("gRPC listener: %w", err)
 	}
-	defer listener.Close()
-	return serve(ctx, c, deps, listener)
+	defer grpcListener.Close()
+	httpListener, err := net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.HTTPPort)))
+	if err != nil {
+		return fmt.Errorf("HTTP listener: %w", err)
+	}
+	defer httpListener.Close()
+	return serve(ctx, c, deps, grpcListener, httpListener)
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
@@ -120,27 +132,31 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-// newRoutes is the listener's HTTP routes: the HTTP form of `Notifications` under /v1/ (served by agentFacade), the
-// webhook when GitHub is configured, and the agent documentation, which needs neither the database nor a peer.
-func newRoutes(agentFacade, webhookHandler http.Handler) (http.Handler, error) {
-	agentDocs, err := fs.Sub(docs.Agents, "agents")
-	if err != nil {
-		return nil, err
-	}
+// newRoutes keeps the HTTP listener for the signed GitHub webhook only. Workload methods are gRPC.
+func newRoutes(webhookHandler http.Handler) http.Handler {
 	routes := http.NewServeMux()
-	routes.Handle("/v1/", agentFacade)
 	if webhookHandler != nil {
 		routes.Handle(webhook.Pattern, webhookHandler)
 	}
-	facade.MountAgentDocs(routes, agentDocs, docs.OpenAPI)
-	return routes, nil
+	return routes
 }
 
-// serve answers on listener until ctx ends or a worker or the listener fails. gRPC and the HTTP routes share the
-// listener: the servicers are gRPC, and the HTTP form of `Notifications`, its documentation and the webhook are
-// plain HTTP.
-func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) error {
-	resolver, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
+// serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
+func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
+	callers, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
+	if err != nil {
+		return err
+	}
+	var workloadSVIDs *auth.SVIDResolver
+	if c.RPC.Has(listener.SPIFFE) {
+		// The namespace holds the Sandboxes and the policy objects, Identities included, the service watches.
+		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, &resolver.Identities{PolicyNamespace: c.Namespace})
+		if err != nil {
+			return err
+		}
+		workloadSVIDs = svid
+	}
+	callers, err = callers.WithListenerAuthentication(c.RPC, workloadSVIDs)
 	if err != nil {
 		return err
 	}
@@ -153,19 +169,19 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	defer db.Close()
-	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.WorkChannel)
+	hub, err := wakeups.Listen(ctx, c.DatabaseURL, store.WorkChannel, store.InboxChannel)
 	if err != nil {
 		return fmt.Errorf("Notification Service PostgreSQL listener unavailable: %w", err)
 	}
 	defer hub.Close()
 	// Neither connection dials until its first call, so a peer that is down does not stop the service starting.
-	historyConnection, err := bearer.Dial(c.HistoryService.Target, c.HistoryService.TokenFile, seconds(c.HistoryService.RequestTimeoutSeconds),
+	historyConnection, err := bearer.Dial(c.HistoryService.Target, c.HistoryService.TokenFile, seconds(c.HistoryService.RequestTimeoutSeconds), c.HistoryService.TLS,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(historyReceiveBytes)))
 	if err != nil {
 		return err
 	}
 	defer historyConnection.Close()
-	dispatcherConnection, err := bearer.Dial(c.SessionDispatcher.Target, c.SessionDispatcher.TokenFile, seconds(c.SessionDispatcher.RequestTimeoutSeconds))
+	dispatcherConnection, err := bearer.Dial(c.SessionDispatcher.Target, c.SessionDispatcher.TokenFile, seconds(c.SessionDispatcher.RequestTimeoutSeconds), c.SessionDispatcher.TLS)
 	if err != nil {
 		return err
 	}
@@ -175,18 +191,17 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		return err
 	}
 	var actionDialOptions []grpc.DialOption
-	if actionEndpoint.tlsServerName != "" {
+	if actionEndpoint.tlsServerName != "" && c.Actions.TLS == nil {
 		actionDialOptions = append(actionDialOptions,
 			grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, actionEndpoint.tlsServerName)))
 	}
-	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), actionDialOptions...)
+	actionsConnection, err := bearer.Dial(actionEndpoint.target, c.Actions.TokenFile, seconds(c.Actions.RequestTimeoutSeconds), c.Actions.TLS, actionDialOptions...)
 	if err != nil {
 		return err
 	}
 	defer actionsConnection.Close()
-	watchPeriod := time.Duration(c.PolicyWatchPeriodSeconds) * time.Second
-	sendPolicy := inboxaccess.NewPolicy(reader.StaleAfterCycles * watchPeriod)
-	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace, watchPeriod)
+	sendPolicy := inboxaccess.NewPolicy()
+	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace)
 	if err != nil {
 		return err
 	}
@@ -220,39 +235,37 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	}
 
 	options := api.Options{
-		Store: inboxes, Wakeups: hub, Resolver: resolver, Namespace: c.Namespace, Sandboxes: sandboxes,
+		Store: inboxes, Wakeups: hub, Namespace: c.Namespace, Sandboxes: sandboxes,
 		Runner: &api.ProxyRunner{
 			TokenFile: c.RunnerGateway.TokenFile, Timeout: seconds(c.RunnerGateway.RequestTimeoutSeconds),
-			TargetTemplate: c.RunnerGateway.ControlTarget,
+			TargetTemplate: c.RunnerGateway.ControlTarget, TLS: c.RunnerGateway.TLS,
 		},
 		// The Action Service source authorizes a subscription the same way it reads one.
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
+		Sessions:         dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		MessageBodyLimit: c.MessageBodyLimitBytes, OperatorReader: c.OperatorReaderAccount,
 		Debounce:       c.NoticeDebounce.Debounce(),
-		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
+		RequestTimeout: seconds(c.RequestTimeoutSeconds),
 	}
-	operator := api.NewNotificationsOperator(options)
 	// A worker that stops ends the process, so a ready replica's workers are running.
 	health := probes.New(db, hub)
-	grpcServer := grpc.NewServer(observability.GRPCServerOption())
-	notificationspb.RegisterNotificationsServer(grpcServer, api.NewNotifications(options))
-	operatorpb.RegisterNotificationsOperatorServer(grpcServer, operator)
+	methods := auth.HealthMethods()
+	// A watch carries no deadline of its own, so the request timeout bounds its admission.
+	maps.Copy(methods, api.Methods(options, callers))
+	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
+	security, err := c.RPC.ServerCredentials(environment_runtime_transport.NotificationsURI)
+	if err != nil {
+		return err
+	}
+	if security != nil {
+		serverOptions = append(serverOptions, grpc.Creds(security))
+	}
+	grpcServer := grpc.NewServer(serverOptions...)
+	notifications := api.NewNotifications(options)
+	notificationspb.RegisterNotificationsServer(grpcServer, notifications)
 	healthpb.RegisterHealthServer(grpcServer, health)
-	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
-	// servicers authenticate every request. It outlives the termination signal, so that calls admitted before it
-	// finish while draining.
-	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopFacade()
-	agentFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, notificationspb.RegisterNotificationsHandlerFromEndpoint)
-	if err != nil {
-		return err
-	}
-	routes, err := newRoutes(agentFacade, webhookHandler)
-	if err != nil {
-		return err
-	}
+	routes := newRoutes(webhookHandler)
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
-	facade.MountGRPC(server, grpcServer)
 
 	// Each worker follows the commits on its own signal.
 	signals := make([]<-chan struct{}, workers)
@@ -270,8 +283,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		Actions:    actionsSource, GitHub: githubSource, Settings: c.Settings,
 	}
-	failed := make(chan error, workers+1)
-	// The workers outlive the listener, so a claim in progress is released before the database closes: the
+	failed := make(chan error, workers+3)
+	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.
 	workContext, stopWorkers := context.WithCancel(context.WithoutCancel(ctx))
 	running := runWorkers(workContext, workers, failed, func(ctx context.Context, index int) error {
@@ -279,7 +292,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	})
 	defer running.Wait()
 	defer stopWorkers()
-	go func() { failed <- fmt.Errorf("listener: %w", server.Serve(listener)) }()
+	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
+	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
 
 	var result error
 	select {
@@ -288,25 +302,34 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 		result = ctx.Err()
 	}
 	health.Drain()
-	// Open watches end with reconnect_required rather than holding the shutdown until their leases.
-	operator.Drain()
+	notifications.Drain()
 	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 	defer cancel()
+	// Stop the webhook listener before draining workload and backend gRPC calls.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
 	}
+	graceful.Stop(stopped, grpcServer)
 	return result
 }
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
+	if err != nil {
+		slog.Error("Notification Service migration failed", "error", err)
+		os.Exit(1)
+	}
+	if handled {
+		return
+	}
 	c, err := loadConfig()
 	if err != nil {
 		slog.Error("invalid Notification Service configuration", "error", err)
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "notification-service")
 	if err != nil {
 		slog.Error("Notification Service tracing setup failed", "error", err)

@@ -1,8 +1,9 @@
 # Agentplane service boundaries
 
 The integration app is a user-facing composition layer, not a backend dependency. The former
-Sandbox Service is not deployed: the app submits Sandbox desired state and operator grants through
-Kubernetes as the requesting operator, and the Sandbox Controller reconciles resources and owns
+Sandbox Service is not deployed: the Runner Gateway's `EnvironmentService` accepts authenticated
+management requests from the app and Action Service and writes Sandbox desired state to Kubernetes.
+The Sandbox Controller reconciles resources and owns
 `Sandbox.status`.
 
 ## The integration app is a client
@@ -12,10 +13,13 @@ and shared infrastructure, never services to the app.
 
 ```mermaid
 flowchart LR
-    App[Integration app] --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
-    App -->|health probe| Gateway[Runner Gateway]
+    App[Integration app] -->|authenticated management facade| Gateway[Runner Gateway]
+    Gateway --> Kubernetes[Kubernetes API: Sandbox spec]
+    App -->|generated PolicyService facade| Policy[Policy Controller]
+    Policy --> Kubernetes
+    App -->|health probe| Gateway
     App -->|UID/owner-fenced live inventory and status| Proxy[Per-Sandbox Runner Proxy]
-    App -->|openings and durable commands| Dispatcher[Session Dispatcher]
+    App -->|Session creation and durable commands| Dispatcher[Session Dispatcher]
     Dispatcher -->|delivery through runner proxy| Gateway
     App --> History[History Service]
     App --> Notifications[Notification service]
@@ -55,17 +59,18 @@ when both processes expose HTTP listeners. A backend's HTTP/JSON facade is not a
 
 The integration app owns the browser's HTTP/JSON and streaming boundary. It calls each backend's
 generated gRPC client with the credential that backend expects, and returns the generated message's
-ProtoJSON form or a UI-specific composition. The app never forwards browser cookies or browser-supplied upstream credentials. Backend authentication and authorization still run on every RPC; the app neither
-replaces that authority nor turns a browser session into a backend dependency.
+ProtoJSON form or a UI-specific composition. Thread detail is composed in the browser from the app's
+generated ThreadMetadata API and the History Service's generated Session summary API. The app never
+forwards browser cookies or browser-supplied upstream credentials. Backend authentication and
+authorization still run on every RPC; the app neither replaces that authority nor turns a browser
+session into a backend dependency.
 
 A service does not acquire an HTTP facade merely because it serves gRPC. A facade needs an explicit
-direct HTTP-client contract independent of the browser app. Existing published service HTTP APIs
-remain available to such clients: Notifications and egress rules have HTTP CLI consumers; Actions,
-Connections and Dispatcher also publish direct HTTP APIs. The Actions CLI itself uses native gRPC.
-Removing a published API requires its own caller/contract review; the app does not consume those
-facades. Agents and automation must remain able to use backend APIs while the app is unavailable.
-Consolidating their HTTP endpoints would require an independent API gateway, not routing them through
-the integration app.
+direct HTTP-client contract independent of the browser app. The Notifications workload API uses gRPC;
+its proto HTTP annotations generate the App browser facade, while `agentplane notifications` calls gRPC.
+Actions and Connections retain their direct HTTP APIs. Agents and automation can use the Notifications CLI
+while the app is unavailable; the app remains a separate browser boundary and does not become a dependency
+for workload access.
 
 Use generated gateway handlers and protobuf messages instead of a handwritten HTTP-to-RPC
 transcoder or duplicate wire models. A language without a generated gateway may use small typed
@@ -79,20 +84,29 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 ## Ownership
 
 - **Integration app:** user-facing composition and interaction. As the requesting operator, it writes
-  Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
+  Sandbox `spec` through the Runner Gateway and requests operator-owned `PolicyBinding` grants and
+  revocations through the generated PolicyService facade. It reads Sandbox
   projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
   the Runner Gateway for placement, and uses each Sandbox's Runner Proxy for UID/owner-fenced live
   inventory and process/Session diagnostics. Manual resume is a Sandbox lifecycle request through
   Kubernetes; the Runner owns native-state recovery after startup. It owns harness startup and
-  reconciliation after command admission. The app reads Session history and Threads from the History
-  Service. See the [Runner Gateway](../runner_gateway/README.md) and
+  reconciliation after command admission. The app reads Session history from the History Service and
+  owns the app-specific Thread metadata. See the [Runner Gateway](../runner_gateway/README.md) and
   [Session Dispatcher](../runner_gateway/dispatcher/README.md) contracts.
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
+- **Policy Controller:** owns operator grant validation and PolicyBinding creation and revocation,
+  plus expiry and reconciliation of the Kubernetes grants those bindings represent.
 - **Runner Gateway:** runner control stream, verified destination bindings, the per-Sandbox Runner
-  Proxy and read-only Sandbox inventory. It does not own Session records or command admission. The
-  app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable
+  Proxy and `EnvironmentService` RPCs. The service owns Sandbox create, templates and mutations;
+  it returns existing-target facts only after exact ServiceAccount UID and Sandbox-owner checks,
+  and delegates explicit resume to the lifecycle
+  manager. Dispatcher automatic delivery wake is assessed and requested through the shared lifecycle
+  manager under the current caller identity, `wakeOnSend` and `wake_callers` policy.
+  The service does not grant target access. The Gateway does not own Session records
+  or command admission.
+  The app and Dispatcher use the proxy for live Runner RPCs; the Dispatcher owns sender-facing durable
   command admission and delivery state. The retired `sandbox_commands` database resource is absent
   from current manifests.
 - **History Service:** the Session Event archive, the ingress runners push their journals to, the
@@ -105,9 +119,9 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 - **Action Service:** Action authorization and Decisions, execution lifecycle, and canonical Action
   history.
 
-`app/threads/` owns only the app's Thread metadata, projections, and browser-facing composition. Its
-session adapter uses the History Service; it does not own Sandbox reconciliation or connect directly
-to runners. Thread identities do not travel in Runner control-stream metadata.
+`app/go/threads/` owns only the app's Thread metadata and its browser-facing API. The browser combines
+that metadata with History Service summaries; it does not own Sandbox reconciliation or connect
+directly to runners. Thread identities do not travel in Runner control-stream metadata.
 
 ## Invariants
 
@@ -118,14 +132,14 @@ to runners. Thread identities do not travel in Runner control-stream metadata.
   table can be dropped and rebuilt from the raw log.
 - **One database per service**, named for it, with its own role. No service reads another's database;
   Electric's logical replication of the history fold is the one exception.
-- **The Runner Gateway routes and does not provision.** It holds the control stream and serves each runner's
-  own `Runner` service at its Sandbox's control address; it keeps no Session records and creates no Kubernetes
-  objects besides its connection records.
+- **The Runner Gateway owns Environment management.** It holds the control stream and serves each
+  runner's own `Runner` service at its Sandbox's control address; its `EnvironmentService` creates
+  and changes Sandbox objects, while the Dispatcher owns Session records.
 - **The History Service never routes to, reads or manages Sandboxes.** It records which Sandbox wrote each
   Session.
 - **One Session ID everywhere,** minted by the client: runner, Gateway, History Service and app use the same
   UUID.
-- **Runners only dial out.** No runner listens for connections.
+- **Runner control is private.** The Gateway dials each runner's mTLS gRPC listener; only Gateway workloads may reach it.
 - **The app is a facade.** It stores browser sessions, operator-set Thread metadata and the Thread → Session
   link, and asks the History Service where a Session runs.
 - **Coordination lives in Kubernetes** (Leases, Services), except a fence that must commit in the same
@@ -136,7 +150,8 @@ to runners. Thread identities do not travel in Runner control-stream metadata.
 The Runner Gateway authenticates proxy callers, resolves the current Sandbox and runner connection,
 and routes Runner RPCs to the replica holding the outbound stream. The app and Notification service
 use it for live Runner inventory; the Sandbox Controller uses its controller-only proxy authorization
-for quiesce. The app requests Sandbox lifecycle changes through Kubernetes. The Session Dispatcher owns durable sender-facing command admission and delivery.
+for quiesce. The app requests Sandbox lifecycle changes through the Gateway's `EnvironmentService`.
+The Session Dispatcher owns durable sender-facing command admission and delivery.
 No backend needs the app process to keep serving these operations.
 
 Notification-triggered wake and durable acceptance for offline destinations are separate features
@@ -178,15 +193,16 @@ requirement.
 
 The Sandbox Service API, server source, and Deployment are retired. The History Service retains the
 existing `sandbox_service` database and its authored Session history. The app submits Sandbox desired
-state and operator grants through the Kubernetes API as the requesting operator; the Sandbox
+state through the Gateway's authenticated `EnvironmentService` facade; the Sandbox
 Controller reconciles `spec` and owns `status`.
 
 Shared read-only Sandbox projections may be used by the app, notifications and Runner Gateway. They
-carry no create/delete/grant/session authority. RunnerControl and History protobuf/client types remain
+carry no create/delete/grant/session authority. The Gateway's separate management methods do.
+Runner and History protobuf/client types remain
 service-owned APIs; the Gateway-specific Session API and the Sandbox Service API have no client here.
 
 Thread launch defaults live in the app's configured preset catalog and are selected by the preset
 label on a Sandbox. The shared Sandbox creation request has no per-Sandbox Session defaults. The
 shared Sandbox read model carries the Sandbox's bootstrap script but no launch defaults. The app
-resolves a complete Session spec from the preset before sending its opening to the Dispatcher. No
+resolves a complete Session spec from the preset before creating the Session through the Dispatcher. No
 database schema, identities, or retained logs change with package renames.

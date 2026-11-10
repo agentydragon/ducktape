@@ -4,8 +4,10 @@ from pathlib import Path
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field, SecretStr
 
+from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
 from aiquota.providers.claude import ClaudeSettings
 from aiquota.providers.codex import CodexSettings
+from aiquota.providers.openai_platform import OpenAIPlatformSettings
 from aiquota.providers.zai import ZaiSettings
 
 CONFIG_DIR = Path(user_config_dir("aiquota"))
@@ -51,6 +53,8 @@ class Config(BaseModel):
     remote_api: RemoteAPISettings = Field(default_factory=RemoteAPISettings)
     claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
     codex: CodexSettings = Field(default_factory=CodexSettings)
+    openai_platform: OpenAIPlatformSettings = Field(default_factory=OpenAIPlatformSettings)
+    anthropic_platform: AnthropicPlatformSettings = Field(default_factory=AnthropicPlatformSettings)
     zai: ZaiSettings = Field(default_factory=ZaiSettings)
 
 

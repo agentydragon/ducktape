@@ -1,131 +1,71 @@
-"""Shared aiquota render test fixtures."""
+"""Shared aiquota render test fixtures, validated as production quota models."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import TypeAdapter
 
-from aiquota.models import (
-    AllQuotas,
-    ExtraSpend,
-    FetchError,
-    FetchSuccess,
-    PaidCredits,
-    PrepaidBalance,
-    ProviderFetch,
-    ProviderQuota,
-    QuotaWindow,
-    SuccessfulProviderFetch,
-)
+from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
+from aiquota.render.view_model import AllQuotasView, to_view
 
 FIXTURE_NAMES = (
     "empty",
+    "banked_resets_ordinary",
+    "banked_resets_exhausted",
+    "banked_resets_pending",
+    "banked_resets_unknown",
     "tints",
+    "binding_summary",
+    "zai_peak",
     "hot",
     "exhausted",
     "extra_enabled_not_burning",
+    "extra_disabled_positive",
+    "extra_spend_fallback",
+    "multi_window_reset_pending",
+    "stale_paid_signals",
     "stale_fallback",
     "paid_credits",
+    "openai_platform_credits",
+    "anthropic_platform_credits",
     "claude_prepaid_balance",
     "claude_prepaid_balance_unavailable",
+    "claude_prepaid_balance_stale",
+    "claude_reset_grants",
     "reset_credit_expiry_unavailable",
+    "platform_credits_with_subscription_resets",
+    "wire_fields",
+    "reset_pending",
+    "stale_observation",
+    "observed_account_2026_11_04",
 )
-PROVIDER_ORDER = ("claude", "codex", "zai")
-DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
-def load_fixture_data(path: Path) -> dict[str, Any]:
-    data = yaml.safe_load(path.read_text())
-    if not isinstance(data, dict):
-        raise ValueError(f"{path} must contain a mapping at top level")
-    return data
+def load_quota_fixture(path: Path) -> AllQuotas:
+    return AllQuotas.model_validate(yaml.safe_load(path.read_text()))
 
 
-def load_quota_fixture(path: Path, *, now: datetime = DEFAULT_NOW) -> AllQuotas:
-    return fixture_data_to_quotas(load_fixture_data(path), now=now)
-
-
-def fixture_data_to_quotas(data: dict[str, Any], *, now: datetime = DEFAULT_NOW) -> AllQuotas:
-    providers = [_provider_quota(provider, data[provider], now=now) for provider in PROVIDER_ORDER if provider in data]
-    return AllQuotas(providers=providers, fetched_at=now)
-
-
-def _provider_quota(provider: str, node: object, *, now: datetime) -> ProviderQuota:
-    if not isinstance(node, dict):
-        raise ValueError(f"{provider} fixture must be a mapping")
-    return ProviderQuota(
-        provider=provider,
-        last_output=ProviderFetch(fetched_at=_last_check_at(node, now=now), result=_last_output_result(node)),
-        last_success=_last_success(node.get("lastSuccess"), now=now),
+def meter_quota_view(used_percent: float) -> AllQuotasView:
+    now = datetime(2026, 1, 15, 12, tzinfo=UTC)
+    quotas = AllQuotas(
+        fetched_at=now,
+        providers=[
+            ProviderQuota(
+                provider="codex",
+                last_output=ProviderFetch(
+                    fetched_at=now,
+                    result=FetchSuccess(
+                        windows=[QuotaWindow(used_percent=used_percent, reset_seconds=9000, window_seconds=18000)]
+                    ),
+                ),
+            )
+        ],
     )
+    return to_view(quotas, now)
 
 
-def _last_output_result(node: dict[str, Any]) -> FetchSuccess | FetchError:
-    error = node.get("error")
-    if error is not None:
-        return FetchError(error=str(error))
-    return _success(node)
-
-
-def _last_success(node: object, *, now: datetime) -> SuccessfulProviderFetch | None:
-    if node is None:
-        return None
-    if not isinstance(node, dict):
-        raise ValueError("lastSuccess must be a mapping")
-    age = node.get("ageSeconds")
-    fetched_at = now - timedelta(seconds=float(age)) if age is not None else now
-    return SuccessfulProviderFetch(fetched_at=fetched_at, result=_success(node))
-
-
-def _success(node: dict[str, Any]) -> FetchSuccess:
-    return FetchSuccess(
-        windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
-        extra_spend=_extra_spend(node.get("extraSpend")),
-        paid_credits=PaidCredits.model_validate(node["paidCredits"]) if node.get("paidCredits") is not None else None,
-        prepaid_balance=_prepaid_balance(node.get("prepaidBalance")),
-        available_reset_credits=node.get("availableResetCredits"),
-        available_reset_credit_expiries=node.get("availableResetCreditExpiries", []),
-        reset_credit_expiry_lookup_failed=node.get("resetCreditExpiryLookupFailed", False),
-    )
-
-
-def _last_check_at(node: dict[str, Any], *, now: datetime) -> datetime:
-    age = node.get("lastCheckAgeSeconds")
-    if age is not None:
-        return now - timedelta(seconds=float(age))
-    return now
-
-
-def _window(node: object) -> QuotaWindow | None:
-    if node is None:
-        return None
-    if not isinstance(node, dict):
-        raise ValueError("window fixture must be a mapping")
-    return QuotaWindow(
-        used_percent=float(node["usedPercent"]),
-        reset_seconds=float(node["resetSeconds"]),
-        window_seconds=float(node["windowSeconds"]),
-    )
-
-
-def _extra_spend(node: object) -> ExtraSpend | None:
-    if node is None:
-        return None
-    if not isinstance(node, dict):
-        raise ValueError("extraSpend fixture must be a mapping")
-    return ExtraSpend(
-        is_enabled=bool(node["is_enabled"]),
-        monthly_limit_usd=float(node["monthly_limit_usd"]),
-        used_usd=float(node["used_usd"]),
-        utilization=float(node["utilization"]),
-    )
-
-
-def _prepaid_balance(node: object) -> PrepaidBalance | None:
-    if node is None:
-        return None
-    if not isinstance(node, dict):
-        raise ValueError("prepaidBalance fixture must be a mapping")
-    return TypeAdapter(PrepaidBalance).validate_python(node)
+def load_quota_view_fixture(path: Path, *, now: datetime | None = None) -> dict[str, Any]:
+    """Return the same derived wire view used by `/v1/quotas` and the desktop daemon."""
+    quotas = load_quota_fixture(path)
+    return to_view(quotas, now if now is not None else quotas.fetched_at).model_dump(mode="json")

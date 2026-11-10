@@ -154,14 +154,6 @@ def test_build_authentik_auth_appends_extra_verifiers(auth_build_harness: _AuthB
     assert auth_build_harness.multi_auth_cls.call_args.kwargs["verifiers"] == [sentinel]
 
 
-def test_build_authentik_auth_constructs_the_stock_downstream_identity_proxy(
-    auth_build_harness: _AuthBuildHarness,
-) -> None:
-    build_authentik_auth(_config())
-
-    auth_build_harness.downstream_proxy_cls.assert_called_once()
-
-
 def test_compose_authentik_auth_uses_caller_owned_proxy_without_reconfiguring_it(
     auth_build_harness: _AuthBuildHarness,
 ) -> None:

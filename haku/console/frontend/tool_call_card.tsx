@@ -7,7 +7,7 @@ import {
   terminalStatusLabel,
   type ApprovalDisplayFields,
 } from "./tool_call_state";
-import type { ToolCallRecord } from "./api/tool_call_record";
+import type { ToolCallRecord } from "./tool_call_record";
 import { ClockIcon, CloseIcon, SyncCurrentIcon, SyncErrorIcon } from "./icons";
 import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
 import { ToolCallMeta } from "./tool_call_meta";

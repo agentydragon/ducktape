@@ -6,23 +6,28 @@ behavior.
 
 ## Choose a task
 
-| Task                                 | Start here                                                                                                                                   | Result to review                                                                                                                                                                    |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run a spec against captured source   | [Getting started](#getting-started) and [pipeline validation](docs/cli.md#running-the-pipeline)                                              | Emitted modules, selector outcomes, and gate result                                                                                                                                 |
-| Understand a binding                 | [Inspect a binding end to end](docs/cli.md#workflow-investigating-a-binding-end-to-end)                                                      | Source, dependencies, and current assignment                                                                                                                                        |
-| Extract unassigned code              | [Propose and claim residuals](docs/spec_editing.md#workflow-proposing-new-modules)                                                           | Reviewed proposal, selectors, and proposed-assignment gate                                                                                                                          |
-| Move existing bindings               | [Focused binding moves](docs/spec_editing.md#workflow-moving-a-binding-from-one-module-to-another)                                           | Reviewed move batch and gate verdict                                                                                                                                                |
-| Review architecture and module shape | [Architecture review](docs/architecture_review.md)                                                                                           | Current architecture notes, measured conventions, and worker-ready reorganization tasks                                                                                             |
-| Reorganize existing assignments      | [Decompose, then refine](docs/spec_editing.md#workflow-reorganizing-existing-modules)                                                        | Complete source-unit assignment and gate verdict                                                                                                                                    |
-| Recover readable binding names       | [Naming workflow](docs/naming.md)                                                                                                            | Source-grounded names, reviewed YAML changes, and naming verification                                                                                                               |
-| Rename a binding                     | [Rename without moving](docs/spec_editing.md#workflow-renaming-a-binding-without-moving)                                                     | Name change and collision check                                                                                                                                                     |
-| Rename or merge module files         | [Rename a module](docs/spec_editing.md#renaming-or-disabling-a-module) or [merge modules](docs/spec_editing.md#workflow-merging-two-modules) | Gated YAML edit preserving claims and metadata                                                                                                                                      |
-| Stabilize selectors                  | [Bulk conversion loop](docs/selectors.md#bulk-conversion-loop)                                                                               | Reviewed anchors, exact-source validation, and remaining debt                                                                                                                       |
-| Diagnose a rejected edit             | [Rejection diagnostics](docs/cli.md#rejection-diagnostics), then [gate queries](docs/cli.md#gate-queries)                                    | Source-backed blocking constraint; if an assertion is justified, use the [contract chooser](skills/shared/initialization_contracts.md#choose-the-contract-for-the-established-fact) |
-| Plan, delegate, or integrate work    | [Shared work procedures](skills/shared/workflow.md)                                                                                          | Scoped plans, isolated copied inputs, completed execution evidence, and validated integration                                                                                       |
+| Task                                 | Start here                                                                                                                                   | Result to review                                                                                            |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Run a spec against captured source   | [Getting started](#getting-started) and [pipeline validation](docs/cli.md#running-the-pipeline)                                              | Emitted modules, selector outcomes, and gate result                                                         |
+| Understand a binding                 | [Inspect a binding end to end](docs/cli.md#workflow-investigating-a-binding-end-to-end)                                                      | Source, dependencies, and current assignment                                                                |
+| Extract unassigned code              | [Propose and claim residuals](docs/spec_editing.md#workflow-proposing-new-modules)                                                           | Reviewed proposal, selectors, and proposed-assignment gate                                                  |
+| Move existing bindings               | [Focused binding moves](docs/spec_editing.md#workflow-moving-a-binding-from-one-module-to-another)                                           | Reviewed move batch and gate verdict                                                                        |
+| Review architecture and module shape | [Architecture review](docs/architecture_review.md)                                                                                           | Current architecture notes, measured conventions, and worker-ready reorganization tasks                     |
+| Reorganize existing assignments      | [Decompose, then refine](docs/spec_editing.md#workflow-reorganizing-existing-modules)                                                        | Complete source-unit assignment and gate verdict                                                            |
+| Recover readable binding names       | [Naming workflow](docs/naming.md)                                                                                                            | Source-grounded names, reviewed YAML changes, and naming verification                                       |
+| Rename a binding                     | [Rename without moving](docs/spec_editing.md#workflow-renaming-a-binding-without-moving)                                                     | Name change and collision check                                                                             |
+| Rename or merge module files         | [Rename a module](docs/spec_editing.md#renaming-or-disabling-a-module) or [merge modules](docs/spec_editing.md#workflow-merging-two-modules) | Gated YAML edit preserving claims and metadata                                                              |
+| Stabilize selectors                  | [Bulk conversion loop](docs/selectors.md#bulk-conversion-loop)                                                                               | Reviewed anchors, exact-source validation, and remaining debt                                               |
+| Prune inferable annotations          | [Spec lint](docs/cli.md#running-the-pipeline)                                                                                                | Typed `inferable`/`inconclusive` findings by authored identity; removal is a reviewed edit                  |
+| Diagnose a rejected edit             | [Assignment diagnosis](skills/shared/workflow.md#diagnose-a-rejected-assignment)                                                             | Source-backed cause and justified spec, analysis or contract repair                                         |
+| Break a sequenced-only cycle         | [Proposing commutations](docs/spec_editing.md#workflow-proposing-commutations)                                                               | Ranked `commuting_statements` draft with each inerted edge's explanation, audited and applied by the author |
+| Plan, delegate, or integrate work    | [Shared work procedures](skills/shared/workflow.md)                                                                                          | Scoped plans, isolated copied inputs, completed execution evidence, and validated integration               |
+| Extend or repair a partial spec      | [One useful increment](skills/shared/workflow.md#complete-one-useful-increment)                                                              | Passing candidate, readable emitted structure, relevant runtime observations and current handoff            |
 
 Use the project's adapter for concrete paths and gate, regeneration, and runtime
-checks. Graph-backed commands require a matching saved graph through `--graph` or
+checks. Normal runs omit full graph serialization. Add `run --graphs` or request
+Bazel's `dependency_graphs` output group when refreshing graph inputs.
+Graph-backed commands require a matching saved graph through `--graph` or
 `DEBUNDLE_GRAPH`; [input compatibility and regeneration](docs/cli.md#common-arguments-and-env-vars)
 and [invocation records](docs/cli.md#resolved-invocation-records) describe those
 boundaries. Read the linked recipe for the chosen operation; per-flag details are
@@ -77,6 +82,15 @@ unassigned_mode:
   cli: { kind: inline_in_entry }
   print: { kind: inline_in_entry }
   structuredIO: { kind: inline_in_entry }
+
+chunk_renames:
+  print:
+    members:
+      - name: helper
+        selector:
+          binding:
+            name: a
+            kind: function_declaration
 ```
 
 - Each `js-files.txt` line names one `.js` file below `inputs.root`, or
@@ -86,8 +100,20 @@ unassigned_mode:
 - Roots are normalized relative paths and may not overlap. Trees scoped to one chunk
   share it: no duplicate module paths, and their selectors resolve jointly.
 - Compiled flat-spec module paths are relative to their tree root;
-  `logical_modules` is keyed by chunk ID. `binding_patches.yaml` applies to
-  `main_chunk_id` only.
+  `logical_modules` is keyed by chunk ID.
+- `chunk_renames` uses the canonical flat-spec shape, keyed by input chunk ID.
+  It applies in-place readable names to bindings left in that chunk's entry
+  (residual) body; it creates no module and does not change ownership. This is
+  the sole rename source for every chunk, including the main chunk. Each key
+  must have an `unassigned_mode`, as required by flat-spec validation.
+- Graph queries derive module scope and binding homes from `module_roots` and
+  module YAML. They report source bindings and module ownership, so
+  `chunk_renames` does not add a graph owner. The `bindings` listing and editing
+  commands operate on module YAML; edit tree `chunk_renames` in the config and
+  use full tree `spec validate` to exercise selectors and lowering, including
+  the rename ledger. Its source-only mode checks module selectors against source
+  without reading tree config. Use `run` for ordinary final reconstruction and
+  emission checks.
 
 ## Where behavior lives
 
@@ -97,6 +123,7 @@ the shared resolver and gate rather than their own acceptance rules.
 
 | Responsibility                                                                  | Start here                                                          |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Parse command/environment inputs into typed service requests                    | `transform_command.rs`, `analyze_command.rs`, `package_args.rs`     |
 | Load source and retain in-memory chunk/file artifacts and import indexes        | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/artifact.rs` |
 | Normalize module paths and parse JS-list input                                  | `artifacts/paths.rs`                                                |
 | Define serialized report models and write JSON reports                          | `artifacts/reports.rs`                                              |
@@ -106,10 +133,11 @@ the shared resolver and gate rather than their own acceptance rules.
 | Match, synthesize, and diagnose selectors                                       | `selectors/{matching,authoring,diagnostics}/`                       |
 | Analyze statement effects, dependencies, and structural atoms                   | `facts/`, `purity/`, `graph/`, `chunk_analysis/`                    |
 | Model synchronous values, collect callable execution facts, and interpret calls | `facts/sync_effects/{value_model,execution_index,interpreter}.rs`   |
+| Summarize what each builtin coerces, allocates, mutates and returns             | `facts/abstract_domain/builtins.rs`                                 |
 | Assemble assignments and validate realizability                                 | `assignment_assembly.rs`, `gate.rs`, `realizability/`               |
 | Lower accepted assignments to entry and logical-module files                    | `lowering/`                                                         |
 | Plan/apply vendor substitution and finalize emitted files                       | `vendor/`, `artifacts/emission_files.rs`                            |
-| Render and write finalized JavaScript files and output reports                  | `artifacts/script_output.rs`                                        |
+| Render finalized scripts through accepted plans and write output reports        | `artifacts/write_tree.rs`, `artifacts/script_output.rs`             |
 | Accept concrete syntax, replacements, and browser loading before writing        | `reconstruction.rs`, `artifacts/browser_harness_plan.rs`            |
 | Propose moves or safe module refinements; inspect or edit spec                  | `peel/`, `cli/`                                                     |
 
@@ -133,7 +161,9 @@ elsewhere in the repo are not the live implementation.
 
 ## Bazel integration and profiling
 
-`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action; profile
+`debundle_product.bzl` declares a corpus's standard target family;
+`pipeline.bzl`'s `debundle_pipeline` runs `debundle run` as a build action, and
+`debundle_cli.bzl` provides a runfiles-backed launcher for graph queries; profile
 with `perf_wrapper.sh`: <docs/bazel_integration.md>.
 
 ## Spec features
@@ -142,10 +172,14 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   collects it in a catchall file, or decomposes it into one module per atomic
   group. Policies and generated paths: <SPEC.md#unassigned-source>.
 
-- **Runtime loading:** `execution_runtime: native_browser_esm` declares native
-  browser module loading independently of harness emission; omitted or `generic`
-  retains host-loader fallback. Checked closure and replacement prerequisites:
-  <SPEC.md#runtime-loading-contract>.
+- **Host behavior:** `host_behavior` declares audited host behaviors as
+  explicit keys, never a runtime name: `synchronous_module_loader: none` for
+  native browser module loading (independent of harness emission),
+  `reentry_free_operations`, `reentry_free_builtin_modules` and
+  `reentry_free_bun_modules` for audited host calls and module leaves. Omitted keys stay conservative; the audited
+  executable's identity goes in `note:`. Keys, readers and prerequisites:
+  <SPEC.md#host-behavior>. `program_premises` holds author premises about the
+  program itself (<SPEC.md#program-premises>).
 
 - **`comment:`** emits into generated JS; **`note:`** is YAML-only authoring
   metadata: <docs/spec_editing.md> § Comments and notes.
@@ -154,10 +188,22 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   <docs/design.md> § Conditionally-correct optimizations):
   `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain` (+ author-trusted
   `trusted_dataflow_summaries`) orders impure statements by the cells they touch
-  (§ Emission modes); `chunk_analysis_options.<chunk_id>.local_property_effects`
+  (§ Emission modes); recognized array-content ordering, including pure reads,
+  applies in either graph mode (<SPEC.md> § Dependency-graph array ordering);
+  `chunk_analysis_options.<chunk_id>.local_property_effects`
   makes `X.prop = <pure-rhs>;` a local effect on `X` (A10);
   `deferred_global_publications` narrows callback reentry for audited inert
-  browser-global data slots while retaining write ordering.
+  browser-global data slots while retaining write ordering;
+  `native_operation_inputs` carries source-selected native initializer and
+  computed class-key read premises;
+  `native_call_identity_inputs` certifies the callee at one selected direct
+  `Object.freeze` call while retaining its argument and effect checks;
+  `initializer_call_effect_inputs` selects an existing logical-module member
+  with `resolved_member` and supplies an exact audited imported-call
+  operation-domain receipt, independently of purity, timing, and retained
+  callback evidence (<SPEC.md#exact-initializer-call-effect-inputs>);
+  `commuting_statements` certifies two selected source units as order-independent
+  during initialization (<SPEC.md> § Commuting statements).
 - **Input-chunk admission**: every materialized chunk is screened for A1 (top-level
   `eval`), A3 (dynamic `import(...)`), A5 (`import.meta`) before quotient/lowering
   (`chunk_analysis/chunk_admission.rs`); audited corpora disable checks with

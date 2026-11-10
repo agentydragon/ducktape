@@ -1,6 +1,9 @@
+use analysis_model::DepKind;
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::report_builders::build_dependency_graph_report;
@@ -9,13 +12,22 @@ use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
 use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
-    BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, EntryDestination,
-    ModuleId, ModuleQuotient, PlannedModule,
+    BindingCatalogue, BindingScopeError, DependencyGraphReport, EntryDestination, ModuleId,
+    ModuleQuotient, PlannedModule, StructuralPlacementCheck,
 };
+use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
-use crate::validation::{AssignmentReport, validate_assignment};
+use crate::realizability::CrossRebindEdge;
+use crate::realizability::{
+    CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
+    EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
+    SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
+    TranslationValidationResult, check_realizability, effect_translation_assess,
+    translation_validate,
+};
+use crate::validation::{AssignmentReport, AssignmentValidation, validation_from_verdict};
 
 #[derive(Debug, Error)]
 pub enum AssignmentAnalysisBuildError {
@@ -69,6 +81,9 @@ pub struct AssignmentAnalysis {
     /// realizability gate's evaluation simulator mirrors. See
     /// `esm_import_order::EsmImportOrder`.
     import_order: EsmImportOrder,
+    /// Planning and final validation share this verdict for the immutable
+    /// graph/assignment pair. A rebuilt assignment starts with an empty cache.
+    realizability: OnceLock<RealizabilityVerdict>,
 }
 
 /// An immutable assignment whose atomic-group, schedule, and rebinding checks
@@ -76,7 +91,7 @@ pub struct AssignmentAnalysis {
 #[derive(Debug)]
 pub struct ValidatedAssignment<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
-    report: AssignmentReport,
+    validation: AssignmentValidation,
 }
 
 impl ValidatedAssignment<'_> {
@@ -85,7 +100,431 @@ impl ValidatedAssignment<'_> {
     }
 
     pub fn report(&self) -> &AssignmentReport {
-        &self.report
+        &self.validation.report
+    }
+
+    pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
+        &self.validation.verdict.cross_rebinds
+    }
+}
+
+/// An immutable assignment the gate rejected. It still projects to syntax
+/// placement so `debundle run --emit-on-rejection` can lower it for reading;
+/// the report says why the result is not runnable.
+#[derive(Debug)]
+pub struct RejectedAssignment<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    validation: Box<AssignmentValidation>,
+}
+
+impl RejectedAssignment<'_> {
+    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+        self.assignment_analysis
+    }
+
+    pub fn report(&self) -> &AssignmentReport {
+        &self.validation.report
+    }
+
+    pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
+        &self.validation.verdict.cross_rebinds
+    }
+}
+
+/// Pre-effect evidence for one exact immutable assignment: the legacy
+/// realizability validation, the candidate's emitted ESM order, and its
+/// structural placement. Each is computed once here and consumed by
+/// [`CandidatePreflight::evaluate`], so the realizability verdict that decides
+/// acceptance travels with the candidate instead of being recomputed.
+pub struct CandidatePreflight<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
+    emitted_order: CandidateEmittedOrder,
+    placement: StructuralPlacementAssessment,
+}
+
+impl<'a> CandidatePreflight<'a> {
+    /// The projection must be for this immutable assignment.
+    pub fn prepare(
+        assignment_analysis: &'a AssignmentAnalysis,
+        projection: &analysis::PlacementProjection<'_>,
+    ) -> Self {
+        assert!(
+            std::ptr::eq(&assignment_analysis.assignment, projection.assignment()),
+            "candidate placement projection must belong to this immutable assignment"
+        );
+        let legacy_validation = assignment_analysis.validate_with_verdict();
+        let emitted_order = assignment_analysis.candidate_emitted_order();
+        let placement = structural_placement_assessment(
+            assignment_analysis.inputs.dependency_graph(),
+            &legacy_validation,
+            projection,
+        );
+        Self {
+            assignment_analysis,
+            legacy_validation,
+            emitted_order,
+            placement,
+        }
+    }
+
+    /// The authoritative gate decision, known before any effect sweep runs.
+    pub fn is_rejected(&self) -> bool {
+        legacy_gate_rejects(&self.legacy_validation)
+    }
+
+    /// Run legacy translation validation and the candidate effect sweep over
+    /// the retained emitted order and placement. The visitors stream complete
+    /// evidence without retaining a second copy of its rows.
+    pub fn evaluate<E>(
+        self,
+        facts: &[analysis::facts::StatementFacts],
+        translation_validation_visitor: Option<
+            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
+        >,
+        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
+    ) -> Result<CandidateEvaluation<'a>, E> {
+        let translation_validation = self.assignment_analysis.translation_validation(
+            &self.legacy_validation,
+            &self.emitted_order,
+            translation_validation_visitor,
+        )?;
+        let mut audit = TvAudit::begin();
+        let effect = match audit.as_mut() {
+            None => self.assignment_analysis.effect_assessment(
+                facts,
+                &translation_validation,
+                &self.emitted_order,
+                effect_visitor,
+            )?,
+            Some(audit) => {
+                let mut effect_visitor = effect_visitor;
+                self.assignment_analysis.effect_assessment(
+                    facts,
+                    &translation_validation,
+                    &self.emitted_order,
+                    Some(&mut |row: &EffectConflictDiagnosticRow<'_>| {
+                        audit.conflict(row);
+                        effect_visitor
+                            .as_mut()
+                            .map_or(Ok(()), |visitor| visitor(row))
+                    }),
+                )?
+            }
+        };
+        let candidate_assessment = CandidateRelocationAssessment {
+            placement: self.placement,
+            effect,
+        };
+        if let Some(audit) = audit {
+            audit.finish(TvAuditRecord {
+                argv: std::env::args().collect(),
+                chunk_id: self.assignment_analysis.inputs.chunk_id(),
+                translation_validation: &translation_validation.report,
+                candidate: candidate_assessment.report(),
+                effect: &candidate_assessment.effect.report,
+            });
+        }
+        Ok(CandidateEvaluation {
+            assignment_analysis: self.assignment_analysis,
+            legacy_validation: self.legacy_validation,
+            translation_validation,
+            candidate_assessment,
+        })
+    }
+}
+
+/// The authoritative legacy gate verdict beside both diagnostic projections
+/// of the same concrete candidate. Assessment always runs; report selection
+/// controls only serialization. Effect coverage remains diagnostic until all
+/// required owner domains can discharge the relocation obligations.
+#[derive(Debug)]
+pub struct CandidateEvaluation<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
+    translation_validation: TranslationValidationResult,
+    candidate_assessment: CandidateRelocationAssessment,
+}
+
+impl<'a> CandidateEvaluation<'a> {
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
+        self.assignment_analysis
+    }
+
+    /// Decided by the legacy realizability verdict alone.
+    pub fn is_rejected(&self) -> bool {
+        legacy_gate_rejects(&self.legacy_validation)
+    }
+
+    pub fn report(&self) -> &AssignmentReport {
+        &self.legacy_validation.report
+    }
+
+    pub fn translation_validation(&self) -> &TranslationValidationResult {
+        &self.translation_validation
+    }
+
+    pub fn candidate_assessment(&self) -> &CandidateRelocationAssessment {
+        &self.candidate_assessment
+    }
+
+    pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
+        if self.is_rejected() {
+            Err(RejectedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: Box::new(self.legacy_validation),
+            })
+        } else {
+            Ok(ValidatedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: self.legacy_validation,
+            })
+        }
+    }
+}
+
+fn legacy_gate_rejects(validation: &AssignmentValidation) -> bool {
+    !validation.verdict.is_realizable()
+        || !validation.report.atomic_group_conflicts.is_empty()
+        || !validation.report.cycles.is_empty()
+}
+
+/// The reason a split atomic group is surfaced to the placement pass. Pure
+/// eager-use/sequenced SCCs are semantic order constraints; the remaining
+/// recognized causes preserve source-declarator and other structural
+/// co-location obligations. Mixed or empty cause sets stay explicit blockers.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AtomicGroupPlacementClass {
+    SemanticOrderScc,
+    StructuralConstraint,
+    MixedOrUnclassified,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicGroupPlacementObligation {
+    pub classification: AtomicGroupPlacementClass,
+    pub conflict: AtomicGroupConflict,
+}
+
+/// A typed cross-destination write edge that must be placed with its binding
+/// owner before the emitted ESM is writable.
+#[derive(Debug, Clone, Serialize)]
+pub struct CrossDestinationRebindObligation {
+    pub edge: CrossRebindEdge,
+    pub source_unit: SourceUnitId,
+    pub target_unit: SourceUnitId,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StructuralPlacementStatus {
+    Blocked,
+    NoKnownBlocker,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StructuralPlacementCoverage {
+    pub unresolved_checks: BTreeSet<StructuralPlacementCheck>,
+}
+
+impl StructuralPlacementCoverage {
+    pub fn is_complete(&self) -> bool {
+        self.unresolved_checks.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StructuralPlacementAssessment {
+    pub status: StructuralPlacementStatus,
+    /// Reads the same typed outcome that `EmissionPlacement::from_projection`
+    /// uses; diagnostic counts do not reconstruct the emitter's decision.
+    pub emission_mappable: bool,
+    pub coverage: StructuralPlacementCoverage,
+    pub projection_violations: Vec<analysis::PlacementProjectionViolation>,
+    pub cross_destination_rebinds: Vec<CrossDestinationRebindObligation>,
+    pub atomic_group_obligations: Vec<AtomicGroupPlacementObligation>,
+    pub semantic_order_sccs: Vec<SemanticOrderSccObligation>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticOrderSccObligation {
+    pub rejection: SccRejection,
+    pub modules: Vec<analysis::ModuleId>,
+    pub dependency_edges: Vec<usize>,
+}
+
+/// A same-assignment candidate result. The effect assessment and its report
+/// are retained together from one sweep, beside typed structural placement
+/// obligations derived from the validation that admitted this exact analysis.
+#[derive(Debug, Clone)]
+pub struct CandidateRelocationAssessment {
+    pub placement: StructuralPlacementAssessment,
+    pub effect: EffectTranslationValidationResult,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CandidateRelocationAssessmentReport {
+    #[serde(flatten)]
+    pub effect: EffectRelocationAssessment,
+    pub status: CandidateRelocationStatus,
+    pub legacy_gate_accepts: bool,
+    /// The current legacy gate still rejects semantic-order-only SCCs. This
+    /// field distinguishes that remaining veto from effect/placement blocks.
+    pub legacy_gate_ordering_veto: bool,
+    pub placement: StructuralPlacementAssessment,
+}
+
+/// This assessment never claims acceptance while the structural coverage
+/// declaration is incomplete. The current legacy gate remains authoritative.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateRelocationStatus {
+    BlockedByEffect,
+    BlockedByPlacement,
+    BlockedByEffectAndPlacement,
+    Incomplete,
+    AcceptedWithinCheckedScope,
+}
+
+impl CandidateRelocationAssessment {
+    pub fn report(&self) -> CandidateRelocationAssessmentReport {
+        let effect_blocked = matches!(
+            self.effect.assessment.decision,
+            crate::realizability::EffectRelocationDecision::Conflict { .. }
+        );
+        let effect_accepted = matches!(
+            self.effect.assessment.decision,
+            crate::realizability::EffectRelocationDecision::Accepted { .. }
+        );
+        CandidateRelocationAssessmentReport {
+            status: candidate_relocation_status(effect_blocked, effect_accepted, &self.placement),
+            legacy_gate_accepts: self.effect.report.legacy_gate_accepts,
+            legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
+            effect: self.effect.assessment.clone(),
+            placement: self.placement.clone(),
+        }
+    }
+}
+
+fn candidate_relocation_status(
+    effect_blocked: bool,
+    effect_accepted: bool,
+    placement: &StructuralPlacementAssessment,
+) -> CandidateRelocationStatus {
+    match (
+        effect_blocked,
+        placement.status == StructuralPlacementStatus::Blocked,
+    ) {
+        (true, true) => CandidateRelocationStatus::BlockedByEffectAndPlacement,
+        (true, false) => CandidateRelocationStatus::BlockedByEffect,
+        (false, true) => CandidateRelocationStatus::BlockedByPlacement,
+        (false, false) if !effect_accepted || !placement.coverage.is_complete() => {
+            CandidateRelocationStatus::Incomplete
+        }
+        (false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
+    }
+}
+
+fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> bool {
+    !placement.semantic_order_sccs.is_empty()
+        || placement.atomic_group_obligations.iter().any(|obligation| {
+            obligation.classification == AtomicGroupPlacementClass::SemanticOrderScc
+        })
+}
+
+fn structural_placement_assessment(
+    graph: &analysis::DependencyGraph,
+    validation: &AssignmentValidation,
+    projection: &analysis::PlacementProjection<'_>,
+) -> StructuralPlacementAssessment {
+    let cross_destination_rebinds: Vec<CrossDestinationRebindObligation> = validation
+        .verdict
+        .cross_rebinds
+        .iter()
+        .map(|edge| {
+            let dependency = graph
+                .iter_edges()
+                .find(|dependency| dependency.id == edge.dependency_edge)
+                .expect("typed cross-rebind edge must belong to the validated dependency graph");
+            CrossDestinationRebindObligation {
+                edge: edge.clone(),
+                source_unit: dependency.from,
+                target_unit: dependency.to,
+            }
+        })
+        .collect();
+    let atomic_group_obligations: Vec<AtomicGroupPlacementObligation> = validation
+        .report
+        .atomic_group_conflicts
+        .iter()
+        .cloned()
+        .map(|conflict| AtomicGroupPlacementObligation {
+            classification: classify_atomic_group_conflict(&conflict),
+            conflict,
+        })
+        .collect();
+    let semantic_order_sccs: Vec<SemanticOrderSccObligation> = validation
+        .verdict
+        .unrealizable_sccs
+        .iter()
+        .map(|diagnosis| SemanticOrderSccObligation {
+            rejection: diagnosis.rejection,
+            modules: diagnosis.core.modules.iter().copied().collect(),
+            dependency_edges: diagnosis
+                .core
+                .constraining_dependency_edges
+                .iter()
+                .map(|edge| edge.0)
+                .collect(),
+        })
+        .collect();
+    let blocked = projection.assessment().has_blockers()
+        || !cross_destination_rebinds.is_empty()
+        || atomic_group_obligations.iter().any(|obligation| {
+            obligation.classification != AtomicGroupPlacementClass::SemanticOrderScc
+        });
+    StructuralPlacementAssessment {
+        status: if blocked {
+            StructuralPlacementStatus::Blocked
+        } else {
+            StructuralPlacementStatus::NoKnownBlocker
+        },
+        emission_mappable: projection.emission_maps().is_some(),
+        coverage: StructuralPlacementCoverage {
+            unresolved_checks: projection.assessment().unresolved_checks().clone(),
+        },
+        projection_violations: projection.assessment().violations().to_vec(),
+        cross_destination_rebinds,
+        atomic_group_obligations,
+        semantic_order_sccs,
+    }
+}
+
+fn classify_atomic_group_conflict(conflict: &AtomicGroupConflict) -> AtomicGroupPlacementClass {
+    let causes = &conflict.causes;
+    if !causes.is_empty()
+        && causes
+            .iter()
+            .all(|cause| matches!(cause, DepKind::EagerUse | DepKind::Sequenced))
+    {
+        AtomicGroupPlacementClass::SemanticOrderScc
+    } else if !causes.is_empty()
+        && causes.iter().all(|cause| {
+            matches!(
+                cause,
+                DepKind::EagerRebind
+                    | DepKind::LazyRebind
+                    | DepKind::DeferredRebind
+                    | DepKind::CoDeclaration
+                    | DepKind::CoLocation
+                    | DepKind::LocalEffect
+            )
+        })
+    {
+        AtomicGroupPlacementClass::StructuralConstraint
+    } else {
+        AtomicGroupPlacementClass::MixedOrUnclassified
     }
 }
 
@@ -146,6 +585,8 @@ impl AssignmentAnalysis {
         let DependencyGraphAndAtomicGroups {
             dependency_graph,
             atomic_groups,
+            // Reported by materialization before the gate runs.
+            unused_commuting_statements: _,
         } = precomputed;
         let outcome = {
             let local_bindings = binding_catalogue.local_view(chunk_identity)?;
@@ -170,17 +611,11 @@ impl AssignmentAnalysis {
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        // Every output module and the entry destination need a deterministic
-        // source-order slot for emit stability, even singletons that don't
-        // participate in any canonical edge.
-        let mut extra_nodes: BTreeSet<ModuleId> =
-            (0..planned_modules.len()).map(ModuleId).collect();
-        extra_nodes.insert(entry_module_id);
-        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
-        let import_order = EsmImportOrder::build(
-            &constraining_pairs,
-            &canonical_edges.i_successors,
-            &extra_nodes,
+        let import_order = EsmImportOrder::build_for_assignment(
+            &canonical_edges,
+            &dependency_graph,
+            &assignment,
+            &emitted_modules(planned_modules.len(), entry_module_id),
         );
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
@@ -198,6 +633,7 @@ impl AssignmentAnalysis {
             module_quotient,
             module_quotient_sccs,
             import_order,
+            realizability: OnceLock::new(),
         })
     }
 
@@ -210,8 +646,8 @@ impl AssignmentAnalysis {
     }
 
     /// Shared per-module ESM import ordering. The emitter renders
-    /// every import-directive list through this; the realizability
-    /// gate's evaluation simulator applies the same ordering rules
+    /// every import-directive list through this; the candidate's exact
+    /// emitted-order simulation consumes this same object
     /// (see `esm_import_order::EsmImportOrder` for the contract).
     pub fn import_order(&self) -> &EsmImportOrder {
         &self.import_order
@@ -220,38 +656,339 @@ impl AssignmentAnalysis {
     /// Validate the assignment and its module quotient. Spec authors consume the
     /// resulting report to fix any cycles or atomic-group conflicts.
     pub fn validate(&self) -> AssignmentReport {
-        let mut report =
-            validate_assignment(self.inputs.dependency_graph(), &self.assignment, &|id| {
-                self.module_path(id)
-            });
-        report.atomic_group_conflicts = self.assembly_conflicts.clone();
-        report.linker_order = self
+        self.validate_with_verdict().report
+    }
+
+    /// Retain the typed realizability result beside the rendered report for
+    /// callers that must make a typed gate decision or pair it with another
+    /// in-memory analysis of this assignment.
+    pub fn validate_with_verdict(&self) -> AssignmentValidation {
+        let mut validation = validation_from_verdict(
+            self.inputs.dependency_graph(),
+            &self.assignment,
+            &|id| self.module_path(id),
+            self.realizability_verdict().clone(),
+        );
+        validation.report.atomic_group_conflicts = self.assembly_conflicts.clone();
+        validation.report.linker_order = self
             .import_order
             .linker_order()
             .iter()
             .map(|id| self.module_path(*id))
             .collect();
-        report
+        validation
     }
 
-    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, AssignmentReport> {
-        let report = self.validate();
-        if !report.atomic_group_conflicts.is_empty()
-            || !report.cycles.is_empty()
-            || !report.cross_rebinds.is_empty()
-        {
-            return Err(report);
-        }
-        Ok(ValidatedAssignment {
-            assignment_analysis: self,
-            report,
+    pub fn realizability_verdict(&self) -> &RealizabilityVerdict {
+        self.realizability
+            .get_or_init(|| check_realizability(self.inputs.dependency_graph(), &self.assignment))
+    }
+
+    /// Project one immutable candidate through the emitter's exact ESM loader
+    /// order before either translation sweep consumes it.
+    fn candidate_emitted_order(&self) -> CandidateEmittedOrder {
+        CandidateEmittedOrder::from_assignment(
+            self.inputs.dependency_graph(),
+            &self.assignment,
+            &emitted_modules(
+                self.inputs.planned_modules().len(),
+                self.assignment.entry_destination().module_id(),
+            ),
+            &self.import_order,
+        )
+    }
+
+    /// Translation validation of the emitted order beside the gate's verdict
+    /// in `report`. The gate stays authoritative. With conflicts read off the
+    /// gate's ordering edges the two must agree, so with `DEBUNDLE_TV_ORACLE`
+    /// set a disagreement panics: it is a bug in the loader model, the sweep
+    /// or the gate.
+    fn translation_validation<E>(
+        &self,
+        validation: &AssignmentValidation,
+        emitted_order: &CandidateEmittedOrder,
+        mut visitor: Option<&mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>>,
+    ) -> Result<TranslationValidationResult, E> {
+        let dependency_graph = self.inputs.dependency_graph();
+        let exporting = visitor.is_some();
+        let mut project = |evidence| {
+            visitor.as_mut().expect("active evidence visitor")(
+                &TranslationValidationEvidenceReport::new(
+                    evidence,
+                    dependency_graph,
+                    &self.assignment,
+                    &|id| self.module_path(id),
+                ),
+            )
+        };
+        let verdict = translation_validate(
+            dependency_graph,
+            &self.assignment,
+            emitted_order,
+            exporting.then_some(&mut project),
+        )?;
+        let wire = TranslationValidationReport::new(
+            &verdict,
+            validation.verdict.is_realizable()
+                && validation.report.atomic_group_conflicts.is_empty(),
+            dependency_graph,
+            &self.assignment,
+            &|id| self.module_path(id),
+        );
+        assert!(
+            wire.accepts == wire.gate_accepts || !tv_oracle_enabled(),
+            "DEBUNDLE_TV_ORACLE: chunk {}: translation validation disagrees with the gate: {wire:#?}",
+            self.inputs.chunk_id(),
+        );
+        Ok(TranslationValidationResult {
+            report: wire,
+            conflict_pairs: verdict.conflict_pairs,
         })
+    }
+
+    /// Assess candidate-order effects for this exact assignment/import order.
+    /// The effect report and typed effect assessment come from one sweep.
+    fn effect_assessment<E>(
+        &self,
+        facts: &[analysis::facts::StatementFacts],
+        legacy: &TranslationValidationResult,
+        emitted_order: &CandidateEmittedOrder,
+        visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
+    ) -> Result<EffectTranslationValidationResult, E> {
+        effect_translation_assess(
+            EffectTranslationValidationInputs {
+                graph: self.inputs.dependency_graph(),
+                assignment: &self.assignment,
+                emitted_order,
+                facts,
+                legacy,
+                module_path: &|id| self.module_path(id),
+            },
+            visitor,
+        )
     }
 
     /// High-fidelity node-link view of the fine dependency graph plus
     /// its current module quotient. Written as
-    /// `<chunk_id>/dependency_graph.json` for downstream peel tooling.
-    pub fn dependency_graph_report(&self) -> DependencyGraphReport {
-        build_dependency_graph_report(self)
+    /// `<chunk_id>/dependency_graph.json.gz` for downstream peel tooling;
+    /// `program_graph` is the run's program graph relative to that file.
+    pub fn dependency_graph_report(
+        &self,
+        program_graph: std::path::PathBuf,
+        author_inputs: &analysis::reports::author_inputs::AuthorInputLocations<'_>,
+    ) -> DependencyGraphReport {
+        build_dependency_graph_report(self, program_graph, author_inputs)
+    }
+}
+
+/// The modules the emitted entry imports, plus the entry itself.
+fn emitted_modules(planned_module_count: usize, entry: ModuleId) -> BTreeSet<ModuleId> {
+    let mut modules: BTreeSet<ModuleId> = (0..planned_module_count).map(ModuleId).collect();
+    modules.insert(entry);
+    modules
+}
+
+fn tv_oracle_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_TV_ORACLE").is_some())
+}
+
+/// One candidate evaluation, as the legacy/effect discrepancy audit consumes
+/// it (`debug/2026_11_09_l4c_discrepancy_audit.md`): the legacy verdict, the
+/// edge-based and effect-based translation validations, and the combined
+/// relocation status.
+#[derive(Serialize)]
+struct TvAuditRecord<'a> {
+    /// The CLI invocation; e2e fixture paths name the test function.
+    argv: Vec<String>,
+    chunk_id: &'a str,
+    translation_validation: &'a TranslationValidationReport,
+    candidate: CandidateRelocationAssessmentReport,
+    effect: &'a crate::realizability::EffectTranslationValidationReport,
+}
+
+/// The `DEBUNDLE_TV_AUDIT` directory, when the audit is on ([`TvAudit`]).
+pub fn tv_audit_dir() -> Option<&'static std::path::Path> {
+    static DIR: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        std::env::var_os("DEBUNDLE_TV_AUDIT").map(|_| {
+            std::path::PathBuf::from(
+                std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR")
+                    .expect("DEBUNDLE_TV_AUDIT needs TEST_UNDECLARED_OUTPUTS_DIR"),
+            )
+            .join("debundle_tv_audit")
+        })
+    })
+    .as_deref()
+}
+
+/// With `DEBUNDLE_TV_AUDIT` set (`--test_env=DEBUNDLE_TV_AUDIT=1`), every
+/// candidate evaluation writes `<pid>-<n>.json` (a [`TvAuditRecord`]) and
+/// `<pid>-<n>.conflicts.jsonl` (every effect conflict row, as
+/// `--effect-conflicts-jsonl` exports them) under the Bazel test's
+/// `$TEST_UNDECLARED_OUTPUTS_DIR/debundle_tv_audit/`, beside the
+/// `<pid>.sources.json` input sources `debundle run` writes there. Process id
+/// and sequence keep the CLI runs of one test apart. Diagnostic only.
+struct TvAudit {
+    stem: std::path::PathBuf,
+    conflicts: std::io::BufWriter<std::fs::File>,
+}
+
+impl TvAudit {
+    fn begin() -> Option<Self> {
+        static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let dir = tv_audit_dir()?;
+        let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let stem = dir.join(format!("{}-{sequence}", std::process::id()));
+        let path = stem.with_extension("conflicts.jsonl");
+        let conflicts = std::fs::create_dir_all(dir)
+            .and_then(|()| std::fs::File::create(&path))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: create {path:?}: {error}"));
+        Some(Self {
+            stem,
+            conflicts: std::io::BufWriter::new(conflicts),
+        })
+    }
+
+    fn conflict(&mut self, row: &EffectConflictDiagnosticRow<'_>) {
+        use std::io::Write;
+        serde_json::to_writer(&mut self.conflicts, row)
+            .map_err(std::io::Error::from)
+            .and_then(|()| writeln!(self.conflicts))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: write {:?}: {error}", self.stem));
+    }
+
+    fn finish(mut self, record: TvAuditRecord<'_>) {
+        use std::io::Write;
+        let path = self.stem.with_extension("json");
+        self.conflicts
+            .flush()
+            .and_then(|()| std::fs::File::create(&path))
+            .map_err(serde_json::Error::io)
+            .and_then(|file| serde_json::to_writer(std::io::BufWriter::new(file), &record))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: write {path:?}: {error}"));
+    }
+}
+
+#[cfg(test)]
+mod placement_classification_tests {
+    use super::*;
+
+    fn conflict(causes: impl IntoIterator<Item = DepKind>) -> AtomicGroupConflict {
+        AtomicGroupConflict {
+            members: vec![SourceUnitId(3), SourceUnitId(7)],
+            claims: Vec::new(),
+            causes: causes.into_iter().collect(),
+        }
+    }
+
+    #[test]
+    fn classifies_semantic_order_and_structural_constraints_separately() {
+        assert_eq!(
+            classify_atomic_group_conflict(&conflict([DepKind::EagerUse, DepKind::Sequenced])),
+            AtomicGroupPlacementClass::SemanticOrderScc,
+        );
+        assert_eq!(
+            classify_atomic_group_conflict(&conflict([DepKind::CoDeclaration])),
+            AtomicGroupPlacementClass::StructuralConstraint,
+        );
+        assert_eq!(
+            classify_atomic_group_conflict(&conflict([DepKind::LazyRebind])),
+            AtomicGroupPlacementClass::StructuralConstraint,
+        );
+        assert_eq!(
+            classify_atomic_group_conflict(&conflict([DepKind::EagerUse, DepKind::CoDeclaration])),
+            AtomicGroupPlacementClass::MixedOrUnclassified,
+        );
+        assert_eq!(
+            classify_atomic_group_conflict(&conflict([])),
+            AtomicGroupPlacementClass::MixedOrUnclassified,
+        );
+    }
+
+    #[test]
+    fn co_declaration_obligation_keeps_the_full_source_unit_group() {
+        let conflict = conflict([DepKind::CoDeclaration]);
+        let obligation = AtomicGroupPlacementObligation {
+            classification: classify_atomic_group_conflict(&conflict),
+            conflict,
+        };
+        assert_eq!(
+            obligation.classification,
+            AtomicGroupPlacementClass::StructuralConstraint
+        );
+        assert_eq!(
+            obligation.conflict.members,
+            [SourceUnitId(3), SourceUnitId(7)]
+        );
+        assert!(obligation.conflict.causes.contains(&DepKind::CoDeclaration));
+    }
+
+    #[test]
+    fn semantic_order_veto_is_not_a_structural_candidate_blocker() {
+        let conflict = conflict([DepKind::EagerUse, DepKind::Sequenced]);
+        let placement = StructuralPlacementAssessment {
+            status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: false,
+            coverage: StructuralPlacementCoverage {
+                unresolved_checks: [StructuralPlacementCheck::SourceUnitToBodyMapping]
+                    .into_iter()
+                    .collect(),
+            },
+            projection_violations: Vec::new(),
+            cross_destination_rebinds: Vec::new(),
+            atomic_group_obligations: vec![AtomicGroupPlacementObligation {
+                classification: classify_atomic_group_conflict(&conflict),
+                conflict,
+            }],
+            semantic_order_sccs: Vec::new(),
+        };
+
+        assert!(has_legacy_gate_ordering_veto(&placement));
+        assert_eq!(
+            candidate_relocation_status(false, false, &placement),
+            CandidateRelocationStatus::Incomplete,
+            "a semantic-order-only legacy veto is not an effect or structural block",
+        );
+    }
+
+    #[test]
+    fn structural_coverage_completeness_is_derived_from_unresolved_checks() {
+        let incomplete = StructuralPlacementCoverage {
+            unresolved_checks: [StructuralPlacementCheck::DestructuringDeclaratorGrouping]
+                .into_iter()
+                .collect(),
+        };
+        let complete = StructuralPlacementCoverage {
+            unresolved_checks: BTreeSet::new(),
+        };
+
+        assert!(!incomplete.is_complete());
+        assert!(complete.is_complete());
+    }
+
+    #[test]
+    fn complete_scoped_candidate_can_pass_while_legacy_ordering_veto_remains() {
+        let conflict = conflict([DepKind::EagerUse, DepKind::Sequenced]);
+        let placement = StructuralPlacementAssessment {
+            status: StructuralPlacementStatus::NoKnownBlocker,
+            emission_mappable: true,
+            coverage: StructuralPlacementCoverage {
+                unresolved_checks: BTreeSet::new(),
+            },
+            projection_violations: Vec::new(),
+            cross_destination_rebinds: Vec::new(),
+            atomic_group_obligations: vec![AtomicGroupPlacementObligation {
+                classification: classify_atomic_group_conflict(&conflict),
+                conflict,
+            }],
+            semantic_order_sccs: Vec::new(),
+        };
+
+        assert!(has_legacy_gate_ordering_veto(&placement));
+        assert_eq!(
+            candidate_relocation_status(false, true, &placement),
+            CandidateRelocationStatus::AcceptedWithinCheckedScope,
+        );
     }
 }

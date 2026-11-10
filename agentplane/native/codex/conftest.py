@@ -4,10 +4,10 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture
@@ -24,6 +24,6 @@ def codex(workspace: Path, native_logs: Path, base_environment: dict[str, str], 
         workspace=workspace,
         logs=native_logs,
         codex_home=codex_home,
-        binary=str(get_required_path("agentplane_codex_cli_linux_x64/bin/codex")),
+        binary=str(Runfiles.CreateOrRaise().root() / "agentplane_codex_cli_linux_x64/bin/codex"),
         base_environment=base_environment,
     )

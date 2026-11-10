@@ -1,7 +1,7 @@
 # tofu PG Backend Lock Survives Runner Node Reboot
 
 **Date**: 2026-07-11
-**Status**: Recovered manually; prevention pending
+**Status**: Recovered manually. PostgreSQL dead-peer detection is now configured; bounded `lockTimeout` prevention remains pending.
 
 ## Summary
 
@@ -119,8 +119,8 @@ orphaned PID; do not restart CNPG or kill all `tfstate` sessions.
 
 ## Prevention
 
-- Configure materially shorter TCP keepalive/dead-client detection for the tofu-state
-  PostgreSQL cluster so a vanished runner cannot retain an advisory lock for two hours.
+- **Implemented:** The tofu-state PostgreSQL cluster now uses 60-second idle detection,
+  10-second intervals, and six probes; see the [current database configuration](../../cdk8s/tofu_state/db.py).
 - Give tofu-controller Terraform CRs a bounded `spec.tfstate.lockTimeout` to avoid rapid
   retry churn during legitimate short overlaps. This is mitigation, not orphan eviction.
 - The current Ducktape tofu-controller fork carries merged upstream PR

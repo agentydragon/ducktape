@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from playwright.async_api import BrowserContext, Page
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ def enabled() -> bool:
 
 
 def script_path() -> Path:
-    return get_required_path("_main/agentplane/app/testing/history_probe.js")
+    return Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/history_probe.js"
 
 
 def cpu_throttle() -> float:

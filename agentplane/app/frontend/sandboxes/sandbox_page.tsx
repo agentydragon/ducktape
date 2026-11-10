@@ -1,4 +1,6 @@
-import type { SandboxSnapshot, SandboxView, ThreadView } from "../api/schema";
+import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { clone, create } from "@bufbuild/protobuf";
+
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -15,18 +17,26 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
-import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError, HttpError } from "../client";
-import { findThread, getThread } from "../threads/client";
-import { getSessionOpening, openSession } from "./client";
-import { ActionPolicySection } from "../actions/policy";
+import { displayableError } from "../client";
+import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
+import {
+  deleteEnvironment,
+  getSession,
+  createSession,
+  resumeSandbox,
+  sessionCreateRejected,
+  sessionNotVisible,
+  suspendEnvironment,
+} from "./client";
+import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "./egress";
+import { useEnvironmentWatch, sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl } from "./live";
-import { useLive } from "../live";
+import { usePolicyResources } from "../policy/watch";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
@@ -35,34 +45,36 @@ import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { snapshotFresh } from "../threads/thread_status";
 import { NewThreadForm } from "../threads/new_thread_form";
 import { SandboxThreadsTable } from "../threads/sandbox_threads";
+import { useThreadsLive } from "../threads/live";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { useFrontendConfig } from "../frontend_config";
 import { TopbarActions, TopbarTitle } from "../topbar";
-import type { SessionSpec } from "../../../proto/runner_pb";
+import type { SessionSpec } from "../../../proto/session_pb";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
-function pendingOpenKey(sandbox: string): string {
-  return `agentplane:pending-open:${sandbox}`;
+function pendingCreateKey(sandbox: string): string {
+  return `agentplane:pending-create:${sandbox}`;
 }
 
-type PendingOpen = { threadId: string; state?: string; reason?: string };
+type PendingCreate = { threadId: string; state?: SessionStatus_Materialization; reason?: string };
 
-function openingStateLabel(state: string | undefined): string {
+function sessionStateLabel(state: SessionStatus_Materialization | undefined): string {
   switch (state) {
-    case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
-      return "Queued in Dispatcher";
-    case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
-      return "Opening on the runner";
-    case "DELIVERY_STATE_RUNNER_ADMITTED":
-      return "Accepted by the runner";
-    case "DELIVERY_STATE_FAILED":
-      return "Opening failed";
-    case "DELIVERY_STATE_UNKNOWN":
-      return "Opening outcome unavailable";
+    case SessionStatus_Materialization.SESSION_MATERIALIZATION_WAITING:
+      return "Waiting for the placement owner";
+    case SessionStatus_Materialization.SESSION_MATERIALIZATION_IN_PROGRESS:
+      return "Creating the Session";
+    case SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED:
+      return "Accepted by the placement owner";
+    case SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED:
+      return "Session creation failed";
+    case SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN:
+      return "Session creation outcome unavailable";
     default:
-      return "Waiting for opening status";
+      return "Waiting for Session status";
   }
 }
 
@@ -85,47 +97,73 @@ export function SandboxPage({
   onBack: () => void;
 }): JSX.Element {
   const frontendConfig = useFrontendConfig();
-  const traceSearch = frontendConfig?.trace_search ?? null;
-  const langfuseSearch = frontendConfig?.langfuse_search ?? null;
+  const traceSearch = frontendConfig?.traceSearch ?? null;
+  const langfuseSearch = frontendConfig?.langfuseSearch ?? null;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const [error, setError] = useState<string | null>(null);
   const [creatingThread, setCreatingThread] = useState(false);
-  const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() => {
-    const threadId = sessionStorage.getItem(pendingOpenKey(name));
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(() => {
+    const threadId = sessionStorage.getItem(pendingCreateKey(name));
     return threadId ? { threadId } : null;
   });
-  const resolvingOpen = useRef<string | null>(null);
+  const resolvingCreateAttempt = useRef<string | null>(null);
   useEffect(() => {
-    const threadId = sessionStorage.getItem(pendingOpenKey(name));
-    setPendingOpen(threadId ? { threadId } : null);
+    const threadId = sessionStorage.getItem(pendingCreateKey(name));
+    setPendingCreate(threadId ? { threadId } : null);
   }, [name]);
-  function rememberOpen(attempt: PendingOpen | null): void {
-    if (attempt) sessionStorage.setItem(pendingOpenKey(name), attempt.threadId);
-    else sessionStorage.removeItem(pendingOpenKey(name));
-    setPendingOpen(attempt);
+  function rememberCreateAttempt(attempt: PendingCreate | null): void {
+    if (attempt) sessionStorage.setItem(pendingCreateKey(name), attempt.threadId);
+    else sessionStorage.removeItem(pendingCreateKey(name));
+    setPendingCreate(attempt);
   }
   const [launching, setLaunching] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [threadLimit, setThreadLimit] = useState(200);
 
-  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
-  const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
+  const inventory = useRequiredSandboxesLive();
+  const candidate = inventory.snapshot?.find((item) => item.target?.name === name);
+  const selected = sandboxInventoryFresh(inventory) ? candidate?.target : undefined;
+  const target = selected?.namespace && selected.name && selected.uid ? selected : undefined;
+  const sandboxNamespace = target?.namespace;
+  const sandboxUID = target?.uid;
+  const [lastTarget, setLastTarget] = useState<EnvironmentTarget | null>(null);
+  useEffect(() => {
+    if (sandboxNamespace && sandboxUID)
+      setLastTarget(create(EnvironmentTargetSchema, { namespace: sandboxNamespace, name, uid: sandboxUID }));
+  }, [name, sandboxNamespace, sandboxUID]);
+  // History remains available after the resource disappears; do not use a prior route's UID.
+  const threadUID = sandboxUID ?? (lastTarget?.name === name ? lastTarget.uid : undefined);
+  const threadRequest = useMemo(
+    () => (threadUID ? { sandboxUID: threadUID, limit: threadLimit, search: null, includeArchived } : null),
+    [threadUID, threadLimit, includeArchived]
+  );
+  const threadLive = useThreadsLive(threadRequest, null);
+  // Never combine policy or thread data from an old incarnation with its same-name replacement.
+  const observation = useEnvironmentWatch(target);
+  const sandbox =
+    observation.stream.standing === "current" && observation.stream.connection.phase === "live"
+      ? observation.environment
+      : null;
+  const account = sandbox?.executionAccount?.account;
+  const policy = usePolicyResources(account ? { case: "subject", value: account } : undefined, target?.uid);
+  const deleted = sandboxInventoryFresh(inventory) && !candidate;
   const vmConsoleAvailable = hasVmConsole(sandbox);
   const tab: Tab =
     isTab(requestedTab) && (requestedTab !== "console" || vmConsoleAvailable) ? requestedTab : DEFAULT_TAB;
-  const threadListing = live.snapshot?.threads ?? [];
-  const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
-  const threads = Array.isArray(threadListing) ? threadListing : [];
+  const currentThreads = threadUID && threadLive.snapshot?.sandbox_uid === threadUID ? threadLive.snapshot : null;
+  const threadsUnavailable = threadLive.stream.stalled;
+  const threads = currentThreads?.threads ?? [];
   const ready = sandboxReady(sandbox);
-  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.wake_on_send === true;
-  const threadUnavailableReason = pendingOpen
-    ? "An earlier thread open attempt is unconfirmed. Check opening status before creating another thread."
+  const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.configuration?.wakeOnSend === true;
+  const threadUnavailableReason = pendingCreate
+    ? "An earlier Session creation is unconfirmed. Check its status before creating another thread."
     : !sandbox
-      ? live.snapshot === null
-        ? "Waiting for Sandbox status to load."
-        : "This Sandbox no longer exists."
+      ? deleted
+        ? "This Sandbox no longer exists."
+        : "Waiting for Sandbox status to load."
       : !ready && !canWakeForThread
         ? sandboxSuspended(sandbox)
           ? "The Sandbox is suspended. Resume it or enable wake on send before creating a thread."
@@ -137,19 +175,21 @@ export function SandboxPage({
     }
   }, [requestedTab, sandbox, setSearchParams, vmConsoleAvailable]);
   // History's retained Thread projection, keyed by its ID.
-  const threadById: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
-  const pendingThreadId = pendingOpen?.threadId;
+  const threadById: Record<string, ThreadView> = Object.fromEntries(
+    threads.map((thread) => [thread.metadata.threadId, thread])
+  );
+  const pendingThreadId = pendingCreate?.threadId;
   const projectedPendingThread = pendingThreadId ? threadById[pendingThreadId] : undefined;
-  const visibleThreads = threads.filter((thread) => includeArchived || !thread.archived);
+  const visibleThreads = threads.filter((thread) => includeArchived || !thread.metadata.archived);
   const openProjectedPending = useEffectEvent((threadId: string) => {
     void openThread(threadId, threadId);
   });
 
-  // A queued Open is already durable, so the History projection stream is the event that completes
+  // A Session can be accepted before History projects its Thread, so the History stream completes
   // it. Match by the client-minted Thread ID; unrelated Threads never resolve the pending attempt.
   useEffect(() => {
     if (!pendingThreadId) {
-      resolvingOpen.current = null;
+      resolvingCreateAttempt.current = null;
       return;
     }
     if (projectedPendingThread) openProjectedPending(pendingThreadId);
@@ -158,21 +198,32 @@ export function SandboxPage({
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
-    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    if (!sandbox?.target) return;
+    const failure = await (
+      action === "resume" ? resumeSandbox(sandbox.target) : suspendEnvironment(sandbox.target)
+    ).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     setError(failure ? displayableError(failure) : null);
   }
 
   // No refresh after an action: the live stream carries the thread's new archived state back.
   async function threadAct(threadId: string, action: "archive" | "unarchive"): Promise<void> {
-    const { error: failure } = await api.POST(`/threads/{thread_id}/${action}`, {
-      params: { path: { thread_id: threadId } },
-    });
-    setError(failure ? displayableError(failure) : null);
+    try {
+      await archiveThread(threadId, action === "archive");
+      setError(null);
+    } catch (failure: unknown) {
+      setError(displayableError(failure));
+    }
   }
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
-  async function remove(): Promise<void> {
-    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } } });
+  async function remove(target: EnvironmentTarget): Promise<void> {
+    const failure = await deleteEnvironment(target).then(
+      () => null,
+      (reason: unknown) => reason
+    );
     if (!failure) {
       onBack();
       return;
@@ -181,38 +232,40 @@ export function SandboxPage({
   }
 
   async function createThread(spec: SessionSpec, setupScript: string): Promise<void> {
-    if (!sandbox || creatingThread || pendingOpen) return;
+    if (!sandbox || creatingThread || pendingCreate) return;
     const threadId = crypto.randomUUID();
     // Only the Session ID survives reload. In particular, never persist instructions or bootstrap.
-    rememberOpen({ threadId });
+    rememberCreateAttempt({ threadId });
     beginSessionCreate(threadId, name);
     setLaunching(false);
     setCreatingThread(true);
     setError(null);
-    let openingAccepted = false;
+    let createAccepted = false;
     try {
-      const opening = await withinSessionCreate(threadId, () => openSession(name, threadId, spec, setupScript));
-      if (!opening.sessionId) throw new Error("Open returned without a Session ID");
-      openingAccepted = true;
-      // The live projection may have resolved this attempt while the Open response was in flight.
+      const session = await withinSessionCreate(threadId, () =>
+        createSession(sandbox.target!, threadId, spec, setupScript)
+      );
+      if (!session.sessionId) throw new Error("Create returned without a Session ID");
+      createAccepted = true;
+      // The live projection may have resolved this attempt while the Create response was in flight.
       // Do not resurrect its pending record after navigation, or after the user forgot it.
-      if (sessionStorage.getItem(pendingOpenKey(name)) !== threadId) {
+      if (sessionStorage.getItem(pendingCreateKey(name)) !== threadId) {
         finishSessionCreate(threadId, "unknown");
         return;
       }
-      rememberOpen({ threadId, state: opening.state, reason: opening.reason });
-      if (opening.state === "DELIVERY_STATE_FAILED") finishSessionCreate(threadId, "failed");
+      rememberCreateAttempt({ threadId, state: session.status?.materialization, reason: session.status?.reason });
+      if (session.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED)
+        finishSessionCreate(threadId, "failed");
       if (
-        opening.state === "DELIVERY_STATE_RUNNER_ADMITTED" &&
+        session.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED &&
         (threadById[threadId] || (await withinSessionCreate(threadId, () => findThread(threadId))))
       ) {
         await openThread(threadId, threadId);
       }
     } catch (reason: unknown) {
-      // Outcome may be ambiguous. Do not replay Open or bootstrap, even in this tab.
-      if (!openingAccepted) {
-        const rejectedStatus =
-          reason instanceof HttpError && reason.status >= 400 && reason.status < 500 && reason.status !== 408;
+      // Outcome may be ambiguous. Do not replay Create or bootstrap, even in this tab.
+      if (!createAccepted) {
+        const rejectedStatus = sessionCreateRejected(reason);
         finishSessionCreate(threadId, rejectedStatus ? "rejected" : "unknown");
       }
       setError(`${displayableError(reason)} Check this attempt before creating another thread.`);
@@ -221,25 +274,26 @@ export function SandboxPage({
     }
   }
 
-  async function checkPendingOpen(): Promise<void> {
-    if (!pendingOpen || creatingThread) return;
+  async function checkPendingCreate(): Promise<void> {
+    if (!pendingCreate || creatingThread) return;
     setCreatingThread(true);
     setError(null);
     try {
-      const { threadId } = pendingOpen;
+      const { threadId } = pendingCreate;
       if (threadById[threadId] || (await withinSessionCreate(threadId, () => findThread(threadId)))) {
         await openThread(threadId, threadId);
       } else {
         try {
-          const opening = await withinSessionCreate(threadId, () => getSessionOpening(name, threadId));
-          rememberOpen({ threadId, state: opening.state, reason: opening.reason });
-          if (opening.state === "DELIVERY_STATE_FAILED") finishSessionCreate(threadId, "failed");
-          setError(`${openingStateLabel(opening.state)}${opening.reason ? `: ${opening.reason}` : "."}`);
+          const session = await withinSessionCreate(threadId, () => getSession(threadId));
+          rememberCreateAttempt({ threadId, state: session.status?.materialization, reason: session.status?.reason });
+          if (session.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED)
+            finishSessionCreate(threadId, "failed");
+          const state = session.status?.materialization;
+          const reason = session.status?.reason;
+          setError(`${sessionStateLabel(state)}${reason ? `: ${reason}` : "."}`);
         } catch (reason: unknown) {
-          if (reason instanceof HttpError && (reason.status === 404 || reason.status === 503)) {
-            setError(
-              "No runner Thread or Dispatcher opening is visible yet. Check later; this attempt is never retried."
-            );
+          if (sessionNotVisible(reason)) {
+            setError("No runner Thread or Session is visible yet. Check later; this attempt is never retried.");
           } else {
             setError(displayableError(reason));
           }
@@ -254,25 +308,26 @@ export function SandboxPage({
 
   async function openThread(threadId: string, resolvedAttempt?: string): Promise<void> {
     const attempt =
-      resolvedAttempt ?? (sessionStorage.getItem(pendingOpenKey(name)) === threadId ? threadId : undefined);
+      resolvedAttempt ?? (sessionStorage.getItem(pendingCreateKey(name)) === threadId ? threadId : undefined);
     if (attempt) {
-      if (sessionStorage.getItem(pendingOpenKey(name)) !== attempt || resolvingOpen.current === attempt) return;
-      resolvingOpen.current = attempt;
+      if (sessionStorage.getItem(pendingCreateKey(name)) !== attempt || resolvingCreateAttempt.current === attempt)
+        return;
+      resolvingCreateAttempt.current = attempt;
     }
     try {
       const thread = attempt
         ? await withinSessionCreate(attempt, async () => threadById[threadId] ?? (await getThread(threadId)))
         : (threadById[threadId] ?? (await getThread(threadId)));
       if (attempt) {
-        if (sessionStorage.getItem(pendingOpenKey(name)) !== attempt) {
-          resolvingOpen.current = null;
+        if (sessionStorage.getItem(pendingCreateKey(name)) !== attempt) {
+          resolvingCreateAttempt.current = null;
           return;
         }
-        rememberOpen(null);
+        rememberCreateAttempt(null);
       }
-      onOpenThread(thread.id);
+      onOpenThread(thread.metadata.threadId);
     } catch (reason: unknown) {
-      if (attempt) resolvingOpen.current = null;
+      if (attempt) resolvingCreateAttempt.current = null;
       setError(displayableError(reason));
     }
   }
@@ -316,7 +371,12 @@ export function SandboxPage({
           <Button size="xs" variant="subtle" visibleFrom="sm" onClick={() => setNotificationsOpen(true)}>
             Notifications
           </Button>
-          <NotificationStatus sandbox={name} opened={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
+          <NotificationStatus
+            sandbox={name}
+            sessionIds={visibleThreads.map((thread) => thread.metadata.threadId)}
+            opened={notificationsOpen}
+            onClose={() => setNotificationsOpen(false)}
+          />
           <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
           <Menu position="bottom-end">
             <Menu.Target>
@@ -342,8 +402,8 @@ export function SandboxPage({
                 <Menu.Item
                   component="a"
                   href={langfuseSandboxTraceUrl(langfuseSearch, {
-                    namespace: sandbox.service_account.namespace,
-                    serviceAccount: sandbox.service_account.name,
+                    namespace: sandbox.executionAccount?.account?.namespace ?? sandbox.target!.namespace,
+                    serviceAccount: sandbox.executionAccount?.account?.name ?? sandbox.target!.name,
                   })}
                   target="_blank"
                   rel="noreferrer"
@@ -351,12 +411,11 @@ export function SandboxPage({
                   Find Sandbox LLM traces in Langfuse
                 </Menu.Item>
               )}
-              {/* The API refuses a running sandbox (inventory.py); the reason is shown beside the item. */}
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => setConfirmingDelete(true)}
+                onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, sandbox.target!))}
               >
                 Delete
                 {!deletable(sandbox) && (
@@ -372,10 +431,10 @@ export function SandboxPage({
       {confirmingDelete && (
         <ConfirmDelete
           name={name}
-          onCancel={() => setConfirmingDelete(false)}
+          onCancel={() => setConfirmingDelete(null)}
           onConfirm={() => {
-            setConfirmingDelete(false);
-            void remove();
+            void remove(confirmingDelete);
+            setConfirmingDelete(null);
           }}
         />
       )}
@@ -384,7 +443,7 @@ export function SandboxPage({
           {error}
         </Alert>
       )}
-      {live.snapshot !== null && sandbox === null && (
+      {deleted && (
         <Alert color="red" role="alert">
           There is no sandbox {name} any more.
         </Alert>
@@ -397,28 +456,28 @@ export function SandboxPage({
             : "New threads need a ready Sandbox or a suspended Sandbox with wake on send enabled."}
         </Alert>
       )}
-      {pendingOpen && (
-        <Alert color="yellow" role="status" title="Thread opening">
+      {pendingCreate && (
+        <Alert color="yellow" role="status" title="Session creation">
           <Stack gap="xs">
             <Text size="sm">
-              Open attempt {pendingOpen.threadId}: {openingStateLabel(pendingOpen.state)}
-              {pendingOpen.reason ? ` — ${pendingOpen.reason}` : ""}. Check before creating another thread. An
+              Session {pendingCreate.threadId}: {sessionStateLabel(pendingCreate.state)}
+              {pendingCreate.reason ? ` — ${pendingCreate.reason}` : ""}. Check before creating another thread. An
               unconfirmed attempt is never retried automatically.
             </Text>
             <Group gap="xs">
-              <Button disabled={creatingThread} variant="light" onClick={() => void checkPendingOpen()}>
-                Check opening status
+              <Button disabled={creatingThread} variant="light" onClick={() => void checkPendingCreate()}>
+                Check Session status
               </Button>
               <Button
                 disabled={creatingThread}
                 variant="subtle"
                 color="red"
                 onClick={() => {
-                  rememberOpen(null);
+                  rememberCreateAttempt(null);
                   setError(null);
                 }}
               >
-                Forget attempt; it may still open
+                Forget attempt; Session creation may still complete
               </Button>
             </Group>
           </Stack>
@@ -439,12 +498,30 @@ export function SandboxPage({
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress_log" pt="sm">
-          <EgressLog name={name} />
+          {target && sandbox?.executionAccount?.account && (
+            <EgressLog
+              key={`${target.namespace}/${target.name}/${target.uid}/${sandbox.executionAccount.account.namespace}/${sandbox.executionAccount.account.name}/${sandbox.executionAccount.uid}`}
+              account={sandbox.executionAccount.account}
+              sandbox={target.name}
+            />
+          )}
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
           <Stack gap="md">
-            <PolicyBindingsSection sandbox={name} bindings={live.snapshot?.bindings ?? null} />
-            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            {target && (
+              <PolicyBindingsSection
+                key={`${target.namespace}/${target.name}/${target.uid}`}
+                target={target}
+                resources={policy.resources}
+              />
+            )}
+            {policy.error && (
+              <Alert color="red" role="alert">
+                Policy resources unavailable: {policy.error}
+              </Alert>
+            )}
+            {target && !policy.resources && !policy.error && <Text role="status">Waiting for policy resources…</Text>}
+            <ActionPolicyWatch subject={sandbox?.executionAccount?.account} fence={target?.uid} />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
@@ -452,7 +529,7 @@ export function SandboxPage({
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
-            {tab === "console" && <SandboxConsole sandbox={name} />}
+            {tab === "console" && target && <SandboxConsole target={target} />}
           </Tabs.Panel>
         )}
         <Tabs.Panel value="threads" pt="sm">
@@ -481,7 +558,8 @@ export function SandboxPage({
             {/* Hidden, not unmounted: what was entered, and the model catalog, outlive closing the form. */}
             <div hidden={!launching}>
               <NewThreadForm
-                presetName={sandbox?.preset ?? null}
+                target={sandbox?.target ?? null}
+                presetName={sandbox?.configuration?.preset ?? null}
                 unavailableReason={threadUnavailableReason}
                 creating={creatingThread}
                 onCreate={(spec, setupScript) => void createThread(spec, setupScript)}
@@ -489,17 +567,22 @@ export function SandboxPage({
                 onError={setError}
               />
             </div>
-            {live.snapshot !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
+            {currentThreads !== null && visibleThreads.length === 0 && !threadsUnavailable ? (
               <Text c="dimmed">No threads yet.</Text>
             ) : (
               <SandboxThreadsTable
                 threads={visibleThreads}
                 sandbox={sandbox}
                 traceSearch={traceSearch}
-                fresh={snapshotFresh(live)}
+                fresh={snapshotFresh(threadLive)}
                 onOpen={(threadId) => void openThread(threadId)}
                 onArchive={(threadId, action) => void threadAct(threadId, action)}
               />
+            )}
+            {currentThreads?.more && (
+              <Button variant="subtle" onClick={() => setThreadLimit((limit) => limit + 200)}>
+                Load more threads
+              </Button>
             )}
           </Stack>
         </Tabs.Panel>

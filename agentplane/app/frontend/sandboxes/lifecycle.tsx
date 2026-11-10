@@ -1,34 +1,38 @@
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import type { JSX } from "react";
 /**
  * The lifecycle controls the sandbox list and the sandbox page share: the suspend/resume button,
- * and deletion, which the API takes only from a suspended sandbox (`inventory.py`). The rule is
- * restated here so the UI offers the action when it will be accepted, not so it enforces anything.
+ * and deletion, which the API takes only from a suspended sandbox
+ * (`agentplane/runner_gateway/environments/internal/management/access.go`). The rule is restated here so the UI offers the
+ * action when it will be accepted, not so it enforces anything.
  */
 import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine/core";
-import type { SandboxView } from "../api/schema";
+import { sandboxOperatingMode, sandboxPhase } from "../sandbox_status";
 import { IconPlayerPause, IconPlayerPlay } from "../icons";
 
 export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 
 /** Whether the API will accept a deletion: only a suspended sandbox may go. */
-export function deletable(sandbox: SandboxView): boolean {
-  return sandbox.phase === "Suspended";
+export function deletable(sandbox: EnvironmentDescriptor): boolean {
+  return sandboxPhase(sandbox) === "Suspended";
 }
 
 /** Deletion was asked for: it takes no new work and cannot be suspended or resumed. */
-export function deleting(sandbox: SandboxView): boolean {
-  return sandbox.phase === "Quiescing" || sandbox.phase === "Tearing down";
+export function deleting(sandbox: EnvironmentDescriptor): boolean {
+  const phase = sandboxPhase(sandbox);
+  return phase === "Quiescing" || phase === "Tearing down";
 }
 
 export function SuspendResume({
   sandbox,
   onAct,
 }: {
-  sandbox: SandboxView;
+  sandbox: EnvironmentDescriptor;
   onAct: (action: "suspend" | "resume") => void;
 }): JSX.Element {
-  const resume = sandbox.operating_mode === "Suspended";
-  const modeUnknown = sandbox.operating_mode === null || sandbox.operating_mode === undefined;
+  const mode = sandboxOperatingMode(sandbox);
+  const resume = mode === "Suspended";
+  const modeUnknown = mode === null;
   const disabled = deleting(sandbox) || modeUnknown;
   const label = deleting(sandbox)
     ? "Sandbox deleting"

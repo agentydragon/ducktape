@@ -1,0 +1,67 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//agentplane/env/runtime/supervision/testing:defs.bzl", "pid1_go_test")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "bootstrap",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/bootstrap",
+    visibility = [
+        "//agentplane/env:__subpackages__",
+        "//agentplane/env/runtime:__pkg__",
+        "//agentplane/env/runtime/session:__pkg__",
+    ],
+    deps = [
+        "//agentplane/env/cosi",
+        "//agentplane/env/oneoff",
+        "//agentplane/env/runtime/cosistate",
+        "//agentplane/env/runtime/cosistate:persistent_go_proto",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/runtime/retained",
+        "//agentplane/env/scripts",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/protobuf",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_gen//optional",
+        "@io_etcd_go_bbolt//:bbolt",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+pid1_go_test(
+    name = "bootstrap_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":bootstrap"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/cosistate",
+        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/runtime/retained",
+        "//agentplane/env/runtime/supervision",
+        "//agentplane/env/scripts",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@com_github_cosi_project_runtime//pkg/state/impl/store",
+        "@io_etcd_go_bbolt//:bbolt",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_zap//:zap",
+    ],
+)

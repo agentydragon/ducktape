@@ -1,11 +1,14 @@
 # Agentplane LLM workload ingress
 
 This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
-authoring and the runner-facing model-config contract. The
-central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
-an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
-Go workload-auth resolver, removes it, and forwards the request to LiteLLM with one
-server-held virtual key.
+authoring and the runner-facing model-config contract. Inference HTTP and native ModelConfig gRPC
+share one TLS HTTP/2 listener for Sandbox and backend callers. Sandbox requests arrive through an exact-origin
+sidecar route over opaque proxy CONNECT; the listener resolves the verified Runtime SVID against the
+live Sandbox and accepted credential before deriving the subject its `WorkloadCredential` names (the
+Sandbox's ServiceAccount, or an `Identity`) and the Pod. The same listener accepts configured backend TokenReview bearers; clients verify the
+service SPIFFE URI and hold no SVID. Supplying both a certificate and bearer is rejected, and a failed
+credential never enables another mode. Caller identity headers are never trusted.
+Only inference requests forward provider-native traffic to LiteLLM with one server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
@@ -24,9 +27,11 @@ object is:
 }
 ```
 
-`attribution` maps literal output keys to one of four verified Kubernetes principal fields:
-`namespace`, `service_account`, `pod_name`, or `pod_uid`. The default sends the four
-`agentplane.*` JSON members in `x-litellm-spend-logs-metadata`. Staging also configures
+`attribution` maps literal output keys to verified caller fields: `namespace`, `service_account`,
+`pod_name`, `pod_uid`, `identity` or `identity_uid`. A ServiceAccount caller has no `identity*`
+fields and an Identity caller no `namespace` or `service_account`; a field the caller lacks is
+omitted, never sent empty. The default sends all six as `agentplane.*` JSON members in
+`x-litellm-spend-logs-metadata`. Staging also configures
 four `litellm.metadata.spend_logs_metadata.agentplane.*` W3C baggage members, which
 LiteLLM places on its normal request span before the upstream call. For example, a custom
 JSON field can be configured as:
@@ -53,18 +58,32 @@ headers are removed before this object is stamped. Request bodies remain provide
 never identity evidence; a caller's body `metadata`, Agent, Thread, Pod, or Sandbox fields cannot
 replace the server-stamped object.
 
-The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual key is sent only on
-the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
-mounted into a runner or harness container.
+A backend bearer is sent only to Kubernetes TokenReview. A Sandbox SVID request never attempts
+TokenReview. The LiteLLM virtual key is sent only on the internal LiteLLM
+hop. Neither credential is logged, placed in errors, returned to callers, or mounted into a runner
+or harness container.
+
+The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
+with `spiffe` roots and `kubernetes_bearer.audiences`.
+
+An SVID whose `WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an
+`Identity` is served only when `policy_namespace` names the namespace holding Identities; the
+Identity is read live and must be the incarnation the credential names. Absent, such a caller is
+refused. Any Identity there may infer, as any ServiceAccount in the allowed namespaces may; it is
+attributed by `identity`, `identity_uid` and its Pod, so `policy_namespace` requires every
+attribution output to carry `identity`. Only a listed ServiceAccount may claim a central Session. TLS is required because inference HTTP and
+native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
+health service.
 
 ## Per-model client configuration
 
-The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
-`ModelConfig` record for an exposed route, or JSON `null` (status 200) for a route
-with no configuration, on which the runner uses harness defaults. The ingress retains
-complete records, indexed by their exposed model IDs, rather than reducing them to
-integer budgets. Lookups are answered locally and never forwarded to LiteLLM. Any
-non-200 status, including 404, fails the runner's lookup.
+The native `agentplane.llm_ingress.v1.ModelConfigService.GetModelConfig` gRPC method exposes the
+same configuration to authenticated workloads. The response omits `total_context_budget_tokens`
+for an unknown model; a configured budget is positive. The SVID TLS listener authenticates
+Environment Runtime callers from the verified TLS peer and live Sandbox state; the same listener
+retains Pod-bound TokenReview authentication for backend callers. Environment Runtime
+uses the SVID route for Claude model budgets. For an unconfigured model, the Runtime uses harness
+defaults. Lookups are answered locally and never forwarded to LiteLLM; a gRPC error fails the lookup.
 
 Configuration is authored as a list in ingress settings, for example:
 
@@ -103,14 +122,21 @@ catalog (a new file, a restarted ingress) reaches running Sessions without resta
 harnesses. The runner sets the Codex provider's `model_catalog_url` to this endpoint and passes no context window of its own. cdk8s generates the file for each environment
 (`cluster/cdk8s/agentplane/codex_models.py`): a ChatGPT route takes the pinned Codex's upstream entry, another
 route an entry only where a context window is configured. The pinned Codex must not be older than the runner image's
-(nixpkgs' `codex`, `runner/image.nix`). Codex behavior behind this endpoint, with source citations and test
+(nixpkgs' `codex`, `agentplane/env/images/image.nix`). Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
-`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
-response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
+`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs the first 1 MiB of each request body (with its
+total size) and every raw response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
+
+Backend transport failures and forwarding-slot acquisition timeouts also emit warnings when request
+body logging is disabled. Each warning carries the request `id`, method, path without its query, and
+verified subject kind and name (plus namespace for a ServiceAccount) and Pod when available. Transport warnings include the inner error text, such as a
+DNS lookup or connection failure; the `url.Error` wrapper is unwrapped so its URL, credentials, and
+query are not logged. The caller's request query, body, and headers are omitted. A request canceled
+while waiting for a forwarding slot exits without writing a gateway error.
 
 Each environment projects its Claude routes through the explicit runner budget map
 into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then `settings.py`'s configuration schema. `models.py` owns the lightweight
@@ -120,7 +146,8 @@ These are configured harness overrides, not a catalog of every known model capac
 ## Contract tests
 
 The Go ingress tests exercise request filtering, TokenReview response policy, proxy errors, streaming,
-and cancellation with `httptest` servers. A typed TokenReview fake is used for handler behavior;
+cancellation, and native gRPC authentication on the SVID TLS listener. A typed TokenReview fake is
+used for handler behavior;
 it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
 semantics. One smoke test starts the Bazel-built binary with YAML and environment settings against a
 narrow TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring and the real listener
@@ -129,3 +156,26 @@ configuration path.
 ```sh
 bbr test //agentplane/llm_ingress/...
 ```
+
+## Trusted central Session attribution
+
+`central_sampler_accounts` is a default-empty list of authenticated `namespace/name` accounts.
+Only those callers may supply `x-agentplane-session-id`, and its value must be a canonical UUID.
+The ingress strips that header and generates `agentplane.session_id` in the trusted LiteLLM spend
+metadata alongside the Kubernetes principal fields. A non-allowlisted caller's claim is rejected.
+This is an asserted conversation identity from an explicitly trusted shared sampler; it does not
+replace TokenReview or authorize arbitrary Session reads. LiteLLM promotes the configured Session
+metadata into exported traces; the frontend's metadata-key setting selects the matching Langfuse
+filter. Existing wrapped harness attribution continues to use its Sandbox identity.
+
+With `central_sampler_identity_callers: true` (requires `policy_namespace` and
+`central_sampler_accounts`), those accounts may also call as delegating actors under the
+[delegated authorization contract](../docs/delegated_authorization.md): `Authorization:
+Agentplane-Delegated <sampler token>` plus the base64 `agentplane-delegation-bin` envelope naming
+an Identity of the policy namespace and the Session it serves. The ingress verifies the sampler's
+token and its grant, reads the Identity live and refuses a stale or missing incarnation, then
+attributes the call to that Identity: `identity` and `identity_uid` are the Identity's, `pod_name`
+and `pod_uid` the sampler's Pod, the one that made the call, and `agentplane.session_id` comes from
+the envelope, so a delegated call may not also claim a Session by header. The envelope is stripped
+like every other caller header. A sampler calling for a Session with no Identity keeps using the
+bearer path above. Claiming a Session never implies this grant.

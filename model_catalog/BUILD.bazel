@@ -20,7 +20,7 @@ py_library(
     deps = [
         ":catalog",
         ":policies",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
     ],
 )
 
@@ -38,8 +38,8 @@ py_test(
     deps = [
         ":nix",
         "//:conftest",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -1,3 +1,10 @@
+//! The TypeScript enum IIFE as a pre-purity admission shape. The heap scan
+//! (`facts/abstract_domain/heap.rs`) and the initializer statement's own
+//! purity both run before synchronous execution evaluates the IIFE, so they
+//! still need this syntactic shape; everything that reads what the enum holds
+//! uses the executed initializer's settled fields instead. It goes once a
+//! statement's purity comes from executing it (plan § Step 4).
+
 use super::*;
 
 /// Recognize the TypeScript-emit "enum" IIFE shape that initializes a
@@ -74,56 +81,8 @@ pub(crate) fn is_ts_enum_iife_init_for_binding(expr: &Expr, binding: &str) -> bo
     is_ts_enum_iife_call_for_binding(call, binding)
 }
 
-/// Named own data fields installed by a recognized enum initializer. The
-/// recognizer proves every write is a primitive data assignment on its fresh
-/// parameter; callers must separately prove that the resulting binding is
-/// stable and that this initializer has already run.
-pub(crate) fn ts_enum_iife_named_data_keys(expr: &Expr, binding: &str) -> Option<BTreeSet<String>> {
-    if !is_ts_enum_iife_init_for_binding(expr, binding) {
-        return None;
-    }
-    let Expr::Call(call) = expr.unwrap_parens() else {
-        return None;
-    };
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let param = match callee.unwrap_parens() {
-        Expr::Arrow(arrow) => match &arrow.params[0] {
-            Pat::Ident(ident) => ident.id.sym.as_ref(),
-            _ => return None,
-        },
-        Expr::Fn(function) => match &function.function.params[0].pat {
-            Pat::Ident(ident) => ident.id.sym.as_ref(),
-            _ => return None,
-        },
-        _ => return None,
-    };
-    struct NamedWrites<'a> {
-        param: &'a str,
-        keys: BTreeSet<String>,
-    }
-    impl Visit for NamedWrites<'_> {
-        fn visit_assign_expr(&mut self, assign: &AssignExpr) {
-            if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left
-                && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == self.param)
-                && let MemberProp::Ident(key) = &member.prop
-            {
-                self.keys.insert(key.sym.to_string());
-            }
-            assign.visit_children_with(self);
-        }
-    }
-    let mut writes = NamedWrites {
-        param,
-        keys: BTreeSet::new(),
-    };
-    callee.visit_with(&mut writes);
-    Some(writes.keys)
-}
-
 /// `CallExpr`-level form of `is_ts_enum_iife_init_for_binding`, used
-/// both from the var-init admission and by `PlainDataWriteScanner` to
+/// both from the var-init admission and by the heap scan (`heap.rs`) to
 /// exempt the vetted `X || (X = {})` argument occurrence of the enum
 /// binding from the escape scan.
 pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -> bool {

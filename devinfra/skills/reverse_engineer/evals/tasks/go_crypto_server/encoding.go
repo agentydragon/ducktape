@@ -61,8 +61,7 @@ func encodeBase32Custom(in []byte) string {
 }
 
 func decodeBase32Custom(in string) ([]byte, error) {
-	trimmed := strings.TrimRight(in, string(customPad))
-	if len(trimmed)%8 != 0 && len(in)%8 != 0 {
+	if len(in)%8 != 0 {
 		return nil, errors.New("base32 input length not multiple of 8")
 	}
 	var out []byte
@@ -70,17 +69,45 @@ func decodeBase32Custom(in string) ([]byte, error) {
 		group := in[i : i+8]
 		var bits uint64
 		valid := 0
+		lastValue := int8(0)
+		padding := false
 		for j := 0; j < 8; j++ {
 			c := group[j]
 			if c == customPad {
-				break
+				padding = true
+				continue
+			}
+			if padding {
+				return nil, errors.New("base32 data after padding")
 			}
 			v := customDecodeTable[c]
 			if v < 0 {
 				return nil, errors.New("invalid base32 character")
 			}
 			bits = (bits << 5) | uint64(v)
+			lastValue = v
 			valid++
+		}
+		if padding && i+8 != len(in) {
+			return nil, errors.New("base32 padding before final group")
+		}
+		wantPadding := 0
+		switch valid {
+		case 2:
+			wantPadding = 6
+		case 4:
+			wantPadding = 4
+		case 5:
+			wantPadding = 3
+		case 7:
+			wantPadding = 1
+		case 8:
+			wantPadding = 0
+		default:
+			return nil, errors.New("invalid base32 group length")
+		}
+		if padding && 8-valid != wantPadding {
+			return nil, errors.New("invalid base32 padding length")
 		}
 		bits <<= uint(5 * (8 - valid))
 		var raw [5]byte
@@ -89,25 +116,31 @@ func decodeBase32Custom(in string) ([]byte, error) {
 		raw[2] = byte(bits >> 16)
 		raw[3] = byte(bits >> 8)
 		raw[4] = byte(bits)
-		bytesOut := 5
-		switch valid {
-		case 2:
-			bytesOut = 1
-		case 4:
-			bytesOut = 2
-		case 5:
-			bytesOut = 3
-		case 7:
-			bytesOut = 4
-		case 8:
-			bytesOut = 5
-		default:
-			if valid != 0 {
-				return nil, errors.New("invalid base32 group length")
-			}
-			bytesOut = 0
+		// The encoder leaves the unused low bits of a partial group clear. Reject
+		// alternate bit strings that would decode to the same output bytes.
+		unusedBits := uint(valid*5 - bytesForBase32Group(valid)*8)
+		if unusedBits != 0 && uint8(lastValue)&(1<<unusedBits-1) != 0 {
+			return nil, errors.New("non-zero base32 padding bits")
 		}
+		bytesOut := bytesForBase32Group(valid)
 		out = append(out, raw[:bytesOut]...)
 	}
 	return out, nil
+}
+
+func bytesForBase32Group(chars int) int {
+	switch chars {
+	case 2:
+		return 1
+	case 4:
+		return 2
+	case 5:
+		return 3
+	case 7:
+		return 4
+	case 8:
+		return 5
+	default:
+		return 0
+	}
 }

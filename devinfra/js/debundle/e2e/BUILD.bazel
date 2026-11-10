@@ -1,16 +1,390 @@
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "ordered_own_data_field_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "compressed_graph_reports_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "describe_batch_cli_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 # End-to-end tests treating the debundler as a black-box binary.
 
+debundle_e2e_test(
+    name = "wrapper_argument_native_integrity_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
+
+debundle_e2e_test(
+    name = "captured_value_input_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "native_operation_input_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "native_own_data_read_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "intrinsics_never_written_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "argument_input_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_parity_test",
+    saved_analysis_tools = True,
+    deps = [
+        "@crates//:rmp-serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_identity_test",
+    saved_analysis_tools = True,
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:staged_analysis",
+        "@crates//:rmp-serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_resolved_member_test",
+    saved_analysis_tools = True,
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "saved_analysis_reports_test",
+    saved_analysis_tools = True,
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "bindings_candidate_assessment_test",
+    saved_analysis_tools = True,
+    deps = [
+        "//devinfra/js/debundle:staged_analysis",
+        "@crates//:rmp-serde",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_candidate_assessment_test",
+    saved_analysis_tools = True,
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "initializer_source_only_test",
+    saved_analysis_tools = True,
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "commuting_statements_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_global_provenance_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_bounded_reports_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_local_call_receipts_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+# 820 debundler runs, each followed by two Node runs.
+debundle_e2e_test(
+    name = "foreign_state_node_differential_sweep_test",
+    timeout = "moderate",
+)
+
+debundle_e2e_test(
+    name = "foreign_cell_read_order_test",
+    deps = [
+        ":graph_support",
+    ],
+)
+
+debundle_e2e_test(
+    name = "provider_summary_effect_test",
+    deps = [
+        ":graph_support",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_local_declarations_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_initializer_coverage_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_native_owners_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_descriptor_rows_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_class_owners_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_class_construction_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_array_spread_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_conditional_logical_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_root_statements_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_root_binding_stores_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "translation_validation_differential_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "commuting_statements_gate_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_probe_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_host_provenance_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_trusted_summary_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "spec_lint_loader_keys_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+# Large synthetic graph: run explicitly when checking proposal performance.
+debundle_e2e_test(
+    name = "propose_commutations_budget_test",
+    timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "propose_commutations_cli_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
 debundle_e2e_test(name = "rejection_fixture_report_test")
+
+debundle_e2e_test(
+    name = "atomic_group_conflict_witness_test",
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
 
 debundle_e2e_test(
     name = "contract_audit_cli_test",
@@ -32,19 +406,22 @@ rust_library(
     srcs = [
         "support/ast_assertions.rs",
         "support/fixture_spec.rs",
-        "support/graph_fixture.rs",
         "support/mod.rs",
+        "support/saved_analysis.rs",
     ],
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
     data = [
-        "//devinfra/js/debundle",
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:artifact",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:output_layout",
+        "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:spec",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -54,6 +431,26 @@ rust_library(
         "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
         "@rules_rust//tools/runfiles",
+    ],
+)
+
+rust_library(
+    name = "graph_support",
+    srcs = [
+        "support/effect_validation.rs",
+        "support/graph_fixture.rs",
+        "support/graph_support.rs",
+        "support/reflective_provider.rs",
+    ],
+    crate_name = "debundle_e2e_graph_support",
+    crate_root = "support/graph_support.rs",
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:graph_provenance",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
     ],
 )
 
@@ -70,6 +467,8 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "graph_provenance_test",
     deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:report_io",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -83,18 +482,32 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "source_export_policy_test")
+debundle_e2e_test(
+    name = "source_export_policy_test",
+    deps = ["@crates//:serde_yaml"],
+)
 
 debundle_e2e_test(
     name = "imported_primitive_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 
 debundle_e2e_test(name = "unknown_call_unescaped_callable_test")
 
-debundle_e2e_test(name = "unknown_call_export_reachability_test")
+debundle_e2e_test(
+    name = "unknown_call_export_reachability_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
 
 debundle_e2e_test(name = "unknown_call_export_reentry_test")
 
@@ -102,7 +515,11 @@ debundle_e2e_test(name = "native_browser_reentry_test")
 
 debundle_e2e_test(
     name = "global_membership_reentry_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(name = "optional_call_timing_test")
@@ -111,23 +528,148 @@ debundle_e2e_test(name = "no_reentry_callback_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
+debundle_e2e_test(
+    name = "final_global_resolution_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "bundle_owned_globals_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "native_construction_row_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "native_slot_integrity_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(name = "native_constructor_identity_order_test")
+
+debundle_e2e_test(
+    name = "local_array_push_order_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:spec",
+    ],
+)
+
 debundle_e2e_test(name = "fresh_freeze_callback_timing_test")
+
+debundle_e2e_test(
+    name = "native_call_identity_input_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
 
 debundle_e2e_test(name = "math_round_timing_test")
 
-debundle_e2e_test(name = "native_call_summary_test")
-
 debundle_e2e_test(
-    name = "retained_callback_factory_test",
+    name = "native_call_summary_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
     ],
 )
 
 debundle_e2e_test(
+    name = "host_behavior_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "loader_closed_reentry_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
+    name = "reentry_free_operations_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "retained_callback_factory_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+        "@crates//:shlex",
+    ],
+)
+
+debundle_e2e_test(
+    name = "foreign_call_summary_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "initializer_call_effect_input_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "retained_constructor_callback_test",
     deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(name = "prototype_property_integrity_test")
+
+debundle_e2e_test(
+    name = "local_record_factory_contract_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
+
+debundle_e2e_test(
+    name = "retained_instance_class_publication_test",
+    deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
     ],
@@ -139,7 +681,10 @@ debundle_e2e_test(name = "from_entries_callback_storage_test")
 
 debundle_e2e_test(
     name = "export_reentry_report_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(name = "unknown_call_intermediate_availability_test")
@@ -149,30 +694,89 @@ debundle_e2e_test(name = "unknown_call_callback_storage_test")
 debundle_e2e_test(name = "set_iterable_reentry_test")
 
 debundle_e2e_test(
+    name = "stable_array_spread_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "imported_primitive_array_spread_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:spec",
+    ],
+)
+
+debundle_e2e_test(
     name = "imported_callback_timing_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(name = "own_descriptor_inspection_test")
+
+debundle_e2e_test(
+    name = "own_data_object_spread_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "descriptor_copy_factory_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(
+    name = "namespace_wrapper_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+    ],
+)
+
+debundle_e2e_test(
+    name = "own_property_names_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
     ],
 )
 
 debundle_e2e_test(name = "class_callback_reachability_test")
 
-# Keep the full scale workloads: unoptimized RBE runs approach a minute even
-# without a regression, so the short deadline leaves too little margin.
+# These synthetic scale regressions are opt-in: `manual` keeps them out of CI,
+# while `scale` groups them for targeted runs. Unoptimized RBE runs approach a
+# minute even without a regression, so larger cases need a moderate timeout.
 debundle_e2e_test(
     name = "opaque_callback_scale_test",
     timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(
     name = "cross_module_purity_scale_test",
     timeout = "short",
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(
     name = "conflict_diagnostics_scale_test",
     timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
     deps = ["//devinfra/js/debundle:spec"],
 )
 
@@ -180,24 +784,35 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "value_flow_sharing_scale_test",
     timeout = "moderate",
-    tags = ["manual"],
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
 
 debundle_e2e_test(
     name = "soundness_plain_data_escape_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(
     name = "plain_data_escape_scale_test",
     timeout = "short",
+    tags = [
+        "manual",
+        "scale",
+    ],
 )
 
 debundle_e2e_test(
     name = "impure_call_reason_growth_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
     ],
@@ -210,7 +825,20 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
-debundle_e2e_test(name = "per_atomic_group_test")
+debundle_e2e_test(
+    name = "per_atomic_group_test",
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
+    name = "coarse_atomic_groups_test",
+    deps = ["//devinfra/js/debundle:spec"],
+)
 
 debundle_e2e_test(name = "naturalization_test")
 
@@ -267,7 +895,10 @@ debundle_e2e_test(name = "rename_shadowed_inner_binding_test")
 
 debundle_e2e_test(name = "rename_shorthand_destructure_test")
 
-debundle_e2e_test(name = "rename_target_capture_test")
+debundle_e2e_test(
+    name = "rename_target_capture_test",
+    deps = ["//devinfra/js/debundle:artifact"],
+)
 
 debundle_e2e_test(name = "member_comment_rename_test")
 
@@ -287,12 +918,30 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "local_class_construction_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(
     name = "initializer_purity_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)
+
+debundle_e2e_test(
+    name = "fresh_returned_record_destructuring_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
@@ -317,7 +966,11 @@ debundle_e2e_test(name = "runtime_tdz_on_imported_class_test")
 
 debundle_e2e_test(
     name = "accepted_spec_runs_under_node_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(
@@ -340,8 +993,21 @@ debundle_e2e_test(name = "mediator_reaches_asymmetric_cycle_test")
 debundle_e2e_test(name = "namespace_aggregator_split_tdz_test")
 
 debundle_e2e_test(
+    name = "emit_on_rejection_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "pass_two_tdz_cut_diagnosis_test",
     deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "cut_edge_explanation_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(name = "cross_ref_lowering_test")
@@ -360,17 +1026,9 @@ debundle_e2e_test(
     ],
 )
 
-rust_test(
+debundle_e2e_test(
     name = "cross_chunk_readable_imports_test",
     size = "small",
-    srcs = ["cross_chunk_readable_imports_test.rs"],
-    crate_root = "cross_chunk_readable_imports_test.rs",
-    data = [
-        "//devinfra/js/debundle",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    edition = "2024",
-    deps = [":support"],
 )
 
 debundle_e2e_test(
@@ -432,12 +1090,14 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "spec_comments_test",
     size = "small",
+    deps = ["@crates//:serde_json"],
 )
 
 debundle_e2e_test(
     name = "selector_commands_agree_test",
     size = "small",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
@@ -461,7 +1121,9 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "realizability_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -469,6 +1131,7 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "dependency_graph_purity_reason_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
     ],
@@ -476,35 +1139,57 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "at_init_promotion_fndecl_direct_read_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(
     name = "at_init_cross_module_call_body_reads_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(
     name = "at_init_s_chain_dataflow_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(
     name = "at_init_unresolved_callee_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(
     name = "pure_members_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:spec",
     ],
 )
 
 debundle_e2e_test(
     name = "s_chain_dataflow_soundness_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
 )
 
 debundle_e2e_test(
@@ -520,7 +1205,9 @@ debundle_e2e_test(
     name = "peel_factorize_landability_test",
     size = "small",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
@@ -531,6 +1218,7 @@ debundle_e2e_test(
     name = "peel_factorize_extend_anonymous_test",
     size = "small",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
@@ -551,8 +1239,14 @@ debundle_e2e_test(
 debundle_e2e_test(name = "intrinsic_alias_lowering_test")
 
 debundle_e2e_test(
+    name = "invalid_member_selector_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(
     name = "module_merge_test",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -565,13 +1259,25 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "modules_gate_cli_test")
+debundle_e2e_test(
+    name = "modules_gate_cli_test",
+    deps = [":graph_support"],
+)
 
-debundle_e2e_test(name = "edit_gate_direct_claims_cli_test")
+debundle_e2e_test(
+    name = "edit_gate_direct_claims_cli_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:report_io",
+    ],
+)
 
 debundle_e2e_test(
     name = "module_decomposition_cli_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
         "@crates//:tempfile",
@@ -579,8 +1285,19 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "proposal_consumer_metadata_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_apply_cli_test",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
@@ -590,22 +1307,35 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "modules_refine_cli_test",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
 )
 
-debundle_e2e_test(name = "bindings_assign_gate_cli_test")
+debundle_e2e_test(
+    name = "bindings_assign_gate_cli_test",
+    deps = [":graph_support"],
+)
 
-debundle_e2e_test(name = "bindings_unassign_gate_cli_test")
+debundle_e2e_test(
+    name = "bindings_unassign_gate_cli_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(
     name = "cli_mutation_outcome_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
-debundle_e2e_test(name = "edit_gate_source_match_cli_test")
+debundle_e2e_test(
+    name = "edit_gate_source_match_cli_test",
+    deps = [":graph_support"],
+)
 
 debundle_e2e_test(
     name = "modules_list_cli_test",
@@ -652,12 +1382,16 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "scc_cluster_cli_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(
     name = "invocation_cli_test",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:shlex",
         "@crates//:tempfile",
@@ -666,17 +1400,30 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "top_level_query_cli_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "static_imports_cli_test",
     deps = ["@crates//:serde_json"],
 )
 
 debundle_e2e_test(
     name = "query_failures_cli_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:report_io",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(
     name = "binding_name_resolution_cli_test",
     deps = [
+        ":graph_support",
         "//devinfra/js/debundle:peel",
         "@crates//:serde_json",
     ],
@@ -684,8 +1431,15 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "comment_cli_test",
-    deps = ["@crates//:serde_yaml"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_yaml",
+    ],
 )
+
+debundle_e2e_test(name = "duplicate_annotations_cli_test")
+
+debundle_e2e_test(name = "call_registration_contract_test")
 
 debundle_e2e_test(
     name = "match_selector_cli_test",
@@ -697,13 +1451,18 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "bindings_assign_cli_test",
-    deps = ["@crates//:serde_yaml"],
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
 )
 
 debundle_e2e_test(
     name = "selector_conflict_witness_test",
     size = "small",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -713,9 +1472,12 @@ debundle_e2e_test(name = "initializer_placement_test")
 
 debundle_e2e_test(name = "intrinsic_array_iteration_test")
 
+debundle_e2e_test(name = "member_chain_callback_write_test")
+
 debundle_e2e_test(
     name = "source_match_coalescing_cli_test",
     deps = [
+        ":graph_support",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -723,5 +1485,59 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "synchronous_precision_report_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(name = "callback_pool_order_test")
+
+debundle_e2e_test(name = "opaque_receiver_callbacks_test")
+
+debundle_e2e_test(
+    name = "opaque_callback_publication_test",
+    deps = [":graph_support"],
+)
+
+debundle_e2e_test(name = "bounded_callback_fallback_heap_test")
+
+debundle_e2e_test(name = "callback_future_availability_test")
+
+debundle_e2e_test(
+    name = "explain_integrity_cli_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "native_iterable_operation_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(name = "export_availability_test")
+
+debundle_e2e_test(
+    name = "runtime_resource_closure_test",
     deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
+    name = "effect_tv_array_iteration_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "call_initializer_seal_test",
+    deps = [":graph_support"],
 )

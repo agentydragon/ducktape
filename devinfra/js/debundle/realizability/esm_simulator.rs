@@ -15,19 +15,19 @@ use crate::esm_import_order::EsmImportOrder;
 /// decide whether Lemma 2's source-import reversal actually rescues
 /// a candidate asymmetric I-SCC at runtime.
 ///
-/// The simulator models the **same** import-ordering decisions the
+/// The simulator models the graph-constrained import-ordering decisions the
 /// materializer makes, via the shared `EsmImportOrder` (the single
 /// source of truth both sides consume — see `esm_import_order`):
 ///   - the chunk's emitted entry file imports **every**
 ///     emitted logical module — binding imports for binding-owning
 ///     plans, side-effect-only imports for binding-less plans — in
 ///     `EsmImportOrder::sort_entry_imports` order (Lemma 2's
-///     source-import order). See `lowering::lower_chunk`.
+///     source-import order). See `lowering::lower::prepare_candidate_emission_plan`.
 ///   - every other module's intra-chunk imports (cross-module
 ///     binding imports, phantom side-effect imports, entry-binding
 ///     import — one merged list) follow
 ///     `EsmImportOrder::sort_module_imports` (dependency-first
-///     linker order). See `lowering::lower_chunk::lower_single_plan`.
+///     linker order). See `lowering::module_output::prepare_module_emission`.
 ///
 /// It then walks DFS from entry, records the post-order
 /// evaluation index per module, and verifies every cross-module
@@ -35,6 +35,10 @@ use crate::esm_import_order::EsmImportOrder;
 /// source `M`. Equivalent to asking whether the emitted ESM bundle
 /// would actually execute without TDZ on the constraining edges in
 /// the candidate SCC.
+/// Acyclic candidates may prefer source order among entry imports; dependencies
+/// still evaluate first. Cyclic candidates may interleave only entry-only
+/// leaves, which have no outgoing imports or non-entry importers. Thus this
+/// base-order simulation preserves every module-edge ordering check.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(super) struct EsmEvaluationSimulator {
     /// Post-order index per module after DFS from entry. Lower
@@ -43,6 +47,10 @@ pub(super) struct EsmEvaluationSimulator {
     /// so the simulator skips constraining-edge checks involving
     /// them.
     pub(super) post_order: BTreeMap<ModuleId, usize>,
+    /// False when the constraining pairs are cyclic: `EsmImportOrder` then
+    /// has no linker order and every non-entry import list falls back to
+    /// `ModuleId` order.
+    linker_order_available: bool,
 }
 
 impl EsmEvaluationSimulator {
@@ -74,7 +82,11 @@ impl EsmEvaluationSimulator {
         let import_order = EsmImportOrder::build(constraining_pairs, i_successors, &nodes);
         let post_order =
             simulate_esm_post_order(entry_module_id, i_successors, &nodes, &import_order);
-        Self { post_order }
+        Self {
+            post_order,
+            linker_order_available: constraining_pairs.is_empty()
+                || !import_order.linker_order().is_empty(),
+        }
     }
 
     /// Yields the `(from, to)` constraining pairs inside `modules`
@@ -85,7 +97,9 @@ impl EsmEvaluationSimulator {
     /// rescues the SCC.
     ///
     /// Endpoints unreachable from entry are skipped — ESM never
-    /// loads them, so they can't fire a TDZ at runtime.
+    /// loads them, so they can't fire a TDZ at runtime. Without a linker
+    /// order (cyclic constraining pairs, which Pass 1 rejects) there is no
+    /// import order to check, so nothing is yielded.
     pub(super) fn tdz_pairs<'a>(
         &'a self,
         modules: &'a BTreeSet<ModuleId>,
@@ -94,6 +108,7 @@ impl EsmEvaluationSimulator {
         constraining_pairs
             .iter()
             .copied()
+            .filter(|_| self.linker_order_available)
             .filter(move |&(from, to)| {
                 if !modules.contains(&from) || !modules.contains(&to) {
                     return false;
@@ -119,7 +134,7 @@ impl EsmEvaluationSimulator {
 ///   - Elsewhere: that module's I-successors in
 ///     `sort_module_imports` order (dependency-first; mirrors the
 ///     merged cross/phantom/entry-binding import list the emitter
-///     renders in `lowering::lower_chunk::lower_single_plan`).
+///     renders in `lowering::module_output::prepare_module_emission`).
 ///
 /// Cycle no-op: a back-edge to a module already on the link-DFS
 /// stack is skipped. petgraph's `DfsPostOrder` filters neighbors

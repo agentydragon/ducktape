@@ -1,25 +1,29 @@
 """Unit tests for SessionStartHookInput parsing."""
 
+import pytest
 import pytest_bazel
 
 from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 
 
-def test_missing_permission_mode_defaults_to_none() -> None:
-    """Claude Code Web was observed (2025-01-18) not sending permission_mode
-    for SessionStart:resume events, despite documentation claiming it's required.
-    """
+@pytest.mark.parametrize(
+    ("event_fields", "expected_model"),
+    [({"source": "resume", "model": "claude-sonnet-5"}, "claude-sonnet-5"), ({"source": "startup"}, None)],
+    ids=["resume-omits-permission-mode", "startup-omits-model"],
+)
+def test_optional_session_start_fields(event_fields: dict[str, str], expected_model: str | None) -> None:
+    """Web omitted permission_mode on resume (2025-01-18); some events omit model."""
     result = SessionStartHookInput.model_validate(
         {
             "session_id": "s",
             "cwd": "/tmp",
             "transcript_path": "/tmp/t.json",
             "hook_event_name": "SessionStart",
-            "source": "resume",
-            "model": "claude-sonnet-5",
+            **event_fields,
         }
     )
+    assert result.model == expected_model
     assert result.permission_mode is None
 
 
@@ -36,20 +40,6 @@ def test_explicit_permission_mode() -> None:
         }
     )
     assert result.permission_mode == PermissionMode.PLAN
-
-
-def test_missing_model_defaults_to_none() -> None:
-    """Claude Code doesn't always send the model field in SessionStart events."""
-    result = SessionStartHookInput.model_validate(
-        {
-            "session_id": "s",
-            "cwd": "/tmp",
-            "transcript_path": "/tmp/t.json",
-            "hook_event_name": "SessionStart",
-            "source": "startup",
-        }
-    )
-    assert result.model is None
 
 
 if __name__ == "__main__":

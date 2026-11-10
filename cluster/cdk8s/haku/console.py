@@ -5,7 +5,7 @@ backend paths to the API.
 
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
 reviewed/released ducktape code it sits outside Haku's RBAC (Haku cannot read its secrets or
-logs or patch it) and outside the haku-egress-proxy fence, so it gets ordinary egress and can
+logs or patch it) and outside haku-sandbox's egress fence, so it gets ordinary egress and can
 hold secrets Haku may not read (haku/PLAN.md, "The agent-authored console").
 
 The API and static shell are separate Deployments so a frontend-only image update never

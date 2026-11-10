@@ -13,6 +13,13 @@ from x.wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusRespons
 from x.wt.testing.data import MockBehaviors
 
 
+def _configure_return_values(mock: Mock, overrides: dict[str, Any]) -> Mock:
+    for method_name, return_value in overrides.items():
+        if method_name in mock.__dir__():
+            mock.configure_mock(**{f"{method_name}.return_value": return_value})
+    return mock
+
+
 class MockFactory:
     """Factory for creating configured mocks with standard behaviors."""
 
@@ -24,18 +31,11 @@ class MockFactory:
         pr_view_returns: dict[str, Any] | None = None,
         **kwargs,
     ) -> Mock:
-        """Create a configured GitHub client mock."""
         mock = Mock(spec=GitHubInterface)
         mock.pr_list.return_value = pr_list_returns or MockBehaviors.GitHub.empty_pr_list()
         mock.pr_search.return_value = pr_search_returns or MockBehaviors.GitHub.empty_pr_list()
         mock.pr_view.return_value = pr_view_returns
-
-        # Allow override of any method via kwargs
-        for method_name, return_value in kwargs.items():
-            if method_name in mock.__dir__():
-                mock.configure_mock(**{f"{method_name}.return_value": return_value})
-
-        return mock
+        return _configure_return_values(mock, kwargs)
 
     @staticmethod
     def git_manager(
@@ -45,7 +45,6 @@ class MockFactory:
         working_status: tuple[list[str], list[str]] | None = None,
         **kwargs,
     ) -> Mock:
-        """Create a configured git manager mock."""
         mock = Mock(spec=GitManager)
         mock.list_branches.return_value = branches or MockBehaviors.Git.standard_branches()
         mock.list_worktrees.return_value = worktrees or []
@@ -56,18 +55,12 @@ class MockFactory:
         mock.worktree_remove.return_value = None
         mock.branch_exists.return_value = True
 
-        # Allow override of any method via kwargs
-        for method_name, return_value in kwargs.items():
-            if method_name in mock.__dir__():
-                mock.configure_mock(**{f"{method_name}.return_value": return_value})
-
-        return mock
+        return _configure_return_values(mock, kwargs)
 
     @staticmethod
     def daemon_client(
         *, status_response: StatusResponse | None = None, get_status_returns: StatusResponse | None = None, **kwargs
     ) -> Mock:
-        """Create a configured daemon client mock."""
         mock = Mock(spec=WtClient)
 
         # Default empty status response
@@ -83,31 +76,17 @@ class MockFactory:
         mock.delete_worktree.return_value = Mock(success=True)
         mock.list_worktrees.return_value = Mock(worktrees=[])
 
-        # Allow override of any method via kwargs
-        for method_name, return_value in kwargs.items():
-            if method_name in mock.__dir__():
-                mock.configure_mock(**{f"{method_name}.return_value": return_value})
-
-        return mock
+        return _configure_return_values(mock, kwargs)
 
     @staticmethod
     def view_formatter(**kwargs) -> Mock:
-        """Create a view formatter mock."""
-
         mock = Mock(spec=ViewFormatter)
         mock.render_worktree_status_all.return_value = None
         mock.render_single_status.return_value = None
-
-        # Allow override of any method via kwargs
-        for method_name, return_value in kwargs.items():
-            if method_name in mock.__dir__():
-                mock.configure_mock(**{f"{method_name}.return_value": return_value})
-
-        return mock
+        return _configure_return_values(mock, kwargs)
 
     @staticmethod
     def process_info_list(*, running_processes: list[dict[str, Any]] | None = None) -> list[Mock]:
-        """Create a list of process info mocks."""
         if running_processes is None:
             return []
 
@@ -122,21 +101,16 @@ class MockFactory:
 
 
 class ServiceBuilder:
-    """Builder pattern for creating service instances with configurable dependencies."""
-
     def __init__(self, test_config):
-        """Initialize builder with test configuration."""
         self.config = test_config
         self.mocks = {}
         self._use_real = set()
 
     def with_real_git(self):
-        """Use real GitManager instead of mock."""
         self._use_real.add("git")
         return self
 
     def with_mock_git(self, **behaviors):
-        """Use mock GitManager with specified behaviors."""
         self.mocks["git"] = MockFactory.git_manager(**behaviors)
         return self
 
@@ -146,18 +120,14 @@ class ServiceBuilder:
         return self
 
     def with_mock_github(self, **behaviors):
-        """Use mock GitHub client with specified behaviors."""
         self.mocks["github"] = MockFactory.github_client(**behaviors)
         return self
 
     def with_mock_daemon(self, **behaviors):
-        """Use mock daemon client with specified behaviors."""
         self.mocks["daemon"] = MockFactory.daemon_client(**behaviors)
         return self
 
     def build_worktree_service(self):
-        """Build WorktreeService with configured dependencies."""
-
         # Create real instances for components marked as 'real'
         if "git" in self._use_real:
             git_manager = GitManager(config=self.config)
@@ -174,7 +144,6 @@ class ServiceBuilder:
         return WorktreeService(git_manager, github_client)
 
     def build_cli_dependencies(self):
-        """Build CLI dependencies (config, formatter, daemon_client)."""
         formatter = MockFactory.view_formatter()
         daemon_client = self.mocks.get("daemon", MockFactory.daemon_client())
 

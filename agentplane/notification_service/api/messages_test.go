@@ -1,18 +1,24 @@
 package api
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -23,8 +29,7 @@ var toSandbox = policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{N
 // sendRequest is a message from the other Sandbox to the test Session of the test Sandbox as it is now.
 func sendRequest(key string) *notificationspb.SendMessageRequest {
 	return &notificationspb.SendMessageRequest{
-		DestinationRef: &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName},
-		SessionId:      testSession, IdempotencyKey: key, Body: "Please review the change.",
+		SessionId: testSession, IdempotencyKey: key, Body: "Please review the change.",
 	}
 }
 
@@ -81,8 +86,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	if len(inboxes.GetInboxes()) != 1 {
 		t.Fatalf("inboxes = %v", inboxes)
 	}
-	inboxID := inboxes.GetInboxes()[0].GetId()
-	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: inboxID})
+	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +95,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	}
 	entry := read.GetEntries()[0]
 	want := &notificationspb.MessageEvent{
-		MessageId: sent.GetId(), Sender: &notificationspb.ServiceAccount{Namespace: testNamespace, Name: otherSandboxName},
+		MessageId: sent.GetId(), Sender: &identitypb.ServiceAccount{Namespace: testNamespace, Name: otherSandboxName},
 	}
 	if !proto.Equal(entry.GetEvent().GetMessage(), want) || len(entry.GetSubscriptionIds()) != 0 {
 		t.Errorf("entry = %v", entry)
@@ -104,7 +108,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	if _, err := server.sentMessage(t, sandboxToken, sent.GetId()); status.Code(err) != codes.NotFound {
 		t.Errorf("the recipient's lookup: %v, want NotFound", err)
 	}
-	if _, err := server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: inboxID, ThroughCursor: 1}); err != nil {
+	if _, err := server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	followed, err := server.sentMessage(t, otherSandboxToken, sent.GetId())
@@ -116,10 +120,12 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("after the acknowledgement: %v", followed)
 	}
 
-	// History confirmed the Session once, when its inbox opened.
+	// The History check establishes the new inbox. Later sends to this UID-keyed inbox work through
+	// a History outage because they do not repeat it.
+	server.history.failWith(status.Error(codes.Unavailable, "test History outage"))
 	server.send(t, sendRequest("second"))
 	if asked := server.history.questions(); len(asked) != 1 || asked[0] != testSession {
-		t.Errorf("History asked about %v, want the Session once", asked)
+		t.Errorf("History asked about %v, want only the check that opened the inbox", asked)
 	}
 }
 
@@ -182,40 +188,124 @@ func TestRevokingAGrantRefusesNewMessagesButKeepsTheSentOnes(t *testing.T) {
 func TestASendIsRefusedWhileTheGrantsMayBeOutOfDate(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
-	// The policy goes stale an hour after its last cycle.
-	server.policy.Freshness.RecordCycle(reader.PolicyBindings, time.Now().Add(-2*time.Hour))
+	server.policy.Health.RecordFailure(reader.PolicyBindings, errors.New("test: the watch failed"))
 	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("stale"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)
 }
 
-func TestAMessageToNoSuchSandboxIsNotFound(t *testing.T) {
+func TestAMessageToNoSuchSessionOrSandboxIncarnationIsNotFound(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, policyapi.SandboxTargets{AllSandboxes: true})
-	for name, ref := range map[string]*notificationspb.DestinationRef{
-		"missing Sandbox":     {Namespace: testNamespace, Name: "test-missing-sandbox"},
-		"another incarnation": {Namespace: testNamespace, Name: sandboxName, Uid: "test-former-sandbox-uid"},
-		"another namespace":   {Namespace: "test-elsewhere", Name: sandboxName},
+	for name, placement := range map[string]*dispatcherpb.Session{
+		"missing Sandbox":     nativeSession(testSession, "test-missing-sandbox", sandboxUID),
+		"another incarnation": nativeSession(testSession, sandboxName, "test-former-sandbox-uid"),
 	} {
 		t.Run(name, func(t *testing.T) {
+			server.openings.placements[testSession] = placement
 			request := sendRequest("missing")
-			request.DestinationRef = ref
 			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)
 			requireCode(t, err, codes.NotFound)
 		})
 	}
+	delete(server.openings.placements, testSession)
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("missing-opening"))
+	requireCode(t, err, codes.NotFound)
 	server.requireNoInbox(t)
 }
 
-func TestAMessageOpensAnInboxOnlyForASessionHistoryRecordedForTheSandbox(t *testing.T) {
+func TestAMessageNeedsACompleteDispatcherSession(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
-	server.history.sandboxes["test-other-sandbox-session"] = &historypb.SandboxRef{Namespace: testNamespace, Name: otherSandboxName}
-	for name, session := range map[string]string{
-		"unrecorded Session":        "test-unrecorded-session",
-		"another Sandbox's Session": "test-other-sandbox-session",
+	for name, placement := range map[string]*dispatcherpb.Session{
+		"missing UID":     nativeSession(testSession, sandboxName, ""),
+		"wrong Session":   nativeSession("another-session", sandboxName, sandboxUID),
+		"missing Sandbox": nativeSession(testSession, "", sandboxUID),
 	} {
 		t.Run(name, func(t *testing.T) {
+			server.openings.placements[testSession] = placement
+			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("incomplete"))
+			requireCode(t, err, codes.Unavailable)
+		})
+	}
+	server.openings.err = status.Error(codes.Unavailable, "test Dispatcher outage")
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("outage"))
+	requireCode(t, err, codes.Unavailable)
+	server.requireNoInbox(t)
+	if asked := server.history.questions(); len(asked) != 0 {
+		t.Errorf("History asked about %v without a valid opening", asked)
+	}
+}
+
+func TestSessionTargetUsesTypedPlacement(t *testing.T) {
+	central := &dispatcherpb.Session{
+		SessionId: testSession,
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID},
+		}}},
+	}
+	for _, test := range []struct {
+		name    string
+		opening *dispatcherpb.Session
+		want    bool
+	}{
+		{"native environment", nativeSession(testSession, sandboxName, sandboxUID), true},
+		{"central initial executor", central, true},
+		{"missing placement", &dispatcherpb.Session{SessionId: testSession}, false},
+		{"missing central executor", &dispatcherpb.Session{SessionId: testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{}}}}, false},
+		{"wrong Session", nativeSession("other", sandboxName, sandboxUID), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target := sessionidentity.Target(test.opening, testSession)
+			if (target != nil) != test.want {
+				t.Fatalf("sessionidentity.Target(%v) = %v, want present %t", test.opening, target, test.want)
+			}
+			if test.want && (target.GetName() != sandboxName || target.GetUid() != sandboxUID) {
+				t.Fatalf("wrong exact target: %v", target)
+			}
+		})
+	}
+}
+
+func TestAnOldWireDestinationFenceIsRejectedBeforeSending(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	oldRef, err := proto.Marshal(&notificationspb.DestinationRef{
+		Namespace: testNamespace, Name: sandboxName, Uid: "test-former-sandbox-uid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := sendRequest("old-wire")
+	request.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), oldRef))
+	_, err = server.client.SendMessage(bearing(t, otherSandboxToken), request)
+	requireCode(t, err, codes.InvalidArgument)
+	server.requireNoInbox(t)
+	if asked := server.history.questions(); len(asked) != 0 {
+		t.Errorf("History asked about %v after an old wire request", asked)
+	}
+}
+
+func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	server.history.sandboxes["test-other-sandbox-session"] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: otherSandboxName, Uid: proto.String(otherSandboxUID),
+	}
+	server.history.sandboxes["test-former-sandbox-session"] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: sandboxName, Uid: proto.String("test-former-sandbox-uid"),
+	}
+	server.history.sandboxes["test-session-without-history-uid"] = &historypb.SandboxRef{
+		Namespace: testNamespace, Name: sandboxName,
+	}
+	for name, session := range map[string]string{
+		"unrecorded Session":          "test-unrecorded-session",
+		"another Sandbox's Session":   "test-other-sandbox-session",
+		"same-name predecessor":       "test-former-sandbox-session",
+		"History Session without UID": "test-session-without-history-uid",
+	} {
+		t.Run(name, func(t *testing.T) {
+			server.openings.placements[session] = nativeSession(session, sandboxName, sandboxUID)
 			request := sendRequest("unrecorded")
 			request.SessionId = session
 			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)
@@ -226,6 +316,30 @@ func TestAMessageOpensAnInboxOnlyForASessionHistoryRecordedForTheSandbox(t *test
 	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("outage"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)
+}
+
+func TestMessageToSameNameReplacementDoesNotReuseFormerSandboxInbox(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	first := server.send(t, sendRequest("before-recreate"))
+
+	server.recreateSandbox(t)
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("after-recreate"))
+	requireCode(t, err, codes.NotFound)
+	server.requireNoInbox(t)
+	if _, err := server.sentMessage(t, otherSandboxToken, first.GetId()); err != nil {
+		t.Fatalf("the earlier message after Sandbox replacement: %v", err)
+	}
+}
+
+func TestConfirmSessionRequiresLiveSandboxUID(t *testing.T) {
+	server := newServer(t)
+	err := server.notifications.confirmSession(t.Context(), &identitypb.EnvironmentTarget{
+		Namespace: testNamespace, Name: sandboxName,
+	}, testSession)
+	if !errors.Is(err, errSessionUnrecorded) {
+		t.Fatalf("confirmSession error = %v, want %v", err, errSessionUnrecorded)
+	}
 }
 
 func TestAMessageMustFitTheConfiguredLimit(t *testing.T) {

@@ -1,0 +1,11 @@
+[Unit]
+Description=Opt-in delayed delegated cgroup kernel-path stress probe
+ConditionKernelCommandLine=agentplane.delegated-cgroup-stress=1
+
+[Timer]
+OnBootSec=30s
+AccuracySec=1s
+Unit=agentplane-delegated-cgroup-stress.service
+
+[Install]
+WantedBy=timers.target

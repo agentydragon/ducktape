@@ -8,7 +8,7 @@ periodic repair, but acceptance fails prompt detection and current base-SHA labe
 
 Notifications ran `devel-20261027222401-9291858`, a descendant of the feature merge, with 2/2
 updated, available and ready replicas. Both migration init containers previously exited 0.
-The exercise uses this machine's kubeconfig, an isolated `runner-ducktape` Sandbox with only the
+The exercise uses this machine's kubeconfig, an isolated `environment-tools` Sandbox with only the
 `basic` PolicySet, a fresh Codex Session on GPT-6 Luna at low effort, and a Pod-bound workload
 bearer for the Notifications API. Credentials remain in memory.
 

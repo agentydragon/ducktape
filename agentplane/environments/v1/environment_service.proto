@@ -1,0 +1,324 @@
+syntax = "proto3";
+
+package agentplane.environments.v1;
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/environments/v1;environmentpb";
+
+import "agentplane/proto/environment_lifecycle.proto";
+import "agentplane/proto/identity.proto";
+import "agentplane/proto/kubernetes.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// EnvironmentService discovers existing managed environments and authorizes explicit lifecycle changes.
+service EnvironmentService {
+  rpc ListEnvironmentTemplates(google.protobuf.Empty) returns (ListEnvironmentTemplatesResponse) {
+    option (google.api.http) = {get: "/v1/environment-templates"};
+  }
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (agentplane.proto.EnvironmentTarget) {
+    option (google.api.http) = {post: "/v1/environments" body: "*"};
+  }
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
+    option (google.api.http) = {get: "/v1/environments"};
+  }
+  // Sends an initial caller-visible snapshot, then coalesced updates and removals.
+  rpc WatchEnvironments(google.protobuf.Empty) returns (stream WatchEnvironmentsResponse) {
+    option (google.api.http) = {get: "/v1/environments:watch"};
+  }
+  rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
+  }
+  // Sends the current snapshot, then updated snapshots of the exact target. Intermediate
+  // states may be coalesced; reconnecting starts a fresh observation without an event cursor.
+  rpc WatchEnvironment(WatchEnvironmentRequest) returns (stream WatchEnvironmentResponse) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}:watch"};
+  }
+  rpc ResumeEnvironment(ResumeEnvironmentRequest) returns (ResumeEnvironmentResponse) {
+    option (google.api.http) = {post: "/v1/environments/{target.namespace}/{target.name}:resume" body: "*"};
+  }
+  rpc SuspendEnvironment(EnvironmentMutationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/environments/{target.namespace}/{target.name}:suspend" body: "*"};
+  }
+  rpc DeleteEnvironment(EnvironmentMutationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/environments/{target.namespace}/{target.name}"};
+  }
+  rpc SetEnvironmentWakeOnSend(SetEnvironmentWakeOnSendRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:wake-policy" body: "*"};
+  }
+  rpc SetEnvironmentIdleSuspend(SetEnvironmentIdleSuspendRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {patch: "/v1/environments/{target.namespace}/{target.name}:idle-suspend" body: "*"};
+  }
+}
+
+// The app resolves presets before sending this complete Environment request. The preset itself is only a label.
+message CreateEnvironmentRequest {
+  string name = 1;
+  string template = 2;
+  reserved 3, 4, 5, 6;
+  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
+  string bootstrap = 7;
+  // PolicySet names to bind, beside the EnvironmentService defaults.
+  repeated string policy_sets = 8;
+  // The app's preset this Environment was made from, recorded as a label; the controller never resolves it.
+  optional string preset = 9;
+  // Whether an incoming message may resume this Environment after suspension.
+  bool wake_on_send = 10;
+  // How long its runner must stay idle before the controller suspends the Environment; absent, never.
+  google.protobuf.Duration idle_suspend_after = 11;
+  // The Environment's initial `spec.inboxTags`.
+  repeated string inbox_tags = 12;
+  // Present only for an authorized Action Service launch. Included in the create intent;
+  // the Action Service separately owns the launcher policy grants.
+  EnvironmentLaunchOrigin launch_origin = 13;
+}
+
+message EnvironmentLaunchOrigin {
+  agentplane.proto.ServiceAccount caller = 1;
+  string action_group = 2;
+  repeated string launcher_grants = 3;
+}
+
+message ListEnvironmentTemplatesResponse {
+  repeated string names = 1;
+}
+
+message EnvironmentMutationRequest {
+  agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message SetEnvironmentWakeOnSendRequest {
+  agentplane.proto.EnvironmentTarget target = 1;
+  bool wake_on_send = 2;
+}
+
+message SetEnvironmentIdleSuspendRequest {
+  agentplane.proto.EnvironmentTarget target = 1;
+  google.protobuf.Duration idle_suspend_after = 2;
+}
+
+message ListEnvironmentsRequest {
+  // Required, bounded to 1..100. Broad readers receive one page of the inventory.
+  uint32 limit = 1;
+  // Opaque continuation for a broad reader. A Sandbox-owned account resolves one candidate.
+  string page_token = 2;
+}
+
+message ListEnvironmentsResponse {
+  repeated EnvironmentDescriptor items = 1;
+  string next_page_token = 2;
+}
+
+message WatchEnvironmentsResponse {
+  // Snapshot chunks replace the previous view only when snapshot_complete arrives. Afterwards,
+  // upserts replace one EnvironmentDescriptor and removals remove the named UID. Reconnect starts a new snapshot.
+  oneof frame {
+    EnvironmentChunk snapshot = 1;
+    google.protobuf.Empty snapshot_complete = 2;
+    EnvironmentDescriptor upsert = 3;
+    // Deleted or no longer visible; the UID fences same-name replacement.
+    agentplane.proto.EnvironmentTarget removed = 4;
+  }
+}
+
+message EnvironmentChunk {
+  repeated EnvironmentDescriptor environments = 1;
+}
+
+message GetEnvironmentRequest {
+  // All three fields are required. A same-name replacement is not the requested target.
+  agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message WatchEnvironmentRequest {
+  // All three fields are required. A same-name replacement is not the requested target.
+  agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message WatchEnvironmentResponse {
+  EnvironmentDescriptor environment = 1;
+}
+
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_CONFIGURED = 1;
+  AVAILABILITY_ABSENT = 2;
+  AVAILABILITY_UNAVAILABLE = 3;
+}
+
+enum Provenance {
+  PROVENANCE_UNSPECIFIED = 0;
+  PROVENANCE_DEPLOYMENT_CONFIG = 1;
+}
+
+enum ReadinessState {
+  READINESS_STATE_UNSPECIFIED = 0;
+  READINESS_STATE_READY = 1;
+  READINESS_STATE_NOT_READY = 2;
+}
+
+enum OperatingMode {
+  OPERATING_MODE_UNSPECIFIED = 0;
+  OPERATING_MODE_RUNNING = 1;
+  OPERATING_MODE_SUSPENDED = 2;
+}
+
+enum AutomaticWakeState {
+  AUTOMATIC_WAKE_STATE_UNSPECIFIED = 0;
+  AUTOMATIC_WAKE_STATE_AVAILABLE = 1;
+  AUTOMATIC_WAKE_STATE_NOT_AVAILABLE = 2;
+  AUTOMATIC_WAKE_STATE_NOT_REQUIRED = 3;
+}
+
+message Readiness {
+  ReadinessState state = 1;
+  string reason = 2;
+  string detail = 3;
+}
+
+message WorkspaceGuidance {
+  Availability availability = 1;
+  string root = 2;
+  Provenance provenance = 3;
+  // The Runner creates missing cwd directories when opening a Session.
+  bool creates_missing_cwd = 4;
+  // True only when the runtime itself enforces root as a cwd boundary for this template.
+  bool root_enforced = 5;
+}
+
+message TextFact {
+  Availability availability = 1;
+  string value = 2;
+}
+
+message RuntimeConfiguration {
+  string harness = 1;
+  string model = 2;
+  string display_name = 3;
+  repeated string reasoning_efforts = 4;
+  Provenance provenance = 5;
+}
+
+message EnvironmentConfiguration {
+  string template = 1;
+  WorkspaceGuidance workspace = 2;
+  TextFact instructions = 3;
+  repeated RuntimeConfiguration configurations = 4;
+  Availability configurations_availability = 5;
+  SandboxBinding binding = 6;
+  optional string preset = 7;
+  bool wake_on_send = 8;
+  google.protobuf.Duration idle_suspend_after = 9;
+}
+
+message EnvironmentObservedState {
+  Readiness readiness = 1;
+  google.protobuf.Timestamp observed_at = 2;
+  OperatingMode operating_mode = 3;
+  SandboxPhase phase = 4;
+  string stop_stage = 5;
+  // The current Sandbox workload incarnation is not the Sandbox UID in target.
+  string runtime_incarnation_uid = 6;
+  google.protobuf.Timestamp created_at = 7;
+  optional string suspended_by = 8;
+  google.protobuf.Timestamp idle_suspend_at = 9;
+  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 10;
+}
+
+// Caller-specific capabilities and preconditions for actions on this environment.
+message EnvironmentActions {
+  // Availability of wake-on-send, distinct from permission to request an explicit resume.
+  AutomaticWakeState automatic_wake = 1;
+  // Absent for deleting environments retained in the broad inventory view; they cannot be resumed.
+  agentplane.proto.ResumeEligibility resume_eligibility = 2;
+  // The observed generation and opaque precondition used by ResumeEnvironment.
+  int64 wake_generation = 3;
+  string resume_token = 4;
+}
+
+// Raw Kubernetes projections retained for diagnosis and exact live-incarnation inspection.
+message KubernetesDiagnostics {
+  google.protobuf.Struct sandbox_status = 1;
+  SandboxPod pod = 2;
+}
+
+message EnvironmentDescriptor {
+  agentplane.proto.EnvironmentTarget target = 1;
+  agentplane.proto.ServiceAccountIdentity execution_account = 2;
+  reserved 3 to 27;
+  reserved
+      "readiness", "workspace", "instructions", "configurations", "configurations_availability", "observed_at",
+      "template", "operating_mode", "stop_stage", "wake_on_send", "resume", "automatic_wake", "runtime_incarnation_uid",
+      "resume_eligibility", "wake_generation", "resume_token", "created_at", "binding", "pod", "status", "phase",
+      "preset", "idle_suspend_after", "suspended_by", "idle_suspend_at", "autosuspend_blockers";
+  EnvironmentConfiguration configuration = 28;
+  EnvironmentObservedState observed_state = 29;
+  EnvironmentActions actions = 30;
+  KubernetesDiagnostics kubernetes_diagnostics = 31;
+}
+
+message ResumeEnvironmentRequest {
+  // All three fields identify one Sandbox; a replacement is not the requested target.
+  agentplane.proto.EnvironmentTarget target = 1;
+  // Opaque precondition for the target UID and wake generation observed by Discovery. Required
+  // for ordinary callers. A trusted direct Pod-bound operator broker may omit it to express a new
+  // operator intent; delegated actor authority never enables that path.
+  string resume_token = 2;
+}
+
+enum ResumeOutcome {
+  RESUME_OUTCOME_UNSPECIFIED = 0;
+  RESUME_OUTCOME_REQUESTED = 1;
+  RESUME_OUTCOME_ALREADY_RUNNING = 2;
+  RESUME_OUTCOME_STATE_CHANGED = 3;
+}
+
+message ResumeEnvironmentResponse {
+  agentplane.proto.EnvironmentTarget target = 1;
+  ResumeOutcome outcome = 2;
+  // Generation observed after the guarded request, when the target still exists.
+  optional int64 wake_generation = 3;
+  agentplane.proto.ResumeEligibility eligibility = 4;
+  agentplane.proto.WakeAssessment wake = 5;
+}
+
+message SandboxBinding {
+  reserved 1;
+  reserved "session_defaults";
+  string bootstrap = 2;
+}
+
+message SandboxPod {
+  string name = 1;
+  string namespace = 2;
+  string uid = 3;
+  bool deleting = 4;
+  repeated agentplane.proto.OwnerReference owner_references = 5;
+  google.protobuf.Struct status = 6;
+  optional string node_name = 7;
+}
+
+
+
+// Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether
+// deletion was asked for, whether it is to run, whether an incarnation exists, and whether its
+// Sessions are sealed. A Sandbox in QUIESCING or TEARING_DOWN takes no new Sessions or commands and
+// cannot be suspended or resumed; its Sessions can still be read until it is deleted.
+enum SandboxPhase {
+  SANDBOX_PHASE_UNSPECIFIED = 0;
+  // To run, and no incarnation exists yet.
+  SANDBOX_PHASE_CREATING = 1;
+  // To run, with an incarnation.
+  SANDBOX_PHASE_RUNNING = 2;
+  // Not to run, and its incarnation is still going.
+  SANDBOX_PHASE_SUSPENDING = 3;
+  // Not to run, and no incarnation exists; the state volume is kept.
+  SANDBOX_PHASE_SUSPENDED = 4;
+  // Being deleted, waiting for its runner to seal every Session and its ingress to acknowledge each
+  // seal. Stays here while the runner is unreachable, for the operator to decide.
+  SANDBOX_PHASE_QUIESCING = 5;
+  // Being deleted, every Session sealed: its Pod or VM and its state volume are being removed.
+  SANDBOX_PHASE_TEARING_DOWN = 6;
+}

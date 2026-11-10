@@ -116,15 +116,8 @@ def render_ledger(
 ) -> str:
     """Render classified transactions as a deterministic Beancount ledger.
 
-    Args:
-        txns: live classified transactions (one bucket each).
-        buckets: bucket id -> definition (supplies the contra account path).
-        funding_accounts: Plaid account id -> Beancount funding account path.
-        title: ledger title (``option "title"``).
-        operating_currency: fallback currency and ``option "operating_currency"``.
-
-    Raises:
-        KeyError: a txn references a bucket id or account id not in the maps.
+    Operating currency sets the ledger option and fills missing transaction currencies.
+    Unknown bucket or funding-account IDs raise ``KeyError``.
     """
     ordered = sorted(txns, key=lambda t: (t.date, t.transaction_id))
     entries: list[data.Directive] = []

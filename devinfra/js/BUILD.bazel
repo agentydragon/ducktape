@@ -22,10 +22,61 @@ js_library(
 )
 
 js_binary(
-    name = "strip_ts_types",
-    data = ["//:node_modules/typescript"],
-    entry_point = "strip_ts_types.mjs",
+    name = "openapi_typescript_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/openapi-typescript",
+    ],
+    entry_point = "openapi_typescript_codegen.mjs",
     visibility = ["//visibility:public"],
+)
+
+# Hey API's Zod plugin used by `openapi_zod_ts_library`.
+js_binary(
+    name = "openapi_zod_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/@hey-api/openapi-ts",
+    ],
+    entry_point = "openapi_zod_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
+
+# JSON Schema declaration generator used by `json_schema_typescript_library`.
+js_binary(
+    name = "json_schema_typescript_codegen",
+    data = ["//:node_modules/json-schema-to-typescript"],
+    entry_point = "json_schema_typescript_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
+
+# Standard quicktype renderers for JSON Schema consumers outside TypeScript.
+js_binary(
+    name = "quicktype_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/quicktype-core",
+    ],
+    entry_point = "quicktype_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "schema_remote_fetch_guard",
+    srcs = ["schema_remote_fetch_guard.mjs"],
+)
+
+py_library(
+    name = "data_uri",
+    srcs = ["data_uri.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "data_uri_bin",
+    main_module = "devinfra.js.data_uri",
+    visibility = ["//visibility:public"],
+    deps = [":data_uri"],
 )
 
 py_library(

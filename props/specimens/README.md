@@ -35,34 +35,8 @@ props/specimens/
 Each snapshot directory contains:
 
 - **`BUILD.bazel`**: Metadata via `specimen_targets()` — slug, split, code source. Provenance (commit SHA, include/exclude) as comments.
-- **Issue files** (`.yaml` in `issues/` directory): One file per logical issue type
+- **Issue files** (`.yaml` in `issues/` directory): One file per logical issue type; see the [format specification](docs/format_spec.md#issue-file-format-yaml) for the schema and examples.
 - **`code/`** (optional): Source code for local specimens
-
-## Issue File Format
-
-Issues are authored in YAML for simplicity and readability:
-
-```yaml
-rationale: |
-  Dead code should be removed. Lines 145-167 define a function
-  that is never called anywhere in the codebase.
-should_flag: true
-occurrences:
-  - occurrence_id: occ-0
-    files:
-      src/cli.py:
-        - [145, 167]
-    # critic_scopes_expected_to_recall auto-inferred for single-file issues
-```
-
-Key fields:
-
-- `rationale`: What's wrong and why (objective, factual description)
-- `should_flag`: `true` for real issues, `false` for false positives
-- `occurrences`: List of occurrence locations with file paths and line ranges
-- `critic_scopes_expected_to_recall`: Minimal file sets needed to detect this issue (used for per-file training examples)
-
-See <docs/format_spec.md> for detailed schema documentation.
 
 ## Training Strategy
 

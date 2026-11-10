@@ -25,7 +25,23 @@ from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.core.agent_types import TargetMetric
 from props.db.models import AgentRun
 from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST
 from util.exec.models import BaseExecResult
+
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+# gazelle:include_dep //mcp_infra/testing:fixtures
+# gazelle:include_dep //props/testing/fixtures:e2e_infra
+# gazelle:include_dep //props/testing/fixtures:e2e_container
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.runs",
+    "mcp_infra.testing.fixtures",
+    "props.testing.fixtures.e2e_infra",
+    "props.testing.fixtures.e2e_container",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +73,11 @@ async def test_recipes_in_container(
     so recall_metrics and run_analysis produce non-trivial output.
     """
     snapshot = str(test_snapshot)
+    with synced_db.session() as session:
+        seeded_run_ids = {
+            str(run.agent_run_id) for run in session.query(AgentRun).filter_by(image_digest=FAKE_CRITIC_DIGEST).all()
+        }
+    assert len(seeded_run_ids) == 2
 
     @CriticDevMock.mock()
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
@@ -70,17 +91,20 @@ async def test_recipes_in_container(
         logger.info(f"ground_truth: {gt_data}")
 
         ex_data = yield from _run_recipe(m, "examples_and_scopes")
-        assert len(ex_data["train_examples"]) >= 1
-        assert all(e["recall_denominator"] >= 0 for e in ex_data["train_examples"])
+        assert any(
+            e["snapshot_slug"] == snapshot and e["example_kind"] == "whole_snapshot" and e["recall_denominator"] > 0
+            for e in ex_data["train_examples"]
+        )
         logger.info(f"examples_and_scopes: {ex_data}")
 
         rm_data = yield from _run_recipe(m, "recall_metrics")
-        assert len(rm_data["leaderboard"]) >= 1, f"Expected non-empty leaderboard: {rm_data}"
-        assert all(row["recall_denominator"] >= 1 for row in rm_data["leaderboard"])
+        assert any(
+            row["digest"] == FAKE_CRITIC_DIGEST and row["recall_denominator"] >= 1 for row in rm_data["leaderboard"]
+        )
         logger.info(f"recall_metrics: {rm_data}")
 
         ra_data = yield from _run_recipe(m, "run_analysis", snapshot)
-        assert len(ra_data["recent_runs"]) >= 1, f"Expected non-empty runs: {ra_data}"
+        assert seeded_run_ids <= {row["agent_run_id"] for row in ra_data["recent_runs"]}
         logger.info(f"run_analysis: {ra_data}")
 
         yield m.report_failure("Recipe verification done — exiting via report_failure")

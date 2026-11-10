@@ -1,7 +1,11 @@
 //! Real JS/spec inputs for graph-backed query and edit workflows.
 
 use super::*;
+use debundle_e2e_support::*;
 use std::collections::BTreeMap;
+use std::fs;
+use std::process::Command;
+use tempfile::TempDir;
 
 pub struct GraphFixture {
     run: TreeRun,
@@ -44,7 +48,7 @@ impl GraphFixture {
             .iter()
             .map(|(path, yaml)| (path.as_str(), *yaml))
             .collect();
-        let run = run_tree_fixture(
+        let run = run_tree_graph_fixture(
             &TreeFixture {
                 chunks,
                 module_roots: &[("main", "main")],
@@ -58,9 +62,9 @@ impl GraphFixture {
             "{}",
             run.result.stderr
         );
-        let modules_root = run._root.path().join("modules/main");
+        let modules_root = run.root().join("modules/main");
         Self {
-            graph: run.report_root.join("main/dependency_graph.json"),
+            graph: run.report_root.join("main/dependency_graph.json.gz"),
             modules: modules_root,
             run,
         }
@@ -109,7 +113,7 @@ impl GraphFixture {
     }
 
     pub fn source_path(&self) -> PathBuf {
-        self.run._root.path().join("snapshot/main.js")
+        self.run.root().join("snapshot/main.js")
     }
 
     pub fn assert_success(&self, args: &[&str]) {
@@ -189,10 +193,7 @@ impl GraphFixture {
             .args(args)
             .env("DEBUNDLE_MODULES", &self.modules)
             .env("DEBUNDLE_GRAPH", &self.graph)
-            .env(
-                "DEBUNDLE_SOURCE_ROOT",
-                self.run._root.path().join("snapshot"),
-            );
+            .env("DEBUNDLE_SOURCE_ROOT", self.run.root().join("snapshot"));
         command
     }
 
@@ -221,15 +222,19 @@ impl GraphFixture {
     /// Refresh the saved graph after deliberate changes to valid authoring inputs.
     pub fn refresh_graph(&self) {
         let rerun = self.rerun();
+        let fresh_graph = rerun
+            .path()
+            .join("reports/tree/main/dependency_graph.json.gz");
         fs::copy(
-            rerun.path().join("reports/tree/main/dependency_graph.json"),
-            &self.graph,
+            program_graph_path(&fresh_graph),
+            program_graph_path(&self.graph),
         )
-        .expect("refresh fixture graph from the real pipeline");
+        .expect("refresh fixture program graph from the real pipeline");
+        fs::copy(&fresh_graph, &self.graph).expect("refresh fixture graph from the real pipeline");
     }
 
     fn rerun(&self) -> TempDir {
-        let rerun = TempDir::new_in(self.run._root.path()).expect("create fresh output directory");
+        let rerun = TempDir::new_in(self.run.root()).expect("create fresh output directory");
         let out = self.run_current_spec(rerun.path());
         assert!(
             out.status.success(),
@@ -242,7 +247,7 @@ impl GraphFixture {
     /// Run validation against the current input spec, independent of the
     /// saved graph used by CLI edit commands.
     pub fn assert_current_pipeline_rejects(&self, diagnostics: &[&str]) {
-        let output_root = TempDir::new_in(self.run._root.path())
+        let output_root = TempDir::new_in(self.run.root())
             .expect("create current-spec validation output directory");
         let out = self.run_current_spec(output_root.path());
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -261,17 +266,11 @@ impl GraphFixture {
     }
 
     fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
-        let root = self.run._root.path();
+        let root = self.run.root();
         Command::new(debundler_path())
             .arg("run")
-            .arg("--tree-config")
-            .arg(root.join("spec_config.yaml"))
-            .arg("--tree-modules")
-            .arg(root.join("modules"))
-            .arg("--tree-vendor-marks")
-            .arg(root.join("vendor_marks.yaml"))
-            .arg("--tree-source-root")
-            .arg(root)
+            .arg("--graphs")
+            .args(tree_spec_args(root))
             .arg("--out-root")
             .arg(out_root)
             .output()
@@ -279,6 +278,22 @@ impl GraphFixture {
     }
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {
-        read_json(&self.graph)
+        let report = read_gzip_json(&self.graph);
+        assert_no_purity_disagreements(&report);
+        report
+    }
+
+    pub fn program_graph(&self) -> ProgramGraphReport {
+        read_program_graph(&self.graph)
+    }
+
+    /// Saved-graph source-unit id that declares `binding`.
+    pub fn source_unit_for_binding(&self, binding: &str) -> String {
+        source_unit_for_binding(&self.dependency_graph(), binding).to_string()
+    }
+
+    /// Saved-graph source-unit id whose statement starts on source `line`.
+    pub fn source_unit_for_line(&self, line: usize) -> String {
+        source_unit_for_line(&self.dependency_graph(), line).to_string()
     }
 }

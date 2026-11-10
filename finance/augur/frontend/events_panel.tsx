@@ -126,7 +126,7 @@ export function SelectedRolloutEventsPanel({
                     </tr>
                     {group.events.map((event, index) => (
                       <tr
-                        key={`${event.kind}-${event.monthIndex}-${index}`}
+                        key={`${event.kind}-${event.month_index}-${index}`}
                         role="button"
                         tabIndex={0}
                         className={interactiveClassName}

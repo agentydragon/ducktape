@@ -1,9 +1,17 @@
 # Bootstrap Process Analysis: Dependency Guarantees and Gaps
 
+> **Archived 2026-02 analysis.** Recommendations and current-state claims below describe the
+> cluster at that time. The current bootstrap procedure is in the
+> [Talos Cluster Bootstrap Playbook](../bootstrap.md), with its dependency graph in
+> [bootstrap dependencies](../bootstrap_dependencies.md). In particular, waiting for all
+> nodes to become Ready after Cilium and making Flux bootstrap depend on that check are now
+> implemented in [`cilium.tf`](../../terraform/main/cilium.tf) and
+> [`flux.tf`](../../terraform/main/flux.tf).
+
 ## Overview
 
-This document analyzes the actual bootstrap process, identifying what dependencies are guaranteed by our current
-configuration and where gaps exist that could cause race conditions or failures.
+This 2026-02 analysis recorded which dependencies were guaranteed by the bootstrap
+configuration at the time and where gaps could cause race conditions or failures.
 
 ## Bootstrap Stages and Dependency Guarantees
 
@@ -92,7 +100,7 @@ configuration and where gaps exist that could cause race conditions or failures.
 
 - `helm_release.cilium_bootstrap` installs Cilium
 
-**Current code:**
+**Code excerpt from the time:**
 
 ```hcl
 resource "helm_release" "cilium_bootstrap" {
@@ -121,7 +129,7 @@ resource "helm_release" "cilium_bootstrap" {
 - `tls_private_key.sealed_secrets` generates keypair
 - `kubernetes_secret.sealed_secrets_key` deploys it
 
-**Current code:**
+**Code excerpt from the time:**
 
 ```hcl
 resource "kubernetes_secret" "sealed_secrets_key" {
@@ -147,7 +155,7 @@ resource "kubernetes_secret" "sealed_secrets_key" {
 
 - `null_resource.flux_bootstrap` runs flux bootstrap command
 
-**Current code:**
+**Code excerpt from the time:**
 
 ```hcl
 resource "null_resource" "flux_bootstrap" {
@@ -294,15 +302,15 @@ resource "null_resource" "verify_talos_services" {
 }
 ```
 
-## Recommended Changes Priority
+## Recommendations at the time (2026-02)
 
-1. **HIGH**: Add `wait_for_nodes_ready` check after Cilium
-2. **HIGH**: Make Flux bootstrap depend on all nodes being Ready
+1. **HIGH**: Add `wait_for_nodes_ready` check after Cilium — implemented since this analysis.
+2. **HIGH**: Make Flux bootstrap depend on all nodes being Ready — implemented since this analysis.
 3. **MEDIUM**: Add explicit Cilium health verification
 4. **MEDIUM**: Add CSI driver health checks in terraform
 5. **LOW**: Add Talos service verification
 
-## Current State Assessment
+## Assessment at the time (2026-02)
 
 **What works:**
 
@@ -320,12 +328,12 @@ resource "null_resource" "verify_talos_services" {
 
 ## Conclusion
 
-Our current dependencies are **mostly sufficient** for the happy path, but lack robustness for detecting and
+At the time, dependencies were **mostly sufficient** for the happy path, but lacked robustness for detecting and
 handling common failure modes like:
 
 - Worker nodes failing to mount kubelet volumes
 - Partial CNI deployment
 - Slow node initialization
 
-The main issue is that we proceed based on **resource creation** rather than **actual health verification**.
-Adding explicit health checks at each stage would make the bootstrap process much more reliable.
+The main issue then was proceeding based on **resource creation** rather than **actual health verification**.
+Adding explicit health checks at each stage would have made that bootstrap more reliable.

@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
-RUN_DIR = "cluster/docs/inference/runs/2026-09-24_qwen38_ssd"
+RUN_DIR = "ducktape/cluster/docs/inference/runs/2026-09-24_qwen38_ssd"
 CODING_REQUEST = f"{RUN_DIR}/coding_request.json"
 LONG_CONTEXT_SOURCES = f"{RUN_DIR}/long_context_sources.json"
 TOOL_ROUNDTRIP = f"{RUN_DIR}/dense_tool_roundtrip.json"
@@ -28,7 +28,7 @@ TOOL_RESULT = "verification_code=SSD-5090-7C2E"
 
 
 def _read_json(runfile: str) -> Any:
-    return json.loads(get_required_path(own_repo_rlocation(runfile)).read_text())
+    return json.loads((Runfiles.CreateOrRaise().root() / runfile).read_text())
 
 
 def _json_bytes(value: Any) -> bytes:

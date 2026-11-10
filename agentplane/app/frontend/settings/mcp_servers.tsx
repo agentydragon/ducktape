@@ -1,28 +1,41 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect, useState } from "react";
-import { type StreamConnection } from "../live_stream";
+import { toJson } from "@bufbuild/protobuf";
+import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
+import { type StreamConnection } from "../stream_reader";
 
 import { displayableError } from "../client";
-import { followActionGroups, type ActionGroupView, type ActionGroupWatchFrame } from "../actions/client";
+import {
+  ExecutorKind,
+  McpLifecycle,
+  McpUnavailableReason,
+  type ActionGroup,
+} from "../../../action_service/action_service_pb";
+import {
+  McpLinkageStatus,
+  McpRefreshAction,
+  type McpServerLinkage,
+} from "../../../action_service/operator_action_service_pb";
+import { followActionGroups, type ActionGroupWatchFrame } from "../actions/client";
+import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../actions/presentation";
 import { TimeAgo } from "../time_ago";
-import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage, type McpLinkageView } from "../mcp_linkage_client";
+import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "../mcp_linkage_client";
 
-type McpHealth = ActionGroupView["health"];
+type McpHealth = ActionGroup["health"];
 
 type Row =
-  | { kind: "oauth"; linkage: McpLinkageView; group: ActionGroupView | null }
-  | { kind: "health-only"; group: ActionGroupView };
+  { kind: "oauth"; linkage: McpServerLinkage; group: ActionGroup | null } | { kind: "health-only"; group: ActionGroup };
 
 function useMcpLinkages(): {
-  snapshot: McpLinkageView[] | null;
-  setSnapshot: Dispatch<SetStateAction<McpLinkageView[] | null>>;
+  snapshot: McpServerLinkage[] | null;
+  setSnapshot: Dispatch<SetStateAction<McpServerLinkage[] | null>>;
   connection: StreamConnection;
 } {
-  const [snapshot, setSnapshot] = useState<McpLinkageView[] | null>(null);
+  const [snapshot, setSnapshot] = useState<McpServerLinkage[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
 
   useEffect(() => {
-    let pendingSnapshot: Map<string, McpLinkageView> | null = new Map();
+    let pendingSnapshot: Map<string, McpServerLinkage> | null = new Map();
     const stop = followMcpLinkages({
       onOpen: () => {
         // Keep the last complete snapshot visible during reconnect; replace it after the new
@@ -33,7 +46,7 @@ function useMcpLinkages(): {
         switch (frame.kind) {
           case "snapshot":
             if (pendingSnapshot === null) throw new Error("MCP linkage snapshot arrived after completion.");
-            for (const linkage of frame.linkages) pendingSnapshot.set(linkage.server_id, linkage);
+            for (const linkage of frame.linkages) pendingSnapshot.set(linkage.serverId, linkage);
             break;
           case "snapshot_complete":
             if (pendingSnapshot === null) throw new Error("MCP linkage snapshot completed more than once.");
@@ -42,14 +55,14 @@ function useMcpLinkages(): {
             break;
           case "upsert":
             if (pendingSnapshot !== null) {
-              pendingSnapshot.set(frame.linkage.server_id, frame.linkage);
+              pendingSnapshot.set(frame.linkage.serverId, frame.linkage);
               break;
             }
             setSnapshot((current) => {
               if (current === null) return current;
-              const exists = current.some((linkage) => linkage.server_id === frame.linkage.server_id);
+              const exists = current.some((linkage) => linkage.serverId === frame.linkage.serverId);
               return exists
-                ? current.map((linkage) => (linkage.server_id === frame.linkage.server_id ? frame.linkage : linkage))
+                ? current.map((linkage) => (linkage.serverId === frame.linkage.serverId ? frame.linkage : linkage))
                 : [...current, frame.linkage];
             });
             break;
@@ -67,13 +80,13 @@ function useMcpLinkages(): {
 }
 
 function useActionGroupHealth(): {
-  snapshot: ActionGroupView[] | null;
+  snapshot: ActionGroup[] | null;
   connection: StreamConnection;
 } {
-  const [snapshot, setSnapshot] = useState<ActionGroupView[] | null>(null);
+  const [snapshot, setSnapshot] = useState<ActionGroup[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
-    let replay: ActionGroupView[] = [];
+    let replay: ActionGroup[] = [];
     return followActionGroups({
       onOpen: () => {
         replay = [];
@@ -111,38 +124,38 @@ function useActionGroupHealth(): {
 // carries a server_id to have that
 // server_id equal its own key -- so an oauth-linked group's key doubles as the join key, with no
 // separate field needed.
-function mergeRows(groups: ActionGroupView[], linkages: McpLinkageView[]): Row[] {
-  const linkageBySid = new Map(linkages.map((linkage) => [linkage.server_id, linkage]));
+function mergeRows(groups: ActionGroup[], linkages: McpServerLinkage[]): Row[] {
+  const linkageBySid = new Map(linkages.map((linkage) => [linkage.serverId, linkage]));
   const matched = new Set<string>();
   const rows: Row[] = [];
   for (const group of groups) {
-    if (group.executor_kind !== "mcp") continue;
+    if (group.executorKind !== ExecutorKind.MCP) continue;
     const linkage = linkageBySid.get(group.key);
     if (linkage) {
-      matched.add(linkage.server_id);
+      matched.add(linkage.serverId);
       rows.push({ kind: "oauth", linkage, group });
     } else {
       rows.push({ kind: "health-only", group });
     }
   }
   for (const linkage of linkages) {
-    if (!matched.has(linkage.server_id)) rows.push({ kind: "oauth", linkage, group: null });
+    if (!matched.has(linkage.serverId)) rows.push({ kind: "oauth", linkage, group: null });
   }
   return rows;
 }
 
 function rowKey(row: Row): string {
-  return row.kind === "oauth" ? `linkage:${row.linkage.server_id}` : `group:${row.group.key}`;
+  return row.kind === "oauth" ? `linkage:${row.linkage.serverId}` : `group:${row.group.key}`;
 }
 
 function lifecycleColor(health: McpHealth): "green" | "orange" | "gray" {
   if (health == null) return "gray";
   switch (health.state) {
-    case "available":
+    case McpLifecycle.AVAILABLE:
       return "green";
-    case "draining":
-    case "stopped":
-      return health.reason === "supervisor_stopped" ? "orange" : "gray";
+    case McpLifecycle.DRAINING:
+    case McpLifecycle.STOPPED:
+      return health.reason === McpUnavailableReason.SUPERVISOR_STOPPED ? "orange" : "gray";
     default:
       return "orange"; // disconnected, connecting, discovering
   }
@@ -166,23 +179,58 @@ function StateLabel({ children }: { children: ReactNode }): JSX.Element {
 }
 
 function ConnectionState({ health }: { health: McpHealth }): JSX.Element {
+  const reason = mcpUnavailableReasonLabel(health?.reason);
+  const state = health == null ? "pending" : mcpLifecycleLabel(health.state);
   return (
     <>
       <StateLabel>Connection</StateLabel>
-      <Badge color={lifecycleColor(health)}>{health == null ? "pending" : (health.reason ?? health.state)}</Badge>
+      <Badge color={lifecycleColor(health)}>{reason ?? state}</Badge>
     </>
   );
 }
 
-function RefreshFailure({ linkage }: { linkage: McpLinkageView }): JSX.Element | null {
-  const failure = linkage.refresh_failure;
-  if (failure == null) return null;
+function retryAtIso(value: Timestamp | undefined): string | null {
+  if (value === undefined) return null;
+  const json = toJson(TimestampSchema, value);
+  if (typeof json !== "string") throw new Error("The Action Service returned an invalid refresh retry time.");
+  return json;
+}
+
+function linkageStatus(status: McpLinkageStatus): { label: string; color: "green" | "orange" | "gray" } {
+  switch (status) {
+    case McpLinkageStatus.UNLINKED:
+      return { label: "unlinked", color: "gray" };
+    case McpLinkageStatus.LINKED:
+      return { label: "linked", color: "green" };
+    case McpLinkageStatus.DEGRADED:
+      return { label: "degraded", color: "orange" };
+    case McpLinkageStatus.EXPIRED:
+      return { label: "expired", color: "orange" };
+    default:
+      throw new Error(`Unknown MCP linkage status (${status}).`);
+  }
+}
+
+function LinkageState({ status }: { status: McpLinkageStatus }): JSX.Element {
+  const presentation = linkageStatus(status);
+  return (
+    <>
+      <StateLabel>OAuth link</StateLabel>
+      <Badge color={presentation.color}>{presentation.label}</Badge>
+    </>
+  );
+}
+
+function RefreshFailure({ linkage }: { linkage: McpServerLinkage }): JSX.Element | null {
+  const failure = linkage.refreshFailure;
+  if (failure === undefined) return null;
+  const retryAt = retryAtIso(failure.retryAt);
   const next =
-    failure.action !== "retrying" ? (
+    failure.action !== McpRefreshAction.RETRYING ? (
       "link the account again"
-    ) : failure.retry_at != null ? (
+    ) : retryAt != null ? (
       <>
-        retrying <TimeAgo value={failure.retry_at} />
+        retrying <TimeAgo value={retryAt} />
       </>
     ) : (
       "retrying"
@@ -211,11 +259,11 @@ export function McpServers(): JSX.Element {
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function link(linkage: McpLinkageView): Promise<void> {
-    setBusy({ serverId: linkage.server_id, operation: "link" });
+  async function link(linkage: McpServerLinkage): Promise<void> {
+    setBusy({ serverId: linkage.serverId, operation: "link" });
     setError(null);
     try {
-      const authorizationUrl = await startMcpLinkage(linkage.server_id, linkage.scopes);
+      const authorizationUrl = await startMcpLinkage(linkage.serverId, linkage.scopes);
       window.location.assign(authorizationUrl);
     } catch (failure) {
       setError(displayableError(failure));
@@ -223,13 +271,13 @@ export function McpServers(): JSX.Element {
     }
   }
 
-  async function disconnect(linkage: McpLinkageView): Promise<void> {
-    setBusy({ serverId: linkage.server_id, operation: "disconnect" });
+  async function disconnect(linkage: McpServerLinkage): Promise<void> {
+    setBusy({ serverId: linkage.serverId, operation: "disconnect" });
     setError(null);
     try {
-      const updated = await disconnectMcpLinkage(linkage.server_id);
+      const updated = await disconnectMcpLinkage(linkage.serverId);
       linkages.setSnapshot(
-        (current) => current?.map((item) => (item.server_id === updated.server_id ? updated : item)) ?? null
+        (current) => current?.map((item) => (item.serverId === updated.serverId ? updated : item)) ?? null
       );
     } catch (failure) {
       setError(displayableError(failure));
@@ -261,28 +309,17 @@ export function McpServers(): JSX.Element {
             <>
               <Group justify="space-between" align="flex-start">
                 <div>
-                  <Text fw={600}>{row.linkage.server_id}</Text>
+                  <Text fw={600}>{row.linkage.serverId}</Text>
                   <Text size="sm" c="dimmed">
-                    {row.linkage.server_url}
+                    {row.linkage.serverUrl}
                   </Text>
                   <Text size="xs" c="dimmed">
                     Scopes: {row.linkage.scopes.length ? row.linkage.scopes.join(", ") : "provider default"}
                   </Text>
                 </div>
                 <States>
-                  <StateLabel>OAuth link</StateLabel>
-                  <Badge
-                    color={
-                      row.linkage.status === "linked"
-                        ? "green"
-                        : row.linkage.status === "degraded" || row.linkage.status === "expired"
-                          ? "orange"
-                          : "gray"
-                    }
-                  >
-                    {row.linkage.status}
-                  </Badge>
-                  {row.group != null && row.linkage.status !== "unlinked" && (
+                  <LinkageState status={row.linkage.status} />
+                  {row.group != null && row.linkage.status !== McpLinkageStatus.UNLINKED && (
                     <ConnectionState health={row.group.health} />
                   )}
                 </States>
@@ -290,23 +327,24 @@ export function McpServers(): JSX.Element {
               <RefreshFailure linkage={row.linkage} />
               {/* A connection waiting on a linkage whose refresh failure is already shown has nothing to add. */}
               {row.group != null &&
-                row.linkage.status !== "unlinked" &&
-                !(row.linkage.refresh_failure != null && row.group.health?.reason === "linkage_unavailable") && (
-                  <HealthDetail health={row.group.health} />
-                )}
+                row.linkage.status !== McpLinkageStatus.UNLINKED &&
+                !(
+                  row.linkage.refreshFailure !== undefined &&
+                  row.group.health?.reason === McpUnavailableReason.LINKAGE_UNAVAILABLE
+                ) && <HealthDetail health={row.group.health} />}
               <Group justify="flex-end" mt="sm">
                 <Button
-                  loading={busy?.serverId === row.linkage.server_id && busy.operation === "link"}
+                  loading={busy?.serverId === row.linkage.serverId && busy.operation === "link"}
                   disabled={loading || busy !== null}
                   onClick={() => void link(row.linkage)}
                 >
-                  {row.linkage.status === "linked" ? "Reconnect" : "Link account"}
+                  {row.linkage.status === McpLinkageStatus.LINKED ? "Reconnect" : "Link account"}
                 </Button>
-                {row.linkage.status === "linked" && (
+                {row.linkage.status === McpLinkageStatus.LINKED && (
                   <Button
                     color="red"
                     variant="light"
-                    loading={busy?.serverId === row.linkage.server_id && busy.operation === "disconnect"}
+                    loading={busy?.serverId === row.linkage.serverId && busy.operation === "disconnect"}
                     disabled={loading || busy !== null}
                     onClick={() => void disconnect(row.linkage)}
                   >
@@ -321,7 +359,7 @@ export function McpServers(): JSX.Element {
                 <div>
                   <Text fw={600}>{row.group.key}</Text>
                   <Text size="sm" c="dimmed">
-                    {row.group.executor_description}
+                    {row.group.executorDescription}
                   </Text>
                 </div>
                 <States>

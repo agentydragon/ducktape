@@ -1,94 +1,38 @@
-# Pre-commit Performance Analysis
+# Pre-commit Performance Analysis (Historical)
 
-Analysis of pre-commit hook execution times and implemented optimizations.
+These measurements describe a former pre-commit implementation. They are not current
+benchmarks or a description of today's hook runner.
 
-## Current State (After Optimization)
+## Recorded measurements
 
-| Hook               | Time | Notes                                                |
-| ------------------ | ---- | ---------------------------------------------------- |
-| bazel-precommit    | ~42s | 22s build + 14s parallel batches (16 batches)        |
-| checkov            | ~13s | Terraform security scanner                           |
-| terraform_validate | ~11s | Terraform validation                                 |
-| terraform_tflint   | ~4s  | Terraform linting                                    |
-| markdownlint-cli2  | ~3s  | Markdown linting                                     |
-| other hooks        | ~5s  | YAML/AST/TOML checks, ruff, etc.                     |
-| **Total**          | ~78s | Down from ~160s (parallel execution via script-path) |
+| Scope                         | Historical result                                                                                                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full hook run                 | About 160s before the runner change and 78s after parallel batching through a script-path runner.                                                                            |
+| Former `bazel-precommit` hook | About 42s: 22s building and 14s across 16 parallel batches.                                                                                                                  |
+| Other hooks                   | `checkov` 13s; `terraform_validate` 11s; `terraform_tflint` 4s; `markdownlint-cli2` 3s; other YAML/AST/TOML checks and Ruff 5s. The three Terraform hooks totaled about 28s. |
+| Work within each batch        | Prettier about 6s over 100+ files (about 60ms/file); Ruff about 1s over 60+ files; buildifier about 0.2s; Kustomize, Flux and GitOps validators about 4–5s each.             |
+| File listing                  | `pygit2.status()` took about 12s; reading `pygit2.index` took about 0.02s.                                                                                                   |
+| Previous split Bazel hooks    | Separate format and validate hooks each took about 55s when serialized on the Bazel client lock.                                                                             |
 
-Per-batch breakdown (runs in parallel):
+## Lessons from the former runner
 
-- prettier: ~6s (100+ files)
-- ruff: ~1s (60+ files)
-- buildifier: ~0.2s
-- kustomize/flux/gitops validators: ~4-5s each
+The former unified Bazel binary ran Prettier, Ruff, shfmt and buildifier alongside
+Terraform-centralization and Kustomize/Flux/GitOps/Helm validators. Its `bazel run
+--script_path` runner let pre-commit's batches run without holding the Bazel client
+lock: the first batch created a runner under `.git/precommit-runners/`, while batches
+from the same pre-commit process (identified by PPID) waited on `flock` and reused it.
+The old profiling command expected two `Running command line` messages after
+batching.
 
-## Key Optimizations
+The `pytest-main` check moved to a Bazel aspect on normal builds, including Bazel CI,
+so it left pre-commit. The old note also suggested pre-generating the runner in a
+warmed CI cache, and parallelizing Terraform hooks while caching initialization;
+those were proposals, not implemented steps. These are lessons from that
+implementation, not instructions for the current setup.
 
-### 1. Unified Bazel Precommit (`devinfra/precommit/precommit.py`)
+## Current ownership
 
-Combined format and validate into single Bazel binary to avoid client lock contention.
-Previous setup with separate bazel-format and bazel-validate hooks caused ~55s each due
-to Bazel client lock serialization.
-
-**Formatters** (run in parallel via asyncio):
-
-- prettier (JS/TS/CSS/MD/YAML/JSON)
-- ruff (Python)
-- shfmt (Shell)
-- buildifier (Bazel)
-
-**Validators** (run in parallel via asyncio):
-
-- terraform-centralization (direct import)
-- kustomize/flux/gitops/helm (subprocess)
-
-The pytest-main check now runs as a Bazel aspect on `py_test` targets during normal
-Bazel builds (including Bazel CI); it no longer runs in pre-commit.
-
-### 2. Fast File Listing
-
-Replaced `pygit2.status()` (12s, stats every file) with `pygit2.index` (0.02s, reads index).
-
-### 3. Script-path runner (`devinfra/precommit/run_precommit.sh`)
-
-Uses `bazel run --script_path` to generate a runner script that executes without holding
-the Bazel client lock. This allows pre-commit's parallel batch execution to work.
-
-Key design:
-
-- Uses PPID to identify all batches from one pre-commit invocation
-- First batch generates the runner script, others wait via flock and reuse it
-- Runners stored in `.git/precommit-runners/`
-
-## Current Bottlenecks
-
-### 1. Bazel build time (~22s)
-
-First batch waits for `bazel run --script_path` to generate the runner script.
-Subsequent batches wait via flock then reuse the same script.
-
-**Potential**: Pre-generate runner script in CI warm cache.
-
-### 2. Prettier (~6s per batch)
-
-Dominates format time. 100+ files @ ~60ms/file.
-
-### 3. Terraform Hooks (~28s combined)
-
-- checkov: ~13s (security scanner)
-- terraform_validate: ~11s (init + validate per module)
-- terraform_tflint: ~4s
-
-**Potential**: Combine into parallel script, cache init.
-
-## Profiling
-
-```bash
-# Profile all hooks
-time pre-commit run --all-files
-
-# Profile bazel-precommit with detailed timing
-PRECOMMIT_PROFILE=1 bazelisk run //devinfra/precommit
-
-# Count bazel invocations (should be 2 due to batching)
-pre-commit run bazel-precommit --all-files 2>&1 | grep -c "Running command line"
-```
+[`.pre-commit-config.yaml`](../../.pre-commit-config.yaml) defines the current hooks.
+The `ducktape-precommit` entry point is declared by the
+[`//:ducktape_git_hooks_wheel` target](../../BUILD.bazel); its file checks live in
+[`git_hook.py`](../precommit/git_hook.py).

@@ -127,11 +127,11 @@ Take `researcher` above with the list reversed, so a credential-less `open-inter
 Granting more would make GitHub start failing, which is what placeholder-directed matching below
 forecloses.
 
-Inside one binding the author chooses that order. Across bindings nobody does: `subject_bindings`
-walks `sorted(index.policy_bindings)`, so the **binding name** decides. A seed named `all-sandboxes-open`
-is consulted before `researcher-4m9tz` and produces exactly the refusal above; the same binding
-named `zz-open` is consulted after it and the request succeeds. The alphabet is not a policy
-decision.
+Inside one binding the author chooses that order. Across bindings nobody does: the policy reader
+index walks a subject's bindings in sorted binding-name order, so the **binding name** decides. A
+seed named `all-sandboxes-open` is consulted before `researcher-4m9tz` and produces exactly the
+refusal above; the same binding named `zz-open` is consulted after it and the request succeeds. The
+alphabet is not a policy decision.
 
 ## Decided: placeholder-directed matching
 
@@ -193,7 +193,7 @@ the sets it was created with. One binding per grant keeps each lifetime its own,
 over a subject's bindings composes them. Revocation follows the same seam: deleting one grant's
 binding takes back that grant and nothing else.
 
-The app writes it at `POST /sandboxes/{name}/egress`, which refuses a set name the namespace does
+The app writes it at `POST /sandboxes/{name}/policy-bindings`, which refuses a set name the namespace does
 not hold. A dangling name is not corruption — the CRD admits any string and the proxy reports it
 as `EgressReady=False` (`PolicySetUnavailable`) while the binding's other sets still grant — so
 the refusal is a guard on the typo at the moment of writing, not a guarantee: a set deleted after
@@ -241,7 +241,7 @@ inference and LiteLLM's existing `cheap-experiments` key. It is separate from
 receive both through the deployment's default policies; standing caller bindings
 and static OpenClaw explicitly include `inference-experiments`. Existing per-sandbox
 bindings need an explicit grant update or a new sandbox; changing defaults does not
-rewrite those grants. Read `/v1/rules` for the active
+rewrite those grants. Run `agentplane egress rules` for the active
 hosts, methods, paths, and credential placeholders; send the returned placeholder
 as `Authorization: Bearer ...` through the configured proxy. Override any matching
 `NO_PROXY` entry for these experiment calls (`curl --noproxy ''`), particularly

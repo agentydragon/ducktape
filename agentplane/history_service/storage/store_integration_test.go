@@ -12,21 +12,19 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
-var testWriter = Writer{Namespace: "testing", Name: "worker", UID: "test-worker-account-uid"}
+var testWriter = ServiceAccountWriter{Namespace: "testing", Name: "worker", UID: "test-worker-account-uid"}
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	return db
 }
 
@@ -59,7 +57,7 @@ func entries(first, last uint64) []*eventlogpb.EventEntry {
 func opened(t *testing.T, store *Store) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	return sessionID
@@ -138,8 +136,8 @@ func removedRanges(page *historypb.ReadSessionEventsResponse) []CursorRange {
 }
 
 func stoppedAt(sessionID uuid.UUID, cursor uint64) *historypb.SessionFeedState {
-	return &historypb.SessionFeedState{Attached: &runnerpb.Attached{
-		SessionId: sessionID.String(), LastCursor: cursor, HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED,
+	return &historypb.SessionFeedState{Attached: &sessionpb.Attached{
+		SessionId: sessionID.String(), LastCursor: cursor, HarnessState: sessionpb.HarnessState_HARNESS_STATE_STOPPED,
 	}}
 }
 
@@ -173,7 +171,7 @@ func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, false)
 	sessionID := opened(t, store)
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	resumed := entryFrom("source", 2, true)
@@ -261,13 +259,13 @@ func TestASessionBindsToItsFirstWriter(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
 	for range 2 {
-		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	recreated := testWriter
 	recreated.UID = "test-recreated-uid"
-	_, err := store.BindWriter(t.Context(), sessionID, recreated, "")
+	_, err := store.BindWriter(t.Context(), sessionID, recreated, "", nil)
 	assertError(t, err, ErrWriterMismatch)
 }
 
@@ -275,13 +273,13 @@ func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, false)
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
 		t.Fatalf("same Sandbox reconnect: %v", err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement", nil); !errors.Is(err, ErrSandboxMismatch) {
 		t.Fatalf("same-name replacement: %v, want ErrSandboxMismatch", err)
 	}
 	var got string
@@ -296,39 +294,39 @@ func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
 func TestAReconnectedWriterFillsAnUnknownSandboxUIDOnce(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
 		t.Fatalf("fill unknown UID: %v", err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement", nil); !errors.Is(err, ErrSandboxMismatch) {
 		t.Fatalf("replacement after fill: %v, want ErrSandboxMismatch", err)
 	}
 }
 
-func TestOpenedSessionsListInRecordingOrder(t *testing.T) {
+func TestRecordedSessionsListInRecordingOrder(t *testing.T) {
 	store := testStore(t)
 	first, second := opened(t, store), opened(t, store)
-	all, err := store.OpenedSessions(t.Context(), 0, 1000)
+	all, err := store.RecordedSessions(t.Context(), 0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	index := func(sessionID uuid.UUID) int {
-		return slices.IndexFunc(all, func(session OpenedSession) bool { return session.SessionID == sessionID })
+		return slices.IndexFunc(all, func(session RecordedSession) bool { return session.SessionID == sessionID })
 	}
 	i, j := index(first), index(second)
 	if i < 0 || j < 0 || all[i].Position >= all[j].Position {
 		t.Fatalf("sessions %v do not list %s before %s", all, first, second)
 	}
-	rest, err := store.OpenedSessions(t.Context(), all[i].Position, 1000)
+	rest, err := store.RecordedSessions(t.Context(), all[i].Position, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.ContainsFunc(rest, func(session OpenedSession) bool { return session.SessionID == first }) || !slices.ContainsFunc(rest, func(session OpenedSession) bool { return session.SessionID == second }) {
+	if slices.ContainsFunc(rest, func(session RecordedSession) bool { return session.SessionID == first }) || !slices.ContainsFunc(rest, func(session RecordedSession) bool { return session.SessionID == second }) {
 		t.Fatalf("sessions after the first: %v", rest)
 	}
-	_, err = store.OpenedSessions(t.Context(), 0, 0)
+	_, err = store.RecordedSessions(t.Context(), 0, 0)
 	assertError(t, err, ErrInvalidArgument)
 }
 
@@ -377,12 +375,12 @@ func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 		want    map[string]int
 	}{
 		{"binding a new Session", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{ChannelHistory: 1, ChannelSessions: 1}},
 		{"binding it again", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{}},
@@ -416,7 +414,7 @@ func TestObservationPagesSeekTheRetainedPrefix(t *testing.T) {
 		t.Fatalf("empty history: %v", page)
 	}
 	appendEntries(t, store, sessionID, entry(1), entry(2), nativeEntry(3, "retained\x00native"), entry(4), entry(5))
-	started, native := "harness_started", "native"
+	started, native := historypb.EventKind_EVENT_KIND_HARNESS_STARTED, historypb.EventKind_EVENT_KIND_NATIVE
 	for _, test := range []struct {
 		name          string
 		before, after *uint64
@@ -460,10 +458,10 @@ func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 	}
 	record(feed)
 	conflicting := proto.Clone(feed).(*historypb.SessionFeedState)
-	conflicting.Attached.Spec = &runnerpb.SessionSpec{Cwd: "/another-workspace"}
+	conflicting.Attached.Spec = &sessionpb.SessionSpec{Cwd: "/another-workspace"}
 	assertError(t, store.RecordFeedState(t.Context(), sessionID, conflicting), ErrConflict)
 
-	feed.Attached.HarnessState = runnerpb.HarnessState_HARNESS_STATE_RUNNING
+	feed.Attached.HarnessState = sessionpb.HarnessState_HARNESS_STATE_RUNNING
 	record(feed)
 	assertFeedState(t, NewStore(db, false), sessionID, feed)
 
@@ -474,7 +472,7 @@ func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 	appendEntries(t, store, sessionID, entryFrom("source", 2, true))
 	feed.Attached.LastCursor = 2
 	record(feed)
-	record(&historypb.SessionFeedState{Attached: &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: 1}})
+	record(&historypb.SessionFeedState{Attached: &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: 1}})
 	page := readPage(t, store, sessionID, 2, 128)
 	if page.LastCursor != 2 || len(page.Entries) != 0 || !proto.Equal(page.FeedState, feed) {
 		t.Fatalf("page %v does not carry the newer snapshot", page)
@@ -488,15 +486,15 @@ func TestSealEndsCommittedHistoryAndIsSticky(t *testing.T) {
 	store := testStore(t)
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entry(1), entry(2))
-	attachedAt := func(cursor uint64) *runnerpb.Attached {
-		return &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: cursor}
+	attachedAt := func(cursor uint64) *sessionpb.Attached {
+		return &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: cursor}
 	}
 	sealedAt := func(cursor uint64) *historypb.SessionFeedState {
-		return &historypb.SessionFeedState{Attached: attachedAt(cursor), Sealed: &runnerpb.Sealed{Cursor: cursor}}
+		return &historypb.SessionFeedState{Attached: attachedAt(cursor), Sealed: &sessionpb.Sealed{Cursor: cursor}}
 	}
 	// A seal that stops short of the committed history is refused.
 	assertError(t, store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{
-		Attached: attachedAt(1), Sealed: &runnerpb.Sealed{Cursor: 1},
+		Attached: attachedAt(1), Sealed: &sessionpb.Sealed{Cursor: 1},
 	}), ErrConflict)
 	if err := store.RecordFeedState(t.Context(), sessionID, sealedAt(2)); err != nil {
 		t.Fatal(err)
@@ -510,7 +508,7 @@ func TestSealEndsCommittedHistoryAndIsSticky(t *testing.T) {
 		t.Fatalf("a snapshot without a seal dropped it: %v", stored)
 	}
 	assertError(t, store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{
-		Attached: attachedAt(2), Sealed: &runnerpb.Sealed{Cursor: 3},
+		Attached: attachedAt(2), Sealed: &sessionpb.Sealed{Cursor: 3},
 	}), ErrConflict)
 }
 
@@ -520,8 +518,8 @@ func TestReopeningASealNeedsASnapshotThatReachesIt(t *testing.T) {
 	appendEntries(t, store, sessionID, entry(1), entry(2))
 	incarnation := "test-incarnation-1"
 	sealed := &historypb.SessionFeedState{
-		Attached: &runnerpb.Attached{SessionId: sessionID.String(), LastCursor: 2},
-		Sealed:   &runnerpb.Sealed{Cursor: 2, IncarnationUid: &incarnation},
+		Attached: &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: 2},
+		Sealed:   &sessionpb.Sealed{Cursor: 2, IncarnationUid: &incarnation},
 	}
 	if err := store.RecordFeedState(t.Context(), sessionID, sealed); err != nil {
 		t.Fatal(err)
@@ -573,7 +571,7 @@ func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 	if got := cursors(readPage(t, store, sessionID, 0, 128)); !reflect.DeepEqual(got, []uint64{1, 2, 4}) {
 		t.Fatalf("replay stored cursors %v", got)
 	}
-	started := "harness_started"
+	started := historypb.EventKind_EVENT_KIND_HARNESS_STARTED
 	for _, test := range []struct {
 		name  string
 		after *uint64
@@ -643,7 +641,7 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 	if got := settledRanges(readPage(t, store, sessionID, 0, 2)); got != nil {
 		t.Fatalf("a page before the gap reports settlement %v", got)
 	}
-	native, started, completed := "native", "item_started", "item_completed"
+	native, started, completed := historypb.EventKind_EVENT_KIND_NATIVE, historypb.EventKind_EVENT_KIND_ITEM_STARTED, historypb.EventKind_EVENT_KIND_ITEM_COMPLETED
 	if got, want := observationPage(t, store, sessionID, nil, pointer(0), 30), (ObservationPage{
 		8, []Observation{{1, native}, {2, started}, {7, native}, {8, completed}}, []CursorRange{{3, 6}},
 	}); !reflect.DeepEqual(got, want) {
@@ -688,4 +686,101 @@ func TestDefaultStoreKeepsEveryEntry(t *testing.T) {
 	if page := readPage(t, store, sessionID, 0, 128); len(page.Entries) != 8 || settledRanges(page) != nil {
 		t.Fatalf("entries %d, settled %v", len(page.Entries), settledRanges(page))
 	}
+}
+
+func TestReadSequencesRequiresAPositiveBatchAndNonzeroSequences(t *testing.T) {
+	store := NewStore(nil, false)
+	for _, batchSize := range []int{0, -1} {
+		_, err := store.ReadSequences(t.Context(), uuid.New(), []uint64{1}, batchSize)
+		assertError(t, err, ErrInvalidArgument)
+	}
+	for _, sequences := range [][]uint64{nil, {}, {0}} {
+		_, err := store.ReadSequences(t.Context(), uuid.New(), sequences, 1)
+		assertError(t, err, ErrInvalidArgument)
+	}
+}
+
+var (
+	testIdentityWriter  = IdentityWriter{Identity{Name: "test-agent", UID: "test-agent-uid"}}
+	testIdentitySandbox = Sandbox{Namespace: "testing", Name: "test-sandbox", UID: "test-sandbox-uid"}
+)
+
+func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
+	store := testStore(t)
+	sessionID := uuid.New()
+	for range 2 {
+		if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	successor := testIdentityWriter
+	successor.UID = "test-successor-uid"
+	_, err := store.BindIdentityWriter(t.Context(), sessionID, successor, testIdentitySandbox, nil, nil)
+	assertError(t, err, ErrWriterMismatch)
+	// One Identity may run several Sandboxes; a Session stays with the one it began in.
+	otherSandbox := testIdentitySandbox
+	otherSandbox.Name, otherSandbox.UID = "test-other-sandbox", "test-other-sandbox-uid"
+	_, err = store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, otherSandbox, nil, nil)
+	assertError(t, err, ErrSandboxMismatch)
+	_, err = store.BindWriter(t.Context(), sessionID, testWriter, "", nil)
+	assertError(t, err, ErrWriterMismatch)
+
+	accountSession := opened(t, store)
+	_, err = store.BindIdentityWriter(t.Context(), accountSession, testIdentityWriter, testIdentitySandbox, nil, nil)
+	assertError(t, err, ErrWriterMismatch)
+}
+
+// A replica predating Identity writers reads an Identity-bound row as unbound; the schema refuses
+// the ServiceAccount bind it would then write.
+func TestAnIdentityBoundRowRefusesAnOlderReplicasServiceAccountBind(t *testing.T) {
+	db := testDB(t)
+	sessionID := uuid.New()
+	if _, err := NewStore(db, false).BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.ExecContext(t.Context(), `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4
+		WHERE id = $1`, sessionID, testWriter.Namespace, testWriter.Name, testWriter.UID)
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Constraint != "history_writer_one_kind" {
+		t.Fatalf("older replica's bind over an Identity writer: %v", err)
+	}
+}
+
+func TestAnIdentityRunSessionReadsByItsExecutionIdentityIncarnation(t *testing.T) {
+	store := testStore(t)
+	sessionID := uuid.New()
+	identity := testIdentityWriter.Identity
+	if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, &identity); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(scope ReadScope) bool {
+		t.Helper()
+		sessions, err := store.WithReadScope(scope).RecordedSessions(t.Context(), 0, 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(sessions, func(session RecordedSession) bool { return session.SessionID == sessionID })
+	}
+	successor := Identity{Name: identity.Name, UID: "test-successor-uid"}
+	if !listed(OwnedByIdentity(identity)) || listed(OwnedByIdentity(successor)) ||
+		listed(OwnedByIdentity(Identity{Name: "test-other-agent", UID: identity.UID})) {
+		t.Fatal("an Identity-run Session is read by exactly its execution Identity incarnation")
+	}
+	if listed(OwnedBy(ExecutionPrincipal(testWriter))) {
+		t.Fatal("a ServiceAccount read an Identity-run Session it was not recorded as executing as")
+	}
+	_, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, &successor)
+	assertError(t, err, ErrExecutionPrincipalMismatch)
+
+	// The execution Identity is fixed by the first push; a snapshot may omit it but not change it.
+	if _, err := store.Append(t.Context(), sessionID, entries(1, 1)); err != nil {
+		t.Fatal(err)
+	}
+	attached := &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: 1}
+	if err := store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{Attached: attached}); err != nil {
+		t.Fatal(err)
+	}
+	attached.ExecutionIdentity = &identitypb.Identity{Name: successor.Name, Uid: successor.UID}
+	err = store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{Attached: attached})
+	assertError(t, err, ErrExecutionPrincipalMismatch)
 }

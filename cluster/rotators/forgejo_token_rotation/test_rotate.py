@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import pytest
 import pytest_bazel
 
 from cluster.rotators.forgejo_token_rotation import rotate
@@ -174,7 +175,14 @@ def test_should_rotate_when_scopes_change():
     assert due
 
 
-def test_should_rotate_when_token_age_reaches_interval():
+@pytest.mark.parametrize(
+    ("token_id", "now"),
+    [
+        pytest.param(12, datetime(2026, 7, 31, tzinfo=UTC), id="age-boundary"),
+        pytest.param(13, datetime(2026, 7, 2, tzinfo=UTC), id="stamped-token-missing"),
+    ],
+)
+def test_should_rotate_due_to_age_or_absent_token(token_id: int, now: datetime) -> None:
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
     stamps = {
         "rotated_at_unencrypted": "2026-07-01T00:00:00Z",
@@ -183,20 +191,7 @@ def test_should_rotate_when_token_age_reaches_interval():
         "scopes_unencrypted": FULL_ACCOUNT_SCOPES,
         "token_id_unencrypted": 12,
     }
-    due, _ = should_rotate(r, stamps, [{"id": 12}], now=datetime(2026, 7, 31, tzinfo=UTC))
-    assert due
-
-
-def test_should_rotate_when_stamped_token_missing_from_forgejo():
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    stamps = {
-        "rotated_at_unencrypted": "2026-07-01T00:00:00Z",
-        "rotate_after_days_unencrypted": 30,
-        "repository_access_unencrypted": "all",
-        "scopes_unencrypted": FULL_ACCOUNT_SCOPES,
-        "token_id_unencrypted": 12,
-    }
-    due, _ = should_rotate(r, stamps, [{"id": 13}], now=datetime(2026, 7, 2, tzinfo=UTC))
+    due, _ = should_rotate(r, stamps, [{"id": token_id}], now=now)
     assert due
 
 

@@ -1,4 +1,6 @@
-use crate::{DependencyGraph, EntryDestination, ModuleId, SourceUnitId};
+use source_identity::SourceUnitId;
+
+use crate::{DependencyGraph, EntryDestination, ModuleId};
 
 /// Per-source_unit module assignment for one chunk's dependency graph.
 ///

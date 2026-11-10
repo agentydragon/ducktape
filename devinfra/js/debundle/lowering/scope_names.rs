@@ -1,4 +1,4 @@
-use crate::chunk_ast::declaration_names;
+use binding_targets::declaration_name_strings;
 use std::collections::BTreeSet;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -32,7 +32,7 @@ pub(super) fn collect_occupied_local_names(body: &[ModuleItem]) -> BTreeSet<Stri
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for name in declaration_names(&export_decl.decl) {
+                for name in declaration_name_strings(&export_decl.decl) {
                     occupied.insert(name);
                 }
             }
@@ -49,7 +49,7 @@ pub(super) fn collect_occupied_local_names(body: &[ModuleItem]) -> BTreeSet<Stri
                 }
             }
             ModuleItem::Stmt(Stmt::Decl(decl)) => {
-                for name in declaration_names(decl) {
+                for name in declaration_name_strings(decl) {
                     occupied.insert(name);
                 }
             }

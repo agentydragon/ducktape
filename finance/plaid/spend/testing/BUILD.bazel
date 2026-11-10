@@ -1,0 +1,33 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "transaction",
+    srcs = ["transaction.py"],
+    visibility = ["//finance/plaid/spend:__pkg__"],
+    deps = ["//finance/plaid/spend:allowance"],
+)
+
+py_library(
+    name = "dashboard",
+    srcs = ["dashboard.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
+    deps = [
+        ":ledger",
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:configuration",
+        "//finance/plaid/spend:models",
+        "//finance/plaid/spend:reconciliation_views",
+    ],
+)
+
+py_library(
+    name = "ledger",
+    srcs = ["ledger.py"],
+    visibility = ["//finance/plaid/spend:__subpackages__"],
+    deps = [
+        "//finance/plaid/spend:allowance",
+        "//finance/plaid/spend:models",
+    ],
+)

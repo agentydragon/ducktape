@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -24,7 +24,6 @@ const (
 	sandboxVMIKind   = "VirtualMachineInstance"
 	phaseRunning     = "Running"
 	phaseQuiescing   = "Quiescing"
-	phaseDeleting    = "Deleting"
 	modeSuspended    = "Suspended"
 	phaseCreate      = "Creating"
 	phaseSuspend     = "Suspending"
@@ -32,35 +31,30 @@ const (
 )
 
 type sandboxView struct {
-	identity    sandboxreader.Identity
+	identity    *sandboxreader.Identity
 	phase       string
 	incarnation *sandboxapi.Incarnation
 }
 
 // sandboxResolver names the Sandbox and runner Pod a request is for, and admits it only while the Pod serves it.
+// It reads objects, the informer cache in production, and admits nothing while health says the cache may
+// not be acted on.
 type sandboxResolver struct {
 	namespace string
 	sandboxes *sandboxreader.Reader
-	core      coreclient.CoreV1Interface
+	objects   client.Reader
+	health    *watchhealth.Health
 }
 
-func newSandboxResolver(namespace string, objects client.Reader, core coreclient.CoreV1Interface) (*sandboxResolver, error) {
-	if core == nil {
-		return nil, fmt.Errorf("Kubernetes core client is required")
+func newSandboxResolver(namespace string, objects client.Reader, health *watchhealth.Health) (*sandboxResolver, error) {
+	if health == nil {
+		return nil, fmt.Errorf("Kubernetes cache health is required")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects)
 	if err != nil {
 		return nil, err
 	}
-	return &sandboxResolver{namespace: namespace, sandboxes: sandboxes, core: core}, nil
-}
-
-func (r *sandboxResolver) get(ctx context.Context, name string) (sandboxView, error) {
-	view, err := r.sandboxes.Get(ctx, name)
-	if err != nil {
-		return sandboxView{}, err
-	}
-	return routingView(view), nil
+	return &sandboxResolver{namespace: namespace, sandboxes: sandboxes, objects: objects, health: health}, nil
 }
 
 func routingView(view sandboxreader.View) sandboxView {
@@ -77,18 +71,44 @@ func unavailable(err error) error {
 	return status.Error(codes.Unavailable, "Sandbox or runner routing is unavailable")
 }
 
+type executionEnvironmentUnavailableError struct {
+	state executorpb.ExecutionEnvironmentFailure_State
+	code  codes.Code
+	msg   string
+}
+
+func (e *executionEnvironmentUnavailableError) Error() string { return e.msg }
+
+func (e *executionEnvironmentUnavailableError) GRPCStatus() *status.Status {
+	return status.New(e.code, e.msg)
+}
+
+func environmentUnavailable(state executorpb.ExecutionEnvironmentFailure_State) *executionEnvironmentUnavailableError {
+	switch state {
+	case executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED,
+		executorpb.ExecutionEnvironmentFailure_STATE_STARTING,
+		executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY:
+		return &executionEnvironmentUnavailableError{
+			state: state, code: codes.Unavailable, msg: "destination unavailable; no offline admission",
+		}
+	case executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING:
+		return &executionEnvironmentUnavailableError{
+			state: state, code: codes.FailedPrecondition, msg: "runner or sandbox state refused the request",
+		}
+	case executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE:
+		return &executionEnvironmentUnavailableError{
+			state: state, code: codes.Unavailable, msg: "Sandbox runner control route is unavailable",
+		}
+	default:
+		return nil
+	}
+}
+
 func sandboxPhase(resource *sandboxapi.Sandbox) string {
-	runningReason := ""
-	sealed := false
-	if running := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionRunning); running != nil {
-		runningReason = running.Reason
-	}
-	if quiesced := meta.FindStatusCondition(resource.Status.Conditions, sandboxapi.ConditionQuiesced); quiesced != nil && quiesced.Status == metav1.ConditionTrue {
-		sealed = true
-	}
+	stage := resource.Status.StopStage
 	incarnated := resource.Status.Incarnation != nil
 	if resource.DeletionTimestamp != nil && !resource.DeletionTimestamp.IsZero() {
-		if sealed || runningReason == phaseDeleting {
+		if meta.IsStatusConditionTrue(resource.Status.Conditions, sandboxapi.ConditionQuiesced) || stage == sandboxapi.StopStageDeleting {
 			return phaseTearDown
 		}
 		return phaseQuiescing
@@ -105,39 +125,52 @@ func sandboxPhase(resource *sandboxapi.Sandbox) string {
 	if resource.Status.OperatingMode != sandboxapi.OperatingModeSuspended {
 		return ""
 	}
-	if !incarnated {
+	if !incarnated || stage == sandboxapi.StopStageStopped {
 		return modeSuspended
 	}
-	if runningReason == phaseQuiescing {
+	if stage == sandboxapi.StopStageQuiescing {
 		return phaseQuiescing
 	}
 	return phaseSuspend
 }
 
-func (r *sandboxResolver) destination(ctx context.Context, destination *sandboxespb.SandboxDestination, writes bool) (sandboxView, error) {
+// allowSuspending admits the controller's Quiesce through a held suspend: the controller calls it
+// right after publishing `Quiescing`, while this informer can still serve the prior `Suspending`
+// snapshot, which otherwise returned UNAVAILABLE until the controller's one-minute retry.
+func (r *sandboxResolver) destination(ctx context.Context, destination *identitypb.SandboxDestination, writes, allowSuspending bool) (sandboxView, error) {
+	if !r.health.Available() {
+		return sandboxView{}, status.Error(codes.Unavailable, "Sandbox inventory is not synchronized")
+	}
 	incarnation, err := r.sandboxes.Incarnation(ctx, destination)
 	if err != nil {
 		return sandboxView{}, err
 	}
 	view := routingView(incarnation)
-	if writes && (view.phase == phaseQuiescing || view.phase == phaseTearDown) {
-		return sandboxView{}, status.Error(codes.FailedPrecondition, "runner or sandbox state refused the request")
+	if view.phase == modeSuspended || view.phase == phaseSuspend && !allowSuspending {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
 	}
-	if view.phase != phaseRunning && view.phase != phaseQuiescing {
+	if view.phase == phaseCreate {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_STARTING)
+	}
+	if view.phase == phaseTearDown || writes && view.phase == phaseQuiescing {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING)
+	}
+	if view.phase != phaseRunning && view.phase != phaseQuiescing && !(allowSuspending && view.phase == phaseSuspend) {
 		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
 	}
 	if view.incarnation == nil {
-		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_STARTING)
 	}
-	pod, err := r.core.Pods(r.namespace).Get(ctx, view.incarnation.Name, metav1.GetOptions{})
+	var pod corev1.Pod
+	err = r.objects.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: view.incarnation.Name}, &pod)
 	if apierrors.IsNotFound(err) {
-		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	if err != nil {
 		return sandboxView{}, fmt.Errorf("read Sandbox runner Pod: %w", err)
 	}
-	if !podIsReadyForSandbox(pod, view) {
-		return sandboxView{}, status.Error(codes.Unavailable, "destination unavailable; no offline admission")
+	if !podIsReadyForSandbox(&pod, view) {
+		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	return view, nil
 }
@@ -161,54 +194,8 @@ func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 		return false
 	}
 	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.Kind == sandboxapi.SandboxKind {
-		return owner.Name == sandbox.identity.Name && string(owner.UID) == sandbox.identity.UID
+		return owner.Name == sandbox.identity.Name && string(owner.UID) == sandbox.identity.Uid
 	}
 	return owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind &&
 		pod.Labels[sandboxapi.SandboxLabel] == sandbox.identity.Name
-}
-
-func (r *sandboxResolver) runnerPeer(ctx context.Context, principal auth.Principal) (sandboxreader.Identity, string, error) {
-	if principal.Account.Namespace != r.namespace || principal.PodName == "" || principal.PodUID == "" {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	pod, err := r.core.Pods(r.namespace).Get(ctx, principal.PodName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return sandboxreader.Identity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
-	}
-	if err != nil {
-		return sandboxreader.Identity{}, "", fmt.Errorf("read runner Pod: %w", err)
-	}
-	if string(pod.UID) != principal.PodUID || pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
-		return sandboxreader.Identity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
-	}
-	owner := metav1.GetControllerOf(pod)
-	if owner == nil {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	sandboxName := owner.Name
-	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
-		sandboxName = pod.Labels[sandboxapi.SandboxLabel]
-		if sandboxName == "" {
-			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-		}
-	} else if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	view, err := r.get(ctx, sandboxName)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-		}
-		return sandboxreader.Identity{}, "", err
-	}
-	if principal.Account.Name != view.identity.Name {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.UID != types.UID(view.identity.UID) {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	if owner.APIVersion == sandboxVMIAPIVer && (view.incarnation == nil || view.incarnation.UID != string(pod.UID)) {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	return view.identity, string(pod.UID), nil
 }

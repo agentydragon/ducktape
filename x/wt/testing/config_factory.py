@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
 from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
 from x.wt.testing.data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
@@ -17,7 +17,7 @@ _GITSTATUSD_RLOCATION = "gitstatusd/gitstatusd-linux-x86_64"
 
 def gitstatusd_binary() -> Path:
     """The Bazel-provided gitstatusd; only test targets that list `//third_party/gitstatusd` in `data` have it."""
-    return get_required_path(_GITSTATUSD_RLOCATION)
+    return Runfiles.CreateOrRaise().root() / _GITSTATUSD_RLOCATION
 
 
 class ConfigFactory:

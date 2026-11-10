@@ -10,7 +10,7 @@ read-only Transactions tab use `/api/v1/transactions?period=...`; the Configurat
 Configuration omits Plaid account IDs. The view and transaction responses carry typed period reports and a separate
 forecast; the web types are generated from the Pydantic OpenAPI schema. The Spending page's estimate-window control
 requests a 7-day or 30-day server forecast through both the view and live-event routes. The same selection drives a
-daily category-stacked Chart.js bar chart with the monthly-credit-equivalent daily leash as a line, along with the
+daily category-stacked Chart.js bar chart with the server-provided monthly-credit-equivalent daily leash as a line, along with the
 balance estimate, pace warning, and purchase check. Transaction category keys resolve to configured labels and colors
 shared with the chart. Card statements and the Transactions tab keep their own periods. Transaction rows use short
 account display names and show counterparties, with named Plaid Transactions fields in expandable details. The details

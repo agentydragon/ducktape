@@ -1,149 +1,58 @@
-# Linting Architecture
+# Linting architecture
 
-This document describes the linting and formatting setup across pre-commit, Bazel, and CI.
+## Configuration owners
 
-## Quick Reference
+- [.bazelrc](../../.bazelrc) enables build-time lint/typecheck aspects and their output groups;
+  [linters.bzl](../lint/linters.bzl) owns the Ruff, mypy and ESLint integrations.
+- [.pre-commit-config.yaml](../../.pre-commit-config.yaml) owns commit-time checks,
+  formatters and file filters. Its tools come from the shared Nix
+  [preCommitPackages](../../nix/flake/devtools.nix), also exposed as `.#precommit`.
+- [ruff.toml](../../ruff.toml), [mypy.ini](../../mypy.ini),
+  [eslint.config.js](../../eslint.config.js) and [.prettierrc.cjs](../../.prettierrc.cjs)
+  own each tool's rules. Do not add package-level Ruff or mypy configuration.
 
-| Tool                             | Pre-commit              | Bazel Aspect | GitHub CI           |
-| -------------------------------- | ----------------------- | ------------ | ------------------- |
-| **Python (ruff check)**          | `ruff-check` hook       | default      | Both                |
-| **Python (ruff format)**         | `ruff-format` hook      | N/A          | Pre-commit          |
-| **Python (mypy)**                | -                       | default      | bazel-ci            |
-| **JS/TS (eslint)**               | -                       | default      | bazel-ci            |
-| **JS/TS (prettier)**             | `prettier` hook         | N/A          | Pre-commit          |
-| **Starlark (buildifier)**        | `buildifier` hook       | -            | Pre-commit          |
-| **Starlark (buildifier format)** | `buildifier` hook       | N/A          | Pre-commit          |
-| **Rust (clippy)**                | -                       | default      | bazel-ci            |
-| **Rust (rustfmt)**               | `rustfmt` hook          | default      | Both                |
-| **Shell (shfmt)**                | `shfmt` hook            | N/A          | Pre-commit          |
-| **Nix (nixfmt)**                 | `nixfmt` hook           | N/A          | Pre-commit          |
-| **Ansible**                      | syntax-check (fast)     | -            | ansible-lint (full) |
-| **Terraform (tflint/validate)**  | `checkov_diff`/`tflint` | Bazel tests  | Both                |
-
-## Configuration Files
-
-### Single Source of Truth
-
-| Tool       | Config File                     | Used By                        |
-| ---------- | ------------------------------- | ------------------------------ |
-| ruff       | `/ruff.toml`                    | Pre-commit hook, Bazel aspects |
-| mypy       | `/mypy.ini`                     | Bazel aspects                  |
-| eslint     | `/eslint.config.js`             | Bazel aspects                  |
-| buildifier | `@buildifier_prebuilt` defaults | Pre-commit, Bazel              |
-| prettier   | `/.prettierrc.cjs`              | Pre-commit `prettier` hook     |
-
-**Do not add `[tool.ruff]` or `[tool.mypy]` to package-level `pyproject.toml` files.**
-
-### Exclusion Patterns
-
-Exclusions are defined in multiple places:
-
-| File                                  | Scope                                                |
-| ------------------------------------- | ---------------------------------------------------- |
-| `.pre-commit-config.yaml` (`exclude`) | Global pre-commit exclusions                         |
-| `.gitattributes`                      | Format/lint exclusions via `rules-lint-ignored=true` |
-| `ruff.toml`                           | Ruff-specific exclusions                             |
-| `mypy.ini`                            | Mypy-specific exclusions                             |
-| `eslint.config.js`                    | ESLint ignores                                       |
-
-Common exclusion patterns (should match across files):
-
-- `**/third_party/**`
-- `**/testdata/**`
-- `**/fixtures/**`
-- `**/vendor/**`
-- `**/node_modules/**`
+ESLint and mypy run through Bazel, not pre-commit. Buildifier's Nix and Bazel
+pins are separate; changing one does not automatically update the other.
 
 ## Bazel Aspect Configs
 
-Defined in `.bazelrc`. Lint runs by default on every `bazel build`.
+Lint runs by default on builds. The enabled aspects and failure policy are in
+[.bazelrc](../../.bazelrc); use the repository's `bbr build` workflow.
 
-```bash
-# Lint runs by default (ruff + eslint + mypy + clippy + rustfmt):
-bazel build //...
+`--config=nolint` drops the check output groups and disables **all** validation
+actions, including validations unrelated to lint. Use it only where that is
+intended, such as the [lockfile workflows](lockfiles.md).
 
-# Skip all of it:
-bazel build --config=nolint //...
-```
+## Exclusions
 
-`--config=nolint` also skips every other rule's validation actions, so use it only where
-that is wanted (as in <lockfiles.md>).
+[.gitattributes](../../.gitattributes) holds `rules-lint-ignored=true` flags;
+[.pre-commit-config.yaml](../../.pre-commit-config.yaml) holds hook-specific file
+filters. Ruff, mypy and ESLint also have exclusions in their own configuration
+files above. Check each relevant owner when changing coverage; a copied list of
+common directory patterns is not the source of truth.
 
-Aspect definitions in `devinfra/lint/linters.bzl`:
+## CI boundaries
 
-- `ruff` - Python linting via `@multitool//tools/ruff`
-- `mypy_aspect` - Type checking via `//devinfra/lint:mypy_cli`
-- `eslint` - JS/TS linting via `//devinfra/lint:eslint`
+[pre-commit.yml](../../.github/workflows/pre-commit.yml) checks changed files on
+PRs and all files on pushes/manual runs.
+[bazel-ci.yml](../../.github/workflows/bazel-ci.yml) selects test/build targets;
+builds use the default lint aspects. Full ansible-lint runs separately in
+[ansible-lint.yml](../../.github/workflows/ansible-lint.yml), which installs its
+Galaxy roles and collections; the fast syntax check remains a pre-commit hook.
 
-## GitHub CI Workflows
+Terraform validation/linting also runs through `rules_tf`'s `tf_module` test
+targets. Cluster structural validation is the `//cluster/validation:test_*`
+Bazel suite, not a pre-commit hook. Cluster/Terraform hook scopes are defined in
+[.pre-commit-config.yaml](../../.pre-commit-config.yaml).
 
-| Workflow           | What Runs                                                                                 |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| `pre-commit.yml`   | `pre-commit run` on the PR's changed files (`--all-files` on pushes and manual runs)      |
-| `bazel-ci.yml`     | `bazel test`, then `bazel build` (lint runs by default), over the affected targets on PRs |
-| `ansible-lint.yml` | Full ansible-lint (thorough mode)                                                         |
+## Go race instrumentation and publication
 
-## Formatting
-
-Formatting is handled by pre-commit hooks (run automatically on `git commit`):
-
-- **prettier** - JS/TS, CSS, HTML, Markdown, YAML, JSON (Nix devshell tool)
-- **ruff format** - Python (local Nix devshell tool)
-- **shfmt** - Shell scripts (local Nix devshell tool; `.zsh` is excluded)
-- **buildifier** - Starlark (local Nix devshell tool)
-
-All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
-
-## Pre-commit Hooks
-
-Key hooks in `.pre-commit-config.yaml`:
-
-| Hook                 | Source               | Purpose                           |
-| -------------------- | -------------------- | --------------------------------- |
-| `ruff-check`         | local (Nix devshell) | Python linting                    |
-| `ruff-format`        | local (Nix devshell) | Python formatting                 |
-| `buildifier`         | local (Nix devshell) | Starlark formatting               |
-| `ducktape-precommit` | local (system)       | Filename + frozen-specimen checks |
-| `prettier`           | local (Nix devshell) | JS/TS/MD/YAML formatting          |
-| `rustfmt`            | local (Nix devshell) | Rust formatting                   |
-| `nixfmt`             | local (Nix devshell) | Nix formatting                    |
-| `markdownlint-cli2`  | local (Nix devshell) | Markdown linting                  |
-
-Cluster and Terraform hooks run only on their own files:
-
-- `kubeconform` - K8s manifest validation (`cluster/{k8s,generated,parked}`)
-- `checkov_diff` - Terraform security analysis (`cluster/terraform`, `tf`)
-- `tflint` - Terraform linting (`cluster/terraform`, `tf`)
-
-Terraform validation and linting are also covered by Bazel `tf_module` test targets (`rules_tf`).
-
-Cluster structural validation (kustomize builds, CRD layering, orphaned files, Flux
-dependencies, health checks, blueprint completeness) runs as the
-`//cluster/validation:test_*` Bazel test suite, not as a pre-commit hook.
-
-## Version Management
-
-Pre-commit uses tools supplied by the Nix devshell / web-session:
-
-- `ruff-check`/`ruff-format`: Ruff 0.16.7 from the devshell's pinned binary
-- `buildifier`: the devshell's Buildifier binary
-
-Bazel uses managed versions:
-
-- buildifier: `@buildifier_prebuilt//buildifier` (used by `//devinfra/lint`)
-
-### Known Gaps
-
-See `TODO.md` for tracked items. Current gaps:
-
-1. **Buildifier version drift risk**: Pre-commit uses the Nix-provided Buildifier, while Bazel uses its own pinned Buildifier version. Changes to one toolchain do not automatically update the other.
-
-2. **ESLint not in pre-commit**: JS/TS linting only runs in CI via Bazel aspects, not locally during commit.
-
-3. **mypy not in pre-commit**: Type checking only runs in CI via Bazel aspects, not locally during commit.
-
-## Adding New Linters
-
-1. **For Python/JS/Rust**: Add aspect to `devinfra/lint/linters.bzl`
-2. **For other languages**: Add to `.pre-commit-config.yaml`
-3. **Update this document**
+`.bazelrc` enables the rules_go race setting at the `build` command level, so
+`bazel test` and the following `bazel build` retain the same global setting and
+can reuse analysis. Go tests and standalone `go_library` targets inherit race
+instrumentation. Each non-pure `go_binary` root that produces a normal
+executable sets `race = "off"`; its linked Go dependencies use that mode too.
+`pure = "on"` binaries and tests retain their no-cgo mode. Apply the same
+`race = "off"` policy to new non-pure Go binaries, including test helpers and
+generated Gazelle binaries. Publication reuses output digests only from the
+build invocation; test verdicts come separately from the test invocation.

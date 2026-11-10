@@ -7,7 +7,6 @@ py_library(
     srcs = ["evidence_data.py"],
     deps = [
         "//finance/augur/model:conditioning",
-        "//finance/augur/model:evidence",
         "//finance/augur/model:series",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
@@ -70,7 +69,6 @@ py_library(
     deps = [
         ":evidence_data",
         "//finance/augur/model:conditioning",
-        "//finance/augur/model:evidence",
         "//finance/augur/model:series",
         "//finance/augur/model/path_models:scenarios",
         "//finance/evidence:loading",
@@ -92,6 +90,7 @@ py_test(
         "//finance/augur/model:conditioning",
         "//finance/augur/model:series",
         "//finance/evidence:sources",
+        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -4,14 +4,21 @@
 //! can themselves depend on author contracts in their defining chunks.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
+use swc_common::Span;
+use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
+use crate::execution_evidence::SourceLocation;
 use crate::purity::Purity;
-use crate::reports::schema::SourceLocation;
-use spec::BuiltinGlobalRoot;
+use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub mod saved;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
     TypescriptMetadataDecorateHelper,
@@ -19,7 +26,8 @@ pub enum KnownEffect {
     TypescriptMetadataDecorateHelperThreeArgs,
 }
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LocalEffectPolicy {
     #[default]
     KnownEffectsOnly,
@@ -48,22 +56,179 @@ pub enum CallbackFactoryEvidence {
         defining_module: String,
         export: String,
         local: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         source_location: Option<SourceLocation>,
     },
 }
 
+/// A source-derived successful-return capability. Deferred bodies may have
+/// arbitrary effects and exterior captures; consumers must activate the foreign
+/// capability pool when this record is read, invoked, or exposed.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReturnedRecordSummary {
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub source_location: Option<SourceLocation>,
+    pub members: Vec<DeferredRecordMember>,
+    /// Composed source/native proof, including its captured-input dependencies.
+    pub inference: crate::analysis_provenance::InferenceUse,
+    /// As on `ForeignCallSummary`: the swap's replacement package when the
+    /// emitted program runs it instead of this body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement_package: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DeferredRecordMember {
+    pub name: String,
+    pub source_location: Option<SourceLocation>,
+    /// Includes the fresh state binding as well as exterior binding names.
+    /// These are provider-local provenance, never importer binding IDs.
+    pub captures: BTreeSet<String>,
+}
+
+/// Source-checked wrapping of one ordinary input. The returned capability
+/// retains the input graph; no purity, fresh identity or no-throw claim follows.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NamespaceWrapperSummary {
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub source_location: Option<SourceLocation>,
+    pub inference: crate::analysis_provenance::InferenceUse,
+    /// Trusted provider judgment; deliberately absent from report JSON.
+    #[serde(skip)]
+    pub(crate) dependencies: ProofDependencies,
+}
+
+/// Source-only wrapper proof: direct callback uses receive these ordinary
+/// allocated arguments without explicitly returning or publishing the callback.
+/// Consumer entry coverage additionally requires an anonymous inline callback
+/// unable to obtain its own identity. Callback-supplied values may still escape.
+/// Timing-only author assertions never supply this capability.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackObjectArguments {
+    pub wrapper: CallbackFactoryEvidence,
+    pub object_arguments: BTreeSet<usize>,
+}
+
+/// Audited provider descriptor-copy behavior. The importer must separately
+/// prove an exact fresh literal at a single-execution call site.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DescriptorCopyFactorySummary {
+    pub defining_module: String,
+    pub export: String,
+    pub author_location: String,
+    pub signatures: Vec<spec::DescriptorCopyFactorySignature>,
+}
+
+/// How the importer must invoke a derived foreign callable for its summary to
+/// apply: a class only through `new`, a function only through an ordinary call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForeignInvocation {
+    Call,
+    Construct,
+}
+
+/// One possible result of a derived foreign call.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ForeignReturn {
+    /// The argument value itself (`undefined` when not supplied).
+    Argument {
+        index: usize,
+    },
+    /// An object or closure allocated by this call. It may hold retained
+    /// arguments and provider captures; the carrier proves no heap locality.
+    FreshAllocation,
+    Primitive,
+}
+
+/// Provider-derived summary of one exported callable (SPEC.md § Derived
+/// foreign call summaries). Under A11 and the closed native census, a matching
+/// call runs no code other than the provider body itself: no getter, coercion,
+/// argument, host or export callback. It writes only to its own allocations.
+/// Arguments outside `retained_arguments` and `Argument` returns are dropped.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ForeignCallSummary {
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub source_location: Option<SourceLocation>,
+    pub invocation: ForeignInvocation,
+    pub returns: BTreeSet<ForeignReturn>,
+    pub retained_arguments: BTreeSet<usize>,
+    /// Source-private provider var values retained by the result. Their kinds
+    /// remain unknown; later use must retain opaque foreign capabilities.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub retained_provider_captures: BTreeSet<String>,
+    /// Every source-private provider var cell the body reads. A summary with
+    /// any is no receipt for the call's effects: the cell's writers are
+    /// outside what the summary proves.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub provider_cell_reads: BTreeSet<String>,
+    /// Census families the body constructs from (`new WeakMap()`); their
+    /// integrity premise is in `dependencies`.
+    pub native_constructions: BTreeSet<NativeIntrinsic>,
+    /// The vendor swap's replacement package when the emitted program runs it
+    /// instead of this body; the summary then rests on the swap's equivalence
+    /// promise (SPEC.md § Vendor swap equivalence).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replacement_package: Option<String>,
+    /// Trusted provider judgment; deliberately absent from report JSON.
+    #[serde(skip)]
+    pub(crate) dependencies: ProofDependencies,
+}
+
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallableSummary {
     callback_factory_evidence: BTreeSet<CallbackFactoryEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned_record: Option<ReturnedRecordSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace_wrapper: Option<NamespaceWrapperSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callback_object_arguments: Option<CallbackObjectArguments>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreign_call: Option<ForeignCallSummary>,
 }
 
 impl CallableSummary {
     pub fn callback_factory(evidence: CallbackFactoryEvidence) -> Self {
         Self {
             callback_factory_evidence: BTreeSet::from([evidence]),
+            returned_record: None,
+            namespace_wrapper: None,
+            callback_object_arguments: None,
+            descriptor_copy_factory: None,
+            foreign_call: None,
+        }
+    }
+
+    pub fn returned_record(summary: ReturnedRecordSummary) -> Self {
+        Self {
+            returned_record: Some(summary),
+            ..Self::default()
+        }
+    }
+
+    pub fn namespace_wrapper(summary: NamespaceWrapperSummary) -> Self {
+        Self {
+            namespace_wrapper: Some(summary),
+            ..Self::default()
+        }
+    }
+
+    pub fn descriptor_copy_factory(summary: DescriptorCopyFactorySummary) -> Self {
+        Self {
+            descriptor_copy_factory: Some(summary),
+            ..Self::default()
         }
     }
 
@@ -75,14 +240,774 @@ impl CallableSummary {
         &self.callback_factory_evidence
     }
 
+    pub fn foreign_call(summary: ForeignCallSummary) -> Self {
+        Self {
+            foreign_call: Some(summary),
+            ..Self::default()
+        }
+    }
+
     pub fn merge(&mut self, other: Self) {
+        if let Some(call) = other.foreign_call {
+            assert!(
+                self.foreign_call
+                    .as_ref()
+                    .is_none_or(|previous| previous == &call)
+            );
+            self.foreign_call = Some(call);
+        }
+        if let Some(factory) = other.descriptor_copy_factory {
+            assert!(
+                self.descriptor_copy_factory
+                    .as_ref()
+                    .is_none_or(|old| old == &factory)
+            );
+            self.descriptor_copy_factory = Some(factory);
+        }
+        if let Some(wrapper) = other.namespace_wrapper {
+            assert!(
+                self.namespace_wrapper
+                    .as_ref()
+                    .is_none_or(|previous| previous == &wrapper)
+            );
+            self.namespace_wrapper = Some(wrapper);
+        }
+        if let Some(arguments) = other.callback_object_arguments {
+            assert!(
+                self.callback_object_arguments
+                    .as_ref()
+                    .is_none_or(|old| old == &arguments)
+            );
+            self.callback_object_arguments = Some(arguments);
+        }
+        if let Some(record) = other.returned_record {
+            assert!(
+                self.returned_record
+                    .as_ref()
+                    .is_none_or(|previous| previous == &record)
+            );
+            self.returned_record = Some(record);
+        }
         self.callback_factory_evidence
             .extend(other.callback_factory_evidence);
     }
 }
 
-#[derive(Debug, Clone, Default)]
+/// Intrinsic families whose visible writes constrain inferred native operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeIntrinsic {
+    GlobalObject,
+    /// A global slot may hold any native value; descendants retain this root.
+    UnknownGlobalValue,
+    /// Host census only; not part of author `IntrinsicFamily::ALL`.
+    TextEncoder,
+    Error,
+    FinalizationRegistry,
+    Function,
+    Object,
+    Array,
+    Math,
+    RegExp,
+    Symbol,
+    Promise,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+}
+
+impl From<spec::IntrinsicFamily> for NativeIntrinsic {
+    fn from(family: spec::IntrinsicFamily) -> Self {
+        match family {
+            spec::IntrinsicFamily::Error => Self::Error,
+            spec::IntrinsicFamily::FinalizationRegistry => Self::FinalizationRegistry,
+            spec::IntrinsicFamily::Function => Self::Function,
+            spec::IntrinsicFamily::Object => Self::Object,
+            spec::IntrinsicFamily::Array => Self::Array,
+            spec::IntrinsicFamily::Math => Self::Math,
+            spec::IntrinsicFamily::RegExp => Self::RegExp,
+            spec::IntrinsicFamily::Symbol => Self::Symbol,
+            spec::IntrinsicFamily::Promise => Self::Promise,
+            spec::IntrinsicFamily::Map => Self::Map,
+            spec::IntrinsicFamily::Set => Self::Set,
+            spec::IntrinsicFamily::WeakMap => Self::WeakMap,
+            spec::IntrinsicFamily::WeakSet => Self::WeakSet,
+        }
+    }
+}
+
+impl NativeIntrinsic {
+    /// Every global property name `for_global_binding` recognizes.
+    pub(crate) const GLOBAL_BINDINGS: &[&str] = &[
+        "Error",
+        "Function",
+        "Object",
+        "Array",
+        "Math",
+        "RegExp",
+        "Symbol",
+        "Promise",
+        "Map",
+        "Set",
+        "WeakMap",
+        "WeakSet",
+        "FinalizationRegistry",
+        "TextEncoder",
+        "globalThis",
+        "window",
+        "self",
+        "frames",
+        "top",
+    ];
+
+    pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
+        match property {
+            "TextEncoder" => Some(Self::TextEncoder),
+            "Error" => Some(Self::Error),
+            "Function" => Some(Self::Function),
+            "Object" => Some(Self::Object),
+            "Array" => Some(Self::Array),
+            "Math" => Some(Self::Math),
+            "RegExp" => Some(Self::RegExp),
+            "Symbol" => Some(Self::Symbol),
+            "Promise" => Some(Self::Promise),
+            "Map" => Some(Self::Map),
+            "Set" => Some(Self::Set),
+            "WeakMap" => Some(Self::WeakMap),
+            "WeakSet" => Some(Self::WeakSet),
+            "FinalizationRegistry" => Some(Self::FinalizationRegistry),
+            "globalThis" | "window" | "self" | "frames" | "top" => Some(Self::GlobalObject),
+            _ => None,
+        }
+    }
+
+    /// The global object's own property holding the family's constructor or
+    /// namespace.
+    pub(crate) fn global_binding(self) -> Option<&'static str> {
+        match self {
+            Self::GlobalObject | Self::UnknownGlobalValue => None,
+            Self::TextEncoder => Some("TextEncoder"),
+            Self::Error => Some("Error"),
+            Self::FinalizationRegistry => Some("FinalizationRegistry"),
+            Self::Function => Some("Function"),
+            Self::Object => Some("Object"),
+            Self::Array => Some("Array"),
+            Self::Math => Some("Math"),
+            Self::RegExp => Some("RegExp"),
+            Self::Symbol => Some("Symbol"),
+            Self::Promise => Some("Promise"),
+            Self::Map => Some("Map"),
+            Self::Set => Some("Set"),
+            Self::WeakMap => Some("WeakMap"),
+            Self::WeakSet => Some("WeakSet"),
+        }
+    }
+}
+
+/// Stable reference to one exact author input in one provider chunk.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ValueInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Exact authored provider contract consumed by a semantic certificate.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct DescriptorCopyAuthorRef {
+    pub defining_module: String,
+    pub export: String,
+    pub spec_location: String,
+}
+
+/// One audited exact imported-call initializer in the importer chunk.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct InitializerCallEffectInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Stable reference to one exact imported-array lifetime assertion.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArraySpreadInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Author premise admitted only after source, provider, import, and call-site
+/// checks. The source binding and call span are session-local; the reference
+/// remains stable in saved effect proofs and reports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedInitializerCallEffectInput {
+    pub reference: InitializerCallEffectInputRef,
+    pub binding: Id,
+    pub callee: Id,
+    pub call_span: Span,
+    pub source_sha256: String,
+    pub provider_chunk: String,
+    pub provider_export: String,
+    pub provider_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_replacement: Option<EffectiveInitializerCallReplacement>,
+    /// Complete ordinary static dependency closure that evaluated before the
+    /// importer, with no path back to it. This proves the direct import read.
+    pub provider_dependency_closure: BTreeSet<String>,
+}
+
+/// Effective bundled implementation actually emitted for a swapped export.
+/// The independent original provider digest remains on the parent evidence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectiveInitializerCallReplacement {
+    pub package: String,
+    pub bundle_path: PathBuf,
+    pub bundle_export: String,
+    pub symbol_kind: spec::PartialSwapKind,
+    pub upstream_export: Option<String>,
+    pub bundle_sha256: String,
+}
+
+/// Provider identity resolved from one direct named import and one selected
+/// exported producer declaration. All names are source-derived evidence.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArrayOperandEvidence {
+    pub selector_local: String,
+    pub consumer_binding: String,
+    pub provider_module: String,
+    pub provider_export: String,
+    pub provider_local: String,
+    pub source_specifier: String,
+    pub provider_source_match: spec::SourceMatchClaim,
+    pub provider_source_sha256: String,
+    pub primitive_slots: Vec<analysis_model::PrimKinds>,
+    pub provider_source_location: Option<SourceLocation>,
+}
+
+/// Exact-site imported-array lifetime assertion, kept separate from inferred
+/// provider literal and import/export resolution facts.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArraySpreadInputEvidence {
+    pub reference: ImportedPrimitiveArraySpreadInputRef,
+    pub spec_location: String,
+    pub consumer_source_match: spec::SourceMatchClaim,
+    pub consumer_source_sha256: String,
+    pub selected_consumer_binding: String,
+    pub consumer_source_location: Option<SourceLocation>,
+    pub operands: Vec<ImportedPrimitiveArrayOperandEvidence>,
+    pub lifetime: spec::ImportedPrimitiveArrayLifetimeContract,
+    pub note: Option<String>,
+}
+
+/// One operand whose exact native array spread consumed the input above.
+/// `evidence.lifetime` is the author's assertion; selected import endpoints,
+/// producer literals and primitive slot kinds are independently source-derived.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveArraySpreadInputUse {
+    pub evidence: ImportedPrimitiveArraySpreadInputEvidence,
+    pub operand_index: usize,
+}
+
+/// Resolved author premise passed to exactly one consumer chunk. Spans are
+/// parser-session-local; the evidence record above is stable and serializable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedImportedPrimitiveArraySpreadInput {
+    pub evidence: ImportedPrimitiveArraySpreadInputEvidence,
+    pub consumer_initializer_span: Span,
+    pub spread_token_spans: Vec<Span>,
+}
+
+/// Additional captured-value assertions required by an inferred proof.
+/// Structural source evidence stays on the proof's existing source identity.
+/// Empty dependencies add no captured-value premise; the analysis's baseline
+/// native and host assumptions still apply independently.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ProofDependencies {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub value_inputs: BTreeSet<ValueInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub initializer_call_effect_inputs: BTreeSet<InitializerCallEffectInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub imported_primitive_array_spread_inputs: BTreeSet<ImportedPrimitiveArraySpreadInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub argument_inputs: BTreeSet<ArgumentInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub host_behavior: BTreeSet<HostBehaviorKey>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub program_premises: BTreeSet<ProgramPremiseKey>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+}
+
+/// A stable source module export cell that contributed to an imported
+/// primitive's value. Re-export aliases are not cells; their source cells are
+/// retained transitively.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PrimitiveExportCell {
+    pub module: String,
+    pub export: String,
+}
+
+/// Source-derived primitive value evidence used only for an imported binding
+/// read after its provider's exact static dependency closure is shown to be
+/// acyclic with respect to the importer. It carries no provider effect
+/// authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveRead {
+    pub kinds: analysis_model::PrimKinds,
+    pub provider_module: String,
+    /// Every analyzed module in the provider's resolved static dependency
+    /// closure, including the provider and excluding the importer.
+    pub dependency_closure: BTreeSet<String>,
+    pub source_cells: BTreeSet<PrimitiveExportCell>,
+}
+
+/// One `program_premises` assertion consumed by a proof (SPEC.md § Program
+/// premises).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgramPremiseKey {
+    ProcessPrototypeChainAccessors,
+    NonLiteralLoaderCalls,
+    IntrinsicsNeverWritten,
+}
+
+/// Global properties that hold only fresh ordinary objects created by
+/// analyzed code (SPEC.md § Bundle-owned globals).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BundleGlobalNames {
+    pub names: BTreeSet<String>,
+    /// Every property keyed by a `Symbol.for` symbol.
+    pub registered_symbols: bool,
+    /// No analyzed write may replace `Map`, `Set`, `WeakMap` or `WeakSet`,
+    /// so constructing one allocates a fresh object.
+    pub fresh_collections: bool,
+    /// Premises that discharged a computed call which could otherwise
+    /// install an accessor on the global chain. Every proof using the set
+    /// depends on them.
+    pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+}
+
+/// Stable reference to one `no_accessor_install_callables` entry.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NoAccessorInstallRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// A `no_accessor_install_callables` entry resolved to its one function.
+#[derive(Debug, Clone)]
+pub struct ResolvedNoAccessorInstall {
+    pub reference: NoAccessorInstallRef,
+    pub function_span: Span,
+}
+
+/// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).
+/// The value is not repeated: a key enters a proof only with the one value its
+/// reader accepts, which the spec echo in the same report shows.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostBehaviorKey {
+    LoaderResultForEvaluatingModule,
+    SynchronousLoadRunsAppCallbacks,
+    SynchronousLoadDrainsMicrotasks,
+    ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
+    ReentryFreeBunModule(spec::BunModule),
+    ReentryFreeEmbeddedLoader(spec::EmbeddedLoader),
+    ReentryFreeOperation(spec::ReentryFreeOperation),
+    PredefinedGlobals,
+}
+
+impl HostBehaviorKey {
+    /// The list entry that declared `module` reentry-free.
+    pub fn reentry_free_module(module: spec::HostModule) -> Self {
+        match module {
+            spec::HostModule::Node(builtin) => Self::ReentryFreeBuiltinModule(builtin),
+            spec::HostModule::Bun(bun) => Self::ReentryFreeBunModule(bun),
+        }
+    }
+}
+
+impl ProofDependencies {
+    pub fn is_empty(&self) -> bool {
+        self.value_inputs.is_empty()
+            && self.native_operation_inputs.is_empty()
+            && self.initializer_call_effect_inputs.is_empty()
+            && self.imported_primitive_array_spread_inputs.is_empty()
+            && self.descriptor_copy_authors.is_empty()
+            && self.argument_inputs.is_empty()
+            && self.host_behavior.is_empty()
+            && self.program_premises.is_empty()
+            && self.no_accessor_install_callables.is_empty()
+    }
+
+    pub fn extend(&mut self, other: &Self) {
+        if other.is_empty() {
+            return;
+        }
+        self.value_inputs.extend(other.value_inputs.iter().cloned());
+        self.native_operation_inputs
+            .extend(other.native_operation_inputs.iter().cloned());
+        self.initializer_call_effect_inputs
+            .extend(other.initializer_call_effect_inputs.iter().cloned());
+        self.imported_primitive_array_spread_inputs
+            .extend(other.imported_primitive_array_spread_inputs.iter().cloned());
+        self.descriptor_copy_authors
+            .extend(other.descriptor_copy_authors.iter().cloned());
+        self.argument_inputs
+            .extend(other.argument_inputs.iter().cloned());
+        self.host_behavior
+            .extend(other.host_behavior.iter().copied());
+        self.program_premises
+            .extend(other.program_premises.iter().copied());
+        self.no_accessor_install_callables
+            .extend(other.no_accessor_install_callables.iter().cloned());
+    }
+}
+
+/// Evidence retained for an author-conditioned value refinement. The physical
+/// input path and digest identify the bytes consumed by the parser; they do not
+/// establish the external runtime premise recorded by the author.
+///
+/// Analysis output names the premise only by its path inside the spec, so it
+/// does not depend on where the spec or the inputs live. The fields marked
+/// report-only are `None` in analysis output and filled in by
+/// [`crate::reports::author_inputs::AuthorInputLocations`].
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ValueInputEvidence {
+    pub reference: ValueInputRef,
+    /// `chunk_analysis_options.<chunk>.value_inputs[<i>]`; reports prefix the
+    /// authored spec file.
+    pub spec_location: String,
+    pub source_match: SourceMatchClaim,
+    pub value_kind: CapturedValueKind,
+    pub source_path: String,
+    /// Report-only: the absolute parser input file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parser_input_file: Option<String>,
+    pub audited_source_sha256: String,
+    pub selected_binding: String,
+    pub declaration_location: Option<SourceLocation>,
+    pub initializer_location: Option<SourceLocation>,
+    pub expected_export: Option<String>,
+    /// Report-only: the author's note on the input.
+    pub note: Option<String>,
+}
+
+/// Stable reference to one exact native author assertion. The index is in
+/// native-operation inputs followed by native-call-identity inputs for that
+/// defining chunk, so the two fields cannot collide.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NativeOperationInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Shared evidence discriminator for the two distinct authored native-input
+/// fields. Their spec enums cannot express each other's cases.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum NativeInputKind {
+    Operation(spec::NativeOperationKind),
+    CallIdentity(spec::NativeCallIdentityKind),
+}
+
+impl NativeInputKind {
+    pub fn empty_constructor_name(self) -> Option<&'static str> {
+        match self {
+            Self::Operation(spec::NativeOperationKind::TextEncoderEmpty) => Some("TextEncoder"),
+            Self::Operation(spec::NativeOperationKind::MapEmpty) => Some("Map"),
+            Self::Operation(spec::NativeOperationKind::WeakMapEmpty) => Some("WeakMap"),
+            Self::Operation(spec::NativeOperationKind::SetEmpty) => Some("Set"),
+            _ => None,
+        }
+    }
+}
+
+/// Provenance retained for an author-certified native operation or call site.
+/// Spec-relative like [`ValueInputEvidence`].
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativeOperationInputEvidence {
+    pub reference: NativeOperationInputRef,
+    /// `chunk_analysis_options.<chunk>.native_{operation,call_identity}_inputs[<i>]`;
+    /// reports prefix the authored spec file.
+    pub spec_location: String,
+    pub selector: NativeOperationSelectorProvenance,
+    pub operation: NativeInputKind,
+    pub source_path: String,
+    /// Report-only: the absolute parser input file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parser_input_file: Option<String>,
+    pub audited_source_sha256: String,
+    pub selected_binding: String,
+    pub declaration_location: Option<SourceLocation>,
+    pub initializer_location: Option<SourceLocation>,
+    /// Report-only: the author's note on the input.
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeOperationSelectorProvenance {
+    SourceMatch(SourceMatchClaim),
+    /// Source-only evidence in saved analysis; reports restore the authored selector.
+    Declaration(SourceDeclaration),
+    ResolvedMember(spec::ResolvedMemberSelector),
+}
+
+/// One original declaration in the provider's prepared module body.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SourceDeclaration {
+    pub binding: String,
+    pub body_index: usize,
+}
+
+/// Source-selected imported primitive-array spread input normalized for the
+/// analysis crate. Projection owns authored syntax; analysis consumes only
+/// these source-bound selectors and contracts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisImportedPrimitiveArrayOperand {
+    pub selector_local: String,
+    pub consumer_binding: String,
+    pub provider_chunk: String,
+    pub provider_source_match: SourceMatchClaim,
+    pub provider_declaration: SourceDeclaration,
+    pub audited_provider_source_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisImportedPrimitiveArraySpreadInput {
+    pub consumer_declaration: SourceDeclaration,
+    pub source_match: SourceMatchClaim,
+    pub audited_source_sha256: String,
+    pub operands: Vec<AnalysisImportedPrimitiveArrayOperand>,
+    pub lifetime: spec::ImportedPrimitiveArrayLifetimeContract,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ArgumentInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Spec-relative like [`ValueInputEvidence`]; reports render only its
+/// location (`InferenceUseReport::argument_input_spec_locations`).
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ArgumentInputEvidence {
+    pub reference: ArgumentInputRef,
+    /// `chunk_analysis_options.<chunk>.argument_inputs[<i>]`.
+    pub spec_location: String,
+    pub source_match: SourceMatchClaim,
+    pub source_path: String,
+    pub audited_source_sha256: String,
+    pub selected_binding: String,
+    pub parameter_index: usize,
+    pub exact_arity: usize,
+    pub declaration_location: Option<SourceLocation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedArgumentInput {
+    pub evidence: ArgumentInputEvidence,
+    pub binding: Id,
+    pub function_start: u32,
+}
+
+/// Resolved author input for one canonical source binding. Spans and `Id` are
+/// session-local; serialized evidence uses the stable source locations above.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedBindingValueInput {
+    pub evidence: ValueInputEvidence,
+    pub binding: Id,
+    pub declaration_span: Span,
+    pub initializer_span: Span,
+    pub initializer_ordinal: SourceUnitOrdinal,
+}
+
+/// A value input after the canonical selector engine has selected one exact
+/// top-level source unit. The prepared execution index resolves this name to
+/// its canonical SWC `Id` and validates all declaration/write facts.
+#[derive(Debug, Clone)]
+pub struct SelectedBindingValueInput {
+    pub evidence: ValueInputEvidence,
+    pub selected_binding: String,
+    /// Original parsed module-body item selected by `selector_resolve`. The
+    /// canonical execution index maps this span to its split source unit and
+    /// validates the declaration and complete write summary.
+    pub selected_statement_span: Span,
+}
+
+/// A native-operation input after the canonical selector engine has selected
+/// one exact top-level source unit. The execution index validates the
+/// initializer and resolves each certified operation to its precise call span.
+#[derive(Debug, Clone)]
+pub struct SelectedNativeOperationInput {
+    pub evidence: NativeOperationInputEvidence,
+    pub selected_binding: String,
+    pub selected_statement_span: Span,
+}
+
+/// Resolved author input for one exact native operation read or call. Spans and `Id`
+/// are session-local; serialized evidence uses stable source provenance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedNativeOperationInput {
+    pub evidence: NativeOperationInputEvidence,
+    pub binding: Id,
+    /// Original top-level statement selected by the input, before the
+    /// analysis view splits a multi-declarator declaration into source units.
+    pub selected_statement_span: Span,
+    pub declaration_span: Span,
+    /// The complete binding initializer, including an object or class when
+    /// the input selects several contained operation sites.
+    pub initializer_span: Span,
+    /// One exact read or call site; several records can share the same author
+    /// reference and containing initializer without certifying its result.
+    pub call_span: Span,
+    pub initializer_ordinal: SourceUnitOrdinal,
+    /// Exact operand of an admitted Set spread, if this is a spread operation.
+    pub spread_source: Option<Id>,
+    pub spread_source_span: Option<Span>,
+    pub spread_token_span: Option<Span>,
+}
+
+/// Stable reference to one `commuting_statements` entry of its defining chunk.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct CommutingStatementsRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+impl std::fmt::Display for CommutingStatementsRef {
+    /// The entry's path inside its spec, as resolution diagnostics name it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "chunk_analysis_options.{}.commuting_statements[{}]",
+            self.defining_chunk, self.input_index
+        )
+    }
+}
+
+/// One resolved endpoint of a commuting pair: the selector the author wrote
+/// and the single post-split source unit it selected.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommutingEndpoint {
+    pub selector: spec::SourceUnitSelector,
+    pub source_unit: SourceUnitOrdinal,
+    /// Declared binding that identified the source unit; `None` for an
+    /// anonymous statement.
+    pub selected_binding: Option<String>,
+    /// Authored logical-module members whose resolved declaration is this
+    /// endpoint. Empty when no authored member maps to the declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logical_members: Vec<ResolvedMemberSelector>,
+}
+
+/// Source-resolved author premise that two source units of one chunk commute
+/// during synchronous initialization. Both endpoints are distinct source units
+/// of `reference.defining_chunk`. This is an authored contract, never an
+/// inferred source fact; it grants no purity, no-reentry or receiver guarantee.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResolvedCommutingStatements {
+    pub reference: CommutingStatementsRef,
+    pub spec_location: String,
+    pub a: CommutingEndpoint,
+    pub b: CommutingEndpoint,
+    pub note: Option<String>,
+}
+
+/// Source-certified Set spread. This is independent, one-way evidence for the
+/// shared value-flow solve, not a result inferred from that solve or from the
+/// eventual dependency graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StableSetIterableUse {
+    pub source_span: Span,
+    pub spread_token_span: Span,
+    /// The seed, every intervening constructor and the spread, in order. The
+    /// gate stage refuses an emission placement that splits them.
+    pub interval_bindings: Vec<Id>,
+    pub dependencies: ProofDependencies,
+}
+
+/// A source-derived primitive Set operation whose full native protocol is
+/// proved before the canonical value-flow solve. This is not an author input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InferredSetConstruction {
+    pub binding: Id,
+    pub operation: InferredSetOperation,
+    pub dependencies: ProofDependencies,
+    pub inference: crate::analysis_provenance::InferenceUse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InferredSetOperation {
+    PrimitiveArray,
+    ProtectedSpread {
+        source: Id,
+        interval: Box<StableSetIterableUse>,
+    },
+}
+
+/// Proven constructor origins shared by flow, heap and native transfer. The
+/// original author reference and source inference stay distinct evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvenSetAllocation {
+    AuthorInput(NativeOperationInputRef),
+    Inferred(Box<InferredSetConstruction>),
+}
+
+/// Resolved whole-program native integrity, derived from source facts and any
+/// explicitly recorded author input dependencies. This is never a serialized
+/// spec assertion.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NativeIntegrity {
+    pub mutated: BTreeSet<NativeIntrinsic>,
+    pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
+    pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
+    /// Validated inputs by stable reference. Consumers report a dependency only
+    /// when a receiver refinement was actually used.
+    pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
+    pub consumed_value_inputs: BTreeSet<ValueInputRef>,
+    /// Host claims a receiver discharge consumed.
+    pub consumed_host_behavior: BTreeSet<HostBehaviorKey>,
+    /// Families `program_premises.intrinsics_never_written` names. Their slots
+    /// are intact whatever the census witnesses; `mutated` excludes them.
+    pub never_written: BTreeSet<NativeIntrinsic>,
+    /// The witnesses that premise overrides: the author's audit list.
+    pub never_written_overrides: Vec<crate::reports::schema::NeverWrittenOverride>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AnalysisAssumptions {
+    /// Author prototype premises for source-checked local unary record factories.
+    pub retained_record_factories: BTreeSet<String>,
+    /// Source-resolved author inputs for captured provider bindings. These are
+    /// keyed by canonical IDs from the prepared entry AST and are distinct from
+    /// inferred source facts and all purity/callback contracts.
+    pub captured_value_inputs: Vec<ResolvedBindingValueInput>,
+    /// Source-resolved author premises for exact native operation call sites.
+    /// They are not native integrity guards or inferred identity facts.
+    pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
+    /// Exact source-selected author call-effect premises. These cover the
+    /// provider invocation's nonlexical effects only, never its operands.
+    pub initializer_call_effect_inputs: Vec<ResolvedInitializerCallEffectInput>,
+    /// Source-selected author premises for exact imported array spreads.
+    pub imported_primitive_array_spread_inputs: Vec<ResolvedImportedPrimitiveArraySpreadInput>,
+    /// Source-selected author premises for one exact local helper parameter.
+    pub argument_inputs: Vec<ResolvedArgumentInput>,
+    /// Host operations the author audited as unable to run application code
+    /// synchronously (`host_behavior.reentry_free_operations`).
+    pub reentry_free_operations: BTreeSet<spec::ReentryFreeOperation>,
+    /// `host_behavior.predefined_globals`: whether the host predefines only
+    /// standard global properties.
+    pub predefined_globals: spec::PredefinedGlobals,
+    /// The whole-program bundle-owned global properties (SPEC.md §
+    /// Bundle-owned globals); empty unless `predefined_globals: standard`.
+    pub bundle_globals: BundleGlobalNames,
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
@@ -129,6 +1054,10 @@ pub struct AnalysisAssumptions {
     /// Audited callback-bearing calls with no synchronous reentry; supplied
     /// callbacks become global roots after the call, independent of purity.
     pub no_reentry_callback_exports: BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
+    /// Exact source-selected top-level calls with the same callback reachability
+    /// contract, keyed by the parsed call span `(lo, hi)`. This is a local
+    /// timing premise, not a purity or known-result assertion.
+    pub no_reentry_statement_calls: BTreeMap<(u32, u32), spec::RetainedCallbackSignature>,
     /// Imported namespace members whose audited direct calls cannot reenter
     /// caller/importer/host code for primitive arguments. No purity claim.
     pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,
@@ -147,24 +1076,120 @@ pub struct AnalysisAssumptions {
     pub fluent_bindings: BTreeSet<String>,
 }
 
+impl AnalysisAssumptions {
+    /// Whether an author contract describes calls through this imported local.
+    pub(crate) fn names_imported_callable(&self, local: &str) -> bool {
+        self.inline_callback_factories.contains(local)
+            || self.callback_factory_members.contains_key(local)
+            || self.retained_callback_factories.contains_key(local)
+            || self.retained_callback_factory_members.contains_key(local)
+            || self.retained_callback_constructors.contains_key(local)
+            || self.no_reentry_exports.contains(local)
+            || self.no_reentry_callback_exports.contains_key(local)
+            || self.no_reentry_members.contains_key(local)
+            || self.no_reentry_record_members.contains_key(local)
+            || self.namespace_independent_members.contains_key(local)
+            || self.fluent_bindings.contains(local)
+    }
+}
+
 /// Inputs to semantic analysis. Author assertions stay separate from imported
 /// call summaries and the caller-selected local-effect policy.
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
+    pub native_integrity: Option<NativeIntegrity>,
+    /// Source- and explicit-placement-certified spread uses, keyed by the
+    /// exact constructor call start. Their dependencies retain the author
+    /// native-operation inputs used to derive each certificate.
+    pub stable_set_spreads: BTreeMap<u32, StableSetIterableUse>,
+    pub inferred_set_constructions: BTreeMap<u32, InferredSetConstruction>,
+    /// Identity of this chunk within a supplied whole-program native census.
+    /// Used only to separate local activation from already-present mutations.
+    pub current_chunk_id: Option<String>,
     pub assumptions: AnalysisAssumptions,
+    /// Source-match results awaiting canonical binding/write-index validation
+    /// in the whole-program prepared analysis.
+    pub selected_value_inputs: Vec<SelectedBindingValueInput>,
+    /// Source-match results awaiting canonical call-shape validation in the
+    /// whole-program prepared analysis.
+    pub selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
     pub local_effect_policy: LocalEffectPolicy,
     /// Cross-module purity verdicts for this chunk's imported function
     /// bindings, keyed by local binding name. Produced by the program-level
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Named and default imports of this chunk, by local name, bound to a
+    /// provider cell that is never rebound
+    /// (`crate::cross_module_purity::resolve_stable_imports`). A read of any
+    /// other import is an order-dependent effect; empty in strictly per-chunk
+    /// paths, where every import stays one.
+    pub stable_imports: BTreeSet<String>,
     /// Bare imported callable capabilities, retaining the evidence that
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
-    /// Inferred direct ESM import bindings whose possible values are primitive.
-    /// Used only to suppress ToPrimitive callback promotion, never eager reads.
-    pub imported_primitives: BTreeSet<String>,
+    /// Source-proved imported primitive values admitted to ordinary candidate
+    /// execution, keyed by local binding name. The program-summary adapter
+    /// supplies one only alongside a matching `imported_primitive_reads`
+    /// entry; raw exported kinds alone do not prove a normal imported
+    /// `GetValue`. This value supports ordinary transfer, while the separate
+    /// read capability supplies its normal-read effect coverage.
+    pub imported_values: BTreeMap<String, crate::facts::abstract_domain::value::Value>,
+    /// Imported stable primitive reads with exact source-cell provenance and
+    /// an acyclic, fully resolved static dependency closure. This is an
+    /// operation-local read capability, not provider effect authority.
+    pub imported_primitive_reads: BTreeMap<String, ImportedPrimitiveRead>,
+}
+
+/// Exact-site native inputs after the canonical execution index validated
+/// source shape and local slot contradictions. Whole-program callers also
+/// checked the shared cross-chunk native write census before supplying them.
+pub(crate) struct ValidatedNativeOperationFacts {
+    inputs: Vec<ResolvedNativeOperationInput>,
+}
+
+impl ValidatedNativeOperationFacts {
+    pub(crate) fn new(inputs: Vec<ResolvedNativeOperationInput>) -> Self {
+        Self { inputs }
+    }
+
+    /// A validated direct zero-argument native constructor; its result has no
+    /// ordinary-object or retained-callback certificate.
+    pub(crate) fn empty_native_constructor_proof(
+        &self,
+        construction: &swc_ecma_ast::NewExpr,
+    ) -> Option<&ResolvedNativeOperationInput> {
+        self.inputs.iter().find(|input| {
+            input.call_span == construction.span
+                && input.evidence.operation.empty_constructor_name().is_some()
+        })
+    }
+
+    /// The exact-site native input certifies the original data slots. A bare
+    /// Symbol call with no argument or one string literal has no conversion
+    /// callback; Symbol.for requires one string literal for its registry lookup.
+    /// The fresh allocation or registry operation has no separately
+    /// observable effect at these literal sites.
+    pub(crate) fn symbol_literal_proof(
+        &self,
+        call: &CallExpr,
+    ) -> Option<&ResolvedNativeOperationInput> {
+        let string_literal = matches!(call.args.as_slice(), [arg]
+            if arg.spread.is_none() && matches!(arg.expr.as_ref(), Expr::Lit(Lit::Str(_))));
+        self.inputs.iter().find(|input| {
+            input.call_span == call.span
+                && match input.evidence.operation {
+                    NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+                        call.args.is_empty() || string_literal
+                    }
+                    NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor) => {
+                        string_literal
+                    }
+                    _ => false,
+                }
+        })
+    }
 }
 
 impl AnalysisInputs {

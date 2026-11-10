@@ -17,6 +17,19 @@ from props.testing.fixtures.runs import (
     make_reported_issues,
 )
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:ground_truth
+# gazelle:include_dep //props/testing/fixtures:runs
+# gazelle:include_dep //props/testing/fixtures:scopes
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.ground_truth",
+    "props.testing.fixtures.runs",
+    "props.testing.fixtures.scopes",
+)
+
 
 def test_ungraded_run_appears_with_zero_credit(synced_test_session: Session, example_subtract_orm: Example):
     """Runs without grading edges get zero credit via COALESCE."""

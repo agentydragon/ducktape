@@ -11,14 +11,21 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.platform_routes import (
+    PLATFORM_ROUTES_LISTEN_ADDRESS,
+    PlaintextRouteTransport,
+    PlatformRoute,
+    PlatformRoutes,
+)
+from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.testing.tls import issue_workload_leaf, make_ca, workload_uri, write_ca
 
 UNARY = "/test.Echo/Unary"
 STREAM = "/test.Echo/Stream"
 FAILING = "/test.Echo/Failing"
 BLOCKING = "/test.Echo/Blocking"
-ARBITRARY = "/unknown.Service/AnyMethod"
+ARBITRARY = "/test.Echo/AnyMethod"
 
 
 @dataclass
@@ -88,17 +95,37 @@ def token_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
+def unused_proxy(tmp_path: Path) -> Proxy:
+    """A proxy hop the sidecar requires at startup and the plaintext route never dials."""
+    ca = make_ca("agentplane-egress-sidecar-test")
+    cert_file, key_file = issue_workload_leaf(ca, workload_uri("test-ns", "test-sandbox", "credential-id"), tmp_path)
+    return Proxy(
+        address="127.0.0.1:1",
+        transport=TLSProxyTransport(
+            ca_file=write_ca(ca, tmp_path, "root")[0], auth=SpiffeProxyAuth(cert_file=cert_file, key_file=key_file)
+        ),
+    )
+
+
+@pytest.fixture
+async def route_channel(
+    upstream: tuple[Upstream, int], token_file: Path, unused_proxy: Proxy
+) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
-    route_config = {
-        "control": PlatformRoute(listen_address="127.0.0.1:0", upstream=f"127.0.0.1:{port}", token_file=token_file)
-    }
+    route_config = PlatformRoutes(
+        listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
+        routes={
+            "control": PlatformRoute(
+                service_prefixes=("/test.Echo/",),
+                upstream=f"127.0.0.1:{port}",
+                transport=PlaintextRouteTransport(token_file=token_file),
+            )
+        },
+    )
     async with (
-        SidecarProcess(
-            proxy_host="127.0.0.1", proxy_port=1, token_file=token_file, platform_routes=route_config
-        ) as sidecar,
+        SidecarProcess(proxy=unused_proxy, platform_routes=route_config) as sidecar,
         grpc.aio.insecure_channel(
-            f"{sidecar.platform_route_listeners['control'].host}:{sidecar.platform_route_listeners['control'].port}"
+            f"{sidecar.platform_route_listener.host}:{sidecar.platform_route_listener.port}"
         ) as channel,
     ):
         yield RouteUnderTest(channel, handler, token_file)
@@ -146,9 +173,18 @@ async def test_stream_flows_both_ways_without_waiting_for_client_half_close(rout
     assert dict(await call.trailing_metadata())["x-upstream-trailer"] == "trailer-value"
 
 
-async def test_arbitrary_method_passes_through_without_service_protos(route_channel: RouteUnderTest) -> None:
+async def test_arbitrary_method_in_an_allowlisted_service_passes_without_service_protos(
+    route_channel: RouteUnderTest,
+) -> None:
     assert await _unary(route_channel.channel, ARBITRARY)(b"opaque payload") == b"daolyap euqapo"
     assert route_channel.upstream.seen[-1].method == ARBITRARY
+
+
+async def test_unknown_service_is_rejected(route_channel: RouteUnderTest) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as error:
+        await _unary(route_channel.channel, "/unknown.Service/AnyMethod")(b"opaque payload")
+    assert error.value.code() is grpc.StatusCode.UNIMPLEMENTED
+    assert all(call.method != "/unknown.Service/AnyMethod" for call in route_channel.upstream.seen)
 
 
 async def test_upstream_status_and_trailing_metadata_reach_the_workload(route_channel: RouteUnderTest) -> None:

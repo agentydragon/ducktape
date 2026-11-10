@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -27,14 +27,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
@@ -78,7 +80,7 @@ var (
 )
 
 func principal(account auth.Account) store.CallerPrincipal {
-	return store.CallerPrincipal{Account: store.ServiceAccount{Namespace: account.Namespace, Name: account.Name}}
+	return store.CallerPrincipal{Account: store.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, ServiceAccountUID: "test-uid-" + account.Name}
 }
 
 func useAPIServer(server *kubeapiserver.Server) error {
@@ -132,6 +134,9 @@ func (labeledAccounts) Admits(account auth.Account) bool {
 	return err == nil && found.Labels[callerLabel] == "true"
 }
 
+// AdmitsIdentity admits no Identity: this fixture's callers present bearers, which only name ServiceAccounts.
+func (labeledAccounts) AdmitsIdentity(auth.Identity) bool { return false }
+
 // served is the API over a database of its own, on a gRPC server with its HTTP facade, as main serves it.
 type served struct {
 	store  *store.Store
@@ -150,6 +155,8 @@ type served struct {
 	operators operator_action_servicepb.OperatorActionServiceClient
 	// connections is the MCP edge ConnectionService used to exercise this shared Gate's operator admission.
 	connections connection_servicepb.ConnectionServiceClient
+	linkageRPC  linkage_servicepb.LinkageServiceClient
+	health      healthpb.HealthClient
 	// url is the base URL of the HTTP facade.
 	url string
 	// operatorToken is a token the issuer signed for the operator.
@@ -171,7 +178,7 @@ func serve(t *testing.T) *served {
 func serveWith(t *testing.T, reviews auth.TokenReviews, groups *catalog.Catalog, servers ...linkage.Server) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
-	index, _ := namespace.watch(t)
+	index := namespace.watch(t)
 	return serveWithPolicy(t, reviews, groups, namespace, index, servers...)
 }
 
@@ -188,12 +195,11 @@ func newPolicyNamespace(t *testing.T) policyNamespace {
 	return policyNamespace(name)
 }
 
-// watch runs a policy informer of the namespace and returns its index once the index is available, with what stops
-// the informer. The informer runs until stopped or the test ends.
-func (n policyNamespace) watch(t *testing.T) (*informer.Index, func()) {
+// watch runs a policy informer of the namespace until the test ends, and returns its index once the index is available.
+func (n policyNamespace) watch(t *testing.T) *informer.Index {
 	t.Helper()
-	index := informer.NewIndex(reader.StaleAfterCycles*reader.MinWatchPeriod, []string{testNamespace})
-	policyInformer, err := informer.New(kube.Config, index, string(n), reader.MinWatchPeriod)
+	index := informer.NewIndex([]string{testNamespace})
+	policyInformer, err := informer.New(kube.Config, index, string(n))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,16 +209,12 @@ func (n policyNamespace) watch(t *testing.T) (*informer.Index, func()) {
 		defer close(done)
 		policyInformer.Run(ctx)
 	}()
-	var stopped sync.Once
-	stop := func() {
-		stopped.Do(func() {
-			cancel()
-			<-done
-		})
-	}
-	t.Cleanup(stop)
-	eventually(t, "the policy index to be available", func() bool { return index.Freshness.Available(time.Now()) })
-	return index, stop
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	eventually(t, "the policy index to be available", index.Health.Available)
+	return index
 }
 
 // eventually waits for the condition, and fails the test once callDeadline passes without it.
@@ -308,11 +310,7 @@ func serveWithPolicy(
 ) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
 	listening, err := url.Parse(dsn)
 	if err != nil {
@@ -352,18 +350,37 @@ func serveWithPolicy(
 	s.gate = NewGate(GateOptions{
 		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount, labeledReaderAccount},
 		Operators: operators,
+		AdditionalOperatorMethods: []string{
+			connection_servicepb.ConnectionService_ListCallerServiceAccounts_FullMethodName,
+			connection_servicepb.ConnectionService_ListConnections_FullMethodName,
+			connection_servicepb.ConnectionService_GetConnection_FullMethodName,
+			connection_servicepb.ConnectionService_UpdateConnection_FullMethodName,
+			connection_servicepb.ConnectionService_RebindConnection_FullMethodName,
+			connection_servicepb.ConnectionService_UnbindConnection_FullMethodName,
+			connection_servicepb.ConnectionService_WatchConnections_FullMethodName,
+			connection_servicepb.ConnectionService_PreviewConnectionEnrollment_FullMethodName,
+			connection_servicepb.ConnectionService_DecideConnectionEnrollment_FullMethodName,
+		},
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
 	// The standalone MCP edge reuses this Gate; a stub keeps its method behind the auth interceptor here.
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connection_servicepb.UnimplementedConnectionServiceServer{})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(s.linkages))
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpFacade, err := facade.NewHandler(
-		t.Context(), listener.Addr().String(), 0,
+		t.Context(), grpcListener.Addr().String(), 0,
 		action_servicepb.RegisterActionServiceHandlerFromEndpoint,
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 	)
@@ -371,10 +388,11 @@ func serveWithPolicy(
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: httpFacade, ReadHeaderTimeout: callDeadline}
-	facade.MountGRPC(server, grpcServer)
-	go func() { _ = server.Serve(listener) }()
+	go func() { _ = grpcServer.Serve(grpcListener) }()
+	t.Cleanup(grpcServer.Stop)
+	go func() { _ = server.Serve(httpListener) }()
 	t.Cleanup(func() { server.Close() })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +400,9 @@ func serveWithPolicy(
 	s.client = action_servicepb.NewActionServiceClient(connection)
 	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(connection)
 	s.connections = connection_servicepb.NewConnectionServiceClient(connection)
-	s.url = "http://" + listener.Addr().String()
+	s.linkageRPC = linkage_servicepb.NewLinkageServiceClient(connection)
+	s.health = healthpb.NewHealthClient(connection)
+	s.url = "http://" + httpListener.Addr().String()
 	return s
 }
 

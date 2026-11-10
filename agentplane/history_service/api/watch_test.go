@@ -48,7 +48,7 @@ func (w watching) wantChanged() {
 func (w watching) wantOpened(sessionID uuid.UUID, position uint64) {
 	w.t.Helper()
 	response := w.receive()
-	if opened := response.GetSessionOpened(); opened.GetSessionId() != sessionID.String() || opened.GetPosition() != position {
+	if opened := response.GetSessionRecorded(); opened.GetSessionId() != sessionID.String() || opened.GetPosition() != position {
 		w.t.Fatalf("want %s opened at %d, received %v", sessionID, position, response)
 	}
 }
@@ -67,7 +67,7 @@ func (w watching) wantReconnectAndCleanEnd() {
 func (s testServer) currentPosition(t *testing.T) uint64 {
 	t.Helper()
 	var position uint64
-	if err := s.db.QueryRowContext(t.Context(), "SELECT COALESCE(max(opened_position), 0) FROM session_history").Scan(&position); err != nil {
+	if err := s.db.QueryRowContext(t.Context(), "SELECT COALESCE(max(recorded_position), 0) FROM session_history").Scan(&position); err != nil {
 		t.Fatal(err)
 	}
 	return position
@@ -110,14 +110,14 @@ func TestAWatchOpensWithChangedAndRepeatsItAfterEachChange(t *testing.T) {
 	watch.wantChanged()
 }
 
-func TestAWatchAskingForOpeningsNamesTheSessionsRecordedAfterThePosition(t *testing.T) {
+func TestAWatchAskingForSessionsNamesTheSessionsRecordedAfterThePosition(t *testing.T) {
 	server := newServer(t, time.Hour)
 	before := server.currentPosition(t)
 	first, firstPosition := server.record(t)
 	second, secondPosition := server.record(t)
 	server.settled(t)
 
-	watch := server.watch(t, &historypb.WatchSessionSummariesRequest{OpenedAfter: proto.Uint64(before)})
+	watch := server.watch(t, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(before)})
 	watch.wantChanged()
 	watch.wantOpened(first, firstPosition)
 	watch.wantOpened(second, secondPosition)
@@ -127,26 +127,26 @@ func TestAWatchAskingForOpeningsNamesTheSessionsRecordedAfterThePosition(t *test
 	watch.wantOpened(third, thirdPosition)
 
 	// A caller that reconnects with the last position it handled is told of what came after it only.
-	reconnected := server.watch(t, &historypb.WatchSessionSummariesRequest{OpenedAfter: proto.Uint64(secondPosition)})
+	reconnected := server.watch(t, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(secondPosition)})
 	reconnected.wantChanged()
 	reconnected.wantOpened(third, thirdPosition)
 }
 
-func TestOpeningsBeyondOnePageAreAllNamedInOrder(t *testing.T) {
+func TestSessionsBeyondOnePageAreAllNamedInOrder(t *testing.T) {
 	server := newServer(t, time.Hour)
 	before := server.currentPosition(t)
 	recorded := map[uuid.UUID]bool{}
-	for range openingsPage + 1 {
+	for range recordingsPage + 1 {
 		sessionID, _ := server.record(t)
 		recorded[sessionID] = true
 	}
 	server.settled(t)
 
-	watch := server.watch(t, &historypb.WatchSessionSummariesRequest{OpenedAfter: proto.Uint64(before)})
+	watch := server.watch(t, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(before)})
 	watch.wantChanged()
 	var positions []uint64
-	for range openingsPage + 1 {
-		opened := watch.receive().GetSessionOpened()
+	for range recordingsPage + 1 {
+		opened := watch.receive().GetSessionRecorded()
 		sessionID, err := uuid.Parse(opened.GetSessionId())
 		if err != nil || !recorded[sessionID] {
 			t.Fatalf("named %q, which was not recorded", opened.GetSessionId())
@@ -193,7 +193,7 @@ func TestAWriteTheCallerDoesNotReadFailsAtTheTimeout(t *testing.T) {
 	t.Cleanup(func() { close(stream.release) })
 	failed := make(chan error, 1)
 	go func() {
-		failed <- sendWithin(stream, 10*time.Millisecond, &historypb.WatchSessionSummariesResponse{})
+		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.WatchSessionSummariesResponse{})
 	}()
 	select {
 	case err := <-failed:

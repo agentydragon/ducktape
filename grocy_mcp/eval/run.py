@@ -15,6 +15,7 @@ import uvicorn
 from agent_framework import Agent, AgentSession, InMemoryHistoryProvider, MCPStreamableHTTPTool, Message
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.openai import OpenAIChatCompletionClient
+from python.runfiles import Runfiles
 
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.eval.cases import EvalCase
@@ -23,7 +24,6 @@ from grocy_mcp.eval.result_types import EvalResult
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_mcp
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
-from util.bazel.runfiles import get_required_path
 from util.net import listen_tcp
 
 logger = logging.getLogger(__name__)
@@ -86,18 +86,9 @@ def _write_messages_jsonl(messages: list[Message], path: Path) -> None:
 
 
 async def _snapshot_final_state(grocy_base_url: str) -> dict[str, Any]:
-    """Dump every REST-visible Grocy entity after the agent finishes.
-
-    The closest thing to a database dump that doesn't require reaching
-    into the container: every table Grocy exposes via `/objects/<entity>`
-    plus the computed stock / volatile views. IDs resolve to names via
-    the reference tables in the same snapshot.
-    """
-    # Every entity Grocy exposes — covers core tables, `_view` / `_resolved`
-    # SQL views, append-only audit tables, and computed aggregates. Kept
-    # hard-coded rather than derived from `ReadableEntityType` so the
-    # dump is self-contained and doesn't shift when the MCP tool surface
-    # narrows.
+    """Snapshot REST entities/views after an eval; include references for ID/name lookup."""
+    # Keep this table/view/audit/computed list independent of `ReadableEntityType`
+    # so eval snapshots don't shift when the MCP read surface narrows.
     entity_types = [
         # Core writeable tables
         "products",
@@ -186,7 +177,7 @@ async def run_grocy_eval(
     # `initialize.instructions`, but `agent_framework` currently discards the
     # InitializeResult (see _mcp.py session.initialize()). Prepend the
     # markdown to the system prompt ourselves so the model sees it.
-    server_instructions = get_required_path("_main/grocy_mcp/server_instructions.md").read_text()
+    server_instructions = (Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/server_instructions.md").read_text()
     combined_instructions = f"{SYSTEM_PROMPT}\n\n{server_instructions}"
 
     async with _serve_mcp(grocy_base_url) as mcp_url:

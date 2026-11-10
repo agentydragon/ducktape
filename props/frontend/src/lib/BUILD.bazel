@@ -1,4 +1,4 @@
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
@@ -20,9 +20,9 @@ filegroup(
     visibility = ["//props/frontend:__pkg__"],
 )
 
-js_openapi_schema(
+openapi_js_library(
     name = "schema",
-    generator = "//props/backend:export_schema_bin",
+    schema = "//props/backend:openapi_schema",
 )
 
 ts_library(
@@ -136,6 +136,19 @@ ts_library(
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
     ],
+)
+
+ts_library(
+    name = "queryClient",
+    srcs = ["queryClient.ts"],
+    tsconfig = "//props/frontend:tsconfig",
+    deps = ["//:node_modules/@tanstack/react-query"],
+)
+
+ts_library(
+    name = "queryKeys",
+    srcs = ["queryKeys.ts"],
+    tsconfig = "//props/frontend:tsconfig",
 )
 
 ts_library(

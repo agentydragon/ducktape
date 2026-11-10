@@ -17,27 +17,27 @@ import yaml
 
 # Aliased to avoid shadowing the builtin.
 from inspect_ai import eval as inspect_eval
-from inspect_ai.model import CompactionSummary, ModelOutput, get_model
+from inspect_ai.model import CompactionSummary, ModelName, ModelOutput, get_model
+from inspect_ai.scorer import Target
 from inspect_ai.solver import Generate, Solver, TaskState
 from more_itertools import one
 
+from devinfra.oci.oci import load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from loom.gym.dossier import series_dossier
 from loom.gym.inspect_harness import (
     WAYBACK_PROXY_IMAGE_TAG,
     _submit_tool,
     agent_eval_task,
+    gym_proper_loss,
     sample_for_task,
     write_sandbox_compose,
 )
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
-from loom.gym.task import BinaryOutcome, EvidenceItem
-from loom.wayback.proxy import fake_ia
+from loom.gym.task import BinaryOutcome, EvidenceItem, ScalarOutcome, ScalarQuestion, Task
+from loom.wayback.proxy import fake_ia, wayback_proxy_image
 from third_party.containers import python_3_14_slim
-from util.oci import OciImage, load_oci_image
-from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", WAYBACK_PROXY_IMAGE_TAG)
 
 # Linear ramp over 2020-01..2020-12: from anchor 2020-01 (level 100) the ramp
 # reaches 112 by +6m, crossing the 1.05x threshold (105) → outcome YES. Its
@@ -89,6 +89,40 @@ def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     assert "call the submit tool" in str(sample.input)
     assert sample.sandbox is not None
     assert sample.sandbox.config == str(compose_path)
+
+
+def test_scalar_sample_metadata_reaches_scorer(tmp_path: Path) -> None:
+    task = Task(
+        task_id="scalar-metadata-test",
+        as_of=date(2024, 7, 1),
+        resolution_date=date(2024, 7, 2),
+        question=ScalarQuestion(text="What will the value be?", unit="units"),
+        outcome=ScalarOutcome(value=10.0),
+        outcome_source="test fixture",
+    )
+    sample = sample_for_task(task, {}, tmp_path / "unused-compose.yaml", archive=False)
+    sample_id = sample.id
+    assert sample_id is not None
+    state = TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=sample_id,
+        epoch=1,
+        input=str(sample.input),
+        messages=[],
+        target=Target(str(sample.target)),
+        output=ModelOutput(
+            model="mockllm/model",
+            completion=json.dumps({"quantiles": {"0.1": 9, "0.25": 9, "0.5": 9, "0.75": 9, "0.9": 9}}),
+        ),
+        metadata=sample.metadata,
+    )
+
+    score = asyncio.run(gym_proper_loss(archive=False)(state, Target(str(sample.target))))
+
+    assert score is not None
+    assert score.value == pytest.approx(0.5 * math.log(10 / 9))
+    assert score.metadata is not None
+    assert "submission_error" not in score.metadata
 
 
 def test_submit_tool_enforces_answer_shape() -> None:
@@ -275,8 +309,8 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # sidecar, archived web reachable from an otherwise route-less container,
     # evidence-as-files, the served-evidence manifest landing in the score,
     # and the gym's proper loss (outcome YES → -ln(0.8)).
-    load_oci_image(WAYBACK_PROXY_IMAGE)
-    load_oci_image(python_3_14_slim.IMAGE)
+    load_oci_image(wayback_proxy_image.LAYOUT_RLOCATION, image_ref=WAYBACK_PROXY_IMAGE_TAG)
+    agent_image = load_oci_image(python_3_14_slim.LAYOUT_RLOCATION)
     # Bash-only tool: the agent runs python via the shell. Fetch the https://
     # evidence lead through the clamped MITM proxy unmodified — urllib honors
     # https_proxy and trusts the proxy CA via SSL_CERT_FILE. The harness's rich
@@ -310,7 +344,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
                 [EVIDENCE_TASK],
                 [RAMP],
                 wayback_upstream=f"http://host.docker.internal:{fake_upstream_port}",
-                agent_image="python:3.14-slim",
+                agent_image=agent_image,
                 compose_dir=tmp_path,
             ),
             model=model,

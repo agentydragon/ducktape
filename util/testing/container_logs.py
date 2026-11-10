@@ -11,7 +11,7 @@ from types import TracebackType
 
 from testcontainers.core.container import DockerContainer
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _stream_logs(container, out_dir: Path) -> None:

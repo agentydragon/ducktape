@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
@@ -15,7 +15,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 NAMESPACE = "forgejo"
 DATABASE = "forgejo"
-POSTGRES = cnpg.PostgresRef(
+POSTGRES = cluster.PostgresRef(
     name="forgejo-db-ssd",
     namespace=NAMESPACE,
     # Not `<cluster>-app`: CNPG reserves that name for a Secret it generates itself.
@@ -25,7 +25,7 @@ POSTGRES = cnpg.PostgresRef(
 
 def _chart(app: App) -> Chart:
     chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=POSTGRES,
@@ -37,7 +37,7 @@ def _chart(app: App) -> Chart:
         },
         # Existing SSD-local replicas remain pinned by their PVs; the node
         # affinity only steers placements no existing claim constrains.
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="10Gi",
         resize_in_use_volumes=False,
         # The cluster was created by pg_basebackup from the retired forgejo-db, so this
@@ -45,10 +45,10 @@ def _chart(app: App) -> Chart:
         # reconciles: the cloned owner `forgejo`, not CNPG's default `app`, which does
         # not exist here. CNPG keeps that role's password in sync with the Secret,
         # which Forgejo also authenticates with.
-        initdb=cnpg.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
+        initdb=cluster.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, retention="30d")
     return chart
 
 

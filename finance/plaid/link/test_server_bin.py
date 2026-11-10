@@ -13,10 +13,9 @@ import os
 import subprocess
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
-
-SERVER_BIN = "_main/finance/plaid/link/server_bin"
+SERVER_BIN = "ducktape/finance/plaid/link/server_bin"
 
 
 def test_container_entrypoint_imports_and_reaches_settings() -> None:
@@ -24,7 +23,7 @@ def test_container_entrypoint_imports_and_reaches_settings() -> None:
     reach after module-level import succeeded. An import-time failure looks entirely different and
     is the regression this guards."""
     result = subprocess.run(
-        [str(get_required_path(SERVER_BIN))],
+        [Runfiles.CreateOrRaise().root() / SERVER_BIN],
         capture_output=True,
         check=False,
         text=True,

@@ -1,44 +1,23 @@
 # Offline Nodes Block DaemonSet Health Checks
 
-> **Status (2026-06):** Option A (`disableWait`) is the live workaround — applied
-> to `monitoring/kube-prometheus-stack` and `loki/promtail` HelmReleases. Options
-> B–D remain unimplemented; the long-term fix is still Option B (auto-remove stale
-> NotReady nodes). Full options/analysis below.
+> **Source state (2026-10):** upgrade `disableWait` is configured for
+> `kube-prometheus-stack`, `promtail`, and Node Feature Discovery. The two
+> `promtail` releases and Node Feature Discovery also bound rolling updates above
+> the roaming-node count; `test_roaming_daemonset_capacity` checks that bound
+> against `nebula-mesh.json`. These settings address Helm upgrade waits and
+> rollout capacity. The stale-Node cleanup proposal in Option B remains open.
 
 ## Problem
 
-The cluster includes roaming nodes (laptops) and a Proxmox CP node that are
-frequently offline. DaemonSets (e.g., `prometheus-node-exporter`) schedule pods
-on all nodes, but pods on offline nodes stay Pending forever.
+The cluster includes roaming nodes (laptops) that are frequently offline.
+DaemonSets schedule pods on those nodes, but pods cannot become Ready while a
+node is absent.
 
 Helm's `--wait` blocks until all resources are healthy, including DaemonSets. A
 DaemonSet with Pending pods on offline nodes will never satisfy `--wait`,
-causing every Helm upgrade to timeout. This blocks Flux reconciliation for the
-HelmRelease and everything downstream of it.
-
-### Affected nodes
-
-| Node             | Type         | Availability                    |
-| ---------------- | ------------ | ------------------------------- |
-| `talos-pve-cp-0` | Talos CP     | Down during Proxmox maintenance |
-| `rugged`         | NixOS laptop | Often offline                   |
-| `iguana`         | NixOS laptop | Often offline                   |
-
-### Affected HelmReleases
-
-Any HelmRelease that includes a DaemonSet and uses Helm's default `--wait` will
-timeout when offline nodes have Pending pods.
-
-| HelmRelease                                     | DaemonSet                  | Desired | Ready                                                   |
-| ----------------------------------------------- | -------------------------- | ------- | ------------------------------------------------------- |
-| `monitoring/kube-prometheus-stack`              | `prometheus-node-exporter` | 8       | 5                                                       |
-| `loki/promtail`                                 | `promtail`                 | 8       | 4                                                       |
-| `loki/loki`                                     | `loki-canary`              | 3       | 3 (no tolerations → untainted nodes only, not affected) |
-| `node-feature-discovery/node-feature-discovery` | `nfd-worker`               | 8       | 5                                                       |
-
-Cilium DaemonSets (`cilium`, `cilium-envoy`) are also affected (8 desired, 5
-ready) but are installed via terraform `null_resource`, not a HelmRelease, so
-Flux health checks don't apply.
+causing some Helm upgrades to time out and blocking dependent Flux
+reconciliation. The releases that need this treatment change over time; inspect
+their current chart and rendered resources before applying the options below.
 
 ### Impact (2026-04-06 incident)
 
@@ -123,25 +102,30 @@ always-on nodes.
 
 **Pro**: Simple, declarative.
 
-**Con**: Loses monitoring on roaming nodes entirely. Doesn't help when
-`talos-pve-cp-0` is temporarily NotReady. Rejected — we want node-exporter on
-all nodes.
+**Con**: Loses monitoring on roaming nodes entirely. Doesn't help when an
+always-on node is temporarily NotReady. Rejected — we want node-exporter on all
+nodes.
 
 ### D. DaemonSet `maxUnavailable` high enough to tolerate offline nodes
 
-Set `updateStrategy.rollingUpdate.maxUnavailable` to the number of
-potentially-offline nodes so rollouts don't block.
+Set `updateStrategy.rollingUpdate.maxUnavailable` above the number of
+potentially-offline nodes so a rollout can progress while those nodes are absent.
+This is a rollout-capacity guard, not a replacement for Helm's wait policy:
+`maxUnavailable` alone does not make Helm stop waiting for every DaemonSet pod.
 
-**Rejected**: The count must be synchronized with the actual number of
-offline-capable nodes. Every time a roaming node is added or removed, the count
-needs updating across every DaemonSet-bearing HelmRelease. Fragile and annoying
-to maintain. Also doesn't fix Helm `--wait` — it still expects all desired pods
-to be Ready regardless of `maxUnavailable`.
+The current source uses this with `upgrade.disableWait` for `promtail`,
+`promtail-journal`, and Node Feature Discovery. The
+[roaming DaemonSet check](../../cdk8s/monitoring/test_roaming_daemonset_capacity.py)
+derives the laptop count from `nebula-mesh.json` and verifies that each configured
+budget exceeds it. Kube-prometheus-stack uses `disableWait` for its install and
+upgrade without this additional budget.
 
 ## Recommendation
 
-**Immediate (option A)**: Add `disableWait` to `kube-prometheus-stack` and any
-other HelmReleases with DaemonSets. Unblocks Flux now.
+**Current source (option A)**: `kube-prometheus-stack`, `promtail`, and Node
+Feature Discovery set `upgrade.disableWait`; the two `promtail` releases and Node
+Feature Discovery also use the checked rolling-update budget described in
+Option D. Inspect each chart before applying this to another release.
 
 **Long-term (option B)**: Deploy a stale-node cleanup mechanism so the cluster's
 node list reflects reality. This makes all health checks work correctly without

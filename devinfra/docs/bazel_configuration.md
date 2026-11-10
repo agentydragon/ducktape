@@ -211,5 +211,5 @@ runs are skipped.
 
 For cache layout and worktree mechanics, see
 <bazel_worktree_cache_sharing.md>. For `bb remote`'s outer-runner behavior, see
-<bb_remote_internals.md>. Historical NixOS compatibility investigation is in
+<../buildbuddy/docs/remote.md>. Historical NixOS compatibility investigation is in
 <../debug/nixos_bazel_bash/README.md>.

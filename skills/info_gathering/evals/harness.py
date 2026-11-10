@@ -5,7 +5,7 @@ Agent (uses skill) vs Simulator (holds ground truth). Provides:
 - Pydantic models for results and logging
 - Helpers for loading the skill text
 
-Uses the OpenAI Responses API via BoundOpenAIModel and the SDK's configured retry policy.
+Uses the OpenAI Responses API via ResponsesModel and the SDK's configured retry policy.
 """
 
 import argparse
@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
+from python.runfiles import Runfiles
 
 from agent_core.events import ToolCall
 from openai_utils.client_factory import get_async_openai
-from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
-from util.bazel.runfiles import get_required_path
+from openai_utils.model import Model, ResponsesModel
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,11 @@ def save_summary(*, summary: RunSummary, summary_path: Path) -> None:
 
 DEFAULT_MODEL = "gpt-oss:20b"
 
-_SKILL_RLOCATION = "_main/skills/info_gathering/SKILL.md"
+_SKILL_RLOCATION = "ducktape/skills/info_gathering/SKILL.md"
 
 
 def load_skill() -> str:
-    return get_required_path(_SKILL_RLOCATION).read_text()
+    return (Runfiles.CreateOrRaise().root() / _SKILL_RLOCATION).read_text()
 
 
 def build_agent_system(skill_text: str, extra_system: str = "") -> str:
@@ -87,6 +87,6 @@ def output_dir_from_args(args: argparse.Namespace) -> Path:
     return d
 
 
-def model_from_args(args: argparse.Namespace) -> OpenAIModelProto:
+def model_from_args(args: argparse.Namespace) -> Model:
     client = get_async_openai(base_url=args.base_url, api_key=args.api_key or "unused")
-    return BoundOpenAIModel(client=client, model=args.model)
+    return ResponsesModel(client=client, model=args.model)

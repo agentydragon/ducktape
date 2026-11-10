@@ -11,9 +11,9 @@ from typing import Any, cast
 
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.clickhouse import client
-from util.bazel.runfiles import get_required_path
 
 
 def test_public_coder_clickhouse_reader_contract() -> None:
@@ -21,7 +21,10 @@ def test_public_coder_clickhouse_reader_contract() -> None:
     source_secret = cast(
         dict[str, Any],
         yaml.safe_load(
-            get_required_path("_main/cluster/k8s/clickhouse/cluster/public-coder-credentials.sops.yaml").read_text()
+            (
+                Runfiles.CreateOrRaise().root()
+                / "ducktape/cluster/k8s/clickhouse/cluster/public-coder-credentials.sops.yaml"
+            ).read_text()
         ),
     )
     metadata = source_secret["metadata"]

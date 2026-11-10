@@ -4,7 +4,41 @@ Source and attribution: [Artificial Analysis](https://artificialanalysis.ai/).
 These are selected comparison rows, not a mirror of AA's full dataset. Retain that
 scope when refreshing; API access does not itself grant redistribution rights.
 
-## Current snapshot: 2026-10-14
+## Current snapshot: 2026-10-31
+
+<cited_models_2026_10_31.csv> contains **18 selected comparison rows** retrieved
+from Artificial Analysis model pages: current OpenAI and Anthropic high-effort
+models, plus recent representative releases from Google, Kimi, Meta, xAI, Alibaba,
+Z.ai, DeepSeek, MiniMax, and Mistral. This is a comparison cohort, not a full
+leaderboard export. Each row links to its source page.
+
+- Fetched 2026-10-31. Index methodology: **v5.0**.
+- The comparison uses each model's highest listed reasoning setting (typically
+  `max`); Gemini Carbon and Argon and Mistral Large 4 use `high`, while Grok 4.7
+  uses `xhigh`.
+- Scores and API costs per Intelligence Index task are copied from each model page.
+  Costs and API token prices are USD. Blank cost or price fields mean the page did
+  not publish that value; Muse Wonder Full is subscription-only in the cited
+  comparison and has no public API task cost.
+- `output_tokens_from_index_millions` is the page's rounded output-token volume for
+  its v5 run. It helps explain why similarly priced models can have different task
+  costs; it is not a quota estimate.
+- The v5 evaluation mix changed substantially. Do not compare v5 scores or task
+  costs with v4.3.2 or earlier as longitudinal model progress. The v5 suite adds
+  FrontierCode 2.0 and Terminal-Bench-Science, updates AA-Omniscience, HLE, and
+  CritPt, and removes GDPval-AA v2.1, SciCode, and AA-LCR v1.1. See the
+  [v5 announcement](https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v5)
+  and [benchmarking methodology](https://artificialanalysis.ai/methodology/intelligence-benchmarking).
+
+Current subscription conclusions and the interpretation of these rows are in
+<../../x/ai_sub_value/subscription_comparison.md>.
+
+The rugged local-model plot still uses the complete 2026-10-14 v4.3.2 snapshot
+because it compares external reference scores with local-model rows from the same
+retrieval. Do not replace only its provider reference scores with v5.0; a current
+plot needs the whole rugged candidate cohort refreshed under v5.0.
+
+## Historical snapshot: 2026-10-14
 
 <cited_models_2026_10_14.csv> contains the previous 57 comparison rows refreshed
 from the [leaderboard](https://artificialanalysis.ai/leaderboards/models), plus
@@ -65,7 +99,7 @@ Do not infer local serving cost or latency from AA's API price columns.
 ## Historical snapshot: 2026-09-24
 
 <cited_models_2026_09_24.csv> refreshes the model/effort slugs cited in
-<../ai_subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
+<../../x/ai_sub_value/subscription_comparison.md> and adds all published GPT-6 Luna, Sol, and Astra
 efforts plus `qwen3-8-flash-next` (added same-day from the same leaderboard fetch for
 an agent-routing question; not cited in the subscription analysis). It contains
 **57 measured rows: 39 from the historical cohort, 17 GPT-6 rows, and

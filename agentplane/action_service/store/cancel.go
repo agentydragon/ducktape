@@ -21,7 +21,7 @@ func (s *Store) Cancel(ctx context.Context, id uuid.UUID, principal Principal) (
 		if err != nil {
 			return err
 		}
-		if caller, ok := principal.(CallerPrincipal); !ok || row.Caller != caller.Account {
+		if owner, ok := principal.(Owner); !ok || !ownedBy(row.Caller, owner) {
 			return ErrNotFound
 		}
 		switch row.State {

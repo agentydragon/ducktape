@@ -16,16 +16,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -71,12 +73,13 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 	return err
 }
 
-// running is a served History Service: the read API and the runner ingress, each on its own port.
+// running is a served History Service with reads and journal ingress on one listener.
 type running struct {
-	reads   historypb.HistoryServiceClient
-	health  healthpb.HealthClient
-	ingress runneringresspb.RunnerIngressClient
-	stop    func() error
+	rpcAddress string
+	reads      historypb.HistoryServiceClient
+	health     healthpb.HealthClient
+	ingress    session_ingresspb.SessionJournalIngressClient
+	stop       func() error
 }
 
 // start serves with settings for the test database; tune adjusts the rest.
@@ -86,6 +89,7 @@ func start(t *testing.T, tune func(*config)) running {
 	c.DatabaseURL = integrationDatabase.URL
 	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
+	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
 	// The fold waits for a commit's wakeup rather than for its next cycle.
 	c.FoldIntervalSeconds = 3600
@@ -99,11 +103,11 @@ func start(t *testing.T, tune func(*config)) running {
 		}
 		return listener
 	}
-	readsListener, ingressListener := listen(), listen()
+	readsListener := listen()
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() {
-		served <- serve(ctx, c, kube.Clientset, readsListener, ingressListener)
+		served <- serve(ctx, c, kube.Clientset, readsListener)
 	}()
 	var stopped bool
 	stop := func() error {
@@ -120,8 +124,17 @@ func start(t *testing.T, tune func(*config)) running {
 		}
 	}
 	t.Cleanup(func() { _ = stop() })
-	dial := func(listener net.Listener) *grpc.ClientConn {
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dial := func(socket net.Listener) *grpc.ClientConn {
+		security, err := (*environment_runtime_transport.ClientTLS)(nil).Credentials()
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				security, err = (&environment_runtime_transport.ClientTLS{CAFile: spiffe.CAFile, ServerURI: environment_runtime_transport.HistoryIngressURI}).Credentials()
+			}
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection, err := grpc.NewClient(socket.Addr().String(), grpc.WithTransportCredentials(security))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,8 +143,9 @@ func start(t *testing.T, tune func(*config)) running {
 	}
 	readsConnection := dial(readsListener)
 	return running{
-		reads: historypb.NewHistoryServiceClient(readsConnection), health: healthpb.NewHealthClient(readsConnection),
-		ingress: runneringresspb.NewRunnerIngressClient(dial(ingressListener)), stop: stop,
+		rpcAddress: readsListener.Addr().String(),
+		reads:      historypb.NewHistoryServiceClient(readsConnection), health: healthpb.NewHealthClient(readsConnection),
+		ingress: session_ingresspb.NewSessionJournalIngressClient(readsConnection), stop: stop,
 	}
 }
 
@@ -150,18 +164,18 @@ func journalEntry(cursor uint64) *eventlogpb.EventEntry {
 	}
 }
 
-// pushJournal opens a Session's journal on the ingress port and returns once its last entry is acknowledged.
+// pushJournal returns once the Session journal's last entry is acknowledged.
 func pushJournal(t *testing.T, service running, sessionID uuid.UUID, entries ...*eventlogpb.EventEntry) {
 	t.Helper()
 	push, err := service.ingress.Push(bearing(t, writerToken))
 	if err != nil {
 		t.Fatal(err)
 	}
-	frames := []*runneringresspb.PushFrame{
-		{Frame: &runneringresspb.PushFrame_Announce{Announce: &runnerpb.Attached{SessionId: sessionID.String()}}},
+	frames := []*session_ingresspb.PushFrame{
+		{Frame: &session_ingresspb.PushFrame_Announce{Announce: &sessionpb.Attached{SessionId: sessionID.String()}}},
 	}
 	for _, entry := range entries {
-		frames = append(frames, &runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Entry{Entry: entry}})
+		frames = append(frames, &session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Entry{Entry: entry}})
 	}
 	for _, frame := range frames {
 		if err := push.Send(frame); err != nil {
@@ -178,8 +192,7 @@ func pushJournal(t *testing.T, service running, sessionID uuid.UUID, entries ...
 	}
 }
 
-// A journal pushed to the ingress port is stored, folded, announced to a watcher and read back on the other port:
-// the wiring of the service, from a runner's push to a reader's summary.
+// A pushed journal is stored, folded, announced to a watcher and read back on the same native gRPC listener.
 func TestAJournalPushedToTheIngressIsFoldedAndReadFromTheAPI(t *testing.T) {
 	service := start(t, nil)
 	watch, err := service.reads.WatchSessionSummaries(bearing(t, readerToken), &historypb.WatchSessionSummariesRequest{})
@@ -236,11 +249,13 @@ func TestTheIngressSettlesDeltasOnlyWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestEachPortAdmitsOnlyItsOwnCallers(t *testing.T) {
+func TestEachMethodEnforcesItsCallerContract(t *testing.T) {
 	service := start(t, nil)
 	_, err := service.reads.GetSessionSummary(bearing(t, writerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
-	if got := status.Code(err); got != codes.Unauthenticated {
-		t.Errorf("a runner on the read API: %v, want Unauthenticated", got)
+	// The read API admits reviewed ServiceAccounts, then scopes reads to the
+	// retained execution principal. An unknown Session stays hidden.
+	if got := status.Code(err); got != codes.NotFound {
+		t.Errorf("a runner without a matching principal on the read API: %v, want NotFound", got)
 	}
 	push, err := service.ingress.Push(bearing(t, readerToken))
 	if err != nil {
@@ -369,12 +384,8 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	c.DatabaseURL = integrationDatabase.URL
 	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
+	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
-	readsListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer readsListener.Close()
 	closed, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -382,7 +393,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	closed.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if err := serve(ctx, c, kube.Clientset, readsListener, closed); err == nil || errors.Is(err, context.Canceled) {
+	if err := serve(ctx, c, kube.Clientset, closed); err == nil || errors.Is(err, context.Canceled) {
 		t.Errorf("serve returned %v, want the listener's error", err)
 	}
 }
@@ -419,7 +430,7 @@ func duplicateListenerFD(t *testing.T, listener net.Listener) int {
 }
 
 // run is what main serves: the settings name the addresses, and the Kubernetes client is built from the kubeconfig.
-func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
+func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
 	// The Kubernetes client dials only when a token needs review, which no call here presents.
 	const unreachableCluster = `{"apiVersion": "v1", "kind": "Config", "current-context": "test",
@@ -433,23 +444,16 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ingressListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		readerListener.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		readerListener.Close()
-		ingressListener.Close()
-	})
-	readerAddress, ingressAddress := readerListener.Addr().(*net.TCPAddr), ingressListener.Addr().(*net.TCPAddr)
-	readerFD, ingressFD := duplicateListenerFD(t, readerListener), duplicateListenerFD(t, ingressListener)
+	t.Cleanup(func() { readerListener.Close() })
+	readerAddress := readerListener.Addr().(*net.TCPAddr)
+	readerFD := duplicateListenerFD(t, readerListener)
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
 	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
+	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
-	c.ListenAddress, c.Ingress.ListenAddress = fmt.Sprintf("fd:%d", readerFD), fmt.Sprintf("fd:%d", ingressFD)
+	c.RPC.ListenAddress = fmt.Sprintf("fd:%d", readerFD)
 	c.Kubeconfig = kubeconfig
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
@@ -459,7 +463,6 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 		<-served
 	})
 	readTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(readerAddress.Port))
-	ingressTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(ingressAddress.Port))
 	dial := func(target string) *grpc.ClientConn {
 		connection, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -473,21 +476,17 @@ func TestRunServesTheReadAPIAndTheIngressOnTheirConfiguredPorts(t *testing.T) {
 	if _, err := healthpb.NewHealthClient(dial(readTarget)).Check(call, &healthpb.HealthCheckRequest{}, grpc.WaitForReady(true)); err != nil {
 		t.Fatalf("the read port does not answer: %v", err)
 	}
-	// The service now owns duplicates, so releasing the original sockets does not interrupt either endpoint.
+	// The service owns a duplicate, so releasing the original socket does not interrupt either API.
 	readerListener.Close()
-	ingressListener.Close()
 	push := func(target string) error {
-		stream, err := runneringresspb.NewRunnerIngressClient(dial(target)).Push(call, grpc.WaitForReady(true))
+		stream, err := session_ingresspb.NewSessionJournalIngressClient(dial(target)).Push(call, grpc.WaitForReady(true))
 		if err != nil {
 			return err
 		}
 		_, err = stream.Recv()
 		return err
 	}
-	if got := status.Code(push(ingressTarget)); got != codes.Unauthenticated {
+	if got := status.Code(push(readTarget)); got != codes.Unauthenticated {
 		t.Errorf("Push on the ingress port: %v, want Unauthenticated", got)
-	}
-	if got := status.Code(push(readTarget)); got != codes.Unimplemented {
-		t.Errorf("Push on the read port: %v, want Unimplemented", got)
 	}
 }

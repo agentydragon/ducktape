@@ -352,7 +352,7 @@ fn compute_selector_debt_impl(
         for member in &module.members {
             match member
                 .selector
-                .selected()
+                .validate()
                 .with_context(|| format!("module {module_path}: member selector"))?
             {
                 MemberSelectorSpec::Binding(binding) => {

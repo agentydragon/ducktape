@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//agentplane/env/runtime/supervision/testing:defs.bzl", "pid1_go_test")
+
+package(default_visibility = ["//agentplane/env/runtime/execution/companion:__subpackages__"])
+
+go_library(
+    name = "executor",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion",
+    visibility = [
+        "//agentplane/env/runtime/execution:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/execution/companion/control:control_go_proto",
+        "//agentplane/env/runtime/supervision",
+        "//agentplane/grpc/streaming",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+pid1_go_test(
+    name = "executor_test",
+    srcs = [
+        "health_test.go",
+        "main_test.go",
+    ],
+    embed = [":executor"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/execution/companion/control",
+        "//agentplane/env/runtime/execution/companion/control:control_go_proto",
+        "//agentplane/env/runtime/supervision",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
+    ],
+)

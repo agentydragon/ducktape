@@ -95,7 +95,9 @@ def fit_mixed_windows(
         window = path.between(start, end)
         if len(window.months) < MINIMUM_MONTHS:
             raise ValueError(f"equation {index} window from {start} has {len(window.months)} states")
-        previous, current = window.states[:-1], window.states[1:]
+        previous, current = window.transition_pairs()
+        if len(previous) < MINIMUM_MONTHS - 1:
+            raise ValueError(f"equation {index} window from {start} has only {len(previous)} consecutive transitions")
         design = np.column_stack([np.ones(len(previous)), previous])
         coefficients[:, index], *_ = np.linalg.lstsq(design, current[:, index], rcond=None)
 
@@ -105,8 +107,11 @@ def fit_mixed_windows(
     # a 3x3 covariance off a handful of residuals at the early origins — numerically fine, and
     # meaningless.
     if len(common.months) < MINIMUM_MONTHS:
-        raise ValueError(f"covariance span from {common.months[0]} has {len(common.months)} states")
-    previous, current = common.states[:-1], common.states[1:]
+        first_month = common.months[0] if common.months else "no shared months"
+        raise ValueError(f"covariance span from {first_month} has {len(common.months)} states")
+    previous, current = common.transition_pairs()
+    if len(previous) < MINIMUM_MONTHS - 1:
+        raise ValueError(f"covariance span has only {len(previous)} consecutive transitions")
     design = np.column_stack([np.ones(len(previous)), previous])
     residuals = current - design @ coefficients
     covariance = residuals.T @ residuals / (len(residuals) - design.shape[1])

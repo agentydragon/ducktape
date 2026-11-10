@@ -3,11 +3,15 @@ package orchestrationv1
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
@@ -17,20 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// recentDispatches is how many of a Session's Dispatches get_session answers with, newest first.
-const recentDispatches = 20
-
 // summaryBatch is the most Sessions one BatchGetSessionSummaries reads.
 const summaryBatch = 200
-
-type getSessionArgs struct {
-	Sandbox   SandboxRef `json:"sandbox"`
-	SessionID string     `json:"session_id"`
-}
-
-type listSessionsArgs struct {
-	Sandbox SandboxRef `json:"sandbox"`
-}
 
 // SessionListing is a Session as its history records it, in the fields a listing of a Sandbox's Sessions shows: none
 // of its instructions, working directory or transcript.
@@ -60,8 +52,8 @@ type RunnerSnapshot struct {
 type SessionState struct {
 	// SandboxReady is the Sandbox's Ready condition, absent until its controller sets it.
 	SandboxReady *Readiness `json:"sandbox_ready,omitempty"`
-	// Opening is absent for a Session not opened through the Session Dispatcher.
-	Opening *Delivery `json:"opening,omitempty"`
+	// Status is absent for a Session not created through the Session Dispatcher.
+	Status *SessionMaterialization `json:"status,omitempty"`
 	// Session is absent until the Session's runner has written it.
 	Session    *SessionListing   `json:"session,omitempty"`
 	Dispatches []CommandDelivery `json:"dispatches"`
@@ -74,7 +66,15 @@ type Readiness struct {
 	Message string                 `json:"message,omitempty"`
 }
 
-// Delivery is where the Session Dispatcher has a Session's opening or one of its commands.
+// SessionMaterialization is the Dispatcher's durable owner admission, separate from command delivery.
+type SessionMaterialization struct {
+	Materialization string    `json:"materialization"`
+	Reason          *string   `json:"reason,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// Delivery is where the Session Dispatcher has one of a Session's commands.
 type Delivery struct {
 	State     string    `json:"state"`
 	Reason    *string   `json:"reason,omitempty"`
@@ -103,15 +103,15 @@ type SessionList struct {
 }
 
 // getSession reads a Session of the named incarnation from the API server, the Session Dispatcher and the History
-// Service. A Session that neither its opening nor its history ties to that incarnation is refused as not found, so a
+// Service. A Session that neither its session nor its history ties to that incarnation is refused as not found, so a
 // grant on one Sandbox reads no other's Sessions.
-func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (SessionState, error) {
+func (e *Executor) getSession(ctx context.Context, args contract.GetSessionArgs) (SessionState, error) {
 	ctx, cancel, err := e.sessionReadContext(ctx)
 	if err != nil {
 		return SessionState{}, err
 	}
 	defer cancel()
-	sandbox, opening, summary, err := e.sessionForRead(ctx, args.Sandbox, args.SessionID)
+	sandbox, session, summary, err := e.sessionForRead(ctx, args.Sandbox, args.SessionID)
 	if err != nil {
 		return SessionState{}, err
 	}
@@ -122,7 +122,7 @@ func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (Session
 		return SessionState{}, readError("Session Dispatcher", err)
 	}
 	dispatches := listed.GetDispatches()
-	recent := dispatches[max(0, len(dispatches)-recentDispatches):]
+	recent := dispatches[max(0, len(dispatches)-contract.RecentDispatches):]
 	var history map[string]*CommandHistory
 	if summary != nil && len(recent) > 0 {
 		history, err = e.commandHistory(ctx, args.SessionID, summary.GetCommittedCursor(), recent)
@@ -134,9 +134,13 @@ func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (Session
 	if ready := meta.FindStatusCondition(sandbox.Status.Conditions, sandboxapi.ConditionReady); ready != nil {
 		state.SandboxReady = &Readiness{Status: ready.Status, Reason: ready.Reason, Message: ready.Message}
 	}
-	if o := opening.GetOpening(); o != nil {
-		state.Opening = &Delivery{
-			State: o.GetState().String(), Reason: o.Reason, CreatedAt: o.GetCreatedAt().AsTime(), UpdatedAt: o.GetUpdatedAt().AsTime(),
+	if o := session.GetSession(); o != nil {
+		if o.GetStatus() == nil {
+			return SessionState{}, readError("Session Dispatcher", errors.New("Session status is missing"))
+		}
+		state.Status = &SessionMaterialization{
+			Materialization: o.GetStatus().GetMaterialization().String(), Reason: o.GetStatus().Reason,
+			CreatedAt: o.GetCreatedAt().AsTime(), UpdatedAt: o.GetUpdatedAt().AsTime(),
 		}
 	}
 	if summary != nil {
@@ -222,7 +226,7 @@ func (e *Executor) commandHistory(ctx context.Context, sessionID string, committ
 
 // listSessions reads the Sessions the History Service records for the named incarnation, which it finds by UID alone:
 // a Sandbox deleted since keeps its Sessions there.
-func (e *Executor) listSessions(ctx context.Context, args listSessionsArgs) (SessionList, error) {
+func (e *Executor) listSessions(ctx context.Context, args contract.ListSessionsArgs) (SessionList, error) {
 	found, err := e.history.FindSessions(ctx, &historypb.FindSessionsRequest{
 		Sandbox: &historypb.FindSessionsRequest_SandboxUid{SandboxUid: string(args.Sandbox.UID)},
 	})
@@ -269,8 +273,14 @@ func listing(summary *historypb.SessionSummary) SessionListing {
 		l.LastTurnStatus = new(summary.GetLastTurnStatus().String())
 	}
 	if attached := summary.GetAttached(); attached != nil {
+		harness := attached.GetSpec().GetPlacement().GetEnvironmentHosted().GetHarness()
+		if attached.GetSpec().GetPlacement().GetCentralSamplerV1() != nil {
+			harness = sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
+		} else if harness == sessionpb.Harness_HARNESS_UNSPECIFIED {
+			harness = attached.GetHistoricalHarness()
+		}
 		l.Runner = &RunnerSnapshot{
-			Harness: attached.GetSpec().GetHarness().String(), HarnessState: attached.GetHarnessState().String(),
+			Harness: harness.String(), HarnessState: attached.GetHarnessState().String(),
 			LaunchOutcome: attached.GetLaunchOutcome().String(),
 		}
 		if turn := attached.GetActiveTurnId(); turn != "" {
@@ -290,16 +300,16 @@ func timeOf(timestamp *timestamppb.Timestamp) *time.Time {
 // readError is a failed read as the attempt's outcome. A read has no effect, so its outcome is never unknown: it
 // failed, and the caller may ask again.
 func readError(service string, err error) error {
-	return refuse("read_failed", "reading the %s: %v", service, err)
+	return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_READ_FAILED, "reading the %s: %v", service, err)
 }
 
 // sessionForRead ties both authorities' evidence to the live Sandbox incarnation before reading history.
-func (e *Executor) sessionForRead(ctx context.Context, ref SandboxRef, sessionID string) (*sandboxapi.Sandbox, *dispatcherpb.GetSessionOpeningResponse, *historypb.SessionSummary, error) {
+func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, sessionID string) (*sandboxapi.Sandbox, *dispatcherpb.GetSessionResponse, *historypb.SessionSummary, error) {
 	sandbox, err := e.requireSandbox(ctx, ref)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	opening, err := e.dispatcher.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID})
+	session, err := e.dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID})
 	if err != nil && status.Code(err) != codes.NotFound {
 		return nil, nil, nil, readError("Session Dispatcher", err)
 	}
@@ -307,17 +317,21 @@ func (e *Executor) sessionForRead(ctx context.Context, ref SandboxRef, sessionID
 	if err != nil && status.Code(err) != codes.NotFound {
 		return nil, nil, nil, readError("History Service", err)
 	}
-	// The incarnations the Session's opening and its history tie it to, as far as each is known.
+	// The incarnations the Session's session and its history tie it to, as far as each is known.
 	var tied []string
-	if opening != nil {
-		tied = append(tied, opening.GetOpening().GetSandboxUid())
+	if session != nil {
+		target := session.GetSession().GetPlacement().GetEnvironmentHosted().GetEnvironment()
+		if session.GetSession().GetPlacement().GetCentralSamplerV1() != nil {
+			target = session.GetSession().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+		}
+		tied = append(tied, target.GetUid())
 	}
 	if written := summary.GetSandbox(); written != nil && written.Uid != nil {
 		tied = append(tied, *written.Uid)
 	}
 	if len(tied) == 0 || slices.ContainsFunc(tied, func(uid string) bool { return uid != string(ref.UID) }) {
-		return nil, nil, nil, refuse("session_not_found", "no Session %s of Sandbox %q incarnation %s is known",
+		return nil, nil, nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SESSION_NOT_FOUND, "no Session %s of Sandbox %q incarnation %s is known",
 			sessionID, ref.Name, ref.UID)
 	}
-	return sandbox, opening, summary, nil
+	return sandbox, session, summary, nil
 }

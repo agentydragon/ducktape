@@ -10,22 +10,21 @@ import (
 	"strings"
 	"time"
 
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/util/netlistener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-type platformRoute struct {
-	name   string
-	config platformRouteConfig
-	conn   *grpc.ClientConn
+type platformRoutes struct {
 	server *grpc.Server
 	listen net.Listener
+	conns  []*grpc.ClientConn
 }
 
 type routeForwarder struct {
@@ -33,59 +32,134 @@ type routeForwarder struct {
 	tokenFile string
 }
 
-func bindPlatformRoutes(routes map[string]platformRouteConfig) ([]*platformRoute, error) {
-	return bindPlatformRoutesWithKeepalive(routes, keepalive.ClientParameters{
+type platformRouteDispatcher struct {
+	byService map[string]*routeForwarder
+}
+
+func (s *sidecar) bindPlatformRoutes(config platformRoutesConfig) (*platformRoutes, error) {
+	return s.bindPlatformRoutesWithKeepalive(config, keepalive.ClientParameters{
 		Time:                time.Minute,
 		Timeout:             10 * time.Second,
 		PermitWithoutStream: false,
 	})
 }
 
-func bindPlatformRoutesWithKeepalive(
-	routes map[string]platformRouteConfig,
+func (s *sidecar) bindPlatformRoutesWithKeepalive(
+	config platformRoutesConfig,
 	keepaliveParameters keepalive.ClientParameters,
-) ([]*platformRoute, error) {
-	names := make([]string, 0, len(routes))
-	for name := range routes {
+) (*platformRoutes, error) {
+	if len(config.Routes) == 0 {
+		return nil, nil
+	}
+	listener, err := netlistener.Open(config.ListenAddress)
+	if err != nil {
+		return nil, fmt.Errorf("listen for platform routes: %w", err)
+	}
+	started := &platformRoutes{listen: listener}
+	dispatcher := &platformRouteDispatcher{byService: make(map[string]*routeForwarder)}
+	names := make([]string, 0, len(config.Routes))
+	for name := range config.Routes {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	started := make([]*platformRoute, 0, len(names))
 	for _, name := range names {
-		config := routes[name]
-		listener, err := netlistener.Open(config.ListenAddress)
-		if err != nil {
-			stopPlatformRoutes(started)
-			return nil, fmt.Errorf("listen for platform route %q: %w", name, err)
+		route := config.Routes[name]
+		clientTarget := route.Upstream
+		var tokenFile string
+		var dialOptions []grpc.DialOption
+		transportCredentials := credentials.TransportCredentials(insecure.NewCredentials())
+		switch configured := route.Transport.(type) {
+		case plaintextRouteTransportConfig:
+			tokenFile = configured.TokenFile
+		case tlsConnectRouteTransportConfig:
+			if s.proxyHop == nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("platform route %q TLS CONNECT requires a proxy hop", name)
+			}
+			serverCredentials, err := s.proxyHop.transport.svid.ClientCredentials(configured.ServerURI)
+			if err != nil {
+				closePlatformRoutes(started)
+				return nil, fmt.Errorf("configure platform route %q TLS: %w", name, err)
+			}
+			transportCredentials = serverCredentials
+		default:
+			closePlatformRoutes(started)
+			return nil, fmt.Errorf("platform route %q has unsupported transport %T", name, route.Transport)
 		}
-		conn, err := grpc.NewClient(
-			config.Upstream,
+		if route.Transport.mode() != platformRoutePlaintext {
+			// Keep the configured authority intact: the central proxy resolves it
+			// after applying its hostname policy and destination TLS identity.
+			clientTarget = "passthrough:///" + route.Upstream
+			dialOptions = append(dialOptions, grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+				if address != route.Upstream {
+					return nil, fmt.Errorf("unexpected platform route destination %q", address)
+				}
+				return s.dialRouteTunnel(ctx, address)
+			}))
+		}
+
+		clientOptions := []grpc.DialOption{
 			observability.GRPCClientOption(),
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithTransportCredentials(transportCredentials),
 			grpc.WithKeepaliveParams(keepaliveParameters),
-		)
+		}
+		clientOptions = append(clientOptions, dialOptions...)
+		conn, err := grpc.NewClient(clientTarget, clientOptions...)
 		if err != nil {
-			_ = listener.Close()
-			stopPlatformRoutes(started)
+			closePlatformRoutes(started)
 			return nil, fmt.Errorf("create upstream for platform route %q: %w", name, err)
 		}
-		forwarder := &routeForwarder{conn: conn, tokenFile: config.TokenFile}
-		server := grpc.NewServer(
-			observability.GRPCServerOption(),
-			grpc.UnknownServiceHandler(forwarder.forward),
-			grpc.ForceServerCodec(rawCodec{}),
-		)
-		route := &platformRoute{name: name, config: config, conn: conn, server: server, listen: listener}
-		started = append(started, route)
+		started.conns = append(started.conns, conn)
+		forwarder := &routeForwarder{conn: conn, tokenFile: tokenFile}
+		for _, prefix := range route.ServicePrefixes {
+			dispatcher.byService[prefix] = forwarder
+		}
 	}
+	started.server = grpc.NewServer(
+		observability.GRPCServerOption(),
+		grpc.UnknownServiceHandler(dispatcher.forward),
+		grpc.ForceServerCodec(rawCodec{}),
+	)
 	return started, nil
 }
 
-func stopPlatformRoutes(routes []*platformRoute) {
-	for i := len(routes) - 1; i >= 0; i-- {
-		routes[i].server.Stop()
-		_ = routes[i].conn.Close()
-		_ = routes[i].listen.Close()
+func validPlatformServicePrefix(prefix string) bool {
+	if !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") {
+		return false
+	}
+	service := strings.TrimSuffix(strings.TrimPrefix(prefix, "/"), "/")
+	return service != "" && !strings.ContainsAny(service, "/ \t\r\n")
+}
+
+func (d *platformRouteDispatcher) forward(server any, workload grpc.ServerStream) error {
+	method, okay := grpc.MethodFromServerStream(workload)
+	if !okay {
+		return status.Error(codes.Internal, "gRPC method is unavailable")
+	}
+	separator := strings.LastIndexByte(method, '/')
+	if separator <= 0 || separator == len(method)-1 {
+		return status.Errorf(codes.Unimplemented, "no platform route for gRPC method %q", method)
+	}
+	prefix := method[:separator+1]
+	forwarder, exists := d.byService[prefix]
+	if !exists {
+		return status.Errorf(codes.Unimplemented, "no platform route for gRPC service %q", prefix)
+	}
+	return forwarder.forward(server, workload)
+}
+
+func closePlatformRoutes(routes *platformRoutes) {
+	if routes == nil {
+		return
+	}
+	if routes.server != nil {
+		routes.server.Stop()
+	}
+	for i := len(routes.conns) - 1; i >= 0; i-- {
+		_ = routes.conns[i].Close()
+	}
+	if routes.listen != nil {
+		_ = routes.listen.Close()
 	}
 }
 
@@ -105,7 +179,8 @@ func (f *routeForwarder) forward(_ any, workload grpc.ServerStream) error {
 	incoming, _ := metadata.FromIncomingContext(workload.Context())
 	outgoing := metadata.MD{}
 	for key, values := range incoming {
-		if key == "authorization" || strings.HasPrefix(key, ":") || strings.HasPrefix(key, "grpc-") {
+		if key == "authorization" || key == "proxy-authorization" || key == "x-agentplane-workload-token" ||
+			strings.HasPrefix(key, ":") || strings.HasPrefix(key, "grpc-") {
 			continue
 		}
 		outgoing[key] = append([]string(nil), values...)

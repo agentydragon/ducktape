@@ -206,6 +206,7 @@ spec:
       - rugged-local/oai-chat/gemma4-e4b
       - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
       - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+      - anthropic-api/ant-messages/claude-haiku-5-5
       - chatgpt-sub/ant-messages/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-luna
   providerConfigRef:
@@ -357,6 +358,7 @@ spec:
       - rugged-local/oai-chat/gemma4-e4b
       - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
       - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+      - anthropic-api/ant-messages/claude-haiku-5-5
       - chatgpt-sub/ant-messages/gpt-6-luna
       - chatgpt-sub/oai-responses/gpt-6-luna
   providerConfigRef:

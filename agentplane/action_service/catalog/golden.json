@@ -2783,7 +2783,6 @@
      "description": "test group description",
      "direct_tools": null,
      "executor": {
-      "default_policy_sets": null,
       "description": "test orchestration executor",
       "kind": "orchestration_v1",
       "namespace": "test-namespace",
@@ -2826,9 +2825,6 @@
      "description": "test group description",
      "direct_tools": null,
      "executor": {
-      "default_policy_sets": [
-       "test-policy"
-      ],
       "description": "test orchestration executor",
       "kind": "orchestration_v1",
       "namespace": "test-namespace",
@@ -2837,7 +2833,7 @@
         "launch": {
          "template": "test-template"
         },
-        "open_session": {
+        "create_session": {
          "spec": {
           "cwd": "/test",
           "harness": "HARNESS_CODEX",
@@ -2855,9 +2851,6 @@
     "test-group": {
      "description": "test group description",
      "executor": {
-      "default_policy_sets": [
-       "test-policy"
-      ],
       "description": "test orchestration executor",
       "kind": "orchestration_v1",
       "namespace": "test-namespace",
@@ -2866,7 +2859,7 @@
         "launch": {
          "template": "test-template"
         },
-        "open_session": {
+        "create_session": {
          "spec": {
           "cwd": "/test",
           "harness": "HARNESS_CODEX",

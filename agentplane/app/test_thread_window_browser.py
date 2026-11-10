@@ -8,8 +8,10 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import ParseDict
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
+from agentplane.app.frontend.testing.history_interactions import frames
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.thread_browser import (
@@ -17,19 +19,20 @@ from agentplane.app.testing.thread_browser import (
     append_items,
     capture_reading_anchor,
     expect_reading_anchor,
-    frames,
     message_composer,
     wheel_and_capture_anchor_at_scrollend,
 )
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.app.testing.thread_browser",)
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.thread_browser", "agentplane.app.integration_fixtures")
 
 
 @pytest.fixture
@@ -73,6 +76,25 @@ def _handles(urls: list[str]) -> set[str]:
     return {
         handle for url in urls if "/sync/entities?" in url for handle in parse_qs(urlsplit(url).query).get("handle", [])
     }
+
+
+async def _scopes(requests: list[Request]) -> list[history_service_pb2.ReadThreadEntitiesResponse]:
+    """Generated History scope reads, independent of the Electric row-window requests."""
+    scopes = []
+    for request in requests:
+        if "/upstream/history/v1/sessions/" in request.url and request.url.endswith("/entities"):
+            assert request.method == "POST"
+            post_data = request.post_data_json
+            assert isinstance(post_data, dict)
+            query = ParseDict(post_data, history_service_pb2.ReadThreadEntitiesRequest())
+            assert query.HasField("range")
+            assert query.range.limit == 1
+            response = await request.response()
+            # A reload or disconnect can abort an in-flight read before it has a response.
+            if response is not None:
+                assert response.ok
+                scopes.append(ParseDict(await response.json(), history_service_pb2.ReadThreadEntitiesResponse()))
+    return scopes
 
 
 def _older_page(request: Request) -> bool:
@@ -174,13 +196,17 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
     await expect(composer).to_have_value("Draft retained while the thread grows")
 
-    # One scope read and one shape since the reload: the window moved by loading more into it, at
+    # History may reread the epoch after summary notifications. The window stays on one epoch
+    # and one shape since the reload, moving by loading more into it, at
     # least one further page for the one time the reader reached its top -- on top of the eager
     # initial load. Not pinned to exactly eager + 1: loadOlderAtTop keeps asking for another page
     # while scrollTop is within a full screen of the top, so a taller viewport can settle one page
     # further before the buffer clears that (viewport-height-relative) threshold.
     urls = [request.url for request in requests]
-    assert len([url for url in urls if "/sync/scope" in url]) == 1
+    scopes = await _scopes(requests)
+    assert scopes
+    assert len({scope.projection_epoch for scope in scopes}) == 1
+    assert scopes[0].projection_epoch
     assert len(_handles(urls)) == 1
     assert len([request for request in requests if _older_page(request)]) >= eager + 1
     await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
@@ -262,9 +288,9 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
 ) -> None:
     """A live report described the jump as reliable across repeated reloads of one real thread --
     not an occasional race, but something that keeps happening on that thread's actual content.
-    estimateSize is a flat 180px; a page of rows nowhere near that (a one-liner next to a message
-    twenty paragraphs long) makes virtualizer.scrollToIndex's estimate-based jump, and the two
-    frames of correctFromDom afterwards, wrong by a large and inconsistent margin each cycle --
+    The old integration used a flat 180px estimate; a page of rows nowhere near that (a one-liner
+    next to a message twenty paragraphs long) made its estimate-based jump and subsequent
+    DOM correction wrong by a large and inconsistent margin each cycle --
     unlike append_items's mild variance, which every existing pagination test here uses. Runs
     several scroll-to-top cycles deep into that unevenness, each one fully settled before the
     next, to isolate accumulated estimate error from any gesture-timing race."""
@@ -346,8 +372,10 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
     document = await page.evaluate_handle("document")
     before = _handles(await page.evaluate("() => performance.getEntriesByType('resource').map(entry => entry.name)"))
     assert len(before) == 1
-    requests: list[str] = []
-    page.on("request", lambda request: requests.append(request.url))
+    requests = _recording_requests(page)
+    scope_before = await thread_browser.content.session_summary(thread.id)
+    assert scope_before is not None
+    assert scope_before.HasField("projection_epoch")
 
     await page.context.set_offline(True)
     try:
@@ -357,8 +385,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         latest = append_items(thread_browser, "offline-item", range(70))
         async with asyncio.timeout(15):
             while True:
-                scope = await thread_browser.content.current_scope(thread.id)
-                if scope is not None and scope.through_cursor >= latest.cursor:
+                scope = await thread_browser.content.session_summary(thread.id)
+                if scope is not None and scope.folded_through >= latest.cursor:
                     break
                 await asyncio.sleep(0.01)
         await expect(composer).to_have_value("Draft retained across a long offline gap")
@@ -369,8 +397,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         await expect(composer).to_have_value("Draft retained across a long offline gap")
         assert await document.evaluate("original => original === document")
         # The gap is read from the shape's log, from the offset the reader had reached.
-        assert _handles(requests) == before
-        assert not [url for url in requests if "/sync/scope" in url]
+        assert _handles([request.url for request in requests]) == before
+        assert all(scope.projection_epoch == scope_before.projection_epoch for scope in await _scopes(requests))
         await page.screenshot(path=undeclared_outputs_dir() / "thread-long-offline-recovery.png")
     finally:
         await page.context.set_offline(False)

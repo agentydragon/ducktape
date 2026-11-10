@@ -12,9 +12,9 @@ are in <SPEC.md>; capability requirements every item below must meet are in
   the fitted models through a tombstoned visibility exception. That union is the pattern
   the conventions rule out. Deciding the app's model selection is part of deciding the app's
   future, which is not decided.
-- **Held feature PRs.** #8139 (uncertain equity mean), #8141 (pinned equity mean) and #8142
-  (block bootstrap) would land in `x/models/`; #8143 is trading costs. Each waits on the
-  owner's go.
+- **Fitted-model parameter uncertainty.** #5798 remains open. For v0, the chosen path is
+  historical replay with block bootstrap; revisit parameter uncertainty if model selection
+  changes.
 - **Integer money.** Integer quanta were chosen for speed at large rollout counts, a gain
   never measured. If a measurement shows it does not pay, `World` may instead know its
   currency and take and return exact fixed-point `Decimal` money.
@@ -119,7 +119,7 @@ Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not wit
   partially sell the existing nominal-bond slice, then off-par acquisition. Hold-to-maturity
   becomes a policy, not the instrument's illiquidity. Then a native-position version of
   <x/bond_policies/README.md>'s supplied-curve control.
-- **Trading costs:** a proportional cost per trade, readable in the trace (#5486, held #8143).
+- **Trading costs:** a proportional cost per trade, readable in the trace (#5486).
 - **Fund expense ratios:** a fund's annual expense ratio accrues as a drag on its value,
   readable in the trace; model them before comparing products whose costs differ materially.
 
@@ -161,8 +161,8 @@ Annual totals are right without DECLINE and INSTALLMENTS; Mare Island is not wit
 - **READY** (after ROBUST and any adopted model change): review held-out multi-horizon joint
   equity/rates/inflation behavior against agreed tolerances before claiming forecast fidelity.
   Candidates: #5487 (joint fit), #5488 (regimes), #5510 (resampling), #5835 (muni curve); the
-  two-point Treasury curve beyond ten years (`model/bond_fund.py`, #5834 closed without a
-  recorded reason) needs a decision whether to pursue it.
+  two-point Treasury curve beyond ten years (`model/bond_fund.py`) needs a decision whether to
+  pursue it.
 
 ### Gated on an owner decision
 

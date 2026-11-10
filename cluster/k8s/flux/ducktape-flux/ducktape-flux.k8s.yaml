@@ -167,6 +167,7 @@ spec:
     - cluster/k8s/
     - cluster/generated/
     - cluster/parked/
+    - secrets/shared/
     - agentplane/crds/manifests/
     - cluster/charts/browsertrix/
     - loom/wayback/deploy/

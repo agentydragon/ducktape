@@ -22,9 +22,10 @@ Inbox recording retains its existing transaction boundary for deduplication, ent
 
 ## Storage and scheduling
 
-The service owns a PostgreSQL database and role on the shared cluster. Its image-coupled Goose
-migrator keeps the advisory lock of the retired Alembic migrator; see
-[`migrations`](../migrations/migrations.go) and the deployment instructions.
+The service owns a PostgreSQL database and role on the shared cluster. The serving process applies
+Goose migrations before it opens listeners or starts workers. Its migration-only mode uses the same
+binary and migration code. Goose retains the advisory lock shared with the retired Alembic migrator;
+see [`migrations`](../migrations/migrations.go) and the deployment instructions.
 
 An inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Inbox entries hold their own payload copies, independent
@@ -36,7 +37,7 @@ fenced commits prevent stale workers from overwriting newer work. Listener loss 
 Actions history is read through its API, not its database. GitHub refresh deadlines, provider
 backoff, delivery retries and retention remain durable or scheduled work even without new ingress.
 See [`worker`](../worker/worker.go), [`store`](../store/store.go) and
-[`wakeups`](../../postgres/go/wakeups).
+[`wakeups`](../../postgres/wakeups).
 
 ## Notice delivery and history
 
@@ -72,7 +73,19 @@ Shared failure observations belong to their access/subject records, not copies o
 subscription or inbox history. These are current-state records, not temporal versions. See
 [`github_state.go`](../store/github_state.go), [`github_ingest.go`](../store/github_ingest.go),
 [`github_deliveries.go`](../store/github_deliveries.go), and the
-[schema](../migrations/notifications/00001_baseline.sql).
+[schema](../migrations/notifications/00013_baseline.sql).
+
+### Mergeability freshness
+
+GitHub's REST `mergeable` lags base-branch moves and names no evaluated pair. A 2026-10-28 probe
+(synthetic PR #12341, only the base moving) saw `true`/`clean` for 119 seconds after a conflicting
+base push, then a stale `false`/`dirty` after the base was restored, before `null`/`unknown` and
+`true`. The PR's `base.sha` kept naming the original base throughout, and responses carry
+`Cache-Control: private, max-age=60`; the probe could not separate HTTP caching from computation
+lag. Hence the service validates a positive's test-merge parents against freshly read refs, reports
+a negative only as GitHub's answer at `observedAt`, rechecks negatives after 5, 15 and 45 seconds,
+and retries unverified positives on the same schedule then every 60 seconds. That schedule is a
+cost/latency choice, not a freshness guarantee.
 
 ## Recovery acceptance
 

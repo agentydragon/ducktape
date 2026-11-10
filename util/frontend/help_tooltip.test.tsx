@@ -1,36 +1,15 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { HelpTooltip } from "./help_tooltip";
+import { cleanupMounted, renderWithMantine } from "./testing/react";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+afterEach(cleanupMounted);
 
 async function mount(): Promise<HTMLDivElement> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <HelpTooltip topic="Spend policy" description={"First line.\nSecond line."} />
-      </MantineProvider>
-    )
-  );
-  return container;
+  return renderWithMantine(<HelpTooltip topic="Spend policy" description={"First line.\nSecond line."} />);
 }
-
-afterEach(async () => {
-  await act(async () => {
-    for (const { root } of mounted) root.unmount();
-  });
-  for (const { container } of mounted) container.remove();
-  mounted.length = 0;
-});
 
 describe("HelpTooltip", () => {
   it("opens for keyboard focus and closes with Escape", async () => {

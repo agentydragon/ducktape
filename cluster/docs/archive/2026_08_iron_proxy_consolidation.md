@@ -80,7 +80,7 @@ contact. The only benefit left was drift prevention.
 **The premise expired.** This note assumed a small, stable set of hand-written
 proxy Deployments, growing to a fourth copy with the `haku-sandbox` migration.
 The direction is now **one Squid per agent, provisioned by haku-console**
-(<../plans/agent_egress_proxy_options.md>), where per-instance config is generated at
+([historical egress research](https://github.com/agentydragon/ducktape/blob/52e1bfa5a1/cluster/docs/plans/agent_egress_proxy_options.md)), where per-instance config is generated at
 provision time rather than committed. There is no growing set of copy-pasted
 manifests for a shared patch to single-source — the generator is the
 single-sourcing.

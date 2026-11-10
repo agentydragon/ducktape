@@ -10,15 +10,18 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/lib/pq"
-	"github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+// The BUILD target supplies runfiles paths for the loader and image descriptors.
+var loaderRlocation, postgresRlocation, ryukRlocation string
 
 const (
 	postgresImage = "postgres:18"
@@ -64,10 +67,10 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 
 // Start ensures the PostgreSQL and Ryuk image tags are available, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
-	if err := loadImage(ctx, postgresImage, "ducktape/third_party/containers/postgres_18_load.sh"); err != nil {
+	if err := loadImage(ctx, postgresImage, postgresRlocation); err != nil {
 		return nil, err
 	}
-	if err := loadImage(ctx, ryukImage, "ducktape/third_party/containers/ryuk_014_load.sh"); err != nil {
+	if err := loadImage(ctx, ryukImage, ryukRlocation); err != nil {
 		return nil, err
 	}
 
@@ -111,6 +114,14 @@ func (db *Database) Close() error {
 	return errors.Join(closeAdmin, terminate(db.container))
 }
 
+// PrepareCloneTemplate snapshots the migrated database before tests can write to it.
+// Clone also prepares the template lazily for packages that do not use a shared database.
+func (db *Database) PrepareCloneTemplate(ctx context.Context) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.prepareCloneTemplateLocked(ctx)
+}
+
 // Clone returns the URL of a database of the test's own, copied from the migrated one, which the test's cleanup
 // drops: it starts with the schema and no rows, so queries that span every row see only the test's, and its NOTIFY
 // channels reach only its own connections. A test package that clones connects to the migrated database only
@@ -119,12 +130,8 @@ func (db *Database) Clone(t testing.TB) string {
 	t.Helper()
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	if db.admin == nil {
-		admin, err := db.createTemplate(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		db.admin = admin
+	if err := db.prepareCloneTemplateLocked(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	db.clones++
 	name := fmt.Sprintf("test_%d", db.clones)
@@ -137,6 +144,30 @@ func (db *Database) Clone(t testing.TB) string {
 		}
 	})
 	return db.databaseURL(name)
+}
+
+// Open returns a PostgreSQL database handle for dsn and closes it when the test completes.
+func Open(t testing.TB, dsn string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// prepareCloneTemplateLocked initializes the clone source while db.mu is held.
+func (db *Database) prepareCloneTemplateLocked(ctx context.Context) error {
+	if db.admin != nil {
+		return nil
+	}
+	admin, err := db.createTemplate(ctx)
+	if err != nil {
+		return err
+	}
+	db.admin = admin
+	return nil
 }
 
 func (db *Database) databaseURL(name string) string {
@@ -190,29 +221,36 @@ func openDatabase(ctx context.Context, container testcontainers.Container) (stri
 	return url, db, nil
 }
 
-func loadImage(ctx context.Context, image, loaderRlocation string) error {
-	dockerClient, err := client.New(client.FromEnv)
-	if err != nil {
-		return fmt.Errorf("create Docker client to inspect %s: %w", image, err)
-	}
-	_, inspectErr := dockerClient.ImageInspect(ctx, image)
-	closeErr := dockerClient.Close()
-	// TODO: Verify cached images against the Bazel pin; consider sharing
-	// the image-loading path with Python.
-	if inspectErr == nil {
-		return closeErr
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close Docker client after inspecting %s: %w", image, closeErr)
-	}
-
+func loadImage(ctx context.Context, image, imageRlocation string) error {
 	loader, err := runfiles.Rlocation(loaderRlocation)
 	if err != nil {
-		return fmt.Errorf("locate Bazel image loader for %s: %w", image, err)
+		return fmt.Errorf("locate shared OCI image loader for %s: %w", image, err)
 	}
-	command := exec.CommandContext(ctx, loader)
+	return runImageLoader(ctx, image, loader, imageRlocation, image)
+}
+
+func runImageLoader(ctx context.Context, image, loader string, args ...string) error {
+	runfilesEnv, err := runfiles.Env()
+	if err != nil {
+		return fmt.Errorf("get runfiles environment for OCI image loader: %w", err)
+	}
+	command := exec.CommandContext(ctx, loader, args...)
+	command.Env = append(os.Environ(), runfilesEnv...)
+	// The shared Python loader starts Docker as a child. Keep both in one group so cancelling this
+	// context cannot leave a detached `docker load` holding the daemon busy.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error {
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("load Bazel image %s: %w", image, ctx.Err())
+		}
 		return fmt.Errorf("load Bazel image %s: %w", image, err)
 	}
 	return nil

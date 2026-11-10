@@ -10,6 +10,8 @@ import (
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -46,11 +48,8 @@ const (
 	// repeated. Runner facts enqueue the Sandbox on progress; this deadline recovers a lost event or a
 	// stuck runner without polling.
 	quiesceDeadline = time.Minute
-	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
-	// Lease watch enqueues on.
-	runnerLapsedPoll = 5 * time.Second
 	// How long past its Lease's expiry a runner still counts as connected. A Runner Gateway rollout
-	// drops every connection at once and the runners reconnect to the new replicas.
+	// drops every connection at once and the new Gateway replicas reconnect to the runners.
 	runnerDisconnectGrace = time.Minute
 )
 
@@ -70,8 +69,14 @@ type Reconciler struct {
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
+	// Requests each incarnation's WorkloadCredential, which the Policy Controller issues.
+	Credentials requester.Requester
 	// The current time, for the liveness of a connection Lease and the idle timers.
 	Now func() time.Time
+	// FirecrackerStatus reads the launcher supervisor through the Kubernetes Pod proxy.
+	FirecrackerStatus FirecrackerStatusReader
+	// Suspender closes Runtime admission without sealing RAM-preserved Sessions.
+	Suspender RuntimeSuspender
 
 	idle idleTimers
 }
@@ -87,6 +92,8 @@ func WorkspaceVolumeName(sandbox string) string { return sandbox + "-workspace" 
 // +kubebuilder:object:generate=false
 type unready struct {
 	reason, message string
+	// The stage of stopping the workload this wait is, if any; readers see it as `status.stopStage`.
+	stage sandboxapi.StopStage
 	// Nonzero where no watch event will end the wait.
 	retryAfter time.Duration
 }
@@ -108,6 +115,10 @@ type workload struct {
 	vm       *kubevirtv1.VirtualMachine
 	vmi      *kubevirtv1.VirtualMachineInstance
 	launcher *corev1.Pod
+	// credential is the one the current or next incarnation runs with, once issued.
+	credential                 requester.Issued
+	runnerCredentialAccepted   bool
+	runnerIncarnationPublished bool
 }
 
 // incarnation is the Pod the runner runs in, if any.
@@ -116,6 +127,13 @@ func (w workload) incarnation() *corev1.Pod {
 		return w.pod
 	}
 	return w.launcher
+}
+
+func previouslyPublishedRunnerIncarnation(sandbox *sandboxapi.Sandbox, w workload) bool {
+	incarnation := w.incarnation()
+	previous := sandbox.Status.Incarnation
+	return incarnation != nil && incarnation.UID != "" && previous != nil &&
+		previous.Name == incarnation.Name && previous.UID == string(incarnation.UID)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
@@ -144,13 +162,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
+	priorFirecrackerPod := sandbox.Status.Incarnation != nil ||
+		(sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")
+	if w.pod == nil && priorFirecrackerPod && sandbox.Status.Volumes != nil &&
+		sandbox.Status.Volumes.State != nil && sandbox.Status.Volumes.State.Layout.Type == sandboxapi.RawDiskImage {
+		return r.updateStatus(ctx, &sandbox, w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving the checkpoint for operator recovery", retryAfter: 5 * time.Second}, nil)
+	}
+	w, credentialGate, err := r.ensureRunnerCredential(ctx, &sandbox, w, sandboxRunning(&sandbox))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	blocked, err := r.ensureStateVolume(ctx, &sandbox)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	gate, err := r.ensureIdentity(ctx, &sandbox)
-	if err != nil {
+	gate := credentialGate
+	if identityGate, err := r.ensureIdentity(ctx, &sandbox); err != nil {
 		return ctrl.Result{}, err
+	} else if gate == nil {
+		gate = identityGate
 	}
 	if serviceGate, err := r.ensureControlService(ctx, &sandbox); err != nil {
 		return ctrl.Result{}, err
@@ -168,17 +198,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	if blocked == nil && (idle.lameduck || !sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) {
+	if blocked == nil && (idle.lameduck || !sandboxRunning(&sandbox) || sandboxQuiescing(&sandbox)) && !isFirecrackerPod(w.pod) {
 		if blocked, err = r.quiesceBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	if blocked == nil {
+	if blocked == nil && isFirecrackerPod(w.pod) {
+		blocked, err = r.convergeFirecracker(ctx, &sandbox, w.pod, sandboxRunning(&sandbox))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if blocked == nil && !isFirecrackerPod(w.pod) {
 		if w, blocked, err = r.converge(ctx, &sandbox, w, sandboxRunning(&sandbox), gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	result, err := r.updateStatus(ctx, &sandbox, w, blocked, idle.suspendAt)
+	statusBlocked := blocked
+	if statusBlocked == nil {
+		statusBlocked = credentialGate
+	}
+	result, err := r.updateStatus(ctx, &sandbox, w, statusBlocked, idle.suspendAt)
 	result.RequeueAfter = earliest(result.RequeueAfter, idle.recheck)
 	return result, err
 }
@@ -220,6 +260,11 @@ func (r *Reconciler) pod(ctx context.Context, sandbox *sandboxapi.Sandbox) (*cor
 // be writing to it, then lets the Sandbox go. Each step's watch event runs the next. It returns why
 // the Sandbox is still there, or nil once the finalizer is removed.
 func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
+	if w.pod == nil && !sandboxSessionsQuiesced(sandbox) && sandbox.Status.Volumes != nil && sandbox.Status.Volumes.State != nil &&
+		sandbox.Status.Volumes.State.Layout.Type == sandboxapi.RawDiskImage &&
+		(sandbox.Status.Incarnation != nil || (sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")) {
+		return w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving checkpoint during deletion", retryAfter: 5 * time.Second}, nil
+	}
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
 		return w, nil, err
@@ -239,7 +284,23 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	if needsQuiesce {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
-		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
+		w, credentialGate, err := r.ensureRunnerCredential(ctx, sandbox, w, true)
+		if err != nil {
+			return w, nil, err
+		}
+		if isFirecrackerPod(w.pod) {
+			if credentialGate != nil {
+				return w, credentialGate, nil
+			}
+			ready, err := r.convergeFirecracker(ctx, sandbox, w.pod, true)
+			if err != nil || ready != nil {
+				return w, ready, err
+			}
+			if ready, err := r.firecrackerQuiesceReady(ctx, sandbox, w.pod); err != nil || ready != nil {
+				return w, ready, err
+			}
+		}
+		w, blocked, err := r.converge(ctx, sandbox, w, true, credentialGate)
 		if err != nil || blocked != nil {
 			return w, blocked, err
 		}
@@ -258,20 +319,21 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		if err := r.deleteIfLive(ctx, w.pod); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{reason: "Deleting", message: fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
+		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
 	}
 	if w.vm != nil {
 		// The VM's DataVolumes, the VM-local workspace among them, go with it.
 		if err := r.deleteIfLive(ctx, w.vm); err != nil {
 			return w, nil, err
 		}
-		return w, &unready{reason: "Deleting", message: fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
+		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
 	}
 	if w.vmi != nil {
 		// KubeVirt removes a VMI only once its virt-launcher Pod is gone, so no guest still writes to
 		// the state PVC after this.
-		return w, &unready{reason: "Deleting", message: fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
+		return w, &unready{reason: "Deleting", stage: sandboxapi.StopStageDeleting, message: fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
 	}
+	// The WorkloadCredential, its Certificates and their Secrets go with the Sandbox.
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
 	return w, nil, r.Update(ctx, sandbox)
 }
@@ -280,14 +342,14 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 // Gateway records on the Sandbox's Lease, or "" if none ever did.
 func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
-	return lease.Annotations[sandboxlease.PodUIDAnnotation], err
+	return sandboxlease.LastConnectedPodUID(lease.Annotations), err
 }
 
 // runnerLease reads the Lease the Runner Gateway writes for the Sandbox's runner connection; it is
 // empty if no runner ever connected.
 func (r *Reconciler) runnerLease(ctx context.Context, sandbox *sandboxapi.Sandbox) (coordinationv1.Lease, error) {
 	var lease coordinationv1.Lease
-	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease)
+	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease)
 	return lease, client.IgnoreNotFound(err)
 }
 
@@ -353,37 +415,42 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbo
 func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, runner)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	switch facts.Stage {
 	case sandboxlease.QuiesceQuiesced:
 		sandbox.Status.QuiescedIncarnation = &runner
 		sandbox.Status.QuiesceAttempt = nil
-		return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
 	}
 	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runner {
 		if remaining := attempt.AttemptedAt.Add(quiesceDeadline).Sub(r.Now()); remaining > 0 {
-			return &unready{reason: "Quiescing", message: "the runner is quiescing", retryAfter: remaining}, nil
+			return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting to retry runner quiescence", retryAfter: remaining}, nil
 		}
 	}
 	sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
+	// Publish the control-call phase with its durable attempt. A prior SuspendPending status has
+	// no stop stage, and the Gateway must be able to route this Quiesce before outer status update.
+	sandbox.Status.OperatingMode = sandboxOperatingMode(sandbox)
+	sandbox.Status.SuspendedBy, sandbox.Status.SuspendedAtWakeGeneration = sandboxSuspension(sandbox)
+	sandbox.Status.StopStage = sandboxapi.StopStageQuiescing
 	if err := r.Status().Update(ctx, sandbox); err != nil {
 		return nil, fmt.Errorf("recording quiesce attempt for %s: %w", sandbox.Name, err)
 	}
 	result, err := r.Quiescer.Quiesce(ctx, sandbox, nil)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	if result.Quiescing {
-		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
 	}
 	sandbox.Status.QuiescedIncarnation = &runner
 	sandbox.Status.QuiesceAttempt = nil
-	return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
+	return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the runner has quiesced every Session"}, nil
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.
@@ -425,8 +492,14 @@ func (r *Reconciler) template(ctx context.Context, sandbox *sandboxapi.Sandbox) 
 		}
 		return nil, nil, err
 	}
-	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
-		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
+	count := 0
+	for _, set := range []bool{template.Spec.Pod != nil, template.Spec.VM != nil, template.Spec.Firecracker != nil} {
+		if set {
+			count++
+		}
+	}
+	if count != 1 {
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod, vm and firecracker", template.Name)}, nil
 	}
 	if blocked := validateStateVolume(&template); blocked != nil {
 		return nil, blocked, nil
@@ -454,6 +527,18 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	sealed := w.incarnation() != nil && sandboxQuiescedIncarnation(sandbox, string(w.incarnation().UID))
 	if gate != nil && (sealed || ended) {
 		return w, gate, nil
+	}
+	if w.pod == nil && (sandbox.Status.Incarnation != nil ||
+		(sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")) {
+		// A lost launcher may have a checkpoint on its PVC. Cold booting another Pod would
+		// discard that execution and risk duplicate external effects.
+		current, blocked, err := r.template(ctx, sandbox)
+		if err != nil || blocked != nil {
+			return w, blocked, err
+		}
+		if current.Spec.Firecracker != nil {
+			return w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving the checkpoint for operator recovery"}, nil
+		}
 	}
 	var template *sandboxapi.SandboxTemplate
 	if gate == nil && (sealed || ended || (w.pod == nil && !vmRunning(w.vm) && w.vmi == nil)) {
@@ -509,7 +594,10 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		}
 		return w, &unready{reason: "Starting", message: fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
 	}
-	pod, blocked := render(sandbox, template)
+	if !validRunnerCredentialID(w.credential.ID) {
+		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next Pod"}, nil
+	}
+	pod, blocked := render(sandbox, template, w.credential)
 	if blocked != nil {
 		return w, blocked, nil
 	}
@@ -524,7 +612,14 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 		return w, nil, err
 	}
 	w.pod = pod
-	return w, nil, nil
+	bound := runnerCredential(sandbox)
+	bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(pod.UID)
+	if err := r.setRunnerCredential(ctx, sandbox, bound); err != nil {
+		return w, nil, err
+	}
+	// Bind the record at once: the first binding after its fresh ID accepts that ID.
+	_, _, err := r.requestCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
+	return w, nil, err
 }
 
 // renderedSpec is the annotation value for a rendered Pod or VM spec.
@@ -538,14 +633,20 @@ func renderedSpec(spec any) string {
 
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
-func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (*corev1.Pod, *unready) {
+func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*corev1.Pod, *unready) {
 	if blocked := validateStateVolume(template); blocked != nil {
 		return nil, blocked
 	}
 	if blocked := validateWorkspace(template); blocked != nil {
 		return nil, blocked
 	}
-	spec := template.Spec.Pod.Spec.DeepCopy()
+	var podTemplate *corev1.PodTemplateSpec
+	if template.Spec.Firecracker != nil {
+		podTemplate = &template.Spec.Firecracker.Pod
+	} else {
+		podTemplate = template.Spec.Pod
+	}
+	spec := podTemplate.Spec.DeepCopy()
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
@@ -553,6 +654,14 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (
 	spec.ServiceAccountName = sandbox.Name
 	if blocked := withLaunch(sandbox, template, spec); blocked != nil {
 		return nil, blocked
+	}
+	if blocked := withRunnerTLS(template, spec, credential.SecretName); blocked != nil {
+		return nil, blocked
+	}
+	if template.Spec.Firecracker != nil {
+		if blocked := withFirecracker(sandbox, template, spec); blocked != nil {
+			return nil, blocked
+		}
 	}
 	spec.Volumes = append(spec.Volumes, corev1.Volume{
 		Name: volume,
@@ -568,16 +677,22 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate) (
 			}},
 		})
 	}
-	annotations := maps.Clone(template.Spec.Pod.Annotations)
+	annotations := maps.Clone(podTemplate.Annotations)
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
 	annotations[RenderedSpecAnnotation] = renderedSpec(spec)
+	labels := withSandboxLabel(podTemplate.Labels, sandbox)
+	if template.Spec.Firecracker != nil {
+		annotations[FirecrackerRunningAnnotation] = "true"
+		labels[EnvironmentBackendLabel] = "firecracker"
+	}
+	labels[sandboxapi.EnvironmentRuntimeCredentialLabel] = credential.ID
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,
 			Namespace:   sandbox.Namespace,
-			Labels:      withSandboxLabel(template.Spec.Pod.Labels, sandbox),
+			Labels:      labels,
 			Annotations: annotations,
 		},
 		Spec: *spec,
@@ -603,13 +718,21 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	status.Incarnation = nil
 	status.OperatingMode = sandboxOperatingMode(sandbox)
 	status.SuspendedBy, status.SuspendedAtWakeGeneration = sandboxSuspension(sandbox)
-	if pod := w.incarnation(); pod != nil {
-		status.Incarnation = &sandboxapi.Incarnation{Name: pod.Name, UID: string(pod.UID)}
+	incarnation := w.incarnation()
+	if !w.runnerIncarnationPublished {
+		incarnation = nil
+	}
+	if incarnation != nil {
+		status.Incarnation = &sandboxapi.Incarnation{Name: incarnation.Name, UID: string(incarnation.UID)}
+	} else if blocked != nil && blocked.reason == "FirecrackerLauncherLost" {
+		status.Incarnation = sandbox.Status.Incarnation
 	}
 	condition := metav1.Condition{Type: sandboxapi.ConditionRunning, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	status.StopStage = ""
 	switch {
 	case blocked != nil:
 		condition.Reason, condition.Message = blocked.reason, blocked.message
+		status.StopStage = blocked.stage
 	case w.pod != nil:
 		podCondition(&condition, sandbox, w.pod, func() *corev1.Event { return r.latestPodEvent(ctx, w.pod) })
 	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
@@ -618,20 +741,21 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 		condition.Reason, condition.Message = "Starting", "no Pod or VM is created yet"
 	case w.vm != nil:
 		condition.Reason, condition.Message = "Stopped", fmt.Sprintf("VM %s is halted; its disks and the state PVC are kept", w.vm.Name)
+		status.StopStage = sandboxapi.StopStageStopped
 	default:
 		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
+		status.StopStage = sandboxapi.StopStageStopped
 	}
 	meta.SetStatusCondition(&status.Conditions, condition)
-	workloadReady := workloadReadyCondition(sandbox, condition, w.incarnation())
+	workloadReady := workloadReadyCondition(sandbox, condition, incarnation)
 	meta.SetStatusCondition(&status.Conditions, workloadReady)
 	ready := workloadReady
-	incarnation := w.incarnation()
 	var connectionLease *coordinationv1.Lease
 	needsConnectionLease := workloadReady.Status == metav1.ConditionTrue ||
 		(sandbox.Spec.Bootstrap != "" && incarnation != nil)
 	if needsConnectionLease {
 		var lease coordinationv1.Lease
-		err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.RunnerLeaseSuffix}, &lease)
+		err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
@@ -685,6 +809,10 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 	if running.Status != metav1.ConditionTrue {
 		return condition
 	}
+	if incarnation == nil {
+		condition.Reason, condition.Message = "IncarnationUnpublished", "the runner incarnation has not been accepted"
+		return condition
+	}
 	if podReady(incarnation) {
 		condition.Status, condition.Reason = metav1.ConditionTrue, "PodReady"
 		condition.Message = fmt.Sprintf("Pod %s is Ready", incarnation.Name)
@@ -697,33 +825,60 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 // runnerConnectedCondition is True while the Runner Gateway's Lease names this incarnation's Pod and
 // was renewed within its duration plus the grace, so a connection from an earlier incarnation never
 // counts and a brief drop does not. It also says when to look again, since no watch event marks time:
-// the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
+// the moment a live connection would lapse. A lapsed one needs none: the Lease watch enqueues when a
+// renewal revives it (`leaseRevived`).
 func runnerConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod, lease *coordinationv1.Lease, now time.Time) (metav1.Condition, time.Duration) {
-	condition := metav1.Condition{Type: sandboxapi.ConditionRunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	condition := metav1.Condition{Type: sandboxapi.ConditionEnvironmentRuntimeConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
 		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
 		return condition, 0
 	}
 	if lease == nil {
-		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
+		condition.Reason, condition.Message = "NeverConnected", "the Runner Gateway has not established a connection to this runner"
 		return condition, 0
 	}
 	if runner := lease.Annotations[sandboxlease.PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
-		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
+		condition.Reason, condition.Message = "AwaitingEnvironmentRuntime", fmt.Sprintf("the Runner Gateway has not established a connection to Pod %s's Environment Runtime", incarnation.Name)
 		return condition, 0
 	}
-	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
-		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
-		return condition, runnerLapsedPoll
+	if lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] == "" {
+		condition.Reason, condition.Message = "ConnectionPending", "the Runner Gateway is waiting for the runner's first state message; connectivity and authentication are not yet confirmed"
+		return condition, 0
 	}
-	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
+	lapse, renewed := connectionLapse(lease)
+	if !renewed {
+		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
+		return condition, 0
+	}
 	if remaining := lapse.Sub(now); remaining > 0 {
 		condition.Status, condition.Reason = metav1.ConditionTrue, "Connected"
-		condition.Message = fmt.Sprintf("Pod %s's runner is connected to the Runner Gateway", incarnation.Name)
+		condition.Message = fmt.Sprintf("the Runner Gateway is connected to Pod %s's runner", incarnation.Name)
 		return condition, remaining
 	}
-	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
-	return condition, runnerLapsedPoll
+	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("the Runner Gateway has not renewed the connection Lease for Pod %s's runner since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
+	return condition, 0
+}
+
+// connectionLapse is when a connection Lease stops counting as live: its last renewal plus its
+// duration and the grace. It is false for a Lease that records no renewal.
+func connectionLapse(lease *coordinationv1.Lease) (time.Time, bool) {
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		return time.Time{}, false
+	}
+	return lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace), true
+}
+
+// connectionLive is whether `runnerConnectedCondition` counts the Lease's renewals as recent at now.
+func connectionLive(lease *coordinationv1.Lease, now time.Time) bool {
+	lapse, renewed := connectionLapse(lease)
+	return renewed && lapse.After(now)
+}
+
+// leaseRevived is whether an update takes a lapsed connection Lease to a live one, a change only
+// renewal time moves. The reconciler requeues at the moment a live connection lapses, so the Lease
+// watch only has to enqueue the reverse crossing.
+func leaseRevived(previous, current *coordinationv1.Lease, now time.Time) bool {
+	return !connectionLive(previous, now) && connectionLive(current, now)
 }
 
 // bootstrappedCondition says how far the Sandbox's bootstrap has got, from the facts the incarnation's
@@ -735,7 +890,7 @@ func bootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod,
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "NoBootstrap", "the Sandbox has no bootstrap"
 		return condition, nil
 	}
-	var facts sandboxlease.RunnerFacts
+	var facts sandboxlease.EnvironmentRuntimeFacts
 	if incarnation != nil && lease != nil {
 		var err error
 		if facts, err = sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(incarnation.UID)); err != nil {
@@ -745,7 +900,7 @@ func bootstrappedCondition(sandbox *sandboxapi.Sandbox, incarnation *corev1.Pod,
 	switch facts.Bootstrap {
 	case sandboxlease.BootstrapNone:
 		condition.Status = metav1.ConditionUnknown
-		condition.Reason, condition.Message = "BootstrapNotReported", "the runner has not reported its bootstrap"
+		condition.Reason, condition.Message = "BootstrapNotReported", "the Runner Gateway has not received bootstrap status from the runner"
 	case sandboxlease.BootstrapRunning:
 		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
 	case sandboxlease.BootstrapSucceeded:
@@ -899,16 +1054,20 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Event{}, byPodEvent).
 		Watches(&sandboxapi.SandboxTemplate{}, byTemplate)
 	// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
-	// so only a different runner Pod, a new connection or a change in the facts the runner
-	// publishes enqueues.
+	// so only a different runner Pod, a new connection, a change in the facts the runner publishes
+	// or a renewal that revives a lapsed connection enqueues.
 	setup = setup.Watches(&coordinationv1.Lease{},
 		handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &sandboxapi.Sandbox{}),
 		builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 			previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
 			return previous.Annotations[sandboxlease.PodUIDAnnotation] != current.Annotations[sandboxlease.PodUIDAnnotation] ||
 				leaseTransitions(previous) != leaseTransitions(current) ||
-				sandboxlease.FactsChanged(previous.Annotations, current.Annotations)
+				sandboxlease.FactsChanged(previous.Annotations, current.Annotations) ||
+				leaseRevived(previous, current, r.Now())
 		}}))
+	// A starting workload waits for the Policy Controller to issue its WorkloadCredential. The
+	// requester reads the record uncached, so this watch only spares the runnerCredentialRetry wait.
+	setup = setup.Owns(&workloadapi.WorkloadCredential{})
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
 	}

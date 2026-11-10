@@ -23,8 +23,8 @@ type querier interface {
 
 type rowScanner interface{ Scan(...any) error }
 
-const requestColumns = `id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
-	state, version, created_at, updated_at, history_at`
+const requestColumns = `id, idempotency_key, action_group, action_name, arguments, title, description, caller_namespace, caller_name, caller_uid,
+	caller_identity_name, caller_identity_uid, state, version, created_at, updated_at, history_at`
 
 // requestRow is a request with the position in history its first non-pending Event gave it.
 type requestRow struct {
@@ -57,24 +57,30 @@ func utc(t *time.Time) *time.Time {
 	return &converted
 }
 
-func decodeRecordedActor(data []byte) (*action_servicepb.Principal, error) {
-	actor, err := decodeStoredActor(data)
-	if errors.Is(err, errInvalidActor) {
-		return nil, invalid("%s", err)
-	}
-	return actor, err
-}
-
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
-	var actionJSON, arguments []byte
+	var arguments []byte
+	var callerNamespace, callerName, callerUID, identityName, identityUID sql.NullString
 	var state string
-	if err := row.Scan(&r.ID, &r.IdempotencyKey, &actionJSON, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
-		&r.Caller.Name, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
+	if err := row.Scan(&r.ID, &r.IdempotencyKey, &r.Action.Group, &r.Action.Name, &arguments, &r.Title, &r.Description, &callerNamespace,
+		&callerName, &callerUID, &identityName, &identityUID, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
 		return requestRow{}, err
 	}
-	if err := json.Unmarshal(actionJSON, &r.Action); err != nil {
-		return requestRow{}, fmt.Errorf("request %s action: %w", r.ID, err)
+	switch {
+	case callerNamespace.Valid && callerName.Valid:
+		caller := ServiceAccountCaller{Account: ServiceAccount{Namespace: callerNamespace.String, Name: callerName.String}}
+		if callerUID.Valid {
+			uid := callerUID.String
+			caller.UID = &uid
+		}
+		r.Caller = caller
+	case identityName.Valid && identityUID.Valid:
+		r.Caller = IdentityCaller{Identity: Identity{Name: identityName.String, UID: identityUID.String}}
+	default:
+		r.Caller = UnknownCaller{}
+	}
+	if err := r.Action.Validate(); err != nil {
+		return requestRow{}, fmt.Errorf("request %s typed Action identity: %w", r.ID, err)
 	}
 	r.Arguments = arguments
 	var known bool
@@ -99,14 +105,29 @@ func getRequest(ctx context.Context, q querier, id uuid.UUID, lock bool) (reques
 	return row, err
 }
 
+// mayBeReadBy is ownedBy for an Owner; an operator and a service reader read every request.
 func (r requestRow) mayBeReadBy(principal ReadPrincipal) bool {
 	switch principal := principal.(type) {
-	case CallerPrincipal:
-		return r.Caller == principal.Account
+	case Owner:
+		return ownedBy(r.Caller, principal)
 	case OperatorPrincipal, ServiceReaderPrincipal:
 		return true
 	default:
 		return false
+	}
+}
+
+// ownedBy preserves a ServiceAccount's name-scoped ownership: its UID pins request provenance but does not change
+// read scope. An Identity owns by incarnation.
+func ownedBy(caller Caller, owner Owner) bool {
+	switch owner := owner.(type) {
+	case CallerPrincipal:
+		recorded, ok := caller.(ServiceAccountCaller)
+		return ok && recorded.Account == owner.Account
+	case IdentityPrincipal:
+		return caller == IdentityCaller{Identity: owner.Identity}
+	default:
+		panic(fmt.Sprintf("unknown owner %T", owner))
 	}
 }
 
@@ -150,7 +171,7 @@ func attach(ctx context.Context, q querier, rows []requestRow) ([]ActionRequest,
 func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid.UUID]*Decision, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT request_id, id, verdict, provider, operator_issuer, operator_subject, decision_note, reason_code,
-			reason_description, policy_evidence, idempotency_key, decided_at
+			reason_description, policy_evidence_proto, idempotency_key, decided_at
 		FROM action_decision WHERE request_id = ANY($1::uuid[])`, ids)
 	if err != nil {
 		return nil, err
@@ -160,11 +181,11 @@ func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid
 	for rows.Next() {
 		var requestID uuid.UUID
 		var decision Decision
-		var verdict string
-		var issuer, subject *string
+		var verdict, provider string
+		var issuer, subject, decisionNote, reasonCode, reasonDescription *string
 		var evidence []byte
-		if err := rows.Scan(&requestID, &decision.ID, &verdict, &decision.Provider, &issuer, &subject,
-			&decision.DecisionNote, &decision.ReasonCode, &decision.ReasonDescription, &evidence,
+		if err := rows.Scan(&requestID, &decision.ID, &verdict, &provider, &issuer, &subject,
+			&decisionNote, &reasonCode, &reasonDescription, &evidence,
 			&decision.IdempotencyKey, &decision.DecidedAt); err != nil {
 			return nil, err
 		}
@@ -172,14 +193,28 @@ func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid
 		if !decision.Verdict.valid() {
 			return nil, fmt.Errorf("decision %s has unknown verdict %q", decision.ID, verdict)
 		}
-		if issuer != nil && subject != nil {
-			decision.Operator = &OperatorPrincipal{Issuer: *issuer, Subject: *subject}
-		}
-		if document := jsonValue(evidence); document != nil {
-			decision.PolicyEvidence = new(PolicyEvidence)
-			if err := json.Unmarshal(document, decision.PolicyEvidence); err != nil {
-				return nil, fmt.Errorf("decision %s policy_evidence: %w", decision.ID, err)
+		switch provider {
+		case operatorProvider:
+			if issuer == nil || subject == nil {
+				return nil, fmt.Errorf("operator decision %s names no operator", decision.ID)
 			}
+			decision.Decider = OperatorDecision{
+				Operator: OperatorPrincipal{Issuer: *issuer, Subject: *subject}, DecisionNote: decisionNote,
+			}
+		case policyProvider:
+			if reasonCode == nil {
+				return nil, fmt.Errorf("policy decision %s has no reason code", decision.ID)
+			}
+			policy := PolicyDecision{ReasonCode: reasonCodeFromStored(*reasonCode), ReasonDescription: reasonDescription}
+			if evidence != nil {
+				policy.Evidence, err = decodeStoredPolicyEvidenceProto(evidence)
+				if err != nil {
+					return nil, fmt.Errorf("decision %s policy_evidence: %w", decision.ID, err)
+				}
+			}
+			decision.Decider = policy
+		default:
+			return nil, fmt.Errorf("decision %s has unknown provider %q", decision.ID, provider)
 		}
 		decision.DecidedAt = decision.DecidedAt.UTC()
 		decisions[requestID] = &decision
@@ -209,7 +244,10 @@ func loadExecutions(ctx context.Context, q querier, ids pq.StringArray) (map[uui
 		if !execution.State.valid() {
 			return nil, fmt.Errorf("execution %s has unknown state %q", execution.ID, state)
 		}
-		execution.Result, execution.Error = jsonValue(result), jsonValue(failure)
+		execution.Result = jsonValue(result)
+		if execution.Error, err = decodeExecutionError(jsonValue(failure)); err != nil {
+			return nil, fmt.Errorf("execution %s: %w", execution.ID, err)
+		}
 		execution.CreatedAt = execution.CreatedAt.UTC()
 		execution.StartedAt, execution.CompletedAt, execution.ReconciledAt =
 			utc(execution.StartedAt), utc(execution.CompletedAt), utc(execution.ReconciledAt)
@@ -244,21 +282,24 @@ func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action_serv
 
 // appendEvent records the request's current version and state, and wakes whoever follows the request.
 func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principal) error {
-	var document any
+	var actorProto any
 	if actor != nil {
 		recorded, err := recordedActor(actor)
 		if err != nil {
 			return err
 		}
-		encoded, err := encodeStoredActor(recorded)
+		principalBytes, err := encodeRecordedPrincipal(recorded)
 		if err != nil {
 			return err
 		}
-		document = string(encoded)
+		if principalBytes != nil {
+			actorProto = principalBytes
+		}
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO action_event (request_id, sequence, state, at, actor) VALUES ($1, $2, $3, $4, $5::jsonb)`,
-		row.ID, row.Version, storedState(row.State), row.UpdatedAt, document); err != nil {
+		`INSERT INTO action_event (request_id, sequence, state, at, actor_proto)
+			VALUES ($1, $2, $3, $4, $5)`,
+		row.ID, row.Version, storedState(row.State), row.UpdatedAt, actorProto); err != nil {
 		return err
 	}
 	return notify(ctx, tx, UpdatesChannel, row.ID.String())
@@ -267,7 +308,20 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 	switch principal := principal.(type) {
 	case CallerPrincipal:
-		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: principal.Account.Proto()}}, nil
+		if principal.ServiceAccountUID == "" {
+			return nil, invalid("a recorded caller needs its verified ServiceAccount UID")
+		}
+		uid := principal.ServiceAccountUID
+		return &action_servicepb.Principal{
+			Principal: &action_servicepb.Principal_Caller{Caller: principal.Account.Proto()}, CallerUid: &uid,
+		}, nil
+	case IdentityPrincipal:
+		if err := principal.Identity.validate(); err != nil {
+			return nil, invalid("%s", err)
+		}
+		return &action_servicepb.Principal{
+			Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: principal.Identity.Proto()},
+		}, nil
 	case OperatorPrincipal:
 		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: principal.Issuer, Subject: principal.Subject}}}, nil
 	default:
@@ -275,35 +329,52 @@ func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 	}
 }
 
-// Submit stores an admitted request for the caller. The caller's idempotency key is spent whatever the envelope
-// says: a second submission under it is a ConflictIdempotencyKeyUsed, and the request is read back by key.
-func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input ActionRequestInput, admission Admission) (ActionRequest, error) {
+// Submit stores an admitted request for its owner. A ServiceAccount's UID pins its account incarnation, while
+// ownership and its idempotency key remain scoped by namespace/name; an Identity's are scoped by incarnation. A second
+// submission under the key is a ConflictIdempotencyKeyUsed, and the original request is read back by key.
+func (s *Store) Submit(ctx context.Context, owner Owner, input ActionRequestInput, admission Admission) (ActionRequest, error) {
 	if err := input.Validate(); err != nil {
 		return ActionRequest{}, err
 	}
-	if err := validateServiceAccount(caller.Account); err != nil {
-		return ActionRequest{}, err
+	// The owner's columns, and the unique key a repeated idempotency key conflicts on.
+	var namespace, name, uid, identityName, identityUID *string
+	var conflict string
+	switch owner := owner.(type) {
+	case CallerPrincipal:
+		if err := validateServiceAccount(owner.Account); err != nil {
+			return ActionRequest{}, err
+		}
+		if owner.ServiceAccountUID == "" {
+			return ActionRequest{}, invalid("caller ServiceAccount UID is required")
+		}
+		namespace, name, uid = &owner.Account.Namespace, &owner.Account.Name, &owner.ServiceAccountUID
+		conflict = "caller_namespace, caller_name, idempotency_key"
+	case IdentityPrincipal:
+		if err := owner.Identity.validate(); err != nil {
+			return ActionRequest{}, invalid("%s", err)
+		}
+		identityName, identityUID = &owner.Identity.Name, &owner.Identity.UID
+		conflict = "caller_identity_name, caller_identity_uid, idempotency_key"
+	default:
+		panic(fmt.Sprintf("unknown owner %T", owner))
 	}
 	if admission.Vote != nil {
 		if err := admission.Vote.Validate(); err != nil {
 			return ActionRequest{}, err
 		}
 	}
-	action, err := json.Marshal(input.Action)
-	if err != nil {
-		return ActionRequest{}, err
-	}
 	var view ActionRequest
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
-			INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace,
-				caller_name, state, version, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, 'decision_pending', 1, $9, $9)
-			ON CONFLICT (caller_namespace, caller_name, idempotency_key) DO NOTHING
+			INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title,
+				description, caller_namespace, caller_name, caller_uid, caller_identity_name, caller_identity_uid,
+				state, version, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, 'decision_pending', 1, $13, $13)
+			ON CONFLICT (`+conflict+`) DO NOTHING
 			RETURNING `+requestColumns,
-			admission.RequestID, input.IdempotencyKey, string(action), string(input.Arguments), input.Title,
-			input.Description, caller.Account.Namespace, caller.Account.Name, at))
+			admission.RequestID, input.IdempotencyKey, input.Action.Group, input.Action.Name, string(input.Arguments),
+			input.Title, input.Description, namespace, name, uid, identityName, identityUID, at))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,
@@ -318,12 +389,9 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 		}
 		if vote := admission.Vote; vote != nil {
 			if _, err := recordDecision(ctx, tx, &row, at, decisionRecord{
-				Verdict:           vote.Verdict,
-				Provider:          vote.Provider,
-				IdempotencyKey:    "auto:" + row.ID.String(),
-				ReasonCode:        &vote.ReasonCode,
-				ReasonDescription: vote.ReasonDescription,
-				PolicyEvidence:    vote.Evidence,
+				Verdict:        vote.Verdict,
+				IdempotencyKey: "auto:" + row.ID.String(),
+				Decider:        vote.Policy,
 			}); err != nil {
 				return err
 			}
@@ -456,12 +524,15 @@ func (q *query) arg(value any) string {
 	return fmt.Sprintf("$%d", len(q.args))
 }
 
-// readableBy is the condition mayBeReadBy applies: a caller reads its own requests, an operator and a service
-// reader every owner's.
+// readableBy is the condition mayBeReadBy applies: a ServiceAccount reads requests by namespace/name, an Identity by
+// incarnation, an operator and a service reader every owner's. Caller UID is provenance and does not change a
+// ServiceAccount's ownership scope.
 func (q *query) readableBy(principal ReadPrincipal) []string {
 	switch principal := principal.(type) {
 	case CallerPrincipal:
 		return []string{"caller_namespace = " + q.arg(principal.Account.Namespace) + " AND caller_name = " + q.arg(principal.Account.Name)}
+	case IdentityPrincipal:
+		return []string{"caller_identity_name = " + q.arg(principal.Identity.Name) + " AND caller_identity_uid = " + q.arg(principal.Identity.UID)}
 	case OperatorPrincipal, ServiceReaderPrincipal:
 		return nil
 	default:
@@ -582,7 +653,7 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 		if _, err := readable(ctx, tx, id, principal); err != nil {
 			return err
 		}
-		query := `SELECT sequence, state, at, actor FROM action_event WHERE request_id = $1 AND sequence > $2
+		query := `SELECT sequence, state, at, actor_proto FROM action_event WHERE request_id = $1 AND sequence > $2
 			ORDER BY sequence`
 		args := []any{id, filter.AfterSequence}
 		if filter.Limit != nil {
@@ -597,8 +668,8 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 		for rows.Next() {
 			var event Event
 			var state string
-			var actor []byte
-			if err := rows.Scan(&event.Sequence, &state, &event.At, &actor); err != nil {
+			var actorProto []byte
+			if err := rows.Scan(&event.Sequence, &state, &event.At, &actorProto); err != nil {
 				return err
 			}
 			var known bool
@@ -607,9 +678,9 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 			if !known {
 				return fmt.Errorf("event %s/%d has unknown state %q", id, event.Sequence, state)
 			}
-			if document := jsonValue(actor); document != nil {
+			if actorProto != nil {
 				var err error
-				if event.Actor, err = decodeRecordedActor(document); err != nil {
+				if event.Actor, err = decodeStoredPrincipalProto(actorProto); err != nil {
 					return fmt.Errorf("event %s/%d actor: %w", id, event.Sequence, err)
 				}
 			}

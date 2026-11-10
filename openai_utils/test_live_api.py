@@ -12,7 +12,7 @@ import pytest_bazel
 
 from openai_utils.client_factory import build_client
 from openai_utils.errors import ContextLengthExceededError
-from openai_utils.model import OpenAIModelProto, ResponsesRequest
+from openai_utils.model import Model, ResponsesRequest
 from openai_utils.requests import create_chat_completion
 from openai_utils.testing.fixtures import ClientMode, error_transport, mock_and_live, mock_openai_client
 
@@ -31,14 +31,12 @@ def _huge_prompt(length: int = 5_000_000) -> str:
 async def test_context_length_exceeded(mode: ClientMode, live_openai_model) -> None:
     """Context length exceeded → ContextLengthExceededError in both mock and live."""
     if mode is ClientMode.MOCK:
-        client: OpenAIModelProto = mock_openai_client(
-            error_transport("context_length_exceeded", "context length exceeded")
-        )
+        client: Model = mock_openai_client(error_transport("context_length_exceeded", "context length exceeded"))
     else:
         client = build_client(live_openai_model)
 
     with pytest.raises(ContextLengthExceededError):
-        await client.responses_create(ResponsesRequest(input=_huge_prompt(), max_output_tokens=16))
+        await client.sample(client.prepare(ResponsesRequest(input=_huge_prompt(), max_output_tokens=16)))
 
 
 # --- Live-only tests ---

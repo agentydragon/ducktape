@@ -9,6 +9,7 @@ load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink", "shared_py_image_layers")
 load("//props:py_test.bzl", "py_test")
+load("//props/testing:exec_properties.bzl", "CONTAINER_E2E_EXEC_PROPERTIES")
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
@@ -43,12 +44,13 @@ py_test(
         "//props/agents/critic:image",
         "//props/agents/grader:image",
     ],
+    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
+        "//mcp_infra/testing:fixtures",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",
@@ -60,6 +62,11 @@ py_test(
         "//props/core/models:examples",
         "//props/db:database",
         "//props/db:models",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
     ],
 )

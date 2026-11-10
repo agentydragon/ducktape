@@ -11,12 +11,12 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -31,7 +31,7 @@ _SERVICE = ServiceRef(
 _CLUSTER_CA_CONFIG_MAP = "kube-root-ca.crt"
 _CLUSTER_CA_DIR = "/etc/nginx/cluster-ca"
 _NGINX_CONF = (
-    get_required_path(own_repo_rlocation("cluster/cdk8s/kube-api-proxy.conf"))
+    (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/kube-api-proxy.conf")
     .read_text()
     .replace("@LISTEN_PORT@", str(_SERVICE.pod_port))
     .replace("@CLUSTER_CA_DIR@", _CLUSTER_CA_DIR)

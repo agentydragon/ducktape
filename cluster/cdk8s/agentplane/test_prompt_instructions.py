@@ -9,6 +9,7 @@ two places they are supposed to work, which reads as flaky policy rather than a 
 
 from typing import Any
 
+import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
@@ -19,6 +20,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
 )
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
+from cluster.cdk8s.agentplane.egress import BASIC_POLICY
 from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS
 
 
@@ -66,13 +68,46 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     }
     bound = set(binding["spec"]["policySets"]) & action_sets
     assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    assert set(preset) & action_sets == set(HAKU_ACTION_POLICY_SETS), "preset and its named bundle drifted"
+    # `basic` is listed separately on the preset and now also owns the narrow same-principal
+    # Session-delegation approval rule, so include it in the rendered action-set view without
+    # duplicating it in HAKU_ACTION_POLICY_SETS.
+    expected_action_sets = set(HAKU_ACTION_POLICY_SETS) | {BASIC_POLICY}
+    assert set(preset) & action_sets == expected_action_sets, "preset and its named bundle drifted"
     assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
 
     # Every name the preset binds must resolve to a PolicySet this namespace actually creates, or the
     # The app refuses the launch outright.
     created = {doc["metadata"]["name"] for doc in staging_manifests if doc["kind"] == "PolicySet"}
     assert set(preset) <= created, sorted(set(preset) - created)
+
+
+@pytest.mark.parametrize("policy_set", ["quest-read", "thrive-read"])
+def test_read_policy_grants(staging_manifests: list[dict[str, Any]], policy_set: str) -> None:
+    for name in ("haku-agent", "claude-ai"):
+        binding = one(
+            doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == name
+        )
+        assert policy_set in binding["spec"]["policySets"]
+    app_config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
+    )
+    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    assert policy_set in presets["haku"]["policy_sets"]
+    assert all(policy_set not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
+
+
+def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, Any]]) -> None:
+    bindings = {
+        doc["metadata"]["name"]: doc["spec"]["policySets"]
+        for doc in staging_manifests
+        if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] in {"haku-agent", "claude-ai"}
+    }
+    claude_only = {"buildbuddy", "mimir-reads", "orchestration-presets"}
+    haku, claude = bindings["haku-agent"], bindings["claude-ai"]
+    assert len(haku) == len(set(haku))
+    assert len(claude) == len(set(claude))
+    assert set(claude) - set(haku) == claude_only
+    assert [policy for policy in claude if policy not in claude_only] == haku
 
 
 if __name__ == "__main__":

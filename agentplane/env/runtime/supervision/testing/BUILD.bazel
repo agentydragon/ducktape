@@ -1,0 +1,21 @@
+# gazelle:exclude pid1_go_test.py
+
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
+
+package(default_visibility = ["//agentplane/env:__subpackages__"])
+
+exports_files(["pid1_go_test.py"])
+
+oci_image(
+    name = "git_image",
+    testonly = True,
+    base = "@debian_trixie_slim_linux_amd64",
+    tars = ["@trixie_e2e//:flat"],
+)
+
+oci_layout_py(
+    name = "git_tools",
+    testonly = True,
+    image = ":git_image",
+)

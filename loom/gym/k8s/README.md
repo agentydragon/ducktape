@@ -51,6 +51,6 @@ Tune model / task-filter / arms via `args` in `eval-job.yaml`.
 - IA/archive failures often surface as no-answer samples: exhausted agent loop,
   empty answer, `JSONDecodeError`, and `value=nan`. Treat the `nan` count as an
   archive reliability signal before assuming a model or scoring bug.
-- Archive-service status, first cold-run results, and limiter follow-ups live in
-  `../../wayback/cache/PLAN.md`. Archive.org API behavior and signal-header
+- Archive-service contract and parked status live in
+  `../../wayback/cache/README.md`. Archive.org API behavior and signal-header
   notes live in `../../docs/archive_org_apis.md`.

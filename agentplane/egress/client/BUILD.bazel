@@ -9,6 +9,7 @@ kubernetes_clients(
         "CredentialSource",
         "EgressCredential",
         "EgressCredentialSpec",
+        "KubernetesServiceAccountSource",
         "ProjectedWorkloadTokenSource",
         "SecretKeyRef",
         "Target",

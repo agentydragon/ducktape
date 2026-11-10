@@ -1,8 +1,9 @@
-"""The history's User Timing marks (frontend/threads/thread_view_timing.ts), collected by the
-Playwright init script (thread_view_marks.js) and read back as typed events.
+"""The history's User Timing marks (`HistoryEvent` in util/frontend/transcript/history_diagnostics.ts),
+collected from the `agentplane:thread-view:` namespace by the Playwright init script
+(thread_view_marks.js) and read back as typed events.
 
-`ThreadViewEvent` there and the models here are one contract: an event kind or field added on either
-side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""
+`HistoryEvent` there and the `ThreadViewEvent` models here are one contract: an event kind or field
+added on either side fails the parse of the other, loudly, rather than being dropped from a failure's dump."""
 
 import asyncio
 import logging
@@ -13,8 +14,7 @@ from typing import Annotated, Literal
 from playwright.async_api import Error as PlaywrightError, Page
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ class EstimateError(_Recorded):
 
 
 def script_path() -> Path:
-    return get_required_path("_main/agentplane/app/testing/thread_view_marks.js")
+    return Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/thread_view_marks.js"
 
 
 _EVENTS = TypeAdapter(list[TimedThreadViewEvent])

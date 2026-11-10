@@ -1,0 +1,253 @@
+syntax = "proto3";
+
+package agentplane.app;
+
+import "agentplane/proto/session.proto";
+import "agentplane/runner_gateway/dispatcher/session_dispatcher.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// AppService defines the integration app's human-facing interface. In-cluster services
+// call backend gRPC APIs directly rather than depending on this app facade.
+service AppService {
+  // Browser-visible model and Sandbox preset configuration.
+  rpc ListModels(google.protobuf.Empty) returns (ListModelsResponse) {
+    option (google.api.http) = {get: "/v1/models"};
+  }
+
+  rpc ListSandboxPresets(google.protobuf.Empty) returns (ListSandboxPresetsResponse) {
+    option (google.api.http) = {get: "/v1/presets"};
+  }
+
+  // Read the health checks for services the app depends on.
+  rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse) {
+    option (google.api.http) = {get: "/v1/system/status"};
+  }
+
+  // Browser-safe deployment settings for optional search links.
+  rpc GetFrontendConfig(GetFrontendConfigRequest) returns (GetFrontendConfigResponse) {
+    option (google.api.http) = {get: "/v1/frontend-config"};
+  }
+
+  // The create form's app defaults and the policy set names visible to the app.
+  rpc GetSandboxForm(GetSandboxFormRequest) returns (GetSandboxFormResponse) {
+    option (google.api.http) = {get: "/v1/sandbox-form"};
+  }
+
+  // App-owned Thread metadata; Session fields belong to History.
+  // Get metadata for an app-owned Thread.
+  rpc GetThreadMetadata(ThreadMetadataTarget) returns (ThreadMetadata) {
+    option (google.api.http) = {
+      get: "/v1/threads/{thread_id}"
+    };
+  }
+
+  // Set a Thread's operator-managed name; an absent or blank name clears it.
+  rpc RenameThread(RenameThreadRequest) returns (ThreadMetadata) {
+    option (google.api.http) = {patch: "/v1/threads/{thread_id}" body: "*"};
+  }
+
+  // Archive an idle Thread, or restore it to the default list.
+  rpc ArchiveThread(ThreadMetadataTarget) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/threads/{thread_id}/archive" body: "*"};
+  }
+
+  rpc UnarchiveThread(ThreadMetadataTarget) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/threads/{thread_id}/unarchive" body: "*"};
+  }
+
+  // List app-owned Thread metadata newest first.
+  rpc ListThreadMetadata(ListThreadMetadataRequest) returns (ListThreadMetadataResponse) {
+    option (google.api.http) = {
+      get: "/v1/threads"
+    };
+  }
+
+  // A Thread metadata change invalidates the caller's list; the caller reads it again.
+  rpc WatchThreadMetadata(WatchThreadMetadataRequest) returns (stream WatchThreadMetadataResponse) {
+    option (google.api.http) = {
+      get: "/v1/threads:watch"
+    };
+  }
+
+  // User-facing composition for the integration app's human frontend, not an API for
+  // in-cluster services. Backend callers use SessionDispatcher directly with a complete
+  // SessionSpec. The app resolves Sandbox presets, applies spec and setup-script overrides,
+  // expands the Session ID in cwd, and creates app-owned Thread metadata before calling
+  // Dispatcher, which owns durable admission, delivery, and opening status.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
+    option (google.api.http) = {
+      post: "/sandboxes/{name}/sessions"
+      body: "*"
+      response_body: "session"
+    };
+  }
+
+  // Read the current live Runner status without waking the Sandbox.
+  rpc GetEnvironmentRuntimeStatus(GetEnvironmentRuntimeStatusRequest)
+      returns (agentplane.proto.EnvironmentRuntimeStatus) {
+    option (google.api.http) = {
+      get: "/sandboxes/{name}/runner-status"
+    };
+  }
+}
+
+message ListModelsResponse {
+  repeated ModelOption models = 1;
+  repeated HarnessModelOffers harnesses = 2;
+}
+
+message ModelOption {
+  string model = 1;
+  string display_name = 2;
+  repeated string reasoning_efforts = 3;
+}
+
+message HarnessModelOffers {
+  agentplane.proto.Harness harness = 1;
+  repeated string models = 2;
+}
+
+message ListSandboxPresetsResponse {
+  repeated SandboxPreset presets = 1;
+}
+
+message GetSystemStatusRequest {}
+
+message GetSystemStatusResponse {
+  repeated SystemComponentStatus components = 1;
+}
+
+message SystemComponentStatus {
+  string name = 1;
+  SystemComponentState state = 2;
+  optional string detail = 3;
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+enum SystemComponentState {
+  SYSTEM_COMPONENT_STATE_UNSPECIFIED = 0;
+  SYSTEM_COMPONENT_STATE_OK = 1;
+  SYSTEM_COMPONENT_STATE_DOWN = 2;
+}
+
+message GetFrontendConfigRequest {}
+
+message GetFrontendConfigResponse {
+  FrontendConfig frontend_config = 1;
+}
+
+message FrontendConfig {
+  TraceSearchSettings trace_search = 1;
+  LangfuseSearchSettings langfuse_search = 2;
+}
+
+message TraceSearchSettings {
+  string grafana_base_url = 1;
+  string tempo_datasource_uid = 2;
+  string deployment_environment = 3;
+}
+
+message LangfuseSearchSettings {
+  string base_url = 1;
+  string project_id = 2;
+  string session_metadata_key = 3;
+  string sandbox_namespace_metadata_key = 4;
+  string sandbox_service_account_metadata_key = 5;
+}
+message GetSandboxFormRequest {}
+
+message GetSandboxFormResponse {
+  repeated string policy_sets = 1;
+  NewSandboxDefaults new_sandbox_defaults = 2;
+}
+
+message NewSandboxDefaults {
+  bool wake_on_send = 1;
+  optional int64 idle_suspend_after_seconds = 2;
+}
+
+message SandboxPreset {
+  string name = 1;
+  string title = 2;
+  string template = 3;
+  repeated string policy_sets = 4;
+  repeated string inbox_tags = 5;
+  SessionDefaults session_defaults = 6;
+  string bootstrap = 7;
+}
+
+message SessionDefaults {
+  agentplane.proto.Harness harness = 1;
+  string model = 2;
+  string cwd = 3;
+  optional string reasoning_effort = 4;
+  string instructions = 5;
+  string setup_script = 6;
+}
+
+message ThreadMetadataTarget {
+  string thread_id = 1;
+}
+
+message RenameThreadRequest {
+  string thread_id = 1;
+  optional string name = 2;
+}
+
+message ThreadMetadata {
+  string thread_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  optional string name = 3;
+  bool archived = 4;
+}
+
+message ListThreadMetadataRequest {
+  // False by default; archived Threads are omitted.
+  bool include_archived = 1;
+  // Defaults to 50; maximum 200.
+  uint32 limit = 2;
+  // Opaque cursor returned by the prior page.
+  string page_token = 3;
+  // Restrict the listing to one exact Sandbox incarnation.
+  string sandbox_uid = 4;
+}
+
+message ListThreadMetadataResponse {
+  repeated ThreadMetadata threads = 1;
+  string next_page_token = 2;
+  int32 archived_count = 3;
+}
+
+message WatchThreadMetadataRequest {}
+
+message WatchThreadMetadataResponse {
+  // Sent when the stream opens and whenever app-owned Thread metadata may have changed.
+  google.protobuf.Empty changed = 1;
+  // Whether the PostgreSQL notification listener is connected to the Thread change channel.
+  bool updates_connected = 2;
+}
+
+message CreateSessionRequest {
+  string name = 1;
+  // Caller-minted UUID; reconcile an uncertain outcome with this identity, never a fresh opening.
+  string session_id = 2;
+  string sandbox_uid = 3;
+  // Partial SessionSpec ProtoJSON, validated strictly against that generated message. A Struct
+  // retains supplied keys, including zero, empty and null values that clear preset defaults.
+  // A plain SessionSpec would lose scalar presence and optional scalars would lose explicit null.
+  google.protobuf.Struct spec = 4;
+  // Omitted selects the preset; null clears it; a string (including empty) replaces it.
+  google.protobuf.Value setup_script = 5;
+}
+
+message GetEnvironmentRuntimeStatusRequest {
+  string name = 1;
+  string sandbox_uid = 2;
+}
+
+message CreateSessionResponse {
+  agentplane.runner_gateway.dispatcher.Session session = 1;
+}

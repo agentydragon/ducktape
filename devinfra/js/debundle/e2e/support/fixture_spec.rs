@@ -8,14 +8,43 @@ use spec::InitializerPurity;
 use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, DependencyGraphOptions,
-    IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule, MakesDecorateCallSelector,
-    MaterializeLogicalModulesConfig, Member as SpecMember, MemberOfModuleSelector, MemberSelector,
-    PassedToCallSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
-    TransformSpec, UnassignedMode, WriteJsTreeConfig,
+    EmitBrowserHarnessConfig, IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule,
+    MakesDecorateCallSelector, MaterializeLogicalModulesConfig, Member as SpecMember,
+    MemberOfModuleSelector, PassedToCallSelector, RawMemberSelector, ReadsMemberSelector,
+    SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
+    SourceMatchIdentifierMode, SwapVendorChunksConfig, TransformSpec, UnassignedMode,
+    WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
+
+/// Nested return-value calls and repeated source evaluation exercise the
+/// operation ledger, including a native guard's proof dependency.
+pub fn composed_global_access_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        "function mutate() { globalThis.marker = 1; return 1; }\n\
+         function peek() { const map = new Map(); globalThis.marker = 1; return globalThis.marker; }\n\
+         function nested() { return peek(); }\n\
+         function unused() { globalThis.unused = 1; }\n\
+         function install(target, key, value) { Object.defineProperty(Object.getPrototypeOf(target), key, { value }); }\n\
+         const first = nested();\n\
+         const second = mutate();\n\
+         const tail = nested() + first;\n\
+         console.log(first, tail, globalThis.marker);\n\
+         export { mutate, peek, nested, unused, first, second, tail };\n",
+        vec![
+            logical_module("outer", &[
+                Member::new("mutate"), Member::new("peek"), Member::new("nested"),
+                Member::new("unused"), Member::new("install"), Member::new("first"), Member::new("tail"),
+            ]),
+            logical_module("inner", &[Member::new("second")]),
+        ],
+    ).with_unassigned_mode(unassigned_mode_inline()).with_program_premises(
+        serde_json::from_value(serde_json::json!({
+            "intrinsics_never_written": { "families": "all", "note": "neutral source contains no intrinsic mutation" }
+        })).unwrap()
+    )
+}
 
 /// One member of a [`LogicalModuleEntry`].
 ///
@@ -24,11 +53,12 @@ use std::collections::BTreeMap;
 #[derive(Default)]
 pub struct Member {
     pub name: &'static str,
-    selector: MemberSelector,
+    selector: RawMemberSelector,
     source_match: Option<SourceMatch>,
     purity: Option<MemberPurity>,
     initializer_purity: Option<InitializerPurity>,
     effect: Option<MemberEffect>,
+    retained_record_factory: bool,
     no_sync_callback_members: Vec<String>,
     pub comment: Option<String>,
 }
@@ -88,7 +118,7 @@ impl BindingGroup {
 }
 
 impl Member {
-    fn pinned(name: &'static str, selector: MemberSelector) -> Self {
+    fn pinned(name: &'static str, selector: RawMemberSelector) -> Self {
         Self {
             name,
             selector,
@@ -116,7 +146,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 binding: Some(BindingSelector {
                     name: binding.to_string(),
                     kind: parse_kind(kind),
@@ -169,7 +199,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 cross_ref: Some(CrossRefSelector {
                     references: Some(anchor.to_string()),
                     aliases: None,
@@ -185,7 +215,7 @@ impl Member {
     pub fn cross_ref_aliases(name: &'static str, anchor: &'static str) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 cross_ref: Some(CrossRefSelector {
                     references: None,
                     aliases: Some(anchor.to_string()),
@@ -210,7 +240,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 reads_member: Some(ReadsMemberSelector {
                     member: member.to_string(),
                     object: object.map(str::to_string),
@@ -233,7 +263,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 member_of_module: Some(MemberOfModuleSelector {
                     module: module.to_string(),
                     member: member.to_string(),
@@ -261,7 +291,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 passed_to_call: Some(PassedToCallSelector {
                     callee_member: callee_member.to_string(),
                     object: object.map(str::to_string),
@@ -288,7 +318,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 makes_decorate_call: Some(MakesDecorateCallSelector {
                     class: class.to_string(),
                     member: member.map(str::to_string),
@@ -309,7 +339,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 intrinsic_alias: Some(IntrinsicAliasSelector {
                     property: property.to_string(),
                     referenced_by: referenced_by.to_string(),
@@ -344,6 +374,14 @@ impl Member {
     /// `spec::BindingAnnotation::effect`.
     pub fn with_effect(mut self, effect: MemberEffect) -> Self {
         self.effect = Some(effect);
+        self
+    }
+
+    /// Assert that this stable local function retains its fresh record argument
+    /// and defers its callback graph. See
+    /// `spec::BindingAnnotation::retained_record_factory`.
+    pub fn with_retained_record_factory(mut self) -> Self {
+        self.retained_record_factory = true;
         self
     }
 
@@ -400,6 +438,7 @@ impl FixtureAnonymousStatement {
         Self(AnonymousStatement {
             match_source: Some(match_source.into()),
             source_match: None,
+            no_reentry_call: None,
             comment: None,
             note: None,
         })
@@ -413,6 +452,7 @@ impl FixtureAnonymousStatement {
                 target_binding: None,
                 match_source: match_source.into(),
             }),
+            no_reentry_call: None,
             comment: None,
             note: None,
         })
@@ -509,6 +549,7 @@ fn fixture_annotations(
             || member.purity.is_some()
             || member.initializer_purity.is_some()
             || member.effect.is_some()
+            || member.retained_record_factory
             || !member.no_sync_callback_members.is_empty()
         {
             annotations.insert(
@@ -517,6 +558,7 @@ fn fixture_annotations(
                     purity: member.purity.unwrap_or_default(),
                     initializer_purity: member.initializer_purity.unwrap_or_default(),
                     effect: member.effect.unwrap_or_default(),
+                    retained_record_factory: member.retained_record_factory,
                     no_sync_callback_members: member.no_sync_callback_members.clone(),
                     comment: member.comment.clone(),
                     ..Default::default()
@@ -647,7 +689,12 @@ pub fn logical_module_with_anon_comment(
 }
 
 pub struct FixtureOpts<'a> {
-    pub execution_runtime: spec::ExecutionRuntime,
+    pub host_behavior: spec::HostBehavior,
+    pub program_premises: spec::ProgramPremises,
+    pub embedded_loaders_path: Option<std::path::PathBuf>,
+    /// Top-level spec keys written verbatim beside the typed spec, for text the
+    /// typed builder cannot express (keys the schema must reject).
+    pub raw_spec_keys: Vec<(&'a str, serde_json::Value)>,
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
@@ -662,8 +709,9 @@ pub struct FixtureOpts<'a> {
     /// declare an explicit mode (the spec validator enforces this).
     /// Renders as a YAML object with `kind: <discriminant>` plus
     /// any variant-specific fields. Use [`unassigned_mode_inline`],
-    /// [`unassigned_mode_catchall_file`], or
-    /// [`unassigned_mode_per_atomic_group`] to build typical bodies.
+    /// [`unassigned_mode_catchall_file`],
+    /// [`unassigned_mode_per_atomic_group`], or
+    /// [`unassigned_mode_coarse_atomic_groups`] to build typical bodies.
     pub unassigned_mode: UnassignedMode,
     /// Opt into the dataflow-aware S-chain emission in `graph/` for
     /// this chunk. Default `false` — leaves the strictly-conservative
@@ -701,11 +749,29 @@ pub struct FixtureOpts<'a> {
     /// `chunk_export_purity` entries as `(defining chunk_id, assertion)`,
     /// built via [`ChunkExportPurityBuilder`]. Default empty.
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
+    /// Author-conditioned captured-value inputs keyed by their defining chunk.
+    pub value_inputs: Vec<(String, Vec<spec::ValueInputContract>)>,
+    /// Source-selected native-operation identity premises keyed by provider.
+    pub native_operation_inputs: Vec<(String, Vec<spec::NativeOperationInputContract>)>,
+    pub initializer_call_effect_inputs:
+        Vec<(String, Vec<spec::InitializerCallEffectInputContract>)>,
+    /// Exact-site imported primitive-array spread premises keyed by consumer.
+    pub imported_primitive_array_spread_inputs:
+        Vec<(String, Vec<spec::ImportedPrimitiveArraySpreadInputContract>)>,
+    /// Source-selected exact native callee identity premises keyed by provider.
+    pub native_call_identity_inputs: Vec<(String, Vec<spec::NativeCallIdentityInputContract>)>,
+    pub argument_inputs: Vec<(String, Vec<spec::ArgumentInputContract>)>,
+    pub no_accessor_install_callables: Vec<(String, Vec<spec::NoAccessorInstallCallableContract>)>,
+    /// Author-certified commuting source-unit pairs keyed by their chunk.
+    pub commuting_statements: Vec<(String, Vec<spec::CommutingStatementsContract>)>,
     /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
     pub vendor_marks: &'a [(&'a str, spec::VendorMark)],
     /// Keep only `chunk_id` in the materialization artifact while retaining
     /// the full chunk table, exercising incomplete-artifact fallback.
     pub prune_other_chunks: bool,
+    /// Configure `emit_browser_harness` over a snapshot `index.html` that
+    /// loads the entry chunk; the harness root is exposed on the run result.
+    pub browser_harness: bool,
 }
 
 impl<'a> FixtureOpts<'a> {
@@ -715,9 +781,13 @@ impl<'a> FixtureOpts<'a> {
         // `static/app/modules/residual/unhandled.js` being written.
         // Tests that exercise `InlineInEntry` semantics override with
         // [`unassigned_mode_inline`]; tests that exercise per-group modules
-        // override with [`unassigned_mode_per_atomic_group`].
+        // override with [`unassigned_mode_per_atomic_group`] or
+        // [`unassigned_mode_coarse_atomic_groups`].
         Self {
-            execution_runtime: spec::ExecutionRuntime::default(),
+            host_behavior: spec::HostBehavior::default(),
+            program_premises: spec::ProgramPremises::default(),
+            embedded_loaders_path: None,
+            raw_spec_keys: Vec::new(),
             source,
             logical_modules,
             chunk_renames: None,
@@ -734,9 +804,24 @@ impl<'a> FixtureOpts<'a> {
             source_paths: &[],
             extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
+            value_inputs: Vec::new(),
+            native_operation_inputs: Vec::new(),
+            initializer_call_effect_inputs: Vec::new(),
+            imported_primitive_array_spread_inputs: Vec::new(),
+            native_call_identity_inputs: Vec::new(),
+            argument_inputs: Vec::new(),
+            no_accessor_install_callables: Vec::new(),
+            commuting_statements: Vec::new(),
             vendor_marks: &[],
             prune_other_chunks: false,
+            browser_harness: false,
         }
+    }
+
+    /// See [`Self::browser_harness`].
+    pub fn with_browser_harness(mut self) -> Self {
+        self.browser_harness = true;
+        self
     }
 
     /// Add analyzed-but-not-materialized sibling chunks (see `extra_chunks`),
@@ -765,6 +850,105 @@ impl<'a> FixtureOpts<'a> {
         entries: &'a [(&'a str, spec::ChunkExportPurity)],
     ) -> Self {
         self.chunk_export_purity = entries;
+        self
+    }
+
+    /// Attach source-bound value inputs to one analyzed provider chunk.
+    pub fn with_value_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::ValueInputContract>,
+    ) -> Self {
+        self.value_inputs.push((chunk.into(), inputs));
+        self
+    }
+
+    /// Attach source-selected native-operation inputs to one provider chunk.
+    pub fn with_native_operation_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::NativeOperationInputContract>,
+    ) -> Self {
+        self.native_operation_inputs.push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_initializer_call_effect_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::InitializerCallEffectInputContract>,
+    ) -> Self {
+        self.initializer_call_effect_inputs
+            .push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_imported_primitive_array_spread_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::ImportedPrimitiveArraySpreadInputContract>,
+    ) -> Self {
+        self.imported_primitive_array_spread_inputs
+            .push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_native_call_identity_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::NativeCallIdentityInputContract>,
+    ) -> Self {
+        self.native_call_identity_inputs
+            .push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_argument_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::ArgumentInputContract>,
+    ) -> Self {
+        self.argument_inputs.push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_no_accessor_install_callables(
+        mut self,
+        chunk: impl Into<String>,
+        callables: Vec<spec::NoAccessorInstallCallableContract>,
+    ) -> Self {
+        self.no_accessor_install_callables
+            .push((chunk.into(), callables));
+        self
+    }
+
+    pub fn with_commuting_statements(
+        mut self,
+        chunk: impl Into<String>,
+        pairs: Vec<spec::CommutingStatementsContract>,
+    ) -> Self {
+        self.commuting_statements.push((chunk.into(), pairs));
+        self
+    }
+
+    pub fn with_embedded_loaders_path(mut self, path: std::path::PathBuf) -> Self {
+        self.embedded_loaders_path = Some(path);
+        self
+    }
+
+    pub fn with_program_premises(mut self, program_premises: spec::ProgramPremises) -> Self {
+        self.program_premises = program_premises;
+        self
+    }
+
+    pub fn with_host_behavior(mut self, host_behavior: spec::HostBehavior) -> Self {
+        self.host_behavior = host_behavior;
+        self
+    }
+
+    /// See [`Self::raw_spec_keys`].
+    pub fn with_raw_spec_key(mut self, key: &'a str, value: serde_json::Value) -> Self {
+        self.raw_spec_keys.push((key, value));
         self
     }
 
@@ -837,6 +1021,72 @@ pub fn unassigned_mode_inline() -> UnassignedMode {
     UnassignedMode::InlineInEntry
 }
 
+fn source_unit_selector(yaml: &str) -> spec::SourceUnitSelector {
+    serde_yaml::from_str(yaml).expect("valid source-unit selector")
+}
+
+/// Hex SHA-256 of fixture `source`, as `audited_source_sha256` fields record it.
+pub fn source_sha256(source: &str) -> String {
+    graph_provenance::sha256(source.as_bytes())
+}
+
+/// `source_match` selector for `statement` claiming `bindings` by their local
+/// names; no bindings selects an anonymous statement.
+pub fn source_match_selector(statement: &str, bindings: &[&str]) -> SourceMatchClaim {
+    SourceMatchClaim {
+        identifiers: SourceMatchIdentifierMode::default(),
+        match_source: statement.to_owned(),
+        bindings: bindings
+            .iter()
+            .map(|binding| SourceMatchBinding::Local((*binding).to_owned()))
+            .collect(),
+        note: None,
+    }
+}
+
+/// Module YAML holding one `source_matches` claim of `statement` that binds
+/// `local` under the readable `name`.
+pub fn source_match_module_yaml(statement: &str, local: &str, name: &str) -> String {
+    let claim = SourceMatchClaim {
+        bindings: vec![source_match_binding(local, name)],
+        ..source_match_selector(statement, &[])
+    };
+    serde_yaml::to_string(&BTreeMap::from([("source_matches", vec![claim])]))
+        .expect("serialize source-match module")
+}
+
+/// `commuting_statements` endpoint: the anonymous statement matching
+/// `statement` exactly.
+pub fn anonymous_source_unit(statement: &str) -> spec::SourceUnitSelector {
+    spec::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[]))
+}
+
+/// `commuting_statements` endpoint: `binding`'s declaration inside the
+/// statement matching `statement` exactly.
+pub fn declared_source_unit(statement: &str, binding: &str) -> spec::SourceUnitSelector {
+    spec::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[binding]))
+}
+
+/// `commuting_statements` endpoint: the source unit of an already resolved
+/// logical member.
+pub fn member_source_unit(module: &str, name: &str) -> spec::SourceUnitSelector {
+    source_unit_selector(&format!(
+        "resolved_member:\n  module: {module}\n  name: {name}\n"
+    ))
+}
+
+/// One `commuting_statements` entry over two endpoint selectors.
+pub fn commuting_pair(
+    a: spec::SourceUnitSelector,
+    b: spec::SourceUnitSelector,
+) -> spec::CommutingStatementsContract {
+    spec::CommutingStatementsContract {
+        a,
+        b,
+        note: Some("Neutral fixture; neither statement observes the other.".to_owned()),
+    }
+}
+
 /// Build an `unassigned_mode: catchall_file` entry.
 /// `target` of `None` means "default residual target", which the
 /// materializer resolves to `residual/unhandled`.
@@ -849,6 +1099,13 @@ pub fn unassigned_mode_catchall_file(target: Option<&str>) -> UnassignedMode {
 /// Build an `unassigned_mode: per_atomic_group` entry.
 pub fn unassigned_mode_per_atomic_group() -> UnassignedMode {
     UnassignedMode::PerAtomicGroup
+}
+
+/// Build an `unassigned_mode: coarse_atomic_groups` entry.
+pub fn unassigned_mode_coarse_atomic_groups() -> UnassignedMode {
+    UnassignedMode::CoarseAtomicGroups {
+        complete_partial_atomic_groups_for: Vec::new(),
+    }
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the
@@ -910,6 +1167,30 @@ impl ChunkExportPurityBuilder {
     pub fn with_inline_callback_factories(mut self, exports: &[&str]) -> Self {
         self.purity.inline_callback_factory_exports =
             exports.iter().map(|s| (*s).to_string()).collect();
+        self
+    }
+
+    pub fn with_descriptor_copy_factory(
+        mut self,
+        export: &str,
+        eager_own_data_keys: &[&str],
+        assigned_data_keys: &[&str],
+    ) -> Self {
+        self.purity.descriptor_copy_factory_exports.insert(
+            export.to_string(),
+            vec![spec::DescriptorCopyFactorySignature {
+                argument_count: 1,
+                object_argument: 0,
+                eager_own_data_keys: eager_own_data_keys
+                    .iter()
+                    .map(|key| (*key).to_string())
+                    .collect(),
+                assigned_data_keys: assigned_data_keys
+                    .iter()
+                    .map(|key| (*key).to_string())
+                    .collect(),
+            }],
+        );
         self
     }
 
@@ -1054,16 +1335,30 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             unassigned_mode_catchall_file(None),
         );
     }
-    let chunk_analysis_options = if opts.dataflow_aware_s_chain
+    let mut chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
         || !opts.deferred_global_publications.is_empty()
         || !opts.non_reentrant_global_membership.is_empty()
         || !opts.admission_overrides.is_empty()
+        || !opts.native_operation_inputs.is_empty()
+        || !opts.initializer_call_effect_inputs.is_empty()
+        || !opts.imported_primitive_array_spread_inputs.is_empty()
+        || !opts.native_call_identity_inputs.is_empty()
+        || !opts.argument_inputs.is_empty()
+        || !opts.commuting_statements.is_empty()
     {
         BTreeMap::from([(
             chunk_id.to_string(),
             DependencyGraphOptions {
+                value_inputs: Vec::new(),
+                native_operation_inputs: Vec::new(),
+                initializer_call_effect_inputs: Vec::new(),
+                imported_primitive_array_spread_inputs: Vec::new(),
+                commuting_statements: Vec::new(),
+                native_call_identity_inputs: Vec::new(),
+                argument_inputs: Vec::new(),
+                no_accessor_install_callables: Vec::new(),
                 dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
@@ -1109,6 +1404,57 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
     } else {
         BTreeMap::new()
     };
+    for (chunk, value_inputs) in &opts.value_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .value_inputs = value_inputs.clone();
+    }
+    for (chunk, native_operation_inputs) in &opts.native_operation_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .native_operation_inputs = native_operation_inputs.clone();
+    }
+    for (chunk, initializer_call_effect_inputs) in &opts.initializer_call_effect_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .initializer_call_effect_inputs = initializer_call_effect_inputs.clone();
+    }
+    for (chunk, imported_primitive_array_spread_inputs) in
+        &opts.imported_primitive_array_spread_inputs
+    {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .imported_primitive_array_spread_inputs =
+            imported_primitive_array_spread_inputs.clone();
+    }
+    for (chunk, native_call_identity_inputs) in &opts.native_call_identity_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .native_call_identity_inputs = native_call_identity_inputs.clone();
+    }
+    for (chunk, argument_inputs) in &opts.argument_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .argument_inputs = argument_inputs.clone();
+    }
+    for (chunk, callables) in &opts.no_accessor_install_callables {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .no_accessor_install_callables = callables.clone();
+    }
+    for (chunk, commuting_statements) in &opts.commuting_statements {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .commuting_statements = commuting_statements.clone();
+    }
 
     let chunk_export_purity: BTreeMap<String, spec::ChunkExportPurity> = opts
         .chunk_export_purity
@@ -1117,10 +1463,12 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         .collect();
 
     TransformSpec {
-        execution_runtime: opts.execution_runtime,
+        host_behavior: opts.host_behavior.clone(),
+        program_premises: opts.program_premises.clone(),
         inputs: LoadJsChunksArgs {
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),
+            embedded_loaders_path: opts.embedded_loaders_path.clone(),
         },
         vendor: opts
             .vendor_marks
@@ -1142,7 +1490,13 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         write_js_tree: Some(WriteJsTreeConfig {
             out_dir: setup.out_root.clone(),
         }),
-        emit_browser_harness: None,
+        emit_browser_harness: setup.browser_harness.as_ref().map(|harness| {
+            EmitBrowserHarnessConfig {
+                asset_summary_path: harness.asset_summary_path.clone(),
+                out_dir: harness.out_dir.clone(),
+                snapshot_root: setup.snapshot_root.clone(),
+            }
+        }),
     }
 }
 

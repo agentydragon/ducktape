@@ -1,6 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
-load("//devinfra/js:openapi.bzl", "js_openapi_zod")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -21,20 +20,15 @@ filegroup(
 
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
-# Generate the SSH argument/result validators from the schema FastMCP builds from the server's
-# registered tool signature and return type.
-js_openapi_zod(
-    name = "ssh_action_schemas_generated",
-    out = "schemas/ssh/exec.zod.ts",
-    generator = "//ssh_mcp_server:export_frontend_schema_bin",
-    tsconfig = "//agentplane/app/frontend:tsconfig_generated",
-)
-
 ts_library(
     name = "ssh_action_schemas",
     srcs = ["schemas/ssh/exec.ts"],
     tsconfig = TSCONFIG,
-    deps = [":ssh_action_schemas_generated"],
+    deps = [
+        "//:node_modules/zod",
+        "//ssh_mcp_server:exec_arguments",
+        "//ssh_mcp_server:exec_result",
+    ],
 )
 
 # Validators and text shared by the GitHub Action widgets and their notification formatters.
@@ -55,10 +49,13 @@ ts_library(
 )
 
 ts_library(
-    name = "types",
-    srcs = ["types.ts"],
+    name = "presentation",
+    srcs = ["presentation.ts"],
     tsconfig = TSCONFIG,
-    deps = [],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service:action_service_pb",
+    ],
 )
 
 ts_library(
@@ -66,13 +63,12 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":types",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:watch_stream",
     ],
 )
@@ -83,17 +79,19 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
+        ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:clamped_block",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/actions/rendering:index",
-        "//agentplane/app/frontend/connections:models",
+        "//agentplane/app/frontend/connections:service_accounts",
+        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -104,12 +102,16 @@ ts_library(
     deps = [
         ":action_client",
         ":call",
+        ":presentation",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:query",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
     ],
 )
@@ -122,17 +124,19 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":action_client",
+        ":presentation",
         ":requests",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:resize_handle",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//util/frontend:resize_handle",
     ],
 )
 
@@ -141,11 +145,14 @@ agentplane_vitest_test(
     srcs = ["requests.test.tsx"],
     deps = [
         ":action_client",
+        ":presentation",
         ":requests",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
@@ -157,10 +164,12 @@ agentplane_vitest_test(
     deps = [
         ":requests",
         ":sidebar",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
@@ -172,11 +181,15 @@ ts_library(
     deps = [
         ":action_client",
         ":history",
+        ":presentation",
         ":requests",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
     ],
 )
@@ -189,11 +202,16 @@ agentplane_vitest_test(
         ":detail",
         ":requests",
         ":sidebar",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/actions/testing:proto_fixtures",
+        "//util/frontend:deferred_test_utils",
     ],
 )
 
@@ -205,24 +223,26 @@ ts_library(
         ":action_client",
         ":call",
         ":call_tool_result",
+        ":presentation",
         ":requests",
-        ":types",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:clamped_block",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:live_stream",
         "//agentplane/app/frontend:raw_switch",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -236,9 +256,9 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/yaml",
         "//:node_modules/zod",
-        "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:parsed_json",
         "//agentplane/app/frontend:text_block",
+        "//util/frontend/transcript:text_block",
     ],
 )
 
@@ -286,10 +306,12 @@ agentplane_vitest_test(
         ":action_client",
         ":history",
         ":requests",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
         "//util/frontend:test_intersection_observer",
     ],
@@ -306,11 +328,12 @@ ts_library(
     srcs = ["policy.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/app/frontend:watch_stream",
         "//util/frontend:code_block",
     ],
 )
@@ -319,15 +342,16 @@ agentplane_vitest_test(
     name = "policy_test",
     srcs = ["policy.test.tsx"],
     deps = [
-        ":action_client",
         ":policy",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:schema",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/app/frontend:watch_stream",
     ],
 )
 
@@ -362,10 +386,11 @@ ts_library(
     deps = [
         ":github_action_schemas",
         ":kubernetes_action_schemas",
+        ":presentation",
         ":sandbox_action_schemas",
         ":ssh_action_schemas",
-        ":types",
         "//:node_modules/zod",
+        "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:argv_text",
     ],
 )
@@ -375,7 +400,8 @@ agentplane_vitest_test(
     srcs = ["notifications/index.test.ts"],
     deps = [
         ":notifications",
-        ":types",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/action_service:action_service_pb",
     ],
 )

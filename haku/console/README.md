@@ -38,12 +38,7 @@ constructs remain for other workspaces.
 
 ### Canonical Agent authority
 
-Contract: <docs/agent_authority.md>. `Operator`, `Agent`, credential bindings, names, profiles,
-and credential grants are durable local identities. Settings lists retained Agents and lets
-Operators change eligible profile assignments. Static Agent configuration and reconciliation are
-retired; existing static credential rows remain as history, with active bindings revoked by
-migration. Access profiles remain deployment-owned identity labels; they do not enable tool
-execution or approval policy.
+See <docs/agent_authority.md> for the canonical identity, credential, profile, and actor-scoped authority contract.
 
 ## Free-form UI
 
@@ -67,8 +62,8 @@ permanently (dies with the row). Tolerance fixes the first; only a constraint fi
 Deciding question: could this value come from a newer commit than the reader? If no (request
 body, config file, pinned third-party vocabulary), an unknown value is a bug or
 attack — <../../STYLE.md> strict mapping applies. If yes, raising is the defect: decode to a named
-unknown (`util.enum_vocab.UnknownValue`), never `None` or a nearby member, so every consumer
-handles it; cross-replica payload models accept unknown fields. A version-negotiated seam may
+unknown variant, never `None` or a nearby member, so every consumer handles it; cross-replica
+payload models accept unknown fields. A version-negotiated seam may
 reject unknown kinds after its handshake; storage has no handshake.
 
 Writer rollout by vocabulary:
@@ -76,9 +71,9 @@ Writer rollout by vocabulary:
 - **Narration** — skippable, append-only (notification kinds, `ConsoleEvent.event_type`): a new
   value ships with its writer; skipped narration is the accepted cost.
 - **Decision** — drives behavior (identity, provenance, rejection statuses): the reader knowing
-  the new member ships one release before the writer. Columns stay strict (no `UnknownValue`
-  decoding): tolerance would not lift the two-release rule, since no consumer may guess.
-- **Required field added to an existing shape** — a narrowing, not an extension: expand/contract
+  the new member ships one release before the writer. Columns stay strict: tolerance would not lift
+  the two-release rule, since no consumer may guess.
+- **Required field added to an existing shape** — a narrowing, not an extension: expand–migrate–contract
   plus a constraint making the old writer fail rather than write a permanently misread row.
 
 ## Test

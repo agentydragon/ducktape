@@ -90,6 +90,17 @@ py_library(
 )
 
 py_library(
+    name = "async_database",
+    srcs = ["async_database.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        "//util:db_url",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "examples",
     srcs = ["examples.py"],
     visibility = ["//props:__subpackages__"],
@@ -168,14 +179,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":examples",
-        ":models",
         "//:conftest",
         "//props:conftest",
         "//props/agents/critic_dev/recipes:ground_truth",
         "//props/core:splits",
-        "//props/testing/fixtures:runs",
-        "@pypi//pytest",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
     ],
 )
@@ -195,7 +204,11 @@ py_test(
         "//props/core:splits",
         "//props/core/models:examples",
         "//props/testing:constants",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
+        "//props/testing/fixtures:scopes",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -213,6 +226,8 @@ py_test(
         ":models",
         "//:conftest",
         "//props:conftest",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -223,7 +238,7 @@ py_test(
 py_test(
     name = "test_split_based_rls",
     # Genuine slowness, unlike the four in
-    # <../../devinfra/debug/2026_08_14_docker_test_timeouts.md>: 54.1s alone against an uncontended
+    # <../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>: 54.1s alone against an uncontended
     # daemon, of which pytest reports 49.1s, so `small`'s 60s leaves it no room at all.
     size = "medium",
     srcs = [
@@ -241,7 +256,9 @@ py_test(
         "//props/orchestration:agent_credentials",
         "//props/testing:constants",
         "//props/testing/fixtures:credentials",
+        "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

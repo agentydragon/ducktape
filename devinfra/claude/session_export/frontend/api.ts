@@ -1,4 +1,4 @@
-import type { PairingStart, SessionDetail, SessionEventPage, SessionListPage, SyncStatus } from "./api/schema";
+import type { PairingStart, SessionDetail, SessionEventPage, SessionListPage, SyncStatus } from "./schema";
 
 /**
  * The pairing page's API. Types come from the API's own OpenAPI document

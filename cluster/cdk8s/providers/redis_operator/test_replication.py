@@ -4,7 +4,7 @@ anti-affinity from `metadata.name`, and leaves optional CRD fields unset on `Non
 from typing import Any, cast
 
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Size, Testing as Cdk8sTesting
+from cdk8s import ApiObjectMetadata, Chart, Size, Testing as Cdk8sTesting
 from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
@@ -36,13 +36,13 @@ _AVOID_CONTROL_PLANE = [
 
 def _synth(
     *,
+    chart: Chart,
     max_memory_percent_of_limit: int | None,
     preferred_node_affinity: list[
         RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution
     ]
     | None,
 ) -> dict[str, Any]:
-    chart = Cdk8sTesting.chart()
     RedisReplication(
         chart,
         "instance",
@@ -63,10 +63,10 @@ def _synth(
     return redis_replication
 
 
-def test_resources_render_as_kubernetes_quantities() -> None:
+def test_resources_render_as_kubernetes_quantities(scratch_chart: Chart) -> None:
     """`Size.as_string()` formats in whatever unit it was constructed with -- `memory_limit`
     here is `Size.gibibytes(1)`, which renders as `"1Gi"`, not a forced `"1024Mi"`."""
-    redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=None)
+    redis_replication = _synth(chart=scratch_chart, max_memory_percent_of_limit=None, preferred_node_affinity=None)
     resources = redis_replication["spec"]["kubernetesConfig"]["resources"]
     assert resources["requests"] == {"cpu": "50m", "memory": "64Mi"}
     assert resources["limits"] == {"cpu": "1", "memory": "1Gi"}
@@ -74,33 +74,35 @@ def test_resources_render_as_kubernetes_quantities() -> None:
     assert storage_resources["requests"] == {"storage": "1Gi"}
 
 
-def test_pod_anti_affinity_is_derived_from_metadata_name_not_a_parameter() -> None:
-    redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=None)
+def test_pod_anti_affinity_is_derived_from_metadata_name_not_a_parameter(scratch_chart: Chart) -> None:
+    redis_replication = _synth(chart=scratch_chart, max_memory_percent_of_limit=None, preferred_node_affinity=None)
     pod_anti_affinity = redis_replication["spec"]["affinity"]["podAntiAffinity"]
     (rule,) = pod_anti_affinity["requiredDuringSchedulingIgnoredDuringExecution"]
     assert rule["labelSelector"]["matchLabels"] == {"app": "test-redis"}
     assert rule["topologyKey"] == "kubernetes.io/hostname"
 
 
-def test_max_memory_percent_of_limit_none_leaves_redis_config_unset() -> None:
-    redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=None)
+def test_max_memory_percent_of_limit_none_leaves_redis_config_unset(scratch_chart: Chart) -> None:
+    redis_replication = _synth(chart=scratch_chart, max_memory_percent_of_limit=None, preferred_node_affinity=None)
     assert "redisConfig" not in redis_replication["spec"]
 
 
-def test_max_memory_percent_of_limit_set_configures_redis_config() -> None:
-    redis_replication = _synth(max_memory_percent_of_limit=80, preferred_node_affinity=None)
+def test_max_memory_percent_of_limit_set_configures_redis_config(scratch_chart: Chart) -> None:
+    redis_replication = _synth(chart=scratch_chart, max_memory_percent_of_limit=80, preferred_node_affinity=None)
     assert redis_replication["spec"]["redisConfig"]["maxMemoryPercentOfLimit"] == 80
 
 
-def test_preferred_node_affinity_none_omits_preferred_terms() -> None:
-    redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=None)
+def test_preferred_node_affinity_none_omits_preferred_terms(scratch_chart: Chart) -> None:
+    redis_replication = _synth(chart=scratch_chart, max_memory_percent_of_limit=None, preferred_node_affinity=None)
     assert (
         "preferredDuringSchedulingIgnoredDuringExecution" not in redis_replication["spec"]["affinity"]["nodeAffinity"]
     )
 
 
-def test_preferred_node_affinity_set_is_passed_through() -> None:
-    redis_replication = _synth(max_memory_percent_of_limit=None, preferred_node_affinity=_AVOID_CONTROL_PLANE)
+def test_preferred_node_affinity_set_is_passed_through(scratch_chart: Chart) -> None:
+    redis_replication = _synth(
+        chart=scratch_chart, max_memory_percent_of_limit=None, preferred_node_affinity=_AVOID_CONTROL_PLANE
+    )
     (preferred,) = redis_replication["spec"]["affinity"]["nodeAffinity"][
         "preferredDuringSchedulingIgnoredDuringExecution"
     ]

@@ -31,7 +31,9 @@ import "google/protobuf/timestamp.proto";
 // snapshot, which is the whole set. The bearer is checked again before every frame: a stream whose bearer expires
 // or stops being accepted ends `UNAUTHENTICATED`, and the client opens another with a fresh token. A stream that ends
 // `UNAUTHENTICATED` before its first frame was refused at the door, and retrying it with the same token cannot
-// succeed.
+// succeed. Each stream write is bounded to wait five seconds for transport backpressure to clear; this bounds waiting
+// on the write, not when a queued frame reaches the peer. An idle drain sends `reconnect_required`; a drain during an
+// outstanding write ends the stream without another frame.
 service OperatorActionService {
   // Records the operator's Decision on a request waiting for one, and answers with the request as it now stands. An
   // allow queues the request for dispatch. `expected_version` must be the `version` the operator reviewed, else

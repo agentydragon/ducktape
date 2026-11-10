@@ -6,11 +6,10 @@ import json
 from typing import Any
 
 from more_itertools import one
-
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 # The pinned Codex's own catalog (`codex debug models --bundled`), which LLM ingress serves ChatGPT routes from.
-_BUNDLED = "_main/cluster/cdk8s/agentplane/codex_upstream_models.json"
+_BUNDLED = "ducktape/cluster/cdk8s/agentplane/codex_upstream_models.json"
 
 
 def usable_window(context_window: int) -> int:
@@ -44,5 +43,5 @@ def entry(slug: str, *, context_window: int) -> dict[str, Any]:
 
 def bundled(model: str, *, slug: str) -> dict[str, Any]:
     """The pinned Codex's bundled entry for `model`, served as `slug` the way LLM ingress serves a ChatGPT route."""
-    models = json.loads(get_required_path(_BUNDLED).read_text())["models"]
+    models = json.loads((Runfiles.CreateOrRaise().root() / _BUNDLED).read_text())["models"]
     return {**one(entry for entry in models if entry["slug"] == model), "slug": slug}

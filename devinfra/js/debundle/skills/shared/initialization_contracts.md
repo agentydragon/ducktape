@@ -15,12 +15,23 @@ gate cannot establish that an author assertion is true.
    effects, retained callbacks, and reads before the first `await`. Include
    helpers, provider branches, accessors, aliases, and publication paths.
 3. For export-reentry constraints, inspect `export_reentry.json` beside the graph
-   and verify the loader/dependency closure. For host operations, establish the
+   and verify the loader/dependency closure. Collection totals are exact;
+   `examples` may be truncated. Request `run --full-report export-reentry` for
+   the complete original-schema evidence when a witness is outside the sample.
+   For host operations, establish the
    exact object, descriptor, prototype, and intrinsic-integrity premises.
 
 Source inference already recognizes some private callback containers and local
 constructor results. Check [synchronous analysis limits](../../SPEC.md#synchronous-analysis-limits)
 before adding an assertion for behavior the analyzer already proves.
+
+Before an expensive analysis refresh, identify the effect domain and proof
+consumer behind the rejecting constraint. A source-justified assertion still
+needs a causal path to changing that constraint. In particular, purity and
+lexical-binding assertions do not establish heap locality: an incomplete
+execution remains a heap barrier without the corresponding heap proof. Check
+[the heap-effect rules](../../SPEC.md#dependency-graph-array-ordering) before predicting
+that a purity edit will remove such a frontier.
 
 ## Choose the contract for the established fact
 
@@ -36,10 +47,67 @@ Callback and no-reentry keys below live under
 | Registration avoids synchronous reentry but may store callbacks across calls                       | [Callback registration](#registration-and-cross-call-storage): later opaque operations may invoke every registered callback                                                                                       |
 | A call with admitted primitive or inert-record arguments cannot synchronously reenter foreign code | [No-reentry calls](#calls-with-primitive-or-inert-record-arguments): audit identity and any namespace lookup; result stays opaque                                                                                 |
 | An initializer, call, or construction has no observable effects                                    | [Purity scope](#purity-scope): select the exact evaluated operation                                                                                                                                               |
-| Native browser ESM evaluation has no synchronous host namespace access                             | [Runtime loading](../../SPEC.md#runtime-loading-contract): `execution_runtime: native_browser_esm`; verify loader, closure, cycles, suspension, and vendor replacements                                           |
+| Native browser ESM evaluation has no synchronous host namespace access                             | [Host behavior](../../SPEC.md#host-behavior): `host_behavior.synchronous_module_loader: none`; verify loader, closure, cycles, suspension, and vendor replacements                                                |
 | A decorator only mutates inert target metadata                                                     | [Metadata effects](../../SPEC.md#local-effect-decorator-annotations): select the matching `effect:` and helper shape; audit target-method invocation and foreign reentry separately                               |
 | A browser-global slot cannot expose its stored callback during synchronous initialization          | [Global publication](../../SPEC.md#deferred-browser-global-publication): `chunk_analysis_options.<chunk>.deferred_global_publications`; audit the host descriptor and all consumers                               |
 | A literal-key membership probe on a direct builtin global cannot reenter                           | [Host membership](../../SPEC.md#audited-builtin-global-membership-probes): `chunk_analysis_options.<chunk>.non_reentrant_global_membership`; audit exact keys, host identity, prototypes, aliases, and intrinsics |
+
+### Exact well-known Symbol class keys
+
+Use `native_operation_inputs` with `operation: symbol_well_known_class_keys`
+for one direct top-level simple class-variable initializer. Audit the original
+global Symbol data binding and its original own data properties at every eager
+computed method-key read through every admitted initialization schedule. Only
+direct `Symbol.asyncIterator`, `Symbol.asyncDispose` and `Symbol.dispose` keys
+are supported. The class must have no inheritance, decorators, static blocks
+or other computed key forms. Use the exact parser-input digest. Known required
+slot writes reject the input; opaque mutation paths remain an audit obligation.
+Each read receives separate evidence. Static field initializers and deferred
+instance code retain ordinary analysis; this supplies no whole-class purity,
+class shape or heap-locality contract. See
+[native integrity inputs](../../SPEC.md#native-integrity-inputs).
+
+Use the separate `symbol_primitive_class_keys` input when those same exact
+reads yield primitive own-data values that may be filled Symbols. Audit the
+global data read, ordinary non-Proxy receiver, and final own-data primitive
+result at every selected site in
+every admitted schedule. Only exact top-level typeof-guarded matching
+`Symbol.for("Symbol.<name>")` fills with empty catch are eligible known writes;
+other known selected-slot writes or global Symbol replacement reject it.
+The fill and its guard/call/setter effects remain ordinary. This grants no
+original-value identity or Symbol.for capability. Reads retain opaque external
+heap ordering, so removing callback constraints need not permit a smaller
+extraction. See the exact shape and ordering contract in the linked SPEC.
+
+### Exact empty native construction
+
+Use `native_operation_inputs` with `operation: map_empty`,
+`operation: weak_map_empty`, or `operation: set_empty` for one selected direct
+zero-argument construction only after auditing the
+original standard global data binding through every admitted initialization
+schedule. Each comma declarator needs its own input. These assertions feed the
+existing empty-construction semantics; later methods, property reads,
+iteration, retention and mutation retain their ordinary checks. Arguments,
+spreads, aliases, shadowing, qualified callees, wrapper expressions and known
+global-slot contradictions are rejected.
+
+For `map_empty`, one input may instead select a nonempty object initializer
+containing only noncomputed ordinary data fields directly initialized by bare
+zero-argument `new Map()`. Audit the original global Map data binding at every
+construction in every admitted initialization schedule. Each site receives
+separate evidence; the object keeps ordinary value and heap inference. Other
+field forms, `__proto__`, nested or wrapped expressions and ambiguous binding
+declarations are rejected. The exact parser-input digest is still required.
+
+Choose `native_operation_inputs` with `operation: text_encoder_empty` only after
+auditing the original global `TextEncoder` data binding at one selected direct
+zero-argument top-level initializer through every emitted initialization
+schedule. Audit host entry state, aliases and possible foreign mutation paths;
+source-known global-slot writes in any analyzed chunk reject the input. The
+constructor timing is silent, but its result remains opaque. Later `.encode`,
+getters, prototype reads and callback behavior need their ordinary proofs.
+Use a canonical selector and the exact parser-input digest; this grants no
+family-wide or host-wide contract. See [native integrity inputs](../../SPEC.md#native-integrity-inputs).
 
 ### Fresh returned callback graphs
 
@@ -87,22 +155,34 @@ Full definition: [retaining callbacks in constructed instances](../../SPEC.md#re
 ### Registration and cross-call storage
 
 **Choose:** `no_reentry_callback_exports` for a direct imported call with exact
-argument-count/callback-position signatures. Callback inputs must resolve to
-stable local ordinary callable identities; retained factory-result graphs,
-callee aliases, namespace calls, spreads, and construction keep conservative
-timing. Other arguments must use the admitted inert primitive syntax.
+argument-count/callback-position signatures, or
+`anonymous_statements[].no_reentry_call` when the exact top-level call is
+selected by `match` / `source_match` in the caller's spec. A source-selected
+call may be bare or the rightmost operand of an `&&` chain; the guard retains
+ordinary effects and reentry checks. The source assertion accepts a direct
+identifier callee or a static member on an identifier
+receiver, and its author audit covers every callable identity that can reach
+the exact call site. For `no_reentry_callback_exports`, callee aliases keep
+conservative timing. Callback inputs must resolve to one stable local ordinary
+callable identity; retained factory-result graphs, computed or optional
+members, effectful receivers, spreads, nested eager calls, and construction
+keep conservative timing. Other arguments must use the admitted inert
+primitive syntax.
 
 **Shape and timing:** the audited call avoids synchronous foreign reentry, but may
 store callbacks in a cross-call registry or return an opaque capability. After
 the call, the analysis treats every supplied callback and capture graph as
 globally reachable. Later opaque calls or protocol operations may invoke them.
-The result stays opaque.
+The source-selected assertion itself establishes neither purity nor a result
+shape; ordinary analysis remains in force and may independently infer either.
 
 **Audit:** provider/helper/type paths, callable identity, own/prototype surfaces,
 and aliases. The provider cannot synchronously invoke callbacks, mutate supplied
-graphs, inspect effectful properties/prototypes, or access importer-owned lexical
-state. Provider-private effects remain possible. Registration does not establish
-purity or a fresh-return/constructor retention policy.
+graphs, inspect effectful properties/prototypes, or access caller/importer-owned
+lexical state. A source-selected member callee also puts its exact property
+lookup under this premise; receiver and argument expressions still evaluate
+normally. Provider-private effects remain possible. Registration does not
+establish purity or a fresh-return/constructor retention policy.
 
 Full definition: [callback registration without synchronous reentry](../../SPEC.md#callback-registration-without-synchronous-reentry).
 

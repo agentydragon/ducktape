@@ -23,7 +23,7 @@ func TestServiceAccountSandboxUIDResolverTracksAccountIncarnations(t *testing.T)
 	}}
 	client := fake.NewSimpleClientset(account)
 	resolver := NewServiceAccountSandboxUIDResolver(client)
-	writer := storage.Writer{Namespace: account.Namespace, Name: account.Name, UID: string(account.UID)}
+	writer := storage.ServiceAccountWriter{Namespace: account.Namespace, Name: account.Name, UID: string(account.UID)}
 	if got, err := resolver.Resolve(t.Context(), writer); err != nil || got != "sandbox-first" {
 		t.Fatalf("first resolve = %q, %v; want sandbox-first", got, err)
 	}
@@ -45,7 +45,7 @@ func TestServiceAccountSandboxUIDResolverRejectsRecreatedAccount(t *testing.T) {
 		Namespace: "sandbox-namespace", Name: "same-name", UID: "service-account-replacement",
 	}})
 	resolver := NewServiceAccountSandboxUIDResolver(client)
-	_, err := resolver.Resolve(t.Context(), storage.Writer{
+	_, err := resolver.Resolve(t.Context(), storage.ServiceAccountWriter{
 		Namespace: "sandbox-namespace", Name: "same-name", UID: "service-account-deleted",
 	})
 	if status.Code(err) != codes.PermissionDenied {

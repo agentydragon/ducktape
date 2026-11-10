@@ -311,6 +311,23 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: buildbuddy-executor-pool
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: buildbuddy-executor-pool.json
+    name: buildbuddy-executor-pool-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  folder: CI
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: flux-cluster
   namespace: monitoring
 spec:

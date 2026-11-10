@@ -1,0 +1,50 @@
+# gazelle:exclude ci
+# gazelle:exclude x
+
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "bbr",
+    srcs = ["bbr.py"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_test(
+    name = "test_bbr",
+    srcs = ["test_bbr.py"],
+    deps = [
+        ":bbr",
+        "//:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# bbr wheel — standalone `bb remote` wrapper (own package, not bundled into
+# the Python statusline wheel, so it's available with the Rust claude-hook).
+py_package(
+    name = "bbr_pkg",
+    packages = ["devinfra"],
+    deps = [":bbr"],
+)
+
+py_wheel(
+    name = "bbr_wheel",
+    distribution = "bbr",
+    entry_points = {
+        "console_scripts": ["bbr = devinfra.buildbuddy.bbr:main"],
+    },
+    python_requires = ">=3.14",
+    requires = ["pygit2>=1.14"],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":bbr_pkg"],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+)

@@ -1,0 +1,534 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/go/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/go/federation"
+	"github.com/agentydragon/ducktape/agentplane/app/go/historyclient"
+	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
+	"github.com/agentydragon/ducktape/agentplane/app/go/historywatch"
+	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
+	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
+	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/app/go/status"
+	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
+	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/kubeclient"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/observability"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
+	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
+	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/client-go/kubernetes"
+)
+
+const systemStatusTimeout = 5 * time.Second
+
+// run owns process dependencies and their shutdown. Each API call continues to use the
+// repository's generated Kubernetes, gRPC, and protobuf APIs; the process adds only composition.
+func run(ctx context.Context, config Config) error {
+	logger := slog.Default()
+	shutdownTracing, err := observability.Init(ctx, "agentplane-app")
+	if err != nil {
+		return fmt.Errorf("configure OpenTelemetry tracing: %w", err)
+	}
+	defer shutdownTracing()
+
+	databaseURL := postgresDriverURL(config.DatabaseURL)
+	if err := dbmigrate.Run(ctx, databaseURL, migrations.Up); err != nil {
+		return fmt.Errorf("migrate app database: %w", err)
+	}
+	db, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		return fmt.Errorf("open app PostgreSQL database: %w", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(16)
+	db.SetMaxIdleConns(8)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("app PostgreSQL unavailable: %w", err)
+	}
+
+	wakeupHub, err := wakeups.Listen(ctx, databaseURL, threads.UpdatesChannel, auth.SessionUpdatesChannel)
+	if err != nil {
+		return fmt.Errorf("start PostgreSQL update listener: %w", err)
+	}
+	defer wakeupHub.Close()
+
+	kubeConfig, err := kubeclient.Config(config.Kubeconfig)
+	if err != nil {
+		return fmt.Errorf("load Kubernetes config: %w", err)
+	}
+	kube, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes API clients: %w", err)
+	}
+	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
+	connectionTarget, err := grpcTargetFromHTTPURL(config.ConnectionServiceURL)
+	if err != nil {
+		return fmt.Errorf("configure Connection Service gRPC client: %w", err)
+	}
+
+	newHistory := func() (*historyclient.Client, error) {
+		return historyclient.New(historyclient.Config{
+			TLS: config.HistoryServiceTLS, Target: config.HistoryServiceTarget, TokenFile: config.HistoryServiceTokenFile,
+			Timeout: time.Duration(config.HistoryServiceRequestTimeoutSeconds * float64(time.Second)),
+		})
+	}
+	historyReaderClient, err := newHistory()
+	if err != nil {
+		return fmt.Errorf("configure History Service reader: %w", err)
+	}
+	defer historyReaderClient.Close()
+	historyWatchClient, err := newHistory()
+	if err != nil {
+		return fmt.Errorf("configure History Service watcher: %w", err)
+	}
+	defer historyWatchClient.Close()
+	historySessionClient, err := newHistory()
+	if err != nil {
+		return fmt.Errorf("configure Sessions watcher: %w", err)
+	}
+	defer historySessionClient.Close()
+
+	history, err := historydata.New(historyReaderClient)
+	if err != nil {
+		return err
+	}
+	threadStore := threads.NewStore(db)
+	runner, err := bridge.NewGatewayRunnerProxy(bridge.RunnerConfig{
+		TLS: config.RunnerGatewayTLS, Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
+		Timeout:        time.Duration(config.RunnerGatewayRequestTimeoutSeconds * float64(time.Second)),
+		TargetTemplate: config.RunnerGatewayControlTarget,
+	})
+	if err != nil {
+		return fmt.Errorf("configure Runner Gateway: %w", err)
+	}
+	dispatcher, err := bridge.NewDispatcherClient(bridge.DispatcherConfig{
+		TLS: config.SessionDispatcherTLS, Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
+		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
+	})
+	if err != nil {
+		return fmt.Errorf("configure Session Dispatcher: %w", err)
+	}
+	environmentConn, err := bearer.Dial(config.SessionDispatcherTarget, config.SessionDispatcherTokenFile,
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)), config.SessionDispatcherTLS)
+	if err != nil {
+		return fmt.Errorf("configure Environment Service client: %w", err)
+	}
+	defer environmentConn.Close()
+	environments, err := sandboxes.NewEnvironmentReader(environmentpb.NewEnvironmentServiceClient(environmentConn))
+	if err != nil {
+		return fmt.Errorf("configure Environment Service reader: %w", err)
+	}
+	appBridge, err := bridge.New(config.SandboxNamespace, environments, runner, dispatcher)
+	if err != nil {
+		return fmt.Errorf("configure Runner bridge: %w", err)
+	}
+	policyConnection, err := bearer.Dial(config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second, nil)
+	if err != nil {
+		return fmt.Errorf("configure Policy Service client: %w", err)
+	}
+	defer policyConnection.Close()
+	policySetNames := policypb.NewPolicyServiceClient(policyConnection)
+
+	oidc := config.OIDC
+	var federator *federation.Client
+	if oidc != nil {
+		tokenEndpoint := ""
+		if config.ActionFederation.TokenEndpoint != nil {
+			tokenEndpoint = *config.ActionFederation.TokenEndpoint
+		}
+		federator, err = federation.New(federation.Config{
+			Mode: config.ActionFederation.Mode, ServiceURL: config.ActionFederation.ServiceURL,
+			LoginJWKSURI:      config.ActionFederation.LoginJWKsURI,
+			LoginTokenProfile: config.ActionFederation.LoginTokenProfile,
+			Target: federation.ProviderConfig{
+				Issuer: config.ActionFederation.Target.Issuer, Audience: config.ActionFederation.Target.Audience,
+				JWKSURI: config.ActionFederation.Target.JWKsURI, TokenProfile: config.ActionFederation.Target.TokenProfile,
+			},
+			Scope: config.ActionFederation.Scope, TokenEndpoint: tokenEndpoint, HTTPClient: baseClient,
+		}, *oidc)
+		if err != nil {
+			return fmt.Errorf("configure Action Service federation: %w", err)
+		}
+	}
+	appAuth, err := auth.NewWithContext(ctx, auth.Config{
+		OIDC: oidc, Database: db, TokenReviews: kube.AuthenticationV1().TokenReviews(),
+		TokenAudience: config.TokenAudience, TokenSubjects: config.TokenSubjects,
+		StoreFederationTokens: federator != nil, SessionChanges: wakeupHub,
+		HTTPClient: baseClient,
+	})
+	if err != nil {
+		return fmt.Errorf("configure app authentication: %w", err)
+	}
+
+	historyWatchClientAdapter := historyWatchAdapter{historyWatchClient}
+	historyWatch, err := historywatch.NewHistoryWatch(historyWatchClientAdapter, func() {
+		if _, notifyErr := db.ExecContext(ctx, `SELECT pg_notify($1, '')`, threads.UpdatesChannel); notifyErr != nil {
+			logger.WarnContext(ctx, "publish History update wakeup", "error", notifyErr)
+		}
+	}, historywatch.Options{RetryInterval: time.Second})
+	if err != nil {
+		return fmt.Errorf("configure History summary watch: %w", err)
+	}
+	historySessionClientAdapter := historyWatchAdapter{historySessionClient}
+	historySessions, err := historywatch.NewSessions(historySessionClientAdapter, threadStore,
+		historywatch.Options{RetryInterval: time.Second})
+	if err != nil {
+		return fmt.Errorf("configure Sessions worker: %w", err)
+	}
+
+	actionTarget, err := grpcTargetFromHTTPURL(config.ActionFederation.ServiceURL)
+	if err != nil {
+		return fmt.Errorf("configure Action Service gRPC client: %w", err)
+	}
+	actionCredentials, err := config.ActionsTLS.Credentials()
+	if err != nil {
+		return err
+	}
+	actionConnection, err := grpc.NewClient(actionTarget,
+		observability.GRPCClientOption(), grpc.WithTransportCredentials(actionCredentials), grpc.WithDisableRetry())
+	if err != nil {
+		return fmt.Errorf("configure Action Service linkage gRPC client: %w", err)
+	}
+	defer closeConnections([]*grpc.ClientConn{actionConnection})
+	linkageClient := linkage_servicepb.NewLinkageServiceClient(actionConnection)
+	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopFacades()
+	actionFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, actionTarget, 10*time.Second,
+		facade.HandlerOptions{TLS: config.ActionsTLS},
+		actionpb.RegisterActionServiceHandlerFromEndpoint,
+		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
+		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Action Service HTTP facade: %w", err)
+	}
+	actionGateway := proxy.NewHandlerUpstream(actionFacade, "")
+	connectionFacade, err := facade.NewHandler(facadeContext, connectionTarget, 10*time.Second, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	if err != nil {
+		return fmt.Errorf("configure generated Connection Service HTTP facade: %w", err)
+	}
+	connectionGateway := proxy.NewHandlerUpstream(connectionFacade, "")
+	dispatcherFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, config.SessionDispatcherTarget,
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
+		facade.HandlerOptions{TLS: config.SessionDispatcherTLS},
+		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
+		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
+	}
+	dispatcherGateway := proxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
+	policyFacade, err := facade.NewHandler(facadeContext, config.PolicyServiceTarget, 10*time.Second, policypb.RegisterPolicyServiceHandlerFromEndpoint)
+	if err != nil {
+		return fmt.Errorf("configure generated Policy Service HTTP facade: %w", err)
+	}
+	policyGateway := proxy.NewHandlerUpstream(policyFacade, config.PolicyServiceTokenFile)
+	historyFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, config.HistoryServiceTarget,
+		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
+		facade.HandlerOptions{TLS: config.HistoryServiceTLS},
+		historypb.RegisterHistoryServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated History Service HTTP facade: %w", err)
+	}
+	historyGateway := proxy.NewHandlerUpstream(historyFacade, config.HistoryServiceTokenFile)
+	notificationTarget, err := grpcTargetFromHTTPURL(config.NotificationsURL)
+	if err != nil {
+		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
+	}
+	notificationFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, notificationTarget,
+		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
+		facade.HandlerOptions{RejectUnknownJSONFields: true, TLS: config.NotificationsTLS},
+		notificationspb.RegisterNotificationsHandlerFromEndpoint,
+	)
+	if err != nil {
+		return fmt.Errorf("configure generated Notification Service HTTP facade: %w", err)
+	}
+	notificationGateway := proxy.NewHandlerUpstream(notificationFacade, config.NotificationsTokenFile)
+	egressTarget, err := grpcTargetFromHTTPURL(config.EgressAdminURL)
+	if err != nil {
+		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
+	}
+	egressFacade, err := facade.NewHandlerWithOptions(facadeContext, egressTarget,
+		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)), facade.HandlerOptions{TLS: config.EgressAdminTLS}, egress_adminpb.RegisterEgressAdminHandlerFromEndpoint)
+	if err != nil {
+		return fmt.Errorf("configure generated Egress HTTP facade: %w", err)
+	}
+	egressGateway := proxy.NewHandlerUpstream(egressFacade, config.EgressAdminTokenFile)
+	consoleConnector, err := sandboxes.NewConsoleConnector(kubeConfig)
+	if err != nil {
+		return fmt.Errorf("configure Sandbox console client: %w", err)
+	}
+	serviceStatus, healthConnections, err := newSystemStatus(config, baseClient)
+	if err != nil {
+		return err
+	}
+	defer closeConnections(healthConnections)
+
+	server := NewHTTPServer(appAuth)
+	app := &appService{
+		config: config, systemStatus: serviceStatus, policySetNames: policySetNames, environments: environments, bridge: appBridge, runnerStatus: appBridge,
+		threadWriter: threadStore, threadReader: threadStore, threadHistory: history, threadRuntime: runner,
+		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
+	}
+	if err := RegisterAppConfigRoutes(server, app); err != nil {
+		return fmt.Errorf("register app configuration facade: %w", err)
+	}
+	if err := RegisterSessionRoutes(server, app); err != nil {
+		return fmt.Errorf("register Session facade: %w", err)
+	}
+	if err := RegisterRunnerRoutes(server, app); err != nil {
+		return fmt.Errorf("register Runner status facade: %w", err)
+	}
+	if err := registerThreadMetadataGateway(server, app); err != nil {
+		return fmt.Errorf("register Thread metadata facade: %w", err)
+	}
+	RegisterOperatorRoutes(server, linkageClient)
+	if err := RegisterStatusRoutes(server, app); err != nil {
+		return fmt.Errorf("register System status facade: %w", err)
+	}
+	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
+	RegisterStreamingRoutes(server, StreamingDependencies{
+		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
+		SandboxNamespace: config.SandboxNamespace, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
+		Federator:      federator,
+		DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: dispatcherGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
+		ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
+		HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
+		Console: consoleConnector, Logger: logger,
+	})
+	if config.ElectricURL != "" {
+		electric, electricErr := proxy.NewElectricProxy(baseClient, config.ElectricURL, threadEpochStore{history: history})
+		if electricErr != nil {
+			return fmt.Errorf("configure Electric thread sync: %w", electricErr)
+		}
+		electricHandler := electric.Handler()
+		server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", electricHandler, false)
+	}
+	workers := []processWorker{
+		{name: "history-watch", run: historyWatch.Run},
+		{name: "history-sessions", run: historySessions.Run},
+	}
+	return serve(ctx, config, server, appAuth, workers)
+}
+
+// historyWatchAdapter narrows the generated streaming client to the local worker interface.
+// Go method return types are invariant, so this small wrapper preserves the generated stream
+// while allowing the worker package to depend on its minimal Recv surface.
+type historyWatchAdapter struct{ client *historyclient.Client }
+
+func (c historyWatchAdapter) WatchSessionSummaries(
+	ctx context.Context,
+	request *historypb.WatchSessionSummariesRequest,
+) (historywatch.Stream, error) {
+	return c.client.WatchSessionSummaries(ctx, request)
+}
+
+func (c historyWatchAdapter) Redial() { c.client.Redial() }
+
+type threadEpochStore struct {
+	history *historydata.Store
+}
+
+func (s threadEpochStore) CurrentEpoch(ctx context.Context, rawID string) (string, bool, error) {
+	id, err := uuid.Parse(rawID)
+	if err != nil || id.String() != rawID {
+		return "", false, nil
+	}
+	return s.history.CurrentEpoch(ctx, id)
+}
+
+func postgresDriverURL(value string) string {
+	return strings.Replace(value, "postgresql+asyncpg://", "postgres://", 1)
+}
+
+func newSystemStatus(config Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
+	probes := make([]status.Probe, 0, 7)
+	connections := make([]*grpc.ClientConn, 0, 5)
+	dialHealth := func(name, target string, tls *environment_runtime_transport.ClientTLS) error {
+		credentials, err := tls.Credentials()
+		if err != nil {
+			return err
+		}
+		connection, err := grpc.NewClient(target,
+			observability.GRPCClientOption(), grpc.WithTransportCredentials(credentials))
+		if err != nil {
+			return fmt.Errorf("configure %s health client: %w", name, err)
+		}
+		connections = append(connections, connection)
+		probes = append(probes, status.GRPCHealthProbe(name, healthpb.NewHealthClient(connection)))
+		return nil
+	}
+	for _, endpoint := range []struct {
+		name, target string
+		tls          *environment_runtime_transport.ClientTLS
+	}{
+		{"Runner Gateway", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
+	} {
+		if err := dialHealth(endpoint.name, endpoint.target, endpoint.tls); err != nil {
+			closeConnections(connections)
+			return nil, nil, err
+		}
+	}
+	for _, endpoint := range []struct {
+		name, raw string
+		tls       *environment_runtime_transport.ClientTLS
+	}{
+		{"Action Service", config.ActionFederation.ServiceURL, config.ActionsTLS},
+		{"Connection Service", config.ConnectionServiceURL, nil},
+		{"Notification Service", config.NotificationsURL, config.NotificationsTLS},
+		{"Egress proxy", config.EgressAdminURL, config.EgressAdminTLS},
+	} {
+		target, err := grpcTargetFromHTTPURL(endpoint.raw)
+		if err != nil {
+			closeConnections(connections)
+			return nil, nil, fmt.Errorf("configure %s health target: %w", endpoint.name, err)
+		}
+		if err := dialHealth(endpoint.name, target, endpoint.tls); err != nil {
+			closeConnections(connections)
+			return nil, nil, err
+		}
+	}
+	if config.ElectricURL != "" {
+		probes = append(probes, status.HTTPHealthProbe("Electric", httpClient, healthURL(config.ElectricURL, "/v1/health")))
+	}
+	checker, err := status.New(probes, systemStatusTimeout)
+	if err != nil {
+		closeConnections(connections)
+		return nil, nil, err
+	}
+	return checker, connections, nil
+}
+
+func grpcTargetFromHTTPURL(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("expected an absolute HTTP(S) service URL")
+	}
+	port := parsed.Port()
+	if port == "" {
+		if parsed.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(parsed.Hostname(), port), nil
+}
+
+func healthURL(raw, path string) string {
+	parsed, _ := url.Parse(raw)
+	parsed.Path = path
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+type processWorker struct {
+	name string
+	run  func(context.Context) error
+}
+
+func serve(ctx context.Context, config Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
+	defer app.Close()
+	listener, err := netlistener.Open(config.ListenAddress)
+	if err != nil {
+		return fmt.Errorf("listen for app HTTP: %w", err)
+	}
+	defer listener.Close()
+
+	appCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	httpServer := &http.Server{
+		Handler: appHTTPHandler(app.Handler(appAuth)), ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return appCtx },
+	}
+	workerErrors := make(chan error, len(workers)+1)
+	var group sync.WaitGroup
+	for _, worker := range workers {
+		worker := worker
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			err := worker.run(appCtx)
+			if appCtx.Err() == nil {
+				if err == nil {
+					err = errors.New("worker stopped unexpectedly")
+				}
+				workerErrors <- fmt.Errorf("%s: %w", worker.name, err)
+			}
+		}()
+	}
+	go func() {
+		err := httpServer.Serve(listener)
+		if !errors.Is(err, http.ErrServerClosed) {
+			workerErrors <- fmt.Errorf("HTTP server: %w", err)
+		}
+	}()
+
+	var cause error
+	select {
+	case <-ctx.Done():
+	case cause = <-workerErrors:
+	}
+	app.BeginDrain()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Duration(config.ShutdownTimeoutSeconds)*time.Second)
+	shutdownErr := httpServer.Shutdown(shutdownCtx)
+	shutdownCancel()
+	cancel()
+	group.Wait()
+	if cause != nil {
+		return errors.Join(cause, shutdownErr)
+	}
+	if shutdownErr != nil {
+		return fmt.Errorf("gracefully shut down app HTTP: %w", shutdownErr)
+	}
+	return nil
+}
+
+func closeConnections(connections []*grpc.ClientConn) {
+	for _, connection := range connections {
+		if err := connection.Close(); err != nil {
+			slog.Warn("close gRPC health connection", "error", err)
+		}
+	}
+}

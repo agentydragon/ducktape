@@ -38,7 +38,7 @@ def query(
         with create_client(timeout=60) as owned_client:
             return query(statement, rules=rules, base_url=base_url, username=username, client=owned_client)
     if rules is None:
-        rules = load_rules(client=client)
+        rules = load_rules()
     url = f"{base_url.rstrip('/')}/api/query"
     parsed = urlsplit(url)
     if parsed.hostname is None or parsed.username is not None or parsed.password is not None:

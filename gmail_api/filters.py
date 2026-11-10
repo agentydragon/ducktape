@@ -55,15 +55,3 @@ class GmailFilter(BaseModel):
     id: str
     criteria: FilterCriteria = Field(default_factory=FilterCriteria)
     action: FilterAction = Field(default_factory=FilterAction)
-
-
-class FiltersListResponse(BaseModel):
-    """Response body of `users.settings.filters.list`.
-
-    Gotcha: Gmail's key is the singular ``filter`` (i.e. ``{"filter": [...]}``), not
-    ``filters`` — mirrored verbatim.
-    """
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    filter: list[GmailFilter] = Field(default_factory=list)

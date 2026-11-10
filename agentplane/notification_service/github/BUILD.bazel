@@ -37,6 +37,7 @@ go_test(
     ],
     data = ["//agentplane/notification_service/store:golden.json"],
     embed = [":github"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/notification_service/github.notificationGoldenRlocation": "$(rlocationpath //agentplane/notification_service/store:golden.json)"},
     deps = [
         "//agentplane/notification_service/github/client",
         "//agentplane/notification_service/github/settings",

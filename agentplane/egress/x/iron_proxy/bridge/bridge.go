@@ -16,14 +16,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 const (
@@ -36,7 +35,7 @@ const (
 )
 
 // Options are the Agentplane authorities the adapter delegates to. Ready can add a component-local
-// readiness gate; Policy.Freshness.Available remains mandatory regardless of that callback.
+// readiness gate; Policy.Health.Available remains mandatory regardless of that callback.
 type Options struct {
 	Identity *auth.Resolver
 	Policy   *policy.Index
@@ -135,12 +134,8 @@ func (b *Bridge) TransformRequest(ctx context.Context, request *transformv1.Tran
 		return reject(http.StatusServiceUnavailable, decision.Unavailable), nil
 	}
 
-	caller := policyapi.ServiceAccountRef{
-		Namespace: state.principal.Account.Namespace,
-		Name:      state.principal.Account.Name,
-	}
+	caller := reader.ServiceAccount{Namespace: state.principal.Account.Namespace, Name: state.principal.Account.Name}
 	workload := &policy.WorkloadContext{
-		Bearer: state.token,
 		Caller: caller,
 		PodUID: state.principal.PodUID,
 		// Projected audience tokens are intentionally unsupported by this bridge prototype.
@@ -194,16 +189,16 @@ func (b *Bridge) available() bool {
 	if b.ready != nil && !b.ready() {
 		return false
 	}
-	return b.policy.Freshness.Available(time.Now())
+	return b.policy.Health.Available()
 }
 
 func (b *Bridge) authenticate(ctx context.Context, headers http.Header, previous *tunnelState) (tunnelState, decision.Reason, int) {
 	values, supplied := headers[textproto.CanonicalMIMEHeaderKey(proxyAuthorizationHeader)]
 	token := ""
 	if supplied {
-		var ok bool
-		token, ok = identity.BearerToken(values)
-		if !ok {
+		var err error
+		token, err = auth.BearerToken(values)
+		if err != nil {
 			return tunnelState{}, decision.TokenRejected, http.StatusForbidden
 		}
 	} else if previous != nil {

@@ -23,15 +23,31 @@ from openai_utils.model import (
     FunctionCallItem,
     FunctionCallOutputItem,
     InputTokensDetails,
-    OpenAIModelProto,
+    Model,
     OutputTokensDetails,
     ResponseOutItem,
     ResponsesRequest,
     ResponsesResult,
     ResponseUsage,
+    WireRequest,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _make_response(*items: ResponseOutItem) -> ResponsesResult:
+    out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
+    return ResponsesResult(
+        id="resp_generic",
+        usage=ResponseUsage(
+            input_tokens=0,
+            input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            output_tokens=(1 if out_tokens else 0),
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+            total_tokens=(1 if out_tokens else 0),
+        ),
+        output=list(items),
+    )
 
 
 class ResponsesFactory(ItemFactory):
@@ -51,7 +67,7 @@ class ResponsesFactory(ItemFactory):
             id="resp_msg",
             usage=ResponseUsage(
                 input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
+                input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
                 output_tokens=1,
                 output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
                 total_tokens=1,
@@ -63,18 +79,7 @@ class ResponsesFactory(ItemFactory):
         return self.make(self.tool_call(name, arguments, call_id))
 
     def make(self, *items: ResponseOutItem) -> ResponsesResult:
-        out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
-        return ResponsesResult(
-            id="resp_generic",
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
-                output_tokens=(1 if out_tokens else 0),
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=(1 if out_tokens else 0),
-            ),
-            output=list(items),
-        )
+        return _make_response(*items)
 
 
 def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
@@ -103,14 +108,14 @@ def tool_roundtrip[T](call: FunctionCallItem, output_type: type[T]) -> Generator
 PlayGen = Generator[ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]
 
 
-class GeneratorMock(ItemFactory, OpenAIModelProto):
+class GeneratorMock(ItemFactory, Model):
     """Abstract base for generator-based OpenAI mocks.
 
     Subclasses ItemFactory for convenient item construction and implements
-    OpenAIModelProto for use as a mock client.
+    Model for use as a mock client.
 
     Subclass and override play() to provide the generator.
-    For MCP-aware methods (call_roundtrip, mcp_tool_call),
+    For MCP-aware methods,
     use MCPDecoratorMock from agent_core.testing.mcp.responses.
     """
 
@@ -125,8 +130,9 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
     def play(self) -> PlayGen:
         """Override in subclass to provide the generator."""
 
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+    async def sample(self, req: WireRequest) -> ResponsesResult:
         """Send request to generator, return wrapped response."""
+        assert isinstance(req, ResponsesRequest)
         try:
             result = self._gen.send(req)
         except StopIteration:
@@ -144,18 +150,7 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
 
     def _make(self, *items: ResponseOutItem) -> ResponsesResult:
         """Create ResponsesResult from items."""
-        out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
-        return ResponsesResult(
-            id="resp_generic",
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
-                output_tokens=(1 if out_tokens else 0),
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=(1 if out_tokens else 0),
-            ),
-            output=list(items),
-        )
+        return _make_response(*items)
 
 
 class DecoratorMock(GeneratorMock):

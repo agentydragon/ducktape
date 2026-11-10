@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_fixture};
+use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture, tree_spec_args};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -62,7 +62,7 @@ fn app_files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<
 #[test]
 fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independently() {
     let packages = TempDir::new().unwrap();
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 7; console.log(value);\n")],
             module_roots: &[("main", "main")],
@@ -81,7 +81,7 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     let workers = TempDir::new().unwrap();
     let first = workers.path().join("first worker");
     let second = workers.path().join("second worker");
-    let graph = fixture.report_root.join("main/dependency_graph.json");
+    let graph = fixture.report_root.join("main/dependency_graph.json.gz");
     let first_report = create(&graph, &first);
     create(&graph, &second);
     fs::remove_dir_all(fixture.root()).unwrap();
@@ -145,7 +145,7 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
 
 #[test]
 fn unmapped_output_replay_stays_inside_relocated_spec_root() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 1; console.log(value);\n")],
             module_roots: &[("main", "main")],
@@ -162,14 +162,8 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
     let original_output_parent = TempDir::new().unwrap();
     let original_out = original_output_parent.path().join("outside output");
     let original = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
-        .arg(fixture.root().join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(fixture.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(fixture.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(fixture.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(fixture.root()))
         .arg("--out-root")
         .arg(&original_out)
         .output()
@@ -179,7 +173,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
         "{}",
         String::from_utf8_lossy(&original.stderr)
     );
-    let original_graph = original_out.join("reports/tree/main/dependency_graph.json");
+    let original_graph = original_out.join("reports/tree/main/dependency_graph.json.gz");
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
     let report = create(&original_graph, &destination);
@@ -253,7 +247,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
         "{}",
         String::from_utf8_lossy(&replay.stderr)
     );
-    let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json");
+    let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json.gz");
     assert!(refreshed_graph.is_file());
     assert!(out_root.join("app/main/entry.js").is_file());
     let refreshed = Command::new(debundler_path())
@@ -281,7 +275,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
 
 #[test]
 fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[(
                 "main",
@@ -346,14 +340,8 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
 
     fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
-        .arg(fixture.root().join("spec_config.yaml"))
-        .arg("--tree-modules")
-        .arg(fixture.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(fixture.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(fixture.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(fixture.root()))
         .arg("--package-root")
         .arg(format!("fixture-package={}", package.path().display()))
         .arg("--package-root")
@@ -375,7 +363,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
     let report = create(
-        &fixture.report_root.join("main/dependency_graph.json"),
+        &fixture.report_root.join("main/dependency_graph.json.gz"),
         &destination,
     );
     package.close().unwrap();
@@ -424,7 +412,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
 
 #[test]
 fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 1;\n")],
             module_roots: &[("main", "main")],
@@ -438,7 +426,7 @@ fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots(
     assert!(fixture.result.status.success(), "{}", fixture.result.stderr);
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
-    let graph = fixture.report_root.join("main/dependency_graph.json");
+    let graph = fixture.report_root.join("main/dependency_graph.json.gz");
     create(&graph, &destination);
     let before = fs::read(destination.join("snapshot.json")).unwrap();
     let repeated = Command::new(debundler_path())
@@ -471,7 +459,7 @@ fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots(
 
 #[test]
 fn snapshot_engine_and_yaml_membership_are_verified() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "const value = 1;\n")],
             module_roots: &[("main", "main")],
@@ -486,7 +474,7 @@ fn snapshot_engine_and_yaml_membership_are_verified() {
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
     let report = create(
-        &fixture.report_root.join("main/dependency_graph.json"),
+        &fixture.report_root.join("main/dependency_graph.json.gz"),
         &destination,
     );
     let modules = Path::new(report["modules"].as_str().unwrap());
@@ -508,7 +496,7 @@ fn snapshot_engine_and_yaml_membership_are_verified() {
 
 #[test]
 fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal() {
-    let fixture = run_tree_fixture(
+    let fixture = run_tree_graph_fixture(
         &TreeFixture {
             chunks: &[("main", "console.log(7);\n")],
             module_roots: &[("main", "main")],
@@ -535,14 +523,8 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     .unwrap();
     fs::remove_dir_all(&fixture.out_root).unwrap();
     let original = Command::new(debundler_path())
-        .args(["run", "--tree-config"])
-        .arg(config)
-        .arg("--tree-modules")
-        .arg(fixture.root().join("modules"))
-        .arg("--tree-vendor-marks")
-        .arg(fixture.root().join("vendor_marks.yaml"))
-        .arg("--tree-source-root")
-        .arg(fixture.root())
+        .args(["run", "--graphs"])
+        .args(tree_spec_args(fixture.root()))
         .arg("--out-root")
         .arg(&fixture.out_root)
         .output()
@@ -558,7 +540,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     let nested_destination = fixture.root().join("snapshot/worker");
     let nested = Command::new(debundler_path())
         .args(["snapshot", "create", "--graph"])
-        .arg(fixture.report_root.join("main/dependency_graph.json"))
+        .arg(fixture.report_root.join("main/dependency_graph.json.gz"))
         .arg("--destination")
         .arg(&nested_destination)
         .output()
@@ -566,7 +548,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     assert!(!nested.status.success());
     assert!(!nested_destination.exists());
     let report = create(
-        &fixture.report_root.join("main/dependency_graph.json"),
+        &fixture.report_root.join("main/dependency_graph.json.gz"),
         &destination,
     );
     fs::remove_dir_all(fixture.root()).unwrap();

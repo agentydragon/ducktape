@@ -13,7 +13,9 @@ py_library(
     deps = [
         ":credentials",
         "@pypi//aiohttp",
+        "@pypi//authlib",
         "@pypi//httpx",
+        "@pypi//httpx2",
     ],
 )
 
@@ -24,6 +26,9 @@ py_test(
         ":oauth",
         "//:conftest",
         "@pypi//aiohttp",
+        "@pypi//authlib",
+        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -70,6 +75,7 @@ py_test(
     srcs = ["test_daemon.py"],
     deps = [
         ":daemon",
+        ":oauth",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -125,6 +131,8 @@ py_wheel(
         "ducktape-network-monitor",
         "dbus-next>=0.2.3",
         "httpx>=0.27.0",
+        "httpx2>=2.13.0",
+        "Authlib>=1.8.0",
         "pydantic>=2.0",
     ],
     version = "0.1.0",

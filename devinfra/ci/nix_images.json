@@ -1,0 +1,105 @@
+{
+  "common_paths": [
+    ".github/actions/finish-attic-upload/action.yml",
+    ".github/actions/setup-nix-attic/action.yml",
+    ".github/workflows/nix-images.yml",
+    ".github/workflows/trusted-fork-pr-context.yml",
+    "devinfra/ci/nix_images.json",
+    "devinfra/ci/nix_images.py",
+    "devinfra/ci/pr_mergeability.py",
+    "flake.lock",
+    "flake.nix",
+    "nix/flake/packages.nix"
+  ],
+  "images": {
+    "agentplane-environment-firecracker-image": {
+      "repository": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker",
+      "paths": [
+        "agentplane/env/images/firecracker-image.nix",
+        "agentplane/env/images/firecracker.nix",
+        "agentplane/env/images/firecracker_guest_contract.json",
+        "agentplane/env/images/systemd/**",
+        "agentplane/env/images/tools.nix",
+        "agentplane/env/images/vm.nix",
+        "agentplane/env/images/vm_guest_contract.json",
+        "nix/artifact-pins.json",
+        "nix/attic-pubkeys.json",
+        "nix/flake/devtools.nix",
+        "nix/lib/nix-ld-image.nix",
+        "nix/nixos/modules/base.nix",
+        "nix/nixos/modules/vm-hardware.nix",
+        "nix/packages/**"
+      ],
+      "smoke": null
+    },
+    "agentplane-environment-vm-container-disk": {
+      "repository": "git.allegedly.works/ducktape-ci/agentplane-environment-vm",
+      "paths": [
+        "agentplane/env/images/container-disk.nix",
+        "agentplane/env/images/home_prepare",
+        "agentplane/env/images/systemd/**",
+        "agentplane/env/images/tools.nix",
+        "agentplane/env/images/vm.nix",
+        "agentplane/env/images/vm_guest_contract.json",
+        "nix/artifact-pins.json",
+        "nix/attic-pubkeys.json",
+        "nix/flake/devtools.nix",
+        "nix/lib/nix-ld-image.nix",
+        "nix/nixos/modules/base.nix",
+        "nix/nixos/modules/vm-hardware.nix",
+        "nix/packages/**"
+      ],
+      "smoke": null
+    },
+    "agentplane-sandbox-build-image": {
+      "repository": "git.allegedly.works/ducktape-ci/agentplane-sandbox-build",
+      "paths": [
+        "agentplane/cli/package.nix",
+        "agentplane/env/images/build.nix",
+        "agentplane/env/images/sandbox.nix",
+        "agentplane/env/images/tools.nix",
+        "nix/artifact-pins.json",
+        "nix/lib/nix-ld-image.nix"
+      ],
+      "smoke": null
+    },
+    "agentplane-sandbox-image": {
+      "repository": "git.allegedly.works/ducktape-ci/agentplane-sandbox",
+      "paths": [
+        "agentplane/cli/package.nix",
+        "agentplane/env/images/sandbox.nix",
+        "agentplane/env/images/tools.nix",
+        "nix/artifact-pins.json",
+        "nix/lib/nix-ld-image.nix"
+      ],
+      "smoke": null
+    },
+    "cpap-gateway-container-disk": {
+      "repository": "git.allegedly.works/ducktape-ci/cpap-gateway",
+      "paths": ["cpap/gateway/**", "nix/artifact-pins.json", "nix/nixos/modules/vm-hardware.nix"],
+      "smoke": null
+    },
+    "environment-tools-image": {
+      "repository": "git.allegedly.works/ducktape-ci/environment-tools",
+      "paths": [
+        ".pre-commit-config.yaml",
+        "agentplane/env/images/ducktape_image_smoke.sh",
+        "agentplane/env/images/ducktape_tools_check.nix",
+        "agentplane/env/images/image.nix",
+        "agentplane/env/images/sandbox.nix",
+        "agentplane/env/images/tools.nix",
+        "nix/artifact-pins.json",
+        "nix/flake/devtools.nix",
+        "nix/lib/nix-ld-image.nix",
+        "nix/packages/**",
+        "ruff.toml"
+      ],
+      "smoke": "agentplane/env/images/ducktape_image_smoke.sh"
+    },
+    "website-image": {
+      "repository": "git.allegedly.works/ducktape-ci/website",
+      "paths": ["website/**"],
+      "smoke": "website/image_smoke.sh"
+    }
+  }
+}

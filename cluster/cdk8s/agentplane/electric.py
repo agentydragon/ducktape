@@ -3,25 +3,13 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ContainerResources,
-    ContainerSecurityContextProps,
-    Cpu,
-    CpuResources,
-    Deployment,
-    DeploymentStrategy,
-    EnvValue,
-    ImagePullPolicy,
-    MemoryResources,
-    PodSecurityContextProps,
-    Service,
-    Volume,
-)
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, DeploymentStrategy, EnvValue, MemoryResources, Volume
 from constructs import Construct
 
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -39,6 +27,11 @@ _STREAM_ID = "agentplane_history"
 
 
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
+# Operator-accepted exception to the two-replica rolling target: a replacement briefly interrupts
+# sync. Raising replicas alone does not add a useful replica: a second Pod on the same stream ID
+# waits read-only with an empty emptyDir store, answers 503 for new shapes, and passes /v1/health
+# readiness (202) while the Service routes to it.
+_REPLICAS = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -62,26 +55,14 @@ class Electric(Construct):
         super().__init__(scope, id)
         self.env = env
         electric = service(env.namespace)
-        labels = electric.pods.selector
         # The replication role's login, which database.py mints.
         role = SecretRef(namespace=env.namespace, name="postgres-electric")
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=labels),
-            pod_metadata=ApiObjectMetadata(labels=labels),
-            replicas=1,
-            strategy=DeploymentStrategy.recreate(),
-            termination_grace_period=Duration.seconds(60),
-            automount_service_account_token=False,
-            security_context=PodSecurityContextProps(
-                ensure_non_root=True, user=_RUN_AS, group=_RUN_AS, fs_group=_RUN_AS
-            ),
-        )
-        container = deployment.add_container(
-            name="electric",
+            env,
+            serves=[electric],
+            container="electric",
             image=_IMAGE,
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             env_variables={
                 "POSTGRES_USER": role.key("username").env_value(self, "postgres-user-ref"),
                 "POSTGRES_PASSWORD": role.key("password").env_value(self, "postgres-password-ref"),
@@ -105,31 +86,22 @@ class Electric(Construct):
                 # once-per-minute LRU expiry; the upstream default retains every shape forever.
                 "ELECTRIC_MAX_SHAPES": EnvValue.from_value("1024"),
             },
-            ports=[electric.port.container_port()],
             readiness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=5, period_seconds=10),
             liveness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
             ),
-            # Writable: its root filesystem writes are unaudited.
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            termination_grace=Duration.seconds(60),
+            replica_profile=_REPLICAS,
+            placement=placement,
+            automount_service_account_token=False,
+            run_as=_RUN_AS,
         )
         # Shape logs are a cache of Postgres: a restart starts them empty, and each reader refetches
         # on its shape's 409.
-        container.mount(
+        workload.container.mount(
             _STORAGE_DIR, Volume.from_empty_dir(self, "storage-volume", "storage", size_limit=Size.gibibytes(5))
-        )
-        if placement is not None:
-            pod_policy.place(deployment, placement)
-        pod_policy.harden(deployment)
-
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=electric.name, namespace=env.namespace, labels=electric.labels),
-            selector=deployment,
-            ports=[electric.port.service_port()],
         )
 
     def add_platform_resources(self) -> None:

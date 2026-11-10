@@ -7,10 +7,11 @@ py_library(
     testonly = True,
     srcs = ["container_e2e.py"],
     deps = [
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/claude/claude_hook/container_e2e:e2e_container_descriptor",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )

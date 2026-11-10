@@ -1,24 +1,29 @@
-"""The Agentplane services runners call over the egress sidecar's platform routes
+"""The Agentplane services runners call over the egress sidecar's shared platform listener
 (agentplane/egress/platform_routes.py). From this one list come:
 - the sidecar's routes and the runner's endpoint flags in the runner SandboxTemplates;
 - the network rules on both ends.
 
-Authenticated routes use the token the sidecar projects for their audience (sandbox_pod.py). The
-telemetry route is an unauthenticated local hop to Alloy. Neither route uses the central proxy.
+The sidecar presents its SVID to Rules, Notification and model configuration through the central
+proxy. Telemetry remains a direct unauthenticated route.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
-from agentplane.egress.platform_routes import PlatformRoute
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
-from cluster.cdk8s.agentplane import history_service, runner_gateway, sandbox_pod, telemetry
+from agentplane.egress.platform_routes import (
+    PLATFORM_ROUTES_PORT,
+    PlaintextRouteTransport,
+    PlatformRoute,
+    PlatformRoutes,
+    PlatformRouteTransport,
+    TLSConnectRouteTransport,
+)
+from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI
+from cluster.cdk8s.agentplane import egress, llm_ingress, notifications, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -27,59 +32,87 @@ from cluster.cdk8s.service_ref import Pods, ServiceRef
 class Route:
     name: str
     service: ServiceRef
-    audience: str | None
-    # On the sidecar's loopback, beside its proxy (3128) and readiness (3129) ports.
-    listen_port: int
+    transport: PlatformRouteTransport
+    service_prefixes: tuple[str, ...]
+
+    @property
+    def listen_port(self) -> int:
+        # Full gRPC methods select routes on the shared local listener.
+        return PLATFORM_ROUTES_PORT
 
     @property
     def local_target(self) -> str:
         return f"127.0.0.1:{self.listen_port}"
 
 
-# Each route replaces `authorization` with its own token, so a runner presents this placeholder.
-ROUTE_BEARER = "platform-route"
+def egress_rules(namespace: str) -> Route:
+    return Route(
+        "egress-rules",
+        egress.admin(namespace),
+        TLSConnectRouteTransport(server_uri=EGRESS_PROXY_URI),
+        ("/agentplane.egress.EgressRules/",),
+    )
 
 
-def control(namespace: str, *, service: ServiceRef | None = None) -> Route:
-    service = service or runner_gateway.runner_control(namespace)
-    return Route("control", service, RUNNER_CONTROL_AUDIENCE, 3130)
+def model_config(namespace: str) -> Route:
+    return Route(
+        "model-config",
+        llm_ingress.service(namespace),
+        TLSConnectRouteTransport(server_uri=LLM_INGRESS_URI),
+        ("/agentplane.llm_ingress.v1.ModelConfigService/",),
+    )
 
 
-def ingress(namespace: str) -> Route:
-    return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, 3131)
+def notifications_grpc(namespace: str) -> Route:
+    return Route(
+        "notifications",
+        notifications.service(namespace),
+        TLSConnectRouteTransport(server_uri=NOTIFICATIONS_URI),
+        ("/agentplane.notification_service.Notifications/",),
+    )
 
 
 def telemetry_route() -> Route:
-    """The runner's local, unauthenticated gRPC hop to Alloy; the runner never dials Alloy directly."""
-    return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, 3132)
+    """The runner's local, unauthenticated gRPC hop to Alloy."""
+    return Route(
+        "telemetry",
+        telemetry.ALLOY_OTLP_GRPC,
+        PlaintextRouteTransport(),
+        (
+            "/opentelemetry.proto.collector.trace.v1.TraceService/",
+            "/opentelemetry.proto.collector.metrics.v1.MetricsService/",
+            "/opentelemetry.proto.collector.logs.v1.LogsService/",
+        ),
+    )
 
 
-def routes(namespace: str, *, control_service: ServiceRef | None = None) -> tuple[Route, ...]:
-    return control(namespace, service=control_service), ingress(namespace), telemetry_route()
+def routes(namespace: str) -> tuple[Route, ...]:
+    return telemetry_route(), egress_rules(namespace), notifications_grpc(namespace), model_config(namespace)
 
 
-def sidecar_routes(
-    namespace: str, *, control_service: ServiceRef | None = None, listen_host: str = "127.0.0.1"
-) -> dict[str, PlatformRoute]:
-    """The sidecar's `platform_routes` setting."""
-    return {
-        route.name: PlatformRoute(
-            listen_address=f"{listen_host}:{route.listen_port}",
-            upstream=f"{route.service.fqdn}:{route.service.pod_port}",
-            **({"token_file": Path(sandbox_pod.audience_token_file(route.audience))} if route.audience else {}),
-        )
-        for route in routes(namespace, control_service=control_service)
-    }
+def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> PlatformRoutes:
+    """The sidecar's shared `platform_routes` listener and its method-selected routes."""
+    return PlatformRoutes(
+        listen_address=f"{listen_host}:{PLATFORM_ROUTES_PORT}",
+        routes={
+            route.name: PlatformRoute(
+                service_prefixes=route.service_prefixes,
+                upstream=f"{route.service.fqdn}:{route.service.pod_port}",
+                transport=route.transport,
+            )
+            for route in routes(namespace)
+        },
+    )
 
 
 def telemetry_endpoint(*, host: str = "127.0.0.1") -> str:
-    """The OTLP/gRPC endpoint on the sidecar route, in the caller's network namespace."""
-    return f"http://{host}:{telemetry_route().listen_port}"
+    """The OTLP/gRPC endpoint on the shared listener, in the caller's network namespace."""
+    return f"http://{host}:{PLATFORM_ROUTES_PORT}"
 
 
 class PlatformRouteFences(Construct):
-    """`clients` may reach each route's service directly: an egress rule on them and an ingress rule
-    on the service. Cilium unions these with each side's own policy."""
+    """`clients` may reach each route's service directly: egress on them and ingress on the service.
+    Cilium unions these with each side's own policy."""
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, clients: Pods) -> None:
         super().__init__(scope, id)

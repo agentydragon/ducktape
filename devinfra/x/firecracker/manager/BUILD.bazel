@@ -1,0 +1,106 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "k8s_client",
+    srcs = ["k8s_client.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":models",
+        "@pypi//kubernetes",
+    ],
+)
+
+py_library(
+    name = "snapshots",
+    srcs = ["snapshots.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":clients",
+        ":k8s_client",
+    ],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":clients",
+        ":config",
+        ":k8s_client",
+        ":models",
+        ":snapshots",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "service_bin",
+    main_module = "devinfra.x.firecracker.manager.service",
+    deps = [":service"],
+)
+
+# ── OCI Image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "service_image_bin",
+    main = "service.py",
+    deps = [":service"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":service_image_bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("service_image_bin"),
+    env = py_image_env(binary_name = "service_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+)
+
+py_test(
+    name = "test_service",
+    srcs = ["test_service.py"],
+    deps = [
+        ":service",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)

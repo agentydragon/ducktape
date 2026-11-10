@@ -1,47 +1,48 @@
 // Package api serves the History Service's HistoryService gRPC API: the reads of retained Session history and
 // of its folded Threads, raw entry follows and summary change watches.
 //
-// Every RPC admits only the configured callers, each proving a ServiceAccount by a bearer reviewed on that call
-// (agentplane/docs/grpc_services.md): a public Session UUID is not itself authority to read a transcript.
+// Methods admits a ServiceAccount proving itself by a bearer reviewed on that call
+// (agentplane/docs/grpc_services.md), or a workload SVID naming an Identity, which reads the Sessions
+// retained as executing as that Identity incarnation: a public Session UUID is not itself authority to read
+// a transcript.
 package api
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Service is the HistoryService server.
 type Service struct {
 	historypb.UnimplementedHistoryServiceServer
 	reader         *reads.Reader
+	readerAccounts sets.Set[auth.Account]
 	wakeups        *wakeups.Hub
-	resolver       *auth.Resolver
-	callers        map[auth.Account]struct{}
 	requestTimeout time.Duration
 	lease          time.Duration
 	draining       context.Context
 	drain          context.CancelFunc
 }
 
-// Options are what a Service reads and whom it admits.
+// Options are what a Service reads.
 type Options struct {
 	Reader *reads.Reader
-	// Wakeups listens to raw history, summary changes and Session openings.
+	// ReaderAccounts retain the existing Pod-bound backend-wide read path.
+	ReaderAccounts []auth.Account
+	// Wakeups listens to raw history, summary changes and Sessions.
 	Wakeups *wakeups.Hub
-	// Resolver and Callers admit a call: the caller proves a ServiceAccount by a bearer Resolver reviews, and
-	// the ServiceAccount must be one of Callers.
-	Resolver *auth.Resolver
-	Callers  []auth.Account
 	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
 	RequestTimeout time.Duration
 	// WatchLease ends each watch and follow after this long: a stream is admitted once, so the lease bounds
@@ -49,14 +50,46 @@ type Options struct {
 	WatchLease time.Duration
 }
 
-func NewService(options Options) *Service {
-	allowed := make(map[auth.Account]struct{}, len(options.Callers))
-	for _, caller := range options.Callers {
-		allowed[caller] = struct{}{}
+// Methods admits a reviewed ServiceAccount or an Identity SVID to the read API. The handler scopes
+// ordinary callers to their retained execution principal or Identity and keeps the configured
+// Pod-bound backend readers explicit.
+func Methods(resolver *auth.Resolver) auth.Methods {
+	rule := auth.ReviewedServiceAccountOrIdentity(resolver)
+	return auth.Methods{
+		historypb.HistoryService_ReadSessionEvents_FullMethodName:        rule,
+		historypb.HistoryService_FollowSession_FullMethodName:            rule,
+		historypb.HistoryService_ReadSessionObservations_FullMethodName:  rule,
+		historypb.HistoryService_GetSessionSummary_FullMethodName:        rule,
+		historypb.HistoryService_BatchGetSessionSummaries_FullMethodName: rule,
+		historypb.HistoryService_ReadThreadEntities_FullMethodName:       rule,
+		historypb.HistoryService_ReadEntityEvidence_FullMethodName:       rule,
+		historypb.HistoryService_ReadNativeFrames_FullMethodName:         rule,
+		historypb.HistoryService_FindSessions_FullMethodName:             rule,
+		historypb.HistoryService_WatchSessionSummaries_FullMethodName:    rule,
 	}
+}
+
+// MethodsWithDelegation adds an explicit Action actor grant to the configured full RPC names.
+func MethodsWithDelegation(
+	resolver *auth.Resolver,
+	delegator auth.Delegator,
+	serviceAccounts auth.ServiceAccountUIDReader,
+	identities auth.IdentityUIDReader,
+	delegatedMethods []string,
+) (auth.Methods, error) {
+	methods, err := Methods(resolver).WithDelegation(
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts, identities,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure delegated History methods: %w", err)
+	}
+	return methods, nil
+}
+
+func NewService(options Options) *Service {
 	draining, drain := context.WithCancel(context.Background())
 	return &Service{
-		reader: options.Reader, wakeups: options.Wakeups, resolver: options.Resolver, callers: allowed,
+		reader: options.Reader, readerAccounts: sets.New(options.ReaderAccounts...), wakeups: options.Wakeups,
 		requestTimeout: options.RequestTimeout, lease: options.WatchLease, draining: draining, drain: drain,
 	}
 }
@@ -64,22 +97,53 @@ func NewService(options Options) *Service {
 // Drain ends every open watch and follow, so a shutdown that waits for open calls is not held up until their leases.
 func (s *Service) Drain() { s.drain() }
 
-// authenticate admits the configured callers only.
-func (s *Service) authenticate(ctx context.Context) error {
-	if _, err := s.resolver.RequireAccount(ctx, s.callers); err != nil {
-		return failure(ctx, err)
-	}
-	return nil
-}
-
-// serve admits the caller, then runs read, both under the request timeout.
-func serve[Request, Response any](ctx context.Context, s *Service, request *Request, read func(context.Context, *Request) (*Response, error)) (*Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
-	defer cancel()
-	if err := s.authenticate(ctx); err != nil {
+// serve runs read under the request timeout.
+func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
+	admission, err := auth.Admitted(ctx)
+	if err != nil {
 		return nil, err
 	}
-	response, err := read(ctx, request)
+	// An Identity reads the Sessions recorded with its exact incarnation, whether its own workload
+	// called or a trusted platform component acts for it.
+	switch identity := admission.(type) {
+	case auth.IdentityAdmission:
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID,
+		})), nil
+	case auth.DelegatedIdentityAdmission:
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
+		})), nil
+	}
+	caller, err := auth.EffectiveCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	account := caller.GetAccount()
+	if account == nil || account.GetNamespace() == "" || account.GetName() == "" || caller.GetUid() == "" {
+		return nil, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
+	}
+	if direct, ok := admission.(auth.DirectAdmission); ok && direct.Pod != nil && direct.Pod.IsPodBound() {
+		if s.readerAccounts.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}) {
+			return s.reader.WithReadScope(storage.AllSessions()), nil
+		}
+	}
+	principal := storage.ExecutionPrincipal{
+		Namespace: account.GetNamespace(),
+		Name:      account.GetName(),
+		UID:       caller.GetUid(),
+	}
+	return s.reader.WithReadScope(storage.OwnedBy(principal)), nil
+}
+
+func serve[Request, Response any](ctx context.Context, s *Service, request *Request, read func(context.Context, *reads.Reader, *Request) (*Response, error)) (*Response, error) {
+	reader, err := s.scopedReader(ctx)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	defer cancel()
+	response, err := read(ctx, reader, request)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -87,35 +151,51 @@ func serve[Request, Response any](ctx context.Context, s *Service, request *Requ
 }
 
 func (s *Service) ReadSessionEvents(ctx context.Context, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadSessionEvents)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
+		return reader.ReadSessionEvents(ctx, request)
+	})
 }
 
 func (s *Service) ReadSessionObservations(ctx context.Context, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadSessionObservations)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
+		return reader.ReadSessionObservations(ctx, request)
+	})
 }
 
 func (s *Service) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
-	return serve(ctx, s, request, s.reader.GetSessionSummary)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
+		return reader.GetSessionSummary(ctx, request)
+	})
 }
 
 func (s *Service) BatchGetSessionSummaries(ctx context.Context, request *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error) {
-	return serve(ctx, s, request, s.reader.BatchGetSessionSummaries)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error) {
+		return reader.BatchGetSessionSummaries(ctx, request)
+	})
 }
 
 func (s *Service) FindSessions(ctx context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
-	return serve(ctx, s, request, s.reader.FindSessions)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
+		return reader.FindSessions(ctx, request)
+	})
 }
 
 func (s *Service) ReadThreadEntities(ctx context.Context, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadThreadEntities)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
+		return reader.ReadThreadEntities(ctx, request)
+	})
 }
 
 func (s *Service) ReadEntityEvidence(ctx context.Context, request *historypb.ReadEntityEvidenceRequest) (*historypb.ReadEntityEvidenceResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadEntityEvidence)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadEntityEvidenceRequest) (*historypb.ReadEntityEvidenceResponse, error) {
+		return reader.ReadEntityEvidence(ctx, request)
+	})
 }
 
 func (s *Service) ReadNativeFrames(ctx context.Context, request *historypb.ReadNativeFramesRequest) (*historypb.ReadNativeFramesResponse, error) {
-	return serve(ctx, s, request, s.reader.ReadNativeFrames)
+	return serve(ctx, s, request, func(ctx context.Context, reader *reads.Reader, request *historypb.ReadNativeFramesRequest) (*historypb.ReadNativeFramesResponse, error) {
+		return reader.ReadNativeFrames(ctx, request)
+	})
 }
 
 // failure answers a failed call. The client gets a fixed message per kind of failure: no SQL, bearer or
@@ -123,7 +203,7 @@ func (s *Service) ReadNativeFrames(ctx context.Context, request *historypb.ReadN
 func failure(ctx context.Context, err error) error {
 	switch {
 	case status.Code(err) != codes.Unknown:
-		// An admission refusal, or a failure already answered.
+		// A failure already answered.
 		return err
 	case errors.Is(err, storage.ErrNotFound):
 		return status.Error(codes.NotFound, "session history not found")

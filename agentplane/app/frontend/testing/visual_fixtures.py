@@ -4,8 +4,8 @@ import pytest
 import pytest_asyncio
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Scene
-from util.testing.viewports import DESKTOP, MOBILE, Viewport
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
 # Case ids name the published screenshots, so these keep the ids every test has used.
 DESKTOP_AND_MOBILE = pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
@@ -35,6 +35,6 @@ async def completed_rollout(view: VisualPage, app: AgentplaneFixture) -> VisualP
 async def shell_calls(view: VisualPage, app: AgentplaneFixture) -> VisualPage:
     await app.build(Scene.SHELL_CALLS)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
+    await view.page.wait_for_selector(".ui-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
     return view

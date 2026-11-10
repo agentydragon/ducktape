@@ -8,16 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
 // eventsThrough is the events of an Action request with sequences first through last.
-func eventsThrough(first, last int64) []ActionEvent {
-	var events []ActionEvent
+func eventsThrough(first, last int64) []storagecodec.ActionEvent {
+	var events []storagecodec.ActionEvent
 	for sequence := first; sequence <= last; sequence++ {
-		events = append(events, ActionEvent{
+		events = append(events, storagecodec.ActionEvent{
 			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}
@@ -29,11 +31,11 @@ func dueOf(subscription Subscription) DueSubscription {
 	return DueSubscription{Subscription: subscription, ActionsAfterSequence: ptr(int64(0))}
 }
 
-func (f fixture) record(claim Claim, subscription Subscription, events []ActionEvent) error {
+func (f fixture) record(claim Claim, subscription Subscription, events []storagecodec.ActionEvent) error {
 	return f.RecordActionEvents(context.Background(), claim, dueOf(subscription), events)
 }
 
-func (f fixture) mustRecord(t *testing.T, claim Claim, subscription Subscription, events []ActionEvent) {
+func (f fixture) mustRecord(t *testing.T, claim Claim, subscription Subscription, events []storagecodec.ActionEvent) {
 	t.Helper()
 	if err := f.record(claim, subscription, events); err != nil {
 		t.Fatal(err)
@@ -78,7 +80,7 @@ func (f fixture) actionsAfterSequence(t *testing.T, id uuid.UUID) int64 {
 
 func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	due := f.source(t, claim)
@@ -86,7 +88,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 		t.Fatal("the new subscription is not due")
 	}
 	events := eventsThrough(1, 3)
-	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"})}}
+	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: storagecodec.ServiceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"})}}
 
 	before := time.Now()
 	if err := f.RecordActionEvents(t.Context(), claim, *due, events); err != nil {
@@ -122,7 +124,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 
 func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 
@@ -139,7 +141,7 @@ func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {
 
 func TestRecordActionEventsRefusesAGapAndRecordsNothingOfTheRead(t *testing.T) {
 	f := newClaimFixture(t)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	f.mustRecord(t, claim, subscription, eventsThrough(1, 2))
@@ -148,7 +150,7 @@ func TestRecordActionEventsRefusesAGapAndRecordsNothingOfTheRead(t *testing.T) {
 	}
 	failure := f.get(t, subscription.ID).Failure
 
-	for name, events := range map[string][]ActionEvent{
+	for name, events := range map[string][]storagecodec.ActionEvent{
 		"a read that starts past the next sequence": eventsThrough(4, 5),
 		"a read that skips one in the middle":       append(eventsThrough(3, 3), eventsThrough(5, 5)...),
 	} {
@@ -177,7 +179,7 @@ func TestRecordActionEventsLeavesASubscriptionThatChangedSinceItWasRead(t *testi
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newClaimFixture(t)
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			claim := f.claim(t)
 			change(f, t, subscription)
 			f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 minute' WHERE id = $1`, subscription.ID)
@@ -209,7 +211,7 @@ func TestRecordActionEventsIsFencedOnTheClaim(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newClaimFixture(t)
-			subscription := f.subscribe(t, body("first"))
+			subscription := f.subscribe(t, f.body("first"))
 			claim := f.claim(t)
 			lose(f, t, subscription)
 
@@ -227,7 +229,7 @@ func TestRecordActionEventsNeedsNoCapacityToReplayAndStopsAtTheEntryQuota(t *tes
 	quotas.EntriesPerInbox = 2
 	f := newFixture(t, quotas)
 	f.exec(t, `TRUNCATE inbox CASCADE`)
-	subscription := f.subscribe(t, body("first"))
+	subscription := f.subscribe(t, f.body("first"))
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 
@@ -241,8 +243,8 @@ func TestRecordActionEventsNeedsNoCapacityToReplayAndStopsAtTheEntryQuota(t *tes
 
 func TestRecordActionEventsClearsTheFailureOfItsSubscriptionAlone(t *testing.T) {
 	f := newClaimFixture(t)
-	first := f.subscribe(t, body("first"))
-	second := f.subscribe(t, body("second"))
+	first := f.subscribe(t, f.body("first"))
+	second := f.subscribe(t, f.body("second"))
 	claim := f.claim(t)
 	for _, subscription := range []Subscription{first, second} {
 		if err := f.SourceFailed(t.Context(), claim, subscription, FailureRateLimited, "HTTP 429", time.Minute); err != nil {
@@ -265,8 +267,8 @@ func TestRecordActionEventsClearsTheFailureOfItsSubscriptionAlone(t *testing.T) 
 
 func TestOverlappingSubscriptionsOfARequestShareItsEntries(t *testing.T) {
 	f := newClaimFixture(t)
-	first := f.subscribe(t, body("first"))
-	overlapping := body("overlapping")
+	first := f.subscribe(t, f.body("first"))
+	overlapping := f.body("overlapping")
 	overlapping.Source = first.Source
 	second := f.subscribe(t, overlapping)
 	claim := f.claim(t)
@@ -285,8 +287,8 @@ func TestOverlappingSubscriptionsOfARequestShareItsEntries(t *testing.T) {
 
 func TestConcurrentSourcesOfAnInboxCommitOnePrefix(t *testing.T) {
 	f := newClaimFixture(t)
-	first := f.subscribe(t, body("first"))
-	second := f.subscribe(t, body("second"))
+	first := f.subscribe(t, f.body("first"))
+	second := f.subscribe(t, f.body("second"))
 	claim := f.claim(t)
 
 	var wg sync.WaitGroup

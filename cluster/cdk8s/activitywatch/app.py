@@ -9,8 +9,6 @@ via Flux's image-automation marker. Also hand-written: the nginx configs the dir
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
@@ -288,8 +286,6 @@ def chart(app: App) -> Chart:
     _deployment(chart)
     _data_claim(chart)
     _service(chart, "readonly-service", service=_READONLY)
-    # CLEANUP(added 2026-10-02): Remove once nothing resolves activitywatch-readonly.activitywatch.svc (consumers: cluster/k8s/authentik/app/blueprints/activitywatch-sso.yaml, applied by the separate authentik Kustomization).
-    _service(chart, "legacy-readonly-service", service=replace(_READONLY, name="activitywatch-readonly"))
     _service(
         chart,
         "write-service",

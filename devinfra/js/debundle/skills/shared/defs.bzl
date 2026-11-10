@@ -75,6 +75,7 @@ DEBUNDLE_REFERENCES = [
         srcs = [
             "//devinfra/js/debundle:README.md",
             "//devinfra/js/debundle:SPEC.md",
+            "//devinfra/js/debundle:perf_wrapper.sh",
         ],
         prefix = "references",
     ),
@@ -89,7 +90,12 @@ DEBUNDLE_REFERENCES = [
             "//devinfra/js/debundle/docs:planning.md",
             "//devinfra/js/debundle/docs:selectors.md",
             "//devinfra/js/debundle/docs:spec_editing.md",
+            "//devinfra/js/debundle/docs:wire_format.md",
         ],
         prefix = "references/docs",
+    ),
+    skill_mapping(
+        srcs = ["//devinfra/js/debundle/perf:contract_audit.md"],
+        prefix = "references/perf",
     ),
 ]

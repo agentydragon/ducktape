@@ -1,15 +1,21 @@
 use super::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
-/// Controls only whether the source module's export surface contributes
-/// synthetic execution roots to unknown-call fallback.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+/// Controls only which of the source module's exports contribute synthetic
+/// execution roots and exposed capabilities to unknown-call fallback.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportReentryPolicy {
+    /// Every export.
     #[default]
     Conservative,
+    /// None: no code can obtain the module's bindings while it evaluates.
     NoStaticImporterReentry,
+    /// Only these export names (`default` for the default export): the only
+    /// code that can obtain the module's bindings while it evaluates imports
+    /// exactly these.
+    ReentryThrough(BTreeSet<String>),
 }
 
 /// Finds an `await` outside lazy scopes: function, arrow, method and
@@ -74,19 +80,31 @@ impl Visit for TopLevelAwaitFinder {
 ///
 /// **Sharing**: materialization computes this layer once and feeds it
 /// to selector resolution and then to [`analyze_chunk_with_policy`]
-/// (via `chunk_analysis::compute_chunk_analysis`). Semantic passes may revisit
+/// (via `chunk_analysis::compute_chunk_facts`). Semantic passes may revisit
 /// the retained item views. `vendor::strip` calls [`analyze_vendor_prune_chunk`]
 /// on transformed output syntax, for which the materializer's original facts
 /// do not apply.
-pub fn analyze_chunk_structural<'a, F>(
+pub fn analyze_chunk_structural<'a>(
     module: &'a Module,
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
-) -> StructuralChunkAnalysis<'a>
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
-    let body = top_level_item_views(&module.body);
+    locator: Option<SourceLocator<'_>>,
+) -> StructuralChunkAnalysis<'a> {
+    complete_chunk_structural(collect_chunk_source_facts(module, locator))
+}
+
+/// Collect the source census once, before exact-site inputs are resolved.
+pub fn collect_chunk_source_facts<'a>(
+    module: &'a Module,
+    locator: Option<SourceLocator<'_>>,
+) -> StructuralChunkSourceFacts<'a> {
+    collect_chunk_source_facts_from_items(&module.body, locator)
+}
+
+pub fn collect_chunk_source_facts_from_items<'a>(
+    items: &'a [ModuleItem],
+    locator: Option<SourceLocator<'_>>,
+) -> StructuralChunkSourceFacts<'a> {
+    let body = top_level_item_views(items);
+    let stable_array_spread_shapes = StableArraySpreadShapes::collect(items, &body);
     let shadowed = compute_shadowed_globals(&body);
     let global_object_names = unshadowed_global_object_aliases(&body);
     let async_direct_function_bindings = collect_async_direct_function_bindings(&body);
@@ -115,6 +133,15 @@ where
                 !shadowed.contains("Promise"),
             );
             item.visit_with(&mut collector);
+            let top_level_var_initializer_candidates = var_decl_of_item(item)
+                .filter(|var| var.kind == VarDeclKind::Var)
+                .into_iter()
+                .flat_map(|var| &var.decls)
+                .filter_map(|decl| match (&decl.name, decl.init.as_deref()) {
+                    (Pat::Ident(binding), Some(_)) => Some(binding.id.to_id()),
+                    _ => None,
+                })
+                .collect();
             let constructor = class_of_item(item).map(|class| {
                 collect_constructor_facts(
                     class,
@@ -124,18 +151,22 @@ where
                     !shadowed.contains("Promise"),
                 )
             });
-            let source_location = source_path.and_then(|source_path| {
-                line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| {
-                    SourceLocation {
-                        source_path: source_path.to_string(),
-                        start_line,
-                        end_line,
-                        start_column: Some(start_column),
-                    }
-                })
-            });
+            let source_location = locator.and_then(|locator| locator.span(item.span()));
             StructuralStatementFacts {
                 ordinal: SourceUnitOrdinal(ordinal),
+                export_linkage: match item {
+                    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
+                        Some(if export.src.is_none() {
+                            ExportLinkage::Local
+                        } else {
+                            ExportLinkage::Dependency
+                        })
+                    }
+                    ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => {
+                        Some(ExportLinkage::Dependency)
+                    }
+                    _ => None,
+                },
                 source_location,
                 kind,
                 var_declared: collector
@@ -148,6 +179,9 @@ where
                     .intersection(&declared)
                     .cloned()
                     .collect(),
+                var_declaration_counts: collector.var_declaration_counts,
+                var_initializer_counts: collector.var_initializer_counts,
+                top_level_var_initializer_candidates,
                 local_bindings: collector
                     .binding_idents
                     .difference(&declared)
@@ -157,6 +191,7 @@ where
                 reads: collector.reads,
                 rebinds: collector.rebinds,
                 member_write_roots: collector.member_write_roots,
+                argument_value_escapes: collector.argument_value_escapes,
                 calls: collector.calls,
                 constructor,
                 at_init_unresolved_sources: collector.at_init_unresolved_sources,
@@ -166,17 +201,108 @@ where
                 declares_direct_function: declares_direct_function(item),
                 global_writes: collector.global_writes,
                 global_reads: collector.global_reads,
-                cell_writes_summarizable: collector.cell_writes_summarizable,
-                dataflow_summarizable: collector.dataflow_summarizable,
+                havoc: collector.havoc,
             }
         })
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
-    let value_flow = ChunkValueFlow::analyze(&body);
-    let plain_data_bindings =
-        crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
+    StructuralChunkSourceFacts {
+        body,
+        stable_array_spread_shapes,
+        imported_bindings,
+        shadowed,
+        per_statement,
+        top_level_await,
+    }
+}
+
+/// Finish the retained source census with one canonical value-flow solve.
+pub fn complete_chunk_structural(
+    source: StructuralChunkSourceFacts<'_>,
+) -> StructuralChunkAnalysis<'_> {
+    complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), &BTreeMap::new(), &[])
+}
+
+/// The canonical value flow `complete_chunk_structural_with_inputs` solves for
+/// `body` under these native-operation and Set-spread inputs.
+pub(crate) fn structural_value_flow(
+    body: &[TopLevelItemView<'_>],
+    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+    inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+) -> ChunkValueFlow {
+    let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(body);
+    candidate_roots.extend(super::heap_contents::array_candidate_roots(body));
+    ChunkValueFlow::analyze_with_native_set_allocations(
+        body,
+        &candidate_roots,
+        &super::value_flow::native_set_allocation_roots(
+            native_operation_inputs,
+            stable_spreads,
+            inferred_set_constructions,
+        ),
+    )
+}
+
+/// Complete the source census with selected native-operation, Set-spread, and
+/// argument inputs before deriving plain-data, Set, and synchronous-call facts.
+/// The argument analysis and native allocation roots share one canonical flow.
+pub fn complete_chunk_structural_with_inputs<'a>(
+    source: StructuralChunkSourceFacts<'a>,
+    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+    inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
+) -> StructuralChunkAnalysis<'a> {
+    let value_flow = structural_value_flow(
+        &source.body,
+        native_operation_inputs,
+        stable_spreads,
+        inferred_set_constructions,
+    );
+    complete_chunk_structural_with_flow(source, argument_inputs, value_flow)
+}
+
+/// `complete_chunk_structural_with_inputs` reusing a flow that
+/// `structural_value_flow` already solved for the same body and inputs.
+pub(crate) fn complete_chunk_structural_with_flow<'a>(
+    source: StructuralChunkSourceFacts<'a>,
+    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
+    value_flow: ChunkValueFlow,
+) -> StructuralChunkAnalysis<'a> {
+    let StructuralChunkSourceFacts {
+        body,
+        stable_array_spread_shapes,
+        imported_bindings,
+        shadowed,
+        per_statement,
+        top_level_await,
+    } = source;
     let dynamic_scope = DynamicScopeFact::analyze(&body);
-    let set_iterable_proof = SetIterableProof::analyze(
+    let stable_var_number_candidates =
+        stable_top_level_var_candidates(&per_statement, dynamic_scope);
+    let argument_facts = (!argument_inputs.is_empty()).then(|| {
+        super::semantic_inference::ArgumentNoEscapeFacts::from_source(
+            &value_flow,
+            &per_statement,
+            argument_inputs,
+            dynamic_scope.present,
+        )
+    });
+    let super::abstract_domain::heap::PlainDataBindings {
+        bindings: plain_data_bindings,
+        dependencies: plain_data_dependencies,
+        inference_uses: plain_data_inference_uses,
+    } = super::abstract_domain::heap::ChunkHeap::analyze(
+        &body,
+        &shadowed,
+        &value_flow,
+        argument_facts.as_ref(),
+    )
+    .plain_data_bindings();
+    let source_semantic_facts =
+        argument_facts.map(|facts| std::sync::Arc::new(facts.into_semantic_facts()));
+    let set_iterable_proof = SetIterableShapes::analyze(
         &body,
         &shadowed,
         &value_flow,
@@ -184,18 +310,72 @@ where
         dynamic_scope,
     );
     let local_class_construction_proof =
-        LocalClassConstructionProof::analyze(&body, &shadowed, &value_flow, dynamic_scope);
+        LocalClassConstructionShapes::analyze(&body, &shadowed, &value_flow, dynamic_scope);
     StructuralChunkAnalysis {
         body,
+        stable_array_spread_shapes,
         imported_bindings,
         value_flow,
-        set_iterable_proof,
-        local_class_construction_proof,
+        dynamic_scope,
+        set_iterable_shapes: set_iterable_proof,
+        local_class_shapes: local_class_construction_proof,
         plain_data_bindings,
+        stable_var_number_candidates,
+        plain_data_dependencies,
+        plain_data_inference_uses,
+        source_semantic_facts,
         shadowed,
         per_statement,
         top_level_await,
     }
+}
+
+/// Derive stable top-level `var` candidates from facts retained by the normal
+/// per-statement collector. This does not walk syntax or run another census:
+/// declaration multiplicity and eager/lazy rebinds came from the same visitor
+/// pass that produced each statement's other structural facts.
+fn stable_top_level_var_candidates(
+    statements: &[StructuralStatementFacts],
+    dynamic_scope: DynamicScopeFact,
+) -> BTreeSet<Id> {
+    if dynamic_scope.present {
+        return BTreeSet::new();
+    }
+
+    let mut candidates = BTreeSet::new();
+    let mut declaration_counts = BTreeMap::<Id, usize>::new();
+    let mut initializer_counts = BTreeMap::<Id, usize>::new();
+    let mut declared_counts = BTreeMap::<Id, usize>::new();
+    let mut nested_bindings = BTreeSet::new();
+    let mut rebinds = BTreeSet::new();
+    for statement in statements {
+        candidates.extend(
+            statement
+                .top_level_var_initializer_candidates
+                .iter()
+                .cloned(),
+        );
+        for (id, count) in &statement.var_declaration_counts {
+            *declaration_counts.entry(id.clone()).or_default() += count;
+        }
+        for (id, count) in &statement.var_initializer_counts {
+            *initializer_counts.entry(id.clone()).or_default() += count;
+        }
+        for id in &statement.declared {
+            *declared_counts.entry(id.clone()).or_default() += 1;
+        }
+        nested_bindings.extend(statement.local_bindings.iter().cloned());
+        rebinds.extend(statement.rebinds.eager.iter().cloned());
+        rebinds.extend(statement.rebinds.lazy.iter().cloned());
+    }
+    candidates.retain(|id| {
+        declaration_counts.get(id) == Some(&1)
+            && initializer_counts.get(id) == Some(&1)
+            && declared_counts.get(id) == Some(&1)
+            && !nested_bindings.contains(id)
+            && !rebinds.contains(id)
+    });
+    candidates
 }
 
 /// Compute the policy-dependent half of the chunk analysis from the
@@ -205,22 +385,17 @@ where
 /// per-statement purity classification, and the redundant-hint
 /// diagnostics. Folds the policy-independent facts in to produce the
 /// full [`ChunkFactAnalysis`].
-pub fn analyze_chunk_with_policy<F>(
+pub fn analyze_chunk_with_policy(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
-    export_reentry_policy: ExportReentryPolicy,
-    source_path: Option<&str>,
-    line_range_for_span: F,
-) -> ChunkFactAnalysis
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
+    export_reentry_policy: &ExportReentryPolicy,
+    locator: Option<SourceLocator<'_>>,
+) -> ChunkFactAnalysis {
     analyze_chunk_with_policy_and_sync(
         structural,
         hints,
         export_reentry_policy,
-        source_path,
-        line_range_for_span,
+        locator,
         SynchronousCallAnalysis::Include,
     )
 }
@@ -231,53 +406,69 @@ enum SynchronousCallAnalysis {
     Omit,
 }
 
-fn analyze_chunk_with_policy_and_sync<F>(
+fn analyze_chunk_with_policy_and_sync(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisInputs,
-    export_reentry_policy: ExportReentryPolicy,
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
+    export_reentry_policy: &ExportReentryPolicy,
+    locator: Option<SourceLocator<'_>>,
     synchronous_calls: SynchronousCallAnalysis,
-) -> ChunkFactAnalysis
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
+) -> ChunkFactAnalysis {
     let StructuralChunkAnalysis {
         body,
+        stable_array_spread_shapes,
         imported_bindings,
         value_flow,
-        set_iterable_proof,
-        local_class_construction_proof,
+        dynamic_scope,
+        set_iterable_shapes,
+        local_class_shapes,
         plain_data_bindings,
+        stable_var_number_candidates,
+        plain_data_dependencies,
+        plain_data_inference_uses,
+        source_semantic_facts,
         shadowed,
         per_statement,
         top_level_await,
     } = structural;
-    let graph = {
-        let mut locate = |span| {
-            let source_path = source_path?;
-            let (start_line, end_line, start_column) = line_range_for_span(span)?;
-            Some(SourceLocation {
-                source_path: source_path.to_string(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
-        ChunkCodeGraph::build_full_with_prepared_plain_data(
+    let plain_array_bindings = super::abstract_domain::heap::plain_array_bindings(&body, &shadowed);
+    let mut prepared_sync_index =
+        super::sync_effects::interpreter::prepare_synchronous_call_index_with_source_facts(
             &body,
-            &shadowed,
-            &hints.assumptions.declared_pure,
-            &hints.assumptions.declared_pure_new,
-            &hints.assumptions.declared_pure_members,
-            &hints.imported_purities,
-            &hints.assumptions.fluent_bindings,
-            &set_iterable_proof,
-            &local_class_construction_proof,
-            &plain_data_bindings,
-            Some(&mut locate),
-        )
-    };
+            &value_flow,
+            hints,
+            &plain_array_bindings,
+            super::sync_effects::interpreter::PreparedSyncShapeInputs {
+                local_class_construction: &local_class_shapes,
+                set_iterable_shapes,
+                stable_array_spread_shapes,
+                shadowed: &shadowed,
+                source_facts: source_semantic_facts.as_deref(),
+            },
+        );
+    let native_facts =
+        ValidatedNativeOperationFacts::new(prepared_sync_index.resolved_native_operation_inputs());
+    prepared_sync_index.locate_native_integrity_witnesses(|span| locator?.span(span));
+    let local_class_construction_proof =
+        prepared_sync_index.local_class_construction_proof().clone();
+    let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
+    let graph = ChunkCodeGraph::build_full_with_prepared_plain_data(
+        &body,
+        &shadowed,
+        &hints.assumptions.declared_pure,
+        &hints.assumptions.declared_pure_new,
+        &hints.assumptions.declared_pure_members,
+        &hints.imported_purities,
+        &hints.assumptions.fluent_bindings,
+        &set_iterable_proof,
+        &local_class_construction_proof,
+        &plain_data_bindings,
+        &plain_data_dependencies,
+        &plain_data_inference_uses,
+        &plain_array_bindings,
+        &stable_var_number_candidates,
+        &hints.stable_imports,
+        locator,
+    );
     let local_effect_context = local_effects::LocalEffectContext::for_body(
         &body,
         hints.local_effect_policy,
@@ -299,58 +490,188 @@ where
             }
         }
     }
+    let rebindings: BTreeSet<Id> = per_statement
+        .iter()
+        .flat_map(|statement| {
+            statement
+                .rebinds
+                .lazy
+                .iter()
+                .chain(&statement.rebinds.eager)
+        })
+        .cloned()
+        .collect();
+    let fresh_record_destructuring = crate::purity::FreshRecordDestructuringContext {
+        flow: &value_flow,
+        dynamic_scope,
+        rebindings: &rebindings,
+    };
+    let native_own_data_reads = per_statement
+        .iter()
+        .map(|statement| {
+            (
+                statement.ordinal,
+                prepared_sync_index.native_own_data_read_diagnostics(statement.ordinal),
+            )
+        })
+        .collect();
     let mut facts: Vec<StatementFacts> = body
         .iter()
         .zip(per_statement)
         .map(|(item_view, structural_facts)| {
-            let item = item_view.as_module_item();
-            let mut fact = assemble_statement_facts(
-                item,
+            assemble_statement_facts(
+                item_view.as_module_item(),
                 structural_facts,
                 &shadowed,
                 hints,
+                &native_facts,
                 &graph,
                 &local_effect_context,
-                &shared_vars,
-            );
-            // Resolve any reason spans on `fact.purity` to
-            // SourceLocations using the same per-chunk line index.
-            // Done after fact construction because the classifier
-            // doesn't have access to the line resolver.
-            if let Some(source_path) = source_path
-                && let Purity::NotPure { reasons } = &mut fact.purity
-            {
-                for reason in reasons.iter_mut() {
-                    reason.source_location = line_range_for_span(reason.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
-                }
-            }
-            fact
+            )
         })
         .collect();
+    for fact in &mut facts {
+        if let Some(producers) = set_iterable_proof.stable_iterable_producers(fact.ordinal) {
+            fact.stable_iterable_producers = producers.clone();
+        }
+    }
+    // Protect the same source interval in the canonical graph, so every
+    // placement validator (including staged edit commands) sees this proof's
+    // co-location obligation before emission.
+    let binding_owners: BTreeMap<_, _> = facts
+        .iter()
+        .flat_map(|fact| {
+            fact.declared
+                .iter()
+                .map(move |id| (id.clone(), fact.ordinal))
+        })
+        .collect();
+    for interval in set_iterable_proof.protected_intervals() {
+        let Some(consumer) = interval
+            .last()
+            .and_then(|id| binding_owners.get(id))
+            .copied()
+        else {
+            continue;
+        };
+        for binding in interval {
+            if let Some(producer) = binding_owners
+                .get(binding)
+                .filter(|owner| **owner != consumer)
+            {
+                facts[consumer.0]
+                    .stable_iterable_producers
+                    .insert(*producer);
+            }
+        }
+    }
     value_flow.augment_calls(&body, &mut facts);
-    if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
-        super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
-            &body,
-            &value_flow,
-            super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
-                set_iterable: &set_iterable_proof,
-                local_class_construction: &local_class_construction_proof,
-                graph: &graph,
-            },
+    let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
+    let fresh_freeze_heap_proof = prepared_sync_index.fresh_record_freeze_heap_proof();
+    let heap_contents = super::heap_contents::annotate_heap_contents(
+        &body,
+        &value_flow,
+        super::heap_contents::HeapContentProofs {
+            local_class: &local_class_heap_proof,
+            set_iterable: &set_iterable_proof,
+            fresh_freeze: &fresh_freeze_heap_proof,
+            native_reads: &prepared_sync_index,
+            native_facts: &native_facts,
+        },
+        &mut facts,
+    );
+    let purity_context = StatementPurityContext {
+        body: &body,
+        shadowed: &shadowed,
+        hints,
+        graph: &graph,
+        proofs: ItemPurityProofs {
+            native_operations: &native_facts,
+            fresh_record_destructuring: &fresh_record_destructuring,
+        },
+        shared_vars: &shared_vars,
+        native_own_data_reads: &native_own_data_reads,
+    };
+    // Current-owner proof preparation consumes the unchanged classifier.
+    // Completed purity is published after evaluation and exact certificate
+    // discharge. Vendor pruning finalizes the same classifier without execution.
+    let purities = match synchronous_calls {
+        SynchronousCallAnalysis::Include => {
+            super::sync_effects::interpreter::annotate_synchronous_calls(
+                &value_flow,
+                super::sync_effects::interpreter::SynchronousCallProofs {
+                    set_iterable: &set_iterable_proof,
+                    graph: &graph,
+                    purity: &purity_context,
+                    callable_heap_contents: &heap_contents.callables,
+                    index: prepared_sync_index,
+                },
+                &shadowed,
+                hints,
+                export_reentry_policy,
+                &mut facts,
+            )
+        }
+        SynchronousCallAnalysis::Omit => facts
+            .iter()
+            .map(|fact| CompletedPurity::unrefined(purity_context.statement_effects(fact)))
+            .collect(),
+    };
+    let global_object_names = unshadowed_global_object_aliases(&body);
+    for ((fact, purity), item_view) in facts.iter_mut().zip(purities).zip(&body) {
+        settle_statement_purity(
+            fact,
+            purity,
+            item_view.as_module_item(),
             &shadowed,
             hints,
-            export_reentry_policy,
-            &mut facts,
+            &graph,
+            &global_object_names,
         );
     }
-    if let Some(source_path) = source_path {
+    let disagreements: Vec<_> = facts
+        .iter()
+        .filter(|fact| {
+            fact.synchronous_calls
+                .as_ref()
+                .is_some_and(|calls| calls.purity_disagreement.is_some())
+        })
+        .map(|fact| (fact.ordinal, fact.source_location.as_ref()))
+        .collect();
+    if !disagreements.is_empty() {
+        eprintln!(
+            "purity-completion-disagreement count={} source={} sites={:?}",
+            disagreements.len(),
+            locator.map_or("<unknown>", |locator| locator.source_path),
+            disagreements
+        );
+    }
+    for fact in &mut facts {
+        // Resolve any reason spans on `fact.purity` to SourceLocations using
+        // the same per-chunk line index; the classifier has no line resolver.
+        if let Some(locator) = locator
+            && let Purity::NotPure { reasons } = &mut fact.purity
+        {
+            for reason in reasons.iter_mut() {
+                reason.source_location = locator.span(reason.span);
+            }
+        }
+    }
+    for (fact, (inferences, inputs)) in facts.iter_mut().zip(heap_contents.native_read_uses) {
+        if let Some(calls) = &mut fact.synchronous_calls {
+            for use_ in inferences {
+                if !calls.inference_uses.contains(&use_) {
+                    calls.inference_uses.push(use_);
+                }
+            }
+            for use_ in inputs {
+                if !calls.native_operation_input_uses.contains(&use_) {
+                    calls.native_operation_input_uses.push(use_);
+                }
+            }
+        }
+    }
+    if let Some(locator) = locator {
         let source_locations: Vec<_> = facts
             .iter()
             .map(|fact| fact.source_location.clone())
@@ -361,34 +682,48 @@ where
                     loss.source_location = if loss.span.is_dummy() {
                         source_locations[loss.statement_ordinal.0].clone()
                     } else {
-                        line_range_for_span(loss.span).map(
-                            |(start_line, end_line, start_column)| SourceLocation {
-                                source_path: source_path.to_string(),
-                                start_line,
-                                end_line,
-                                start_column: Some(start_column),
-                            },
-                        )
+                        locator.span(loss.span)
                     };
                 }
                 for proof_use in &mut calls.callback_factory_uses {
-                    proof_use.source_location = line_range_for_span(proof_use.span).map(
-                        |(start_line, end_line, start_column)| SourceLocation {
-                            source_path: source_path.to_string(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        },
-                    );
+                    proof_use.source_location = locator.span(proof_use.span);
+                }
+                for proof_use in &mut calls.returned_record_uses {
+                    proof_use.source_location = locator.span(proof_use.span);
+                }
+                for proof_use in &mut calls.local_record_factory_uses {
+                    proof_use.source_location = locator.span(proof_use.span);
+                }
+                for rejection in &mut calls.local_record_factory_rejections {
+                    rejection.source_location = locator.span(rejection.span);
+                }
+                for proof_use in &mut calls.author_host_contract_uses {
+                    proof_use.source_location = locator.span(proof_use.span);
+                }
+                for proof_use in &mut calls.native_operation_input_uses {
+                    proof_use.source_location = locator.span(proof_use.span);
                 }
             }
         }
     }
+    let read_names: BTreeSet<&str> = facts
+        .iter()
+        .flat_map(|fact| fact.reads.eager.iter().chain(&fact.reads.lazy))
+        .map(|id| id.0.as_ref())
+        .collect();
+    let unconsulted_purity_hints = hints
+        .assumptions
+        .declared_pure
+        .iter()
+        .filter(|name| !read_names.contains(name.as_str()))
+        .cloned()
+        .collect();
     ChunkFactAnalysis {
         facts,
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
+        unconsulted_purity_hints,
     }
 }
 
@@ -401,13 +736,12 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
         local_effect_policy: LocalEffectPolicy::VendorPrune,
         ..AnalysisInputs::default()
     };
-    let structural = analyze_chunk_structural(module, None, |_| None);
+    let structural = analyze_chunk_structural(module, None);
     analyze_chunk_with_policy_and_sync(
         structural,
         &hints,
-        ExportReentryPolicy::Conservative,
+        &ExportReentryPolicy::Conservative,
         None,
-        |_| None,
         SynchronousCallAnalysis::Omit,
     )
 }
@@ -425,78 +759,63 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
 /// emitter splits the same comma-lists separately at lower-time
 /// (`split_var_decl` in `lowering/util.rs`); this pre-split
 /// just teaches the analyzer the same view.
-pub fn analyze_chunk<F>(
+pub fn analyze_chunk(
     module: &Module,
     hints: &AnalysisInputs,
-    source_path: Option<&str>,
-    mut line_range_for_span: F,
-) -> ChunkFactAnalysis
-where
-    F: FnMut(Span) -> Option<(usize, usize, usize)>,
-{
-    let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
+    locator: Option<SourceLocator<'_>>,
+) -> ChunkFactAnalysis {
+    let structural = analyze_chunk_structural(module, locator);
     analyze_chunk_with_policy(
         structural,
         hints,
-        ExportReentryPolicy::Conservative,
-        source_path,
-        line_range_for_span,
+        &ExportReentryPolicy::Conservative,
+        locator,
     )
 }
 
 /// Fold the policy-independent per-statement facts together with the
-/// policy-dependent local-effect and purity classifications into a
-/// complete [`StatementFacts`] record. Called once per statement by
-/// [`analyze_chunk_with_policy`] after the policy-independent layer
-/// has already walked the AST.
+/// policy-dependent local-effect classification into a [`StatementFacts`]
+/// record. Called once per statement by [`analyze_chunk_with_policy`] after
+/// the policy-independent layer has already walked the AST. Purity and the
+/// fallback pruning it gates are settled later by
+/// [`settle_statement_purity`].
 fn assemble_statement_facts(
     item: &ModuleItem,
     structural: StructuralStatementFacts,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
+    native_facts: &ValidatedNativeOperationFacts,
     graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
-    shared_vars: &BTreeSet<Id>,
 ) -> StatementFacts {
     let StructuralStatementFacts {
         ordinal,
+        export_linkage,
         source_location,
         kind,
         declared,
         local_bindings,
         var_declared,
         var_initializers,
+        var_declaration_counts: _,
+        var_initializer_counts: _,
+        top_level_var_initializer_candidates: _,
         reads,
         rebinds,
         member_write_roots,
         calls,
         constructor,
-        at_init_unresolved_sources,
+        mut at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
-        first_order_unresolved_sources,
+        mut first_order_unresolved_sources,
         first_order_unresolved_inline_fn,
         declares_direct_function,
         global_writes,
         global_reads,
-        cell_writes_summarizable,
-        dataflow_summarizable,
+        mut havoc,
+        argument_value_escapes: _,
     } = structural;
     let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
-    let mut purity = item_purity(
-        item,
-        kind,
-        shadowed,
-        hints,
-        graph,
-        !local_effects.is_empty(),
-    );
-    if !var_initializers.is_disjoint(shared_vars) {
-        purity = purity.worst(Purity::from_reason_with_detail(
-            PurityRule::AssignOrUpdate,
-            item.span(),
-            "initializer writes a shared var binding".to_string(),
-        ));
-    }
     // Opaque at-init calls: a call/new the purity classifier can't
     // prove Pure may touch any cell (I/O like `console.log`, global
     // props written inside callee bodies, indirect eval) — the
@@ -504,56 +823,33 @@ fn assemble_statement_facts(
     // calls are exempt: Pure guarantees no observable writes and no
     // global-prop reads, and binding-cell ordering is enforced by
     // binding edges + rebind co-location rather than the S-chain.
-    let trusted_summary = hints.assumptions.trusted_dataflow_summaries && cell_writes_summarizable;
-    let dataflow_summarizable = trusted_summary
-        || dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
-    // Ordinary eager reads (including `pureWrap(B)`) always remain in
-    // `reads.eager`. For classifier/callee-pure statements, clearing the
-    // unresolved-call fallback also asserts that opaque calls cannot
-    // synchronously invoke callback bodies at module init. An
-    // initializer-only trust annotation certifies the initializer's
-    // evaluation effects but deliberately does not make that callback
-    // assertion: retain its fallback roots so callback-body binding reads
-    // still constrain module order.
+    // The trusted syntactic summary stands in for every havoc but a
+    // dynamic cell write, which no summary can name.
+    // `trusted_summary_discharged` records every cause the summary removed, so
+    // an empty set means `trusted_dataflow_summaries` changed nothing here.
+    let mut trusted_summary_discharged = BTreeSet::new();
+    if hints.assumptions.trusted_dataflow_summaries
+        && !havoc.contains(&DataflowOpacityCause::DynamicCellWrites)
+    {
+        trusted_summary_discharged = std::mem::take(&mut havoc);
+        if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
+            trusted_summary_discharged.insert(DataflowOpacityCause::OpaqueAtInitCall);
+        }
+    } else if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
+        havoc.insert(DataflowOpacityCause::OpaqueAtInitCall);
+    }
     let no_sync_arg_sources = no_sync_member_argument_fallback_sources(item, hints);
-    let mut first_order_unresolved_sources = first_order_unresolved_sources;
     for id in &no_sync_arg_sources.first_order_lazy {
         first_order_unresolved_sources.remove(id);
     }
-    let (at_init_unresolved_sources, at_init_unresolved_inline_fn, first_order_unresolved_sources) =
-        if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
-            (BTreeSet::new(), false, first_order_unresolved_sources)
-        } else {
-            let safe_array_sources =
-                safe_plain_array_at_init_fallback_sources(item, shadowed, graph);
-            let mut at_init_unresolved_sources = at_init_unresolved_sources;
-            for id in &no_sync_arg_sources.eager {
-                at_init_unresolved_sources.remove(id);
-            }
-
-            if safe_array_sources.is_empty() {
-                let at_init_unresolved_inline_fn = at_init_unresolved_inline_fn
-                    && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
-                (
-                    at_init_unresolved_sources,
-                    at_init_unresolved_inline_fn,
-                    first_order_unresolved_sources,
-                )
-            } else {
-                (
-                    at_init_unresolved_sources
-                        .difference(&safe_array_sources)
-                        .cloned()
-                        .collect(),
-                    at_init_unresolved_inline_fn
-                        && has_untrusted_at_init_unresolved_inline_fn_call(item, hints),
-                    first_order_unresolved_sources,
-                )
-            }
-        };
+    for id in &no_sync_arg_sources.eager {
+        at_init_unresolved_sources.remove(id);
+    }
 
     StatementFacts {
         ordinal,
+        export_linkage,
+        stable_iterable_producers: BTreeSet::new(),
         source_location,
         callback_factory_barriers: Vec::new(),
         declared,
@@ -574,9 +870,62 @@ fn assemble_statement_facts(
         declares_direct_function,
         global_writes,
         global_reads,
-        cell_writes_summarizable,
-        dataflow_summarizable,
-        purity,
+        havoc,
+        trusted_summary_discharged,
+        heap_contents: super::HeapContentCells::default(),
+        heap_one_shot_allocation: None,
+        deferred_heap_allocations: BTreeSet::new(),
+        heap_native_integrity_uses: Vec::new(),
+        // Conservative until `settle_statement_purity` records the verdict.
+        purity: Purity::NotPure {
+            reasons: Vec::new(),
+        },
         kind,
     }
+}
+
+/// Record a statement's purity and prune the at-init fallback it gates.
+///
+/// Ordinary eager reads (including `pureWrap(B)`) always remain in
+/// `reads.eager`. For completed-pure statements, clearing the
+/// unresolved-call fallback also asserts that opaque calls cannot
+/// synchronously invoke callback bodies at module init. An
+/// initializer-only trust annotation certifies the initializer's
+/// evaluation effects but deliberately does not make that callback
+/// assertion: retain its fallback roots so callback-body binding reads
+/// still constrain module order.
+fn settle_statement_purity(
+    fact: &mut StatementFacts,
+    purity: CompletedPurity,
+    item: &ModuleItem,
+    shadowed: &BTreeSet<&'static str>,
+    hints: &AnalysisInputs,
+    graph: &ChunkCodeGraph,
+    global_object_names: &BTreeSet<&'static str>,
+) {
+    if let Some(aliases) = fact
+        .synchronous_calls
+        .as_ref()
+        .and_then(|calls| calls.global_object_aliases.clone())
+    {
+        resolve_global_alias_escape(item, global_object_names, &aliases, fact);
+    }
+    if purity.is_pure() && !has_trusted_initializer_purity(item, hints) {
+        fact.at_init_unresolved_sources.clear();
+        fact.at_init_unresolved_inline_fn = false;
+    } else {
+        let no_settled_elements = BTreeMap::new();
+        let settled = fact
+            .synchronous_calls
+            .as_ref()
+            .map_or(&no_settled_elements, |calls| &calls.settled_array_elements);
+        let safe_array_sources =
+            safe_plain_array_at_init_fallback_sources(item, shadowed, graph, settled);
+        for id in &safe_array_sources {
+            fact.at_init_unresolved_sources.remove(id);
+        }
+        fact.at_init_unresolved_inline_fn = fact.at_init_unresolved_inline_fn
+            && has_untrusted_at_init_unresolved_inline_fn_call(item, hints);
+    }
+    fact.purity = purity.verdict;
 }

@@ -34,7 +34,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				quotas := defaultQuotas()
 				quotas.ActiveSubscriptionsPerInbox = limit
 				f := newFixture(t, quotas)
-				base := body("slot-0")
+				base := f.body("slot-0")
 				keyed := func(key string) model.Subscribe {
 					creation := base
 					creation.IdempotencyKey = key
@@ -45,7 +45,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 					subscriptions = append(subscriptions, f.subscribe(t, keyed(fmt.Sprintf("slot-%d", i))))
 				}
 				extra := keyed("extra")
-				_, err := f.Subscribe(t.Context(), f.owner, extra, nil)
+				_, err := f.Subscribe(t.Context(), f.owner, extra, nil, "test-account-uid")
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 				// An idempotent replay and the renewal of an active subscription need no other slot.
 				requireEqual(t, f.subscribe(t, keyed("slot-0")), subscriptions[0])
@@ -55,7 +55,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				}
 				// The quota is per inbox, not shared across an account's Sessions.
 				otherSession := extra
-				otherSession.SessionID = "other-session"
+				otherSession.SessionID = uuid.NewString()
 				if other := f.subscribe(t, otherSession); other.InboxID == subscriptions[0].InboxID {
 					t.Fatal("another Session shares the inbox")
 				}
@@ -74,10 +74,10 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				requireEqual(t, f.subscribe(t, keyed("slot-0")), retained)
 				differing := keyed("slot-0")
 				differing.LifetimeDays = 30
-				if _, err := f.Subscribe(t.Context(), f.owner, differing, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+				if _, err := f.Subscribe(t.Context(), f.owner, differing, nil, "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
 					t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 				}
-				_, err = f.Subscribe(t.Context(), f.owner, keyed("overflow"), nil)
+				_, err = f.Subscribe(t.Context(), f.owner, keyed("overflow"), nil, "test-account-uid")
 				requireQuota(t, err, ActiveSubscriptionsPerInbox, limit)
 
 				if inactive == "expired" {
@@ -101,7 +101,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 
 func TestCreationAndExpiredRenewalShareTheLastActiveSlot(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	base := body("slot-0")
+	base := f.body("slot-0")
 	var subscriptions []Subscription
 	for i := range 64 {
 		creation := base
@@ -118,7 +118,7 @@ func TestCreationAndExpiredRenewalShareTheLastActiveSlot(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, results[0] = f.Subscribe(t.Context(), f.owner, last, nil)
+		_, results[0] = f.Subscribe(t.Context(), f.owner, last, nil, "test-account-uid")
 	}()
 	go func() {
 		defer wg.Done()
@@ -146,14 +146,16 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	quotas.InboxesPerAccount = 1
 	quotas.EntriesPerInbox = 2
 	f := newFixture(t, quotas)
-	first := body("first")
+	first := f.body("first")
 	subscription := f.subscribe(t, first)
 	second := first
 	second.SessionID = "second"
-	_, err := f.Subscribe(t.Context(), f.owner, second, nil)
+	_, err := f.Subscribe(t.Context(), f.owner, second, nil, "test-account-uid")
 	requireQuota(t, err, InboxesPerAccount, 1)
 	// Another account has its own capacity under the same configuration.
-	if _, err := f.Subscribe(t.Context(), newOwner(), first, nil); err != nil {
+	otherAccount := first
+	otherAccount.SessionID = uuid.NewString()
+	if _, err := f.Subscribe(t.Context(), newOwner(), otherAccount, nil, "test-account-uid"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,11 +163,11 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	event := func(sequence int64) model.EventIdentity {
 		return model.ActionsEvent{RequestID: request, Sequence: sequence}
 	}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), `{}`)
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), `{}`)
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), entryPayloadForTest(t, event(1)))
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), entryPayloadForTest(t, event(2)))
 	// A replay of events the inbox holds needs no capacity.
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), `{}`)
-	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID, event(3), `{}`), EntriesPerInbox, 2)
+	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID, event(3), entryPayloadForTest(t, event(3))), EntriesPerInbox, 2)
 	page := f.read(t, subscription.InboxID, 0)
 	if page.Inbox.LastCursor != 2 || len(page.Entries) != 2 {
 		t.Fatalf("last cursor %d with %d entries, want 2 and 2", page.Inbox.LastCursor, len(page.Entries))
@@ -174,7 +176,7 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 
 func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	first := body("first")
+	first := f.body("first")
 	results := make([]Subscription, 2)
 	var wg sync.WaitGroup
 	for i := range results {
@@ -182,7 +184,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			var err error
-			results[i], err = f.Subscribe(t.Context(), f.owner, first, nil)
+			results[i], err = f.Subscribe(t.Context(), f.owner, first, nil, "test-account-uid")
 			if err != nil {
 				t.Error(err)
 			}
@@ -201,7 +203,7 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 
 	// The key is local to the Session's inbox, not the whole Sandbox or account.
 	otherSession := first
-	otherSession.SessionID = "other-session"
+	otherSession.SessionID = uuid.NewString()
 	other := f.subscribe(t, otherSession)
 	if other.InboxID == subscription.InboxID || other.ID == subscription.ID || other.IdempotencyKey != subscription.IdempotencyKey {
 		t.Fatalf("other = %+v", other)
@@ -211,14 +213,14 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 	afterSequence := first
 	afterSequence.Source = model.ActionsSource{RequestID: first.Source.(model.ActionsSource).RequestID, AfterSequence: 1}
 	for _, creation := range []model.Subscribe{otherRequest, afterSequence} {
-		if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
+		if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}
 	}
-	if _, err := f.Read(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Read(t.Context(), AccountOwner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID, 0, 128); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the inbox: %v", err)
 	}
-	if _, err := f.GetSubscription(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.GetSubscription(t.Context(), AccountOwner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the subscription: %v", err)
 	}
 	if _, err := f.GetSubscription(t.Context(), f.incarnation(), uuid.New()); !errors.Is(err, ErrNotFound) {
@@ -249,14 +251,15 @@ func TestSubscriptionsAreListedInPagesInIDOrder(t *testing.T) {
 	quotas := defaultQuotas()
 	quotas.ActiveSubscriptionsPerInbox = 200
 	f := newFixture(t, quotas)
-	base := body("0")
+	base := f.body("0")
 	for i := range 130 {
 		creation := base
 		creation.IdempotencyKey = fmt.Sprint(i)
 		f.subscribe(t, creation)
 	}
 	// Another account's subscriptions are not listed.
-	newFixture(t, quotas).subscribe(t, base)
+	other := newFixture(t, quotas)
+	other.subscribe(t, other.body("other"))
 
 	first, err := f.ListSubscriptions(t.Context(), f.incarnation(), nil)
 	if err != nil {
@@ -282,16 +285,16 @@ func TestSubscriptionsAreListedInPagesInIDOrder(t *testing.T) {
 
 func TestACreationBeyondItsBoundsIsRefused(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	creation := body("")
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, model.ErrInvalid) {
+	creation := f.body("")
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
-	creation = body("lifetime")
+	creation = f.body("lifetime")
 	creation.LifetimeDays = 31
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, model.ErrInvalid) {
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid"); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
-	subscription := f.subscribe(t, body("renewed"))
+	subscription := f.subscribe(t, f.body("renewed"))
 	for _, lifetimeDays := range []int64{0, 31} {
 		if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 1, lifetimeDays); !errors.Is(err, model.ErrInvalid) {
 			t.Fatalf("lifetime %d: error = %v, want model.ErrInvalid", lifetimeDays, err)
@@ -304,7 +307,7 @@ func TestACreationBeyondItsBoundsIsRefused(t *testing.T) {
 
 func TestACurrentSourceFailureShowsWhenItWillBeRetried(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
-	subscription := f.subscribe(t, body("failing"))
+	subscription := f.subscribe(t, f.body("failing"))
 	if subscription.Failure != nil || subscription.RetryAt != nil || subscription.LastSuccessAt != nil {
 		t.Fatalf("a new subscription shows %+v", subscription)
 	}
@@ -333,7 +336,7 @@ func TestACurrentSourceFailureShowsWhenItWillBeRetried(t *testing.T) {
 	if cancelled := f.cancel(t, subscription.ID); cancelled.Failure == nil || cancelled.RetryAt != nil {
 		t.Fatalf("cancelled = %+v", cancelled)
 	}
-	expiring := f.subscribe(t, body("expiring"))
+	expiring := f.subscribe(t, f.body("expiring"))
 	f.exec(t, `
 		UPDATE subscription SET error = 'unavailable', error_kind = 'unavailable', error_since = $2,
 			error_observed_at = $2, next_attempt = $3, expires_at = now() - interval '1 second' WHERE id = $1`,

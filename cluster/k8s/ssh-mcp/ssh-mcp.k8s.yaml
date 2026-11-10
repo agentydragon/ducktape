@@ -59,24 +59,31 @@ data:
       - host: wyrm2.nebula.allegedly.works
         user: agentydragon
         identity_file: /etc/ssh-mcp/keys/wyrm2-agentydragon
+        port: 22
       - host: wyrm2.nebula.allegedly.works
         user: root
         identity_file: /etc/ssh-mcp/keys/wyrm2-root
+        port: 22
       - host: rugged.nebula.allegedly.works
         user: agentydragon
         identity_file: /etc/ssh-mcp/keys/rugged-agentydragon
+        port: 22
       - host: rugged.nebula.allegedly.works
         user: root
         identity_file: /etc/ssh-mcp/keys/rugged-root
+        port: 22
       - host: atlas.nebula.allegedly.works
         user: root
         identity_file: /etc/ssh-mcp/keys-atlas/atlas-root
+        port: 22
       - host: atlas.nebula.allegedly.works
         user: agentydragon
         identity_file: /etc/ssh-mcp/keys-atlas/atlas-agentydragon
+        port: 22
       - host: 192.168.1.100
         user: agentplane
         identity_file: /etc/ssh-mcp/keys-agentplane/home-switch-agentplane
+        port: 22
     command_timeout_seconds: 300
     connect_timeout_seconds: 10
     output_limit_bytes: 65536

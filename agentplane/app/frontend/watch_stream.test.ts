@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { StreamConnection } from "./live_stream";
+import type { StreamConnection } from "./stream_reader";
 import { followWatch } from "./watch_stream";
 import { type ServedWatch, stubWatchFetch } from "./testing/watch";
 
@@ -76,18 +76,6 @@ it("opens a new connection after one ends, and says the replay starts again", as
   expect(events).toEqual(["open", 1, "open", 2]);
 });
 
-it("reports why a request was refused and keeps retrying", async () => {
-  fetchMock.fetch.mockResolvedValueOnce(new Response('{"code":14,"message":"no backend"}', { status: 503 }));
-  follow();
-  await settle();
-  expect(connection()).toMatchObject({ phase: "reconnecting", attempt: 1 });
-  expect(connections.at(-1)).toHaveProperty("lastError", expect.stringContaining("503"));
-
-  await vi.advanceTimersByTimeAsync(1_000);
-  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
-  expect(events).toEqual(["open"]);
-});
-
 it("treats an error message of the stream as the end of the connection", async () => {
   follow();
   await settle();
@@ -98,28 +86,26 @@ it("treats an error message of the stream as the end of the connection", async (
   expect(watch(0).signal?.aborted).toBe(true);
 });
 
-it("connects again at once when the browser comes back online", async () => {
+it("passes nested JSON and null results without changing them", async () => {
   follow();
   await settle();
-  watch(0).end();
+  watch(0).write('{"result":{"values":[null,true,2,"text",{}]}}\n{"result":null}\n');
   await settle();
-  expect(fetchMock.fetch).toHaveBeenCalledTimes(1);
 
-  window.dispatchEvent(new Event("online"));
-  await settle();
-  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
-
-  // The backoff that was running is cancelled, not left to open a third connection.
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
+  expect(events).toEqual(["open", { values: [null, true, 2, "text", {}] }, null]);
+  expect(connection().phase).toBe("live");
 });
 
-it("aborts the request in flight when stopped, and does not connect again", async () => {
-  follow();
-  await settle();
-  stop();
-  await vi.advanceTimersByTimeAsync(60_000);
+it.each(["{}", '{"result":{"number":1e400}}', '{"error":{"code":"14","message":"bad"}}'])(
+  "reconnects without delivering an invalid watch envelope: %s",
+  async (frame) => {
+    follow();
+    await settle();
+    watch(0).write(`${frame}\n`);
+    await settle();
 
-  expect(watch(0).signal?.aborted).toBe(true);
-  expect(fetchMock.fetch).toHaveBeenCalledTimes(1);
-});
+    expect(events).toEqual(["open"]);
+    expect(connection()).toMatchObject({ phase: "reconnecting", attempt: 1, lastError: expect.any(String) });
+    expect(watch(0).signal?.aborted).toBe(true);
+  }
+);

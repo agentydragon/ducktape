@@ -1,19 +1,134 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/js/proto:stage.bzl", "stage_protobuf_es")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 proto_library(
-    name = "grpc_tunnel_proto",
-    srcs = ["grpc_tunnel.proto"],
-    deps = ["@protobuf//:duration_proto"],
+    name = "identity_proto",
+    srcs = ["identity.proto"],
+    visibility = ["//visibility:public"],
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "grpc_tunnel_pb2",
-    deps = [":grpc_tunnel_proto"],
+    name = "identity_pb2",
+    visibility = ["//visibility:public"],
+    deps = [":identity_proto"],
+)
+
+ts_proto_library(
+    name = "identity_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":identity_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "identity_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/identity",
+    proto = ":identity_proto",
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "kubernetes_proto",
+    srcs = ["kubernetes.proto"],
+    visibility = ["//visibility:public"],
+)
+
+ts_proto_library(
+    name = "kubernetes_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":kubernetes_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "kubernetes_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/kubernetes",
+    proto = ":kubernetes_proto",
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "environment_lifecycle_proto",
+    srcs = ["environment_lifecycle.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "environment_lifecycle_pb2",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":environment_lifecycle_proto",
+        "@googleapis//google/rpc:status_proto",
+    ],
+)
+
+stage_protobuf_es(
+    name = "status_generated",
+    proto = "@googleapis//google/rpc:status_proto",
+)
+
+js_library(
+    name = "status_pb",
+    srcs = [":status_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+stage_protobuf_es(
+    name = "code_generated",
+    proto = "@googleapis//google/rpc:code_proto",
+)
+
+js_library(
+    name = "code_pb",
+    srcs = [":code_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+ts_proto_library(
+    name = "environment_lifecycle_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":environment_lifecycle_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/rpc/status_pb.js:./agentplane/proto"},
+    visibility = ["//visibility:public"],
+    deps = [":status_pb"],
+)
+
+go_proto_library(
+    name = "environment_lifecycle_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb",
+    proto = ":environment_lifecycle_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+proto_library(
+    name = "environment_runtime_state_proto",
+    srcs = ["environment_runtime_state.proto"],
+    deps = [
+        ":environment_lifecycle_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "environment_runtime_state_pb2",
+    deps = [":environment_runtime_state_proto"],
 )
 
 proto_library(
@@ -84,51 +199,36 @@ ts_proto_library(
 )
 
 proto_library(
-    name = "runner_proto",
-    srcs = ["runner.proto"],
+    name = "session_proto",
+    srcs = ["session.proto"],
     visibility = ["//visibility:public"],
-    deps = ["@protobuf//:timestamp_proto"],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "runner_pb2",
-    visibility = ["//visibility:public"],
-    deps = [":runner_proto"],
-)
-
-ts_proto_library(
-    name = "runner_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":runner_proto",
-    visibility = ["//visibility:public"],
-)
-
-proto_library(
-    name = "sandboxes_proto",
-    srcs = ["sandboxes.proto"],
     deps = [
-        "@protobuf//:duration_proto",
-        "@protobuf//:struct_proto",
+        ":identity_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "sandboxes_pb2",
-    deps = [":sandboxes_proto"],
+    name = "session_pb2",
+    visibility = ["//visibility:public"],
+    deps = [":session_proto"],
 )
 
 ts_proto_library(
-    name = "sandboxes_pb",
+    name = "session_pb",
     copy_files = False,
     node_modules = "//:node_modules",
-    proto = ":sandboxes_proto",
+    proto = ":session_proto",
     visibility = ["//visibility:public"],
-    deps = [":runner_pb"],
+    deps = [":identity_pb"],
 )
 
-# The Sandbox controller calls `Runner.Seal` through the Runner Gateway's proxy.
+proto_library(
+    name = "delegation_proto",
+    srcs = ["delegation.proto"],
+    deps = [":identity_proto"],
+)
+
 go_proto_library(
     name = "command_go_proto",
     importpath = "github.com/agentydragon/ducktape/agentplane/proto/command",
@@ -150,19 +250,22 @@ go_proto_library(
 )
 
 go_proto_library(
-    name = "runner_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner",
-    proto = ":runner_proto",
+    name = "session_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/session",
+    proto = ":session_proto",
+    deps = [":identity_go_proto"],
 )
 
 go_proto_library(
-    name = "grpc_tunnel_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel",
-    proto = ":grpc_tunnel_proto",
+    name = "environment_runtime_state_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb",
+    proto = ":environment_runtime_state_proto",
+    deps = [":environment_lifecycle_go_proto"],
 )
 
 go_proto_library(
-    name = "sandboxes_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/sandboxes",
-    proto = ":sandboxes_proto",
+    name = "delegation_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/delegation",
+    proto = ":delegation_proto",
+    deps = [":identity_go_proto"],
 )

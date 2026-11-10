@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@mantine/core";
 import type {
   AgentRunDetail,
@@ -11,7 +12,7 @@ import type {
   LlmRequestInfo,
   ReportedIssueInfo,
   SnapshotDetailResponse,
-} from "../lib/api/schema";
+} from "../lib/schema";
 import { toast } from "../lib/toast";
 import BackButton from "./BackButton";
 import Breadcrumb from "./Breadcrumb";
@@ -31,8 +32,8 @@ import DefinitionIdLink from "../lib/DefinitionIdLink";
 import ExampleLink from "../lib/ExampleLink";
 import GradingEdges from "./GradingEdges";
 import FileViewer from "./FileViewer";
+import { snapshotDetailQueryKey } from "../lib/queryKeys";
 
-// Props also support visual tests that seed the component with already loaded data.
 interface Props {
   runId: string;
   initialRun?: AgentRunDetail;
@@ -41,9 +42,11 @@ interface Props {
   initialLLMRequests?: LlmRequestInfo[];
 }
 
-type RunLoad = { status: "loading" } | { status: "loaded"; run: AgentRunDetail } | { status: "error"; message: string };
-
 type LogTab = "logs" | "llm";
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 function getAgentType(run: AgentRunDetail): string {
   return "agent_type" in run.details ? run.details.agent_type : "unknown";
@@ -99,216 +102,125 @@ export default function RunDetail({
   initialFileContents,
   initialLLMRequests,
 }: Props) {
-  // initialRun seeds the loaded state for visual tests and server-rendered data.
-  const [load, setLoad] = useState<RunLoad>(() =>
-    initialRun ? { status: "loaded", run: initialRun } : { status: "loading" }
+  const hasSeededRun = initialRun?.agent_run_id === runId;
+  const runQuery = useQuery({
+    queryKey: ["props", "run-detail", runId],
+    queryFn: ({ signal }) => fetchRun(runId, signal),
+    enabled: !hasSeededRun,
+    initialData: hasSeededRun ? initialRun : undefined,
+  });
+  const run = runQuery.data;
+
+  const [logTabState, setLogTabState] = useState<{ runId: string; tab: LogTab }>({ runId, tab: "llm" });
+  const activeLogTab = logTabState.runId === runId ? logTabState.tab : "llm";
+  const setActiveLogTab = (tab: LogTab) => setLogTabState({ runId, tab });
+  useEffect(() => {
+    setLogTabState({ runId, tab: "llm" });
+  }, [runId]);
+
+  const llmRequestsQuery = useQuery({
+    queryKey: ["props", "run-llm-requests", runId],
+    queryFn: ({ signal }) => fetchLLMRequests(runId, signal),
+    enabled: activeLogTab === "llm" && !hasSeededRun,
+    initialData: hasSeededRun && initialLLMRequests ? { requests: initialLLMRequests } : undefined,
+  });
+  const logsQuery = useQuery({
+    queryKey: ["props", "run-logs", runId],
+    queryFn: async ({ signal }) => (await fetchRunLogs(runId, signal)).logs,
+    enabled: activeLogTab === "logs",
+  });
+
+  const criticRun = run && isCriticRun(run) ? run : undefined;
+  const criticConfig = criticRun?.type_config as CriticTypeConfig | undefined;
+  const snapshotSlug = criticConfig?.example.snapshot_slug;
+  const exampleKind = criticConfig?.example.kind ?? null;
+  const filesHash = criticConfig?.example.kind === "file_set" ? criticConfig.example.files_hash : null;
+  const hasSeededSnapshotDetail = hasSeededRun && initialSnapshotDetail?.slug === snapshotSlug;
+  const shouldLoadSnapshot = Boolean(
+    !hasSeededRun && criticRun && criticRun.details.reported_issues.length > 0 && snapshotSlug
   );
-
-  const [snapshotDetail, setSnapshotDetail] = useState<SnapshotDetailResponse | null>(initialSnapshotDetail ?? null);
-  const [fileContents, setFileContents] = useState<Map<string, FileContentResponse>>(
-    () => new Map(initialFileContents ?? [])
-  );
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-  const [llmRequests, setLlmRequests] = useState<LlmRequestInfo[]>(initialLLMRequests ?? []);
-  const [loadingLLMRequests, setLoadingLLMRequests] = useState(false);
-  const [containerLogs, setContainerLogs] = useState<string | null>(null);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [activeLogTab, setActiveLogTab] = useState<LogTab>("llm");
-
-  // Lazy resources are guarded by run generation so old in-flight work cannot block a new run.
-  const requestControllerRef = useRef(new AbortController());
-  const snapshotDetailRef = useRef(snapshotDetail);
-  snapshotDetailRef.current = snapshotDetail;
-  const loadingSnapshotSignalRef = useRef<AbortSignal | null>(null);
-  const loadingLLMRequestsSignalRef = useRef<AbortSignal | null>(null);
-  const loadingLogsSignalRef = useRef<AbortSignal | null>(null);
-
-  const isCurrentRequest = useCallback((signal: AbortSignal) => {
-    return signal === requestControllerRef.current.signal && !signal.aborted;
-  }, []);
-
-  useLayoutEffect(() => {
-    const controller = new AbortController();
-    requestControllerRef.current = controller;
-    snapshotDetailRef.current = initialSnapshotDetail ?? null;
-    loadingSnapshotSignalRef.current = null;
-    loadingLLMRequestsSignalRef.current = null;
-    loadingLogsSignalRef.current = null;
-
-    setLoad(initialRun ? { status: "loaded", run: initialRun } : { status: "loading" });
-    setSnapshotDetail(initialSnapshotDetail ?? null);
-    setFileContents(new Map(initialFileContents ?? []));
-    setLoadingSnapshot(false);
-    setLlmRequests(initialLLMRequests ?? []);
-    setLoadingLLMRequests(false);
-    setContainerLogs(null);
-    setLoadingLogs(false);
-    setActiveLogTab("llm");
-
-    return () => controller.abort();
-  }, [runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests]);
-
-  const currentRequest = useCallback(() => requestControllerRef.current.signal, []);
-
-  const loadSnapshotData = useCallback(
-    async (criticRun: AgentRunDetail) => {
-      if (getAgentType(criticRun) !== "critic") return;
-
-      const signal = currentRequest();
-      if (!isCurrentRequest(signal) || loadingSnapshotSignalRef.current === signal) return;
-
-      const config = criticRun.type_config as CriticTypeConfig;
-      const snapshotSlug = config.example.snapshot_slug;
-
-      loadingSnapshotSignalRef.current = signal;
-      setLoadingSnapshot(true);
-      try {
-        // Fetch snapshot detail filtered to this example's recall scope.
-        const exampleKind = config.example.kind;
-        const filesHash = exampleKind === "file_set" ? config.example.files_hash : undefined;
-        const loadedSnapshotDetail = await fetchSnapshotDetail(snapshotSlug, exampleKind, filesHash, signal);
-        if (!isCurrentRequest(signal)) return;
-        setSnapshotDetail(loadedSnapshotDetail);
-
-        // Collect files mentioned in critique issues or ground truth.
-        const allFilePaths = new Set<string>();
-
-        for (const issue of getReportedIssues(criticRun)) {
-          for (const location of issue.occurrences.flatMap((occurrence) => occurrence.locations)) {
-            allFilePaths.add(location.file);
-          }
-        }
-
-        for (const tp of loadedSnapshotDetail.true_positives) {
-          for (const occurrence of tp.occurrences) {
-            for (const location of occurrence.locations) {
-              allFilePaths.add(location.file);
-            }
-          }
-        }
-        for (const fp of loadedSnapshotDetail.false_positives) {
-          for (const occurrence of fp.occurrences) {
-            for (const location of occurrence.locations) {
-              allFilePaths.add(location.file);
-            }
-          }
-        }
-
-        const newContents = new Map<string, FileContentResponse>();
-        if (allFilePaths.size === 0) {
-          setFileContents(newContents);
-          return;
-        }
-
-        const response = await fetchSnapshotFiles(snapshotSlug, Array.from(allFilePaths), signal);
-        if (!isCurrentRequest(signal)) return;
-        for (const content of response.files) {
-          newContents.set(content.path, content);
-        }
-        for (const missingPath of response.missing) {
-          console.error(`Failed to fetch file ${missingPath}: file missing from snapshot`);
-        }
-        setFileContents(newContents);
-      } catch (error) {
-        if (isCurrentRequest(signal)) {
-          const message = error instanceof Error ? error.message : "Failed to load snapshot data";
-          toast.error(message);
-        }
-      } finally {
-        if (isCurrentRequest(signal) && loadingSnapshotSignalRef.current === signal) {
-          loadingSnapshotSignalRef.current = null;
-          setLoadingSnapshot(false);
-        }
-      }
+  const snapshotDetailQuery = useQuery({
+    queryKey: snapshotSlug
+      ? snapshotDetailQueryKey(snapshotSlug, exampleKind, filesHash)
+      : ["props", "snapshot-detail", ""],
+    staleTime: Infinity,
+    queryFn: ({ signal }) => {
+      if (!snapshotSlug) throw new Error("snapshot slug is unavailable");
+      return fetchSnapshotDetail(snapshotSlug, exampleKind ?? undefined, filesHash ?? undefined, signal);
     },
-    [currentRequest, isCurrentRequest]
-  );
-
-  const loadSnapshotDataInBackground = useCallback(
-    (criticRun: AgentRunDetail) => {
-      const reportedIssues = getReportedIssues(criticRun);
-      if (
-        getAgentType(criticRun) === "critic" &&
-        reportedIssues.length > 0 &&
-        !snapshotDetailRef.current &&
-        loadingSnapshotSignalRef.current !== requestControllerRef.current.signal
-      ) {
-        void loadSnapshotData(criticRun);
+    enabled: shouldLoadSnapshot,
+    initialData: hasSeededSnapshotDetail ? initialSnapshotDetail : undefined,
+  });
+  const snapshotDetail = snapshotDetailQuery.data ?? null;
+  const filePaths = useMemo(() => {
+    if (!criticRun || !snapshotDetail) return [];
+    const paths = new Set<string>();
+    for (const issue of criticRun.details.reported_issues) {
+      for (const occurrence of issue.occurrences) {
+        for (const location of occurrence.locations) paths.add(location.file);
       }
+    }
+    for (const issue of [...snapshotDetail.true_positives, ...snapshotDetail.false_positives]) {
+      for (const occurrence of issue.occurrences) {
+        for (const location of occurrence.locations) paths.add(location.file);
+      }
+    }
+    return Array.from(paths).sort();
+  }, [criticRun, snapshotDetail]);
+  const snapshotFilesQuery = useQuery({
+    queryKey: ["props", "snapshot-files", snapshotSlug ?? "", filePaths],
+    staleTime: Infinity,
+    queryFn: ({ signal }) => {
+      if (!snapshotSlug) throw new Error("snapshot slug is unavailable");
+      return fetchSnapshotFiles(snapshotSlug, filePaths, signal);
     },
-    [loadSnapshotData]
+    enabled: shouldLoadSnapshot && filePaths.length > 0,
+    initialData:
+      !hasSeededSnapshotDetail || initialFileContents === undefined
+        ? undefined
+        : { files: Array.from(initialFileContents.values()), missing: [] },
+  });
+  const fileContents = useMemo(
+    () => new Map((snapshotFilesQuery.data?.files ?? []).map((file) => [file.path, file])),
+    [snapshotFilesQuery.data]
   );
-
-  const loadData = useCallback(async () => {
-    const signal = currentRequest();
-    if (!isCurrentRequest(signal)) return;
-    setLoad({ status: "loading" });
-    try {
-      const fetchedRun = await fetchRun(runId, signal);
-      if (!isCurrentRequest(signal)) return;
-      setLoad({ status: "loaded", run: fetchedRun });
-      // Snapshot and file hydration stays in the background so metadata, logs, and LLM requests appear first.
-      loadSnapshotDataInBackground(fetchedRun);
-    } catch (error) {
-      if (isCurrentRequest(signal)) {
-        const message = error instanceof Error ? error.message : "Failed to load run";
-        setLoad({ status: "error", message });
-        toast.error(message);
-      }
-    }
-  }, [runId, currentRequest, isCurrentRequest, loadSnapshotDataInBackground]);
-
-  const loadLLMRequests = useCallback(async () => {
-    const signal = currentRequest();
-    if (!isCurrentRequest(signal) || loadingLLMRequestsSignalRef.current === signal) return;
-    loadingLLMRequestsSignalRef.current = signal;
-    setLoadingLLMRequests(true);
-    try {
-      const response = await fetchLLMRequests(runId, signal);
-      if (!isCurrentRequest(signal)) return;
-      setLlmRequests(response.requests);
-    } catch (error) {
-      if (isCurrentRequest(signal)) {
-        const message = error instanceof Error ? error.message : "Failed to load LLM requests";
-        toast.error(message);
-      }
-    } finally {
-      if (isCurrentRequest(signal) && loadingLLMRequestsSignalRef.current === signal) {
-        loadingLLMRequestsSignalRef.current = null;
-        setLoadingLLMRequests(false);
-      }
-    }
-  }, [runId, currentRequest, isCurrentRequest]);
-
-  const loadLogs = useCallback(async () => {
-    const signal = currentRequest();
-    if (!isCurrentRequest(signal) || loadingLogsSignalRef.current === signal) return;
-    loadingLogsSignalRef.current = signal;
-    setLoadingLogs(true);
-    try {
-      const response = await fetchRunLogs(runId, signal);
-      if (!isCurrentRequest(signal)) return;
-      setContainerLogs(response.logs);
-    } catch (error) {
-      if (isCurrentRequest(signal)) {
-        const message = error instanceof Error ? error.message : "Failed to load logs";
-        toast.error(message);
-      }
-    } finally {
-      if (isCurrentRequest(signal) && loadingLogsSignalRef.current === signal) {
-        loadingLogsSignalRef.current = null;
-        setLoadingLogs(false);
-      }
-    }
-  }, [runId, currentRequest, isCurrentRequest]);
+  const loadingSnapshot =
+    shouldLoadSnapshot &&
+    (snapshotDetailQuery.isPending ||
+      (snapshotDetail !== null && filePaths.length > 0 && snapshotFilesQuery.isPending));
+  const llmRequests = llmRequestsQuery.data?.requests ?? [];
+  const loadingLLMRequests = activeLogTab === "llm" && !hasSeededRun && llmRequestsQuery.isPending;
+  const containerLogs = logsQuery.data ?? null;
+  const loadingLogs = activeLogTab === "logs" && logsQuery.isPending;
 
   useEffect(() => {
-    // Seeded visual tests skip all requests; otherwise load run metadata and LLM requests independently.
-    if (initialRun) return;
+    if (runQuery.error) toast.error(errorMessage(runQuery.error, "Failed to load run"));
+  }, [runQuery.error]);
+  useEffect(() => {
+    if (snapshotDetailQuery.error) toast.error(errorMessage(snapshotDetailQuery.error, "Failed to load snapshot data"));
+  }, [snapshotDetailQuery.error]);
+  useEffect(() => {
+    if (snapshotFilesQuery.error) toast.error(errorMessage(snapshotFilesQuery.error, "Failed to load snapshot data"));
+  }, [snapshotFilesQuery.error]);
+  useEffect(() => {
+    if (llmRequestsQuery.error) toast.error(errorMessage(llmRequestsQuery.error, "Failed to load LLM requests"));
+  }, [llmRequestsQuery.error]);
+  useEffect(() => {
+    if (logsQuery.error) toast.error(errorMessage(logsQuery.error, "Failed to load logs"));
+  }, [logsQuery.error]);
+  useEffect(() => {
+    for (const missingPath of snapshotFilesQuery.data?.missing ?? []) {
+      console.error(`Failed to fetch file ${missingPath}: file missing from snapshot`);
+    }
+  }, [snapshotFilesQuery.data]);
 
-    void loadData();
-    void loadLLMRequests();
-  }, [initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests, loadData, loadLLMRequests]);
+  const selectLogTab = (tab: LogTab) => {
+    if (activeLogTab === tab) {
+      if (tab === "logs") void logsQuery.refetch();
+      else void llmRequestsQuery.refetch();
+    }
+    setActiveLogTab(tab);
+  };
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">
@@ -317,32 +229,32 @@ export default function RunDetail({
           <div className="flex items-center gap-4">
             <BackButton className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800" />
             <h2 className="text-lg font-semibold">Run Details</h2>
-            {load.status === "loaded" ? (
+            {run ? (
               <span className="font-mono text-sm text-gray-500 dark:text-gray-400">
-                <RunIdLink id={load.run.agent_run_id} />
+                <RunIdLink id={run.agent_run_id} />
               </span>
             ) : null}
           </div>
-          {load.status === "loaded" ? (
-            <span className={`px-2 py-1 rounded text-sm font-medium capitalize ${getStatusColor(load.run.status)}`}>
-              {formatStatus(load.run.status)}
+          {run ? (
+            <span className={`px-2 py-1 rounded text-sm font-medium capitalize ${getStatusColor(run.status)}`}>
+              {formatStatus(run.status)}
             </span>
           ) : null}
         </div>
         <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Runs", href: "/runs" }, { label: runId }]} />
       </div>
 
-      {load.status === "loading" ? (
+      {runQuery.isPending ? (
         <div className="p-4">
           <p className="text-gray-500 dark:text-gray-400">Loading...</p>
         </div>
-      ) : load.status === "error" ? (
+      ) : runQuery.error ? (
         <div className="p-4">
-          <p className="text-red-500 dark:text-red-400">{load.message}</p>
+          <p className="text-red-500 dark:text-red-400">{errorMessage(runQuery.error, "Failed to load run")}</p>
         </div>
-      ) : (
+      ) : run ? (
         <LoadedRunContent
-          run={load.run}
+          run={run}
           snapshotDetail={snapshotDetail}
           fileContents={fileContents}
           loadingSnapshot={loadingSnapshot}
@@ -351,11 +263,9 @@ export default function RunDetail({
           containerLogs={containerLogs}
           loadingLogs={loadingLogs}
           activeLogTab={activeLogTab}
-          setActiveLogTab={setActiveLogTab}
-          loadLLMRequests={loadLLMRequests}
-          loadLogs={loadLogs}
+          setActiveLogTab={selectLogTab}
         />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -371,8 +281,6 @@ interface LoadedRunContentProps {
   loadingLogs: boolean;
   activeLogTab: LogTab;
   setActiveLogTab: (tab: LogTab) => void;
-  loadLLMRequests: () => Promise<void>;
-  loadLogs: () => Promise<void>;
 }
 
 function LoadedRunContent({
@@ -386,8 +294,6 @@ function LoadedRunContent({
   loadingLogs,
   activeLogTab,
   setActiveLogTab,
-  loadLLMRequests,
-  loadLogs,
 }: LoadedRunContentProps) {
   const agentType = getAgentType(run);
   const reportedIssues = getReportedIssues(run);
@@ -608,7 +514,6 @@ function LoadedRunContent({
               type="button"
               onClick={() => {
                 setActiveLogTab("llm");
-                void loadLLMRequests();
               }}
             >
               LLM Requests ({run.llm_call_count})
@@ -623,7 +528,6 @@ function LoadedRunContent({
               type="button"
               onClick={() => {
                 setActiveLogTab("logs");
-                void loadLogs();
               }}
             >
               Logs

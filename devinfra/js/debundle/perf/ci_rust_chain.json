@@ -1,0 +1,841 @@
+{
+  "inspected_source": "d1b9fcbf2ddb541d536818ce7d7649977dd0d121",
+  "historical_invocations": ["5716744a-14a7-5769-8511-29fa5fbd6417", "bc368612-a68e-5bee-8856-d84b925c765c"],
+  "compiler_profile": {
+    "invocation": "4e127f0a-3cc0-400d-ae52-340d0938dbe2",
+    "source": "29a321db339810631bdfbec6faaa4aac4249b672"
+  },
+  "argument_and_group_profile": {
+    "invocation": "8df3c1c6-20b5-4ca0-a8e1-c62a40cc6cb6",
+    "source": "1442b445327b6a459923206ec3697a67b6063864"
+  },
+  "identity_output_sha256_both_profiles": "eea81d1435b1d9e9edfba92689d0ad1e2c0d45057ab4738ebfdb73030d6a6b0d",
+  "driver_scheduling": [
+    {
+      "invocation": "5716744a",
+      "peak_active_actions": 50,
+      "saturated_50_slots_s_during_15_to_185_s": 84.96511499999983,
+      "staged_metadata_dispatched_after_rlib_process_start_s": 17.012977,
+      "pipeline_ready": "2026-11-04T10:03:40.393604Z",
+      "identity_metadata_ready": "2026-11-04T10:03:39.781945Z",
+      "cli_started": "2026-11-04T10:03:41.109862Z"
+    },
+    {
+      "invocation": "bc368612",
+      "peak_active_actions": 50,
+      "saturated_50_slots_s_during_15_to_185_s": 86.11626399999975,
+      "staged_metadata_dispatched_after_rlib_process_start_s": 0.015892,
+      "pipeline_ready": "2026-11-04T08:54:34.081026Z",
+      "identity_metadata_ready": "2026-11-04T08:54:50.100420Z",
+      "cli_started": "2026-11-04T08:54:50.758272Z"
+    }
+  ],
+  "hasher_groups": [
+    {
+      "group": "first_party",
+      "profiled_wall_s": 4.540468947999999,
+      "stats": [
+        {
+          "function": "('~', 0, \"<method 'read' of '_io.BufferedReader' objects>\")",
+          "calls": 400,
+          "self_s": 4.2780013420000005,
+          "inclusive_s": 4.2780013420000005
+        },
+        {
+          "function": "('~', 0, \"<method 'update' of '_hashlib.HASH' objects>\")",
+          "calls": 638,
+          "self_s": 0.25160293100000003,
+          "inclusive_s": 0.25160293100000003
+        },
+        {
+          "function": "('<runfiles>/_main/devinfra/js/debundle/analysis_identity_hasher.py', 10, 'hash_files')",
+          "calls": 1,
+          "self_s": 0.003843421,
+          "inclusive_s": 4.540231542
+        },
+        {
+          "function": "('~', 0, '<built-in method posix.stat>')",
+          "calls": 102,
+          "self_s": 0.003306935,
+          "inclusive_s": 0.004304192
+        },
+        {
+          "function": "('~', 0, '<built-in method _io.open>')",
+          "calls": 34,
+          "self_s": 0.00043740300000000005,
+          "inclusive_s": 0.00046878400000000003
+        },
+        {
+          "function": "('<runfiles>/rules_python++python+python_3_14_x86_64-unknown-linux-gnu/lib/python3.14/pathlib/__init__.py', 251, '__str__')",
+          "calls": 204,
+          "self_s": 0.000341328,
+          "inclusive_s": 0.0009427740000000001
+        },
+        {
+          "function": "('~', 0, '<built-in method builtins.len>')",
+          "calls": 536,
+          "self_s": 0.00027534,
+          "inclusive_s": 0.00027534
+        },
+        {
+          "function": "('<runfiles>/_main/devinfra/js/debundle/analysis_identity_hasher.py', 39, 'record')",
+          "calls": 136,
+          "self_s": 0.000270152,
+          "inclusive_s": 0.0005144300000000001
+        }
+      ]
+    },
+    {
+      "group": "external",
+      "profiled_wall_s": 22.046684603000006,
+      "stats": [
+        {
+          "function": "('~', 0, \"<method 'read' of '_io.BufferedReader' objects>\")",
+          "calls": 23267,
+          "self_s": 18.630797901,
+          "inclusive_s": 18.630797901
+        },
+        {
+          "function": "('~', 0, \"<method 'update' of '_hashlib.HASH' objects>\")",
+          "calls": 101082,
+          "self_s": 1.2828952310000001,
+          "inclusive_s": 1.2828952310000001
+        },
+        {
+          "function": "('~', 0, '<built-in method posix.stat>')",
+          "calls": 33326,
+          "self_s": 1.1518780530000001,
+          "inclusive_s": 1.411300776
+        },
+        {
+          "function": "('<runfiles>/_main/devinfra/js/debundle/analysis_identity_hasher.py', 10, 'hash_files')",
+          "calls": 1,
+          "self_s": 0.21045833600000002,
+          "inclusive_s": 22.046655779
+        },
+        {
+          "function": "('~', 0, '<built-in method _io.open>')",
+          "calls": 11161,
+          "self_s": 0.091513328,
+          "inclusive_s": 0.103011405
+        },
+        {
+          "function": "('<runfiles>/_main/devinfra/js/debundle/analysis_identity_hasher.py', 39, 'record')",
+          "calls": 44488,
+          "self_s": 0.08273240300000001,
+          "inclusive_s": 0.156188707
+        },
+        {
+          "function": "('<runfiles>/rules_python++python+python_3_14_x86_64-unknown-linux-gnu/lib/python3.14/pathlib/__init__.py', 251, '__str__')",
+          "calls": 66973,
+          "self_s": 0.072601943,
+          "inclusive_s": 0.24089523200000001
+        },
+        {
+          "function": "('<frozen genericpath>', 48, 'isdir')",
+          "calls": 33326,
+          "self_s": 0.043242729,
+          "inclusive_s": 1.46657498
+        }
+      ]
+    },
+    {
+      "group": "first_party",
+      "files": 34,
+      "bytes": 362952269
+    },
+    {
+      "group": "external",
+      "files": 11161,
+      "bytes": 1736179231
+    }
+  ],
+  "compiler_profiles": [
+    {
+      "crate": "analysis",
+      "total_profile_s": 72.093306696,
+      "metadata_self_s": 1.294459481,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 18.090967843,
+          "inclusive_s": 18.090967843,
+          "count": 16
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 9.331425053,
+          "inclusive_s": 9.764341407,
+          "count": 16
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 7.448864635,
+          "inclusive_s": 7.448864635,
+          "count": 1
+        },
+        {
+          "name": "typeck_root",
+          "self_s": 3.859161696,
+          "inclusive_s": 4.564686641,
+          "count": 6679
+        },
+        {
+          "name": "mir_borrowck",
+          "self_s": 3.569333188,
+          "inclusive_s": 5.001592076,
+          "count": 6272
+        },
+        {
+          "name": "items_of_instance",
+          "self_s": 2.452922907,
+          "inclusive_s": 8.948150788,
+          "count": 113613
+        }
+      ]
+    },
+    {
+      "crate": "analysis_identity",
+      "total_profile_s": 0.372548362,
+      "metadata_self_s": 0.053815186,
+      "top": [
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.047146041,
+          "inclusive_s": 0.047146041,
+          "count": 1
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.031025576,
+          "inclusive_s": 0.053021748,
+          "count": 19
+        },
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 0.030782421,
+          "inclusive_s": 0.030782421,
+          "count": 1
+        },
+        {
+          "name": "finish_ongoing_codegen",
+          "self_s": 0.027101634,
+          "inclusive_s": 0.027169115,
+          "count": 1
+        },
+        {
+          "name": "expand_crate",
+          "self_s": 0.02123245,
+          "inclusive_s": 0.068244898,
+          "count": 1
+        },
+        {
+          "name": "metadata_decode_entry_module_children",
+          "self_s": 0.015741025,
+          "inclusive_s": 0.015741025,
+          "count": 3
+        }
+      ]
+    },
+    {
+      "crate": "cli",
+      "total_profile_s": 21.022894226,
+      "metadata_self_s": 1.882612582,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 5.526595577,
+          "inclusive_s": 5.526595577,
+          "count": 16
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 2.229756519,
+          "inclusive_s": 2.229756519,
+          "count": 1
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 2.032160864,
+          "inclusive_s": 2.301533955,
+          "count": 16
+        },
+        {
+          "name": "typeck_root",
+          "self_s": 1.09336662,
+          "inclusive_s": 1.4903405699999999,
+          "count": 1645
+        },
+        {
+          "name": "mir_borrowck",
+          "self_s": 0.850726057,
+          "inclusive_s": 1.2512705020000001,
+          "count": 1413
+        },
+        {
+          "name": "items_of_instance",
+          "self_s": 0.53438895,
+          "inclusive_s": 2.96033901,
+          "count": 31065
+        }
+      ]
+    },
+    {
+      "crate": "debundle_e2e",
+      "total_profile_s": 17.322340964,
+      "metadata_self_s": 1.471261878,
+      "top": [
+        {
+          "name": "run_linker",
+          "self_s": 15.137155398,
+          "inclusive_s": 15.137155398,
+          "count": 1
+        },
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.841368489,
+          "inclusive_s": 0.841368489,
+          "count": 273
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.40480752,
+          "inclusive_s": 1.6844398680000001,
+          "count": 273
+        },
+        {
+          "name": "upstream_monomorphizations",
+          "self_s": 0.119363895,
+          "inclusive_s": 0.961204041,
+          "count": 1
+        },
+        {
+          "name": "metadata_decode_entry_impl_trait_header",
+          "self_s": 0.08666417,
+          "inclusive_s": 0.08666417,
+          "count": 1451
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.073838846,
+          "inclusive_s": 0.073838846,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "crate": "selector_backend_solver",
+      "total_profile_s": 3.12582676,
+      "metadata_self_s": 1.25256257,
+      "top": [
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.41983018,
+          "inclusive_s": 0.41983018,
+          "count": 176
+        },
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 0.33446017,
+          "inclusive_s": 0.33446017,
+          "count": 2
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.30941224,
+          "inclusive_s": 0.98407626,
+          "count": 176
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.25410702,
+          "inclusive_s": 0.25410702,
+          "count": 1
+        },
+        {
+          "name": "metadata_decode_entry_impl_trait_header",
+          "self_s": 0.16024036,
+          "inclusive_s": 0.16024036,
+          "count": 13389
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 0.11016552,
+          "inclusive_s": 0.13585399,
+          "count": 2
+        }
+      ]
+    },
+    {
+      "crate": "selector_constraint_backend",
+      "total_profile_s": 3.327523284,
+      "metadata_self_s": 0.911099799,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 0.593679598,
+          "inclusive_s": 0.593679598,
+          "count": 10
+        },
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.278209307,
+          "inclusive_s": 0.278209307,
+          "count": 174
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.256182242,
+          "inclusive_s": 0.256182242,
+          "count": 1
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 0.201174866,
+          "inclusive_s": 0.228496957,
+          "count": 10
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.171830983,
+          "inclusive_s": 0.596558588,
+          "count": 174
+        },
+        {
+          "name": "LLVM_module_optimize",
+          "self_s": 0.161046524,
+          "inclusive_s": 0.161046524,
+          "count": 10
+        }
+      ]
+    },
+    {
+      "crate": "selector_constraint_model_builder",
+      "total_profile_s": 5.972488919,
+      "metadata_self_s": 1.281108544,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 1.373171108,
+          "inclusive_s": 1.373171108,
+          "count": 11
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.623108749,
+          "inclusive_s": 0.623108749,
+          "count": 1
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 0.607596597,
+          "inclusive_s": 0.654949024,
+          "count": 11
+        },
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.374559696,
+          "inclusive_s": 0.374559696,
+          "count": 175
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.272840794,
+          "inclusive_s": 1.010932777,
+          "count": 175
+        },
+        {
+          "name": "finish_ongoing_codegen",
+          "self_s": 0.198405477,
+          "inclusive_s": 0.198553117,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "crate": "selector_ir",
+      "total_profile_s": 5.54444393,
+      "metadata_self_s": 2.124945752,
+      "top": [
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.795393081,
+          "inclusive_s": 0.795393081,
+          "count": 172
+        },
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 0.572155748,
+          "inclusive_s": 0.572155748,
+          "count": 3
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.378859377,
+          "inclusive_s": 1.25745324,
+          "count": 172
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.356699188,
+          "inclusive_s": 0.356699188,
+          "count": 1
+        },
+        {
+          "name": "metadata_decode_entry_impl_trait_header",
+          "self_s": 0.340961157,
+          "inclusive_s": 0.340961157,
+          "count": 27885
+        },
+        {
+          "name": "specialization_graph_of",
+          "self_s": 0.296501269,
+          "inclusive_s": 0.83796735,
+          "count": 38
+        }
+      ]
+    },
+    {
+      "crate": "selector_resolve",
+      "total_profile_s": 7.579579612,
+      "metadata_self_s": 1.4995437219999999,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 1.736894052,
+          "inclusive_s": 1.736894052,
+          "count": 16
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 0.751034372,
+          "inclusive_s": 0.82992734,
+          "count": 16
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.68116069,
+          "inclusive_s": 0.68116069,
+          "count": 1
+        },
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.36704009,
+          "inclusive_s": 0.36704009,
+          "count": 193
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.28435433,
+          "inclusive_s": 1.02563998,
+          "count": 193
+        },
+        {
+          "name": "typeck_root",
+          "self_s": 0.21878305,
+          "inclusive_s": 0.451103,
+          "count": 136
+        }
+      ]
+    },
+    {
+      "crate": "selector_runtime",
+      "total_profile_s": 2.716598113,
+      "metadata_self_s": 0.993784708,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 0.511971844,
+          "inclusive_s": 0.511971844,
+          "count": 4
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.375228014,
+          "inclusive_s": 1.5929916240000002,
+          "count": 185
+        },
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.297210914,
+          "inclusive_s": 0.297210914,
+          "count": 185
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.24476979,
+          "inclusive_s": 0.24476979,
+          "count": 1
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 0.149394867,
+          "inclusive_s": 0.183437832,
+          "count": 4
+        },
+        {
+          "name": "LLVM_module_optimize",
+          "self_s": 0.10524949,
+          "inclusive_s": 0.10524949,
+          "count": 4
+        }
+      ]
+    },
+    {
+      "crate": "spec_resolution",
+      "total_profile_s": 2.931915144,
+      "metadata_self_s": 0.961618623,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 0.507908071,
+          "inclusive_s": 0.507908071,
+          "count": 5
+        },
+        {
+          "name": "metadata_decode_entry_exported_generic_symbols",
+          "self_s": 0.331770865,
+          "inclusive_s": 0.331770865,
+          "count": 194
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 0.283873046,
+          "inclusive_s": 0.283873046,
+          "count": 1
+        },
+        {
+          "name": "metadata_register_crate",
+          "self_s": 0.192047058,
+          "inclusive_s": 0.664162502,
+          "count": 194
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 0.183655884,
+          "inclusive_s": 0.209521329,
+          "count": 5
+        },
+        {
+          "name": "metadata_decode_entry_impl_trait_header",
+          "self_s": 0.101913627,
+          "inclusive_s": 0.101913627,
+          "count": 19472
+        }
+      ]
+    },
+    {
+      "crate": "staged_analysis",
+      "total_profile_s": 36.31465359,
+      "metadata_self_s": 1.577224232,
+      "top": [
+        {
+          "name": "LLVM_module_codegen_emit_obj",
+          "self_s": 15.265516608,
+          "inclusive_s": 15.265516608,
+          "count": 16
+        },
+        {
+          "name": "codegen_module",
+          "self_s": 5.9286021810000005,
+          "inclusive_s": 6.21268006,
+          "count": 16
+        },
+        {
+          "name": "LLVM_passes",
+          "self_s": 4.85394363,
+          "inclusive_s": 4.85394363,
+          "count": 1
+        },
+        {
+          "name": "items_of_instance",
+          "self_s": 1.063614113,
+          "inclusive_s": 3.912802641,
+          "count": 61718
+        },
+        {
+          "name": "LLVM_module_optimize",
+          "self_s": 0.591231368,
+          "inclusive_s": 0.591231368,
+          "count": 16
+        },
+        {
+          "name": "monomorphization_collector_graph_walk",
+          "self_s": 0.584242976,
+          "inclusive_s": 4.497045617,
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "function_examples": [
+    {
+      "event": "typeck_root",
+      "wall_s": 0.263194,
+      "args": {
+        "arg0": "analysis::facts::sync_effects::execution_index::{{impl}}[20]::collect"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.080054,
+      "args": {
+        "arg0": "analysis::cross_module_purity::resolve_imported_callable_summaries"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.052448,
+      "args": {
+        "arg0": "analysis::cross_module_purity::resolve_imported_purities"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.049792,
+      "args": {
+        "arg0": "analysis::facts::sync_effects::execution_index::{{impl}}[20]::locate_native_integrity_witnesses"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.04265,
+      "args": {
+        "arg0": "analysis::facts::abstract_domain::heap::{{impl}}[1]::analyze"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.041846,
+      "args": {
+        "arg0": "analysis::facts::sync_effects::execution_index::interpreter::{{impl}}[19]::execute_call_transfer"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.033665,
+      "args": {
+        "arg0": "analysis::cross_module_purity::resolve_asserted_inline_callback_factories"
+      }
+    },
+    {
+      "event": "typeck_root",
+      "wall_s": 0.033178,
+      "args": {
+        "arg0": "analysis::facts::sync_effects::local_transfer::execute"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.140398,
+      "args": {
+        "arg0": "analysis::facts::sync_effects::execution_index::{{impl}}[20]::collect"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.122041,
+      "args": {
+        "arg0": "analysis::facts::abstract_domain::value::_[3]::{{impl}}::deserialize::{{impl}}[2]::visit_enum"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.121407,
+      "args": {
+        "arg0": "analysis::facts::set_iterables::{{impl}}::analyze"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.11761,
+      "args": {
+        "arg0": "analysis::facts::abstract_domain::integrity::{{impl}}[10]::resolve"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.096633,
+      "args": {
+        "arg0": "analysis::cross_module_purity::resolve_imported_callable_summaries"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.082353,
+      "args": {
+        "arg0": "analysis::facts::sync_effects::execution_index::interpreter::{{impl}}[19]::execute_call_transfer"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.074127,
+      "args": {
+        "arg0": "analysis::facts::abstract_domain::builtins::ROWS"
+      }
+    },
+    {
+      "event": "mir_borrowck",
+      "wall_s": 0.073683,
+      "args": {
+        "arg0": "analysis::facts::abstract_domain::integrity::{{impl}}[10]::keys_naming"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.251305,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(10:190 ~ hashbrown[b5c9]::raw::{impl#8}::reserve_rehash::{closure#0})), args: [((std::string::String, std::option::Option<std::string::String>), std::collections::HashSet<std::string::String, rustc_hash::FxBuildHasher, std::alloc::Global>), std::alloc::Global, Closure(DefId(10:580 ~ hashbrown[b5c9]::map::make_hasher::{closure#0}), [(std::string::String, std::option::Option<std::string::String>), std::collections::HashSet<std::string::String, rustc_hash::FxBuildHasher, std::alloc::Global>, rustc_hash::FxBuildHasher, i8, Binder { value: extern \"RustCall\" fn((&'^0 ((std::string::String, std::option::Option<std::string::String>), std::collections::HashSet<std::string::String, rustc_hash::FxBuildHasher, std::alloc::Global>),)) -> u64, bound_vars: [Region(BrAnon)] }, (&'{erased} rustc_hash::FxBuildHasher,)]), i8, Binder { value: extern \"RustCall\" fn((&'^0 mut hashbrown::raw::RawTableInner, usize)) -> u64, bound_vars: [Region(BrAnon)] }, (&'{erased} Closure(DefId(10:580 ~ hashbrown[b5c9]::map::make_hasher::{closure#0}), [(std::string::String, std::option::Option<std::string::String>), std::collections::HashSet<std::string::String, rustc_hash::FxBuildHasher, std::alloc::Global>, rustc_hash::FxBuildHasher, i8, Binder { value: extern \"RustCall\" fn((&'^0 ((std::string::String, std::option::Option<std::string::String>), std::collections::HashSet<std::string::String, rustc_hash::FxBuildHasher, std::alloc::Global>),)) -> u64, bound_vars: [Region(BrAnon)] }, (&'{erased} rustc_hash::FxBuildHasher,)]),)] }, UsedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.234336,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(3:3097 ~ alloc[012e]::collections::btree::node::{impl#27}::correct_childrens_parent_links)), args: ['{erased}, placement_projection::StructuralPlacementCheck, alloc::collections::btree::set_val::SetValZST, std::ops::Range<usize>] }, UsedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.219544,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(2:10510 ~ core[c0ac]::iter::traits::iterator::Iterator::collect)), args: [std::iter::Map<std::iter::Cloned<std::collections::hash_set::Iter<'{erased}, cross_module_purity::CallableProjectionRule>>, Closure(DefId(0:6996 ~ analysis[ea8b]::inference::iterative::{impl#2}::solve_with_premises::{closure#0}), [cross_module_purity::CallableProjectionRules, true, std::collections::BTreeSet<cross_module_purity::CallableProjectionRule, std::alloc::Global>, i16, Binder { value: extern \"RustCall\" fn((cross_module_purity::CallableProjectionRule,)) -> (usize, cross_module_purity::CallableProjectionRule), bound_vars: [] }, ()])>, std::vec::Vec<(usize, cross_module_purity::CallableProjectionRule), std::alloc::Global>] }, UsedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.130825,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(0:77 ~ analysis[ea8b]::assignment_assembly::assemble_assignment)), args: [] }, UsedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.129495,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(3:3086 ~ alloc[012e]::collections::btree::node::{impl#25}::into_key_val_mut_at)), args: ['{erased}, facts::sync_effects::value_model::CallSite, facts::sync_effects::value_model::ArrayIteration, alloc::collections::btree::node::marker::LeafOrInternal] }, UsedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.121942,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(109:2071 ~ swc_ecma_visit[bc68]::generated::{impl#139}::visit_with)), args: [facts::value_flow::FlowCallCollector<'{erased}>] }, UsedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.116852,
+      "args": {
+        "arg0": "(Instance { def: Item(DefId(3:781 ~ alloc[012e]::boxed::{impl#10}::drop)), args: [std::mem::MaybeUninit<alloc::collections::btree::node::InternalNode<facts::sync_effects::value_model::CallSite, facts::sync_effects::value_model::FromEntriesMappedProof>>, std::alloc::Global] }, MentionedItems)"
+      }
+    },
+    {
+      "event": "items_of_instance",
+      "wall_s": 0.104487,
+      "args": {
+        "arg0": "(Instance { def: Shim(VTable(DefId(2:4494 ~ core[c0ac]::ops::function::FnOnce::call_once))), args: [Closure(DefId(10:210 ~ hashbrown[b5c9]::raw::{impl#8}::find::{closure#0}), [(facts::value_flow::CandidateRule, std::collections::BTreeSet<facts::value_flow::FlowKey, std::alloc::Global>), std::alloc::Global, Closure(DefId(10:1442 ~ hashbrown[b5c9]::rustc_entry::{impl#0}::rustc_entry::{closure#0}), [facts::value_flow::CandidateRule, std::collections::BTreeSet<facts::value_flow::FlowKey, std::alloc::Global>, rustc_hash::FxBuildHasher, std::alloc::Global, i16, Binder { value: extern \"RustCall\" fn((&'^0 (facts::value_flow::CandidateRule, std::collections::BTreeSet<facts::value_flow::FlowKey, std::alloc::Global>),)) -> bool, bound_vars: [Region(BrAnon)] }, (&'{erased} facts::value_flow::CandidateRule,)]), i16, Binder { value: extern \"RustCall\" fn((usize,)) -> bool, bound_vars: [] }, (&'{erased} mut Closure(DefId(10:1442 ~ hashbrown[b5c9]::rustc_entry::{impl#0}::rustc_entry::{closure#0}), [facts::value_flow::CandidateRule, std::collections::BTreeSet<facts::value_flow::FlowKey, std::alloc::Global>, rustc_hash::FxBuildHasher, std::alloc::Global, i16, Binder { value: extern \"RustCall\" fn((&'^0 (facts::value_flow::CandidateRule, std::collections::BTreeSet<facts::value_flow::FlowKey, std::alloc::Global>),)) -> bool, bound_vars: [Region(BrAnon)] }, (&'{erased} facts::value_flow::CandidateRule,)]), &'{erased} hashbrown::raw::RawTable<(facts::value_flow::CandidateRule, std::collections::BTreeSet<facts::value_flow::FlowKey, std::alloc::Global>), std::alloc::Global>)]), (usize,)] }, UsedItems)"
+      }
+    }
+  ]
+}

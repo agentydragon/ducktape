@@ -33,7 +33,7 @@ from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
     InputTokensDetails,
-    OpenAIModelProto,
+    Model,
     OutputTokensDetails,
     ReasoningItem,
     ResponseOutItem,
@@ -86,7 +86,7 @@ def result_to_sdk_response(result: ResponsesResult, *, model: str = DEFAULT_TEST
             input_tokens=0,
             output_tokens=1,
             total_tokens=1,
-            input_tokens_details=InputTokensDetails(cached_tokens=0),
+            input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
             output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
         )
 
@@ -113,7 +113,7 @@ class FakeOpenAIServer:
     and re-raised when the caller invokes `check_errors()` after server cleanup.
     """
 
-    def __init__(self, mocks: dict[str, OpenAIModelProto]) -> None:
+    def __init__(self, mocks: dict[str, Model]) -> None:
         self._mocks = mocks
         self._captured_error: BaseException | None = None
 
@@ -127,7 +127,7 @@ class FakeOpenAIServer:
         if self._captured_error is not None:
             raise self._captured_error
 
-    def _resolve_mock(self, body: dict[str, Any]) -> OpenAIModelProto:
+    def _resolve_mock(self, body: dict[str, Any]) -> Model:
         """Resolve the mock for a request body by model name."""
         model = body.get("model")
         if not model:
@@ -157,7 +157,7 @@ class FakeOpenAIServer:
                 raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
 
             try:
-                result = await mock.responses_create(req)
+                result = await mock.sample(mock.prepare(req))
             except Exception as e:
                 logger.exception("Mock raised exception")
                 self._capture_error(e)

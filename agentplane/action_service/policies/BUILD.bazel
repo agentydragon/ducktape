@@ -51,7 +51,9 @@ py_library(
     srcs = ["resources.py"],
     visibility = [
         "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
@@ -69,7 +71,6 @@ py_test(
         ":exact_actions",
         ":resources",
         "//:conftest",
-        "//agentplane:policy_sets",
         "//agentplane/action_service:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -132,6 +133,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/policies",
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/store",
         "//agentplane/observability",

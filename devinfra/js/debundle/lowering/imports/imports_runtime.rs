@@ -6,14 +6,15 @@
 //! `source_chunk_imports_for_moved_body` emits the re-import declarations.
 
 use crate::imports::{
-    ArtifactSourceImportResolutionCache, RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind,
-    runtime_reimport_named_specifier, runtime_reimport_specifier,
+    ArtifactSourceImportResolutionCache, runtime_reimport_named_specifier,
+    runtime_reimport_specifier,
 };
 use anyhow::{Result, bail};
 use artifact::paths::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_path,
 };
+use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind};
 use js_ast::import_decl_module_item;
 use std::collections::BTreeMap;
 use swc_ecma_ast::*;

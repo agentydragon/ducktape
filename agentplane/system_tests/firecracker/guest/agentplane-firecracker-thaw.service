@@ -1,0 +1,26 @@
+[Unit]
+Description=Set guest time and Runtime credentials before enabling guest networking
+Wants=network-pre.target
+Before=network-pre.target
+After=local-fs.target systemd-tmpfiles-setup.service
+RequiresMountsFor=/run/agentplane/environment
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/run/agentplane/environment/bin/agentplane-firecracker-thaw-agent
+Restart=on-failure
+RestartSec=1
+User=root
+UMask=0077
+CapabilityBoundingSet=CAP_SYS_TIME CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_SYS_TIME CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/agentplane/environment-runtime-private/environment-runtime-tls
+RestrictAddressFamilies=AF_UNIX AF_VSOCK
+LockPersonality=yes
+
+[Install]
+WantedBy=network-pre.target

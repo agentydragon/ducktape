@@ -1,5 +1,12 @@
 use super::*;
-use crate::facts::{DynamicScopeFact, LocalClassConstructionProof, SetIterableProof};
+use crate::facts::abstract_domain::heap;
+use crate::facts::abstract_domain::primitive::{BindingPrims, collect_binding_prims};
+use crate::facts::{
+    DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
+    SetIterableShapes,
+};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -15,6 +22,8 @@ use std::sync::Arc;
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
     pub(crate) bindings: BTreeMap<String, ChunkBinding>,
+    plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     fresh_record_proofs: BTreeMap<u32, FreshRecordProof>,
     pure_new_constructors: BTreeSet<String>,
     /// Per-binding declared-pure member-call set. Looked up by the
@@ -23,28 +32,27 @@ pub struct ChunkCodeGraph {
     /// admitted as pure with args evaluated normally. Author-trust
     /// contract; see <docs/purity_soundness.md> "Declared purity".
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
-    /// Chunk-top `const X = <result-primitive init>` binding names.
-    /// `const` makes the binding immutable, and a primitive value
-    /// carries no user accessors, so a `ToString` / `ToNumber` /
-    /// `ToPropertyKey` coercion of a reference to `X` fires no user
-    /// code — `X` is admitted as result-primitive wherever it is not
-    /// locally shadowed. The init's own evaluation effects are
-    /// classified separately at its declaration site; only the
-    /// *value* class matters here. See `collect_const_value_classes`.
-    pub(crate) primitive_const_bindings: BTreeSet<String>,
-    /// Immutable Symbol-valued consts are safe only for ToPropertyKey.
-    /// They must not enter `primitive_const_bindings`: ToString(Symbol)
-    /// throws, unlike the result-primitive forms tracked there.
+    /// Primitive types of chunk-top consts and stable top-level numeric vars,
+    /// read by operator classification. See `collect_binding_prims`.
+    pub(crate) binding_prims: BindingPrims,
+    /// Projection of `binding_prims`: bindings whose values carry no user
+    /// accessors and are never Symbol, so coercing a reference fires no user
+    /// code. Init effects remain classified separately.
+    pub(crate) primitive_bindings: BTreeSet<String>,
+    /// Projection of `binding_prims`: Symbol-valued bindings are safe only for
+    /// ToPropertyKey; ToString(Symbol) throws.
     pub(crate) symbol_const_bindings: BTreeSet<String>,
     /// Chunk-top `const X = [..]` bindings that remain static ordinary
     /// arrays under the same no-escape scan as `PlainData`, and are
-    /// never used as the receiver of unknown/mutating array methods.
-    /// At-init fallback uses this to avoid treating `X.map(cb)` /
-    /// `X.forEach(cb)` as if those built-ins might invoke functions
-    /// held inside `X`; the callback body is still modeled separately.
+    /// never used as the receiver of unknown/mutating array methods
+    /// (`heap::plain_array_bindings`). At-init fallback uses this to
+    /// avoid treating `X.map(cb)` / `X.forEach(cb)` as if those
+    /// built-ins might invoke functions held inside `X`.
     plain_array_bindings: BTreeSet<String>,
-    /// Candidate own primitive fields of single-init TS enum objects.
-    ts_enum_named_data_candidates: BTreeMap<Id, TsEnumNamedDataCandidate>,
+    /// Plain arrays whose elements are all primitives
+    /// (`heap::primitive_element_arrays`): their element callbacks receive
+    /// only primitives.
+    primitive_element_arrays: BTreeSet<String>,
     /// Exact Set-constructor spans with a structurally checked fresh-array
     /// iterable. The same proof is consumed by synchronous effect analysis.
     set_iterable_proof: SetIterableProof,
@@ -72,6 +80,45 @@ pub struct ChunkCodeGraph {
     /// (`collect_fluent_const_bindings`). Author-trust contract: see
     /// docs/design.md A9.
     fluent_bindings: BTreeSet<String>,
+    /// During bottom-up transfer extraction, inferred calls are recorded as
+    /// obligations instead of consulting an optimistic Pure placeholder.
+    purity_call_targets: BTreeMap<String, PurityFunctionKey>,
+    purity_call_obligations: Option<Rc<RefCell<Vec<PurityCallObligation>>>>,
+    /// Cells of other chunks, and in export mode this chunk's own module
+    /// state, whose reads no consumer graph orders against their writers.
+    order_dependent_cells: OrderDependentCells,
+}
+
+/// Prepared static facts consumed while extracting canonical purity bodies.
+/// Grouping these inputs keeps local and program-wide extraction on the same
+/// gates for native, captured, and shape-based facts.
+pub(crate) struct PurityShapeInputs<'a> {
+    pub(crate) shadowed: &'a BTreeSet<&'static str>,
+    pub(crate) declared_pure_new: &'a BTreeSet<String>,
+    pub(crate) declared_pure_members: &'a BTreeMap<String, BTreeSet<String>>,
+    pub(crate) imported_purities: &'a BTreeMap<String, Arc<Purity>>,
+    pub(crate) fluent_bindings: &'a BTreeSet<String>,
+    pub(crate) set_iterable_proof: &'a SetIterableProof,
+    pub(crate) local_class_construction_proof: &'a LocalClassConstructionProof,
+    pub(crate) plain_data_bindings: &'a [String],
+    pub(crate) plain_data_dependencies:
+        &'a BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub(crate) plain_data_inference_uses:
+        &'a BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
+    pub(crate) plain_array_bindings: &'a BTreeSet<String>,
+    pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
+    /// Named and default imports bound to a provider cell that is never
+    /// rebound (`AnalysisInputs::stable_imports`).
+    pub(crate) stable_imports: &'a BTreeSet<String>,
+}
+
+/// Source-module identity, policy, and inferred imported function targets for
+/// one batch of body transfers.
+pub(crate) struct PurityCallContext<'a> {
+    pub(crate) module: &'a str,
+    pub(crate) mode: PurityMode,
+    pub(crate) declared_pure: &'a BTreeSet<String>,
+    pub(crate) imported_targets: &'a BTreeMap<String, PurityFunctionKey>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,9 +130,9 @@ pub(crate) enum ChunkBinding {
     /// Chunk-top binding whose value is provably a plain object/array
     /// — `const X = <plain literal>`, or `let`/`var` whose every
     /// re-bind is also a plain literal, or the TS-enum-IIFE shape
-    /// (see `is_ts_enum_iife_init_for_binding`). The chunk-wide write
-    /// scan (`PlainDataWriteScanner`) rejects any post-init accessor
-    /// installation, so property reads `X.k` / `X[k]` are pure.
+    /// (see `is_ts_enum_iife_init_for_binding`) — whose allocations stay
+    /// private and unwritten (`facts/abstract_domain/heap.rs`), so
+    /// property reads `X.k` / `X[k]` are pure.
     /// Full soundness write-up: <docs/purity_soundness.md> §
     /// "ChunkBinding::PlainData".
     PlainData,
@@ -96,26 +143,9 @@ impl ChunkCodeGraph {
         self.fresh_record_proofs.get(&key)
     }
 
-    /// Build the graph for `body`. Two phases:
-    ///
-    /// 1. **Call-graph construction.** For each chunk-top function,
-    ///    walk its body and collect the set of other chunk-top
-    ///    functions it calls (Ident-callee form only). Edges:
-    ///    caller → callee.
-    /// 2. **SCC-bottom-up classification.** Decompose the call
-    ///    graph into strongly-connected components via
-    ///    `petgraph::algo::tarjan_scc` (returns SCCs in reverse
-    ///    topological order — sinks first). Process each SCC in
-    ///    order, so by the time we classify a caller, every
-    ///    callee outside the caller's own SCC is already
-    ///    finalized. Within an SCC (the only place mutual
-    ///    recursion shows up), iterate via a worklist: re-classify
-    ///    a function only when one of its same-SCC callees has
-    ///    changed. Each function in an SCC is reclassified at
-    ///    most twice (`Pure → Unknown` or `Pure → Impure`, both
-    ///    terminal), so per-SCC work is `O(scc_size · body_size)`,
-    ///    and total work is `O(N · body_size)` for the whole
-    ///    chunk regardless of recursion depth.
+    /// Build the graph for `body`. Canonical body classification produces
+    /// immutable transfer facts and exact inferred call obligations; the
+    /// effects worklist closes recursion before projecting final verdicts.
     pub(crate) fn build(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -150,7 +180,7 @@ impl ChunkCodeGraph {
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
     ) -> Self {
-        Self::build_full_with_locations(
+        Self::build_full_with_stable_vars(
             body,
             shadowed,
             declared_pure,
@@ -158,12 +188,12 @@ impl ChunkCodeGraph {
             declared_pure_members,
             imported_purities,
             fluent_bindings,
-            None,
+            &BTreeSet::new(),
         )
     }
 
-    #[allow(clippy::too_many_arguments)] // The optional resolver extends the established build_full inputs.
-    pub(crate) fn build_full_with_locations(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_full_with_stable_vars(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -171,20 +201,42 @@ impl ChunkCodeGraph {
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
-        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+        stable_var_number_candidates: &BTreeSet<Id>,
     ) -> Self {
-        let value_flow = crate::facts::ChunkValueFlow::analyze(body);
-        let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
+        // No program summary reaches this path: every import stays an
+        // order-dependent cell.
+        let stable_imports = BTreeSet::new();
+        let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
+            body,
+            &heap::tracked_allocation_roots(body),
+        );
+        let plain_data_bindings = heap::ChunkHeap::analyze(body, shadowed, &value_flow, None)
+            .plain_data_bindings()
+            .bindings;
+        let plain_array_bindings = heap::plain_array_bindings(body, shadowed);
         let dynamic_scope = DynamicScopeFact::analyze(body);
-        let set_iterable_proof = SetIterableProof::analyze(
+        let local_class_construction_proof =
+            LocalClassConstructionShapes::analyze(body, shadowed, &value_flow, dynamic_scope);
+        let set_iterable_proof = SetIterableShapes::analyze(
             body,
             shadowed,
             &value_flow,
             &plain_data_bindings,
             dynamic_scope,
         );
+        let prepared_sync_index =
+            crate::facts::sync_effects::interpreter::prepare_synchronous_call_index(
+                body,
+                &value_flow,
+                &crate::analysis_inputs::AnalysisInputs::default(),
+                &plain_array_bindings,
+                &local_class_construction_proof,
+                set_iterable_proof,
+                shadowed,
+            );
         let local_class_construction_proof =
-            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, dynamic_scope);
+            prepared_sync_index.local_class_construction_proof().clone();
+        let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,
@@ -196,11 +248,18 @@ impl ChunkCodeGraph {
             &set_iterable_proof,
             &local_class_construction_proof,
             &plain_data_bindings,
-            locate,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &plain_array_bindings,
+            stable_var_number_candidates,
+            &stable_imports,
+            None,
         )
     }
 
-    /// Reuse the chunk-wide escape scan when only imported purities change.
+    /// Reuse prepared chunk facts, including stable numeric-var candidates from
+    /// the canonical structural analysis. Callers without those candidates pass
+    /// an empty set and remain conservative.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_full_with_prepared_plain_data(
         body: &[TopLevelItemView<'_>],
@@ -213,163 +272,227 @@ impl ChunkCodeGraph {
         set_iterable_proof: &SetIterableProof,
         local_class_construction_proof: &LocalClassConstructionProof,
         plain_data_bindings: &[String],
-        mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+        plain_data_dependencies: &BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+        plain_data_inference_uses: &BTreeMap<
+            String,
+            BTreeSet<crate::analysis_provenance::InferenceUse>,
+        >,
+        plain_array_bindings: &BTreeSet<String>,
+        stable_var_number_candidates: &BTreeSet<Id>,
+        stable_imports: &BTreeSet<String>,
+        locator: Option<SourceLocator<'_>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
-        let fresh_record_proofs = functions
-            .iter()
-            .filter_map(|function| {
-                let body = function.block_body?;
-                Some((function.key, fresh_record_proof(&function.params, body)?))
-            })
-            .collect();
-        let name_to_idx: BTreeMap<&str, usize> = functions
-            .iter()
-            .enumerate()
-            .map(|(i, f)| (f.name.as_str(), i))
-            .collect();
-
-        // Phase 1: call edges.
-        let mut call_graph: DiGraphMap<usize, ()> = DiGraphMap::new();
-        let mut callees_of: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); functions.len()];
-        for (i, function) in functions.iter().enumerate() {
-            call_graph.add_node(i);
-            let mut collector = CallCollector {
-                callees: BTreeSet::new(),
-                name_to_idx: &name_to_idx,
-            };
-            function.visit_body_with(&mut collector);
-            for &callee in &collector.callees {
-                call_graph.add_edge(i, callee, ());
-            }
-            callees_of[i] = collector.callees;
-        }
-
-        // Phase 2: optimistic init + SCC-bottom-up classification.
-        let mut bindings: BTreeMap<String, ChunkBinding> = functions
-            .iter()
-            .map(|f| {
-                (
-                    f.name.clone(),
-                    ChunkBinding::Function {
-                        purity: Arc::new(Purity::Pure),
-                    },
-                )
-            })
-            .collect();
-        // Plain-data candidates: chunk-top `const X = <plain object|array
-        // literal>` whose binding cell is never written through anywhere
-        // in the chunk. Function-bound `const` initializers are already
-        // tracked as `Function`; this pass only adds non-function
-        // plain-data shapes.
-        for name in plain_data_bindings {
-            // Functions take precedence: a chunk-top `const f = () => ...`
-            // is registered as Function and must not be re-registered as
-            // PlainData (calling it is the interesting question, not
-            // reading its `.length` etc.).
-            bindings
-                .entry(name.clone())
-                .or_insert(ChunkBinding::PlainData);
-        }
-        let (primitive_const_bindings, symbol_const_bindings) =
-            collect_const_value_classes(body, shadowed);
-        let ts_enum_named_data_candidates =
-            collect_ts_enum_named_data_candidates(body, plain_data_bindings)
-                .into_iter()
-                .filter(|(binding, _)| {
-                    matches!(
-                        bindings.get(binding.0.as_ref()),
-                        Some(ChunkBinding::PlainData)
-                    )
-                })
-                .collect();
-        let mut graph = ChunkCodeGraph {
-            bindings,
-            fresh_record_proofs,
-            pure_new_constructors: declared_pure_new.clone(),
-            declared_pure_members: declared_pure_members.clone(),
-            primitive_const_bindings,
-            symbol_const_bindings,
-            plain_array_bindings: collect_plain_array_bindings(body, shadowed),
-            ts_enum_named_data_candidates,
-            set_iterable_proof: set_iterable_proof.clone(),
-            local_class_construction_proof: local_class_construction_proof.clone(),
-            imported_purities: imported_purities.clone(),
-            fluent_bindings: collect_fluent_const_bindings(body, fluent_bindings),
+        let shape_inputs = PurityShapeInputs {
+            shadowed,
+            declared_pure_new,
+            declared_pure_members,
+            imported_purities,
+            fluent_bindings,
+            set_iterable_proof,
+            local_class_construction_proof,
+            plain_data_bindings,
+            plain_data_dependencies,
+            plain_data_inference_uses,
+            plain_array_bindings,
+            stable_var_number_candidates,
+            stable_imports,
         };
-        // tarjan_scc emits SCCs in reverse topological order: leaves
-        // (sinks — functions that don't call any chunk-top
-        // function) come first, callers come later.
-        for scc in tarjan_scc(&call_graph) {
-            graph.classify_scc(
-                &scc,
-                &functions,
-                &callees_of,
-                shadowed,
-                declared_pure,
-                &mut locate,
+        let local_targets = BTreeMap::new();
+        let call_context = PurityCallContext {
+            module: "",
+            mode: PurityMode::Local,
+            declared_pure,
+            imported_targets: &local_targets,
+        };
+        let mut graph =
+            Self::build_effect_collection_graph(body, &functions, &shape_inputs, &call_context);
+        let mut bodies = BTreeMap::new();
+        for function in &functions {
+            let key = PurityFunctionKey {
+                module: String::new(),
+                binding: function.name.clone(),
+                source_key: function.key,
+                mode: PurityMode::Local,
+            };
+            bodies.insert(
+                key,
+                classify_function_body_transfer(function, shadowed, declared_pure, &graph, locator),
             );
         }
+        let purities = PurityEffectRules::new(bodies).solve_to_purities();
+        for function in functions {
+            let key = PurityFunctionKey {
+                module: String::new(),
+                binding: function.name.clone(),
+                source_key: function.key,
+                mode: PurityMode::Local,
+            };
+            let purity = purities
+                .get(&key)
+                .expect("each function transfer has a completed effect fact")
+                .clone();
+            graph
+                .bindings
+                .insert(function.name, ChunkBinding::Function { purity });
+        }
+        // The returned graph is used by later expression classification,
+        // which must consume the finalized local purity verdicts rather than
+        // record new transfer obligations.
+        graph.purity_call_targets.clear();
+        graph.purity_call_obligations = None;
         graph
     }
 
-    /// Re-classify every function in `scc` until no purity changes.
-    /// Worklist-driven: only re-process a function when one of its
-    /// same-SCC callees has changed (cross-SCC callees are already
-    /// finalized by bottom-up SCC ordering).
-    fn classify_scc(
-        &mut self,
-        scc: &[usize],
-        functions: &[ChunkFunction<'_>],
-        callees_of: &[BTreeSet<usize>],
-        shadowed: &BTreeSet<&'static str>,
-        declared_pure: &BTreeSet<String>,
-        locate: &mut Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
-    ) {
-        let scc_set: BTreeSet<usize> = scc.iter().copied().collect();
-        // Reverse adjacency restricted to this SCC: callee → callers.
-        let mut callers_in_scc: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for &i in scc {
-            for &callee in &callees_of[i] {
-                if scc_set.contains(&callee) {
-                    callers_in_scc.entry(callee).or_default().push(i);
-                }
-            }
-        }
-        let mut pending: BTreeSet<usize> = scc_set;
-        while let Some(&i) = pending.iter().next() {
-            pending.remove(&i);
-            let mut new_purity =
-                classify_function_body(&functions[i], shadowed, declared_pure, self);
-            let name = &functions[i].name;
-            let was_pure = self
-                .function_purity(name)
-                .expect("seeded by build")
-                .is_pure();
-            // Monotone fixed-point: Pure → NotPure is the only
-            // useful transition. Once a function is classified
-            // NotPure, re-classifying with concatenated reasons
-            // would diverge (the reason list grows every
-            // iteration), so we settle on the first NotPure
-            // verdict and stop.
-            if was_pure && !new_purity.is_pure() {
-                if let Some(locate) = locate.as_deref_mut()
-                    && let Purity::NotPure { reasons } = &mut new_purity
-                {
-                    for reason in reasons {
-                        reason.source_location = locate(reason.span);
-                    }
-                }
-                self.bindings.insert(
-                    name.clone(),
-                    ChunkBinding::Function {
-                        purity: Arc::new(new_purity),
+    /// Stable identities for every chunk-top function in source order. Export
+    /// analysis uses these identities to flatten module boundaries into one
+    /// effects closure.
+    pub(crate) fn inferred_function_keys(
+        body: &[TopLevelItemView<'_>],
+        module: &str,
+        mode: PurityMode,
+    ) -> BTreeMap<String, PurityFunctionKey> {
+        collect_chunk_functions(body)
+            .into_iter()
+            .map(|function| {
+                (
+                    function.name.clone(),
+                    PurityFunctionKey {
+                        module: module.to_string(),
+                        binding: function.name,
+                        source_key: function.key,
+                        mode,
                     },
-                );
-                if let Some(callers) = callers_in_scc.get(&i) {
-                    pending.extend(callers.iter().copied());
-                }
+                )
+            })
+            .collect()
+    }
+
+    /// Extract canonical body classifications while replacing only inferred
+    /// local/imported function lookups with exact call obligations. All other
+    /// precedence, shadowing, argument, native, and captured-input rules stay
+    /// in the existing classifier.
+    pub(crate) fn effect_transfers(
+        body: &[TopLevelItemView<'_>],
+        shape_inputs: &PurityShapeInputs<'_>,
+        call_context: &PurityCallContext<'_>,
+        locator: Option<SourceLocator<'_>>,
+    ) -> BTreeMap<PurityFunctionKey, PurityBodyTransfer> {
+        let functions = collect_chunk_functions(body);
+        let graph =
+            Self::build_effect_collection_graph(body, &functions, shape_inputs, call_context);
+        let mut transfers = BTreeMap::new();
+        for function in functions {
+            let key = PurityFunctionKey {
+                module: call_context.module.to_string(),
+                binding: function.name.clone(),
+                source_key: function.key,
+                mode: call_context.mode,
+            };
+            let transfer = classify_function_body_transfer(
+                &function,
+                shape_inputs.shadowed,
+                call_context.declared_pure,
+                &graph,
+                locator,
+            );
+            transfers.insert(key, transfer);
+        }
+        transfers
+    }
+
+    fn build_effect_collection_graph(
+        body: &[TopLevelItemView<'_>],
+        functions: &[ChunkFunction<'_>],
+        shape_inputs: &PurityShapeInputs<'_>,
+        call_context: &PurityCallContext<'_>,
+    ) -> Self {
+        // Both compatibility analysis and the program-wide closure use this
+        // exact static graph, so native/captured facts and all shape gates
+        // cannot drift between the two paths.
+        let function_names: BTreeSet<_> = functions
+            .iter()
+            .map(|function| function.name.clone())
+            .collect();
+        let bindings: BTreeMap<String, ChunkBinding> = shape_inputs
+            .plain_data_bindings
+            .iter()
+            .filter(|name| !function_names.contains(*name))
+            .map(|name| (name.clone(), ChunkBinding::PlainData))
+            .collect();
+        let plain_data_dependencies = shape_inputs.plain_data_dependencies.clone();
+        let plain_data_inference_uses = shape_inputs.plain_data_inference_uses.clone();
+        let binding_prims = collect_binding_prims(
+            body,
+            shape_inputs.shadowed,
+            shape_inputs.stable_var_number_candidates,
+        );
+        let primitive_element_arrays =
+            heap::primitive_element_arrays(body, shape_inputs.plain_array_bindings, &binding_prims);
+        // An author's purity assertion about an imported binding (A9) covers
+        // reading that binding.
+        let is_stable_import = |name: &str| {
+            shape_inputs.stable_imports.contains(name)
+                || call_context.declared_pure.contains(name)
+                || shape_inputs.declared_pure_new.contains(name)
+                || shape_inputs.declared_pure_members.contains_key(name)
+                || shape_inputs.fluent_bindings.contains(name)
+        };
+        let order_dependent_cells = match call_context.mode {
+            PurityMode::Local => OrderDependentCells::imported(body, is_stable_import),
+            PurityMode::Export => {
+                OrderDependentCells::exported(body, is_stable_import, &binding_prims.kinds)
             }
+        };
+        let mut purity_call_targets = call_context.imported_targets.clone();
+        purity_call_targets.extend(Self::inferred_function_keys(
+            body,
+            call_context.module,
+            call_context.mode,
+        ));
+        Self {
+            bindings,
+            fresh_record_proofs: functions
+                .iter()
+                .filter_map(|function| {
+                    let body = function.block_body?;
+                    Some((function.key, fresh_record_proof(&function.params, body)?))
+                })
+                .collect(),
+            pure_new_constructors: shape_inputs.declared_pure_new.clone(),
+            declared_pure_members: shape_inputs.declared_pure_members.clone(),
+            primitive_bindings: binding_prims.non_symbol_bindings(),
+            symbol_const_bindings: binding_prims.symbol_bindings(),
+            binding_prims,
+            plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
+            primitive_element_arrays,
+            plain_data_dependencies,
+            plain_data_inference_uses,
+            set_iterable_proof: shape_inputs.set_iterable_proof.clone(),
+            local_class_construction_proof: shape_inputs.local_class_construction_proof.clone(),
+            imported_purities: shape_inputs.imported_purities.clone(),
+            fluent_bindings: collect_fluent_const_bindings(body, shape_inputs.fluent_bindings),
+            purity_call_targets,
+            purity_call_obligations: Some(Rc::new(RefCell::new(Vec::new()))),
+            order_dependent_cells,
+        }
+    }
+
+    /// The effect of the first order-dependent read `visit` reaches, if any.
+    pub(crate) fn order_dependent_read_effects(
+        &self,
+        visit: impl FnOnce(&mut dyn Visit),
+    ) -> Effects {
+        match self.order_dependent_cells.first_read(visit) {
+            Some(read) => Effects::of_detail(
+                Effect::ObservesForeignCell,
+                read.span,
+                format!(
+                    "reads `{}`, which code outside this chunk's dependency graph can change",
+                    read.name
+                ),
+            ),
+            None => Effects::none(),
         }
     }
 
@@ -383,6 +506,27 @@ impl ChunkCodeGraph {
         }
     }
 
+    /// Return and record the inferred target of a direct identifier call when
+    /// this graph is collecting body transfers. Returning `None` leaves the
+    /// established classifier path unchanged.
+    pub(crate) fn record_purity_call_obligation(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> Option<PurityFunctionKey> {
+        let target = self.purity_call_targets.get(name)?.clone();
+        self.purity_call_obligations
+            .as_ref()?
+            .borrow_mut()
+            .push(PurityCallObligation {
+                callee: target.clone(),
+                name: name.to_string(),
+                span,
+                source_location: None,
+            });
+        Some(target)
+    }
+
     /// Whether `name` is bound at chunk top to a confirmed plain-data
     /// shape — a `const`-bound plain object/array literal that no
     /// statement in this chunk writes through. Member reads `name.k`
@@ -392,27 +536,63 @@ impl ChunkCodeGraph {
         matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
     }
 
+    pub(crate) fn plain_data_dependencies(
+        &self,
+        name: &str,
+    ) -> Option<&crate::analysis_inputs::ProofDependencies> {
+        self.plain_data_dependencies.get(name)
+    }
+
+    pub(crate) fn plain_data_inference_uses(
+        &self,
+        name: &str,
+    ) -> Option<&BTreeSet<crate::analysis_provenance::InferenceUse>> {
+        self.plain_data_inference_uses.get(name)
+    }
+
     /// Whether `name` is a static ordinary array binding suitable for
     /// array-method at-init fallback refinement.
     pub(crate) fn is_plain_array(&self, name: &str) -> bool {
         self.plain_array_bindings.contains(name)
     }
 
-    pub(crate) fn plain_array_bindings(&self) -> &BTreeSet<String> {
-        &self.plain_array_bindings
+    /// Whether `name` is a plain array whose elements are all primitives.
+    pub(crate) fn is_primitive_element_array(&self, name: &str) -> bool {
+        self.primitive_element_arrays.contains(name)
     }
 
-    pub(crate) fn ts_enum_named_data_candidates(&self) -> &BTreeMap<Id, TsEnumNamedDataCandidate> {
-        &self.ts_enum_named_data_candidates
+    pub(crate) fn set_iterable_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+        self.set_iterable_proof.dependencies_for_constructor(span)
     }
 
-    pub(crate) fn has_proven_set_iterable(&self, span: Span) -> bool {
-        self.set_iterable_proof.contains_constructor(span)
+    pub(crate) fn native_iterable_operand(
+        &self,
+        span: Span,
+    ) -> Option<(
+        &crate::facts::TopLevelNativeIterableOperandProjection,
+        &ProofDependencies,
+    )> {
+        self.set_iterable_proof.native_iterable_operand(span)
     }
 
-    pub(crate) fn has_proven_local_class_construction(&self, span: Span) -> bool {
+    pub(crate) fn stable_set_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+        self.set_iterable_proof.stable_spread_dependencies(span)
+    }
+
+    pub(crate) fn stable_array_spread_dependencies(
+        &self,
+        operand: Span,
+    ) -> Option<&ProofDependencies> {
+        self.set_iterable_proof
+            .stable_array_spread_dependencies(operand)
+    }
+
+    pub(crate) fn local_class_construction_dependencies(
+        &self,
+        span: Span,
+    ) -> Option<&ProofDependencies> {
         self.local_class_construction_proof
-            .contains_construction(span)
+            .dependencies_for_construction(span)
     }
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
@@ -443,34 +623,6 @@ impl ChunkCodeGraph {
     }
 }
 
-/// Visitor that collects the indices of other chunk-top functions
-/// called by a function body (Ident-callee form only). Skips
-/// nested function/arrow/method bodies (those are separate lazy
-/// scopes — their callees go to their own graph entries).
-struct CallCollector<'a> {
-    callees: BTreeSet<usize>,
-    name_to_idx: &'a BTreeMap<&'a str, usize>,
-}
-
-impl Visit for CallCollector<'_> {
-    fn visit_function(&mut self, _: &Function) {}
-    fn visit_arrow_expr(&mut self, _: &ArrowExpr) {}
-    fn visit_method_prop(&mut self, _: &MethodProp) {}
-    fn visit_getter_prop(&mut self, _: &GetterProp) {}
-    fn visit_setter_prop(&mut self, _: &SetterProp) {}
-
-    fn visit_call_expr(&mut self, call: &CallExpr) {
-        if let Callee::Expr(callee) = &call.callee
-            && let Expr::Ident(id) = callee.as_ref()
-            && let Some(&idx) = self.name_to_idx.get(id.sym.as_ref())
-        {
-            self.callees.insert(idx);
-        }
-        // Recurse to find nested calls in args / receiver.
-        call.visit_children_with(self);
-    }
-}
-
 #[derive(Debug, Clone)]
 struct ChunkFunction<'a> {
     key: u32,
@@ -478,7 +630,7 @@ struct ChunkFunction<'a> {
     /// Parameter patterns. Default-value expressions evaluate at call
     /// time and destructuring patterns fire getters / the iterator
     /// protocol on the argument, so they participate in the body's
-    /// purity classification (`classify_param_purity`).
+    /// purity classification.
     params: Vec<&'a Pat>,
     /// Block-bodied function/arrow.
     block_body: Option<&'a FunctionBody>,
@@ -499,9 +651,7 @@ impl ChunkFunction<'_> {
     /// patterns and body. Params are included because default-value
     /// expressions evaluate at call time exactly like body code —
     /// both the purity walk (`BodyPurityCollector`) and the
-    /// call-graph walk (`CallCollector`) must see them (a call edge
-    /// hidden in a param default would otherwise skip SCC ordering
-    /// and freeze the callee at its optimistic `Pure` init). Block
+    /// obligation capture must see them. Block
     /// bodies recurse via `visit_with`; concise-arrow expression
     /// bodies fire `visit_expr` directly so the visitor's
     /// `visit_call_expr` / `visit_expr` overrides catch the body.
@@ -665,7 +815,7 @@ fn classify_function_body(
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> Purity {
+) -> Effects {
     // Names bound by this function (its params and every binding
     // declared anywhere in its body) lexically shadow EVERY outer
     // resolution path of the same name: chunk-top PlainData
@@ -693,9 +843,9 @@ fn classify_function_body(
         .params
         .iter()
         .filter_map(|pat| param_destructuring_purity(pat))
-        .fold(Purity::Pure, Purity::worst);
+        .fold(Effects::none(), Effects::then);
     let mut collector = BodyPurityCollector {
-        purity: Purity::Pure,
+        effects: Effects::none(),
         fresh_record: graph.fresh_record_proof(function.key),
         shadowed,
         local_shadowed,
@@ -703,7 +853,40 @@ fn classify_function_body(
         graph,
     };
     function.visit_body_with(&mut collector);
-    param_purity.worst(collector.purity)
+    param_purity
+        .then(collector.effects)
+        .then(graph.order_dependent_read_effects(|finder| function.visit_body_with(finder)))
+}
+
+fn classify_function_body_transfer(
+    function: &ChunkFunction<'_>,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+    locator: Option<SourceLocator<'_>>,
+) -> PurityBodyTransfer {
+    let obligations = graph
+        .purity_call_obligations
+        .as_ref()
+        .expect("transfer extraction configures an obligation buffer");
+    obligations.borrow_mut().clear();
+    let mut purity = classify_function_body(function, shadowed, declared_pure, graph).project();
+    if let Purity::NotPure { reasons } = &mut purity
+        && let Some(locator) = locator
+    {
+        for reason in reasons {
+            reason.source_location = locator.span(reason.span);
+        }
+    }
+    let mut captured = obligations.borrow_mut();
+    let mut obligations = std::mem::take(&mut *captured);
+    drop(captured);
+    if let Some(locator) = locator {
+        for obligation in &mut obligations {
+            obligation.source_location = locator.span(obligation.span);
+        }
+    }
+    PurityBodyTransfer::from_classification(purity, obligations)
 }
 
 /// `Some(NotPure)` when `pat` contains a destructuring pattern that
@@ -713,23 +896,26 @@ fn classify_function_body(
 /// params (fresh array from the arguments list) contribute nothing;
 /// default-value expressions are classified separately as
 /// expressions by the body walk.
-pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
+pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Effects> {
     match pat {
         Pat::Ident(_) => None,
         Pat::Rest(rest) => param_destructuring_purity(&rest.arg),
         Pat::Assign(assign) => param_destructuring_purity(&assign.left),
-        Pat::Array(arr) => Some(Purity::from_reason_with_detail(
-            PurityRule::DestructuringPattern,
+        Pat::Array(arr) => Some(Effects::of_detail(
+            Effect::Coerce(CoerceSite::Destructuring),
             arr.span,
             "array destructuring fires the iterator protocol on the bound value".to_string(),
         )),
-        Pat::Object(obj) => Some(Purity::from_reason_with_detail(
-            PurityRule::DestructuringPattern,
+        Pat::Object(obj) => Some(Effects::of_detail(
+            Effect::Coerce(CoerceSite::Destructuring),
             obj.span,
             "object destructuring fires [[Get]] (user getters / proxy traps) on the bound value"
                 .to_string(),
         )),
-        Pat::Invalid(_) | Pat::Expr(_) => Some(Purity::from_reason(PurityRule::Other, pat.span())),
+        Pat::Invalid(_) | Pat::Expr(_) => Some(Effects::of(
+            Effect::Havoc(HavocCause::Unmodeled),
+            pat.span(),
+        )),
     }
 }
 
@@ -739,7 +925,7 @@ pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
 /// lazy scopes — their purity, if needed, comes from their own
 /// graph entry or from the caller's `Unknown` fallback).
 struct BodyPurityCollector<'a> {
-    purity: Purity,
+    effects: Effects,
     fresh_record: Option<&'a FreshRecordProof>,
     shadowed: &'a BTreeSet<&'static str>,
     /// Every name bound by the function whose body is being walked
@@ -781,7 +967,7 @@ impl Visit for BodyPurityCollector<'_> {
             self.declared_pure,
             self.graph,
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(p);
+        self.effects = std::mem::take(&mut self.effects).then(p);
     }
 
     // Statement-level effects that don't surface as an Impure /
@@ -790,16 +976,16 @@ impl Visit for BodyPurityCollector<'_> {
     // pauses execution observably to a host attached to the
     // process. Both make the enclosing function not Pure.
     fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
-        let throw_reason = Purity::from_reason(PurityRule::ThrowStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(throw_reason);
+        let throw_reason = Effects::of(Effect::Havoc(HavocCause::ThrowStatement), node.span);
+        self.effects = std::mem::take(&mut self.effects).then(throw_reason);
         // Still recurse so the thrown expression contributes its
         // own purity (e.g. `throw io()` should also see the call).
         node.arg.visit_with(self);
     }
 
     fn visit_debugger_stmt(&mut self, node: &DebuggerStmt) {
-        let dbg_reason = Purity::from_reason(PurityRule::DebuggerStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(dbg_reason);
+        let dbg_reason = Effects::of(Effect::Havoc(HavocCause::Debugger), node.span);
+        self.effects = std::mem::take(&mut self.effects).then(dbg_reason);
     }
 
     // Iteration statements fire user code beyond their
@@ -811,22 +997,22 @@ impl Visit for BodyPurityCollector<'_> {
     // regular recursion, but the protocol firing is invisible to it
     // — flag the statement itself.
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let reason = Purity::from_reason_with_detail(
-            PurityRule::IterationProtocol,
+        let reason = Effects::of_detail(
+            Effect::Coerce(CoerceSite::Iteration),
             node.span,
             "for-of fires the iterator protocol on the iterated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        self.effects = std::mem::take(&mut self.effects).then(reason);
         node.visit_children_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let reason = Purity::from_reason_with_detail(
-            PurityRule::IterationProtocol,
+        let reason = Effects::of_detail(
+            Effect::Coerce(CoerceSite::Iteration),
             node.span,
             "for-in enumeration can fire proxy traps on the enumerated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        self.effects = std::mem::take(&mut self.effects).then(reason);
         node.visit_children_with(self);
     }
 
@@ -835,7 +1021,7 @@ impl Visit for BodyPurityCollector<'_> {
     // init expression's own classification doesn't cover.
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let Some(reason) = param_destructuring_purity(&node.name) {
-            self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+            self.effects = std::mem::take(&mut self.effects).then(reason);
         }
         node.visit_children_with(self);
     }

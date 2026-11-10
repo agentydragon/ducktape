@@ -3,12 +3,16 @@ package sandboxcontroller
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,7 +54,7 @@ func testTemplate(image string) *sandboxapi.SandboxTemplate {
 			Pod: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner"}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{
-					Name:         "runner",
+					Name:         "environment-runtime",
 					Image:        image,
 					VolumeMounts: []corev1.VolumeMount{{Name: "state", MountPath: "/state"}},
 				}}},
@@ -80,6 +84,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	addCredentialKinds(t, scheme)
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
 		Spec:       sandboxapi.SandboxSpec{Template: templateName, Running: running},
@@ -88,23 +93,49 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	// uint64 fields.
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
-		WithStatusSubresource(&sandboxapi.Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).
+		WithStatusSubresource(&sandboxapi.Sandbox{}, &kubevirtv1.VirtualMachineInstance{}, &workloadapi.WorkloadCredential{}).
 		WithIndex(&corev1.Event{}, eventObjectUID, eventInvolvedUID).
 		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 			// The API server assigns a PVC UID on creation; the fake tracker does not.
 			if _, claim := obj.(*corev1.PersistentVolumeClaim); claim && obj.GetUID() == "" {
 				obj.SetUID(types.UID("uid-" + obj.GetName()))
 			}
-			return c.Create(ctx, obj, opts...)
+			// A Pod needs its server-assigned UID before the next credential reconcile can bind
+			// the issued URI identity to this workload incarnation. Keep the fixture's existing
+			// stable UID so tests that publish a matching Runner Lease exercise that incarnation.
+			if _, pod := obj.(*corev1.Pod); pod && obj.GetUID() == "" {
+				obj.SetUID(types.UID("uid-pod"))
+			}
+			return fakeCertManagerCreate(ctx, c, obj, opts...)
 		}}).Build()
-	return &Reconciler{Client: c, Objects: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c, Now: func() time.Time { return testNow }}, c
+	return &Reconciler{
+		Client: c, Objects: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c,
+		Credentials: testRequester(t, c), Now: func() time.Time { return testNow },
+	}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {
 	t.Helper()
-	if _, err := r.Reconcile(context.Background(), request); err != nil {
-		t.Fatal(err)
+	for attempt := 0; attempt < 5; attempt++ {
+		issueCredential(t, r.Client, sandboxKey)
+		if _, err := r.Reconcile(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+		var sandbox sandboxapi.Sandbox
+		if err := r.Client.Get(context.Background(), sandboxKey, &sandbox); err != nil {
+			if apierrors.IsNotFound(err) {
+				return
+			}
+			t.Fatal(err)
+		}
+		condition := meta.FindStatusCondition(sandbox.Status.Conditions, sandboxapi.ConditionRunning)
+		credentialPending := condition != nil && slices.Contains([]string{"Requested", "CertificatePending", "CertificateSecretPending", "RunnerCredentialPending"}, condition.Reason)
+		incarnationPending := condition != nil && condition.Reason == "Starting" && sandbox.Spec.Running && sandbox.Status.Incarnation == nil && getPod(t, r.Client) != nil
+		if !credentialPending && !incarnationPending {
+			return
+		}
 	}
+	t.Fatalf("runner credential stayed pending after 5 fake-signer reconciles: %s", runningReason(t, r.Client))
 }
 
 func getSandbox(t *testing.T, c client.Client) *sandboxapi.Sandbox {
@@ -235,7 +266,7 @@ func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
 			connect(t, c, "uid-pod")
 			if tc.fact != "" {
 				var lease coordinationv1.Lease
-				if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+				if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 					t.Fatal(err)
 				}
 				lease.Annotations[sandboxlease.BootstrapAnnotation] = tc.fact
@@ -269,7 +300,7 @@ func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
 	sandbox := getSandbox(t, c)
 	connect(t, c, "uid-pod")
 	var lease coordinationv1.Lease
-	leaseKey := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}
+	leaseKey := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}
 	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
 		t.Fatal(err)
 	}
@@ -284,13 +315,13 @@ func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-pod"},
 		Status:     corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
-	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod}, nil, nil); err != nil {
+	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod, runnerIncarnationPublished: true}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if reader.leaseGets != 1 {
 		t.Errorf("connection Lease reads = %d, want one snapshot shared by both conditions", reader.leaseGets)
 	}
-	for _, conditionType := range []string{sandboxapi.ConditionRunnerConnected, sandboxapi.ConditionBootstrapped} {
+	for _, conditionType := range []string{sandboxapi.ConditionEnvironmentRuntimeConnected, sandboxapi.ConditionBootstrapped} {
 		condition := getCondition(t, c, conditionType)
 		if condition.Status != metav1.ConditionTrue {
 			t.Errorf("%s = %s/%s, want True from the shared connection Lease", conditionType, condition.Status, condition.Reason)
@@ -305,13 +336,13 @@ func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t
 	setBootstrap(t, c, "echo test-bootstrap")
 	statusClient := &countingStatusClient{Client: r.Client}
 	r.Client = statusClient
-	leaseKey := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}
+	leaseKey := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}
 	var lease coordinationv1.Lease
 	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Annotations[sandboxlease.BootstrapAnnotation] = "running"
-	facts := sandboxlease.RunnerFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
+	facts := sandboxlease.EnvironmentRuntimeFacts{AutosuspendBlockers: []sandboxapi.AutosuspendBlocker{{
 		Reason: sandboxapi.AutosuspendBlockerBootstrap,
 	}}}
 	blockerAnnotations, err := facts.Annotations()
@@ -349,8 +380,8 @@ func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t
 	if got := getSandbox(t, c).Status.IdleSuspendBlockers; len(got) != 0 {
 		t.Fatalf("blockers from an earlier incarnation were published: %+v", got)
 	}
-	if got := getCondition(t, c, sandboxapi.ConditionRunnerConnected); got.Status != metav1.ConditionFalse || got.Reason != "AwaitingRunner" {
-		t.Fatalf("RunnerConnected = %s/%s after Lease incarnation changed", got.Status, got.Reason)
+	if got := getCondition(t, c, sandboxapi.ConditionEnvironmentRuntimeConnected); got.Status != metav1.ConditionFalse || got.Reason != "AwaitingEnvironmentRuntime" {
+		t.Fatalf("EnvironmentRuntimeConnected = %s/%s after Lease incarnation changed", got.Status, got.Reason)
 	}
 
 	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
@@ -365,8 +396,8 @@ func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t
 	if got := getSandbox(t, c).Status.IdleSuspendBlockers; len(got) != 0 {
 		t.Fatalf("expired runner facts were published: %+v", got)
 	}
-	if got := getCondition(t, c, sandboxapi.ConditionRunnerConnected); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionLost" {
-		t.Fatalf("RunnerConnected = %s/%s after Lease expiry", got.Status, got.Reason)
+	if got := getCondition(t, c, sandboxapi.ConditionEnvironmentRuntimeConnected); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionLost" {
+		t.Fatalf("EnvironmentRuntimeConnected = %s/%s after Lease expiry", got.Status, got.Reason)
 	}
 
 	r.Now = func() time.Time { return testNow }
@@ -431,8 +462,8 @@ func TestRunnerOfAnEarlierIncarnationDoesNotMakeTheSandboxReady(t *testing.T) {
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	connect(t, c, "uid-earlier-pod")
 	reconcileOnce(t, r)
-	if got := getCondition(t, c, sandboxapi.ConditionRunnerConnected); got.Status != metav1.ConditionFalse || got.Reason != "AwaitingRunner" {
-		t.Errorf("RunnerConnected = %s/%s, want False/AwaitingRunner", got.Status, got.Reason)
+	if got := getCondition(t, c, sandboxapi.ConditionEnvironmentRuntimeConnected); got.Status != metav1.ConditionFalse || got.Reason != "AwaitingEnvironmentRuntime" {
+		t.Errorf("EnvironmentRuntimeConnected = %s/%s, want False/AwaitingEnvironmentRuntime", got.Status, got.Reason)
 	}
 }
 
@@ -456,7 +487,9 @@ func TestConnectionDropIsToleratedUntilTheLeaseLapsesPastTheGrace(t *testing.T) 
 		t.Errorf("requeue = %s, want %s, the moment the connection would lapse", result.RequeueAfter, want)
 	}
 	r.Now = func() time.Time { return testNow.Add(2 * time.Minute) }
-	reconcileOnce(t, r)
+	if result := reconcileResult(t, r); result.RequeueAfter != 0 {
+		t.Errorf("requeue = %s for a lapsed connection, want none: a renewal enqueues through the Lease watch", result.RequeueAfter)
+	}
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionLost" {
 		t.Errorf("Ready = %s/%s past the grace, want False/ConnectionLost", got.Status, got.Reason)
 	}
@@ -591,8 +624,8 @@ func TestStoppedSandboxKeepsStateVolumeWithoutPod(t *testing.T) {
 	if getPod(t, c) != nil {
 		t.Fatal("a stopped Sandbox has a Pod")
 	}
-	if reason := runningReason(t, c); reason != "Stopped" {
-		t.Errorf("Running reason = %s, want Stopped", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageStopped {
+		t.Errorf("stopStage = %q, want Stopped", stage)
 	}
 }
 
@@ -608,8 +641,8 @@ func TestStopDeletesPodAndKeepsStateVolume(t *testing.T) {
 		t.Fatal("stopping deleted the state PVC")
 	}
 	reconcileOnce(t, r)
-	if reason := runningReason(t, c); reason != "Stopped" {
-		t.Errorf("Running reason = %s, want Stopped", reason)
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageStopped {
+		t.Errorf("stopStage = %q, want Stopped", stage)
 	}
 	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation != nil {
 		t.Errorf("a stopped Sandbox reports incarnation %v", incarnation)
@@ -759,8 +792,11 @@ func connect(t *testing.T, c client.Client, runner string) {
 	t.Helper()
 	renewed, duration := metav1.NewMicroTime(testNow), int32(30)
 	lease := &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix, Annotations: map[string]string{sandboxlease.PodUIDAnnotation: runner}},
-		Spec:       coordinationv1.LeaseSpec{RenewTime: &renewed, LeaseDurationSeconds: &duration},
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix, Annotations: map[string]string{
+			sandboxlease.PodUIDAnnotation:                   runner,
+			sandboxlease.EnvironmentRuntimeBootIDAnnotation: "test-runner-boot",
+		}},
+		Spec: coordinationv1.LeaseSpec{RenewTime: &renewed, LeaseDurationSeconds: &duration},
 	}
 	if err := c.Create(context.Background(), lease); err != nil {
 		t.Fatal(err)
@@ -786,7 +822,7 @@ func TestDeletionOfASandboxNoRunnerConnectedToSealsNothing(t *testing.T) {
 func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c, "uid-runner")
+	connect(t, c, string(getPod(t, c).UID))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	deleteSandbox(t, c)
 	quiescer.err = errors.New("runner unreachable")
@@ -821,15 +857,18 @@ func deleteSandbox(t *testing.T, c client.Client) {
 func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c, "uid-runner")
+	connect(t, c, string(getPod(t, c).UID))
 	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("deletion removed the Pod or the state PVC before the Sessions were sealed")
 	}
-	if reason := runningReason(t, c); reason != "Quiescing" {
-		t.Errorf("Running reason = %s, want Quiescing", reason)
+	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.Name != sandboxName || incarnation.UID != "uid-pod" {
+		t.Fatalf("deletion dropped the live runner route before it sealed: incarnation=%v", incarnation)
+	}
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageQuiescing {
+		t.Errorf("stopStage = %q, want Quiescing", stage)
 	}
 
 	quiesceSessions(t, r)
@@ -839,6 +878,9 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("the state PVC went in the same step as the Pod, while the Pod could still be writing")
+	}
+	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageDeleting {
+		t.Errorf("stopStage = %q while the sealed Sandbox's workload goes, want Deleting", stage)
 	}
 	reconcileOnce(t, r)
 	var sandbox sandboxapi.Sandbox
@@ -908,7 +950,7 @@ func TestSuspensionWaitsForTheRunnerToQuiesce(t *testing.T) {
 	if err != nil || result.RequeueAfter == 0 {
 		t.Fatalf("a failed seal is asked again: %v, %v", result, err)
 	}
-	if getPod(t, c) == nil || runningReason(t, c) != "Quiescing" {
+	if getPod(t, c) == nil || getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
 		t.Fatal("the Pod stopped before its runner sealed")
 	}
 
@@ -930,7 +972,7 @@ func TestSuspensionWaitsForTheRunnerToQuiesce(t *testing.T) {
 func publishQuiesceStage(t *testing.T, c client.Client, stage string) {
 	t.Helper()
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Annotations[sandboxlease.QuiesceStageAnnotation] = stage
@@ -942,7 +984,7 @@ func publishQuiesceStage(t *testing.T, c client.Client, stage string) {
 func publishBootstrap(t *testing.T, c client.Client, state string) {
 	t.Helper()
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Annotations[sandboxlease.BootstrapAnnotation] = state
@@ -964,10 +1006,20 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 			if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "SuspendPending" {
 				t.Errorf("Ready = %s/%s, want False/SuspendPending", got.Status, got.Reason)
 			}
+			quiescer := r.Quiescer.(*fakeQuiescer)
+			quiescer.before = func() {
+				persisted := getSandbox(t, c)
+				if persisted.Status.OperatingMode != sandboxapi.OperatingModeSuspended || persisted.Status.StopStage != sandboxapi.StopStageQuiescing {
+					t.Fatalf("Quiesce saw status %s/%s, want Suspended/Quiescing", persisted.Status.OperatingMode, persisted.Status.StopStage)
+				}
+				if attempt := persisted.Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-pod" {
+					t.Fatalf("Quiesce ran without a persisted attempt for uid-pod: %v", attempt)
+				}
+			}
 			publishBootstrap(t, c, finished)
 			reconcileOnce(t, r)
-			if runningReason(t, c) != "Quiescing" {
-				t.Errorf("Running reason = %s once the bootstrap %s, want Quiescing", runningReason(t, c), finished)
+			if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
+				t.Errorf("stopStage = %q once the bootstrap %s, want Quiescing", getSandbox(t, c).Status.StopStage, finished)
 			}
 		})
 	}
@@ -976,7 +1028,7 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 func TestSuspensionWaitsForARunningSetup(t *testing.T) {
 	r, c := runningWithRunner(t)
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Annotations[sandboxlease.SetupsRunningAnnotation] = "true"
@@ -993,8 +1045,8 @@ func TestSuspensionWaitsForARunningSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
-	if runningReason(t, c) != "Quiescing" {
-		t.Errorf("Running reason = %s once the setup ended, want Quiescing", runningReason(t, c))
+	if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
+		t.Errorf("stopStage = %q once the setup ended, want Quiescing", getSandbox(t, c).Status.StopStage)
 	}
 }
 
@@ -1086,7 +1138,10 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 
 	// A controller restart and the status event from the attempt write both see the persisted deadline.
 	afterRestart := &fakeQuiescer{result: QuiesceResult{Quiescing: true}}
-	restarted := &Reconciler{Client: c, Objects: c, KubeVirt: true, Quiescer: afterRestart, Leases: c, Now: func() time.Time { return now }}
+	restarted := &Reconciler{
+		Client: c, Objects: c, KubeVirt: true, Quiescer: afterRestart, Leases: c,
+		Credentials: r.Credentials, Now: func() time.Time { return now },
+	}
 	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
 	// make a new request intent that reopens the per-incarnation retry budget.
 	setRunning(t, c, true)
@@ -1172,14 +1227,34 @@ func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *tes
 		t.Fatal("deletion did not keep the Pod and state PVC behind the failed quiesce")
 	}
 
-	// A restarted runner gets a new Pod UID and must be asked immediately, even within the old deadline.
+	// A replacement runner has a fresh credential, matching TLS Secret mount, and bound Pod UID; it
+	// must be asked immediately, even within the old deadline.
 	pod := getPod(t, c)
-	pod.UID = "uid-next"
-	if err := c.Update(context.Background(), pod); err != nil {
+	if err := c.Delete(context.Background(), pod); err != nil {
 		t.Fatal(err)
 	}
+	sandbox := getSandbox(t, c)
+	sandbox.Status.RunnerCredential = &sandboxapi.RunnerCredential{Kind: sandboxapi.RunnerCredentialKindPod, PodUID: "uid-next"}
+	if err := c.Status().Update(context.Background(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	credential := requestIssued(t, r, sandbox, nil)
+	template, blocked, err := r.template(context.Background(), sandbox)
+	if err != nil || blocked != nil {
+		t.Fatalf("replacement template: blocked=%v err=%v", blocked, err)
+	}
+	replacement, blocked := render(sandbox, template, credential)
+	if blocked != nil {
+		t.Fatalf("render replacement Pod: %v", blocked)
+	}
+	replacement.UID = "uid-next"
+	replacement.OwnerReferences = pod.OwnerReferences
+	if err := c.Create(context.Background(), replacement); err != nil {
+		t.Fatal(err)
+	}
+	requestIssued(t, r, sandbox, requester.Pod{Name: replacement.Name, UID: replacement.UID})
 	var lease coordinationv1.Lease
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix}, &lease); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
 	lease.Annotations[sandboxlease.PodUIDAnnotation] = "uid-next"
@@ -1193,6 +1268,9 @@ func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *tes
 	}
 	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-next" {
 		t.Fatalf("new runner attempt = %v, want uid-next", attempt)
+	}
+	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.UID != "uid-next" {
+		t.Fatalf("bound replacement Pod route = %v, want UID uid-next (Running reason = %s)", incarnation, runningReason(t, c))
 	}
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("deletion removed state before the new runner completed quiesce")
@@ -1312,5 +1390,110 @@ func TestAStoppedSandboxIsSuspended(t *testing.T) {
 	suspended := getSandbox(t, c)
 	if suspended.Status.OperatingMode != sandboxapi.OperatingModeSuspended || suspended.Status.SuspendedBy == nil || *suspended.Status.SuspendedBy != sandboxapi.SuspendedByRequested {
 		t.Errorf("operating mode = %s, suspendedBy = %v, want Suspended by Requested", suspended.Status.OperatingMode, suspended.Status.SuspendedBy)
+	}
+}
+
+func TestPendingObservationDoesNotBlockSuspensionOrDeletion(t *testing.T) {
+	for _, deleting := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deleting=%v", deleting), func(t *testing.T) {
+			r, c := runningWithRunner(t)
+			var lease coordinationv1.Lease
+			key := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}
+			if err := c.Get(context.Background(), key, &lease); err != nil {
+				t.Fatal(err)
+			}
+			delete(lease.Annotations, sandboxlease.EnvironmentRuntimeBootIDAnnotation)
+			if err := c.Update(context.Background(), &lease); err != nil {
+				t.Fatal(err)
+			}
+			if deleting {
+				deleteSandbox(t, c)
+			} else {
+				setRunning(t, c, false)
+			}
+			reconcileOnce(t, r)
+			if getPod(t, c) != nil {
+				t.Fatal("pending observation prevented stopping the Pod")
+			}
+			if r.Quiescer.(*fakeQuiescer).calls != 0 {
+				t.Fatal("asked an unverified runner to quiesce")
+			}
+		})
+	}
+}
+
+func TestPreviouslyConnectedRunnerStillBlocksSuspensionAfterReclaim(t *testing.T) {
+	r, c := runningWithRunner(t)
+	var lease coordinationv1.Lease
+	key := client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}
+	if err := c.Get(context.Background(), key, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = "uid-pod"
+	delete(lease.Annotations, sandboxlease.EnvironmentRuntimeBootIDAnnotation)
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil || r.Quiescer.(*fakeQuiescer).calls != 1 {
+		t.Fatal("lost verified contact allowed unsafe suspension")
+	}
+}
+
+func TestLeaseRevivedWhenRenewalCrossesTheLapse(t *testing.T) {
+	duration := int32(30)
+	lease := func(renewedAgo *time.Duration) *coordinationv1.Lease {
+		l := &coordinationv1.Lease{Spec: coordinationv1.LeaseSpec{LeaseDurationSeconds: &duration}}
+		if renewedAgo != nil {
+			renewed := metav1.NewMicroTime(testNow.Add(-*renewedAgo))
+			l.Spec.RenewTime = &renewed
+		}
+		return l
+	}
+	ago := func(d time.Duration) *time.Duration { return &d }
+	lapsed := 30*time.Second + runnerDisconnectGrace + time.Second
+	for name, test := range map[string]struct {
+		previous, current *time.Duration
+		want              bool
+	}{
+		"renewal of a live connection":          {ago(10 * time.Second), ago(0), false},
+		"renewal inside the grace":              {ago(45 * time.Second), ago(0), false},
+		"renewal of a lapsed connection":        {ago(lapsed), ago(0), true},
+		"first renewal after none was recorded": {nil, ago(0), true},
+		"renewal that is itself already lapsed": {ago(lapsed + time.Minute), ago(lapsed), false},
+		"no renewal in either":                  {nil, nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := leaseRevived(lease(test.previous), lease(test.current), testNow); got != test.want {
+				t.Errorf("leaseRevived = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestConnectionPendingIsNotPolledAndEndsWithTheBootIDFact(t *testing.T) {
+	r, c := runningWithRunner(t)
+	leaseKey := types.NamespacedName{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), leaseKey, &lease); err != nil {
+		t.Fatal(err)
+	}
+	previous := lease.DeepCopy()
+	delete(lease.Annotations, sandboxlease.EnvironmentRuntimeBootIDAnnotation)
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+	if result := reconcileResult(t, r); result.RequeueAfter != 0 {
+		t.Errorf("requeue = %s while the connection is pending, want none", result.RequeueAfter)
+	}
+	if got := getCondition(t, c, sandboxapi.ConditionEnvironmentRuntimeConnected); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionPending" {
+		t.Fatalf("EnvironmentRuntimeConnected = %s/%s, want False/ConnectionPending", got.Status, got.Reason)
+	}
+	// The runner's first state message sets the boot ID, which the Lease watch enqueues on.
+	if !sandboxlease.FactsChanged(lease.Annotations, previous.Annotations) {
+		t.Error("the boot ID appearing is not a Lease change the watch enqueues on")
 	}
 }

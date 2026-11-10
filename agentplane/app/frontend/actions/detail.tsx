@@ -1,11 +1,14 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
 import { IconArrowLeft } from "../icons";
 import { type JSX, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
-import { ActionRequestsContext, PendingActionCard } from "./requests";
+import { actionGroupsQuery, actionRequestQuery, ActionRequestsContext, PendingActionCard } from "./requests";
+import { displayableError } from "../client";
 import { ActionHistoryCard } from "./history";
-import { listActionGroups } from "./client";
+import { ActionState, ExecutorKind } from "../../../action_service/action_service_pb";
+import { actionIdentity } from "./presentation";
 
 type InAppReturnTo = string | { pathname: string; search?: string; hash?: string };
 
@@ -34,70 +37,34 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
-  const [executorKind, setExecutorKind] = useState<string | null>(null);
-  const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: number } | null>(null);
+  if (actions === null) throw new Error("Action details require an ActionRequestsProvider.");
+  const detail = useQuery(actionRequestQuery(requestId), actions.queryClient);
+  const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: bigint } | null>(null);
   const historyState = location.state as { returnTo?: unknown } | null;
   const returnTo = inAppReturnTo(historyState?.returnTo);
-  const liveRequest = actions?.requests.find((item) => item.id === requestId);
-  const cachedRequest = actions?.knownRequests.get(requestId);
-  const request = liveRequest ?? cachedRequest;
-  const detailRequestId = request?.id;
-  const detailRequestState = request?.state;
-  const detailActionGroup = request?.action.group;
-  const stalePendingRequest =
-    liveRequest === undefined && cachedRequest?.state === "decision_pending" && actions?.staleRequestIds.has(requestId);
-  const loading = actions?.detailLoadingIds.has(requestId) ?? false;
-  const error = actions?.detailErrors.get(requestId) ?? null;
-  const knownRequests = actions?.knownRequests;
-  const staleRequestIds = actions?.staleRequestIds;
-  const loadDetail = actions?.loadDetail;
-
-  useEffect(() => {
-    if (
-      knownRequests === undefined ||
-      staleRequestIds === undefined ||
-      loadDetail === undefined ||
-      liveRequest !== undefined
-    ) {
-      return;
-    }
-    const cached = knownRequests.get(requestId);
-    const refresh = cached !== undefined && staleRequestIds.has(requestId);
-    if (cached !== undefined && !refresh) return;
-    void loadDetail(requestId, refresh).catch(() => undefined);
-  }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
+  const request = detail.data;
+  const detailActionGroup = request === undefined ? undefined : actionIdentity(request).group;
+  const groups = useQuery({
+    ...actionGroupsQuery(),
+    enabled: request !== undefined && request.state !== ActionState.DECISION_PENDING,
+  });
+  const executorKind = groups.data?.find((group) => group.key === detailActionGroup)?.executorKind;
+  const stalePendingRequest = request?.state === ActionState.DECISION_PENDING && detail.isStale;
+  const loading = detail.isFetching;
+  const error = detail.error === null ? null : displayableError(detail.error);
 
   useEffect(() => {
     if (returnAfterDecision === null || returnTo === null) return;
-    const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
     if (
-      decided === undefined ||
-      decided.state === "decision_pending" ||
-      decided.version <= returnAfterDecision.version
+      request === undefined ||
+      request.id !== returnAfterDecision.requestId ||
+      request.state === ActionState.DECISION_PENDING ||
+      request.version <= returnAfterDecision.version
     ) {
       return;
     }
     void navigate(returnTo, { replace: true });
-  }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
-
-  useEffect(() => {
-    if (detailRequestId === undefined || detailRequestState === "decision_pending") {
-      setExecutorKind(null);
-      return;
-    }
-    let active = true;
-    void listActionGroups().then(
-      (groups) => {
-        if (active) setExecutorKind(groups.find((group) => group.key === detailActionGroup)?.executor_kind ?? null);
-      },
-      () => {
-        if (active) setExecutorKind(null);
-      }
-    );
-    return () => {
-      active = false;
-    };
-  }, [detailActionGroup, detailRequestId, detailRequestState]);
+  }, [request, navigate, returnAfterDecision, returnTo]);
 
   function goBack(): void {
     if (returnTo !== null) {
@@ -126,26 +93,25 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
       {!loading && !stalePendingRequest && error === null && request === undefined && (
         <Text c="dimmed">This action is no longer available.</Text>
       )}
-      {!loading && !stalePendingRequest && error === null && request?.state === "decision_pending" && (
+      {!loading && !stalePendingRequest && error === null && request?.state === ActionState.DECISION_PENDING && (
         <Stack>
-          {actions?.error !== null && actions?.error !== undefined && (
+          {actions.error !== null && (
             <Alert color="red" title="Action update failed">
               {actions.error}
             </Alert>
           )}
           <PendingActionCard
             request={request}
-            deciding={actions?.deciding === request.id}
+            deciding={actions.deciding === request.id}
             onDecide={(row, verdict) => {
-              if (actions === null) return;
               setReturnAfterDecision({ requestId: row.id, version: row.version });
               actions.decide(row, verdict);
             }}
           />
         </Stack>
       )}
-      {!loading && error === null && request !== undefined && request.state !== "decision_pending" && (
-        <ActionHistoryCard request={request} mcp={executorKind === "mcp"} />
+      {!loading && error === null && request !== undefined && request.state !== ActionState.DECISION_PENDING && (
+        <ActionHistoryCard request={request} mcp={executorKind === ExecutorKind.MCP} />
       )}
     </Stack>
   );

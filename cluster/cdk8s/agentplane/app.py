@@ -1,10 +1,9 @@
-"""The integration app: its Deployment (+ Alembic migrate initContainer), RBAC,
+"""The integration app: its Deployment, RBAC,
 HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 """
 
 from __future__ import annotations
 
-import json
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -16,7 +15,6 @@ from cdk8s_plus_34 import (
     CpuResources,
     EnvValue,
     IApiResource,
-    ImagePullPolicy,
     MemoryResources,
     Role,
     RoleBinding,
@@ -26,9 +24,15 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
-from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
+from agentplane.environment_runtime_transport.config import (
+    ACTIONS_URI,
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
@@ -36,12 +40,13 @@ from cluster.cdk8s.agentplane import (
     egress,
     history_service,
     notifications,
+    policy_controller,
     runner_gateway,
     session_dispatcher,
     telemetry,
+    workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
@@ -53,17 +58,15 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, cli_args, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 
+_DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(512)
-_DEFAULT_MIGRATE_MEMORY_LIMIT = Size.mebibytes(256)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -79,7 +82,7 @@ def oidc_secret(namespace: str) -> SecretRef:
 
 
 class App(Construct):
-    """ServiceAccounts, RBAC, the config ConfigMap, Deployment (+ migrate initContainer), Service,
+    """ServiceAccounts, RBAC, the config ConfigMap, Deployment, Service,
     and optional PodDisruptionBudget. The fleet route, network policy, and credential
     resources are added by `add_platform_resources`.
     """
@@ -94,10 +97,8 @@ class App(Construct):
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
-        runner_control_target: str | None = None,
+        memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        migrate_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
-        migrate_memory_limit: Size | None = _DEFAULT_MIGRATE_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -105,22 +106,24 @@ class App(Construct):
         self.database_url = database_url
         self.placement = placement
         self.registry_secret_name = registry_secret_name
-        self.runner_control_target = runner_control_target or runner_gateway.control_target(env.namespace)
+        self.memory_request = memory_request
         self.memory_limit = memory_limit
-        self.migrate_pull_policy = migrate_pull_policy
-        self.migrate_memory_limit = migrate_memory_limit
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
 
         self._add_agent_service_account()
-        content = env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"})
+        settings = env.app_config.model_copy()
+        settings.egress_admin_tls = workload_tls.client_tls(EGRESS_PROXY_URI)
+        settings.runner_gateway_tls = workload_tls.client_tls(SESSION_DISPATCHER_URI)
+        settings.session_dispatcher_tls = workload_tls.client_tls(SESSION_DISPATCHER_URI)
+        settings.history_service_tls = workload_tls.client_tls(HISTORY_SERVICE_URI)
+        settings.notifications_tls = workload_tls.client_tls(NOTIFICATIONS_URI)
+        settings.actions_tls = workload_tls.client_tls(ACTIONS_URI)
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
-            # The endpoint is delivered as an env var: an older app image ignores unknown env vars
-            # while this manifest reaches the cluster before image automation publishes the new image.
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(settings),
             path="/etc/agentplane/config.yaml",
         )
         workload = self._add_workload(config)
@@ -177,10 +180,8 @@ class App(Construct):
                     ],
                     verbs=["get", "list", "watch"],
                 ),
-                # The operator's grants from the sandbox page, created and revoked by the app itself.
+                # Keep until every app Pod runs the PolicyService client and its old-image rollback window has ended.
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings")], verbs=["create", "delete"]),
-                # Sandboxes the operator creates, edits and deletes from the app.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "patch", "delete"]),
             ],
         )
         RoleBinding(
@@ -192,35 +193,17 @@ class App(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            env_name(Settings, "database_url"): self.database_url,
-            **(
-                {env_name(Settings, "electric_url"): EnvValue.from_value(self.electric.url)}
-                if self.electric is not None
-                else {}
-            ),
-            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
-            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(self.env.app.origin),
-            env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
-            env_name(OIDCSettings, "client_secret"): self.oidc.key("client-secret").env_value(
-                self, "oidc-client-secret-ref"
-            ),
-            env_name(OIDCSettings, "session_secret"): SecretRef(
-                namespace=namespace, name=self.env.app.oidc_session_secret_name
-            )
+            "AGENTPLANE_DATABASE_URL": self.database_url,
+            "AGENTPLANE_OIDC_CLIENT_ID": self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
+            "AGENTPLANE_OIDC_CLIENT_SECRET": self.oidc.key("client-secret").env_value(self, "oidc-client-secret-ref"),
+            "AGENTPLANE_OIDC_SESSION_SECRET": SecretRef(namespace=namespace, name=self.env.app.oidc_session_secret_name)
             .key("session-secret")
             .env_value(self, "oidc-session-secret-ref"),
-            env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
-            env_name(Settings, "connection_service_url"): EnvValue.from_value(
-                str(checked_value(Settings, "connection_service_url", self.env.app_config.connection_service_url))
-            ),
         }
 
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
-        namespace = self.env.namespace
         env = self._container_env()
-        control_target = EnvValue.from_value(self.runner_control_target)
         oidc_secret_reload = self.oidc.name
         if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
@@ -230,50 +213,23 @@ class App(Construct):
             serves=[self.service],
             container="app",
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
-            args=cli_args(
-                Settings,
-                # TODO: a separate Sandbox namespace, holding the Sandboxes, their
-                # templates, and the ServiceAccounts the controller mints for them.
-                sandbox_namespace=namespace,
-                runner_gateway_target=runner_gateway.target(namespace),
-                runner_gateway_token_file="/var/run/secrets/agentplane-runner-gateway/token",
-                history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
-                session_dispatcher_target=(
-                    f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
-                ),
-                session_dispatcher_http_url=(
-                    f"http://{session_dispatcher.http_service(namespace).fqdn}:"
-                    f"{session_dispatcher.http_service(namespace).port.number}"
-                ),
-                notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
-                notifications_token_file="/var/run/secrets/agentplane-notifications/token",
-                host="0.0.0.0",
-                port=self.service.pod_port,
-            ),
             env_variables={
                 **env,
-                env_name(Settings, "runner_gateway_control_target"): control_target,
                 "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(telemetry.OTLP_HTTP_ENDPOINT + "/v1/traces"),
                 "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": EnvValue.from_value("http/protobuf"),
             },
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
+            startup=http_probe(
+                "/healthz", port=self.service.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
+                memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
-            # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
-            # release and the store's close.
+            # The Go HTTP/SSE drain is bounded by shutdown_timeout (5s by default); the rest
+            # of the grace period allows background workers and stores to close cleanly.
             termination_grace=Duration.seconds(60),
-            # The app's Alembic history. The app itself creates no tables; it verifies
-            # the migrated schema at startup and fails if this hasn't run.
-            migrate=migrate_init_container(
-                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
-                name="migrate",
-                env_variables=env,
-                image_pull_policy=self.migrate_pull_policy,
-                memory_limit=self.migrate_memory_limit,
-            ),
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
@@ -285,6 +241,7 @@ class App(Construct):
             },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
+        workload_tls.mount_trust_bundle(self, workload.container)
         for volume, audience, mount_path in [
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
             ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
@@ -295,6 +252,7 @@ class App(Construct):
                 "/var/run/secrets/agentplane-session-dispatcher",
             ),
             ("notifications-token", notifications.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-notifications"),
+            ("policy-token", policy_controller.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-policy"),
         ]:
             workload.project_tokens(volume, mount_path, {"token": audience})
         return workload
@@ -336,9 +294,9 @@ class App(Construct):
                 *self._oidc_egress_rules(),
                 runner_gateway.service(namespace).egress(),
                 session_dispatcher.service(namespace).egress(),
-                session_dispatcher.http_service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
+                policy_controller.service(namespace).egress(),
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;

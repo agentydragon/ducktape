@@ -10,23 +10,24 @@ Usage:
 import logging
 import subprocess
 
-from util.bazel.runfiles import get_required_path
-from util.env import get_required_env
-from util.oci import bazel_crane, read_oci_layout_digest
+from python.runfiles import Runfiles
+
+from devinfra.oci.oci import bazel_crane, read_oci_layout_digest
+from props.agents.env import get_required_env
 
 logger = logging.getLogger(__name__)
 
 # (rlocation of OCI layout dir, repository name, tag override for variants)
 IMAGES: list[tuple[str, str, str | None]] = [
-    ("_main/props/agents/critic/image", "critic", None),
-    ("_main/props/agents/grader/image", "grader", None),
-    ("_main/props/agents/critic_dev/improve/image", "critic_dev_improve", None),
-    ("_main/props/agents/critic_dev/optimize/image", "critic_dev_optimize", None),
-    ("_main/props/agents/critic/variants/contract_truthfulness", "critic", "contract_truthfulness"),
-    ("_main/props/agents/critic/variants/dead_code", "critic", "dead_code"),
-    ("_main/props/agents/critic/variants/flag_propagation", "critic", "flag_propagation"),
-    ("_main/props/agents/critic/variants/high_recall", "critic", "high_recall"),
-    ("_main/props/agents/critic/variants/verbose_docs", "critic", "verbose_docs"),
+    ("ducktape/props/agents/critic/image", "critic", None),
+    ("ducktape/props/agents/grader/image", "grader", None),
+    ("ducktape/props/agents/critic_dev/improve/image", "critic_dev_improve", None),
+    ("ducktape/props/agents/critic_dev/optimize/image", "critic_dev_optimize", None),
+    ("ducktape/props/agents/critic/variants/contract_truthfulness", "critic", "contract_truthfulness"),
+    ("ducktape/props/agents/critic/variants/dead_code", "critic", "dead_code"),
+    ("ducktape/props/agents/critic/variants/flag_propagation", "critic", "flag_propagation"),
+    ("ducktape/props/agents/critic/variants/high_recall", "critic", "high_recall"),
+    ("ducktape/props/agents/critic/variants/verbose_docs", "critic", "verbose_docs"),
 ]
 
 
@@ -44,8 +45,9 @@ def main() -> None:
 
     crane = bazel_crane(registry=registry, username=username, password=password)
 
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for rlocation, repo_name, variant_tag in IMAGES:
-        image_dir = get_required_path(rlocation)
+        image_dir = runfiles_root / rlocation
         local_digest = read_oci_layout_digest(image_dir)
 
         base_tag = variant_tag or "latest"

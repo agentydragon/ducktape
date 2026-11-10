@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -13,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,12 +28,19 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
+
+var ingressServerRlocation string
 
 const (
 	testAudience   = "test-llm-ingress"
@@ -79,16 +89,23 @@ func workloadToken(t *testing.T, name string) string {
 	return token
 }
 
-func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string, models ...modelConfig) *httptest.Server {
+func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string) *httptest.Server {
 	t.Helper()
 	return newConfiguredIngressTestServer(t, reviews, config{
 		LiteLLMURL: backendURL,
 		LiteLLMKey: testBackendKey,
-		Models:     models,
 	})
 }
 
 func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *httptest.Server {
+	t.Helper()
+	handler := newConfiguredIngressTestHandler(t, reviews, c, options...)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newConfiguredIngressTestHandler(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *ingressHandler {
 	t.Helper()
 	if len(c.Attribution.JSONHeaders) == 0 && len(c.Attribution.Baggage) == 0 {
 		c.Attribution = defaultAttribution()
@@ -97,13 +114,11 @@ func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c c
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newIngressHandler(c, resolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler, err := newIngressHandler(c, resolver, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
-	return server
+	return handler
 }
 
 type capturedRequest struct {
@@ -111,6 +126,12 @@ type capturedRequest struct {
 	path    string
 	headers http.Header
 	body    []byte
+}
+
+type ingressTestRoundTripper func(*http.Request) (*http.Response, error)
+
+func (roundTrip ingressTestRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 type fakeLiteLLM struct {
@@ -405,37 +426,6 @@ func TestAuthenticatedWorkloadWithoutSandboxOwnerIsServedAsItsServiceAccount(t *
 	}
 }
 
-func TestModelConfigLookupIsAuthenticatedAndAnsweredFromConfiguration(t *testing.T) {
-	const model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
-	tokenA := workloadToken(t, "test-sandbox-a")
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL, modelConfig{
-		Model: model, TotalContextBudgetTokens: 256 * 1024,
-	})
-	client := testClient()
-	defer client.CloseIdleConnections()
-
-	found, foundBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config?model="+model, "", bearer(tokenA))
-	missing, missingBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config?model=unlisted", "", bearer(tokenA))
-	unauthenticated := doRequest(t, client, ingress.URL+"/agentplane/model-config?model="+model, http.Header{})
-	unauthenticatedBody, _ := io.ReadAll(unauthenticated.Body)
-	_ = unauthenticated.Body.Close()
-	missingParameter, missingParameterBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config", "", bearer(tokenA))
-	if found.StatusCode != http.StatusOK || string(foundBody) != `{"model":"`+model+`","total_context_budget_tokens":262144}`+"\n" ||
-		missing.StatusCode != http.StatusOK || string(missingBody) != "null" ||
-		unauthenticated.StatusCode != http.StatusUnauthorized ||
-		missingParameter.StatusCode != http.StatusUnprocessableEntity ||
-		!strings.Contains(string(missingParameterBody), `"Field required"`) {
-		t.Fatalf("found=%d %s missing=%d %s unauthorized=%d %s no-model=%d %s",
-			found.StatusCode, foundBody, missing.StatusCode, missingBody,
-			unauthenticated.StatusCode, unauthenticatedBody, missingParameter.StatusCode, missingParameterBody)
-	}
-	if got := backend.snapshotRequests(); len(got) != 0 {
-		t.Fatalf("model config lookup reached LiteLLM: %d requests", len(got))
-	}
-}
-
 func TestStreamIsIncrementalAndClientDisconnectCancelsBackend(t *testing.T) {
 	tokenA := workloadToken(t, "test-sandbox-a")
 	backend := newFakeLiteLLM()
@@ -529,11 +519,25 @@ func mustRequest(t *testing.T, method, url string, headers http.Header) *http.Re
 	return req
 }
 
-func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
+// directCaller is the attribution of a subject admitted directly.
+func directCaller(subject auth.Subject) verifiedCaller {
+	return verifiedCaller{claims: subjectClaims(subject), logAttrs: callerLogAttrs(subject)}
+}
+
+// forwardedHeaders applies what Rewrite applies to the outgoing request headers.
+func forwardedHeaders(headers http.Header, subject auth.Subject, attribution attributionConfig) (http.Header, error) {
+	verified, err := verifiedRequestHeaders(subjectClaims(subject), testBackendKey, attribution, "")
+	if err != nil {
+		return nil, err
+	}
+	forwarded := headers.Clone()
+	dropUntrustedRequestHeaders(forwarded, attribution)
+	maps.Copy(forwarded, verified)
+	return forwarded, nil
+}
+
+func TestCredentialAndIdentityHeadersAreReplacedByVerifiedOnes(t *testing.T) {
 	headers := http.Header{
-		"Connection":                    {"keep-alive, x-drop"},
-		"Keep-Alive":                    {"timeout=5"},
-		"X-Drop":                        {"untrusted-hop-value"},
 		"Authorization":                 {"Bearer workload-token"},
 		"X-Api-Key":                     {"forged"},
 		"X-Litellm-Api-Key":             {"forged"},
@@ -554,12 +558,12 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_name", Source: verifiedPodName},
 		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_uid", Source: verifiedPodUID},
 	}
-	forwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, attribution)
+	forwarded, err := forwardedHeaders(headers, principal, attribution)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"Connection", "Keep-Alive", "x-drop", "X-Api-Key", "X-Litellm-Api-Key",
+		"X-Api-Key", "X-Litellm-Api-Key",
 		"X-Agentplane-Pod-Uid", "Content-Length",
 	} {
 		if forwarded.Get(name) != "" {
@@ -588,7 +592,7 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		{name: "baggage only", attribution: attributionConfig{Baggage: attribution.Baggage}, wantBaggage: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			only, err := forwardedRequestHeaders(headers, principal, testBackendKey, test.attribution)
+			only, err := forwardedHeaders(headers, principal, test.attribution)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -603,7 +607,7 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		Baggage:     []attributionField{{Key: "custom.PodUid", Source: verifiedPodUID}},
 	}
 	headers.Set("X-Custom-Verified", `{"Pod.Name":"forged"}`)
-	customForwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, custom)
+	customForwarded, err := forwardedHeaders(headers, principal, custom)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,22 +620,47 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		metadata["agentplane.pod_uid"] != "pod-a-uid" {
 		t.Fatalf("trusted metadata was not stamped: %v, err=%v", metadata, err)
 	}
+}
 
-	source := http.Header{
-		"Connection":       {"x-drop"},
-		"X-Drop":           {"backend-hop"},
-		"Authorization":    {"Bearer backend-key"},
-		"Content-Length":   {"999"},
-		"Set-Cookie":       {"first=1", "second=2"},
-		"Content-Encoding": {"gzip"},
-		"X-Ordinary":       {"kept"},
+func TestIdentityCallerIsAttributedByIdentityWithoutAccountClaims(t *testing.T) {
+	subject := auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"},
+		PodName:  "sandbox-a", PodUID: "pod-a-uid",
 	}
-	destination := make(http.Header)
-	copyResponseHeaders(destination, source)
-	if destination.Get("X-Drop") != "" || destination.Get("Authorization") != "" || destination.Get("Content-Length") != "" ||
-		destination.Get("Content-Encoding") != "gzip" || destination.Get("X-Ordinary") != "kept" ||
-		len(destination.Values("Set-Cookie")) != 2 {
-		t.Fatalf("response headers were not filtered/copied correctly: %v", destination)
+	attribution := defaultAttribution()
+	attribution.Baggage = []attributionField{
+		{Key: "agentplane.namespace", Source: verifiedNamespace},
+		{Key: "agentplane.identity", Source: verifiedIdentity},
+		{Key: "agentplane.pod_uid", Source: verifiedPodUID},
+	}
+	forwarded, err := forwardedHeaders(http.Header{}, subject, attribution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]string
+	if err := json.Unmarshal([]byte(forwarded.Get("X-Litellm-Spend-Logs-Metadata")), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"agentplane.identity":     "agent-a",
+		"agentplane.identity_uid": "identity-a-uid",
+		"agentplane.pod_name":     "sandbox-a",
+		"agentplane.pod_uid":      "pod-a-uid",
+	}
+	if !maps.Equal(metadata, want) {
+		t.Fatalf("Identity caller metadata = %v, want %v without namespace or service_account", metadata, want)
+	}
+	// Baggage members serialize in no fixed order.
+	parsed, err := baggage.Parse(forwarded.Get("Baggage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := map[string]string{}
+	for _, member := range parsed.Members() {
+		members[member.Key()] = member.Value()
+	}
+	if !maps.Equal(members, map[string]string{"agentplane.identity": "agent-a", "agentplane.pod_uid": "pod-a-uid"}) {
+		t.Fatalf("Identity caller baggage = %v, want its identity and Pod alone", members)
 	}
 }
 
@@ -714,6 +743,114 @@ func TestBearerSchemeIsCaseInsensitiveAndAcceptsMultipleSpaces(t *testing.T) {
 	}
 }
 
+func TestProxyTransportFailureWarnsWithSafeDiagnosticsWhenBodyLoggingIsDisabled(t *testing.T) {
+	pod, token := workload(t, "test-sandbox-transport-error", testAudience)
+	var logs bytes.Buffer
+	handler := newConfiguredIngressTestHandler(t, api.TokenReviews(), config{
+		LiteLLMURL: "http://upstream.invalid",
+		LiteLLMKey: testBackendKey,
+	})
+	handler.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	innerError := errors.New("dial tcp: lookup upstream.invalid: no such host")
+	handler.roundTripper = ingressTestRoundTripper(func(*http.Request) (*http.Response, error) {
+		return nil, &url.Error{
+			Op:  "Post",
+			URL: "http://backend-user:backend-password@upstream.invalid/v1/responses?api_key=query-secret",
+			Err: innerError,
+		}
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	client := testClient()
+	defer client.CloseIdleConnections()
+	response, body := request(t, client, http.MethodPost,
+		server.URL+"/v1/responses?request_token=query-secret", "prompt-secret", bearer(token))
+	if response.StatusCode != http.StatusBadGateway || !bytes.Contains(body, []byte("LiteLLM backend unavailable")) {
+		t.Fatalf("status=%d body=%s", response.StatusCode, body)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &record); err != nil {
+		t.Fatalf("warning log is not JSON: %v; logs=%s", err, logs.String())
+	}
+	requestID, okay := record["id"].(string)
+	if record["msg"] != "llm backend forwarding failed" || !okay || requestID == "" ||
+		record["method"] != http.MethodPost || record["path"] != "/v1/responses" ||
+		record["namespace"] != testNamespace || record["pod"] != pod.Name {
+		t.Fatalf("warning log omitted request context: %v", record)
+	}
+	if record["error"] != innerError.Error() {
+		t.Fatalf("warning log omitted the inner transport error: %v", record)
+	}
+	for _, secret := range []string{
+		"backend-user", "backend-password", "api_key", "query-secret", "request_token",
+		"prompt-secret", token, testBackendKey,
+	} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("warning log leaked %q: %s", secret, logs.String())
+		}
+	}
+}
+
+func TestForwardSlotTimeoutWarnsAndPreservesBadGatewayWhenBodyLoggingIsDisabled(t *testing.T) {
+	pod, token := workload(t, "test-sandbox-slot-timeout", testAudience)
+	var logs bytes.Buffer
+	handler := newConfiguredIngressTestHandler(t, api.TokenReviews(), config{
+		LiteLLMURL: "http://upstream.invalid",
+		LiteLLMKey: testBackendKey,
+	})
+	handler.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	handler.poolWaitTimeout = time.Millisecond
+	handler.pool = make(chan struct{}, 1)
+	handler.pool <- struct{}{}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	client := testClient()
+	defer client.CloseIdleConnections()
+	response, body := request(t, client, http.MethodPost,
+		server.URL+"/v1/responses?request_token=query-secret", "prompt-secret", bearer(token))
+	if response.StatusCode != http.StatusBadGateway || !bytes.Contains(body, []byte("LiteLLM backend unavailable")) {
+		t.Fatalf("status=%d body=%s", response.StatusCode, body)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &record); err != nil {
+		t.Fatalf("warning log is not JSON: %v; logs=%s", err, logs.String())
+	}
+	requestID, okay := record["id"].(string)
+	if record["msg"] != "llm forwarding slot acquisition timed out" || !okay || requestID == "" ||
+		record["method"] != http.MethodPost || record["path"] != "/v1/responses" ||
+		record["namespace"] != testNamespace || record["pod"] != pod.Name || record["timeout"] != "1ms" {
+		t.Fatalf("slot timeout warning omitted request context: %v", record)
+	}
+	for _, secret := range []string{"query-secret", "request_token", "prompt-secret", token, testBackendKey} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("slot timeout warning leaked %q: %s", secret, logs.String())
+		}
+	}
+}
+
+func TestForwardSlotCancellationDoesNotWriteGatewayErrorOrWarning(t *testing.T) {
+	var logs bytes.Buffer
+	handler := &ingressHandler{
+		logger:          slog.New(slog.NewJSONHandler(&logs, nil)),
+		pool:            make(chan struct{}, 1),
+		poolWaitTimeout: time.Minute,
+	}
+	handler.pool <- struct{}{}
+	requestContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	incoming := httptest.NewRequest(http.MethodPost, "/v1/responses?request_token=secret", nil).WithContext(requestContext)
+	response := httptest.NewRecorder()
+
+	handler.forward(response, incoming, directCaller(auth.Principal{}))
+
+	if response.Code != http.StatusOK || response.Body.Len() != 0 || logs.Len() != 0 || len(handler.pool) != 1 {
+		t.Fatalf("canceled slot wait wrote a response or warning: code=%d body=%q logs=%s pool=%d",
+			response.Code, response.Body.String(), logs.String(), len(handler.pool))
+	}
+}
+
 func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *testing.T) {
 	t.Run("TokenReview", func(t *testing.T) {
 		tokenA := workloadToken(t, "test-sandbox-a")
@@ -748,7 +885,7 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 }
 
 func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
-	binary, err := runfiles.Rlocation("ducktape/agentplane/llm_ingress/server_/server")
+	binary, err := runfiles.Rlocation(ingressServerRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -812,7 +949,14 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
+	address := listener.Addr().String()
 	_ = listener.Close()
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
+	rpcYAML := fmt.Sprintf("rpc: {listen_address: %q, tls: {cert_file: %q, key_file: %q}, auth: [{mode: kubernetes_bearer, audiences: [test-environment-audience]}]}\n", address, serverFiles.CertFile, serverFiles.KeyFile)
+	if err := os.WriteFile(settings, []byte(settingsYAML+rpcYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	var logs bytes.Buffer
 	command := exec.Command(binary)
@@ -820,8 +964,6 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		"OTEL_SDK_DISABLED=true",
 		configFileEnv + "=" + settings,
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
-		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
-		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
 		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
@@ -854,9 +996,14 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		}
 	}()
 
-	client := testClient()
+	verified := &environment_runtime_transport.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: environment_runtime_transport.LLMIngressURI}
+	clientTLS, err := verified.TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS}}
 	defer client.CloseIdleConnections()
-	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
+	baseURL := "https://127.0.0.1:" + strconv.Itoa(port)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		response, err := client.Get(baseURL + "/healthz")
@@ -879,30 +1026,238 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	modelResponse, modelBody := request(t, client, http.MethodGet,
-		baseURL+"/agentplane/model-config?model=configured%2Fmodel", "", bearer(tokenA))
-	if modelResponse.StatusCode != http.StatusOK || string(modelBody) != "{\"model\":\"configured/model\",\"total_context_budget_tokens\":8192}\n" {
-		t.Fatalf("configured model response: status=%d body=%s", modelResponse.StatusCode, modelBody)
+	credentials, err := verified.Credentials()
+	if err != nil {
+		t.Fatal(err)
 	}
-	messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
-		`{"messages":[]}`, bearer(tokenA))
-	if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
-		t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Both responses are in, so a second review would already have been counted.
+	defer conn.Close()
+	lookupCtx, cancelLookup := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelLookup()
+	lookupCtx = metadata.AppendToOutgoingContext(lookupCtx, "authorization", "Bearer "+tokenA)
+	modelResponse, err := modelconfigpb.NewModelConfigServiceClient(conn).GetModelConfig(lookupCtx, &modelconfigpb.GetModelConfigRequest{Model: "configured/model"})
+	if err != nil || modelResponse.TotalContextBudgetTokens == nil || modelResponse.GetTotalContextBudgetTokens() != 8192 {
+		t.Fatalf("binary gRPC model response: %v, %v", modelResponse, err)
+	}
+
+	for range 2 {
+		messageResponse, messageBody := request(t, client, http.MethodPost, baseURL+"/v1/messages",
+			`{"messages":[]}`, bearer(tokenA))
+		if messageResponse.StatusCode != 529 || !bytes.Equal(messageBody, anthropicError) {
+			t.Fatalf("binary proxy response: status=%d body=%s", messageResponse.StatusCode, messageBody)
+		}
+	}
 	if got := reviews.Load(); got != 1 {
-		t.Fatalf("TokenReview calls = %d, want one shared by both requests", got)
+		t.Fatalf("TokenReview calls = %d, want one shared by the gRPC and HTTP requests", got)
 	}
 	backendMu.Lock()
 	gotBackendRequests := backendRequests
 	backendMu.Unlock()
-	if gotBackendRequests != 1 {
-		t.Fatalf("backend requests=%d, want 1", gotBackendRequests)
+	if gotBackendRequests != 2 {
+		t.Fatalf("backend requests=%d, want 2", gotBackendRequests)
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("ingress binary did not shut down cleanly: %v; logs: %s", err, logs.String())
 	}
 	if strings.Contains(logs.String(), tokenA) || strings.Contains(logs.String(), testBackendKey) {
 		t.Fatal("binary logs contained a workload token or LiteLLM key")
+	}
+}
+
+func TestCentralSessionAttributionRequiresTrustedProducer(t *testing.T) {
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	defer backendServer.Close()
+	server := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
+		LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey,
+		CentralSamplerAccounts: []string{testNamespace + "/trusted-sampler"},
+	})
+	const sessionID = "00000000-0000-4000-8000-000000000055"
+	for _, test := range []struct {
+		name, id string
+		want     int
+	}{
+		{"ordinary-runner", sessionID, http.StatusForbidden},
+		{"trusted-sampler", "not-a-session", http.StatusBadRequest},
+		{"trusted-sampler", sessionID, http.StatusOK},
+	} {
+		token := workloadToken(t, test.name)
+		request, err := http.NewRequest(http.MethodPost, server.URL+"/v1/responses", strings.NewReader(`{"model":"test"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("x-agentplane-session-id", test.id)
+		request.Header.Set("x-litellm-spend-logs-metadata", `{"agentplane.session_id":"forged"}`)
+		request.Header.Set("baggage", "litellm.metadata.spend_logs_metadata.agentplane.session_id=forged,untrusted=value")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != test.want {
+			t.Fatalf("%s: status %d want %d", test.name, response.StatusCode, test.want)
+		}
+	}
+	requests := backend.snapshotRequests()
+	if len(requests) != 1 {
+		t.Fatalf("forwarded %d requests", len(requests))
+	}
+	var members map[string]string
+	if err := json.Unmarshal([]byte(requests[0].headers.Get("x-litellm-spend-logs-metadata")), &members); err != nil {
+		t.Fatal(err)
+	}
+	if members["agentplane.session_id"] != sessionID || members["agentplane.service_account"] != "trusted-sampler" || requests[0].headers.Get("x-agentplane-session-id") != "" {
+		t.Fatalf("unexpected trusted attribution %v", members)
+	}
+	verifiedBaggage, err := baggage.Parse(requests[0].headers.Get("baggage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifiedBaggage.Member("litellm.metadata.spend_logs_metadata.agentplane.session_id").Value() != sessionID || verifiedBaggage.Member("untrusted").Value() != "" {
+		t.Fatalf("unexpected Session baggage %v", verifiedBaggage)
+	}
+}
+
+func TestLargeRequestBodyStreamsWithoutFullBuffering(t *testing.T) {
+	tokenA := workloadToken(t, "test-sandbox-a")
+	firstChunk := bytes.Repeat([]byte("x"), 64*1024)
+	received := make(chan struct{})
+	var total atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		buffer := make([]byte, 32*1024)
+		signaled := false
+		for {
+			n, err := request.Body.Read(buffer)
+			total.Add(int64(n))
+			if n > 0 && !signaled {
+				signaled = true
+				close(received)
+			}
+			if err != nil {
+				break
+			}
+		}
+		_, _ = io.WriteString(writer, strconv.FormatInt(total.Load(), 10))
+	}))
+	t.Cleanup(backend.Close)
+	ingress := newIngressTestServer(t, api.TokenReviews(), backend.URL)
+	client := testClient()
+	defer client.CloseIdleConnections()
+
+	pipeReader, pipeWriter := io.Pipe()
+	req, err := http.NewRequest(http.MethodPost, ingress.URL+"/upload", pipeReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header = bearer(tokenA)
+	type result struct {
+		body []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		response, err := client.Do(req)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		done <- result{body: body, err: err}
+	}()
+	if _, err := pipeWriter.Write(firstChunk); err != nil {
+		t.Fatal(err)
+	}
+	// The request body is still open: only a streaming proxy has delivered bytes to the backend.
+	select {
+	case <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatal("backend received nothing while the request body was still open")
+	}
+	if _, err := pipeWriter.Write(firstChunk); err != nil {
+		t.Fatal(err)
+	}
+	_ = pipeWriter.Close()
+	got := <-done
+	if got.err != nil || string(got.body) != strconv.Itoa(2*len(firstChunk)) {
+		t.Fatalf("body=%q err=%v", got.body, got.err)
+	}
+}
+
+// Regression: with request logging on, a bodyless request (GET /v1/models) crashed the process
+// from the transport's body probe goroutine.
+func TestBodylessRequestIsForwardedWithRequestLogging(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = io.WriteString(writer, request.Method+" "+request.URL.Path)
+	}))
+	t.Cleanup(backend.Close)
+	ingress := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
+		LiteLLMURL:     backend.URL,
+		LiteLLMKey:     testBackendKey,
+		LogLLMRequests: true,
+	})
+	client := testClient()
+	defer client.CloseIdleConnections()
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		req, err := http.NewRequest(method, ingress.URL+"/v1/models", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = bearer(workloadToken(t, "test-sandbox-a"))
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || string(body) != method+" /v1/models" {
+			t.Fatalf("%s: status=%d body=%q err=%v", method, response.StatusCode, body, err)
+		}
+	}
+}
+
+func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
+	tokenA := workloadToken(t, "test-sandbox-a")
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL)
+	client := testClient()
+	defer client.CloseIdleConnections()
+
+	headers := bearer(tokenA)
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	response, err := client.Do(mustRequest(t, http.MethodGet, ingress.URL+"/v1/models", headers))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	_ = response.Body.Close()
+	got := backend.snapshotRequests()
+	if response.StatusCode == http.StatusSwitchingProtocols || len(got) != 1 ||
+		got[0].headers.Get("Upgrade") != "" || got[0].headers.Get("Connection") != "" {
+		t.Fatalf("status=%d backend requests=%+v", response.StatusCode, got)
+	}
+}
+
+func TestIdentityCallerIsLoggedByKindAndNameNotAsAnEmptyAccount(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	attrs := requestLogAttrs("request-id", request, directCaller(auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"}, PodName: "sandbox-a", PodUID: "pod-a-uid",
+	}))
+	logged := map[any]any{}
+	for i := 0; i+1 < len(attrs); i += 2 {
+		logged[attrs[i]] = attrs[i+1]
+	}
+	if logged["subject_kind"] != "identity" || logged["subject_name"] != "agent-a" || logged["pod"] != "sandbox-a" {
+		t.Fatalf("Identity caller log attributes = %v, want its kind, name and Pod", logged)
+	}
+	if _, ok := logged["namespace"]; ok {
+		t.Fatalf("Identity caller logged an account namespace: %v", logged)
 	}
 }

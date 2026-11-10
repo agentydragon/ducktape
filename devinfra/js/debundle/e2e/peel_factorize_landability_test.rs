@@ -6,6 +6,9 @@
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
 
+use analysis::DependencyGraphInput;
+use analysis_model::DepKind;
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};
 use spec::MemberEffect;
@@ -21,7 +24,8 @@ fn residual_fixture(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
 
 fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> ProposalsReport {
     propose(
-        &residual_fixture(source, modules).dependency_graph(),
+        &DependencyGraphInput::from_report(residual_fixture(source, modules).dependency_graph())
+            .unwrap(),
         &BTreeMap::new(),
         10_000,
     )
@@ -235,7 +239,12 @@ export { anchor, dep, consumer };
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     )
     .dependency_graph();
-    let report = propose(&graph, &BTreeMap::new(), 1).unwrap();
+    let report = propose(
+        &DependencyGraphInput::from_report(graph).unwrap(),
+        &BTreeMap::new(),
+        1,
+    )
+    .unwrap();
 
     let blocked = report
         .proposals
@@ -353,11 +362,11 @@ export { anchor, mutable, peer };
 }
 
 #[test]
-fn annotated_decorate_helper_breaks_class_plus_decorator_from_side_effect_chain() {
-    // Minified TypeScript-decorator shape: the class itself is small and
-    // peelable only with its post-class decorator application. The unrelated
-    // source-order side effects before/after the decorator should not force a
-    // mega-closure once the helper is annotated as a target-local effect.
+fn annotated_decorate_helper_keeps_temporary_array_frontier_in_landability() {
+    // Minified TypeScript-decorator shape: the class must stay with its
+    // post-class decorator application. The legacy target-local helper effect
+    // does not prove that its temporary array argument cannot be retained, so
+    // the later opaque operation must remain ordered after the decorator call.
     let chunk_source = r#"const anchor = "anchor";
 console.log("boot");
 function Ro(decorators, target, key, flags) {
@@ -372,7 +381,7 @@ console.log("tail");
 export { anchor, SearchPopoverState };
 "#;
 
-    let report = factorize_residual(
+    let fixture = residual_fixture(
         chunk_source,
         vec![
             logical_module("anchors/anchor", &[Member::new("anchor")]),
@@ -384,15 +393,43 @@ export { anchor, SearchPopoverState };
             logical_module("infra/decorators/observable", &[Member::new("Z")]),
         ],
     );
+    let graph = fixture.dependency_graph();
+    let source_unit_for_ordinal = |ordinal| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .unwrap_or_else(|| panic!("missing graph node at source ordinal {ordinal}"))
+            .id
+            .as_str()
+    };
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == source_unit_for_ordinal(6)
+                && edge.target == source_unit_for_ordinal(5)
+        }),
+        "the later tail must stay ordered after the temporary-array decorator call: {:#?}",
+        graph.edges,
+    );
+    let report = propose(
+        &DependencyGraphInput::from_report(graph).unwrap(),
+        &BTreeMap::new(),
+        10_000,
+    )
+    .unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["SearchPopoverState".to_string()]
-                && proposal.anonymous_statement_source_unit_ids.len() == 1
-                && proposal.source_unit_ids.len() == 2
+                && proposal.source_unit_ids == vec!["unit:1", "unit:4", "unit:5", "unit:6"]
+                && proposal.anonymous_statement_source_unit_ids
+                    == vec!["unit:1", "unit:5", "unit:6"]
                 && proposal.landable_today
+                && proposal.extends_module_id.as_deref() == Some("infra/decorators/observable")
+                && proposal.landability_notes.is_empty()
         }),
-        "decorated class should be proposed with exactly its decorator statement, not the unrelated side-effect chain: {report:#?}",
+        "the executable frontier closure must be landable without pulling export metadata: {report:#?}",
     );
     assert!(
         !report.proposals.iter().any(|proposal| {
@@ -411,15 +448,18 @@ export { anchor, SearchPopoverState };
                 "Ro",
                 MemberEffect::TypescriptDecorateHelper,
             ),
-            logical_module("infra/decorators/observable", &[Member::new("Z")]),
             logical_module_with_anon(
-                "features/search/popover_state",
-                &[Member::new("SearchPopoverState")],
-                &["Ro([Z], SearchPopoverState.prototype, \"visible\", 2);"],
+                "infra/decorators/observable",
+                &[Member::new("Z"), Member::new("SearchPopoverState")],
+                &[
+                    "console.log(\"boot\");",
+                    "Ro([Z], SearchPopoverState.prototype, \"visible\", 2);",
+                    "console.log(\"tail\");",
+                ],
             ),
         ],
     );
-    let _ = run_fixture(promoted_opts);
+    assert_preserved_entry_output(&run_fixture(promoted_opts), "boot\ntail\n");
 }
 
 #[test]

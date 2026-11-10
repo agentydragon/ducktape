@@ -1,13 +1,16 @@
 import threading
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from devinfra.gc import output_base_gc, workspace_scan
 from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch, RetainedBranchReason
 from devinfra.gc.conftest import GitRepo, make_base
 from devinfra.gc.output_base_gc import Inspection, PrunableBase, RetainedBase, ReviewBase
+from devinfra.gc.scan_progress import NULL_PROGRESS
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
 
@@ -16,13 +19,14 @@ def _add(repo: GitRepo, name: str, branch: str) -> Path:
 
 
 def _scan(
-    repo: GitRepo, proc: Path, mountinfo: Path, output_user_root: Path | None = None
+    repo: GitRepo, proc: Path, mountinfo: Path, output_user_root: Path | None = None, session_bases: Sequence[Path] = ()
 ) -> workspace_scan.WorkspaceScan:
     return workspace_scan.scan_workspace(
         repo.path,
         main="main",
         default_branch="main",
         pr_states={},
+        session_bases=session_bases,
         output_user_root=output_user_root,
         proc_root=proc,
         mountinfo_path=mountinfo,
@@ -45,6 +49,37 @@ class RecordingProgress:
         with self.lock:
             self.done[phase] += 1
             self.calls.append((phase, self.done[phase], self.totals[phase], category))
+
+
+def test_interrupt_abandons_queued_items_without_waiting_for_them() -> None:
+    """Regression: a Ctrl+C used to wait for every worker to finish its whole slice."""
+    release = threading.Event()
+    safety = threading.Timer(10, release.set)  # unblocks workers if the interrupt is not prompt
+    safety.start()
+
+    def classify_one(item: int) -> int:
+        if item == 0:
+            raise KeyboardInterrupt
+        release.wait()
+        return item
+
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            workspace_scan.parallel_classify(
+                list(range(50)),
+                lambda: classify_one,
+                phase="items",
+                noun="item",
+                progress=NULL_PROGRESS,
+                category_of=lambda _: "KEEP",
+                describe=str,
+                workers=2,
+            )
+        prompt = not release.is_set()
+    finally:
+        release.set()
+        safety.cancel()
+    assert prompt
 
 
 def test_branch_follows_its_holding_worktree(repo: GitRepo, proc: Path, mountinfo: Path) -> None:
@@ -86,6 +121,7 @@ def test_scan_workspace_reports_progress(repo: GitRepo, proc: Path, mountinfo: P
         main="main",
         default_branch="main",
         pr_states={},
+        session_bases=(),
         proc_root=proc,
         mountinfo_path=mountinfo,
         progress=progress,
@@ -126,6 +162,25 @@ def test_base_with_absent_workspace_is_prunable(repo: GitRepo, proc: Path, mount
     assert [type(base) for base in scan.bases] == [PrunableBase]
 
 
+def test_session_env_bases_join_the_scan_under_the_same_rules(
+    repo: GitRepo, proc: Path, mountinfo: Path, tmp_path: Path
+) -> None:
+    prunable_wt = _add(repo, "wt_merged", "merged")
+    root = tmp_path / "output"
+    root.mkdir()
+    sessions = tmp_path / "session-env"
+    orphaning = make_base(sessions / "session-on-worktree", prunable_wt.resolve(), name="bazel-output-base")
+    orphaned = make_base(sessions / "session-on-gone", tmp_path / "gone", name="bazel-output-base")
+
+    scan = _scan(repo, proc, mountinfo, output_user_root=root, session_bases=[orphaning, orphaned])
+
+    by_path = {base.path: base for base in scan.bases}
+    orphaning_base = by_path[orphaning]
+    assert isinstance(orphaning_base, RetainedBase)
+    assert orphaning_base.workspace_is_prunable_worktree
+    assert isinstance(by_path[orphaned], PrunableBase)
+
+
 def _verdict(base: Inspection) -> tuple[type, Path, StrEnum | None, bool]:
     """Everything a base's row is rendered from, so the comparison is not just the class."""
     reason = base.reason if isinstance(base, RetainedBase | ReviewBase) else None
@@ -133,7 +188,7 @@ def _verdict(base: Inspection) -> tuple[type, Path, StrEnum | None, bool]:
 
 
 def _annotated(repo: GitRepo, proc: Path, mountinfo: Path, root: Path) -> list[Inspection]:
-    bases = list(output_base_gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo))
+    bases = list(output_base_gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
     return workspace_scan.annotate_bases(repo.path, bases, main="main", pr_states={}, proc_root=proc)
 
 
@@ -180,7 +235,7 @@ def test_base_workspace_branches_covers_only_base_workspaces(
     root = tmp_path / "output"
     make_base(root, workspace_wt.resolve())
 
-    bases = list(output_base_gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo))
+    bases = list(output_base_gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
 
     assert workspace_scan.base_workspace_branches(repo.path, bases) == {"has_base"}
 

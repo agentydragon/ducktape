@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect, SegmentedControl } from "@mantine/core";
+import { queryOptions, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import {
   fetchProductPortfolio,
   fetchProductProjectionSummary,
   fetchProductRollout,
-  type AugurDeployment,
-  type ProductPortfolioResponse,
+  type fetchAugurDeployment,
 } from "./client";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
@@ -47,6 +47,8 @@ import {
 } from "./data_helpers";
 
 type ProjectionSummaryResponse = Awaited<ReturnType<typeof fetchProductProjectionSummary>>;
+type ProductPortfolio = Awaited<ReturnType<typeof fetchProductPortfolio>>;
+type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
 type ScenarioEditorProps = React.ComponentProps<typeof ScenarioEditor>;
 type ProductInput = ScenarioEditorProps["base"]["input"];
 type Bootstrap = ScenarioEditorProps["bootstrap"];
@@ -55,13 +57,13 @@ type MetricScale = React.ComponentProps<typeof SharedControls>["metricScale"];
 type CurrencyDisplay = React.ComponentProps<typeof SharedControls>["currencyDisplay"];
 type SharedControlProps = React.ComponentProps<typeof SharedControls>;
 type Scenario = { id: string; label: string; input: ProductInput };
-type TerminalResults = ReadonlyMap<string, ProjectionSummaryResponse["terminalDistribution"]>;
+type TerminalResults = ReadonlyMap<string, ProjectionSummaryResponse["terminal_distribution"]>;
 type SelectedSummary = NonNullable<React.ComponentProps<typeof TerminalMetricTable>["selectedSummary"]>;
 type EventSelection = ReturnType<typeof useEventSelection>;
 type EventVisibility = ReturnType<typeof useVisibleEventKinds>;
 type ProductWorkspaceProps = {
   bootstrap: Bootstrap;
-  deployment: AugurDeployment | null;
+  deployment: Deployment | null;
   tab: AugurTab;
   onSelectTab: (tab: AugurTab) => void;
   rolloutCount: SharedControlProps["rolloutCount"];
@@ -82,13 +84,9 @@ type ProjectionSelection =
   { kind: "percentile"; value: number } | { kind: "stopped"; seed: number; scenarioKey: string } | null;
 type ProjectionSnapshot = {
   requestKey: string;
-  metricFan: ProjectionSummaryResponse["metricFan"];
-  terminalDistribution: ProjectionSummaryResponse["terminalDistribution"];
+  metricFan: ProjectionSummaryResponse["metric_fan"];
+  terminalDistribution: ProjectionSummaryResponse["terminal_distribution"];
 };
-type ProjectionResource =
-  | { status: "pending"; requestKey: string; stale: ProjectionSnapshot | null; error: string | null }
-  | { status: "ready"; snapshot: ProjectionSnapshot }
-  | { status: "failed"; requestKey: string; stale: ProjectionSnapshot | null; error: string };
 
 function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error && error.message) {
@@ -107,19 +105,15 @@ function metricOption(value: string): MetricOption {
   return option;
 }
 
-function projectionSnapshot(resource: ProjectionResource | undefined): ProjectionSnapshot | null {
-  if (!resource) return null;
-  switch (resource.status) {
-    case "ready":
-      return resource.snapshot;
-    case "pending":
-    case "failed":
-      return resource.stale;
+function latestProjectionSnapshot(queryClient: QueryClient, scenarioId: string): ProjectionSnapshot | undefined {
+  let latest: ProjectionSnapshot | undefined;
+  let latestUpdatedAt = 0;
+  for (const query of queryClient.getQueryCache().findAll({ queryKey: ["product-projection-summary", scenarioId] })) {
+    if (query.state.dataUpdatedAt <= latestUpdatedAt || query.state.data === undefined) continue;
+    latest = query.state.data as ProjectionSnapshot;
+    latestUpdatedAt = query.state.dataUpdatedAt;
   }
-}
-
-function projectionError(resource: ProjectionResource | undefined): string | null {
-  return resource && resource.status !== "ready" ? resource.error : null;
+  return latest;
 }
 
 function RolloutResultsPanel({
@@ -166,7 +160,7 @@ function RolloutResultsPanel({
   terminalResultsById: TerminalResults;
   activeId: string;
   activeTerminalResult:
-    ProjectionSummaryResponse["metricFan"] | ProjectionSummaryResponse["terminalDistribution"] | null;
+    ProjectionSummaryResponse["metric_fan"] | ProjectionSummaryResponse["terminal_distribution"] | null;
   selectedRows: ReturnType<typeof selectedRolloutMetricRows>;
   selectedEvents: ReturnType<typeof selectedRolloutEvents>;
   selectedSummary: SelectedSummary | null;
@@ -355,22 +349,31 @@ export function ProductProjectionWorkspace({
 }: ProductWorkspaceProps) {
   const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState<MetricOption["value"]>("net_worth");
-  // Every scenario owns one resource that carries the latest request state plus its last successful
-  // response. The backend returns the fan and terminal distribution from one simulation.
-  const [projectionResourcesById, setProjectionResourcesById] = useState<Map<string, ProjectionResource>>(
-    () => new Map()
-  );
-  const [portfolio, setPortfolio] = useState<ProductPortfolioResponse | null>(null);
-  const [portfolioError, setPortfolioError] = useState<string | null>(null);
   const [selection, setSelection] = useState<ProjectionSelection>(null);
   const selectedPercentile = selection?.kind === "percentile" ? selection.value : null;
-  const [selectedRollout, setSelectedRollout] = useState<{
-    key: string;
-    detail: Awaited<ReturnType<typeof fetchProductRollout>> | null;
-    error: string | null;
-  } | null>(null);
+  const [debouncedProjectionIdentity, setDebouncedProjectionIdentity] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const eventSelection = useEventSelection();
   const visibleEventKinds = useVisibleEventKinds();
+
+  const portfolioQuery = useQuery({
+    queryKey: ["product-portfolio"],
+    queryFn: async ({ signal }) => {
+      try {
+        return await fetchProductPortfolio({ signal });
+      } catch (error) {
+        if (!signal.aborted && !isAbortError(error))
+          toastFetchError("product-portfolio", "Couldn't load portfolio", error);
+        throw error;
+      }
+    },
+    networkMode: "always" as const,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const portfolio: ProductPortfolio | null = portfolioQuery.data ?? null;
+  const portfolioError = portfolioQuery.isError ? errorMessage(portfolioQuery.error) : null;
 
   const { base, variants, activeId } = scenarioSet;
   // The chart's scenario set: the always-present Base (series 0) plus each variant resolved against
@@ -408,52 +411,109 @@ export function ProductProjectionWorkspace({
   // `null` until the portfolio fetch lands — distinct from "loaded, and nothing is sellable".
   // An unedited target allocation is seeded from these rows, so a request built before the
   // portfolio arrives would ask for a no-target scenario (never auto-sells, so ruin) and get a
-  // fan the user never asked for. The fetch effects below wait for it rather than showing that.
+  // fan the user never asked for. The query below waits for it rather than showing that.
   const sellable = useMemo(() => (portfolio ? sellableSleeves(portfolio) : null), [portfolio]);
-  const projectionRequestEntries = useMemo(
-    () =>
-      chartScenarios.map((entry) => {
-        const request = productProjectionSummaryRequest(
-          entry.input,
-          bootstrap,
-          selectedMetric,
-          {
-            rolloutCount,
-            firstSeed,
-            model,
-            horizonMonths,
-            sellable: sellable ?? [],
-          },
-          FAN_PERCENTILES,
-          TERMINAL_DISTRIBUTION_PERCENTILES
-        );
-        return { id: entry.id, label: entry.label, request, requestKey: JSON.stringify(request) };
-      }),
-    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
+  const projectionRequestEntries = useMemo(() => {
+    if (sellable === null) return [];
+    return chartScenarios.map((entry) => {
+      const request = productProjectionSummaryRequest(
+        entry.input,
+        bootstrap,
+        selectedMetric,
+        {
+          rolloutCount,
+          firstSeed,
+          model,
+          horizonMonths,
+          sellable,
+        },
+        FAN_PERCENTILES,
+        TERMINAL_DISTRIBUTION_PERCENTILES
+      );
+      return { id: entry.id, label: entry.label, request, requestKey: JSON.stringify(request) };
+    });
+  }, [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]);
+  const projectionRequestIdentity = JSON.stringify(
+    projectionRequestEntries.map(({ id, requestKey }) => [id, requestKey])
   );
+  const projectionQueries = useQueries({
+    queries: projectionRequestEntries.map(({ id, label, request, requestKey }) => ({
+      ...queryOptions<ProjectionSnapshot>({
+        queryKey: ["product-projection-summary", id, request],
+        queryFn: async ({ signal }) => {
+          try {
+            const payload = await fetchProductProjectionSummary(request, { signal });
+            return {
+              requestKey,
+              metricFan: payload.metric_fan,
+              terminalDistribution: payload.terminal_distribution,
+            };
+          } catch (error) {
+            if (!signal.aborted && !isAbortError(error)) {
+              toastFetchError(`product-projection-${id}`, `Projection failed: ${label}`, error);
+            }
+            throw error;
+          }
+        },
+      }),
+      enabled: sellable !== null && debouncedProjectionIdentity === projectionRequestIdentity,
+      initialData: () => latestProjectionSnapshot(queryClient, id),
+      initialDataUpdatedAt: 0,
+      staleTime: 0,
+      networkMode: "always" as const,
+      retry: false,
+      refetchOnMount: true,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    })),
+  });
+  const projectionQueryIndexesById = useMemo(
+    () => new Map(projectionRequestEntries.map((entry, index) => [entry.id, index])),
+    [projectionRequestEntries]
+  );
+  const activeProjectionQueryIndex = projectionQueryIndexesById.get(activeId);
+  const activeProjectionQuery =
+    activeProjectionQueryIndex === undefined ? undefined : projectionQueries[activeProjectionQueryIndex];
   const activeRequestEntry =
-    projectionRequestEntries.find((entry) => entry.id === activeId) ?? projectionRequestEntries[0];
-  const activeRequest = activeRequestEntry.request;
-  const activeProjection = projectionSnapshot(projectionResourcesById.get(activeId));
+    projectionRequestEntries.find((entry) => entry.id === activeId) ?? projectionRequestEntries[0] ?? null;
+  const activeRequest = activeRequestEntry?.request ?? null;
+  const activeProjection = activeProjectionQuery?.data ?? null;
   const activeResult = activeProjection?.metricFan.metric === selectedMetric.value ? activeProjection.metricFan : null;
   const activeTerminalResult =
+    debouncedProjectionIdentity === projectionRequestIdentity &&
+    !activeProjectionQuery?.isFetching &&
+    !activeProjectionQuery?.isError &&
     activeProjection?.terminalDistribution.metric === selectedMetric.value &&
+    activeRequestEntry !== null &&
     activeProjection.requestKey === activeRequestEntry.requestKey
       ? activeProjection.terminalDistribution
       : null;
   const terminalResultsForDisplay = useMemo(() => {
-    const next = new Map<string, ProjectionSummaryResponse["terminalDistribution"]>();
-    for (const entry of projectionRequestEntries) {
-      const snapshot = projectionSnapshot(projectionResourcesById.get(entry.id));
-      if (snapshot?.terminalDistribution.metric === selectedMetric.value && snapshot.requestKey === entry.requestKey) {
+    const next = new Map<string, ProjectionSummaryResponse["terminal_distribution"]>();
+    if (debouncedProjectionIdentity !== projectionRequestIdentity) return next;
+    for (const [index, entry] of projectionRequestEntries.entries()) {
+      const query = projectionQueries[index];
+      const snapshot = query?.data;
+      if (
+        !query?.isFetching &&
+        !query?.isError &&
+        snapshot?.terminalDistribution.metric === selectedMetric.value &&
+        snapshot.requestKey === entry.requestKey
+      ) {
         next.set(entry.id, snapshot.terminalDistribution);
       }
     }
     return next;
-  }, [projectionRequestEntries, projectionResourcesById, selectedMetric.value]);
+  }, [
+    projectionRequestEntries,
+    projectionQueries,
+    debouncedProjectionIdentity,
+    projectionRequestIdentity,
+    selectedMetric.value,
+  ]);
   const activeTerminalDisplayResult = activeTerminalResult ?? activeResult;
   const activeTerminalSelectionResult = terminalResultsForDisplay.get(activeId) ?? null;
-  const projectionFailure = projectionError(projectionResourcesById.get(activeId));
+  const projectionFailure = activeProjectionQuery?.isError ? errorMessage(activeProjectionQuery.error) : null;
 
   // One overlay series per scenario; Base is series 0 (blue), variants follow. Color is by position
   // so it stays put as the active selection moves. The active scenario also drives the histogram,
@@ -461,7 +521,8 @@ export function ProductProjectionWorkspace({
   const fanSeries = useMemo(
     () =>
       chartScenarios.map((entry, index) => {
-        const metricFan = projectionSnapshot(projectionResourcesById.get(entry.id))?.metricFan;
+        const queryIndex = projectionQueryIndexesById.get(entry.id);
+        const metricFan = queryIndex === undefined ? undefined : projectionQueries[queryIndex]?.data?.metricFan;
         return {
           id: entry.id,
           label: entry.label,
@@ -470,10 +531,10 @@ export function ProductProjectionWorkspace({
           isActive: entry.id === activeId,
         };
       }),
-    [chartScenarios, projectionResourcesById, activeId, selectedMetric.value]
+    [chartScenarios, projectionQueryIndexesById, projectionQueries, activeId, selectedMetric.value]
   );
 
-  const scenarioKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
+  const scenarioKey = activeRequest ? JSON.stringify(activeRequest.scenario) : "";
   const selectedTerminalSample = useMemo(
     () =>
       selectedPercentile == null
@@ -481,7 +542,7 @@ export function ProductProjectionWorkspace({
         : terminalSampleAtPercentile(activeTerminalSelectionResult, selectedMetric, selectedPercentile),
     [activeTerminalSelectionResult, selectedMetric, selectedPercentile]
   );
-  const stoppedSeeds = rowsFrom(activeTerminalSelectionResult?.terminalMetricSamples)
+  const stoppedSeeds = rowsFrom(activeTerminalSelectionResult?.terminal_metric_samples)
     .filter((row) => row.failed)
     .map((row) => Number(row.seed));
   const selectedRolloutSeed =
@@ -490,9 +551,32 @@ export function ProductProjectionWorkspace({
         ? selection.seed
         : null
       : (selectedTerminalSample?.seed ?? null);
-  const selectedDetailKey = selectedRolloutSeed == null ? null : `${scenarioKey}|seed:${selectedRolloutSeed}`;
-  const selectedDetail = selectedRollout?.key === selectedDetailKey ? selectedRollout.detail : null;
-  const rolloutError = selectedRollout?.key === selectedDetailKey ? selectedRollout.error : null;
+  const selectedDetailKey =
+    selectedRolloutSeed == null || activeRequest === null ? null : `${scenarioKey}|seed:${selectedRolloutSeed}`;
+  const selectedRolloutQuery = useQuery({
+    queryKey: ["product-rollout", activeRequest, selectedRolloutSeed],
+    queryFn: async ({ signal }) => {
+      if (activeRequest === null || selectedRolloutSeed === null) {
+        throw new Error("Selected rollout query ran without a current request and seed.");
+      }
+      try {
+        return await fetchProductRollout({ scenario: activeRequest.scenario, seed: selectedRolloutSeed }, { signal });
+      } catch (error) {
+        if (!signal.aborted && !isAbortError(error)) toastFetchError("product-rollout", "Rollout detail failed", error);
+        throw error;
+      }
+    },
+    enabled: selectedRolloutSeed !== null && activeRequest !== null,
+    staleTime: 0,
+    networkMode: "always" as const,
+    retry: false,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const selectedDetail =
+    selectedRolloutQuery.isFetching || selectedRolloutQuery.isError ? null : (selectedRolloutQuery.data ?? null);
+  const rolloutError = selectedRolloutQuery.isError ? errorMessage(selectedRolloutQuery.error) : null;
   const selectedSeed = selectedRolloutSeed;
   const selectedSummary = useMemo(
     () =>
@@ -500,7 +584,7 @@ export function ProductProjectionWorkspace({
         ? {
             seed: Number(selectedDetail.rollout.seed),
             failed: Boolean(selectedDetail.rollout.failed),
-            endingMetrics: selectedDetail.rollout.endingMetrics,
+            ending_metrics: selectedDetail.rollout.ending_metrics,
           }
         : null,
     [selectedDetail]
@@ -510,7 +594,7 @@ export function ProductProjectionWorkspace({
     [selectedDetail, selectedMetric]
   );
   const selectedEvents = useMemo(() => selectedRolloutEvents(selectedDetail), [selectedDetail]);
-  const failedCount = activeResult?.failedCount ?? null;
+  const failedCount = activeResult?.failed_count ?? null;
   const terminalP50 = terminalPercentileValue(activeTerminalDisplayResult, 50);
   const selectedRolloutLoading =
     selectedRolloutSeed != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
@@ -586,112 +670,18 @@ export function ProductProjectionWorkspace({
   }, [base, variants]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetchProductPortfolio({ signal: controller.signal })
-      .then((payload) => {
-        setPortfolio(payload);
-        setPortfolioError(null);
-      })
-      .catch((error) => {
-        if (isAbortError(error)) return;
-        setPortfolio(null);
-        setPortfolioError(errorMessage(error));
-        toastFetchError("product-portfolio", "Couldn't load portfolio", error);
-      });
-    return () => controller.abort();
-  }, []);
-
-  // Drop cached projection resources for scenarios that no longer exist (deleted from the set).
-  useEffect(() => {
-    const ids = new Set(chartScenarios.map((entry) => entry.id));
-    setProjectionResourcesById((previous) => {
-      const next = new Map([...previous].filter(([id]) => ids.has(id)));
-      return next.size === previous.size ? previous : next;
-    });
-  }, [chartScenarios]);
-
-  useEffect(() => {
     if (sellable == null) return;
-    const controller = new AbortController();
-    // Fan out one combined request per scenario. The backend performs the metric-fan and terminal
-    // reductions after one shared simulation, while the two public legacy endpoints remain intact.
+    setDebouncedProjectionIdentity(null);
     const handle = setTimeout(() => {
-      for (const { id, label, request, requestKey } of projectionRequestEntries) {
-        setProjectionResourcesById((previous) => {
-          const previousResource = previous.get(id);
-          return new Map(previous).set(id, {
-            status: "pending",
-            requestKey,
-            stale: projectionSnapshot(previousResource),
-            error: projectionError(previousResource),
-          });
-        });
-        fetchProductProjectionSummary(request, { signal: controller.signal })
-          .then((payload) => {
-            if (controller.signal.aborted) return;
-            setProjectionResourcesById((previous) => {
-              const current = previous.get(id);
-              if (current?.status !== "pending" || current.requestKey !== requestKey) return previous;
-              return new Map(previous).set(id, {
-                status: "ready",
-                snapshot: {
-                  requestKey,
-                  metricFan: payload.metricFan,
-                  terminalDistribution: payload.terminalDistribution,
-                },
-              });
-            });
-          })
-          .catch((error) => {
-            if (controller.signal.aborted || isAbortError(error)) return;
-            const message = errorMessage(error);
-            setProjectionResourcesById((previous) => {
-              const current = previous.get(id);
-              if (current?.status !== "pending" || current.requestKey !== requestKey) return previous;
-              return new Map(previous).set(id, {
-                status: "failed",
-                requestKey,
-                stale: current.stale,
-                error: message,
-              });
-            });
-            toastFetchError(`product-projection-${id}`, `Projection failed: ${label}`, error);
-          });
-      }
+      setDebouncedProjectionIdentity(projectionRequestIdentity);
     }, 120);
-    return () => {
-      clearTimeout(handle);
-      controller.abort();
-    };
-  }, [projectionRequestEntries, sellable]);
+    return () => clearTimeout(handle);
+  }, [projectionRequestIdentity, sellable]);
 
   useEffect(() => {
     eventSelection.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDetailKey]);
-
-  useEffect(() => {
-    setSelectedRollout(null);
-    if (selectedRolloutSeed == null || selectedDetailKey == null) return;
-    const controller = new AbortController();
-    fetchProductRollout(
-      {
-        scenario: activeRequest.scenario,
-        seed: selectedRolloutSeed,
-      },
-      { signal: controller.signal }
-    )
-      .then((payload) => {
-        if (controller.signal.aborted) return;
-        setSelectedRollout({ key: selectedDetailKey, detail: payload, error: null });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || isAbortError(error)) return;
-        setSelectedRollout({ key: selectedDetailKey, detail: null, error: errorMessage(error) });
-        toastFetchError("product-rollout", "Rollout detail failed", error);
-      });
-    return () => controller.abort();
-  }, [activeRequest.scenario, selectedDetailKey, selectedPercentile, selectedRolloutSeed]);
 
   return (
     <div
@@ -707,7 +697,7 @@ export function ProductProjectionWorkspace({
         <SharedControls
           rolloutCount={rolloutCount}
           onChangeRolloutCount={onChangeRolloutCount}
-          maxRolloutCount={bootstrap.maxRolloutSamples}
+          maxRolloutCount={bootstrap.max_rollout_samples}
           model={model}
           onChangeModel={onChangeModel}
           models={bootstrap.models}
@@ -753,19 +743,19 @@ export function ProductProjectionWorkspace({
               </div>
               <div className="text-xs augur-muted">
                 {activeResult.basis === "observed_through_stop" ? "Through stop/completion" : "Completed paths only"} (
-                {activeResult.observationCount} observations)
+                {activeResult.observation_count} observations)
               </div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
                 {fmtQuanta(terminalP50, {
-                  currencyCode: activeTerminalDisplayResult?.currencyCode,
-                  currencyQuantum: activeTerminalDisplayResult?.currencyQuantum,
+                  currencyCode: activeTerminalDisplayResult?.currency_code,
+                  currencyQuantum: activeTerminalDisplayResult?.currency_quantum,
                 })}
               </div>
             </div>
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Failed rollouts</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutCount)}
+                {fmtNumber(failedCount)} / {fmtNumber(activeRequest?.rollout_count ?? rolloutCount)}
               </div>
               {stoppedSeeds.length > 0 && (
                 <NativeSelect
@@ -786,11 +776,11 @@ export function ProductProjectionWorkspace({
               )}
               {selectedSummary?.failed && selectedDetail != null && (
                 <div className="mt-2 text-sm" data-product-stop-book="">
-                  At stop in event month {selectedSummary.endingMetrics.failedMonthIndex} (snapshot{" "}
-                  {selectedSummary.endingMetrics.snapshotIndex}):{" "}
-                  {fmtQuanta(selectedSummary.endingMetrics[selectedMetric.chartValue], {
-                    currencyCode: selectedDetail.currencyCode,
-                    currencyQuantum: selectedDetail.currencyQuantum,
+                  At stop in event month {selectedSummary.ending_metrics.failed_month_index} (snapshot{" "}
+                  {selectedSummary.ending_metrics.snapshot_index}):{" "}
+                  {fmtQuanta(selectedSummary.ending_metrics[selectedMetric.chartValue], {
+                    currencyCode: selectedDetail.currency_code,
+                    currencyQuantum: selectedDetail.currency_quantum,
                   })}
                   .{" "}
                   {activeResult.basis === "observed_through_stop"
@@ -812,14 +802,14 @@ export function ProductProjectionWorkspace({
             metricScale={metricScale}
             horizonMonths={horizonMonths}
             onChangeHorizonMonths={onChangeHorizonMonths}
-            maxHorizonMonths={bootstrap.maxHorizonMonths}
+            maxHorizonMonths={bootstrap.max_horizon_months}
             selectedSeed={selectedSeed}
             selectedPercentile={selectedPercentile}
             onSelectPercentile={onSelectPercentile}
             onClearSelection={clearSelectedRollout}
             selectedRolloutLoading={selectedRolloutLoading}
             fanSeries={fanSeries}
-            percentiles={activeRequest.fanPercentiles}
+            percentiles={activeRequest?.fan_percentiles ?? FAN_PERCENTILES}
             scenarios={chartScenarios}
             terminalResultsById={terminalResultsForDisplay}
             activeId={activeId}

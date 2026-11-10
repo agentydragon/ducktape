@@ -26,7 +26,10 @@ func (g *GitHubState) completeRefresh(ctx context.Context, lease GitHubRefreshLe
 		if !valid {
 			return &RefreshDeferredError{Until: now()}
 		}
-		return write(tx)
+		if err := write(tx); err != nil {
+			return err
+		}
+		return releaseRefresh(ctx, tx, lease)
 	})
 }
 
@@ -85,10 +88,10 @@ func (g *GitHubState) completeCommit(ctx context.Context, lease GitHubRefreshLea
 			return &RefreshDeferredError{Until: now()}
 		}
 		at := now()
-		table, where, args := lease.Key.row()
+		table, where, args := refreshWhere(lease.Key)
 		successPlaceholder := len(args) + 1
 		query := fmt.Sprintf("UPDATE %s SET last_success_at = $%d, error_kind = NULL, error = NULL, "+
-			"error_since = NULL, error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL WHERE %s",
+			"error_since = NULL, error_observed_at = NULL, next_attempt = NULL WHERE %s",
 			table, successPlaceholder, where)
 		updateArgs := append(append([]any(nil), args...), at)
 		if _, err := tx.ExecContext(ctx, query, updateArgs...); err != nil {
@@ -184,11 +187,10 @@ func (g *GitHubState) CompleteReviews(ctx context.Context, lease GitHubRefreshLe
 				return err
 			}
 		}
-		table, where, args := lease.Key.row()
+		table, where, args := refreshWhere(lease.Key)
 		settledArgs := append(append([]any(nil), args...), at)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET last_success_at = $%d, error_kind = NULL,
-				error = NULL, error_since = NULL, error_observed_at = NULL, next_attempt = NULL,
-				claim = NULL, claim_until = NULL WHERE %s`, table, len(args)+1, where), settledArgs...); err != nil {
+				error = NULL, error_since = NULL, error_observed_at = NULL, next_attempt = NULL WHERE %s`, table, len(args)+1, where), settledArgs...); err != nil {
 			return err
 		}
 		if changed {
@@ -221,10 +223,10 @@ func (g *GitHubState) CompleteSubject(ctx context.Context, lease GitHubRefreshLe
 			}
 		}
 		at := now()
-		table, where, args := lease.Key.row()
+		table, where, args := refreshWhere(lease.Key)
 		settledArgs := append(append([]any(nil), args...), at)
 		settled := fmt.Sprintf(`last_success_at = $%d, error_kind = NULL, error = NULL, error_since = NULL,
-   error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL`, len(args)+1)
+   error_observed_at = NULL, next_attempt = NULL`, len(args)+1)
 		if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, settledArgs...); err != nil {
 			return err
 		}
@@ -241,12 +243,12 @@ func (g *GitHubState) CompleteAccess(ctx context.Context, lease GitHubRefreshLea
 		if _, ok := lease.Key.(GitHubAccessKey); !ok {
 			return errors.New("access observations require an access refresh lease")
 		}
-		table, where, args := lease.Key.row()
+		table, where, args := refreshWhere(lease.Key)
 		at := now()
 		successPlaceholder := len(args) + 1
 		settledArgs := append(append([]any(nil), args...), at)
 		settled := fmt.Sprintf(`last_success_at = $%d, error_kind = NULL, error = NULL, error_since = NULL,
-   error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL`, successPlaceholder)
+   error_observed_at = NULL, next_attempt = NULL`, successPlaceholder)
 		if lease.InstallationGeneration == nil {
 			return errors.New("an access lease holds the installation generation it was claimed under")
 		}

@@ -1,18 +1,24 @@
+use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::fmt;
 
 use petgraph::algo::greedy_feedback_arc_set;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
-use crate::realizability::{RealizabilityVerdict, SccRejection, check_realizability};
+use crate::realizability::{RealizabilityVerdict, SccDiagnosis, SccRejection, check_realizability};
 use analysis::assignment_assembly::AtomicGroupConflict;
 use analysis::graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
 use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use analysis::{DepKind, DependencyGraph, ModuleId, Purity, SequencedSourceUnitCause};
+use analysis::analysis_inputs::CommutingStatementsRef;
+use analysis::{
+    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
+    SequencedSourceUnitCause,
+};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -40,6 +46,16 @@ pub struct AssignmentReport {
     pub cross_rebinds: Vec<String>,
 }
 
+/// Canonical in-memory validation for one settled assignment. The typed
+/// verdict is authoritative; `report` is its rendered diagnostic projection.
+/// This value is deliberately not deserializable, so a missing typed verdict
+/// can never default to acceptance when reading a report from disk.
+#[derive(Debug, Clone)]
+pub struct AssignmentValidation {
+    pub verdict: RealizabilityVerdict,
+    pub report: AssignmentReport,
+}
+
 /// Validator's rendered projection of one unrealizable SCC. The shared
 /// "modules in the SCC + edges in the SCC" core is
 /// [`analysis::reports::SccCore`]; the in-memory primitive that carries
@@ -48,7 +64,11 @@ pub struct AssignmentReport {
 /// `lazy_closure` rows the bail-message renderer consumes.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleReport {
+    pub rejection: BlockingRejection,
     pub modules: Vec<ModulePath>,
+    /// One ordered, complete walk through actual Pass-1 constraining edges.
+    /// Absent for actual Pass-2 and conditional collapsed diagnoses.
+    pub pass_one_witness: Option<PassOneCycleWitness>,
     /// Spec-author-actionable cut: realizability-constraining
     /// (`at-init` or `side-effect`) reasons whose removal (by
     /// co-locating each binding pair into one module) lifts the
@@ -75,15 +95,24 @@ pub struct CycleReport {
     /// bail summary can show how the cycle forms even though no
     /// lazy edge is ever part of the cut.
     pub lazy_closure: Vec<CycleEdge>,
+    /// `sequenced` edges between SCC members that an author
+    /// `commuting_statements` premise made inert (each row names its
+    /// premise). They never constrain and never appear in `cut`; listed so
+    /// an author can see what the premise bought while the SCC still
+    /// blocks.
+    pub inert_commuting_edges: Vec<CycleEdge>,
+    /// Spec location of each applied premise, so the bail summary can point
+    /// at an inert edge's entry without the dependency graph.
+    pub commuting_premise_locations: BTreeMap<CommutingStatementsRef, String>,
 }
 
 /// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
 ///
 /// The full list of constraining cross-module edges inside the SCC
-/// is recomputable from `dependency_graph.json` + this entry's `modules`
-/// set, so the wire entry carries only the modules and the cut (a
-/// 1335-module SCC's full evidence is multi-MB; the trimmed entry is
-/// ~100 KB). Consumers that need per-edge evidence re-derive it via
+/// is recomputable from `dependency_graph.json.gz` + this entry's `modules`
+/// set, so the wire entry carries the modules, cut, and one bounded
+/// Pass-1 closed walk instead of all SCC edges. Consumers that need
+/// every edge re-derive it via
 /// `debundle gate describe <id>` (see `devinfra/js/debundle/docs/cli.md`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockingSccEntry {
@@ -94,7 +123,7 @@ pub struct BlockingSccEntry {
     /// Every module in the unrealizable SCC, by canonical
     /// [`ModulePath`] — the same value as the dependency graph module
     /// table's `path`, so consumers join `cycles.json` against
-    /// `dependency_graph.json` by resolving destination keys through the
+    /// `dependency_graph.json.gz` by resolving destination keys through the
     /// table (see `docs/wire_format.md` §"one canonical module
     /// identity").
     pub modules: Vec<ModulePath>,
@@ -103,6 +132,44 @@ pub struct BlockingSccEntry {
     /// toward breaking the SCC. See [`CycleReport::cut`] for the
     /// per-rejection-kind derivation.
     pub cut: Vec<CycleEdge>,
+    /// `null` means this rejection has no supported Pass-1 witness.
+    pub pass_one_witness: Option<PassOneCycleWitness>,
+    /// See [`CycleReport::inert_commuting_edges`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inert_commuting_edges: Vec<CycleEdge>,
+    /// Which gate pass rejected the SCC. `None` only in reports written
+    /// before the field existed.
+    #[serde(default)]
+    pub rejection: Option<BlockingRejection>,
+}
+
+/// Wire projection of [`SccRejection`] for `cycles.json` and the bail
+/// summary.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockingRejection {
+    /// Pass 1: a cycle of constraining edges. The root cause whenever
+    /// present.
+    MutualConstrainingCycle,
+    /// Pass 2 under the linker order: an independent blocker.
+    EsmEvaluationTdz,
+    /// Reported only alongside Pass-1 cycles, which leave no linker order
+    /// for Pass 2. Pass 2 run on the same assignment with each Pass-1 SCC
+    /// collapsed into one module: what still blocks once those cycles are
+    /// resolved by co-location. Conditional, not a verdict of its own.
+    TdzAfterCollapsingPassOne,
+    /// Written by a newer engine; readers treat it as a blocker.
+    #[serde(other)]
+    Unrecognized,
+}
+
+impl BlockingRejection {
+    pub fn of(rejection: SccRejection) -> Self {
+        match rejection {
+            SccRejection::MutualConstrainingCycle => Self::MutualConstrainingCycle,
+            SccRejection::EsmEvaluationTdz => Self::EsmEvaluationTdz,
+        }
+    }
 }
 
 impl BlockingSccEntry {
@@ -113,6 +180,9 @@ impl BlockingSccEntry {
             id,
             modules: cycle.modules.clone(),
             cut: cycle.cut.clone(),
+            pass_one_witness: cycle.pass_one_witness.clone(),
+            inert_commuting_edges: cycle.inert_commuting_edges.clone(),
+            rejection: Some(cycle.rejection),
         }
     }
 
@@ -127,12 +197,27 @@ impl BlockingSccEntry {
     }
 }
 
+/// A complete module closed walk, with one typed dependency cause per step.
+/// The text renderer previews only the first few steps; JSON keeps the walk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PassOneCycleWitness {
+    pub complete: bool,
+    pub steps: Vec<CycleEdge>,
+    pub text_preview_omitted_steps: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CycleEdge {
     /// Source module, by canonical [`ModulePath`].
     pub from: ModulePath,
     /// Target module, by canonical [`ModulePath`].
     pub to: ModulePath,
+    /// Source endpoint's actual source-unit ID (`unit:N`).
+    pub from_source_unit_id: String,
+    /// Target endpoint's actual source-unit ID (`unit:N`).
+    pub to_source_unit_id: String,
+    /// Edge-reason provenance. This ordinal can differ from either endpoint's
+    /// source-unit ordinal, so it must not be used to infer endpoint identity.
     pub statement_ordinal: SourceUnitOrdinal,
     /// Target binding being read (declared in `to`'s module). `None`
     /// for sequenced edges (no symbol).
@@ -154,8 +239,127 @@ pub struct CycleEdge {
     /// (`eager_use` and `sequenced`) vs.
     /// inert-but-graph-present (`lazy_use` and `hoisted_use`).
     pub kind: DepKind,
+    /// Impure-initializer evidence of the source side of a `sequenced`
+    /// edge (`None` when the source is classified pure).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sequenced_source_unit: Option<SequencedSourceUnitCause>,
+    /// Why the gate treats this edge as constraining: the at-init read
+    /// position for `eager_use`, or the retained emission cause and the
+    /// target side's impure-initializer evidence for `sequenced`. `None`
+    /// for the other kinds (their `kind` and `binding` already say why)
+    /// and for `sequenced` edges of a graph written before the cause was
+    /// retained.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<CutEdgeExplanation>,
+    /// The author `commuting_statements` entry that made this edge inert;
+    /// `None` for every constraining edge (and so for every `cut` row).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commuting_premise: Option<CommutingStatementsRef>,
+}
+
+/// Per-kind reasoning behind a constraining [`CycleEdge`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CutEdgeExplanation {
+    /// `eager_use`: `binding` is read while the source statement
+    /// evaluates, from `position`.
+    AtInitRead { position: AtInitReadPosition },
+    /// `sequenced`: the emission rule that produced the edge and how it
+    /// classified both endpoints, plus the target side's impure
+    /// initializer (`None` when the target is classified pure, e.g. an
+    /// array allocation or a pure content reader).
+    Sequenced {
+        cause: SequencedCause,
+        /// Boxed: the purity evidence dwarfs the other variant.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_source_unit: Option<Box<SequencedSourceUnitCause>>,
+    },
+}
+
+/// Where an at-init read sits relative to the statement that issues it.
+/// Derived from the edge's [`EdgeRole`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AtInitReadPosition {
+    /// The statement's own eager position (`reads.eager`).
+    Direct,
+    /// Lifted from the first-order body of `callee_source_unit`, a
+    /// chunk function the statement calls at init
+    /// (`promote_at_init_calls`).
+    PromotedAtInit {
+        callee_source_unit: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        callee_binding: Option<Atom>,
+    },
+    /// Reached through the conservative read closure of an at-init call
+    /// promotion cannot resolve (member call, IIFE, alias); the role
+    /// names the caller itself as callee.
+    UnresolvedAtInitCall,
+}
+
+impl fmt::Display for CutEdgeExplanation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AtInitRead { position } => match position {
+                AtInitReadPosition::Direct => f.write_str("direct at-init read"),
+                AtInitReadPosition::PromotedAtInit {
+                    callee_source_unit,
+                    callee_binding,
+                } => {
+                    let callee = callee_binding
+                        .as_ref()
+                        .map_or_else(|| callee_source_unit.clone(), |b| format!("`{b}`"));
+                    write!(
+                        f,
+                        "at-init read promoted from the body of {callee}, called at init"
+                    )
+                }
+                AtInitReadPosition::UnresolvedAtInitCall => f.write_str(
+                    "at-init read in the conservative closure of an unresolved at-init call",
+                ),
+            },
+            Self::Sequenced { cause, .. } => fmt::Display::fmt(cause, f),
+        }
+    }
+}
+
+/// Explain why `edge` constrains, from provenance retained on the
+/// dependency graph. See [`CycleEdge::explanation`].
+fn explain_edge(
+    dependency_graph: &DependencyGraph,
+    edge: &DependencyEdge,
+) -> Option<CutEdgeExplanation> {
+    match edge.reason.kind {
+        DepKind::EagerUse => {
+            let position = match edge.reason.role() {
+                EdgeRole::Direct => AtInitReadPosition::Direct,
+                EdgeRole::PromotedAtInit { callee_source_unit }
+                    if callee_source_unit == edge.from =>
+                {
+                    AtInitReadPosition::UnresolvedAtInitCall
+                }
+                EdgeRole::PromotedAtInit { callee_source_unit } => {
+                    AtInitReadPosition::PromotedAtInit {
+                        callee_source_unit: analysis::reports::source_unit_key(callee_source_unit),
+                        callee_binding: dependency_graph
+                            .node(callee_source_unit)
+                            .and_then(|node| node.declared.iter().next())
+                            .map(|id| id.0.clone()),
+                    }
+                }
+            };
+            Some(CutEdgeExplanation::AtInitRead { position })
+        }
+        DepKind::Sequenced => Some(CutEdgeExplanation::Sequenced {
+            cause: edge.reason.sequenced_cause()?.clone(),
+            target_source_unit: analysis::reports::schema::impure_source_unit_cause(
+                dependency_graph,
+                edge.to,
+            )
+            .map(Box::new),
+        }),
+        _ => None,
+    }
 }
 
 impl CycleEdge {
@@ -201,30 +405,79 @@ impl CycleEdge {
 /// For ESM-evaluation-simulator (Pass-2 / TDZ) rejections, the cut
 /// rows are followed by the lazy back-edges that close the I-cycle
 /// (`CycleReport::lazy_closure`), in the same binding-pair format.
+const CYCLE_WITNESS_PREVIEW_STEPS: usize = 8;
+
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     let mut out = String::new();
     const TOP_K: usize = 10;
+    let roots = cycles
+        .iter()
+        .filter(|c| c.rejection == BlockingRejection::MutualConstrainingCycle)
+        .count();
+    if roots > 0 {
+        let conditional = cycles
+            .iter()
+            .filter(|c| c.rejection == BlockingRejection::TdzAfterCollapsingPassOne)
+            .count();
+        out.push_str(&format!(
+            "Root cause: {roots} mutual constraining cycle(s) (Pass 1). Pass 2 needs a linker order, which a Pass-1 cycle rules out, so it did not run on this assignment. {conditional} conditional SCC(s) below are what Pass 2 reports with each Pass-1 SCC collapsed into one module.\n",
+        ));
+    }
     for (i, cycle) in cycles.iter().enumerate() {
         out.push_str(&format!(
-            "Cycle #{i}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
+            "Cycle #{i}{}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
+            match cycle.rejection {
+                BlockingRejection::MutualConstrainingCycle => " [Pass 1: mutual constraining cycle]",
+                BlockingRejection::EsmEvaluationTdz => " [Pass 2: ESM evaluation TDZ]",
+                BlockingRejection::TdzAfterCollapsingPassOne =>
+                    " [Pass 2, conditional: after collapsing the Pass-1 SCCs]",
+                BlockingRejection::Unrecognized => "",
+            },
             cycle.modules.len(),
             cycle.cut.len(),
             cut_pairs_count(&cycle.cut),
         ));
 
+        if let Some(witness) = &cycle.pass_one_witness {
+            out.push_str(&format!(
+                "  Complete Pass-1 closed walk ({} step(s); showing {}):\n",
+                witness.steps.len(),
+                witness.steps.len() - witness.text_preview_omitted_steps,
+            ));
+            for edge in witness.steps.iter().take(CYCLE_WITNESS_PREVIEW_STEPS) {
+                let key = BindingPairKey::of(edge);
+                out.push_str(&format!(
+                    "    {} ({}, {}) --{}--> {} ({}, {})\n",
+                    key.from_label,
+                    key.from,
+                    edge.from_source_unit_id,
+                    edge.kind.diagnostic_label(),
+                    key.to_label,
+                    key.to,
+                    edge.to_source_unit_id,
+                ));
+            }
+            if witness.text_preview_omitted_steps > 0 {
+                out.push_str(&format!(
+                    "    ... {} step(s) omitted from this preview; full ordered walk in cycles.json\n",
+                    witness.text_preview_omitted_steps,
+                ));
+            }
+        } else {
+            out.push_str("  Pass-1 closed-walk witness unsupported for this rejection kind.\n");
+        }
+
         // Group cut edges by binding-pair blame key. Each group is
         // one (reader, target) atom split the spec author can fix.
-        let mut groups: HashMap<BindingPairKey<'_>, BindingPairAgg> = HashMap::new();
+        let mut groups: HashMap<BindingPairKey<'_>, Vec<&CycleEdge>> = HashMap::new();
         for edge in &cycle.cut {
-            let key = BindingPairKey::of(edge);
-            let agg = groups.entry(key).or_insert_with(|| BindingPairAgg {
-                kind: edge.kind,
-                count: 0,
-            });
-            agg.count += 1;
+            groups
+                .entry(BindingPairKey::of(edge))
+                .or_default()
+                .push(edge);
         }
-        let mut ranked: Vec<(BindingPairKey<'_>, BindingPairAgg)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(&b.0)));
+        let mut ranked: Vec<(BindingPairKey<'_>, Vec<&CycleEdge>)> = groups.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
 
         // Every blocking SCC carries a non-empty cut by construction:
         // Pass-1 runs FAS over a strongly connected constraining
@@ -236,18 +489,19 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
         );
 
         out.push_str(
-            "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module)):\n",
+            "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module), then why each edge constrains):\n",
         );
-        for (key, agg) in ranked.iter().take(TOP_K) {
+        for (key, edges) in ranked.iter().take(TOP_K) {
             out.push_str(&format!(
                 "    {n:>4}x  {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})\n",
-                n = agg.count,
+                n = edges.len(),
                 from_b = key.from_label,
                 from_m = key.from,
-                kind = agg.kind.diagnostic_label(),
+                kind = edges[0].kind.diagnostic_label(),
                 to_b = key.to_label,
                 to_m = key.to,
             ));
+            render_explanations(edges, &mut out);
         }
         if ranked.len() > TOP_K {
             out.push_str(&format!(
@@ -285,6 +539,12 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             }
         }
 
+        render_inert_commuting_edges(
+            &cycle.inert_commuting_edges,
+            &cycle.commuting_premise_locations,
+            &mut out,
+        );
+
         out.push_str(
             "  Fix: co-locate each (source, target) binding pair above into one logical module, or break the SCC's back-edges in the spec.\n",
         );
@@ -321,10 +581,69 @@ impl<'a> BindingPairKey<'a> {
     }
 }
 
-#[derive(Debug)]
-struct BindingPairAgg {
-    kind: DepKind,
-    count: usize,
+/// Distinct explanations behind one binding-pair row, indented under
+/// it. Shared by the bail summary and `gate describe`'s evidence block.
+pub fn render_explanations(edges: &[&CycleEdge], out: &mut String) {
+    const WHY_K: usize = 3;
+    let distinct: BTreeSet<String> = edges
+        .iter()
+        .filter_map(|edge| edge.explanation.as_ref())
+        .map(ToString::to_string)
+        .collect();
+    for why in distinct.iter().take(WHY_K) {
+        out.push_str(&format!("           - {why}\n"));
+    }
+    if distinct.len() > WHY_K {
+        out.push_str(&format!(
+            "           - … +{} more distinct reason(s)\n",
+            distinct.len() - WHY_K,
+        ));
+    }
+}
+
+/// The `sequenced` edges between SCC members an author `commuting_statements`
+/// premise made inert: a count line, then up to `INERT_K` rows naming both
+/// endpoints, the premise (with its spec location where `premise_locations`
+/// has it) and the retained cause. Nothing when there is no inert edge.
+pub fn render_inert_commuting_edges(
+    edges: &[CycleEdge],
+    premise_locations: &BTreeMap<CommutingStatementsRef, String>,
+    out: &mut String,
+) {
+    const INERT_K: usize = 3;
+    if edges.is_empty() {
+        return;
+    }
+    out.push_str(&format!(
+        "  Inert: {} sequenced edge(s) between SCC members made inert by commuting_statements premise(s); never in the cut:\n",
+        edges.len(),
+    ));
+    for edge in edges.iter().take(INERT_K) {
+        let key = BindingPairKey::of(edge);
+        out.push_str(&format!(
+            "    {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})  [stmt #{ord}]\n",
+            from_b = key.from_label,
+            from_m = key.from,
+            kind = edge.kind.diagnostic_label(),
+            to_b = key.to_label,
+            to_m = key.to,
+            ord = edge.statement_ordinal.0,
+        ));
+        if let Some(premise) = &edge.commuting_premise {
+            let location = premise_locations
+                .get(premise)
+                .map(|location| format!(" at {location}"))
+                .unwrap_or_default();
+            out.push_str(&format!("           inert: premise {premise}{location}\n"));
+        }
+        render_explanations(&[edge], out);
+    }
+    if edges.len() > INERT_K {
+        out.push_str(&format!(
+            "    … +{} more inert edge(s)\n",
+            edges.len() - INERT_K,
+        ));
+    }
 }
 
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
@@ -351,14 +670,37 @@ pub fn validate_assignment(
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> AssignmentReport {
+    validate_assignment_with_verdict(dependency_graph, assignment, module_path).report
+}
+
+/// Validate once and retain both the canonical typed verdict and its rendered
+/// report for in-memory consumers that need to pair it with candidate-order
+/// analyses. Callers must not infer gate facts from rendered strings.
+pub fn validate_assignment_with_verdict(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+) -> AssignmentValidation {
     let verdict = check_realizability(dependency_graph, assignment);
+    validation_from_verdict(dependency_graph, assignment, module_path, verdict)
+}
+
+pub(crate) fn validation_from_verdict(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    verdict: RealizabilityVerdict,
+) -> AssignmentValidation {
     let cross_rebinds = render_cross_rebinds(dependency_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
-        return AssignmentReport {
-            cycles: Vec::new(),
-            atomic_group_conflicts: Vec::new(),
-            linker_order: Vec::new(),
-            cross_rebinds,
+        return AssignmentValidation {
+            verdict,
+            report: AssignmentReport {
+                cycles: Vec::new(),
+                atomic_group_conflicts: Vec::new(),
+                linker_order: Vec::new(),
+                cross_rebinds,
+            },
         };
     }
     // statement_ordinal → first declared binding of the source_unit that
@@ -376,21 +718,19 @@ pub fn validate_assignment(
                 .map(|id| (node.statement_ordinal, id.0.clone()))
         })
         .collect();
-    let cycles = verdict
-        .unrealizable_sccs
-        .iter()
-        .map(|diagnosis| {
-            let (cut, lazy_closure) = match diagnosis.rejection {
-                SccRejection::MutualConstrainingCycle => (
-                    compute_realizability_cut(
+    let report =
+        |diagnosis: &SccDiagnosis, rejection: BlockingRejection, modules: &BTreeSet<ModuleId>| {
+            let (cut, lazy_closure, pass_one_witness) = match diagnosis.rejection {
+                SccRejection::MutualConstrainingCycle => {
+                    let (cut, witness) = compute_realizability_cut(
                         dependency_graph,
                         assignment,
                         &diagnosis.core.constraining_dependency_edges,
                         module_path,
                         &from_binding_by_ordinal,
-                    ),
-                    Vec::new(),
-                ),
+                    );
+                    (cut, Vec::new(), Some(witness))
+                }
                 // The diagnosis's source-unit edges ARE the cut: the
                 // simulator surfaced exactly the constraining
                 // `(from, to)` pairs whose post-order check failed.
@@ -405,30 +745,138 @@ pub fn validate_assignment(
                     nonconstraining_closure_edges(
                         dependency_graph,
                         assignment,
-                        &diagnosis.core.modules,
+                        modules,
                         module_path,
                         &from_binding_by_ordinal,
                     ),
+                    None,
                 ),
             };
             CycleReport {
-                modules: diagnosis
-                    .core
-                    .modules
-                    .iter()
-                    .copied()
-                    .map(module_path)
-                    .collect(),
+                rejection,
+                modules: modules.iter().copied().map(module_path).collect(),
+                pass_one_witness: if rejection == BlockingRejection::MutualConstrainingCycle {
+                    pass_one_witness
+                } else {
+                    None
+                },
                 cut,
                 lazy_closure,
+                inert_commuting_edges: inert_commuting_edges(
+                    dependency_graph,
+                    assignment,
+                    modules,
+                    module_path,
+                    &from_binding_by_ordinal,
+                ),
+                commuting_premise_locations: dependency_graph
+                    .commuting_premises()
+                    .iter()
+                    .map(|premise| (premise.reference.clone(), premise.spec_location.clone()))
+                    .collect(),
             }
+        };
+    let mut cycles: Vec<CycleReport> = verdict
+        .unrealizable_sccs
+        .iter()
+        .map(|diagnosis| {
+            report(
+                diagnosis,
+                BlockingRejection::of(diagnosis.rejection),
+                &diagnosis.core.modules,
+            )
         })
         .collect();
-    AssignmentReport {
-        cycles,
-        atomic_group_conflicts: Vec::new(),
-        linker_order: Vec::new(),
-        cross_rebinds,
+    let pass_one: Vec<&BTreeSet<ModuleId>> = verdict
+        .unrealizable_sccs
+        .iter()
+        .filter(|diagnosis| diagnosis.rejection == SccRejection::MutualConstrainingCycle)
+        .map(|diagnosis| &diagnosis.core.modules)
+        .collect();
+    if !pass_one.is_empty() {
+        let collapsed = collapse_modules(dependency_graph, assignment, &pass_one);
+        let reported: BTreeSet<&BTreeSet<ModuleId>> = verdict
+            .unrealizable_sccs
+            .iter()
+            .map(|diagnosis| &diagnosis.core.modules)
+            .collect();
+        for diagnosis in check_realizability(dependency_graph, &collapsed.assignment)
+            .unrealizable_sccs
+            .iter()
+            .filter(|diagnosis| diagnosis.rejection == SccRejection::EsmEvaluationTdz)
+        {
+            let modules = collapsed.expand(&diagnosis.core.modules);
+            if !reported.contains(&modules) {
+                cycles.push(report(
+                    diagnosis,
+                    BlockingRejection::TdzAfterCollapsingPassOne,
+                    &modules,
+                ));
+            }
+        }
+    }
+    AssignmentValidation {
+        verdict,
+        report: AssignmentReport {
+            cycles,
+            atomic_group_conflicts: Vec::new(),
+            linker_order: Vec::new(),
+            cross_rebinds,
+        },
+    }
+}
+
+/// `assignment` with every module of each Pass-1 SCC moved into one
+/// representative: the entry when the SCC contains it, else its smallest
+/// module. Collapsing whole SCCs of the constraining graph leaves it acyclic.
+struct CollapsedAssignment {
+    assignment: ModuleAssignment,
+    members: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+}
+
+impl CollapsedAssignment {
+    fn expand(&self, modules: &BTreeSet<ModuleId>) -> BTreeSet<ModuleId> {
+        modules
+            .iter()
+            .flat_map(|module| {
+                self.members
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_else(|| BTreeSet::from([*module]))
+            })
+            .collect()
+    }
+}
+
+fn collapse_modules(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    sccs: &[&BTreeSet<ModuleId>],
+) -> CollapsedAssignment {
+    let entry = assignment.entry_destination().module_id();
+    let mut representative = BTreeMap::new();
+    let mut members = BTreeMap::new();
+    for scc in sccs {
+        let target = if scc.contains(&entry) {
+            entry
+        } else {
+            *scc.first().expect("a Pass-1 SCC has at least two modules")
+        };
+        for &module in *scc {
+            representative.insert(module, target);
+        }
+        members.insert(target, (*scc).clone());
+    }
+    let of = dependency_graph
+        .iter_nodes()
+        .map(|node| {
+            let module = assignment.of(node.id);
+            representative.get(&module).copied().unwrap_or(module)
+        })
+        .collect();
+    CollapsedAssignment {
+        assignment: ModuleAssignment::from_assignments(of, assignment.entry_destination()),
+        members,
     }
 }
 
@@ -476,27 +924,71 @@ fn cycle_edges_for(
     let mut out: Vec<CycleEdge> = edge_ids
         .into_iter()
         .map(|edge_id| {
-            let edge = dependency_graph.edge(edge_id);
-            let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
-                .expect("verdict source-unit edge provenance is cross-module in the gate view");
-            CycleEdge {
-                from: module_path(from),
-                to: module_path(to),
-                statement_ordinal: edge.reason.statement_ordinal,
-                binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
-                from_binding: from_binding_by_ordinal
-                    .get(&edge.reason.statement_ordinal)
-                    .cloned(),
-                kind: edge.reason.kind,
-                sequenced_source_unit: analysis::reports::schema::sequenced_edge_cause(
-                    dependency_graph,
-                    edge,
-                ),
-            }
+            cycle_edge_for(
+                dependency_graph,
+                assignment,
+                edge_id,
+                module_path,
+                from_binding_by_ordinal,
+            )
         })
         .collect();
     CycleEdge::sort_for_report(&mut out);
     out
+}
+
+fn cycle_edge_for(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    edge_id: DependencyEdgeId,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
+) -> CycleEdge {
+    let edge = dependency_graph.edge(edge_id);
+    let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
+        .expect("verdict source-unit edge provenance is cross-module in the gate view");
+    CycleEdge {
+        from: module_path(from),
+        to: module_path(to),
+        from_source_unit_id: analysis::reports::source_unit_key(edge.from),
+        to_source_unit_id: analysis::reports::source_unit_key(edge.to),
+        statement_ordinal: edge.reason.statement_ordinal,
+        binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
+        from_binding: from_binding_by_ordinal
+            .get(&edge.reason.statement_ordinal)
+            .cloned(),
+        kind: edge.reason.kind,
+        sequenced_source_unit: analysis::reports::schema::sequenced_edge_cause(
+            dependency_graph,
+            edge,
+        ),
+        explanation: explain_edge(dependency_graph, edge),
+        commuting_premise: edge.reason.commuting_premise().cloned(),
+    }
+}
+
+/// Cross-module edges between members of `modules` (gate view) that an
+/// author `commuting_statements` premise made inert. See
+/// [`CycleReport::inert_commuting_edges`].
+fn inert_commuting_edges(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    modules: &BTreeSet<ModuleId>,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
+) -> Vec<CycleEdge> {
+    let inert_edge_ids = dependency_graph.iter_edges().filter_map(|edge| {
+        edge.reason.commuting_premise()?;
+        let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)?;
+        (modules.contains(&from) && modules.contains(&to)).then_some(edge.id)
+    });
+    cycle_edges_for(
+        dependency_graph,
+        assignment,
+        inert_edge_ids,
+        module_path,
+        from_binding_by_ordinal,
+    )
 }
 
 /// Nonconstraining cross-module read edges between members of `modules`, gate
@@ -529,10 +1021,14 @@ fn nonconstraining_closure_edges(
     )
 }
 
+const ATOMIC_GROUP_CONFLICT_PREVIEW_LIMIT: usize = 8;
+const ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT: usize = 20;
+
 /// Render a human-readable summary of atomic-group conflicts for
 /// inclusion in the materializer's bail message. One block per
-/// conflict listing the group's members and each member's claim. The
-/// `module_path` callback resolves [`ModuleId`]s to the canonical
+/// conflict previews the group's members and claims. Large lists are
+/// bounded here; the machine-readable conflict report remains complete.
+/// The `module_path` callback resolves [`ModuleId`]s to the canonical
 /// [`ModulePath`]s the spec author recognizes.
 pub fn render_atomic_group_conflict_summary(
     conflicts: &[AtomicGroupConflict],
@@ -540,7 +1036,15 @@ pub fn render_atomic_group_conflict_summary(
     dependency_graph: &DependencyGraph,
 ) -> String {
     let mut out = String::new();
-    for (idx, c) in conflicts.iter().enumerate() {
+    let preview_count = conflicts.len().min(ATOMIC_GROUP_CONFLICT_PREVIEW_LIMIT);
+    if conflicts.len() > preview_count {
+        out.push_str(&format!(
+            "  atomic-group conflicts: showing {preview_count} of {}; {} conflict(s) omitted from this preview\n",
+            conflicts.len(),
+            conflicts.len() - preview_count,
+        ));
+    }
+    for (idx, c) in conflicts.iter().take(preview_count).enumerate() {
         if idx > 0 {
             out.push('\n');
         }
@@ -560,11 +1064,14 @@ pub fn render_atomic_group_conflict_summary(
             .collect();
         conflicting_modules.sort();
         out.push_str(&format!(
-            "  atomic group {{{}}} — claims across {{{}}}:\n",
-            member_ids.join(", "),
-            conflicting_modules.join(", "),
+            "  atomic group {{{}}} ({} members) — claims across {{{}}} ({} destinations; {} claims):\n",
+            render_string_preview(&member_ids, ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT),
+            member_ids.len(),
+            render_string_preview(&conflicting_modules, ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT),
+            conflicting_modules.len(),
+            c.claims.len(),
         ));
-        for claim in &c.claims {
+        for claim in c.claims.iter().take(ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT) {
             let names = if claim.binding_names.is_empty() {
                 String::new()
             } else {
@@ -585,17 +1092,43 @@ pub fn render_atomic_group_conflict_summary(
                 module_path(claim.module),
             ));
         }
+        if c.claims.len() > ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT {
+            out.push_str(&format!(
+                "    ... {} claim row(s) omitted from this preview ({} total)\n",
+                c.claims.len() - ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT,
+                c.claims.len(),
+            ));
+        }
         let causes =
             analysis::reports::schema::sequenced_source_unit_causes(dependency_graph, &c.members);
-        render_sequenced_source_unit_causes(&causes, &mut out);
+        render_sequenced_source_unit_causes_with_limit(
+            &causes,
+            &mut out,
+            Some(ATOMIC_GROUP_DETAIL_PREVIEW_LIMIT),
+        );
     }
     out
+}
+
+fn render_string_preview(values: &[String], limit: usize) -> String {
+    let mut preview: Vec<String> = values.iter().take(limit).cloned().collect();
+    let omitted = values.len().saturating_sub(limit);
+    if omitted > 0 {
+        preview.push(format!("... {omitted} omitted"));
+    }
+    preview.join(", ")
 }
 
 fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedSourceUnitCause> {
     let mut causes = BTreeMap::new();
     for edge in &cycle.cut {
-        if let Some(cause) = &edge.sequenced_source_unit {
+        let target = match &edge.explanation {
+            Some(CutEdgeExplanation::Sequenced {
+                target_source_unit, ..
+            }) => target_source_unit.as_deref(),
+            _ => None,
+        };
+        for cause in edge.sequenced_source_unit.iter().chain(target) {
             causes.insert(cause.source_unit_id.clone(), cause.clone());
         }
     }
@@ -606,11 +1139,43 @@ pub(crate) fn render_sequenced_source_unit_causes(
     causes: &[SequencedSourceUnitCause],
     out: &mut String,
 ) {
-    if causes.is_empty() {
+    render_sequenced_source_unit_causes_with_limit(causes, out, None);
+}
+
+fn render_sequenced_source_unit_causes_with_limit(
+    causes: &[SequencedSourceUnitCause],
+    out: &mut String,
+    limit: Option<usize>,
+) {
+    let mut reason_class_counts = BTreeMap::new();
+    for cause in causes {
+        if let Purity::NotPure { reasons } = &cause.purity {
+            for reason in reasons {
+                *reason_class_counts
+                    .entry(<&str>::from(reason.rule))
+                    .or_insert(0usize) += 1;
+            }
+        }
+    }
+    let total_reasons: usize = reason_class_counts.values().sum();
+    if total_reasons == 0 {
         return;
     }
-    out.push_str("  Impure initializers behind side-effect edges:\n");
-    for cause in causes {
+    let rendered_limit = limit.unwrap_or(total_reasons).min(total_reasons);
+    out.push_str("  Impure initializers behind side-effect edges");
+    if total_reasons > rendered_limit {
+        let classes = reason_class_counts
+            .iter()
+            .map(|(class, count)| format!("{class}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            " (showing {rendered_limit} of {total_reasons} reasons; classes: {classes})"
+        ));
+    }
+    out.push_str(":\n");
+    let mut rendered = 0;
+    'causes: for cause in causes {
         let names = if cause.binding_names.is_empty() {
             cause.source_unit_id.clone()
         } else {
@@ -625,6 +1190,9 @@ pub(crate) fn render_sequenced_source_unit_causes(
             continue;
         };
         for reason in reasons {
+            if rendered == rendered_limit {
+                break 'causes;
+            }
             let location = reason
                 .source_location
                 .as_ref()
@@ -639,17 +1207,32 @@ pub(crate) fn render_sequenced_source_unit_causes(
                     )
                 })
                 .unwrap_or_else(|| "<location unavailable>".to_string());
-            let rule = reason.rule.as_str();
+            let rule = reason.rule;
             let detail = reason
                 .detail
                 .as_deref()
                 .map(|detail| format!(" ({detail})"))
                 .unwrap_or_default();
-            out.push_str(&format!("    `{names}` at {location}: {rule}{detail}\n"));
+            // A statement whose synchronous execution is incomplete
+            // chains conservatively; say so next to its purity reason.
+            let incomplete = match cause.synchronous_execution_complete {
+                Some(false) => "; synchronous execution incomplete",
+                _ => "",
+            };
+            out.push_str(&format!(
+                "    `{names}` at {location}: {rule}{detail}{incomplete}\n"
+            ));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("      {guidance}\n"));
             }
+            rendered += 1;
         }
+    }
+    if total_reasons > rendered {
+        out.push_str(&format!(
+            "    ... {} initializer reason(s) omitted from this preview\n",
+            total_reasons - rendered,
+        ));
     }
 }
 
@@ -678,7 +1261,7 @@ fn compute_realizability_cut(
     constraining_dependency_edges: &[DependencyEdgeId],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
-) -> Vec<CycleEdge> {
+) -> (Vec<CycleEdge>, PassOneCycleWitness) {
     let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>> = BTreeMap::new();
     for &edge_id in constraining_dependency_edges {
         let edge = dependency_graph.edge(edge_id);
@@ -707,11 +1290,75 @@ fn compute_realizability_cut(
     for fas_edge in greedy_feedback_arc_set(&pair_graph) {
         cut_edge_ids.extend_from_slice(&by_pair[fas_edge.weight()]);
     }
-    cycle_edges_for(
+    // Anchor at a deterministic edge of the actionable cut. The verdict's
+    // Pass-1 SCC is strongly connected, so a reciprocal path exists through
+    // these same active constraining pairs.
+    let anchor = *cut_edge_ids
+        .iter()
+        .min()
+        .expect("a Pass-1 SCC has a nonempty feedback cut");
+    let anchor_edge = dependency_graph.edge(anchor);
+    let (anchor_from, anchor_to) =
+        assignment_endpoints(anchor_edge, assignment, EndpointView::Gate)
+            .expect("cut edge is cross-module in the gate view");
+    let mut queue = VecDeque::from([anchor_to]);
+    let mut seen = BTreeSet::from([anchor_to]);
+    let mut predecessor: BTreeMap<ModuleId, (ModuleId, DependencyEdgeId)> = BTreeMap::new();
+    while let Some(from) = queue.pop_front() {
+        if from == anchor_from {
+            break;
+        }
+        // Reuse the pair graph rather than retaining another adjacency map.
+        // Its edges were inserted in BTreeMap order, so traversal is repeatable.
+        for pair_edge in pair_graph.edges(idx_of[&from]) {
+            let pair = pair_edge.weight();
+            let to = pair.1;
+            if seen.insert(to) {
+                let edge_id = *by_pair[pair].iter().min().expect("a pair has an edge");
+                predecessor.insert(to, (from, edge_id));
+                queue.push_back(to);
+            }
+        }
+    }
+    assert!(
+        seen.contains(&anchor_from),
+        "Pass-1 verdict edge has no reciprocal path inside its SCC"
+    );
+    let mut return_edge_ids = Vec::new();
+    let mut at = anchor_from;
+    while at != anchor_to {
+        let &(previous, edge_id) = predecessor
+            .get(&at)
+            .expect("BFS path has a predecessor until its start");
+        return_edge_ids.push(edge_id);
+        at = previous;
+    }
+    return_edge_ids.reverse();
+    let witness_steps: Vec<CycleEdge> = std::iter::once(anchor)
+        .chain(return_edge_ids)
+        .map(|edge_id| {
+            cycle_edge_for(
+                dependency_graph,
+                assignment,
+                edge_id,
+                module_path,
+                from_binding_by_ordinal,
+            )
+        })
+        .collect();
+    let witness = PassOneCycleWitness {
+        complete: true,
+        text_preview_omitted_steps: witness_steps
+            .len()
+            .saturating_sub(CYCLE_WITNESS_PREVIEW_STEPS),
+        steps: witness_steps,
+    };
+    let cut = cycle_edges_for(
         dependency_graph,
         assignment,
         cut_edge_ids,
         module_path,
         from_binding_by_ordinal,
-    )
+    );
+    (cut, witness)
 }

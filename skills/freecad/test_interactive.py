@@ -14,9 +14,9 @@ import xmlrpc.client
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from skills.freecad.conftest import freecad_env
-from util.bazel.runfiles import get_required_path
 
 _FREECAD_MCP_ADDON_RLOCATION = "freecad_mcp/addon/FreeCADMCP"
 _RPC_PORT = 9875
@@ -27,7 +27,7 @@ _RPC_URL = f"http://localhost:{_RPC_PORT}"
 def freecad_rpc(conda_root, xvfb_display, tmp_path_factory):
     """Start FreeCAD with the MCP addon and yield an XML-RPC proxy."""
     freecad_gui = conda_root / "bin" / "freecad"
-    addon_dir = get_required_path(_FREECAD_MCP_ADDON_RLOCATION)
+    addon_dir = Runfiles.CreateOrRaise().root() / _FREECAD_MCP_ADDON_RLOCATION
 
     fc_home = tmp_path_factory.mktemp("freecad_rpc_home")
     (fc_home / ".local" / "share" / "FreeCAD" / "1.0").mkdir(parents=True)

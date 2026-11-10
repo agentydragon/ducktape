@@ -12,24 +12,18 @@ from pathlib import Path
 
 _DEVINFRA = Path(__file__).parent
 _PINS_FILE = _DEVINFRA / "image_pins.json"
-_BBR_CONFIG = _DEVINFRA / "bbr.json"
+_BBRC = _DEVINFRA.parent / ".bbrc"
 
 
-def _update_bbr_config(image: str, digest: str) -> bool:
-    """Update container_image in bbr.json when buildbuddy_remote_runner is repinned.
-
-    bbr.json selects the BuildBuddy Remote Runner image for `bb remote`; the RBE
-    container image is selected separately by the execution platform. The runner
-    image is outside action keys.
-    """
-    if not _BBR_CONFIG.exists():
-        return False
-    config = json.loads(_BBR_CONFIG.read_text())
-    if "container_image" not in config:
-        return False
-    config["container_image"] = f"{image}@{digest}"
-    _BBR_CONFIG.write_text(json.dumps(config, indent=2) + "\n")
-    return True
+def _update_runner_config(image: str, digest: str) -> None:
+    """Keep bb remote's native runner default in sync with the image pin."""
+    lines = _BBRC.read_text().splitlines()
+    prefix = "remote --container_image="
+    matches = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+    if len(matches) != 1:
+        raise ValueError(f"Expected one {prefix} entry in {_BBRC}")
+    lines[matches[0]] = f"{prefix}docker://{image}@{digest}"
+    _BBRC.write_text("\n".join(lines) + "\n")
 
 
 def main() -> None:
@@ -58,13 +52,9 @@ def main() -> None:
 
     print(f"Updated {args.name} in {_PINS_FILE}")
 
-    # Also update bbr.json when the runner is repinned
     if args.name == "buildbuddy_remote_runner":
-        image = pins[args.name]["image"]
-        if _update_bbr_config(image, args.digest):
-            if prettier:
-                subprocess.run([prettier, "--write", _BBR_CONFIG], check=True)
-            print(f"Updated container_image in {_BBR_CONFIG}")
+        _update_runner_config(pins[args.name]["image"], args.digest)
+        print(f"Updated container_image in {_BBRC}")
 
 
 if __name__ == "__main__":

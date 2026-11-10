@@ -27,83 +27,225 @@ import {
   type SubsetParams,
 } from "@electric-sql/client";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { z } from "zod";
 
-import type { ThreadScopeResponse } from "../api/schema";
 import { displayableError, fetchWithLogin } from "../client";
 import { threadScope } from "./client";
-import { backoff, type StreamConnection } from "../live_stream";
+import { backoff, type StreamConnection } from "../stream_reader";
+import { followWatch } from "../watch_stream";
 import {
-  decimalBigInt,
-  type Decimal,
-  type Payload,
-  type PayloadRef,
+  ThreadCommandOutcome,
+  ThreadCommandSchema,
+  ThreadConfirmedInputSchema,
+  ThreadEntitySchema,
+  ThreadItemSchema,
+  ThreadLifecycleSchema,
+  ThreadPayloadField,
+  ThreadViewStateSchema,
+  ThreadFeedStatus,
+  WatchSessionSummariesResponseSchema,
+  type ReadThreadEntitiesResponse,
+  type ThreadPayloadReference,
   type ThreadEntity,
-  type ThreadState,
-  type ThreadSync,
-} from "./thread_sync";
+} from "../../../history_service/history_service_pb";
+import { type Payload, type ThreadState, type ThreadSync } from "./thread_sync";
+import { threadEntityPayloadReferences } from "./thread_entity";
 
-const decimal: z.ZodType<Decimal> = z.union([z.string().regex(/^-?\d+$/), z.bigint()]);
-type PayloadField = PayloadRef["field"];
+type Decimal = string | bigint;
+const PG_BIGINT_MAX = 9_223_372_036_854_775_807n;
+const pgBigintString = z
+  .string()
+  .regex(/^\d+$/)
+  .refine((value) => BigInt(value) <= PG_BIGINT_MAX, "value exceeds PostgreSQL BIGINT");
+const pgBigint = z
+  .bigint()
+  .refine((value) => value >= 0n && value <= PG_BIGINT_MAX, "value is outside PostgreSQL BIGINT");
+function decimalBigInt(value: Decimal): bigint {
+  return typeof value === "bigint" ? value : BigInt(value);
+}
+function assertPgBigint(value: bigint, field: string): void {
+  if (value < 0n || value > PG_BIGINT_MAX) {
+    throw new Error(`${field} is outside PostgreSQL BIGINT.`);
+  }
+}
+const decimal: z.ZodType<Decimal> = z.union([pgBigintString, pgBigint]);
+type PayloadField = ThreadPayloadReference["field"];
+const payloadFieldPaths: Partial<Record<PayloadField, string>> = {
+  [ThreadPayloadField.TEXT]: "text",
+  [ThreadPayloadField.ARGUMENTS]: "arguments",
+  [ThreadPayloadField.OUTPUT]: "output",
+  [ThreadPayloadField.CONFIRMED_INPUT]: "confirmed_input",
+  [ThreadPayloadField.COMMAND_INPUT]: "command_input",
+};
 
-const payloadRefSchema = z.object({
-  projection_epoch: z.string(),
-  owner_cursor: z.string(),
-  owner_id: z.string(),
-  field: z.enum(["text", "arguments", "output", "confirmed_input", "command_input"]),
-  revision_cursor: z.string(),
-  generation: z.string(),
-  chunk_count: z.string(),
-});
+const entityRowSchema = z
+  .object({
+    threadId: z.string(),
+    projectionEpoch: z.string(),
+    entityKind: z.enum(["view_state", "item", "confirmed_input", "lifecycle", "command"]),
+    entityId: z.string(),
+    entityIndex: decimal,
+    cursor: decimal,
+    revisionCursor: decimal,
+    pending: z.boolean(),
+    state: z.unknown(),
+  })
+  .strict();
 
-const stateSchema = z.union([
-  z.object({
-    controls: z.object({
-      applied_model: z.string().nullable(),
-      applied_reasoning_effort: z.string().nullable(),
-      active_turn_id: z.string().nullable(),
-      harness_state: z.string().nullable(),
-    }),
-    operational: z.object({
-      status: z.enum(["active", "ended", "failed"]),
-      last_verified_cursor: z.string(),
-      feed_error: z.object({ cursor: z.string().nullable(), message: z.string() }).nullable(),
-    }),
-  }),
-  z.object({
-    kind: z.number().int(),
-    tool_name: z.string(),
-    completion: z.string().nullable(),
-    tool_succeeded: z.boolean().nullable(),
-    recovery: z.number().nullable(),
-    recovery_reason: z.string().nullable(),
-  }),
-  z.object({ harness_message_id: z.string(), origin_command_ids: z.array(z.string()) }),
-  z.object({ observation: z.string(), event: z.unknown() }),
-  z.object({
-    operation: z.string(),
-    outcome: z.enum(["pending", "effected", "failed", "noop"]),
-    outcome_cursor: z.string().nullable(),
-    outcome_reason: z.string().nullable(),
-    requested_value: z.string().nullable(),
-  }),
-]);
-const entitySchema = z.object({
-  threadId: z.string(),
-  projectionEpoch: z.string(),
-  entityKind: z.enum(["view_state", "item", "confirmed_input", "lifecycle", "command"]),
-  entityId: z.string(),
-  entityIndex: decimal,
-  cursor: decimal,
-  revisionCursor: decimal,
-  pending: z.boolean(),
-  turnId: z.string().nullable(),
-  state: stateSchema,
-  textRef: payloadRefSchema.nullable(),
-  argumentsRef: payloadRefSchema.nullable(),
-  outputRef: payloadRefSchema.nullable(),
-  inputRef: payloadRefSchema.nullable(),
-});
+class InvalidThreadEntityError extends Error {
+  constructor(cause: unknown) {
+    super(`Invalid Electric Thread entity: ${displayableError(cause)}`);
+  }
+}
+
+/** Converts Electric's flattened storage row into History's generated canonical entity oneof. */
+function decodeElectricThreadEntity(value: unknown): ThreadEntity {
+  const row = entityRowSchema.parse(value);
+  const base = {
+    sessionId: row.threadId,
+    projectionEpoch: row.projectionEpoch,
+    entityId: row.entityId,
+    entityIndex: BigInt(row.entityIndex),
+    cursor: BigInt(row.cursor),
+    revisionCursor: BigInt(row.revisionCursor),
+  };
+  const entityCursor = base.cursor;
+  const entityRevisionCursor = base.revisionCursor;
+  if (entityRevisionCursor < entityCursor) {
+    throw new Error(`Invalid revision cursor on ${row.entityKind}/${row.entityId}.`);
+  }
+  const stateJson = typeof row.state === "string" ? (JSON.parse(row.state) as JsonValue) : (row.state as JsonValue);
+  const variant = <T extends ThreadPayloadReference | undefined>(
+    reference: T,
+    field: ThreadPayloadField,
+    expectedOwner: string,
+    requireCurrentRevision = false
+  ): void => {
+    if (reference === undefined) return;
+    assertPgBigint(reference.ownerCursor, "payload owner cursor");
+    assertPgBigint(reference.generation, "payload generation");
+    assertPgBigint(reference.revisionCursor, "payload revision cursor");
+    if (reference.chunkCount < 0n) throw new Error("Payload chunk count cannot be negative.");
+    if (
+      reference.projectionEpoch !== row.projectionEpoch ||
+      reference.field !== field ||
+      reference.ownerId !== expectedOwner ||
+      reference.ownerCursor !== entityCursor ||
+      reference.ownerCursor > reference.generation ||
+      reference.generation > reference.revisionCursor ||
+      reference.revisionCursor > entityRevisionCursor ||
+      (requireCurrentRevision && reference.revisionCursor !== entityCursor)
+    ) {
+      throw new Error(`Invalid ${field} payload reference on ${row.entityKind}/${row.entityId}.`);
+    }
+  };
+  switch (row.entityKind) {
+    case "view_state": {
+      if (row.pending) throw new Error(`Invalid view state row ${row.entityId}.`);
+      const state = fromJson(ThreadViewStateSchema, stateJson);
+      if (!state.controls || !state.operational) throw new Error(`Invalid view state row ${row.entityId}.`);
+      if (
+        ![ThreadFeedStatus.ACTIVE, ThreadFeedStatus.ENDED, ThreadFeedStatus.FAILED].includes(state.operational.status)
+      ) {
+        throw new Error(`Invalid feed status on view state row ${row.entityId}.`);
+      }
+      assertPgBigint(state.operational.lastVerifiedCursor, "last verified cursor");
+      if (state.operational.feedError?.cursor !== undefined) {
+        assertPgBigint(state.operational.feedError.cursor, "feed error cursor");
+      }
+      return create(ThreadEntitySchema, {
+        ...base,
+        entity: {
+          case: "viewState",
+          value: state,
+        },
+      });
+    }
+    case "item": {
+      if (row.pending) throw new Error(`Invalid item row ${row.entityId}.`);
+      const state = fromJson(ThreadItemSchema, stateJson);
+      variant(state.textRef, ThreadPayloadField.TEXT, row.entityId);
+      variant(state.argumentsRef, ThreadPayloadField.ARGUMENTS, row.entityId);
+      variant(state.outputRef, ThreadPayloadField.OUTPUT, row.entityId);
+      return create(ThreadEntitySchema, {
+        ...base,
+        entity: {
+          case: "item",
+          value: state,
+        },
+      });
+    }
+    case "confirmed_input": {
+      if (row.pending) throw new Error(`Invalid confirmed input row ${row.entityId}.`);
+      const state = fromJson(ThreadConfirmedInputSchema, stateJson);
+      variant(
+        state.inputRef,
+        ThreadPayloadField.CONFIRMED_INPUT,
+        state.harnessMessageId || `confirmed:${row.cursor}`,
+        true
+      );
+      return create(ThreadEntitySchema, {
+        ...base,
+        entity: {
+          case: "confirmedInput",
+          value: state,
+        },
+      });
+    }
+    case "lifecycle": {
+      if (row.pending) throw new Error(`Invalid lifecycle row ${row.entityId}.`);
+      const state = fromJson(ThreadLifecycleSchema, stateJson);
+      const observation = state.event?.observation.case;
+      if (observation === undefined) {
+        throw new Error(`Invalid lifecycle observation on ${row.entityId}.`);
+      }
+      return create(ThreadEntitySchema, {
+        ...base,
+        entity: {
+          case: "lifecycle",
+          value: state,
+        },
+      });
+    }
+    case "command": {
+      const state = fromJson(ThreadCommandSchema, stateJson);
+      if (
+        ![
+          ThreadCommandOutcome.PENDING,
+          ThreadCommandOutcome.EFFECTED,
+          ThreadCommandOutcome.FAILED,
+          ThreadCommandOutcome.NOOP,
+        ].includes(state.outcome)
+      ) {
+        throw new Error(`Invalid command outcome on row ${row.entityId}.`);
+      }
+      if (row.pending !== (state.outcome === ThreadCommandOutcome.PENDING)) {
+        throw new Error(`Invalid command row ${row.entityId}.`);
+      }
+      if (state.outcomeCursor !== undefined) {
+        assertPgBigint(state.outcomeCursor, "command outcome cursor");
+      }
+      variant(state.inputRef, ThreadPayloadField.COMMAND_INPUT, row.entityId, true);
+      return create(ThreadEntitySchema, {
+        ...base,
+        entity: {
+          case: "command",
+          value: state,
+        },
+      });
+    }
+  }
+}
+
+function electricThreadEntity(value: unknown): ThreadEntity {
+  try {
+    return decodeElectricThreadEntity(value);
+  } catch (error) {
+    if (error instanceof InvalidThreadEntityError) throw error;
+    throw new InvalidThreadEntityError(error);
+  }
+}
 
 const chunkSchema = z.object({
   ownerId: z.string(),
@@ -257,12 +399,21 @@ class Shape {
       },
     });
     this.#stream.subscribe((messages) => {
-      onMessages(messages);
-      this.#position = messages.some(
-        (message) => !isChangeMessage(message) && message.headers.control === "must-refetch"
-      )
-        ? null
-        : this.#reached();
+      try {
+        onMessages(messages);
+        this.#position = messages.some(
+          (message) => !isChangeMessage(message) && message.headers.control === "must-refetch"
+        )
+          ? null
+          : this.#reached();
+      } catch (error) {
+        // A malformed row must not escape the subscriber or advance its caught-up offset.
+        this.#position = null;
+        if (!this.closed) {
+          onError(error);
+          this.close();
+        }
+      }
     });
   }
 
@@ -343,7 +494,7 @@ class PayloadShape extends Listeners {
   readonly #onAttempt: (failure: string | null) => void;
   #shape: Shape | null = null;
   // Chunk text by index, per body: an owner at one generation.
-  readonly #chunks = new Map<string, Map<number, string>>();
+  readonly #chunks = new Map<string, Map<bigint, string>>();
   readonly #requested = new Map<string, BodyId>();
   #queued: BodyId[] = [];
   #version = 0;
@@ -370,20 +521,20 @@ class PayloadShape extends Listeners {
 
   getVersion = (): number => this.#version;
 
-  want(reference: PayloadRef): void {
-    const key = bodyKey(reference.owner_id, reference.generation);
+  want(reference: ThreadPayloadReference): void {
+    const key = bodyKey(reference.ownerId, reference.generation.toString());
     if (this.#requested.has(key)) return;
     this.#ahead.delete(key);
-    const body = { ownerId: reference.owner_id, generation: reference.generation };
+    const body = { ownerId: reference.ownerId, generation: reference.generation.toString() };
     this.#requested.set(key, body);
     this.#queue([body]);
   }
 
   /** Reads the body once nothing a reader waits on is being read, unless a reader asks for it first. */
-  readAhead(reference: PayloadRef): void {
-    const key = bodyKey(reference.owner_id, reference.generation);
-    if (Number(reference.chunk_count) === 0 || this.#requested.has(key) || this.#ahead.has(key)) return;
-    this.#ahead.set(key, { ownerId: reference.owner_id, generation: reference.generation });
+  readAhead(reference: ThreadPayloadReference): void {
+    const key = bodyKey(reference.ownerId, reference.generation.toString());
+    if (reference.chunkCount === 0n || this.#requested.has(key) || this.#ahead.has(key)) return;
+    this.#ahead.set(key, { ownerId: reference.ownerId, generation: reference.generation.toString() });
     // Bodies of rows that arrive together share a read.
     if (!this.#draining) {
       this.#draining = true;
@@ -396,22 +547,22 @@ class PayloadShape extends Listeners {
 
   /** The body as far as the reference spans it. Every prefix of a body's chunks is one of its
    * revisions, so until a chunk the reference names arrives, the body shows the one before. */
-  body(reference: PayloadRef): string | null {
+  body(reference: ThreadPayloadReference): string | null {
     const parts = this.#arrived(reference);
-    return parts.length === 0 && Number(reference.chunk_count) > 0 ? null : parts.join("");
+    return parts.length === 0 && reference.chunkCount > 0n ? null : parts.join("");
   }
 
   /** Why a read stopped the body from loading to the extent the reference spans it, or null where
    * the body is whole or no read of it has failed. */
-  failure(reference: PayloadRef): string | null {
-    const failure = this.#failures.get(bodyKey(reference.owner_id, reference.generation));
-    return failure !== undefined && this.#arrived(reference).length < Number(reference.chunk_count) ? failure : null;
+  failure(reference: ThreadPayloadReference): string | null {
+    const failure = this.#failures.get(bodyKey(reference.ownerId, reference.generation.toString()));
+    return failure !== undefined && BigInt(this.#arrived(reference).length) < reference.chunkCount ? failure : null;
   }
 
-  #arrived(reference: PayloadRef): string[] {
-    const chunks = this.#chunks.get(bodyKey(reference.owner_id, reference.generation));
+  #arrived(reference: ThreadPayloadReference): string[] {
+    const chunks = this.#chunks.get(bodyKey(reference.ownerId, reference.generation.toString()));
     const parts: string[] = [];
-    for (let index = 0; index < Number(reference.chunk_count); index++) {
+    for (let index = 0n; index < reference.chunkCount; index++) {
       const text = chunks?.get(index);
       if (text === undefined) break;
       parts.push(text);
@@ -521,7 +672,7 @@ class PayloadShape extends Listeners {
       if (!this.#requested.has(key)) continue;
       let chunks = this.#chunks.get(key);
       if (chunks === undefined) this.#chunks.set(key, (chunks = new Map()));
-      chunks.set(Number(chunk.chunkIndex), chunk.text);
+      chunks.set(BigInt(chunk.chunkIndex), chunk.text);
       this.#failures.delete(key);
       changed = true;
     }
@@ -605,11 +756,11 @@ class EpochWindow extends Listeners {
   #position: ShapePosition | null = null;
   #state: WindowState = NO_WINDOW;
 
-  constructor(threadId: string, scope: ThreadScopeResponse, onGone: () => void) {
+  constructor(threadId: string, scope: ReadThreadEntitiesResponse, onGone: () => void) {
     super();
     this.#threadId = threadId;
-    this.epoch = scope.projection_epoch;
-    this.#through = BigInt(scope.through_cursor);
+    this.epoch = scope.projectionEpoch;
+    this.#through = scope.throughCursor;
     this.#onGone = onGone;
     this.#shape = this.#open(null);
     void this.#guard(async () => {
@@ -646,13 +797,16 @@ class EpochWindow extends Listeners {
 
   bodies(field: PayloadField): PayloadShape {
     let shape = this.#bodies.get(field);
-    if (shape === undefined)
+    if (shape === undefined) {
+      const path = payloadFieldPaths[field];
+      if (path === undefined) throw new Error(`Unknown Thread payload field: ${field}`);
       this.#bodies.set(
         field,
-        (shape = new PayloadShape(this.#url(`chunks/${field}`), this.#onGone, (failure) =>
-          this.#attempted(field, failure)
+        (shape = new PayloadShape(this.#url(`chunks/${path}`), this.#onGone, (failure) =>
+          this.#attempted(path, failure)
         ))
       );
+    }
     return shape;
   }
 
@@ -740,7 +894,7 @@ class EpochWindow extends Listeners {
         : { where: "entity_index < $1", params: { "1": this.#lowest.toString() }, orderBy: NEWEST_FIRST, limit }
     );
     for (const row of rows) {
-      const index = decimalBigInt(entitySchema.parse(row).entityIndex);
+      const index = electricThreadEntity(row).entityIndex;
       if (this.#lowest === null || index < this.#lowest) this.#lowest = index;
     }
     this.#exhausted = rows.length < limit || this.#lowest === 0n;
@@ -789,13 +943,13 @@ class EpochWindow extends Listeners {
         if (message.headers.operation === "delete") {
           // The fold never deletes a row: its view state leaves the shape when the epoch is retired.
           // An SSE connection stays open, so this is sooner than the 410 its reconnect would get.
-          retired ||= this.#rows.get(message.key)?.entityKind === "view_state";
+          retired ||= this.#rows.get(message.key)?.entity.case === "viewState";
           changed = this.#rows.delete(message.key) || changed;
         }
         // Every row is new at the tail. A change to one older than the reader has loaded is not
         // its concern: loading that page reads the row as it is by then.
         else if (message.headers.operation === "insert" || this.#rows.has(message.key)) {
-          this.#rows.set(message.key, entitySchema.parse(message.value));
+          this.#rows.set(message.key, electricThreadEntity(message.value));
           changed = true;
         }
       } else if (message.headers.control === "must-refetch") void this.#refetch();
@@ -816,6 +970,7 @@ class EpochWindow extends Listeners {
     if (this.#closed) return;
     // The fold was rebuilt under a new epoch: the reader resolves the thread's scope again.
     if (error instanceof FetchError && error.status === 410) return this.#retire();
+    if (error instanceof InvalidThreadEntityError) this.#ready = false;
     this.#publish(displayableError(error));
     if (this.#recovery === undefined && !this.#suspended)
       this.#recovery = window.setTimeout(() => void this.#recover(), backoff(this.#failures++));
@@ -875,16 +1030,11 @@ class EpochWindow extends Listeners {
     const rows = [...this.#rows.values()];
     if (!this.#suspended)
       for (const row of rows)
-        for (const reference of [row.textRef, row.argumentsRef, row.outputRef, row.inputRef])
-          if (reference !== null) this.bodies(reference.field).readAhead(reference);
-    const view = rows.find((row) => row.entityKind === "view_state");
+        for (const reference of threadEntityPayloadReferences(row)) this.bodies(reference.field).readAhead(reference);
+    const view = rows.find((row) => row.entity.case === "viewState");
     this.#state = {
       rows,
-      caughtUp:
-        this.#ready &&
-        this.#through !== null &&
-        view !== undefined &&
-        decimalBigInt(view.revisionCursor) >= this.#through,
+      caughtUp: this.#ready && this.#through !== null && view !== undefined && view.revisionCursor >= this.#through,
       olderAvailable: this.#lowest !== null && !this.#exhausted,
       loadingOlder: this.#loadingOlder,
       connection: this.#connection,
@@ -905,7 +1055,11 @@ class ThreadEpochs extends Listeners {
   readonly #threadId: string;
   #next: EpochWindow | null = null;
   #resolving: AbortController | null = null;
-  #retry: number | undefined;
+  #stopScopeWatch: (() => void) | null = null;
+  #scopeRetry: number | undefined;
+  #scopeRetryAttempt = 0;
+  #scopeReading = false;
+  #scopeDirty = false;
   #closed = false;
   #suspended = false;
   #state: SyncState = { window: null, error: null };
@@ -913,21 +1067,25 @@ class ThreadEpochs extends Listeners {
   constructor(threadId: string) {
     super();
     this.#threadId = threadId;
-    void this.#resolve();
+    this.#watchScope();
   }
 
   getState = (): SyncState => this.#state;
 
   refresh = (): void => {
-    // A suspended thread follows nothing, whatever a read it had in flight finds.
-    if (!this.#suspended) void this.#resolve();
+    // Subscribe before the first scope read. Every new connection starts with a changed frame,
+    // which closes the race between the read and History's notification listener.
+    if (!this.#suspended && !this.#closed) this.#watchScope();
   };
 
   /** Stops following the thread; its window stays, off the network, until `resume` or `close`. */
   suspend(): void {
     this.#suspended = true;
     this.#resolving?.abort();
-    window.clearTimeout(this.#retry);
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    this.#stopScopeWatch?.();
+    this.#stopScopeWatch = null;
     this.#next?.close();
     this.#next = null;
     this.#state.window?.suspend();
@@ -935,29 +1093,85 @@ class ThreadEpochs extends Listeners {
 
   resume(): void {
     this.#suspended = false;
-    void this.#resolve();
+    this.#watchScope();
   }
 
   close(): void {
     this.#closed = true;
     this.#resolving?.abort();
-    window.clearTimeout(this.#retry);
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    this.#stopScopeWatch?.();
+    this.#stopScopeWatch = null;
     this.#next?.close();
     this.#state.window?.close();
   }
 
+  #watchScope(): void {
+    if (this.#stopScopeWatch !== null || this.#closed || this.#suspended) return;
+    this.#stopScopeWatch = followWatch("/upstream/history/v1/session-summaries:watch", {
+      onOpen: () => {},
+      onFrame: (value) => {
+        const frame = fromJson(WatchSessionSummariesResponseSchema, value);
+        switch (frame.observation.case) {
+          case "changed":
+          case "reconnectRequired":
+            this.#scopeChanged();
+            break;
+          case "sessionRecorded":
+            throw new Error("History emitted a SessionRecorded frame without a recorded_after request.");
+          case undefined:
+            throw new Error("History returned an empty Session summary watch frame.");
+        }
+      },
+      onConnection: (connection) => {
+        if (connection.phase === "reconnecting" && connection.lastError) {
+          this.#set({ ...this.#state, error: connection.lastError });
+        }
+      },
+    });
+  }
+
+  #scopeChanged(): void {
+    if (this.#closed || this.#suspended) return;
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    if (this.#scopeReading) {
+      this.#scopeDirty = true;
+      return;
+    }
+    void this.#resolve();
+  }
+
   async #resolve(): Promise<void> {
-    window.clearTimeout(this.#retry);
-    this.#resolving?.abort();
+    if (this.#scopeReading) {
+      this.#scopeDirty = true;
+      return;
+    }
+    this.#scopeReading = true;
+    this.#scopeDirty = false;
     const resolving = (this.#resolving = new AbortController());
+    let scopeMissing = false;
     try {
       const scope = await threadScope(this.#threadId, resolving.signal);
       if (resolving.signal.aborted || this.#closed) return;
-      // No admitted view has materialized during the server's hold: hold another read.
-      if (scope === null) return this.refresh();
+      // The app can know the Thread before History records the Session, and the first fold may
+      // have no epoch yet. Keep the event watch open until the next projection change.
+      if (scope === null || scope.projectionEpoch === "") {
+        scopeMissing = true;
+        return;
+      }
+      // A valid scope is useful even while unrelated summaries are changing. Electric's epoch
+      // fence handles a concurrent reset; its live log catches up any newer watermark.
+      this.#scopeDirty = false;
+      window.clearTimeout(this.#scopeRetry);
+      this.#scopeRetry = undefined;
+      this.#scopeRetryAttempt = 0;
       const suspended = this.#state.window?.suspended ? this.#state.window : null;
-      if (suspended?.resumable && suspended.epoch === scope.projection_epoch) {
-        suspended.resume(BigInt(scope.through_cursor));
+      this.#stopScopeWatch?.();
+      this.#stopScopeWatch = null;
+      if (suspended?.resumable && suspended.epoch === scope.projectionEpoch) {
+        suspended.resume(scope.throughCursor);
         return this.#set({ window: suspended, error: null });
       }
       this.#next?.close();
@@ -978,8 +1192,17 @@ class ThreadEpochs extends Listeners {
     } catch (error) {
       if (resolving.signal.aborted || this.#closed) return;
       this.#set({ ...this.#state, error: displayableError(error) });
-      // A failed read reconnects after a pause; an answered one never waits.
-      this.#retry = window.setTimeout(this.refresh, 1_000);
+      // A watch reconnect replays its initial changed frame and retries this failed scope read.
+      this.#scopeRetry = window.setTimeout(() => {
+        this.#scopeRetry = undefined;
+        void this.#resolve();
+      }, backoff(this.#scopeRetryAttempt++));
+    } finally {
+      this.#scopeReading = false;
+      if (scopeMissing && this.#scopeDirty && !this.#closed && !this.#suspended) {
+        this.#scopeDirty = false;
+        this.#scopeChanged();
+      }
     }
   }
 
@@ -1007,7 +1230,7 @@ function useWindow(): EpochWindow {
 
 /** Keep control commands at their admission cursor, including settled outcomes after reload. */
 function threadRow(row: ThreadEntity): boolean {
-  return row.entityKind !== "command" || row.pending || "outcome" in row.state;
+  return row.entity.case !== "command" || row.entity.value.outcome !== ThreadCommandOutcome.UNSPECIFIED;
 }
 
 // How many threads a reader can leave and come back to without their windows being read again.
@@ -1086,10 +1309,10 @@ function useCommandRows(commandIds: readonly string[]): ThreadEntity[] {
     if (key) shown.selectCommands(key.split("\u0000"));
   }, [key, shown]);
   const selected = new Set(commandIds);
-  return rows.filter((row) => row.entityKind === "command" && selected.has(row.entityId));
+  return rows.filter((row) => row.entity.case === "command" && selected.has(row.entityId));
 }
 
-function usePayload(reference: PayloadRef): Payload {
+function usePayload(reference: ThreadPayloadReference): Payload {
   const shape = useWindow().bodies(reference.field);
   useSyncExternalStore(shape.subscribe, shape.getVersion);
   useEffect(() => {

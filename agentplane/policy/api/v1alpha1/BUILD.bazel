@@ -1,11 +1,53 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/go:controller_gen.bzl", "controller_crds", "controller_deepcopy")
+
+genrule(
+    name = "generated_policy_types",
+    srcs = ["types.go"],
+    outs = ["policy_types.proto"],
+    cmd = "$(location //agentplane/policy/api/v1alpha1/protogen) $(location types.go) > $@",
+    tools = ["//agentplane/policy/api/v1alpha1/protogen"],
+)
+
+# keep: the proto source is generated from the Kubernetes API, not a checked-in .proto file.
+proto_library(
+    name = "policy_types_proto",
+    srcs = [":generated_policy_types"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "policy_types_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy/api/resourcev1",
+    proto = ":policy_types_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "@org_golang_google_protobuf//types/known/structpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+ts_proto_library(
+    name = "policy_types_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":policy_types_proto",
+    visibility = ["//agentplane:__subpackages__"],
+)
 
 go_library(
     name = "v1alpha1",
     srcs = [
         "conditions.go",
         "doc.go",
+        "expiry.go",
         "scheme.go",
         "types.go",
         ":deepcopy",

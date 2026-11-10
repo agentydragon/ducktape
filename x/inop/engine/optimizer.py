@@ -48,7 +48,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from openai_utils.model import OpenAIModelProto, UserMessage
+from openai_utils.model import Model, UserMessage
 from x.inop.config import OptimizerConfig
 from x.inop.engine import runner_factory
 from x.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
@@ -104,9 +104,9 @@ def setup_signal_handlers():
 @dataclass
 class OptimizeMcpArgs:
     anthropic_log: JSONLLogger
-    pe_model: OpenAIModelProto
-    grader_model: OpenAIModelProto
-    summarizer_model: OpenAIModelProto
+    pe_model: Model
+    grader_model: Model
+    summarizer_model: Model
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -299,9 +299,9 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 class OptimizeArgs:
     anthropic_log: JSONLLogger
     # Required DI: adapter model instances for specific roles.
-    pe_model: OpenAIModelProto
-    grader_model: OpenAIModelProto
-    summarizer_model: OpenAIModelProto
+    pe_model: Model
+    grader_model: Model
+    summarizer_model: Model
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -317,38 +317,9 @@ class OptimizeArgs:
 
 
 async def optimize_prompts(args: OptimizeArgs) -> Path:
-    """Run the prompt optimisation loop.
+    """Run prompt optimization via `optimize_prompts_mcp`.
 
-    This is the main entry point for running multiple iterations of the algorithm. It
-    repeatedly executes batches of agents on the seed tasks in parallel,
-    grades the generated solutions using OpenAI's Responses API, updates the system
-    prompt using a prompt engineer (OpenAI o3), and logs results to JSONL files.
-
-    Parameters
-    ----------
-    seed_tasks : List[TaskDefinition]
-        The tasks to use as the benchmark for optimisation.
-    criteria : List[Criterion]
-        Grading criteria to evaluate task performance.
-    cfg : OptimizerConfig
-        Configuration for the optimizer.
-    runner_name : str
-        Name of the configured runner (currently "claude").
-    task_types : dict
-        Task type configurations.
-    runner_configs : dict
-        Runner configurations.
-    iterations : int, optional
-        The number of optimisation iterations to perform (default 3).
-    rollouts_per_task : int, optional
-        The number of agents to sample per task in each iteration (default 2).
-    max_parallel_rollouts : int, optional
-        Maximum number of concurrent agent rollouts (default from config).
-    tasks_per_iteration : int, optional
-        Number of tasks to randomly sample (with replacement) per iteration.
-        If None, uses all seed tasks (default None).
-    base_dir : Path
-        Base directory for output.
+    This wrapper ignores `rollouts_per_task`, `max_parallel_rollouts`, and `tasks_per_iteration`.
     """
     # Delegate to MCP-driven implementation (single source of truth)
     return await optimize_prompts_mcp(

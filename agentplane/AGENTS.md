@@ -10,10 +10,6 @@ The integration app is a client of the backend services, never their dependency
   provisioning and backend-required prompt/context construction. Extract what another service needs
   into its owning service or a neutral shared package, never a temporary app-owned backend API.
   Operator approval stays with its backend authority; the app only presents it.
-- Owners: the app submits Sandbox desired state and operator grants through Kubernetes; the Sandbox
-  Controller reconciles them and owns Sandbox status; the Session Dispatcher owns command admission;
-  the Runner Gateway owns the reverse control stream and Runner proxy; runners own Sessions, native
-  execution and canonical command/Event evidence; Notifications owns subscriptions and inboxes.
 - Backend responsibilities still inside the app are extraction work, not precedent. Distinguish
   planned boundaries from implemented ones.
 - Acceptance for an extracted backend path runs with the app unavailable. Never add a command queue,
@@ -24,17 +20,41 @@ The integration app is a client of the backend services, never their dependency
 Service settings reject unknown keys, and the cdk8s manifests set them: add a setting in code before
 a manifest sets it; remove one from the manifests first and the field after rollout.
 
+New or migrated deployment settings use a typed `Settings` model; `yaml_config` and `SettingsFile`
+render static settings as a required, read-only YAML file. The config-file path is the only bootstrap
+environment variable, with no generic per-setting environment or CLI override layer. A service may
+declare narrow runtime Secret inputs separately when its contract needs them; keep rotating credential
+material in its existing projected or Secret files. Startup validates the completed settings after the
+file and those explicit runtime inputs are combined. SDK and infrastructure environment such as OTEL
+and Downward API values are outside service-owned settings. This is the target for new and migrated
+contracts; existing services retain their current sources until migrated.
+
+## Database migrations
+
+PostgreSQL services embed Goose migrations in their serving binary and run the shared
+`postgres/migrate.Run` lifecycle during normal startup, before workers or request handling.
+Use a stable per-database Goose history table and advisory lock. Use versioned SQL or registered
+Go migrations; no unversioned startup converters, separate migrator images or migration init
+containers. `--migrate-only` in the same binary is available for fixtures and explicit maintenance.
+Deploy with rolling updates and a startup probe covering initialization; schema changes must
+support overlapping old/new writers or have an explicitly reviewed writer cutover.
+See the [migration contract](postgres/migrate/README.md) for timeouts, baseline adoption and
+the Runner's SQLite journal.
+
 ## gRPC services
 
 Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).
 Service-to-service RPC uses native gRPC; browser HTTP and direct-client facades follow the
 [HTTP/gRPC boundary policy](docs/service_boundaries.md#http-and-grpc-boundaries).
+Design calls on behalf of another SA against the approved
+[delegated authorization contract](docs/delegated_authorization.md); keep actor and effective caller
+separate and reuse shared machinery instead of inventing forwarded-identity headers.
 
 ## System overview diagram
 
 A PR that adds, removes, splits or renames a service or Deployment, or changes traffic between them
-(caller/callee, protocol, an edge going live), updates the [README system overview](README.md#system-overview)
-and [focused diagrams](docs/system_overview.md) in the same PR. Draw boundaries and traffic, not a
+(caller/callee, protocol, an edge going live), updates the [system overview and focused diagrams](docs/system_overview.md#system-overview)
+in the same PR. Draw boundaries and traffic, not a
 deployment or replica snapshot; dash runner-initiated platform routes.
 
 ## Deployed state is disposable

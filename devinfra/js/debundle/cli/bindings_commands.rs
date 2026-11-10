@@ -1,16 +1,20 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, Move, UnassignOutcome, parse_batch_json, parse_move_triple,
-    rename_binding, run_bindings_assign, run_bindings_list, run_bindings_unassign,
+    AssignOutcome, BindingsListFilters, CandidateEffectAssessmentContext, Move, Rename,
+    UnassignOutcome, parse_batch_json, parse_move_triple, rename_binding, rename_bindings,
+    run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
+use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
+use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::OutputFormat;
+use pipeline::AnalysisArtifactInput;
 use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
@@ -41,27 +45,24 @@ impl BindingsNs {
     }
     pub(super) fn verify_graph(
         &self,
-        spec_root: Option<&std::path::Path>,
-        graph_source_root: Option<&std::path::Path>,
-        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
-    ) -> Result<()> {
+        roots: &CurrentRoots,
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
         let edit = match &self.command {
             BindingsNsCommand::Assign(args) => &args.edit,
             BindingsNsCommand::Unassign(args) => &args.edit,
-            _ => return Ok(()),
+            _ => return Ok(None),
         };
         if let Some(graph) = &edit.dependency_graph_path {
-            crate::verify_graph_compatibility(
+            return crate::verify_graph_compatibility(
                 graph,
                 &edit.modules_root,
                 edit.source_root.as_deref(),
-                spec_root,
-                graph_source_root,
-                graph_package_roots,
+                roots,
                 None,
-            )?;
+            )
+            .map(Some);
         }
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -80,15 +81,17 @@ enum BindingsNsCommand {
     Comment(BindingCommentArgs),
     /// List every binding in the spec with home module + filters.
     ///
-    /// Per-row: minified name, home module, readable name if any, and
-    /// `orphan` (sole member of its module) / `unrenamed` flags.
+    /// Per-row: typed identity (direct binding identifier, source-match capture,
+    /// or structural member), explicit readable name if any, home module, and
+    /// `orphan` (sole member of its module).
+    /// Use `describe <readable-name>` with a matching graph to find input names.
     List(BindingsListNsArgs),
-    /// Rename a binding's readable `name:` without moving it.
+    /// Rename one or more bindings without moving them.
     ///
-    /// Validation is name-collision detection: no two bindings in the
-    /// chunk get the same readable name. A convenience over
-    /// `bindings assign` for the rename-without-move case. It also
-    /// works on `source_matches[].bindings[]` entries.
+    /// Requested targets must have unique final names among spec members
+    /// and source-match bindings. Batch chains/swaps are checked together,
+    /// with no graph or assignment gate. Run source-only validation afterward
+    /// to check selectors and template references.
     Rename(BindingsRenameArgs),
     /// Move one or more bindings into named logical modules atomically.
     ///
@@ -108,7 +111,7 @@ enum BindingsNsCommand {
     /// of a claim splits that claim across modules. The post-batch gate
     /// rejects any split of a source statement's atomic source_unit.
     /// Contract details: docs/cli.md § "Batch atomicity".
-    Assign(BindingsAssignArgs),
+    Assign(Box<BindingsAssignArgs>),
     /// Remove one or more bindings from their current modules
     /// atomically; they fall through to residual.
     ///
@@ -118,8 +121,10 @@ enum BindingsNsCommand {
     /// only some of its members is rejected; unassigning a whole atom
     /// together is accepted. Dry-run and apply share an exit code on
     /// the same input. `source_matches[].bindings[]` entries cannot yet
-    /// be unassigned with this command.
-    Unassign(BindingsUnassignArgs),
+    /// be unassigned with this command. `--dry-run --analysis` additionally
+    /// reports statement-order commutation for the exact post-unassign
+    /// candidate, without changing the legacy gate.
+    Unassign(Box<BindingsUnassignArgs>),
 }
 
 #[derive(Debug, ClapArgs)]
@@ -130,7 +135,7 @@ struct BindingsListNsArgs {
     /// Restrict to bindings whose home module equals this path.
     #[arg(long = "in")]
     pub in_module: Option<String>,
-    /// Restrict to bindings still using their minified name.
+    /// Restrict to bindings without an explicit readable name.
     #[arg(long)]
     pub unrenamed: bool,
     /// Restrict to bindings that are the only member of their module.
@@ -146,10 +151,25 @@ struct BindingsRenameArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-    /// Current minified or readable name of the binding (must not contain `:`).
-    pub original: String,
+    /// Direct selector identifier, source-match capture local, or explicit
+    /// readable name (structural selectors require a readable name; no `:`).
+    #[arg(
+        required_unless_present = "batch",
+        conflicts_with = "batch",
+        requires = "readable"
+    )]
+    pub original: Option<String>,
     /// New readable name (must not contain `:`).
-    pub readable: String,
+    #[arg(
+        required_unless_present = "batch",
+        conflicts_with = "batch",
+        requires = "original"
+    )]
+    pub readable: Option<String>,
+    /// Read a names-only JSON array of {sym, readable} from a file or `-` for stdin.
+    /// Resolve the complete map against the original spec; chains and swaps are allowed.
+    #[arg(long)]
+    pub batch: Option<String>,
     /// Validate but do not modify any file.
     #[arg(long)]
     pub dry_run: bool,
@@ -165,9 +185,13 @@ struct BindingsRenameArgs {
 struct BindingsUnassignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
-    /// Binding symbols (minified or readable) to remove from their
-    /// current modules. `source_matches[].bindings[]` entries are not
-    /// supported yet.
+    /// Optional full-context report-only assessment of the in-memory
+    /// post-unassign candidate through the canonical lowering path.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
+    /// Direct selector identifiers or explicit readable names to remove from
+    /// their current modules. Structural selectors require a readable name.
+    /// `source_matches[].bindings[]` entries are not supported yet.
     #[arg(required = true)]
     pub syms: Vec<String>,
 }
@@ -176,13 +200,18 @@ struct BindingsUnassignArgs {
 struct BindingsAssignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+    /// Optional full-context report-only assessment of the in-memory
+    /// post-batch candidate through the canonical lowering path.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
     /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
     /// when `--batch` is supplied.
     ///
-    /// `<sym>` accepts the minified or current readable name; the
-    /// optional third field sets the new readable `name:` (omitting it
-    /// preserves the current one). Neither `<sym>` nor `<readable>` may
-    /// contain `:` — use `--batch` JSON for such edge cases.
+    /// `<sym>` accepts a direct selector identifier, source-match capture
+    /// local, or explicit readable name; structural selectors require a
+    /// readable name. The optional third field sets the new readable `name:`
+    /// (omitting it preserves the current one). Neither `<sym>` nor
+    /// `<readable>` may contain `:` — use `--batch` JSON for such edge cases.
     pub triples: Vec<String>,
     /// Read additional moves from a JSON file (or `-` for stdin).
     /// Accepts explicit `{sym, module, readable?}` move arrays, plus
@@ -218,13 +247,13 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
         if entry.orphan {
             flags.push("orphan");
         }
-        if !entry.name.is_renamed() {
+        if !entry.label.is_renamed() {
             flags.push("unrenamed");
         }
-        let readable = entry.name.readable().unwrap_or("-");
+        let readable = entry.label.readable_name.as_deref().unwrap_or("-");
         out.push_str(&format!(
             "  {}  {}  [{}]  {}\n",
-            entry.name.minified(),
+            entry.label.identity,
             entry.module,
             readable,
             flags.join(",")
@@ -233,10 +262,34 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
 }
 
 fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
+    if let Some(path) = &args.batch {
+        use std::io::Read;
+        let text = if path == "-" {
+            let mut text = String::new();
+            std::io::stdin().read_to_string(&mut text)?;
+            text
+        } else {
+            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
+        };
+        let requests: Vec<Rename> = serde_json::from_str(&text)?;
+        let out = rename_bindings(&args.modules_root, requests, args.dry_run, args.no_verify)?;
+        return match OutputFormat::resolve(args.format) {
+            OutputFormat::Text => {
+                println!(
+                    "{}: {} rename(s); {} file(s) written",
+                    out.outcome.action,
+                    out.renames_applied,
+                    out.outcome.files_written.len()
+                );
+                Ok(())
+            }
+            format => print_outcome_json(&out, format),
+        };
+    }
     let out = rename_binding(
         &args.modules_root,
-        &args.original,
-        &args.readable,
+        args.original.as_deref().expect("clap requires original"),
+        args.readable.as_deref().expect("clap requires readable"),
         args.dry_run,
         args.no_verify,
     )?;
@@ -248,11 +301,14 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
                 .first()
                 .map(|f| format!(" ({f})"))
                 .unwrap_or_default();
+            let previous_name = out
+                .old_readable
+                .as_deref()
+                .map(str::to_string)
+                .unwrap_or_else(|| out.identity.to_string());
             println!(
                 "{}: {} -> {}{file}",
-                out.outcome.action,
-                out.old_readable.as_deref().unwrap_or(&out.binding),
-                out.new_readable,
+                out.outcome.action, previous_name, out.new_readable,
             );
         }
         format => print_outcome_json(&out, format)?,
@@ -260,7 +316,11 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
+fn run_bindings_assign_cmd(
+    args: BindingsAssignArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     use std::io::Read;
     let mut moves: Vec<Move> = Vec::new();
     for t in &args.triples {
@@ -276,11 +336,31 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
         };
         moves.extend(parse_batch_json(&text)?);
     }
+    let candidate_context = args
+        .effect_assessment
+        .resolve_for_verified_write(&args.edit, source_context)?;
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
-    let gate = args.edit.gate()?;
-    let out = match run_bindings_assign(&args.edit.modules_root, moves, args.edit.dry_run, gate) {
+    let gate = args.edit.gate(source_context)?;
+    let effect_assessment =
+        candidate_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
+                transform: &context.transform,
+                analysis: AnalysisArtifactInput {
+                    path: &context.analysis_path,
+                    analysis_engine_sha256,
+                },
+                graph_source: context.graph_source,
+            });
+    let out = match run_bindings_assign(
+        &args.edit.modules_root,
+        moves,
+        args.edit.dry_run,
+        gate,
+        effect_assessment,
+    ) {
         Ok(out) => out,
         Err(err) => {
             emit_gate_rejection_json("assign", args.edit.format, &err);
@@ -291,21 +371,43 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
     print_assign_outcome(&out, format)
 }
 
-fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
-    let gate = args.edit.gate()?;
-    let out =
-        match run_bindings_unassign(&args.edit.modules_root, args.syms, args.edit.dry_run, gate) {
-            Ok(out) => out,
-            Err(err) => {
-                emit_gate_rejection_json("unassign", args.edit.format, &err);
-                return Err(err);
-            }
-        };
+fn run_bindings_unassign_cmd(
+    args: BindingsUnassignArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
+    let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    let effect_assessment =
+        candidate_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
+                transform: &context.transform,
+                analysis: AnalysisArtifactInput {
+                    path: &context.analysis_path,
+                    analysis_engine_sha256,
+                },
+                graph_source: context.graph_source,
+            });
+    let gate = args.edit.gate(source_context)?;
+    let out = match run_bindings_unassign(
+        &args.edit.modules_root,
+        args.syms,
+        args.edit.dry_run,
+        gate,
+        effect_assessment,
+    ) {
+        Ok(out) => out,
+        Err(err) => {
+            emit_gate_rejection_json("unassign", args.edit.format, &err);
+            return Err(err);
+        }
+    };
     let format = OutputFormat::resolve(args.edit.format);
     print_unassign_outcome(&out, format)
 }
 
 fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result<()> {
+    out.outcome.warn_if_unassessed_write();
     match format {
         OutputFormat::Text => {
             println!(
@@ -322,6 +424,7 @@ fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result
 }
 
 fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {
+    out.outcome.warn_if_unassessed_write();
     match format {
         OutputFormat::Text => {
             println!(
@@ -337,12 +440,20 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
     }
 }
 
-pub(super) fn run(args: BindingsNs) -> Result<()> {
+pub(super) fn run(
+    args: BindingsNs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     match args.command {
         BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
-        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a),
-        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u),
+        BindingsNsCommand::Assign(a) => {
+            run_bindings_assign_cmd(*a, source_context, analysis_engine_sha256)
+        }
+        BindingsNsCommand::Unassign(u) => {
+            run_bindings_unassign_cmd(*u, source_context, analysis_engine_sha256)
+        }
     }
 }

@@ -10,7 +10,7 @@
 # of runs that landed in that window pulled 83% of all CAS bytes. The image was
 # repinned 8.2 times a day, and not one of those 22 rebuilds changed anything a
 # Bazel action uses -- they were all `nix/artifact-pins.json` bumps reaching the
-# devtools layer, which now lives in devinfra/buildbuddy_remote_runner/Dockerfile instead.
+# devtools layer, which now lives in devinfra/buildbuddy/images/runner/image.nix instead.
 #
 # So: add a path here only for something an action executes *inside* and Bazel
 # cannot supply from the repo it is building. Developer and agent tooling goes
@@ -21,13 +21,13 @@ on:
   push:
     branches: [main, devel]
     paths:
-      - "devinfra/rbe_container_image/Dockerfile"
-      - "devinfra/rbe_container_image/dockerd_wrapper.sh"
+      - "devinfra/buildbuddy/images/rbe/Dockerfile"
+      - "devinfra/buildbuddy/images/rbe/dockerd_wrapper.sh"
       - ".github/workflows/rbe-container-image.yml"
   pull_request:
     paths:
-      - "devinfra/rbe_container_image/Dockerfile"
-      - "devinfra/rbe_container_image/dockerd_wrapper.sh"
+      - "devinfra/buildbuddy/images/rbe/Dockerfile"
+      - "devinfra/buildbuddy/images/rbe/dockerd_wrapper.sh"
       - ".github/workflows/rbe-container-image.yml"
   workflow_dispatch:
 
@@ -59,7 +59,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: devinfra/rbe_container_image/Dockerfile
+          file: devinfra/buildbuddy/images/rbe/Dockerfile
           push: false
           cache-from: type=registry,ref=${{ env.RBE_CONTAINER_IMAGE }}:buildcache
 
@@ -79,7 +79,7 @@ jobs:
         with:
           image: ${{ env.RBE_CONTAINER_IMAGE }}
           context: .
-          file: devinfra/rbe_container_image/Dockerfile
+          file: devinfra/buildbuddy/images/rbe/Dockerfile
           cache_from: type=registry,ref=${{ env.RBE_CONTAINER_IMAGE }}:buildcache
           cache_to: type=registry,ref=${{ env.RBE_CONTAINER_IMAGE }}:buildcache,mode=max
 
@@ -104,11 +104,11 @@ jobs:
       - uses: ./.github/actions/mint-automation-token
         id: app
         with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          private_key: ${{ secrets.DUCKTAPE_AUTOMATION_PRIVATE_KEY }}
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          package: prettier
+          installables: ".#prettier"
 
       - uses: docker/login-action@v4
         with:

@@ -1,7 +1,8 @@
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::*;
+use analysis_model::DepKind;
 use raw_js_test_support::{parse, parse_with_source_map};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
@@ -30,7 +31,7 @@ fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
 }
 
 fn analyze_facts_with_hints(module: &Module, hints: &AnalysisInputs) -> Vec<StatementFacts> {
-    analyze_chunk(module, hints, None, |_| None).facts
+    analyze_chunk(module, hints, None).facts
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
@@ -39,8 +40,8 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
 
 fn build_dependency_graph(
     facts: &[StatementFacts],
-) -> Result<DependencyGraph, DuplicateTopLevelDeclaration> {
-    build_dependency_graph_with(facts, DependencyGraphOptions::default())
+) -> Result<DependencyGraph, DependencyGraphBuildError> {
+    build_dependency_graph_with(facts, GraphOptions::default(), &[]).map(|(graph, _)| graph)
 }
 
 /// A direct call `f()` at the chunk top level records `f` in the
@@ -635,7 +636,7 @@ fn class_names_are_bindings_but_class_evaluation_reads_remain_eager() {
 }
 
 #[test]
-fn annotated_decorate_helper_call_records_target_local_effect_not_global_sequence() {
+fn annotated_decorate_helper_keeps_target_local_effect_and_array_frontier() {
     let module = parse(
         r#"console.log("boot");
 function Ro(decorators, target, key, flags) {}
@@ -664,12 +665,15 @@ console.log("tail");"#,
             .map(|id| id.0.as_ref()),
         Some("C"),
     );
-    assert!(
-        graph.iter_edges().all(|edge| {
-            edge.reason.kind != DepKind::Sequenced
-                || (edge.from != SourceUnitId(4) && edge.to != SourceUnitId(4))
-        }),
-        "recognized decorate helper must not participate in unrelated global S edges: {:#?}",
+    let sequenced_edges: Vec<_> = graph
+        .iter_edges()
+        .filter(|edge| edge.reason.kind == DepKind::Sequenced)
+        .map(|edge| (edge.from.0, edge.to.0))
+        .collect();
+    assert_eq!(
+        sequenced_edges,
+        vec![(5, 0), (5, 4)],
+        "the call's temporary array keeps the heap-frontier edge from tail (5) to the helper call (4), while the helper remains outside the unrelated boot/tail global sequence: {:#?}",
         graph.iter_edges().collect::<Vec<_>>(),
     );
 }
@@ -1073,8 +1077,8 @@ sideEffect(C, E);
         ..AnalysisInputs::default()
     };
 
-    let a = analyze_chunk(&module, &hints_default, None, |_| None);
-    let b = analyze_chunk(&module, &hints_decorate, None, |_| None);
+    let a = analyze_chunk(&module, &hints_default, None);
+    let b = analyze_chunk(&module, &hints_decorate, None);
     assert_eq!(a.facts.len(), b.facts.len());
     assert_eq!(a.top_level_await, b.top_level_await);
 
@@ -1160,12 +1164,61 @@ fn repeated_declaration_is_refused_unless_every_site_is_var() {
     ] {
         assert_eq!(
             build_dependency_graph(&analyze_facts(&parse(source))).unwrap_err(),
-            DuplicateTopLevelDeclaration {
+            DependencyGraphBuildError::DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration {
                 binding: "pick".into(),
                 first: SourceUnitOrdinal(0),
                 second: SourceUnitOrdinal(1),
-            },
+            },),
             "{source}"
         );
     }
+}
+
+/// Regression for the plain-array at-init fallback: a call-free `map`
+/// callback that reads an element member can run that element's getter, so
+/// the array stays a fallback root. Elements proven primitive, or used only
+/// by identity, keep it out.
+#[test]
+fn plain_array_fallback_keeps_arrays_whose_callbacks_touch_element_members() {
+    let facts = analyze_facts(&parse(
+        "let later = 0; \
+         const items = [{ get label() { return later; } }]; \
+         const labels = items.map((item) => item.label); \
+         const kept = items.filter((item) => item); \
+         const ids = ['a', 'b']; \
+         const sizes = ids.map((id) => id.length + `${id}`);",
+    ));
+    assert!(
+        facts[2]
+            .at_init_unresolved_sources
+            .contains(&test_id("items"))
+    );
+    assert!(
+        !facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("items"))
+    );
+    assert!(
+        !facts[5]
+            .at_init_unresolved_sources
+            .contains(&test_id("ids"))
+    );
+}
+
+/// Regression for plain-array exposure: a `forEach` callback receives the
+/// array as its third argument and can replace a primitive element with an
+/// accessor, so the array no longer counts as primitive-only.
+#[test]
+fn plain_array_written_through_a_callback_argument_stays_a_fallback_root() {
+    let facts = analyze_facts(&parse(
+        "let later = 0; \
+         const values = [1]; \
+         values.forEach((value, index, array) => { array[index] = { get label() { return later; } }; }); \
+         const labels = values.map((value) => value.label);",
+    ));
+    assert!(
+        facts[3]
+            .at_init_unresolved_sources
+            .contains(&test_id("values"))
+    );
 }

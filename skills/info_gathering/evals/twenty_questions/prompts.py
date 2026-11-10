@@ -4,12 +4,13 @@ Loads shared prompt templates from text files via Bazel runfiles, providing a
 single source of truth used by all implementations (Python, Rust, Go).
 """
 
-from skills.eval_infra.eval_prompt import compose_system_prompt
-from util.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
-_SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
-_SCRATCH_NOTE_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/scratch_system_note.txt"
-_FIRST_USER_MSG_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/first_user_message.txt"
+from skills.eval_infra.eval_prompt import compose_system_prompt
+
+_SIM_RLOCATION = "ducktape/skills/info_gathering/evals/twenty_questions/sim.txt"
+_SCRATCH_NOTE_RLOCATION = "ducktape/skills/info_gathering/evals/twenty_questions/scratch_system_note.txt"
+_FIRST_USER_MSG_RLOCATION = "ducktape/skills/info_gathering/evals/twenty_questions/first_user_message.txt"
 
 _BASE_GUESSER_PREAMBLE = (
     "You are playing 20 Questions. Your goal is to identify the secret in as few questions as possible."
@@ -17,12 +18,12 @@ _BASE_GUESSER_PREAMBLE = (
 
 
 def load_sim_prompt(*, secret: str, turn_limit: int) -> str:
-    template = get_required_path(_SIM_RLOCATION).read_text()
+    template = (Runfiles.CreateOrRaise().root() / _SIM_RLOCATION).read_text()
     return template.format(secret=secret, turn_limit=turn_limit)
 
 
 def load_scratch_system_note() -> str:
-    return get_required_path(_SCRATCH_NOTE_RLOCATION).read_text().strip()
+    return (Runfiles.CreateOrRaise().root() / _SCRATCH_NOTE_RLOCATION).read_text().strip()
 
 
 def build_guesser_system(*, skill: str) -> str:
@@ -40,5 +41,5 @@ def build_guesser_system(*, skill: str) -> str:
 
 
 def first_user_message(domain_description: str, turn_limit: int) -> str:
-    template = get_required_path(_FIRST_USER_MSG_RLOCATION).read_text().strip()
+    template = (Runfiles.CreateOrRaise().root() / _FIRST_USER_MSG_RLOCATION).read_text().strip()
     return template.format(domain_description=domain_description, turn_limit=turn_limit)

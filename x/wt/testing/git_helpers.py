@@ -19,18 +19,7 @@ def add_and_commit(
     author_name: str | None = None,
     author_email: str | None = None,
 ) -> pygit2.Oid:
-    """Stage files and create a commit using pygit2.
-
-    Args:
-        repo_path: Path to the git repository (or worktree)
-        files: Dict of filename -> content to write and stage
-        message: Commit message
-        author_name: Optional author name (defaults to test data)
-        author_email: Optional author email (defaults to test data)
-
-    Returns:
-        The commit OID
-    """
+    """Stage files and commit them with pygit2, using test author defaults when omitted."""
     repo = pygit2.Repository(repo_path)
 
     # Write and stage files
@@ -50,15 +39,7 @@ def add_and_commit(
 
 
 def worktree_exists(repo: pygit2.Repository, worktree_path: Path) -> bool:
-    """Check if a worktree exists at the given path using pygit2.
-
-    Args:
-        repo: pygit2.Repository instance for the main repository
-        worktree_path: Path to check for worktree
-
-    Returns:
-        True if worktree exists at path
-    """
+    """Return whether pygit2 lists a worktree at the given path."""
     for wt_name in repo.list_worktrees():
         wt = repo.lookup_worktree(wt_name)
         if Path(wt.path) == worktree_path:
@@ -71,11 +52,6 @@ def add_worktree(repo: pygit2.Repository, worktree_path: Path, branch: str) -> N
 
     Note: This performs a checkout (unlike git worktree add --no-checkout).
     For no-checkout worktrees, use subprocess or git_run.
-
-    Args:
-        repo: pygit2.Repository instance for the main repository
-        worktree_path: Path where worktree should be created
-        branch: Branch name for the worktree
     """
     branch_ref = repo.lookup_branch(branch)
     if branch_ref is None:

@@ -8,13 +8,13 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 from pydantic import BaseModel, ConfigDict, TypeAdapter
+from python.runfiles import Runfiles
 
-from util.bazel.runfiles import get_required_path
-from util.testing.viewports import Viewport
-from util.testing.visual_capture import VisualHarness
+from util.testing.frontend_visual.capture import VisualHarness
+from util.testing.frontend_visual.viewports import Viewport
 
-# gazelle:include_dep //util/testing:visual_fixtures
-pytest_plugins = ("util.testing.visual_fixtures",)
+# gazelle:include_dep //util/testing/frontend_visual:fixtures
+pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -29,7 +29,9 @@ class Fixture(BaseModel):
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "fixture" not in metafunc.fixturenames:
         return
-    fixtures = TypeAdapter(list[Fixture]).validate_json(get_required_path(os.environ["FIXTURE_CATALOG"]).read_bytes())
+    fixtures = TypeAdapter(list[Fixture]).validate_json(
+        (Runfiles.CreateOrRaise().root() / os.environ["FIXTURE_CATALOG"]).read_bytes()
+    )
     if not fixtures:
         raise ValueError("the preview fixture catalog is empty")
     metafunc.parametrize("fixture", fixtures, ids=[fixture.slug for fixture in fixtures])
@@ -42,7 +44,6 @@ async def test_preview(
 ) -> None:
     name = f"preview-{fixture.slug}-{variant}-{color_scheme}"
     async with visual.open(
-        name,
         viewport=Viewport(width=1200, height=900, device_scale_factor=2),
         color_scheme=color_scheme,
         window_globals={"__FIXTURE__": fixture.index, "__VARIANT__": variant},

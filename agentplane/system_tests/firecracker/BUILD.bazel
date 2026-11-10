@@ -1,0 +1,117 @@
+load("@image_pins//:pins.bzl", "BUSYBOX_1_38_REFERENCE", "GENERIC_DEVICE_PLUGIN_REFERENCE")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "image_manifest")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
+
+pkg_files(
+    name = "boot_files",
+    srcs = [
+        "//agentplane/system_tests/firecracker/guest:init",
+        "//agentplane/system_tests/firecracker/guest:rootfs.ext4",
+        "//agentplane/system_tests/firecracker/kernel:initramfs.cpio",
+        "//agentplane/system_tests/firecracker/kernel:vmlinux",
+    ],
+    attributes = pkg_attributes(mode = "0644"),
+    renames = {
+        "//agentplane/system_tests/firecracker/guest:init": "init",
+        "//agentplane/system_tests/firecracker/guest:rootfs.ext4": "rootfs.ext4",
+        "//agentplane/system_tests/firecracker/kernel:initramfs.cpio": "initramfs.cpio",
+        "//agentplane/system_tests/firecracker/kernel:vmlinux": "vmlinux",
+    },
+)
+
+pkg_tar(
+    name = "boot_tar",
+    srcs = [":boot_files"],
+)
+
+oci_image(
+    name = "boot_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":boot_tar"],
+    visibility = ["//agentplane/system_tests/suites:__pkg__"],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//kubernetes",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":runtime",
+        "//agentplane/system_tests/deployment:virtualization",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        ":runtime",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+image_manifest(
+    name = "device_plugin_smoke_images",
+    fixture = {
+        "@generic_device_plugin_linux_amd64": GENERIC_DEVICE_PLUGIN_REFERENCE,
+        "@busybox_1_38_linux_amd64": BUSYBOX_1_38_REFERENCE,
+    },
+    guest = {},
+    pki = {},
+    vm = {},
+)
+
+py_test(
+    name = "test_device_plugin",
+    size = "medium",
+    srcs = ["test_device_plugin.py"],
+    data = [
+        K3S_BINARY,
+        ":device_plugin_smoke_images",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "KVM_DEVICE_PLUGIN_IMAGE": GENERIC_DEVICE_PLUGIN_REFERENCE,
+        "KVM_PLUGIN_CONSUMER_IMAGE": BUSYBOX_1_38_REFERENCE,
+        "KVM_PLUGIN_MANIFEST_RLOCATION": "$(rlocationpath :device_plugin_smoke_images)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES,
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":runtime",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/k3s:baseline",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)

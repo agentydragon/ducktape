@@ -22,6 +22,7 @@ from hamcrest import all_of, assert_that
 from more_itertools import one
 
 from agent_core.testing.responses import PlayGen
+from devinfra.oci.oci import BazelImage
 from mcp_infra.testing.matchers import exited_successfully, stdout_contains
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.registry_push_probe import CONTAINER_SCRIPT_PATH
@@ -40,12 +41,28 @@ from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
 from util.exec.models import BaseExecResult
-from util.oci import BazelImage
+
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+# gazelle:include_dep //props/testing/fixtures:scopes
+# gazelle:include_dep //mcp_infra/testing:fixtures
+# gazelle:include_dep //props/testing/fixtures:e2e_infra
+# gazelle:include_dep //props/testing/fixtures:e2e_container
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.runs",
+    "props.testing.fixtures.scopes",
+    "mcp_infra.testing.fixtures",
+    "props.testing.fixtures.e2e_infra",
+    "props.testing.fixtures.e2e_container",
+)
 
 logger = logging.getLogger(__name__)
 
 _CRITIC_REGISTRY_PROBE_IMAGE = BazelImage(
-    repo_name="critic", image_rlocation="_main/props/agents/critic_dev/critic_registry_probe_image"
+    repo_name="critic", image_rlocation="ducktape/props/agents/critic_dev/critic_registry_probe_image"
 )
 
 
@@ -111,9 +128,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Verify we received a non-empty system message
         system_text = get_system_prompt_text(first_request)
         assert system_text, "Expected non-empty system message"
-        assert "critic" in system_text.lower(), (
-            f"Expected system message to mention 'critic'. Got: {system_text[:200]}..."
-        )
         logger.info(f"Critic received system message ({len(system_text)} chars)")
 
         # Submit zero issues

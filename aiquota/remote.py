@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from aiquota.models import AllQuotas
+from aiquota.render.view_model import AllQuotasView
 
 QUOTAS_PATH = "/v1/quotas"
 
@@ -17,7 +17,7 @@ class QuotaAPIClient:
     bearer_token: str | None = field(repr=False)
     timeout: float = 5.0
 
-    async def fetch(self) -> AllQuotas:
+    async def fetch(self) -> AllQuotasView:
         token = self.bearer_token
         if not token:
             raise ValueError("aiquota API bearer token is empty")
@@ -27,4 +27,4 @@ class QuotaAPIClient:
                 f"{self.url.rstrip('/')}{QUOTAS_PATH}", headers={"Authorization": f"Bearer {token}"}
             )
         response.raise_for_status()
-        return AllQuotas.model_validate_json(response.content)
+        return AllQuotasView.model_validate_json(response.content)

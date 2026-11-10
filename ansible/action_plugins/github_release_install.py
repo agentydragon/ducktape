@@ -76,9 +76,6 @@ if plugins_dir not in sys.path:
 
 from module_utils.github_release import INSTALL_METHODS, ActionError, GitHubInstaller, ReleaseSpec, _fail  # noqa: E402
 
-ENSURE_ABSENT = "absent"
-ENSURE_PRESENT = "present"
-
 
 class ActionModule(ActionBase):
     """GitHub Release Install action plugin."""

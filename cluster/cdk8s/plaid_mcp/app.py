@@ -9,8 +9,6 @@ stays hand-written beside the generated output in the flat Plaid manifest direct
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
@@ -21,15 +19,12 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 _NAME = "plaid-mcp"
 _CONFIG_MAP = "config"
 _SECRET_MANAGER = "secret-manager"
@@ -288,7 +283,3 @@ def chart(app: App) -> Chart:
         ingress=[IngressRule.from_gateway(_WEB.pod_port)],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, manifest_name="app.k8s.yaml")

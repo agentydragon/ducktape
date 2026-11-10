@@ -50,7 +50,8 @@ type ToolAnnotations struct {
 	OpenWorldHint   *bool
 }
 
-// Binding is where a group's Actions run: an MCPBinding, a PodBinding or an OrchestrationBinding.
+// Binding is where a group's Actions run: an MCPBinding, a PodBinding, an OrchestrationBinding or a
+// SessionDelegationBinding.
 type Binding interface{ isBinding() }
 
 // MCPBinding reaches a reviewed upstream MCP server.
@@ -81,15 +82,20 @@ type OrchestrationBinding struct {
 	Description string
 	// Namespace is where Sandboxes are launched and their launcher grants written.
 	Namespace string
-	// DefaultPolicySets are bound to every Sandbox it launches, beside the ones a launch names.
-	DefaultPolicySets []string
 	// Presets are the reviewed launch presets, a JSON object the executor reads.
 	Presets json.RawMessage
 }
 
-func (MCPBinding) isBinding()           {}
-func (PodBinding) isBinding()           {}
-func (OrchestrationBinding) isBinding() {}
+// SessionDelegationBinding runs same-principal Session operations in this service, forwarding the verified caller
+// identity to the owning Discovery, Session Dispatcher and History APIs on each RPC.
+type SessionDelegationBinding struct {
+	Description string
+}
+
+func (MCPBinding) isBinding()               {}
+func (PodBinding) isBinding()               {}
+func (OrchestrationBinding) isBinding()     {}
+func (SessionDelegationBinding) isBinding() {}
 
 // Group is the unit of discovery and ownership: one executor binding, many Actions.
 type Group struct {
@@ -232,16 +238,21 @@ type podExecutorSettings struct {
 }
 
 type orchestrationExecutorSettings struct {
-	Description       string               `yaml:"description"`
-	Namespace         string               `yaml:"namespace"`
-	DefaultPolicySets []string             `yaml:"default_policy_sets"`
-	Presets           map[string]any       `yaml:"presets"`
-	Unknown           map[string]yaml.Node `yaml:",inline"`
+	Description string               `yaml:"description"`
+	Namespace   string               `yaml:"namespace"`
+	Presets     map[string]any       `yaml:"presets"`
+	Unknown     map[string]yaml.Node `yaml:",inline"`
 }
 
-func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node           { return s.Unknown }
-func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node           { return s.Unknown }
-func (s *orchestrationExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
+type sessionDelegationExecutorSettings struct {
+	Description string               `yaml:"description"`
+	Unknown     map[string]yaml.Node `yaml:",inline"`
+}
+
+func (s *mcpExecutorSettings) unknownKeys() map[string]yaml.Node               { return s.Unknown }
+func (s *podExecutorSettings) unknownKeys() map[string]yaml.Node               { return s.Unknown }
+func (s *orchestrationExecutorSettings) unknownKeys() map[string]yaml.Node     { return s.Unknown }
+func (s *sessionDelegationExecutorSettings) unknownKeys() map[string]yaml.Node { return s.Unknown }
 
 // UnmarshalYAML decodes node as the executor kind its `kind` names, refusing a key that kind has no field for. Its
 // errors are yaml.TypeErrors, which the decoder reports with its own.
@@ -259,9 +270,11 @@ func (s *executorSettings) UnmarshalYAML(node *yaml.Node) error {
 		s.kind = &podExecutorSettings{}
 	case "orchestration_v1":
 		s.kind = &orchestrationExecutorSettings{}
+	case "session_delegation":
+		s.kind = &sessionDelegationExecutorSettings{}
 	default:
 		return &yaml.TypeError{Errors: []string{
-			fmt.Sprintf("line %d: executor kind must be mcp, pod or orchestration_v1", node.Line),
+			fmt.Sprintf("line %d: executor kind must be mcp, pod, orchestration_v1 or session_delegation", node.Line),
 		}}
 	}
 	if err := node.Decode(s.kind); err != nil {
@@ -424,16 +437,20 @@ func (s *orchestrationExecutorSettings) binding() (Binding, error) {
 	if s.Namespace == "" {
 		return nil, errors.New("namespace is required")
 	}
-	if slices.Contains(s.DefaultPolicySets, "") {
-		return nil, errors.New("default_policy_sets must name PolicySets")
-	}
 	presets, err := jsonObject(s.Presets)
 	if err != nil {
 		return nil, fmt.Errorf("presets %w", err)
 	}
 	return OrchestrationBinding{
-		Description: s.Description, Namespace: s.Namespace, DefaultPolicySets: s.DefaultPolicySets, Presets: presets,
+		Description: s.Description, Namespace: s.Namespace, Presets: presets,
 	}, nil
+}
+
+func (s *sessionDelegationExecutorSettings) binding() (Binding, error) {
+	if err := checkLength("description", s.Description, 1, 2000); err != nil {
+		return nil, err
+	}
+	return SessionDelegationBinding{Description: s.Description}, nil
 }
 
 func newAction(s actionSettings) (ActionDefinition, error) {
@@ -464,7 +481,7 @@ func jsonObject(value map[string]any) (json.RawMessage, error) {
 	}
 	document, err := json.Marshal(value)
 	if err != nil {
-		// Such as a nested mapping whose keys are not strings.
+		// Such as a cycle or a value with no JSON representation.
 		return nil, errors.New("must be a JSON object")
 	}
 	return document, nil

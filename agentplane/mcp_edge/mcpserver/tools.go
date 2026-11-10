@@ -9,16 +9,17 @@ import (
 	"slices"
 	"strings"
 
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
-// tools are the generic Action tools and the direct tools. Each reaches the core with the tool call's context, which
-// carries the caller's auth.TokenInfo; the core decides who the caller is.
+// tools serve Action calls and static guide reads. Action calls reach core with the verified caller's context;
+// guide reads use the edge's embedded documentation and create no Action.
 type tools struct {
 	core              pb.ActionServiceClient
 	maxWaitSeconds    float64
@@ -56,7 +57,7 @@ type getActionPolicyInput struct {
 
 // policyTarget is "self", or a named ServiceAccount.
 type policyTarget struct {
-	account *sandboxes.ServiceAccount
+	account *identitypb.ServiceAccount
 }
 
 func (t *policyTarget) UnmarshalJSON(data []byte) error {
@@ -72,7 +73,7 @@ func (t *policyTarget) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &named); err != nil {
 		return err
 	}
-	t.account = &sandboxes.ServiceAccount{Namespace: named.ServiceAccount.Namespace, Name: named.ServiceAccount.Name}
+	t.account = &identitypb.ServiceAccount{Namespace: named.ServiceAccount.Namespace, Name: named.ServiceAccount.Name}
 	return nil
 }
 

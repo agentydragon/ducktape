@@ -28,6 +28,16 @@ spec:
       name: monitoring-stack
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/buildbuddy-executor/**"
+          to: "@artifact/cluster/k8s/buildbuddy-executor/"
+      name: buildbuddy-executor
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/k8s/buildbuddy-kvm-worker/**"
+          to: "@artifact/cluster/k8s/buildbuddy-kvm-worker/"
+      name: buildbuddy-kvm-worker
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/ntfy/**"
           to: "@artifact/cluster/k8s/ntfy/"
       name: ntfy
@@ -270,11 +280,6 @@ spec:
       name: grafana-instance
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy/"
-      name: haku-egress-proxy
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/haku/rbac/**"
           to: "@artifact/cluster/generated/haku/rbac/"
       name: haku-rbac
@@ -406,6 +411,15 @@ spec:
       name: public-coder-agent-access
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/ai-session-archive/**"
+          to: "@artifact/cluster/generated/ai-session-archive/"
+        - from: "@repo/cluster/k8s/ai-session-archive-image-pins/**"
+          to: "@artifact/cluster/k8s/ai-session-archive-image-pins/"
+        - from: "@repo/secrets/shared/session-backup.yaml"
+          to: "@artifact/cluster/generated/ai-session-archive/session-backup.sops.yaml"
+      name: ai-session-archive
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/session-backup/**"
           to: "@artifact/cluster/k8s/session-backup/"
       name: session-backup
@@ -470,6 +484,18 @@ spec:
       name: claude-session-sync
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/platform-sessions/**"
+          to: "@artifact/cluster/generated/platform-sessions/"
+      name: platform-sessions
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/platform-sessions-remote/**"
+          to: "@artifact/cluster/generated/platform-sessions-remote/"
+        - from: "@repo/cluster/k8s/platform-sessions-remote-image-pins/**"
+          to: "@artifact/cluster/k8s/platform-sessions-remote-image-pins/"
+      name: platform-sessions-remote
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/cli-proxy-api/**"
           to: "@artifact/cluster/k8s/cli-proxy-api/"
       name: cli-proxy-api
@@ -530,6 +556,16 @@ spec:
       name: flux-webhook
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/cdviz/database/**"
+          to: "@artifact/cluster/generated/cdviz/database/"
+      name: cdviz-database
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/cdviz/app/**"
+          to: "@artifact/cluster/generated/cdviz/app/"
+      name: cdviz
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/forgejo/gitops/**"
           to: "@artifact/cluster/generated/forgejo/gitops/"
       name: forgejo-gitops
@@ -548,11 +584,6 @@ spec:
         - from: "@repo/cluster/generated/gatus/**"
           to: "@artifact/cluster/generated/gatus/"
       name: gatus
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/"
-      name: github-api-proxy
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/github-tf/**"

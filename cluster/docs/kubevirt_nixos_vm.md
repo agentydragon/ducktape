@@ -1,28 +1,15 @@
 # KubeVirt NixOS VM Runbook
 
-KubeVirt and CDI are installed by <../cdk8s/kubevirt/>. New VM root images use
-OCI `containerDisk` images rather than CDI imports from SeaweedFS. See
-<kubevirt_vm_image_artifacts.md> for the current image build and publishing
-examples.
+KubeVirt and CDI are installed by <../cdk8s/kubevirt/>.
 
 ## Image and VM setup
 
-1. Build the guest disk as an OCI image using an existing recipe such as
-   <../../cpap/gateway/container-disk.nix> or
-   <../../agentplane/runner/container-disk.nix>.
-2. Publish it to the Forgejo OCI registry from a GitHub Actions workflow; use
-   the repository's image automation to update the manifest tag.
-3. Set the VM root volume's `containerDisk.image` to that registry reference.
-   Add the needed image pull credentials to the VM's namespace.
-4. Keep durable guest state on a PVC or another durable store. A `containerDisk`
-   root is ephemeral.
-5. If image updates should roll out automatically, configure a restart path.
-   KubeVirt does not change the disk of an already running VMI when only its
-   template image changes.
-
-The old SeaweedFS `vm-images` bucket and publisher are retired. The parked
-`gecko` and `agent-box` CDI manifests remain as historical configs and cannot be
-resumed until migrated to OCI images.
+Follow <kubevirt_vm_image_artifacts.md> for OCI `containerDisk` build/publishing
+recipes, durable-state placement, image-update restart requirements, and the
+retired SeaweedFS/parked-CDI migration boundary. Set the VM root volume's
+`containerDisk.image` to the published registry reference and add its image pull
+credentials to the VM's namespace. Use the repository's
+[image automation](container-images.md#adding-a-new-container-image) to update manifest tags.
 
 ## Verification
 
@@ -41,7 +28,7 @@ not a current deployment recipe.
 
 ## Caveats
 
-VMs that use `local-path-ovh-hdd` (or any local-path class) are tied to one node
+VMs that use node-local storage are tied to one node
 and are not live-migratable; node loss means availability loss. For durable
 VMs, use a CSI backend with RWX/block support and `VolumeSnapshotClass` before
 relying on KubeVirt migration, snapshots, or node-failure recovery.

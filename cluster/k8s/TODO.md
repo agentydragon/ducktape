@@ -126,9 +126,6 @@ descending order of "that can't be right":
 - [ ] `forgejo` — 2Gi → 8Gi, VPA saw 3.24Gi. Git pack cache? Mirror sync?
 - [ ] `haku-console` server — 512Mi → 3Gi, VPA saw 1.29Gi for a static-file +
       API server.
-- [ ] `haku-egress-proxy` mitmproxy — 1Gi → 3Gi, VPA saw 1.15Gi. Second time it
-      has outgrown its limit; the existing comment claims the working set stays
-      bounded under `stream_large_bodies`, and it evidently does not.
 - [ ] `grocy-{sf,vallejo}` valkey — 128Mi → 384Mi, VPA saw 256Mi. Check the
       eviction policy; this is a cache with apparently unbounded key growth.
 - [ ] `website` nginx — 64Mi → 192Mi, VPA saw 100Mi to serve static files.
@@ -191,6 +188,16 @@ Options to consider:
       ahead of `cache.allegedly.works`, or as a fallback) so a degraded
       attic doesn't block local rebuilds.
 
+## Attic cache retention
+
+- [ ] 2026-11-08: Set `default-retention-period` in `nix-cache/server-local.toml` (or per
+      cache via `attic cache configure --retention-period`). Unset means paths never expire;
+      the 30-day `[garbage-collection] interval` only reclaims unreferenced chunks. Since
+      #15012, same-repo PRs also upload, including multi-GB image results (VM and
+      Firecracker disks, kernels), onto the 100 GiB `attic-local-storage` volume. Paths
+      `devel` still uses get re-pushed and refreshed. Alternatively send PR uploads to a
+      short-retention `ducktape:pr` cache that CI also substitutes from.
+
 ## Slim down `authentik-jwt-rotation` image
 
 - [ ] 2026-06-18: Revisit `authentik-jwt-rotation` image contents. It still
@@ -239,10 +246,12 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
 
 ## Ship node logs to Loki (not just pod logs)
 
-Motivation: Alloy/promtail scrape pod logs only, so kernel/service messages — including
-the RTX 5090 `Xid 79 "GPU has fallen off the bus"` events — never leave a node's local
-journal, leaving no cluster-side history to quantify GPU fall-off frequency. Broader
-detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
+Talos service and kernel logs are streamed to Loki through Vector; NixOS node journals
+are shipped by `promtail-journal`. This supersedes the earlier claim that guest-node
+kernel/service messages stay local. The remaining host-log gap is Atlas's Proxmox/PVE
+journal, tracked below. Talos boot-id/source attribution remains open in
+<../docs/plan.md> § "Host log capture". Broader GPU detect/quantify plan:
+<../../debug/atlas/gpu_lockup_20260718_followups.md>.
 
 - [ ] **Unblock clean full OpenTofu plans.** Targeted Talos plans converge, but a
       no-target `tofu plan` still stalls during provider refresh even after regenerating the
@@ -341,38 +350,36 @@ would hand a hostile author only a credential they could already obtain.
 - [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
       it having nothing worth reading; that assumption is the tripwire.
 
-## Egress fences: known gaps
+## Haku egress: known gaps
 
-The fences in `cluster/cdk8s/egress_fences.py` bound the host set each proxy pod may
-reach on the public internet, and nothing else. Known wrong or unverified around them
-as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
+`haku-sandbox` and `haku-ci` reach the public internet only through Agentplane egress, as the
+standing accounts their sidecars or the haku-ci relay present; the force-proxy CCNPs
+(`haku/namespace.py`, `haku_ci/runner.py`) bound everything else to the cluster. Known wrong or
+unverified around it (operator-facing summary: `haku/docs/security.md`):
 
-- [ ] Collapse the fences. Five allowlists express about three distinct policies — one
-      host (`api.anthropic.com`), build registries plus a model API, and the
-      operator-data tier; `agents/public-coder-agent` is a waiver rather than a fence.
-- [ ] Converge on one proxy. mitmproxy (`agents/haku-egress-proxy`)
-      has no credential placeholders, so `haku-sandbox` sends real unredacted tokens
-      upstream where iron would send a placeholder and substitute in a trusted pod.
-      Blocked on verifying iron equivalents of `--set stream_large_bodies=1m` (dind
-      image layers were buffered whole into memory and OOM-killed the pod) and the
-      `--ignore-hosts` raw TLS passthrough for `api.anthropic.com` (interception breaks
-      the Managed Agents HTTP/2 session stream).
-- [ ] Enforce at two layers. The mitmproxy fence confines only via Cilium `toFQDNs` —
-      the container has no allowlist.
-- [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
-      (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
-      `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
+- [ ] (Maybe later.) AnkiWeb sync has been off since the credentials moved to external-creds
+      (2026-09-21, #7581). `ankiweb-credentials` exists only in `ducktape-flux` (its source), approved
+      for `haku-sandbox` in `external_creds.py` but never mirrored there: `haku/workspaces.py` has no
+      ExternalSecret for it. haku-anki references the Secret with `optional: true`, so it starts fine
+      and its sync worker reports `disabled` (`GET /api/sync/status`) instead of failing loudly.
+      Fix: ESO-mirror it into `haku-sandbox` like the other approved consumers (keys `email` and
+      `password`, which the Deployment reads), restart Anki, and check the status leaves `disabled`.
+      Before turning it on, know that the worker's first pass after boot does an automatic full upload
+      when AnkiWeb's side is empty, so the collection is pushed to the dedicated AnkiWeb account
+      straight away. Also consider dropping `optional: true` so a missing Secret is loud.
+- [ ] Enforce at two layers. Agentplane egress enforces each account's host rules at L7, but its
+      Pods have open 80/443 (`cilium.open_internet_egress` in `agentplane/egress.py`), so a proxy
+      bug is not backstopped at L3/L4.
+- [ ] Route cluster-internal traffic through the proxies too. The haku-ci runner
+      (`_PROXY_ENV` in `cluster/cdk8s/haku_ci/runner.py`) sets `NO_PROXY` to
+      `*.allegedly.works`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
       under the operator's own domains or the cluster network is reached with no proxy
       in the path and no allowlist applied.
 - [ ] Allowlist DNS for the **sandboxes**, where the exfil channel actually is. Verified
       in-cluster 2026-08-04: the force-proxy CCNPs admit sandbox pods to kube-dns with a
       plain L4 rule and no `rules.dns`, so Cilium does not proxy their queries and they
-      resolve anything (a probe pod in `haku-sandbox` resolved `example.com` while the
-      same name 502'd through the proxy). The fix belongs in the force-proxy CCNPs.
-- [ ] Record traffic, including rejections. The proxies filter and substitute
-      credentials but keep no request log, so a blocked request is invisible after the
-      fact — and rejections are how a fence being too tight, or an agent trying
-      somewhere it should not, becomes observable at all.
+      resolve anything (a probe pod in `haku-sandbox` resolved `example.com`, which no proxy
+      rule admits). The fix belongs in the force-proxy CCNPs.
 - [ ] Verify which pod is routed through which proxy. The force-proxy
       `CiliumClusterwideNetworkPolicy` selectors are unverified, and one that matches
       nothing bypasses the fence entirely.

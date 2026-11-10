@@ -3,79 +3,9 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthChecks,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    flux_kustomization_depends_on_many,
-)
-
-
-def airlock(chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization) -> Kustomization:
-    name = "airlock"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        suspend=False,
-        timeout="5m",
-        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-    )
-
-
-def haku_egress_proxy(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cert_manager: Kustomization,
-    cert_manager_trust: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    name = "haku-egress-proxy"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
-        decryption=SOPS_DECRYPTION,
-    )
-
-
-def plaid_mcp(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cnpg: Kustomization,
-    external_secrets_operator: Kustomization,
-    authentik: Kustomization,
-    seaweedfs_operator: Kustomization,
-) -> Kustomization:
-    name = "plaid-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="10m",
-        decryption=SOPS_DECRYPTION,
-        # Web OIDC credentials are supplied by an ExternalSecret and required by
-        # the pods at startup; wait=True tracks their readiness. Unrelated
-        # Authentik Terraform projects must not block app image/config updates.
-        # Finance spend policy reconciles independently; its Secret copy and
-        # workload become ready once that configuration arrives.
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik, seaweedfs_operator),
-    )
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 
 
 def plaid_spend_policy(chart: Chart) -> Kustomization:
@@ -102,54 +32,6 @@ def plaid_spend_policy(chart: Chart) -> Kustomization:
     )
 
 
-def public_coder_agent_access(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    name = "public-coder-agent-access"
-    return flux_kustomization(
-        chart,
-        name,
-        directory,
-        wait=None,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        description=(
-            "The public-coder-agent namespace, which holds the parked OpenClaw instance's PVCs, and the Roles "
-            "and bindings that Haku and Agentplane Sandboxes still use against it."
-        ),
-    )
-
-
-def public_coder_agent_app(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    agentplane_staging: Kustomization,
-) -> Kustomization:
-    name = "public-coder-agent-app"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        wait=None,
-        annotations={"ducktape.org/parked": "true"},
-        # The parked app artifact is intentionally omitted. Keep its inventory orphanable so
-        # the retained OpenClaw PVCs and state survive while the app is offline.
-        suspend=True,
-        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        decryption=SOPS_DECRYPTION,
-        timeout="5m",
-        # Runtime credentials and services can reconcile after the namespace and workload land.
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, agentplane_staging),
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
-            )
-        ],
-        description=(
-            "OpenClaw coder agent application; its state and retained SSH audit recordings stay "
-            "in the parked namespace. Backups reconcile separately."
-        ),
-    )
-
-
 def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac: Kustomization) -> Kustomization:
     name = "agent-shared-secrets"
     return flux_kustomization(
@@ -160,27 +42,4 @@ def agent_shared_secrets(chart: Chart, directory: RenderedDirectory, claude_rbac
         wait=None,
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(claude_rbac)],
-    )
-
-
-def tana_mcp(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    external_secrets_operator: Kustomization,
-    mcp_oauth_state: Kustomization,
-    monitoring_crds: Kustomization,
-) -> Kustomization:
-    name = "tana-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="5m",
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator,
-            mcp_oauth_state,
-            # ServiceMonitor + PrometheusRule
-            monitoring_crds,
-        ),
     )

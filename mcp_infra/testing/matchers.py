@@ -32,7 +32,6 @@ class ExitedSuccessfully(BaseMatcher[BaseExecResult]):
 
 
 def exited_successfully() -> Matcher[BaseExecResult]:
-    """Matcher for BaseExecResult that exited with code 0."""
     return ExitedSuccessfully()
 
 
@@ -55,5 +54,4 @@ class StdoutContains(BaseMatcher[BaseExecResult]):
 
 
 def stdout_contains(expected: str) -> Matcher[BaseExecResult]:
-    """Matcher for BaseExecResult whose stdout contains expected text."""
     return StdoutContains(expected)

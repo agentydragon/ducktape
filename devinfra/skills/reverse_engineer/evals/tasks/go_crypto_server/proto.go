@@ -59,6 +59,15 @@ type exportResponse struct {
 	Blob string `json:"blob"`
 }
 
+type exportVerifyRequest struct {
+	Token string `json:"token"`
+	Blob  string `json:"blob"`
+}
+
+type exportVerifyResponse struct {
+	Valid bool `json:"valid"`
+}
+
 const (
 	codeOK             = 0
 	codeBadRequest     = 4001

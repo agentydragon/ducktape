@@ -3,30 +3,39 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
+from agentplane.workload_auth.listener import KubernetesBearerAuth, Listener
 from util.yaml_file_settings import YamlFileSettings
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
+type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
+
+
+class DelegationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
+    caller_namespaces: tuple[str, ...] = Field(
+        min_length=1, description="Namespaces whose caller identity Actions may assert."
+    )
+    methods: tuple[str, ...] = Field(
+        min_length=1, description="Full HistoryService RPC method names that admit delegation."
+    )
 
 
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    token_audience: str = Field(
-        min_length=1, description="The audience runners' projected tokens carry for the ingress."
-    )
+    token_audience: str = Field(min_length=1, description="The token audience for journal pushes by central samplers.")
     writer_namespaces: frozenset[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
     )
-    listen_address: str = Field(
-        default="0.0.0.0:8081",
-        min_length=1,
-        description="The ingress listener, so the network fence admits the egress proxy to it and nothing else.",
+    sampler_accounts: frozenset[ServiceAccountRef] = Field(
+        default=frozenset(), description="ServiceAccounts allowed to publish centrally hosted Sessions."
     )
     settle_deltas: bool = Field(
         default=True,
@@ -43,16 +52,43 @@ class Settings(YamlFileSettings):
 
     database_url: str = Field(min_length=1)
     reader_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
+    delegation: DelegationSettings | None = Field(
+        default=None,
+        description="Independent Actions delegation trust; a delegated actor keeps ordinary caller read scope.",
+    )
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
+    migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     log_levels: LogLevels
-    listen_address: str = Field(default="0.0.0.0:8080", min_length=1)
+    rpc: Listener
     kubeconfig: Path | None = None
+    # CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+    #   (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+    policy_namespace: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Namespace holding the Identities a Sandbox SVID may name; absent refuses Identity writers.",
+    )
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.
     fold_page_size: int = Field(default=1000, ge=1, le=1000)
     fold_interval_s: float = Field(default=2, gt=0)
+    native_frame_read_batch_size: int = Field(
+        default=200, ge=1, description="Maximum linked sequences per raw-history query, independent of API pagination."
+    )
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
     )
+
+    @model_validator(mode="after")
+    def bearer_audiences(self) -> Settings:
+        audiences = frozenset(
+            audience
+            for method in self.rpc.auth
+            if isinstance(method, KubernetesBearerAuth)
+            for audience in method.audiences
+        )
+        if not {self.token_audience, self.ingress.token_audience} <= audiences:
+            raise ValueError("rpc.auth must allow the read and ingress bearer audiences")
+        return self

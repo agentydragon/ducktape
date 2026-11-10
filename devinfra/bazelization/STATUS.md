@@ -1,76 +1,33 @@
-# Bazel Migration Status
+# Bazel migration record
 
-## Vision
+## February 2026 snapshot
 
-Fully Bazel-managed repository: `bazel build //...`, `bazel test //...`, `bazel lint //...` cover everything. No direct tool invocations outside Bazel. All container images via rules_oci. Single dependency source per language.
+The migration note recorded 6 of 8 success criteria met: Python coverage 95.6%
+(990/1036 files), Rust 100%, Terraform 100% (76/76 modules), and 12 Docker images
+moved to `rules_oci`. These are historical counts, not current coverage claims.
+The intended shape was colocated tests, one dependency source per language,
+Bazel-managed build/test/image work, and a single root Python tool configuration.
 
-### What Stays Outside Bazel
+## Scope and environment boundaries
 
-- Ansible (Ansible Galaxy)
-- Nix configuration
-- Website (Haskell/stack)
+- Ansible/Galaxy, Nix configuration, and system/deployment shell scripts remain
+  separate concerns. Shell categories include CI/Ansible, container entrypoints,
+  deployment scripts, Nix-managed programs, and Bazel test helpers.
+- [finance/gnucash_util.py](../../finance/gnucash_util.py) imports the system
+  `gnucash` library. [GNOME theme targets](../../gnome/gterm_theme/BUILD.bazel) are
+  manual and need the GNOME/DBus environment and system libraries.
+- The website's build/deployment owner is [website/README.md](../../website/README.md).
 
-## Current State (February 2026)
+## Unimplemented intentions from the note
 
-6 of 8 success criteria met. Python at 95.6% Bazel coverage (990/1036 files), Rust at 100%, Terraform at 100% (76/76 modules). All linters integrated into `bazel lint //...` (ruff, mypy, clippy/rustfmt, eslint, buildifier, yamllint). 12 Docker images migrated to rules_oci. Flat package layout with colocated tests is the norm. Single root `pyproject.toml` remains (tool config only). Pre-commit framework handles git hooks; Claude Code session hooks handle proxy setup for web sessions.
+A unified `bazel check` command and consolidation of small experimental packages
+were proposals, not implemented commands or a completed migration. Separate
+packages still matter when deployment targets or dependencies differ.
 
-Run `bazel run //devinfra/orphans:find_orphans_bin` to list orphaned files.
+## Current owners
 
-## Remaining Work
-
-### High Priority
-
-- **Unified check command (Phase 3)**: Create `bazel check //...` that runs all linters + type checkers. Simplify pre-commit to single command. Update CI to use it.
-
-### Lower Priority
-
-- **Package consolidation**: Small experimental packages could move into `hack/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
-- **Remove `check-ast` pre-commit hook**: Redundant with `bazel build`.
-
-### Intentionally Not Bazelized
-
-| Item                                                                    | Reason                          |
-| ----------------------------------------------------------------------- | ------------------------------- |
-| `ansible/`                                                              | Ansible Galaxy                  |
-| `nix/`                                                                  | Nix configuration               |
-| `finance/gnucash_util.py`                                               | Requires system gnucash library |
-| Shell scripts (CI, entrypoints, deployment, Nix-managed, tool wrappers) | Various — see categories below  |
-
-Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Docker entrypoints, deployment scripts (`llm/deploy.sh`, etc.), Nix-managed (`nix/home/**/*.sh`), Bazel test helpers (`devinfra/lint/run_*.sh`).
-
-### Manual Targets (require special environment)
-
-| Target                   | Reason                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `//gnome/gterm_theme:*`  | Requires DBUS/GNOME session                                                  |
-| `website/` nested module | Haskell/stack build system; build via `cd website && bazelisk build //:site` |
-
-## Reference
-
-### Commands
-
-```bash
-bazel build //...                       # Build + lint (runs by default)
-bazel run //:requirements.update        # Update Python requirements lock
-bazel run //devinfra/orphans:find_orphans_bin  # Find un-Bazelized files
-bazel run //tools:gazelle               # Update BUILD files
-bazel run //devinfra/lint:buildifier       # Format BUILD files
-```
-
-### Linter Configuration
-
-| Tool       | Config                         | Bazel Command                               |
-| ---------- | ------------------------------ | ------------------------------------------- |
-| Ruff       | `ruff.toml`                    | `bazel build //...` (default)               |
-| mypy       | `mypy.ini`                     | `bazel build //...` (default)               |
-| ESLint     | `eslint.config.js`             | `bazel build //...` (default)               |
-| Prettier   | `props/frontend/.prettierrc`   | `bazel test //props/frontend:prettier_test` |
-| TypeScript | `props/frontend/tsconfig.json` | `bbr build //props/frontend:bundle`         |
-| buildifier | `devinfra/lint/BUILD.bazel`    | `bazel run //devinfra/lint:buildifier`      |
-| nixfmt     | N/A                            | Pre-commit hook only                        |
-
-Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses upstream `rules_mypy` v0.41.0 with its `mypy_cli` macro, `follow_imports = silent`, global `ignore_missing_imports = False`, and targeted per-module overrides.
-
-### Hook Lifecycle
-
-**Git pre-commit** (via `.pre-commit-config.yaml`): safety checks, syntax validation, Ansible check, Bazel format/lint, ruff autofix, markdownlint, kubeconform, nixfmt.
+Use the [root README](../../README.md#build-system) and [AGENTS.md](../../AGENTS.md)
+for build/test policy, [linting architecture](../docs/linting.md) for aspects and
+hook ownership, [Gazelle](../docs/gazelle.md) for BUILD generation, and
+[lockfiles](../docs/lockfiles.md) for dependency updates. The existing
+[`find_orphans_bin`](../orphans/BUILD.bazel) target reports files outside the graph.

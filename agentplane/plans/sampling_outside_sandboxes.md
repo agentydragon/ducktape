@@ -1,6 +1,6 @@
 # Sampling outside Sandboxes
 
-**Research, no direction chosen (operator request, 2026-10-27).** Could Agentplane run the agent loop
+**Research record (operator request, 2026-10-27).** Could Agentplane run the agent loop
 (model sampling, prompt assembly, the native conversation store) outside Sandboxes, with a Sandbox only
 running the agent's processes and file operations? Rai: "could we run LLM sampling and talking to ai
 APIs outside of the sandboxes, just executing processes inside them? Iiuc, codex code mode has synergy
@@ -13,20 +13,26 @@ the 2.1.252 test pin and this session's installed 2.1.296, plus existing scripte
 ([versioned evidence](../debug/claude_execution_placement.md)). The runner image uses independently
 pinned nixpkgs harnesses. No new inference or execution-placement probe was run for this research.
 
+The operator chose an Agentplane-owned loop, now the opt-in [central sampler](../central_sampler/README.md),
+whose README records the placement and coexistence rulings. What stays open here: central placement of
+upstream Codex (input to the [Session runtime model](session_runtime_model.md) attachment questions) and
+the Claude alternatives [below](#claude).
+
 ## Today
 
-- The Runner runs one Codex app-server for all its Codex Sessions, with `CODEX_HOME` at
+- Environment Runtime runs one Codex app-server for all its Codex Sessions, with `CODEX_HOME` at
   `<state_dir>/codex` on the Sandbox's state volume, and one Claude Code process per Session
   ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity)).
   Rollouts, compaction output and harness configuration are files the agent's own tools can read and
-  rewrite: the [isolated executor](../runner/docs/codex_executor.md) is a resource boundary, not a
+  rewrite: the [isolated executor](../env/runtime/execution/docs/codex_executor.md) is a resource boundary, not a
   trust boundary.
-- Sampling already leaves the Sandbox on the wire. The harness calls the
-  [LLM ingress](../llm_ingress/README.md) with a placeholder bearer that the egress proxy substitutes;
-  the ingress passes bodies through and attributes the request to the calling Pod.
-- Every process in a Sandbox can sample. The `basic` egress policy grants the whole LLM ingress with the
-  `agentplane-workload` credential (`cluster/cdk8s/agentplane/egress.py`), and the placeholder is
-  published in runner instructions ([egress](../egress/README.md#rules-api)).
+- Sampling already leaves the Sandbox on the wire. The harness reaches the
+  [LLM ingress](../llm_ingress/README.md) through an exact-origin sidecar route. The sidecar
+  authenticates the destination TLS connection with the Runtime SVID; the proxy authorizes CONNECT
+  for the Sandbox's ServiceAccount, and the ingress independently verifies the SVID before it
+  attributes the request to the calling Pod.
+- Every process in a Sandbox can sample. The SVID route is available without a caller-held API key
+  or a bearer-substitution credential; the ingress presents its own server-held key to LiteLLM.
 - Isolated executor mode already splits Codex in two inside the Sandbox: the app-server in the runner
   container and `codex exec-server` in a companion container, joined by `CODEX_EXEC_SERVER_URL`.
 
@@ -67,24 +73,21 @@ What stays on the harness host:
 
 ### First runnable slice
 
-Worker `/root/central_codex_spike`, 2026-10-27: the experimental
-[`runner/x/central_codex`](../runner/x/central_codex/README.md) subprocess/relay fixture passed on RBE
-in 16.3 seconds ([evidence](../debug/central_codex_sampling.md)). It drives real code-mode shell, patch,
-image and remote instruction loading, keeps native state outside the executor directory, and reads
-conversation history after executor loss and sampler restart. The host explicitly records unknown
-effects and interrupts a disconnected turn: a yielded shell session is not terminal failure evidence.
-The separate Pod/VM failure domain, real fence, authenticated Gateway path, spend attribution and
-comparable nested-call latency remain open. No deployment changes.
+A temporary subprocess/relay fixture passed on RBE, 2026-10-27
+([preserved evidence and open gates](../debug/central_codex_sampling.md)); its source is retired. The
+Pod/VM failure domain, real fence, authenticated Gateway path, spend attribution and nested-call latency
+remain unmeasured for upstream Codex.
 
 ### Reaching a Sandbox's exec-server
 
 The app-server dials each exec-server over WebSocket; a bearer needs `wss://` or loopback. The other
 direction, the exec-server registering itself, either uses a Noise relay to OpenAI's environment
 registry or, in "direct" mode, requires AWS SigV4 ([exec-server README][es-readme]). Neither fits
-Agentplane, whose runners dial out and admit no connections ([runner control](../docs/runner_control.md)).
-What fits is a byte tunnel: the Runner Gateway serves a per-Sandbox WebSocket endpoint, carries it over
-the runner's existing outbound connection to the loopback exec-server, and the central harness
-`environment/add`s that endpoint with a per-Sandbox bearer.
+Agentplane, whose runners expose private mTLS gRPC servers ([runner control](../docs/runner_control.md)).
+A candidate is a byte tunnel: the Runner Gateway serves a per-Sandbox WebSocket endpoint, carries
+it through a new runner RPC over the existing Gateway-to-runner mTLS connection to the loopback
+exec-server, and the central harness `environment/add`s that endpoint with a per-Sandbox bearer.
+This tunnel is a proposal; the current connection does not supply it.
 
 ## Code mode
 
@@ -138,8 +141,8 @@ Only the app-server's client changes it: `cwd` on `thread/start`, `thread/resume
 ([thread.rs][cwd-thread]), `cwd` or a per-environment cwd on `turn/start`, for that turn and later ones
 ([turn.rs][cwd-turn]), and `thread/settings/update` ([thread.rs][cwd-settings]). A `cd` inside a command,
 the paths of an `apply_patch` or a file a cell reads leave it alone. The Runner sends the Session spec's
-`cwd` once, on `thread/start` (`runner/codex/adapter.go`), and a Session's spec never changes
-([runner SPEC](../runner/SPEC.md)), so each Session has one cwd and one chain for its whole life.
+`cwd` once, on `thread/start` (`env/runtime/codex/adapter.go`), and a Session's spec never changes
+([Harness Host session protocol](../env/runtime/docs/session_protocol.md)), so each Session has one cwd and one chain for its whole life.
 
 Before every sampling step Codex re-reads the global file, but re-reads the project chain only when the
 environment selection (ids, cwds, roots) or project trust changed ([agents_md_manager.rs][agents-cache],
@@ -201,11 +204,11 @@ shared app-server would have to turn them off, or each owner gets an app-server 
   app-server, where one exit fails every hosted Session's turn and owners share `CODEX_HOME`,
   configuration and memories. The journal could stay with an in-Sandbox Runner that remains the
   app-server's client through a tunnel, but then conversation content transits the Sandbox again.
-  Either way this meets the frozen `RUNNER_STATE_BOUNDARY_RETHINK` and `RUNNER_CENTRAL_ADMISSION`
-  ([freezer](task_freezer.md)).
+  Dispatcher already durably admits commands centrally; the broader location of runner state remains
+  in the frozen `RUNNER_STATE_BOUNDARY_RETHINK` ([freezer](task_freezer.md)).
 - **The exec-server tunnel**: its per-Sandbox bearer, interrupts that cross it, and what a lost tunnel
   means. An exec-server restart already loses running processes, and Codex does not replay them
-  ([executor](../runner/docs/codex_executor.md#scope-in-codex-01621)).
+  ([executor](../env/runtime/execution/docs/codex_executor.md#scope-in-codex-01621)).
 - **Latency.** Every nested call and filesystem probe is a cluster round trip. AGENTS.md discovery
   probes ancestors concurrently (up to 256 in flight), about one round trip.
 - **Spend attribution.** The ingress attributes a request to the calling Pod, which would be the
@@ -238,7 +241,7 @@ harness needs to account for each feature it retains, beyond where it runs:
 - **Multi-agent v2, auto-review, skills and plugins, the MCP client with OAuth, hooks, approvals and
   exec policy.**
 - **Rollouts, resume, fork and `thread/items/list`**, which the Runner's recovery reconciliation reads
-  ([runner](../runner/README.md#native-continuation-evidence)).
+  ([retained-state contract](../env/runtime/docs/retained_state.md#native-continuation-evidence)).
 
 Central placement and persistence ownership are independent choices. Upstream Codex centrally
 retains its native store plus Agentplane's command/Event journal. A fork or custom sampler could
@@ -261,56 +264,13 @@ other's tables or a decision to delete services. The [current authorities](../do
 contracts. Central sampling alone does not replace them. Any extraction must preserve retained
 Sessions, identities, history and native state under the staging data-preservation procedure.
 
-### Bounded spike: measure the headless subset we need
+### Bounded spike
 
-Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
-of OpenAI APIs. **Baseline merged in
-[PR #12207](https://github.com/agentydragon/ducktape/pull/12207), `/root/postgres_harness_spike`,
-2026-10-27.** The operator-authorized code-mode-only implementation is isolated under
-`agentplane/x/postgres_codex`. The [runnable experiment and measured findings](../debug/postgres_codex_spike.md)
-record 563 physical Python runtime lines, a separate upstream source/dependency inventory, and seven
-passing RBE cases. It reuses real pinned upstream code-mode host, exec-server and apply-patch binaries.
-A persistence-focused Codex fork was not implemented or measured.
-
-The scripted model turn exercises remote shell and patch, then continues in a fresh sampler process
-from Postgres, without a native rollout or second Runner conversation journal. The database retains
-actual provider requests/responses, including opaque encrypted reasoning, and correlated tool intents
-and results. An independent full upstream Codex consumer also accepts the scripted wire. This does
-not establish live provider or subscription compatibility. The recommendation favors central upstream
-Codex for broad compatibility today; the custom loop is a candidate if its bounded completed-cell
-checkpoints and tool contract suffice.
-
-Crash checks distinguish committed intent, dispatch, effect and returned result. Database-clock leases
-and ownership generations fence stale sampler writes. Postgres cannot atomically commit a shell side
-effect: a real append followed by a lost reply remains uncertain and is not automatically replayed.
-Sampler and executor SIGKILL cases preserve readable conversation state and bound failure reporting
-([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). A dispatch can race after
-committed intent; database fencing does not guarantee exactly-once remote effects. There is no
-reconciliation interface yet.
-
-The [process-control extension](../debug/postgres_codex_spike.md#process-control-extension),
-in [PR #12213](https://github.com/agentydragon/ducktape/pull/12213), adds real yielded-cell `wait`, durable shell session handles,
-interactive stdin, PTY EOF/Ctrl-C and external generation-targeted interruption. A retained host is
-required for live V8 state; process continuation uses the upstream executor session's 30-second
-detached retention window. These are explicit limits, not Postgres serialization of live processes.
-Compaction is a separate extension. Instruction discovery, persistent JavaScript storage, subagents,
-skills/MCP, approvals, hooks, memory, History export and frontend tracing remain omitted. A frontend
-trace was not an acceptance gate: the operator clarified that existing Langfuse links already provide
-partial visibility. Neither extension establishes production replacement or deployment.
-
-### Model exchange visibility
-
-A custom central sampler owns the request/response boundary before native adapters translate it.
-Merely relocating upstream Codex does not expose every model payload through app-server; equivalent
-evidence would need model-client instrumentation or an ingress capture path. Record a model-exchange ID linked to Session, turn and tool IDs, with ordered streaming parts,
-completion/error, usage and timing. Keep the request actually sent distinct from assembled input,
-frontend projections, and a recovered or retried attempt. This lets the frontend show prompts,
-instruction/context sources, compaction and tool results without inferring the model exchange from
-SDK events. Preserve opaque provider continuation data needed for resume. Store model
-payloads without substituted credentials under conversation authorization and an explicit retention policy; do not put auth headers
-or credential-bearing URLs in frontend traces. Central ownership must still bound buffering and apply
-backpressure when storage or a viewer is slow. The spike should show what fidelity upstream's API
-already exposes and what a fork/custom loop gains.
+A code-mode-only Postgres sampler baseline merged in
+[PR #12207](https://github.com/agentydragon/ducktape/pull/12207) (source since removed); the
+[recorded experiment](../debug/postgres_codex_spike.md) preserves its line counts, crash/fencing
+findings and its process-control and compaction extensions. A persistence-focused Codex fork
+was not implemented or measured. The operator then chose a custom loop, the central sampler.
 
 ## Claude
 
@@ -339,12 +299,16 @@ Alternatives to compare:
   compatibility was tested here. Agentplane owns the tool/context loop and persistence; presenting
   a Claude identity does not supply Claude's built-in tool behavior.
 
-## Next
+The gated Claude native remote-tools investigation and a custom Claude subscription sampler remain
+independent branches. CLIProxyAPI translation/cloaking alone does not supply native tool,
+instruction, cache or continuation semantics or prove live provider/account support.
 
-The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)
-and remaining `CENTRAL_CODEX_SPIKE` gates inform `HARNESS_PLACEMENT_DESIGN` in
-[task DAG](task_dag.md) section 5. `CLAUDE_REMOTE_EXECUTION_SPIKE` supplies optional Claude evidence;
-it is not a prerequisite for choosing a Codex-only mode. No runtime cutover is selected.
+## Accepted central sampler v1
+
+Operator agreement, 2026-10-27, implemented as the [central sampler](../central_sampler/README.md):
+an independent code-mode sampler with its own database, reaching the Sandbox only through the
+Runner's Executor API. Its README records the placement and coexistence rulings; its
+[SPEC](../central_sampler/SPEC.md) owns the contract, including the direct Anthropic adapter.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53

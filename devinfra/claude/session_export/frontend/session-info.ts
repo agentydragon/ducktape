@@ -1,4 +1,4 @@
-import type { SessionSummary } from "./api/schema";
+import type { SessionSummary } from "./schema";
 
 export type StatusFilter = "all" | "active" | "paused" | "archived";
 const ROUTINE_SESSION_ORIGINS = new Set([

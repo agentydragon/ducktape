@@ -5,13 +5,161 @@
 //! their own surrounding purity/effect checks.
 
 use super::*;
+use crate::analysis_inputs::{
+    AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
+    InferredSetOperation, NativeInputKind, NativeOperationInputEvidence, ProofDependencies,
+    ResolvedImportedPrimitiveArraySpreadInput, ResolvedNativeOperationInput, StableSetIterableUse,
+};
+use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use anyhow::{Result, bail};
+use source_identity::SourceUnitOrdinal;
+use std::sync::Arc;
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SetIterableProof {
-    constructor_starts: BTreeSet<u32>,
+/// Source identity and top-level initialization scope for one checked
+/// collection constructor operand. Construction is private to the source
+/// proof that joins an exact top-level operation with its checked input. This
+/// records syntax/proof identity only; it never contains evaluated iterator
+/// yields or a runtime collection size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TopLevelNativeIterableOperandProjection {
+    operation_span: Span,
+    operand: NativeIterableOperandOrigin,
+    owner: SourceUnitOrdinal,
 }
 
-impl SetIterableProof {
+/// Origin of the statically checked constructor operand. Runtime iteration
+/// still resolves and validates the corresponding allocation at its prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeIterableOperandOrigin {
+    ImmediateArrayLiteral { allocation_site: u32 },
+}
+
+impl TopLevelNativeIterableOperandProjection {
+    fn new(operation_span: Span, allocation_site: u32, owner: SourceUnitOrdinal) -> Self {
+        Self {
+            operation_span,
+            operand: NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site },
+            owner,
+        }
+    }
+
+    pub(crate) fn operation_span(self) -> Span {
+        self.operation_span
+    }
+
+    pub(crate) fn operand_origin(self) -> NativeIterableOperandOrigin {
+        self.operand
+    }
+
+    pub(crate) fn owner(self) -> SourceUnitOrdinal {
+        self.owner
+    }
+
+    pub(crate) fn matches_operand(self, expr: &Expr) -> bool {
+        matches!(
+            (self.operand, expr.unwrap_parens()),
+            (
+                NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site },
+                Expr::Array(array)
+            ) if array.span.lo.0 == allocation_site
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TopLevelNativeIterableOperandSite {
+    pub(crate) operation_span: Span,
+    pub(crate) operand: NativeIterableOperandOrigin,
+    pub(crate) owner: SourceUnitOrdinal,
+}
+
+/// Certify the one-way source/schedule premise before value-flow inference.
+/// The input constructor and every intervening source unit are independently
+/// selected primitive-Set operations in the same original declaration. No
+/// graph result, flow identity or assignment is consulted here; the interval
+/// must stay in one output module, which the gate stage enforces.
+pub fn certify_stable_set_spreads(
+    inputs: &[ResolvedNativeOperationInput],
+) -> Result<BTreeMap<u32, StableSetIterableUse>> {
+    let by_ordinal: BTreeMap<_, _> = inputs
+        .iter()
+        .filter(|input| {
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+        })
+        .map(|input| (input.initializer_ordinal.0, input))
+        .collect();
+    let mut stable = BTreeMap::new();
+    for spread in inputs.iter().filter(|input| {
+        input.evidence.operation
+            == NativeInputKind::Operation(spec::NativeOperationKind::SetFromSetSpread)
+    }) {
+        let Some(source) = spread.spread_source.as_ref() else {
+            bail!(
+                "{} has no exact Set spread source",
+                spread.evidence.spec_location
+            );
+        };
+        let seed = by_ordinal.values().find(|input| {
+            input.binding == *source
+                && input.initializer_ordinal < spread.initializer_ordinal
+                && input.selected_statement_span == spread.selected_statement_span
+        });
+        let Some(seed) = seed else {
+            bail!(
+                "{} requires an earlier certified fresh primitive Set in the same original declaration",
+                spread.evidence.spec_location
+            );
+        };
+        let mut dependencies = ProofDependencies::default();
+        let mut interval_bindings = Vec::new();
+        dependencies
+            .native_operation_inputs
+            .insert(spread.evidence.reference.clone());
+        for ordinal in seed.initializer_ordinal.0..spread.initializer_ordinal.0 {
+            let Some(input) = by_ordinal.get(&ordinal) else {
+                bail!(
+                    "{} has an uncertified intervening source unit",
+                    spread.evidence.spec_location
+                );
+            };
+            if input.selected_statement_span != spread.selected_statement_span {
+                bail!(
+                    "{} has an intervening Set constructor outside its original declaration",
+                    spread.evidence.spec_location
+                );
+            }
+            dependencies
+                .native_operation_inputs
+                .insert(input.evidence.reference.clone());
+            interval_bindings.push(input.binding.clone());
+        }
+        interval_bindings.push(spread.binding.clone());
+        stable.insert(
+            spread.call_span.lo.0,
+            StableSetIterableUse {
+                source_span: spread
+                    .spread_source_span
+                    .expect("validated spread has operand span"),
+                spread_token_span: spread
+                    .spread_token_span
+                    .expect("validated spread has token span"),
+                interval_bindings,
+                dependencies,
+            },
+        );
+    }
+    Ok(stable)
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SetIterableShapes {
+    pub(super) constructor_starts: BTreeSet<u32>,
+}
+
+impl SetIterableShapes {
     pub(crate) fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -35,34 +183,29 @@ impl SetIterableProof {
             item.as_module_item().visit_with(&mut scanner);
         }
 
-        let mut invalid = scanner.invalid;
-        let mut aliases_by_source = BTreeMap::<Id, Vec<Id>>::new();
+        let mut alias_neighbors = BTreeMap::<Id, BTreeSet<Id>>::new();
         for (alias, candidate) in &candidates {
             if let Some(source) = &candidate.source {
-                aliases_by_source
+                alias_neighbors
+                    .entry(alias.clone())
+                    .or_default()
+                    .insert(source.clone());
+                alias_neighbors
                     .entry(source.clone())
                     .or_default()
-                    .push(alias.clone());
+                    .insert(alias.clone());
             }
         }
-        let mut pending: Vec<_> = invalid.iter().cloned().collect();
-        while let Some(id) = pending.pop() {
-            let Some(candidate) = candidates.get(&id) else {
-                continue;
-            };
-            if let Some(source) = &candidate.source
-                && invalid.insert(source.clone())
-            {
-                pending.push(source.clone());
-            }
-            if let Some(aliases) = aliases_by_source.get(&id) {
-                for alias in aliases {
-                    if invalid.insert(alias.clone()) {
-                        pending.push(alias.clone());
-                    }
-                }
-            }
+        let rules: Vec<_> = alias_neighbors.keys().cloned().collect();
+        let adjacency = alias_neighbors
+            .into_iter()
+            .map(|(id, neighbors)| (id, neighbors.into_iter().collect()))
+            .collect();
+        let mut inference = IterativeInference::new(AliasInvalidationRules { adjacency });
+        for id in scanner.invalid {
+            inference.seed(id, ());
         }
+        let invalid: BTreeSet<_> = inference.solve(rules).into_values().into_keys().collect();
 
         let mut constructor_starts = scanner.direct_literal_calls;
         for (array, start) in scanner.alias_consumers {
@@ -78,9 +221,305 @@ impl SetIterableProof {
         ));
         Self { constructor_starts }
     }
+}
 
-    pub(crate) fn contains_constructor(&self, span: Span) -> bool {
-        self.constructor_starts.contains(&span.lo.0)
+struct AliasInvalidationRules {
+    adjacency: BTreeMap<Id, Vec<Id>>,
+}
+
+impl IterativeRules for AliasInvalidationRules {
+    type Key = Id;
+    type Fact = ();
+    type Rule = Id;
+
+    fn evaluate(&self, id: &Id, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        if context.read(id.clone()).is_none() {
+            return;
+        }
+        for neighbor in self.adjacency.get(id).into_iter().flatten() {
+            context.propose(neighbor.clone(), ());
+        }
+    }
+
+    fn merge(_key: &Self::Key, _current: &mut Self::Fact, _contribution: Self::Fact) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SetIterableProof {
+    facts: Arc<SemanticFacts>,
+    author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
+    author_dependencies: BTreeMap<u32, ProofDependencies>,
+    stable_spreads: BTreeMap<u32, ProofDependencies>,
+    source_constructions: BTreeMap<u32, InferredSetConstruction>,
+    native_iterable_operands: BTreeMap<u32, TopLevelNativeIterableOperandProjection>,
+    protected_intervals: Vec<Vec<Id>>,
+    spread_sources: BTreeMap<u32, u32>,
+    array_spreads: StableArraySpreadShapes,
+    imported_array_spreads: BTreeMap<u32, (ResolvedImportedPrimitiveArraySpreadInput, usize)>,
+}
+
+impl SetIterableProof {
+    pub(super) fn new(
+        facts: Arc<SemanticFacts>,
+        author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
+        hints: &AnalysisInputs,
+        array_spreads: StableArraySpreadShapes,
+        constructor_operands: &BTreeMap<u32, TopLevelNativeIterableOperandSite>,
+    ) -> Self {
+        let author_dependencies = author_inputs
+            .iter()
+            .map(|(site, evidence)| {
+                (
+                    *site,
+                    hints.stable_set_spreads.get(site).map_or_else(
+                        || ProofDependencies {
+                            native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+                            ..ProofDependencies::default()
+                        },
+                        |stable| stable.dependencies.clone(),
+                    ),
+                )
+            })
+            .collect();
+        let spreads: Vec<_> = hints
+            .stable_set_spreads
+            .values()
+            .chain(
+                hints
+                    .inferred_set_constructions
+                    .values()
+                    .filter_map(|proof| match &proof.operation {
+                        InferredSetOperation::ProtectedSpread { interval, .. } => {
+                            Some(interval.as_ref())
+                        }
+                        InferredSetOperation::PrimitiveArray => None,
+                    }),
+            )
+            .collect();
+        let protected_intervals = spreads
+            .iter()
+            .map(|spread| spread.interval_bindings.clone())
+            .collect();
+        let origins: BTreeMap<_, _> = hints
+            .assumptions
+            .native_operation_inputs
+            .iter()
+            .map(|input| (input.binding.clone(), input.call_span.lo.0))
+            .chain(
+                hints
+                    .inferred_set_constructions
+                    .iter()
+                    .map(|(site, proof)| (proof.binding.clone(), *site)),
+            )
+            .collect();
+        let spread_sources = spreads
+            .iter()
+            .filter_map(|spread| {
+                let source = origins.get(spread.interval_bindings.first()?)?;
+                Some(
+                    [spread.source_span.lo.0, spread.spread_token_span.lo.0]
+                        .into_iter()
+                        .map(|span| (span, *source)),
+                )
+            })
+            .flatten()
+            .collect();
+        let mut proof = Self {
+            facts,
+            author_inputs,
+            author_dependencies,
+            protected_intervals,
+            spread_sources,
+            source_constructions: hints.inferred_set_constructions.clone(),
+            native_iterable_operands: BTreeMap::new(),
+            stable_spreads: spreads
+                .into_iter()
+                .flat_map(|stable| {
+                    [stable.source_span.lo.0, stable.spread_token_span.lo.0]
+                        .into_iter()
+                        .map(|site| (site, stable.dependencies.clone()))
+                })
+                .collect(),
+            array_spreads,
+            imported_array_spreads: hints
+                .assumptions
+                .imported_primitive_array_spread_inputs
+                .iter()
+                .flat_map(|input| {
+                    input
+                        .spread_token_spans
+                        .iter()
+                        .enumerate()
+                        .map(|(position, span)| (span.lo.0, (input.clone(), position)))
+                })
+                .collect(),
+        };
+        let operation_sites: BTreeSet<_> = proof
+            .author_inputs
+            .keys()
+            .chain(proof.source_constructions.keys())
+            .copied()
+            .collect();
+        for site in operation_sites {
+            let Some(source) = constructor_operands.get(&site) else {
+                continue;
+            };
+            if proof
+                .dependencies_for_constructor(source.operation_span)
+                .is_none()
+            {
+                continue;
+            }
+            let NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site } =
+                source.operand;
+            if source.operation_span.lo.0 != site {
+                continue;
+            }
+            proof.native_iterable_operands.insert(
+                site,
+                TopLevelNativeIterableOperandProjection::new(
+                    source.operation_span,
+                    allocation_site,
+                    source.owner,
+                ),
+            );
+        }
+        proof
+    }
+
+    pub(crate) fn protected_intervals(&self) -> &[Vec<Id>] {
+        &self.protected_intervals
+    }
+
+    pub(crate) fn stable_spread_source(&self, span: Span) -> Option<u32> {
+        self.spread_sources.get(&span.lo.0).copied()
+    }
+
+    pub(crate) fn stable_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+        self.stable_spreads.get(&span.lo.0)
+    }
+
+    pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
+        self.author_dependencies
+            .get(&span.lo.0)
+            .or_else(|| {
+                self.source_constructions
+                    .get(&span.lo.0)
+                    .map(|proof| &proof.dependencies)
+            })
+            .or_else(|| {
+                self.facts
+                    .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+            })
+    }
+
+    /// Return the one shared source/operand projection and its canonical
+    /// protocol dependencies for a checked top-level Set constructor.
+    pub(crate) fn native_iterable_operand(
+        &self,
+        span: Span,
+    ) -> Option<(&TopLevelNativeIterableOperandProjection, &ProofDependencies)> {
+        let projection = self.native_iterable_operands.get(&span.lo.0)?;
+        (projection.operation_span() == span)
+            .then_some((projection, self.dependencies_for_constructor(span)?))
+    }
+
+    /// The projection constrains literals that use the shared certificate.
+    /// Previously certified nonliteral and unrelated fresh-Set sites keep
+    /// their existing flow-root admission and do not acquire a new owner gate.
+    pub(crate) fn heap_constructor_in_owner(&self, span: Span, owner: SourceUnitOrdinal) -> bool {
+        self.native_iterable_operand(span)
+            .is_none_or(|(projection, _)| projection.owner() == owner)
+    }
+
+    /// Return canonical proof dependencies for early heap admission. The
+    /// immediate-literal projection is the shared path; selected alias and
+    /// static-member constructions retain their existing proof-backed path.
+    pub(crate) fn heap_constructor_dependencies(
+        &self,
+        span: Span,
+        owner: SourceUnitOrdinal,
+    ) -> Option<&ProofDependencies> {
+        if !self.heap_constructor_in_owner(span, owner) {
+            return None;
+        }
+        self.dependencies_for_constructor(span)
+    }
+
+    pub(crate) fn author_input_for_constructor(
+        &self,
+        span: Span,
+    ) -> Option<&NativeOperationInputEvidence> {
+        self.author_inputs.get(&span.lo.0)
+    }
+
+    pub(crate) fn inference_use_for_constructor(
+        &self,
+        span: Span,
+    ) -> Option<crate::analysis_provenance::InferenceUse> {
+        self.source_constructions
+            .get(&span.lo.0)
+            .map(|proof| proof.inference.clone())
+            .or_else(|| {
+                self.facts
+                    .inference_use(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+            })
+    }
+
+    pub(crate) fn stable_array_spread_dependencies(
+        &self,
+        token: Span,
+    ) -> Option<&ProofDependencies> {
+        let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
+        self.facts
+            .dependencies(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+    }
+
+    pub(crate) fn stable_array_spread_source(&self, span: Span) -> Option<u32> {
+        self.array_spreads.source_origins.get(&span.lo.0).copied()
+    }
+
+    pub(crate) fn stable_array_spread_inference_use(
+        &self,
+        token: Span,
+    ) -> Option<crate::analysis_provenance::InferenceUse> {
+        let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
+        self.facts
+            .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+    }
+
+    pub(crate) fn imported_array_spread(
+        &self,
+        token: Span,
+    ) -> Option<(
+        &ResolvedImportedPrimitiveArraySpreadInput,
+        usize,
+        &ImportedPrimitiveArrayOperandEvidence,
+    )> {
+        let (input, position) = self.imported_array_spreads.get(&token.lo.0)?;
+        if input.spread_token_spans.get(*position) != Some(&token) {
+            return None;
+        }
+        Some((input, *position, input.evidence.operands.get(*position)?))
+    }
+
+    pub(crate) fn stable_iterable_producers(
+        &self,
+        consumer: SourceUnitOrdinal,
+    ) -> Option<&BTreeSet<SourceUnitOrdinal>> {
+        self.array_spreads
+            .by_initializer
+            .iter()
+            .find_map(|(initializer, shape)| {
+                (shape.consumer == consumer
+                    && self
+                        .facts
+                        .dependencies(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+                        .is_some())
+                .then_some(&shape.producers)
+            })
     }
 }
 
@@ -197,7 +636,8 @@ fn proven_static_member_sets(
                             return false;
                         };
                         let mut receiver_values = flow.values_of_expr(&member.obj).into_iter();
-                        let Some(ValueOrigin::Object(object)) = receiver_values.next() else {
+                        let Some(Value::Alloc(Kind::Object, object)) = receiver_values.next()
+                        else {
                             return false;
                         };
                         receiver_values.next().is_none()
@@ -341,16 +781,21 @@ impl Visit for ArrayUseScanner<'_> {
 mod tests {
     use super::*;
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
-    use crate::purity::collect_plain_data_bindings;
     use raw_js_test_support::parse;
 
     fn proves_only_new(src: &str) -> bool {
         let module = parse(src);
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
-        let flow = ChunkValueFlow::analyze(&body);
-        let plain_data = collect_plain_data_bindings(&body, &shadowed, &flow);
-        let proof = SetIterableProof::analyze(
+        let flow = ChunkValueFlow::analyze_with_candidates(
+            &body,
+            &crate::facts::abstract_domain::heap::tracked_allocation_roots(&body),
+        );
+        let plain_data =
+            crate::facts::abstract_domain::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)
+                .plain_data_bindings()
+                .bindings;
+        let proof = SetIterableShapes::analyze(
             &body,
             &shadowed,
             &flow,
@@ -370,7 +815,7 @@ mod tests {
         let mut spans = NewSpans(Vec::new());
         module.visit_with(&mut spans);
         assert_eq!(spans.0.len(), 1, "fixture needs one constructor");
-        proof.contains_constructor(spans.0[0])
+        proof.constructor_starts.contains(&spans.0[0].lo.0)
     }
 
     #[test]
@@ -395,6 +840,19 @@ mod tests {
         ));
         assert!(!proves_only_new(
             "const lookup = { key: 'token' }; function make(lookup) { return new Set([lookup.key]); }"
+        ));
+    }
+
+    #[test]
+    fn array_alias_invalidation_reaches_the_whole_chain() {
+        assert!(proves_only_new(
+            "const values = ['a'], alias = values, tail = alias; const unique = new Set(tail);"
+        ));
+        assert!(!proves_only_new(
+            "const values = ['a'], alias = values, tail = alias; values.push('b'); const unique = new Set(tail);"
+        ));
+        assert!(!proves_only_new(
+            "const values = ['a'], alias = values, tail = alias; tail.push('b'); const unique = new Set(values);"
         ));
     }
 }

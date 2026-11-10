@@ -1,4 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_test")
 
 py_library(
     name = "base",
@@ -67,6 +68,40 @@ py_library(
 )
 
 py_library(
+    name = "openai_platform_lib",
+    srcs = ["openai_platform.py"],
+    imports = ["../.."],
+    visibility = [
+        "//aiquota:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
+    deps = [
+        ":base",
+        ":client",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "anthropic_platform_lib",
+    srcs = ["anthropic_platform.py"],
+    imports = ["../.."],
+    visibility = [
+        "//aiquota:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
+    deps = [
+        ":base",
+        ":client",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "zai_lib",
     srcs = ["zai.py"],
     imports = ["../.."],
@@ -83,9 +118,34 @@ py_library(
 )
 
 py_test(
+    name = "test_openai_platform",
+    srcs = ["test_openai_platform.py"],
+    deps = [
+        ":client",
+        ":openai_platform_lib",
+        "//:conftest",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_anthropic_platform",
+    srcs = ["test_anthropic_platform.py"],
+    deps = [
+        ":anthropic_platform_lib",
+        ":client",
+        "//:conftest",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_client",
     srcs = ["test_client.py"],
-    imports = ["../.."],
     deps = [
         ":client",
         "//:conftest",
@@ -100,9 +160,9 @@ py_test(
     srcs = ["test_claude.py"],
     data = [
         "fixtures/claude_prepaid_credits.json",
+        "fixtures/claude_reset_grants.json",
         "fixtures/claude_usage.json",
     ],
-    imports = ["../.."],
     deps = [
         ":claude_lib",
         ":cli_proxy_lib",
@@ -113,6 +173,7 @@ py_test(
         "//devinfra/claude/claude_api:usage",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -126,7 +187,6 @@ py_test(
         "fixtures/codex_reset_credits.json",
         "fixtures/codex_weekly_primary.json",
     ],
-    imports = ["../.."],
     deps = [
         ":cli_proxy_lib",
         ":client",
@@ -144,10 +204,10 @@ py_test(
     name = "test_zai",
     srcs = ["test_zai.py"],
     data = ["fixtures/zai_quota.json"],
-    imports = ["../.."],
     deps = [
         ":zai_lib",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

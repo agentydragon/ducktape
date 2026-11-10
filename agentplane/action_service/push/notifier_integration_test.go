@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -19,7 +21,7 @@ const awaitBound = 30 * time.Second
 
 var (
 	testOperator = store.OperatorPrincipal{Issuer: "https://issuer.test.example", Subject: "test-operator"}
-	testCaller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}}
+	testCaller   = store.CallerPrincipal{Account: store.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}, ServiceAccountUID: "test-caller-uid"}
 )
 
 // delivery is a Notifier's database, with the requests and subscriptions in it, and the push service it delivers to.
@@ -51,11 +53,7 @@ func newDelivery(t *testing.T) *delivery {
 
 func open(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, dsn)
 	return db
 }
 
@@ -84,7 +82,9 @@ func (d *delivery) submit(t *testing.T, key string, allowed bool) store.ActionRe
 	t.Helper()
 	admission := store.Admission{RequestID: uuid.New()}
 	if allowed {
-		admission.Vote = &store.ProviderVote{Provider: "test-policy", Verdict: store.VerdictAllow, ReasonCode: "test-allow"}
+		admission.Vote = &store.ProviderVote{
+			Verdict: store.VerdictAllow, Policy: store.PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE},
+		}
 	}
 	request, err := d.store.Submit(t.Context(), testCaller, store.ActionRequestInput{
 		IdempotencyKey: key, Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},

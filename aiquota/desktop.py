@@ -102,6 +102,7 @@ class QuotaDaemon:
             timeout=httpx.Timeout(connect=10, read=READ_TIMEOUT_SECONDS, write=10, pool=10), follow_redirects=False
         )
         cached = self.cache.read()
+        self._cached_quotas = cached
         self.view_json = to_view(cached).model_dump_json() if cached is not None else ""
         self.status = "starting"
         self.error = ""
@@ -133,7 +134,9 @@ class QuotaDaemon:
         parsed = parse_view_event(event)
         if parsed is None:
             return False
-        self.cache.write(parsed)
+        if parsed != self._cached_quotas:
+            self.cache.write(parsed)
+            self._cached_quotas = self.cache.read()
         # Keep the validated wire payload intact, including all server-derived fields.
         self.view_json = event.data
         self.bus_interface.view_changed(self.view_json)

@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -18,32 +21,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-var (
-	ErrWakeQuiescing   = errors.New("Sandbox is quiescing")
-	ErrWakeModeUnknown = errors.New("Sandbox operating mode unknown")
-	ErrWakeDeleted     = errors.New("Sandbox is tearing down")
-	ErrWakeSuperseded  = errors.New("wake ownership or queued request was superseded")
-)
-
 const deliveryWorkerCount = 4
-
-type wakeLimitedError struct{ retryAfter time.Duration }
-
-type retryKind uint8
-
-const (
-	retryFailure retryKind = iota
-	retryWakeBudget
-)
 
 type retryState struct {
 	workID string
 	until  time.Time
-	kind   retryKind
-}
-
-func (e wakeLimitedError) Error() string {
-	return fmt.Sprintf("wake budget exhausted for %s", e.retryAfter)
 }
 
 // SandboxCatalog must return a complete listing after synchronization. It also
@@ -52,20 +34,23 @@ func (e wakeLimitedError) Error() string {
 type SandboxCatalog interface {
 	SandboxReader
 	ListSandboxes(context.Context) ([]SandboxSnapshot, error)
+	// CurrentSandboxUIDs performs an uncached, complete API read. Call it after
+	// collecting stored deletion candidates; cached absence cannot authorize cleanup.
+	CurrentSandboxUIDs(context.Context) (map[string]struct{}, error)
 	Changes() <-chan struct{}
 	WaitSynced(context.Context) bool
 }
 
-// WakeController rereads the Sandbox and uses UID/resourceVersion preconditions.
-// beforeResume is called only immediately before a guarded patch; it reserves
-// the caller's persistent budget and starts the stored wake deadline first.
-type WakeController interface {
-	WakeForSend(context.Context, string, string, func(int64) error) (bool, error)
+// WakeRequester shares the lifecycle owner's live authorization, guarded mutation and budget
+// path with explicit resume. Dispatcher supplies only the retained effective sender: the
+// ServiceAccount or Identity a row is attributed to.
+type WakeRequester interface {
+	RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error)
 }
 
 type DeliveryRunner interface {
 	RunnerCommands
-	OpenSession(context.Context, SandboxSnapshot, string, *runnerpb.SessionSpec, *string) error
+	CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error
 }
 
 type LeaseOwner interface {
@@ -76,7 +61,7 @@ type LeaseOwner interface {
 type DeliveryWorker struct {
 	Store   *Store
 	Catalog SandboxCatalog
-	Wake    WakeController
+	Wake    WakeRequester
 	Leases  LeaseOwner
 	Runner  DeliveryRunner
 	Hub     *WatchHub
@@ -90,9 +75,8 @@ type DeliveryWorker struct {
 	refused map[string]string
 	queue   workqueue.TypedRateLimitingInterface[string]
 	limiter workqueue.TypedRateLimiter[string]
-	// A delayed item can be added early by a database notification. The queue
-	// owns the timer and retry count; the cause decides whether a newly ready
-	// Sandbox may bypass a wake-budget delay.
+	// A delayed item can be added early by a database notification. The worker
+	// still checks readiness before honoring a persisted wake retry time.
 	retries map[string]retryState
 }
 
@@ -127,7 +111,7 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 	var unsubscribe func()
 	for sub == nil {
 		var err error
-		sub, unsubscribe, err = w.Hub.subscribe()
+		sub, unsubscribe, err = w.Hub.subscribeChanges()
 		if err == nil {
 			break
 		}
@@ -138,7 +122,7 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 		}
 	}
 	defer unsubscribe()
-	// A queue key is a Session ID, so even with multiple workers an opening
+	// A queue key is a Session ID, so even with multiple workers a Session
 	// and its commands cannot be delivered concurrently in this process.
 	for range deliveryWorkerCount {
 		go w.runQueue(ctx)
@@ -176,6 +160,8 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 }
 
 func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result error) {
+	ctx, span := observability.Start(ctx, "Dispatcher Reconcile", trace.WithAttributes(attribute.Bool("lease.renew", renew)))
+	defer func() { observability.End(span, result) }()
 	// A partial scan or failed renewal cannot leave an old token available to
 	// independently running queue workers. The next successful renewal restores it.
 	defer func() {
@@ -185,7 +171,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			w.mu.Unlock()
 		}
 	}()
-	sandboxes, err := w.Catalog.ListSandboxes(ctx)
+	listCtx, listSpan := observability.Start(ctx, "Dispatcher Reconcile Sandbox Inventory")
+	sandboxes, err := w.Catalog.ListSandboxes(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
@@ -195,18 +183,36 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		byName[sandbox.Name] = sandbox
 		liveUID[sandbox.UID] = struct{}{}
 	}
-	storedUID, err := w.Store.ListSandboxUIDs(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Stored Sandboxes")
+	storedUID, err := w.Store.ListSandboxUIDs(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
+	var candidates []string
 	for uid := range storedUID {
 		if _, live := liveUID[uid]; !live {
-			if _, err := w.Store.EndSandbox(ctx, uid); err != nil {
-				return err
+			candidates = append(candidates, uid)
+		}
+	}
+	if len(candidates) > 0 {
+		// A new environment can appear after the cached scan but before its session
+		// reaches PostgreSQL. Confirm absence only after freezing that candidate set.
+		currentUIDs, err := w.Catalog.CurrentSandboxUIDs(ctx)
+		if err != nil {
+			return err
+		}
+		for _, uid := range candidates {
+			if _, live := currentUIDs[uid]; !live {
+				if _, err := w.Store.EndSandbox(ctx, uid); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	pending, err := w.Store.SandboxesWithPendingWork(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Pending Work")
+	pending, err := w.Store.SandboxesWithPendingWork(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
@@ -219,7 +225,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 				continue
 			}
 		}
-		owner, err := w.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)
+		leaseCtx, leaseSpan := observability.Start(ctx, "Dispatcher Reconcile Acquire Lease", trace.WithAttributes(attribute.String("sandbox.name", sandbox.Name)))
+		owner, err := w.Leases.Acquire(leaseCtx, sandbox.Name, sandbox.UID)
+		observability.End(leaseSpan, err)
 		if err != nil {
 			return err
 		}
@@ -232,7 +240,9 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 		w.mu.Unlock()
 		if owner != nil && (!had || old != *owner) {
-			current, err := w.Store.RecoverSandbox(ctx, *owner)
+			recoveryCtx, recoverySpan := observability.Start(ctx, "Dispatcher Reconcile Recover Sandbox", trace.WithAttributes(attribute.String("sandbox.name", sandbox.Name)))
+			current, err := w.Store.RecoverSandbox(recoveryCtx, *owner)
+			observability.End(recoverySpan, err)
 			if err != nil {
 				return err
 			}
@@ -254,18 +264,22 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 	}
 	w.mu.Unlock()
-	openings, err := w.Store.OpeningHeads(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Session Heads")
+	sessions, err := w.Store.SessionHeads(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
-	heads, err := w.Store.Heads(ctx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Command Heads")
+	heads, err := w.Store.Heads(listCtx)
+	observability.End(listSpan, err)
 	if err != nil {
 		return err
 	}
-	for _, opening := range openings {
-		sandbox, live := byName[opening.SandboxName]
-		if live && sandbox.UID == opening.SandboxUID {
-			w.enqueue(opening.SessionID)
+	for _, session := range sessions {
+		sandbox, live := byName[session.SandboxName]
+		if live && sandbox.UID == session.SandboxUID {
+			w.enqueue(session.SessionID)
 		}
 	}
 	for _, head := range heads {
@@ -294,7 +308,7 @@ func (w *DeliveryWorker) forgetOwner(uid string, owner Owner) {
 
 func (w *DeliveryWorker) enqueue(sessionID string) {
 	retry := w.retryFor(sessionID)
-	if delay := time.Until(retry.until); delay > 0 && retry.kind != retryWakeBudget {
+	if delay := time.Until(retry.until); delay > 0 {
 		w.queue.AddAfter(sessionID, delay)
 	} else {
 		w.queue.Add(sessionID)
@@ -330,18 +344,20 @@ func (w *DeliveryWorker) workFor(sessionID string) string {
 	return w.retryFor(sessionID).workID
 }
 
-func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) error {
-	opening, head, err := w.Store.SessionHead(ctx, sessionID)
+func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (result error) {
+	ctx, span := observability.Start(ctx, "Dispatcher Process Session", trace.WithAttributes(attribute.String("session.id", sessionID)))
+	defer func() { observability.End(span, result) }()
+	session, head, err := w.Store.SessionHead(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-	if opening == nil && head == nil {
+	if session == nil && head == nil {
 		w.clearRetry(sessionID)
 		return nil
 	}
 	name, uid, workID := "", "", ""
-	if opening != nil {
-		name, uid, workID = opening.SandboxName, opening.SandboxUID, "opening:"+opening.SessionID
+	if session != nil {
+		name, uid, workID = session.SandboxName, session.SandboxUID, "session:"+session.SessionID
 	} else {
 		name, uid, workID = head.SandboxName, head.SandboxUID, head.CommandID
 	}
@@ -367,12 +383,61 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) e
 		w.forgetOwner(uid, owner)
 		return err
 	}
-	if opening != nil {
-		ready, err := w.prepareOpening(ctx, opening, sandbox, owner)
+	queuedSession := session
+	principalSession := session
+	if principalSession == nil {
+		principalSession, err = w.Store.GetSession(ctx, sessionID)
+		if errors.Is(err, ErrNotFound) {
+			principalSession = nil
+		} else if err != nil {
+			return err
+		}
+	}
+	if head != nil && principalSession != nil && principalSession.Placement.requiresReadyExecutor() &&
+		(principalSession.State == SessionFailedState || principalSession.State == SessionUnknownState) {
+		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
+	}
+	if principalSession != nil && principalSession.ExecutionPrincipal != nil {
+		account, found, err := w.executionAccount(ctx, sandbox)
+		if err != nil {
+			return err
+		}
+		expected := principalSession.ExecutionPrincipal
+		if !found && expected.GetUid() == "" && head == nil {
+			return w.Store.NoteSessionWaiting(ctx, principalSession.SessionID, owner, "execution_identity_pending")
+		}
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(expected) ||
+			accountOfIdentity(expected) != (Account{Namespace: sandbox.Namespace, Name: sandbox.Name}) {
+			return w.failExecutionIdentity(ctx, principalSession, head, owner)
+		}
+		if expected.GetUid() == "" && head == nil {
+			principalSession, err = w.Store.BindExecutionPrincipal(ctx, principalSession.SessionID, principalSession.SandboxUID,
+				accountOfIdentity(expected).Namespace, accountOfIdentity(expected).Name, account.GetUid())
+			if err != nil {
+				return err
+			}
+			expected = principalSession.ExecutionPrincipal
+			queuedSession = principalSession
+		}
+		if account.GetUid() != expected.GetUid() || expected.GetUid() == "" {
+			return w.failExecutionIdentity(ctx, principalSession, head, owner)
+		}
+	}
+	if principalSession != nil && principalSession.recordsExecution() {
+		identity, found, err := w.executionIdentity(ctx, sandbox)
+		if err != nil {
+			return err
+		}
+		if !found || !sameIdentity(identity, principalSession.ExecutionIdentity) {
+			return w.failExecutionIdentity(ctx, principalSession, head, owner)
+		}
+	}
+	if queuedSession != nil {
+		ready, err := w.prepareSession(ctx, queuedSession, sandbox, owner)
 		if err != nil || !ready {
 			return err
 		}
-		if w.deliverOpening(ctx, opening, sandbox, owner) {
+		if w.deliverSession(ctx, queuedSession, sandbox, owner) {
 			w.enqueue(sessionID)
 		}
 	} else {
@@ -380,11 +445,63 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) e
 		if err != nil || !ready {
 			return err
 		}
-		if w.deliverCommand(ctx, head, sandbox, owner) {
+		if w.deliverCommand(ctx, head, sandbox, owner, principalSession) {
 			w.enqueue(sessionID)
 		}
 	}
 	return nil
+}
+
+func (w *DeliveryWorker) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
+	reader, ok := w.Catalog.(ExecutionAccountReader)
+	if !ok {
+		return nil, false, errors.New("Sandbox execution account reader unavailable")
+	}
+	return reader.GetExecutionAccount(ctx, sandbox)
+}
+
+func (w *DeliveryWorker) executionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	reader, ok := w.Catalog.(ExecutionAccountReader)
+	if !ok {
+		return nil, false, errors.New("Sandbox execution account reader unavailable")
+	}
+	return reader.GetExecutionIdentity(ctx, sandbox)
+}
+
+// executionCurrent reports whether the Sandbox still runs as the exact ServiceAccount and Identity
+// session recorded: an Identity changed while the Sandbox was stopped strands the Session rather
+// than re-attributing it.
+func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *Session, sandbox SandboxSnapshot) (bool, error) {
+	if session.ExecutionPrincipal != nil {
+		account, found, err := w.executionAccount(ctx, sandbox)
+		if err != nil {
+			return false, err
+		}
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(session.ExecutionPrincipal) ||
+			session.ExecutionPrincipal.GetUid() == "" || account.GetUid() != session.ExecutionPrincipal.GetUid() {
+			return false, nil
+		}
+	}
+	identity, found, err := w.executionIdentity(ctx, sandbox)
+	if err != nil {
+		return false, err
+	}
+	return found && sameIdentity(identity, session.ExecutionIdentity), nil
+}
+
+func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, session *Session, head *Dispatch, owner Owner) error {
+	if head == nil {
+		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionFailedState, "execution_identity_changed")
+		if err == nil {
+			w.clearRetry(session.SessionID)
+		}
+		return err
+	}
+	_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{QueueState}, FailedState, "execution_identity_changed", nil)
+	if err == nil {
+		w.clearRetry(head.SessionID)
+	}
+	return err
 }
 
 func (w *DeliveryWorker) clearRetry(sessionID string) {
@@ -396,12 +513,12 @@ func (w *DeliveryWorker) clearRetry(sessionID string) {
 
 func (w *DeliveryWorker) backoff(sessionID, workID string) {
 	delay := w.limiter.When(sessionID)
-	w.setRetry(sessionID, workID, delay, retryFailure)
+	w.setRetry(sessionID, workID, delay)
 }
 
-func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration, kind retryKind) {
+func (w *DeliveryWorker) setRetry(sessionID, workID string, after time.Duration) {
 	w.mu.Lock()
-	w.retries[sessionID] = retryState{workID: workID, until: time.Now().Add(after), kind: kind}
+	w.retries[sessionID] = retryState{workID: workID, until: time.Now().Add(after)}
 	w.mu.Unlock()
 	w.queue.AddAfter(sessionID, after)
 }
@@ -443,6 +560,38 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 	return FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
 }
 
+// Runtime validates arguments before reservation and reports AlreadyExists for a
+// conflicting retained request. Other terminal codes do not prove native rejection.
+func (w *DeliveryWorker) sessionFailure(session *Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
+	key := "session:" + session.SessionID
+	if session.Placement == CentralSampler {
+		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
+		return sessionMaterializationFromDelivery(state), reason, nil
+	}
+	switch status.Code(err) {
+	case codes.InvalidArgument, codes.AlreadyExists:
+		rejection := status.Convert(err)
+		return SessionFailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
+	case codes.Aborted, codes.Unavailable, codes.DeadlineExceeded:
+		// Reconcile the same Runtime reservation; native preparation waits for work.
+		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
+		return sessionMaterializationFromDelivery(state), reason, nil
+	default:
+		return SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
+	}
+}
+
+func sessionMaterializationFromDelivery(state string) string {
+	switch state {
+	case QueueState:
+		return SessionWaitingState
+	case FailedState:
+		return SessionFailedState
+	default:
+		panic("unexpected Session delivery failure state: " + state)
+	}
+}
+
 func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	delay := 500 * time.Millisecond
 	for ctx.Err() == nil {
@@ -465,7 +614,7 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	}
 }
 
-func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner) bool {
+func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, session *Session) bool {
 	ctx = observability.WithTraceparent(ctx, head.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Command",
@@ -484,6 +633,38 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if claimed == nil {
 		return false
 	}
+	if session != nil && session.recordsExecution() {
+		current, identityErr := w.executionCurrent(ctx, session, sandbox)
+		if identityErr != nil {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, QueueState, "execution_identity_unavailable", nil)
+				return err
+			})
+			w.backoff(head.SessionID, head.CommandID)
+			return true
+		}
+		if !current {
+			w.retryStorage(ctx, func() error {
+				state := FailedState
+				if head.DeliveryAttempted {
+					state = UnknownState
+				}
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, "execution_identity_changed", nil)
+				return err
+			})
+			w.clearRetry(head.SessionID)
+			return true
+		}
+	}
+	var marked bool
+	w.retryStorage(ctx, func() error {
+		var err error
+		marked, err = w.Store.MarkDeliveryAttempt(ctx, head.CommandID, owner)
+		return err
+	})
+	if !marked || ctx.Err() != nil {
+		return false
+	}
 	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner delivery failed")
@@ -491,6 +672,10 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	state, reason := AdmittedState, ""
 	if callErr != nil {
 		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, callErr)
+		// A bare RPC error proves neither non-admission nor the outcome of an earlier attempt.
+		if state == FailedState {
+			state = UnknownState
+		}
 	}
 	w.retryStorage(ctx, func() error {
 		_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, reason, admission)
@@ -502,40 +687,64 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	return true
 }
 
-func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, owner Owner) bool {
-	ctx = observability.WithTraceparent(ctx, opening.Traceparent)
+func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner Owner) bool {
+	ctx = observability.WithTraceparent(ctx, session.Traceparent)
 	ctx, span := observability.Start(
-		ctx, "Dispatcher Deliver Session Opening",
+		ctx, "Dispatcher Deliver Session",
 		trace.WithAttributes(
-			attribute.String("session.id", opening.SessionID),
-			attribute.String("sandbox.name", opening.SandboxName),
+			attribute.String("session.id", session.SessionID),
+			attribute.String("sandbox.name", session.SandboxName),
 		),
 	)
 	defer span.End()
-	key := "opening:" + opening.SessionID
-	claimed, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{QueueState}, DeliveringState, "")
+	key := "session:" + session.SessionID
+	claimed, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionInProgressState, "")
 	if err != nil {
-		span.SetStatus(otelcodes.Error, "session opening claim failed")
-		w.Logger.Error("cannot claim queued opening", "session_id", opening.SessionID, "error", err)
+		span.SetStatus(otelcodes.Error, "Session claim failed")
+		w.Logger.Error("cannot claim queued session", "session_id", session.SessionID, "error", err)
 		return false
 	}
 	if claimed == nil {
 		return false
 	}
-	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript)
-	if callErr != nil {
-		span.SetStatus(otelcodes.Error, "runner session opening failed")
+	if session.recordsExecution() {
+		current, identityErr := w.executionCurrent(ctx, session, sandbox)
+		if identityErr != nil {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionWaitingState, "execution_identity_unavailable")
+				return err
+			})
+			w.backoff(session.SessionID, key)
+			return true
+		}
+		if !current {
+			w.retryStorage(ctx, func() error {
+				_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionFailedState, "execution_identity_changed")
+				return err
+			})
+			w.clearRetry(session.SessionID)
+			return true
+		}
 	}
-	state, reason := AdmittedState, ""
+	callErr := w.Runner.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript, session.execution())
 	if callErr != nil {
-		state, reason = w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, callErr)
+		span.SetStatus(otelcodes.Error, "runner Session failed")
+	}
+	state, reason := SessionAcceptedState, ""
+	var rejection *status.Status
+	if callErr != nil {
+		state, reason, rejection = w.sessionFailure(session, sandbox, callErr)
 	}
 	w.retryStorage(ctx, func() error {
-		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, state, reason)
+		if rejection != nil {
+			_, err := w.Store.RejectSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, reason)
+			return err
+		}
+		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, state, reason)
 		return err
 	})
-	if state != QueueState {
-		w.clearRetry(opening.SessionID)
+	if state != SessionWaitingState {
+		w.clearRetry(session.SessionID)
 	}
 	return true
 }

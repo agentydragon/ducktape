@@ -33,7 +33,6 @@ async def test_native_tool_schema_and_invocation() -> None:
         response = await session.call_tool("echo", {"msg": "hello", "upper": True})
         result = EchoOutput.model_validate(response.structured_content)
 
-    assert isinstance(result, EchoOutput)
     assert result.text == "HELLO"
 
 

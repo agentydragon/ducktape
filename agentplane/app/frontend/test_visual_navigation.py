@@ -1,5 +1,6 @@
 """Agentplane navigation visual behavior tests."""
 
+import json
 import re
 
 import pytest
@@ -9,15 +10,16 @@ from playwright.async_api import Page, expect
 from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
 from agentplane.app.frontend.testing.visual_assertions import (
     _assert_phone_composer_layout,
+    _expect_notice_badges,
     _open_phone_navigation,
     _open_standalone_reasoning,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.page_capture import wait_for_stable
-from util.testing.viewports import SMALL_MOBILE, Viewport
-from util.testing.visual_capture import VisualPage
+from util.testing.frontend_visual.capture import VisualPage
+from util.testing.frontend_visual.page_capture import wait_for_stable
+from util.testing.frontend_visual.viewports import SMALL_MOBILE, Viewport
 
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -34,23 +36,12 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=view.page.locator("#app"))
 
 
-async def expect_notice_badges(page: Page, *, stale: bool) -> None:
-    """The fixture's two unprocessed-count badges and one failed-delivery badge in the sidebar, all
-    painted, and faded exactly when the notice stream is down."""
-    badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
-    for state, count in [("pending", 2), ("error", 1)]:
-        await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
-    for badge in await badges.all():
-        await expect(badge).to_be_visible()
-        await expect(badge).to_have_css("opacity", "0.5" if stale else "1")
-
-
 async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) -> None:
     """Unprocessed-entry counts and a failed delivery on Thread rows; an empty inbox shows nothing."""
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    await expect_notice_badges(page, stale=False)
+    await _expect_notice_badges(page, stale=False)
     await view.capture(target=page.get_by_role("navigation"))
 
 
@@ -97,49 +88,88 @@ async def test_pod_sandbox_hides_vm_console(view: VisualPage, app: AgentplaneFix
     await view.capture(target=page.locator("#app"))
 
 
-async def test_queued_session_open_follows_live_projection_and_survives_return(
+async def test_waiting_session_follows_live_projection_and_survives_return(
     view: VisualPage, app: AgentplaneFixture
 ) -> None:
-    """A queued Open follows its History projection; the Sandbox table lists it on return."""
-    await app.queue_open_response()
+    """A waiting Session follows its History projection; the Sandbox table lists it on return."""
+    await app.queue_create_response()
     await app.mount_app("/sandboxes/ready-sandbox?tab=threads")
     page = view.page
     await page.get_by_role("button", name="New thread", exact=True).click()
     await page.get_by_role("button", name="Create thread").click()
-    pending = page.get_by_role("status").filter(has_text="Open attempt")
-    await expect(pending).to_contain_text("Queued in Dispatcher")
-    match = re.search(r"Open attempt ([0-9a-f-]{36})", await pending.inner_text())
+    pending = page.get_by_role("status").filter(has_text="Session creation")
+    await expect(pending).to_contain_text("Waiting for the placement owner")
+    match = re.search(r"Session ([0-9a-f-]{36})", await pending.inner_text())
     assert match is not None
     session_id = match.group(1)
 
     await app.project_queued_session()
     await expect(page).to_have_url(re.compile(re.escape(session_id)))
-    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening thread")
+    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Waiting Session thread")
     await expect(sidebar_thread).to_be_visible()
 
     await page.locator("a.agentplane-thread-list-group-link").filter(has_text="ready-sandbox").click()
     await page.get_by_role("tab", name="Threads").click()
-    row = page.get_by_role("row", name=re.compile("Queued opening thread"))
+    row = page.get_by_role("row", name=re.compile("Waiting Session thread"))
     await expect(row).to_be_visible()
     await expect(
-        page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening thread")
+        page.locator(".agentplane-thread-list-row-name").filter(has_text="Waiting Session thread")
     ).to_be_visible()
-    await view.check(context="queued Thread projected and listed after returning to its Sandbox")
+    await view.check(context="accepted Session projected and listed after returning to its Sandbox")
     await view.capture(target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE
-async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_thread_view_recorder_in_sidebar_footer(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
     await _open_phone_navigation(page)
     sidebar = page.get_by_role("navigation")
-    debug = sidebar.locator(".agentplane-sidebar-footer").get_by_role("button", name="Debug tools")
+    debug = sidebar.locator(".agentplane-sidebar-footer").get_by_role("button", name="Thread view recorder")
     await expect(debug).to_be_visible()
     await debug.click()
     await expect(page.get_by_role("menuitem", name="Start recording")).to_be_visible()
     await view.capture(target=page.locator("#app"))
+
+
+async def test_thread_view_recording_contains_thread_scope_layouts(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.standalone_reasoning(long_body=True)
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    await page.get_by_role("button", name="Thread view recorder", exact=True).click()
+    await page.get_by_role("menuitem", name="Start recording", exact=True).click()
+    await page.locator(".agentplane-thread-list-row-name", has_text="Running thread").click()
+    await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Running thread")
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    # Make a real scroll correction necessary; compact histories need no scroll write.
+    await _open_standalone_reasoning(page)
+    await expect(history).to_have_attribute("data-layout-settled", "true")
+    assert await history.evaluate("area => area.scrollHeight > area.clientHeight && area.scrollTop > 0")
+    await page.get_by_role("button", name="Thread view recorder (recording)", exact=True).click()
+    async with page.expect_download() as downloaded:
+        await page.get_by_role("menuitem", name="Stop and download recording", exact=True).click()
+    download = await downloaded.value
+    assert download.suggested_filename.startswith("agentplane-thread-view-recording-")
+    path = await download.path()
+    assert path is not None
+    recording = json.loads(path.read_text())
+    assert recording["version"] == 4
+    layouts = recording["layouts"]
+    assert {entry["layout"]["scopeId"] for entry in layouts} == {IDLE_THREAD, RUNNING_THREAD}
+    assert len({entry["layout"]["viewId"] for entry in layouts}) == 2
+    assert any(entry["phase"] == "frame" for entry in layouts)
+    assert any(entry["phase"] == "virtual-change" for entry in layouts)
+    assert any(entry["phase"] == "scroll-after" and entry["reason"] == "follow-committed-layout" for entry in layouts)
+    populated = [entry["layout"] for entry in layouts if entry["layout"]["mountedRows"]]
+    assert populated
+    assert all(layout["viewport"]["height"] > 0 for layout in populated)
+    assert any(layout["virtualRows"] and layout["plannedRows"] for layout in populated)
+    assert "List the repository files." not in json.dumps(recording)
+    await expect(page.get_by_role("button", name="Thread view recorder", exact=True)).to_be_visible()
+    await view.capture()
 
 
 @DESKTOP_AND_MOBILE
@@ -204,10 +234,11 @@ async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualP
 @MOBILE_ONLY
 async def test_mobile_navigation_drawer_threads_disconnected_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.THREAD_STREAM_DROPPED)
+    await app.set_flag(Flag.NOTIFICATION_STREAM_DROPPED)
     await app.age_outage(10000)
     page = await open_phone_drawer(view, app)
     await expect(page.locator('[data-connection="degraded"]').first).to_be_visible()
-    await expect_notice_badges(page, stale=True)
+    await _expect_notice_badges(page, stale=True)
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -244,7 +275,7 @@ async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: Agentp
     await expect(history).to_have_attribute("data-layout-settled", "true")
     # The fixture's folded run is short; open it to create real scroll distance
     # before the reader leaves the bottom of this still-running thread.
-    await history.locator(".agentplane-disclosure-summary").filter(has_text="32 tool calls").first.click()
+    await history.locator(".ui-disclosure-summary").filter(has_text="32 tool calls").first.click()
     await history.hover()
     await page.mouse.wheel(0, -2500)
     jump = page.get_by_role("button", name="Jump to latest")
@@ -253,7 +284,7 @@ async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: Agentp
     assert point is not None
     await page.get_by_role("button", name="Toggle navigation").click()
     await expect(page.locator(".agentplane-sidebar-open")).to_be_visible()
-    await expect_notice_badges(page, stale=False)
+    await _expect_notice_badges(page, stale=False)
     # Probe where the actual high-z floating button was painted, not an arbitrary
     # uncovered patch of the drawer.
     assert await page.evaluate(
@@ -316,9 +347,7 @@ async def test_composer_more_menu(view: VisualPage, app: AgentplaneFixture) -> N
 
 
 @DESKTOP_AND_MOBILE
-async def test_long_thread_name_sandbox_label(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, capture_name: str
-) -> None:
+async def test_long_thread_name_sandbox_label(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     """A phone's topbar gives a long thread name the row and drops the Sandbox label, which the More
     menu still lists; a desktop topbar has room for both."""
     await app.name_thread(IDLE_THREAD, "Idle thread whose long name leaves its Sandbox no room in a phone topbar")
@@ -330,7 +359,7 @@ async def test_long_thread_name_sandbox_label(
         await expect(label).not_to_be_in_viewport()
     else:
         await expect(label).to_be_in_viewport()
-    await view.capture(f"{capture_name}-topbar", target=page.locator(".agentplane-topbar"))
+    await view.capture("topbar", target=page.locator(".agentplane-topbar"))
     await page.get_by_role("button", name="More", exact=True).click()
     await expect(page.get_by_role("menu")).to_contain_text("Sandbox: ready-sandbox")
     await view.capture()

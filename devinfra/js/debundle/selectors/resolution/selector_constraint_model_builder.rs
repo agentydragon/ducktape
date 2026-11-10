@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::SourceUnitId;
 use selector_constraint_backend::{
     AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
     CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
@@ -15,6 +14,7 @@ use selector_ir::{
     SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError,
     SelectorProjectedValue, SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,
 };
+use source_identity::SourceUnitId;
 
 pub fn compile_selector_problem(
     program: &SelectorProgram,
@@ -1655,12 +1655,12 @@ impl FactDomains {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::SourceUnitId;
     use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
     use selector_ir::ClaimKind;
     use selector_test_fixtures::{
         broad_specific_targets, declared_binding, member_read, module_member_use, source_unit_fact,
     };
+    use source_identity::SourceUnitId;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct AllowedTupleConstraint {

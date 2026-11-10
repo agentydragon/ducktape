@@ -27,8 +27,10 @@ inventory was removed.
 To resume, move the app directory back under `cluster/k8s` and drop the parked
 annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and
 unsuspend the backup. The OpenClaw image workflow and smoke script are parked in
-`cluster/parked/public-coder-agent/ci/`; move them back and publish a fresh image
-before resuming. The Haku Kubernetes API route and bearer were removed and will not
+`cluster/parked/public-coder-agent/ci/`. The workflow calls the since-removed `nix-image.yml`: port
+it to an entry in `devinfra/ci/nix_images.json` (smoke script as its `smoke`, its paths added to
+`.github/workflows/nix-images.yml`), then publish a fresh image before resuming. Ensure the rebuilt image contains the gRPC-capable `agentplane` CLI and verify
+`agentplane egress rules` through the sidecar route. The Haku Kubernetes API route and bearer were removed and will not
 return with the app. Verify model budgets and credentials first; do not reset retained
 PVCs or change the embedding identity.
 
@@ -77,7 +79,8 @@ Two layers, and the split matters:
 1. **The app's `public-coder-agent-egress` NetworkPolicy is the fence.** The OpenClaw Pod may
    reach DNS, the Agentplane staging gateway on its proxy port, and in-cluster LiteLLM. It has no
    direct Internet or ClickHouse route. The `HTTP_PROXY` variables point to the local relay; the
-   relay alone mounts the projected workload token.
+   relay alone mounts the workload SVID, which needs a standing `WorkloadCredential` rendered
+   before the Deployment is scaled up (`cluster/cdk8s/public_coder/egress.py`).
 2. **Agentplane's `public-coder-openclaw` policy is the egress allowlist.** It scopes destinations
    and credential substitution for the public-coder ServiceAccount. Every widening is a reviewable
    diff in `cluster/cdk8s/public_coder/egress.py` and the Agentplane policy controller.

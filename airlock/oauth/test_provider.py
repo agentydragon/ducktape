@@ -3,15 +3,35 @@
 import base64
 import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import httpx2
 import pytest
 import pytest_bazel
-import respx
-from httpx import Response
+from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
 
+import airlock.oauth.provider as provider_module
 from airlock.oauth.config import OAuth2ProviderConfig, TokenSecretConfig
-from airlock.oauth.provider import GenericOAuth2Provider, TokenData, generate_pkce_pair
+from airlock.oauth.provider import GenericOAuth2Provider, TokenData
+
+
+def _mock_token_endpoint(monkeypatch: pytest.MonkeyPatch, response: httpx2.Response) -> list[httpx2.Request]:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "https://example.com/token"
+        requests.append(request)
+        return response
+
+    original_client = provider_module.AsyncOAuth2Client
+
+    def client_with_mock_transport(*args: Any, **kwargs: Any) -> AuthlibAsyncOAuth2Client:
+        return original_client(*args, transport=httpx2.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(provider_module, "AsyncOAuth2Client", client_with_mock_transport)
+    return requests
 
 
 @pytest.fixture
@@ -35,8 +55,8 @@ def provider(provider_config: OAuth2ProviderConfig) -> GenericOAuth2Provider:
     )
 
 
-def test_build_authorize_url(provider: GenericOAuth2Provider) -> None:
-    url = provider.build_authorize_url("test-state")
+async def test_build_authorize_url(provider: GenericOAuth2Provider) -> None:
+    url, code_verifier = await provider.build_authorize_url("test-state")
     parsed = urlparse(url)
     params = parse_qs(parsed.query)
 
@@ -47,14 +67,16 @@ def test_build_authorize_url(provider: GenericOAuth2Provider) -> None:
     assert params["client_id"] == ["test-client-id"]
     assert params["scope"] == ["scope1 scope2"]
     assert params["state"] == ["test-state"]
+    assert code_verifier is None
 
 
-def test_explicit_redirect_uri_wins(provider: GenericOAuth2Provider) -> None:
-    params = parse_qs(urlparse(provider.build_authorize_url("st")).query)
+async def test_explicit_redirect_uri_wins(provider: GenericOAuth2Provider) -> None:
+    url, _ = await provider.build_authorize_url("st")
+    params = parse_qs(urlparse(url).query)
     assert params["redirect_uri"] == ["http://localhost:8080/callback/test"]
 
 
-def test_redirect_uri_falls_back_to_shared_default() -> None:
+async def test_redirect_uri_falls_back_to_shared_default() -> None:
     config = OAuth2ProviderConfig(
         name="new",
         display_name="New",
@@ -65,11 +87,12 @@ def test_redirect_uri_falls_back_to_shared_default() -> None:
         access_secret=TokenSecretConfig(name="new-access"),
     )
     provider = GenericOAuth2Provider(config, "id", "sec", "https://airlock.example.com/oauth/callback")
-    params = parse_qs(urlparse(provider.build_authorize_url("st")).query)
+    url, _ = await provider.build_authorize_url("st")
+    params = parse_qs(urlparse(url).query)
     assert params["redirect_uri"] == ["https://airlock.example.com/oauth/callback"]
 
 
-def test_build_authorize_url_with_extra_params() -> None:
+async def test_build_authorize_url_with_extra_params() -> None:
     config = OAuth2ProviderConfig(
         name="google",
         display_name="Google",
@@ -82,7 +105,7 @@ def test_build_authorize_url_with_extra_params() -> None:
         extra_auth_params={"access_type": "offline", "prompt": "consent"},
     )
     provider = GenericOAuth2Provider(config, "gid", "gsecret", "http://localhost/oauth/callback")
-    url = provider.build_authorize_url("state123")
+    url, _ = await provider.build_authorize_url("state123")
     params = parse_qs(urlparse(url).query)
 
     assert params["access_type"] == ["offline"]
@@ -97,10 +120,10 @@ def test_generate_state(provider: GenericOAuth2Provider) -> None:
     assert len(state1) > 20
 
 
-@respx.mock
-async def test_exchange_code(provider: GenericOAuth2Provider) -> None:
-    route = respx.post("https://example.com/token").mock(
-        return_value=Response(
+async def test_exchange_code(provider: GenericOAuth2Provider, monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = _mock_token_endpoint(
+        monkeypatch,
+        httpx2.Response(
             200,
             json={
                 "access_token": "access-123",
@@ -109,7 +132,7 @@ async def test_exchange_code(provider: GenericOAuth2Provider) -> None:
                 "expires_in": 3600,
                 "scope": "scope1 scope2",
             },
-        )
+        ),
     )
     token = await provider.exchange_code("auth-code-789")
 
@@ -117,24 +140,16 @@ async def test_exchange_code(provider: GenericOAuth2Provider) -> None:
     assert token.refresh_token == "refresh-456"
     assert token.scope == "scope1 scope2"
     assert token.expires_at > datetime.now(UTC)
-    assert route.called
+    assert len(requests) == 1
+    sent = dict(parse_qs(requests[0].content.decode()))
+    assert sent["grant_type"] == ["authorization_code"]
+    assert sent["client_id"] == ["test-client-id"]
+    assert sent["client_secret"] == ["test-client-secret"]
+    assert sent["redirect_uri"] == ["http://localhost:8080/callback/test"]
+    assert "Authorization" not in requests[0].headers
 
 
-def test_generate_pkce_pair_s256() -> None:
-    """code_challenge must be base64url(SHA256(code_verifier)) without padding."""
-    verifier, challenge = generate_pkce_pair()
-    assert 43 <= len(verifier) <= 128  # RFC 7636 length window
-    expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
-    assert challenge == expected
-    assert "=" not in challenge  # padding stripped
-
-    # Each call must yield a fresh pair.
-    v2, c2 = generate_pkce_pair()
-    assert v2 != verifier
-    assert c2 != challenge
-
-
-def test_build_authorize_url_with_pkce_and_aud() -> None:
+async def test_build_authorize_url_with_pkce_and_aud() -> None:
     config = OAuth2ProviderConfig(
         name="bsc",
         display_name="BSC",
@@ -148,49 +163,62 @@ def test_build_authorize_url_with_pkce_and_aud() -> None:
         aud="https://fhir.example.com/r4",
     )
     provider = GenericOAuth2Provider(config, "cid", "csec", "http://localhost/oauth/callback")
-    url = provider.build_authorize_url("st", code_challenge="CHAL")
+    url, code_verifier = await provider.build_authorize_url("st")
     params = parse_qs(urlparse(url).query)
 
-    assert params["code_challenge"] == ["CHAL"]
+    assert code_verifier is not None
+    assert 43 <= len(code_verifier) <= 128
+    expected_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    )
+    assert params["code_challenge"] == [expected_challenge]
     assert params["code_challenge_method"] == ["S256"]
     assert params["aud"] == ["https://fhir.example.com/r4"]
     assert params["scope"] == ["interop"]
 
 
-def test_build_authorize_url_no_pkce_no_aud(provider: GenericOAuth2Provider) -> None:
+async def test_build_authorize_url_no_pkce_no_aud(provider: GenericOAuth2Provider) -> None:
     """When PKCE not requested and aud not configured, neither appears."""
-    url = provider.build_authorize_url("state")
+    url, code_verifier = await provider.build_authorize_url("state")
     params = parse_qs(urlparse(url).query)
+    assert code_verifier is None
     assert "code_challenge" not in params
     assert "code_challenge_method" not in params
     assert "aud" not in params
 
 
-@respx.mock
-async def test_exchange_code_with_pkce(provider: GenericOAuth2Provider) -> None:
-    route = respx.post("https://example.com/token").mock(
-        return_value=Response(200, json={"access_token": "a", "expires_in": 3600})
-    )
+async def test_exchange_code_with_pkce(provider: GenericOAuth2Provider, monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = _mock_token_endpoint(monkeypatch, httpx2.Response(200, json={"access_token": "a", "expires_in": 3600}))
     await provider.exchange_code("code", code_verifier="my-verifier")
-    sent = dict(parse_qs(route.calls.last.request.content.decode()))
+    sent = dict(parse_qs(requests[0].content.decode()))
     assert sent["code_verifier"] == ["my-verifier"]
     assert sent["code"] == ["code"]
 
 
-@respx.mock
-async def test_exchange_code_no_pkce_omits_verifier(provider: GenericOAuth2Provider) -> None:
-    route = respx.post("https://example.com/token").mock(
-        return_value=Response(200, json={"access_token": "a", "expires_in": 3600})
-    )
+async def test_exchange_code_no_pkce_omits_verifier(
+    provider: GenericOAuth2Provider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    requests = _mock_token_endpoint(monkeypatch, httpx2.Response(200, json={"access_token": "a", "expires_in": 3600}))
     await provider.exchange_code("code")
-    sent = dict(parse_qs(route.calls.last.request.content.decode()))
+    sent = dict(parse_qs(requests[0].content.decode()))
     assert "code_verifier" not in sent
 
 
-@respx.mock
-async def test_refresh_tokens(provider: GenericOAuth2Provider) -> None:
-    route = respx.post("https://example.com/token").mock(
-        return_value=Response(
+async def test_exchange_code_preserves_http_status_errors(
+    provider: GenericOAuth2Provider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_token_endpoint(monkeypatch, httpx2.Response(400, json={"error": "invalid_grant"}))
+
+    with pytest.raises(httpx2.HTTPStatusError) as exc_info:
+        await provider.exchange_code("invalid-code")
+
+    assert exc_info.value.response.status_code == 400
+
+
+async def test_refresh_tokens(provider: GenericOAuth2Provider, monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = _mock_token_endpoint(
+        monkeypatch,
+        httpx2.Response(
             200,
             json={
                 "access_token": "new-access-123",
@@ -198,25 +226,36 @@ async def test_refresh_tokens(provider: GenericOAuth2Provider) -> None:
                 "expires_in": 3600,
                 "scope": "scope1",
             },
-        )
+        ),
     )
     token = await provider.refresh_tokens("old-refresh-token")
 
     assert token.access_token == "new-access-123"
     assert token.refresh_token == "new-refresh-456"
-    assert route.called
+    assert len(requests) == 1
+    sent = dict(parse_qs(requests[0].content.decode()))
+    assert sent["grant_type"] == ["refresh_token"]
+    assert sent["refresh_token"] == ["old-refresh-token"]
+    assert sent["client_id"] == ["test-client-id"]
+    assert sent["client_secret"] == ["test-client-secret"]
+    assert "Authorization" not in requests[0].headers
 
 
-@respx.mock
-async def test_refresh_tokens_preserves_old_refresh_token(provider: GenericOAuth2Provider) -> None:
+async def test_refresh_tokens_preserves_old_refresh_token(
+    provider: GenericOAuth2Provider, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Google omits refresh_token on refresh responses."""
-    respx.post("https://example.com/token").mock(
-        return_value=Response(200, json={"access_token": "new-access", "expires_in": 3600, "scope": "scope1"})
+    _mock_token_endpoint(
+        monkeypatch, httpx2.Response(200, json={"access_token": "new-access", "expires_in": 3600, "scope": "scope1"})
     )
     token = await provider.refresh_tokens("my-precious-refresh-token")
 
     assert token.access_token == "new-access"
     assert token.refresh_token == "my-precious-refresh-token"
+
+
+def test_authlib_client_uses_httpx2_backend() -> None:
+    assert issubclass(AuthlibAsyncOAuth2Client, httpx2.AsyncClient)
 
 
 def test_needs_refresh_soon(provider: GenericOAuth2Provider) -> None:

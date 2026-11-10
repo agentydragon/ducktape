@@ -39,7 +39,7 @@ metadata:
   namespace: monitoring
 spec:
   configMapRef:
-    key: dashboard.json
+    key: aiquota-history.json
     name: aiquota-history-dashboard
   folder: Analytics
   instanceSelector:

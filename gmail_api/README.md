@@ -1,16 +1,9 @@
 # gmail_api
 
-Shared Gmail API building blocks used across the repo's Gmail tooling
-(`gmail_archiver/`, `x/google_mcp_server/`).
+Shared Gmail resource models used by `gmail_archiver/` and `x/google_mcp_server/` live in
+`labels.py`, `filters.py`, and `messages.py`.
 
-- `labels.py` — Pydantic models and helpers for label resources: `GmailLabel`,
-  `SystemLabel`, `resolve_label_id`, `is_system_label`, `CreateLabelRequest`,
-  `PatchLabelRequest`, `LabelsListResponse`, and the label visibility/type enums.
-- `messages.py` — Pydantic models mirroring Gmail's message/thread/draft resources
-  (`Message`, `MessagePart`, `MessagePartBody`, `MessagePartHeader`, `Thread`, `Draft`,
-  `ThreadsListResponse`) plus the `MessageFormat`/`ThreadFormat` enums. Camel-cased on the
-  wire (`to_camel` aliases + `populate_by_name`), so an API JSON response validates directly
-  with `Model.model_validate(response)` and serializes back unchanged.
-- `service.py` — `build_gmail_service(token_file)` builds the Gmail v1 client used by
-  `gmail_archiver/` from a standard google-auth authorized-user OAuth token JSON. The
-  `x/google_mcp_server/` backend builds bearer-only credentials directly from its Airlock token.
+`service.py` builds Gmail clients for the archiver from google-auth authorized-user OAuth token
+files, which google-auth refreshes. The remote `x/google_mcp_server/` instead builds bearer-only
+Google credentials from its Airlock-minted access token in `GOOGLE_MCP_TOKEN_FILE`; its separate
+`GOOGLE_MCP_BEARER_TOKEN` authenticates callers to the MCP server.

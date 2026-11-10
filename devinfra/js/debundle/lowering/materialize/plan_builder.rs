@@ -1,30 +1,39 @@
 //! `ChunkPlanBuilder` owns the per-chunk mutable state that
-//! `materialize_logical_chunk` threads across its eight phases. Each phase is a
+//! `materialize_logical_chunk` threads across its planning phases. Each phase is a
 //! method on the builder. `bindings_catalogue` is the authoritative binding
 //! destination state; owned-only lookup maps are derived when a downstream
 //! analysis needs that projection.
 
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
-use crate::chunk_ast::{TopLevelDecl, binding_declaration};
-use crate::imports::{
-    ArtifactSourceImportResolutionCache, RuntimeImportFacts, resolve_imported_binding,
-};
+use crate::exports::PublicExportSurface;
+use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
+use crate::ownership_subset::SelectedModule;
 use crate::plans::ModulePlan;
-use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
+use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
 use analysis::{
-    BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
-    SourceUnitClass, SourceUnitId, top_level_id,
+    BindingCatalogue, BindingKind, DependencyGraphAndAtomicGroups, DestructuringDeclaratorGroup,
+    DestructuringGroupOwnerClassification, EntryDestination, ModuleId, ModuleRole,
+    NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass, SourceUnitLayout,
+    chunk_constraining_module_edges, classify_destructuring_group_owners,
+    classify_nested_var_placement, top_level_id,
 };
-use anyhow::{Context, Result, bail};
-use js_ast::statement_for_source_unit_ordinal;
+use anyhow::{Context, Result, bail, ensure};
+use frontend_elaboration::MemberClaimProjection;
+use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
+use frontend_elaboration::source_ast::RuntimeImportFacts;
+use gate::simulated_evaluation_post_order;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
-use source_identity::{SourceUnitOrdinal, StatementId};
+use source_identity::ChunkId;
+use source_identity::SourceUnitId;
+use source_identity::StatementId;
+use spec::MemberSelectorSpec;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
+use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -52,13 +61,30 @@ fn member_outcome(
 }
 
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
-/// `lower_chunk` + the chunk-report builder need from the plan
+/// `prepare_candidate_emission_plan` + the chunk-report builder need from the plan
 /// construction phase.
 pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
     pub(super) bindings_catalogue: BindingCatalogue,
     pub(super) whole_statement_assignment: BTreeMap<StatementId, usize>,
+    /// Positional IDs of plans constructed specifically by coarse residual
+    /// synthesis. This provenance is never inferred from a module path.
+    pub(super) generated_residual_plans: BTreeSet<usize>,
+    /// Source units adopted by an explicitly opted-in authored module to
+    /// complete a partially claimed atomic group.
+    pub(super) atomic_group_owner_completions: Vec<AtomicGroupOwnerCompletion>,
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+}
+
+pub(super) struct AtomicGroupOwnerCompletion {
+    pub(super) owner_path: String,
+    pub(super) atomic_group_source_unit_ids: Vec<SourceUnitId>,
+    pub(super) adopted_source_unit_ids: Vec<SourceUnitId>,
+}
+
+struct CoarseResidualBucket {
+    source_units: BTreeSet<SourceUnitId>,
+    export_surface: PublicExportSurface,
 }
 
 /// Per-explicit-request inputs the builder reads but does not own.
@@ -87,14 +113,17 @@ pub(super) struct ChunkPlanBuilder {
     /// stable: binding destinations and `whole_statement_assignment`
     /// hold positional references.
     module_plans: Vec<ModulePlan>,
+    /// Positional IDs of plans constructed by coarse residual synthesis.
+    generated_residual_plans: BTreeSet<usize>,
+    atomic_group_owner_completions: Vec<AtomicGroupOwnerCompletion>,
     /// Authoritative destination of every claimed binding, including imported
     /// bindings claimed only for re-export. Module plans retain export/name
     /// decisions; syntax placement reads this catalogue.
     bindings_catalogue: HashMap<Id, BindingKind>,
     /// Index into `module_plans` of the "catchall" plan that
     /// unclaimed bindings sweep into, when one exists. `None` when
-    /// the chunk has no residual landing site (default
-    /// `InlineInEntry` with no fallback request, or `PerAtomicGroup`).
+    /// the chunk has no residual landing site (default `InlineInEntry` with
+    /// no fallback request, `PerAtomicGroup`, or `CoarseAtomicGroups`).
     residual_plan_index: Option<usize>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in this chunk. Materialization keeps
@@ -123,10 +152,6 @@ pub(super) struct ChunkPlanBuilder {
     /// known source binding spelling but whose ownership is claimed after chunk
     /// analysis through the global solver.
     deferred_binding_claims_by_name: HashMap<String, EntityRef>,
-    /// Later members whose deferred binding claim duplicated an earlier one.
-    /// Keep the original member in the solver so validation records its actual
-    /// selector result; only the duplicate member is excluded.
-    duplicate_deferred_binding_entities: BTreeSet<(String, String)>,
     /// Every selector outcome worth reporting. In keep-going mode a failed
     /// selector is left out of canonical ownership, so later modules in the
     /// chunk can still be checked; the chunk fails in `finalize` if any
@@ -139,14 +164,196 @@ impl ChunkPlanBuilder {
         Self {
             whole_statement_assignment: BTreeMap::new(),
             module_plans: Vec::new(),
+            generated_residual_plans: BTreeSet::new(),
+            atomic_group_owner_completions: Vec::new(),
             bindings_catalogue: HashMap::new(),
             residual_plan_index: None,
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
-            duplicate_deferred_binding_entities: BTreeSet::new(),
             outcomes: OutcomeSink::new(fail_fast, list_template_identifiers),
         }
+    }
+
+    /// Restrict ownership to selected explicit modules after the full selector
+    /// solve, duplicate checks, analysis-assumption collection, and resolved
+    /// member-site collection have completed, but before residual routing,
+    /// and assignment analysis run.
+    ///
+    /// The selector outcomes, unmatched claims, and no-reentry assertions stay
+    /// attached to the builder so filtering cannot hide an invalid full spec.
+    /// Partial selections remove derived sibling/anonymous binding owners;
+    /// the caller reapplies the existing placement rules after filtering.
+    pub(super) fn retain_modules(&mut self, selected: &BTreeSet<SelectedModule>) -> Result<()> {
+        ensure!(
+            self.residual_plan_index.is_none(),
+            "cannot retain an ownership subset while a residual plan exists"
+        );
+        if let Some(plan) = self
+            .module_plans
+            .iter()
+            .find(|plan| plan.role != ModuleRole::Specified)
+        {
+            bail!(
+                "cannot retain an ownership subset with non-Specified module plan {:?}",
+                plan.id
+            );
+        }
+
+        let choices: BTreeMap<spec::ModulePath, _> = selected
+            .iter()
+            .map(|entry| {
+                (
+                    entry.module.clone(),
+                    (&entry.bindings, &entry.anonymous_statements),
+                )
+            })
+            .collect();
+        let mut remapped_indices = vec![None; self.module_plans.len()];
+        let mut retained_anonymous_statements =
+            vec![BTreeSet::<StatementId>::new(); self.module_plans.len()];
+        let mut matched_selected = BTreeSet::new();
+        let mut next_index = 0;
+        for (old_index, plan) in self.module_plans.iter().enumerate() {
+            let path = spec::ModulePath::parse(&plan.target_path, "")
+                .with_context(|| format!("module plan {:?} has an invalid target path", plan.id))?;
+            let Some((_, anonymous_selector_indices)) = choices.get(&path).copied() else {
+                continue;
+            };
+            ensure!(
+                matched_selected.insert(path.clone()),
+                "multiple module plans have selected target path {path}"
+            );
+            remapped_indices[old_index] = Some(next_index);
+            next_index += 1;
+            retained_anonymous_statements[old_index] = plan
+                .anonymous_statement_selector_indices
+                .iter()
+                .filter_map(|(selector_index, statement)| {
+                    anonymous_selector_indices
+                        .as_ref()
+                        .is_none_or(|indices| indices.contains(selector_index))
+                        .then_some(*statement)
+                })
+                .collect();
+        }
+
+        let missing_selected = selected
+            .iter()
+            .map(|entry| &entry.module)
+            .filter(|path| !matched_selected.contains(*path))
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        ensure!(
+            missing_selected.is_empty(),
+            "selected modules have no explicit plan: {}",
+            missing_selected.join(", ")
+        );
+
+        let remap_index = |old_index: usize| -> Result<Option<usize>> {
+            remapped_indices.get(old_index).copied().with_context(|| {
+                format!("ownership claim references missing module plan {old_index}")
+            })
+        };
+
+        let mut bindings_catalogue = HashMap::new();
+        // Metadata is keyed by source name for both owned bindings and imported
+        // re-exports, even though imports have no entry in plan.bindings.
+        let mut retained_claim_names = vec![BTreeSet::<String>::new(); self.module_plans.len()];
+        for (binding, kind) in &self.bindings_catalogue {
+            let mut retained_kind = kind.clone();
+            let referenced_module = match &mut retained_kind {
+                BindingKind::Owned { module } => module,
+                BindingKind::Imported { re_exporter, .. } => re_exporter,
+            };
+            let old_index = referenced_module.0;
+            let Some(new_index) = remap_index(old_index)? else {
+                continue;
+            };
+            let plan = &self.module_plans[old_index];
+            let source_name = binding.0.as_ref();
+            // Anonymous-statement declarations are derived from their whole
+            // statement claim. Drop them here and let the caller's post-filter
+            // adoption pass restore only declarations whose statements remain.
+            // Explicit named claims keep their independent ownership.
+            let anonymous_derived = matches!(kind, BindingKind::Owned { .. })
+                && plan
+                    .anonymous_binding_statement_origins
+                    .contains_key(source_name)
+                && !plan.binding_claim_origins.contains_key(source_name);
+            if anonymous_derived {
+                continue;
+            }
+
+            let path = spec::ModulePath::parse(&plan.target_path, "")?;
+            let (binding_names, _) = choices
+                .get(&path)
+                .copied()
+                .expect("every retained plan has a subset choice");
+            let keep = match binding_names {
+                None => true,
+                Some(names) => match kind {
+                    BindingKind::Owned { .. } => {
+                        plan.binding_claim_origins.contains_key(source_name)
+                            && plan
+                                .bindings
+                                .get(source_name)
+                                .is_some_and(|name| names.contains(name))
+                    }
+                    BindingKind::Imported { public_name, .. } => {
+                        names.contains(public_name.as_ref())
+                    }
+                },
+            };
+            if keep {
+                referenced_module.0 = new_index;
+                retained_claim_names[old_index].insert(binding.0.to_string());
+                bindings_catalogue.insert(binding.clone(), retained_kind);
+            }
+        }
+
+        let mut whole_statement_assignment = BTreeMap::new();
+        for (statement, old_index) in &self.whole_statement_assignment {
+            if let Some(new_index) = remap_index(*old_index)?
+                && retained_anonymous_statements[*old_index].contains(statement)
+            {
+                whole_statement_assignment.insert(*statement, new_index);
+            }
+        }
+
+        let old_module_plans = std::mem::take(&mut self.module_plans);
+        self.module_plans = old_module_plans
+            .into_iter()
+            .enumerate()
+            .filter_map(|(old_index, mut plan)| {
+                remapped_indices[old_index].map(|_| {
+                    let retained = &retained_claim_names[old_index];
+                    let retained_statements = &retained_anonymous_statements[old_index];
+                    plan.bindings.retain(|name, _| retained.contains(name));
+                    plan.spec_named_bindings
+                        .retain(|name| retained.contains(name));
+                    plan.binding_comments
+                        .retain(|name, _| retained.contains(name));
+                    plan.binding_claim_origins
+                        .retain(|name, _| retained.contains(name));
+                    plan.anonymous_statements
+                        .retain(|statement| retained_statements.contains(statement));
+                    plan.anonymous_statement_comments
+                        .retain(|statement, _| retained_statements.contains(statement));
+                    plan.anonymous_statement_selector_indices
+                        .retain(|_, statement| retained_statements.contains(statement));
+                    plan.anonymous_binding_statement_origins
+                        .retain(|_, statements| {
+                            statements.retain(|statement| retained_statements.contains(statement));
+                            !statements.is_empty()
+                        });
+                    plan
+                })
+            })
+            .collect();
+        self.bindings_catalogue = bindings_catalogue;
+        self.whole_statement_assignment = whole_statement_assignment;
+        Ok(())
     }
 
     /// Process one explicit (non-residual) logical-module request:
@@ -190,10 +397,6 @@ impl ChunkPlanBuilder {
                     );
                     self.outcomes.record(duplicate)?;
                     duplicate_bindings.insert(member.binding.clone());
-                    if member.resolves_after_chunk_analysis() {
-                        self.duplicate_deferred_binding_entities
-                            .insert((request.target_path.clone(), member.export_name.clone()));
-                    }
                     continue;
                 }
                 if let Some(existing) = self
@@ -215,13 +418,14 @@ impl ChunkPlanBuilder {
                         },
                     ))?;
                     duplicate_bindings.insert(member.binding.clone());
-                    self.duplicate_deferred_binding_entities
-                        .insert((request.target_path.clone(), member.export_name.clone()));
                     continue;
                 }
             }
             if member.resolves_after_chunk_analysis() {
-                if matches!(member.selector, MemberSelector::Binding(_)) {
+                if matches!(
+                    member.selector,
+                    MemberSelector::Authored(MemberSelectorSpec::Binding(_))
+                ) {
                     let binding_id = top_level_id(&member.binding, ctx.chunk_top_level_mark);
                     if !ctx.declaration_by_name.contains_key(&binding_id) {
                         self.outcomes.record_selector_result(
@@ -296,7 +500,7 @@ impl ChunkPlanBuilder {
                 // Record it so the pipeline can fail at the end
                 // with the full list across every chunk; meanwhile
                 // keep lowering as if the spec had not claimed the
-                // name (lower_chunk only touches binding ids it can
+                // name (prepare_candidate_emission_plan only touches binding ids it can
                 // resolve, so the missing claim is a no-op here).
                 self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                     chunk_id: ctx.chunk_id.to_string(),
@@ -339,6 +543,8 @@ impl ChunkPlanBuilder {
                 .map(|member| member.binding.clone())
                 .collect(),
             anonymous_statements: Vec::new(),
+            anonymous_statement_selector_indices: BTreeMap::new(),
+            anonymous_binding_statement_origins: BTreeMap::new(),
             anonymous_statement_comments: BTreeMap::new(),
             comment: request.comment.clone(),
             binding_comments,
@@ -379,6 +585,13 @@ impl ChunkPlanBuilder {
                 "logical_module {request_id}: anonymous statement resolved before its module plan existed"
             )
         })?;
+        ensure!(
+            plan.anonymous_statement_selector_indices
+                .insert(claim.selector_index, claim.body_index)
+                .is_none(),
+            "logical_module {request_id}: anonymous selector index {} resolved more than once",
+            claim.selector_index
+        );
         plan.anonymous_statements.push(claim.body_index);
         plan.anonymous_statements.sort_unstable();
         plan.anonymous_statements.dedup();
@@ -393,42 +606,6 @@ impl ChunkPlanBuilder {
         self.outcomes.record(outcome)
     }
 
-    /// The entities of the explicit requests the selector resolve decides:
-    /// every solver-resolved member and anonymous statement. A name pin whose
-    /// binding no top-level declaration carries was already recorded as an
-    /// unmatched claim, and a duplicate claim as its outcome, so neither is
-    /// resolved.
-    pub(super) fn selector_member_indices(
-        &self,
-        explicit_requests: &[LogicalRequest],
-        chunk_top_level_mark: swc_common::Mark,
-        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
-    ) -> Vec<Vec<usize>> {
-        explicit_requests
-            .iter()
-            .map(|request| {
-                request
-                    .members
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, member)| {
-                        member.resolves_after_chunk_analysis()
-                            && !self.duplicate_deferred_binding_entities.contains(&(
-                                request.target_path.clone(),
-                                member.export_name.clone(),
-                            ))
-                            && (!matches!(member.selector, MemberSelector::Binding(_))
-                                || declaration_by_name.contains_key(&top_level_id(
-                                    &member.binding,
-                                    chunk_top_level_mark,
-                                )))
-                    })
-                    .map(|(index, _)| index)
-                    .collect()
-            })
-            .collect()
-    }
-
     /// Claims what `resolution` resolved of `selectors`, and records every
     /// other outcome.
     #[allow(clippy::too_many_arguments)]
@@ -437,6 +614,7 @@ impl ChunkPlanBuilder {
         explicit_requests: &[LogicalRequest],
         resolution: Resolution,
         resolved_members: Vec<Vec<usize>>,
+        member_claims: &MemberClaimProjection,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
@@ -463,11 +641,23 @@ impl ChunkPlanBuilder {
             };
             let claimed = match entity {
                 EntityIndex::AnonymousStatement(statement_index) => {
+                    let statement = StatementId(body_index);
+                    ensure!(
+                        member_claims
+                            .claimed_anonymous_statements
+                            .get(&(index, statement_index))
+                            == Some(&statement),
+                        "frontend anonymous-statement claim projection disagrees for logical_module {} statement {} at body index {}",
+                        request.id,
+                        statement_index,
+                        body_index,
+                    );
                     self.claim_anonymous_statement(
                         index,
                         &request.id,
                         &ResolvedAnonymousStatement {
-                            body_index: StatementId(body_index),
+                            selector_index: statement_index,
+                            body_index: statement,
                             comment: request.anonymous_statements[statement_index]
                                 .comment
                                 .clone(),
@@ -476,7 +666,8 @@ impl ChunkPlanBuilder {
                     true
                 }
                 EntityIndex::Member(member_index) => {
-                    let member = &request.members[resolved_members[index][member_index]];
+                    let request_member_index = resolved_members[index][member_index];
+                    let member = &request.members[request_member_index];
                     let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \
@@ -484,7 +675,7 @@ impl ChunkPlanBuilder {
                             request.id, member.export_name,
                         )
                     })?;
-                    self.claim_binding_after_chunk_analysis(
+                    let applied = self.claim_binding_after_chunk_analysis(
                         request,
                         member,
                         &binding,
@@ -493,7 +684,20 @@ impl ChunkPlanBuilder {
                         chunk_id,
                         body,
                         declaration_by_name,
-                    )?
+                    )?;
+                    let projected = member_claims
+                        .claimed_members
+                        .get(&(index, request_member_index))
+                        == Some(&binding);
+                    ensure!(
+                        applied == projected,
+                        "frontend member-claim projection disagrees for logical_module {} member {} (binding `{binding}`): projected {}, applied {}",
+                        request.id,
+                        member.export_name,
+                        projected,
+                        applied,
+                    );
+                    applied
                 }
             };
             if matches!(
@@ -684,40 +888,6 @@ impl ChunkPlanBuilder {
         Ok(true)
     }
 
-    pub(super) fn resolved_binding_for_member(
-        &self,
-        request_index: usize,
-        member: &MemberRequest,
-    ) -> Option<String> {
-        if !member.binding.is_empty() {
-            return Some(member.binding.clone());
-        }
-        let plan = self.module_plans.get(request_index)?;
-        if let Some((binding, _)) = plan
-            .bindings
-            .iter()
-            .find(|(_, export_name)| *export_name == &member.export_name)
-        {
-            return Some(binding.clone());
-        }
-        self.bindings_catalogue
-            .iter()
-            .find_map(|(binding, kind)| match kind {
-                BindingKind::Imported {
-                    re_exporter: ModuleId(index),
-                    public_name,
-                    ..
-                } if *index == request_index && public_name.as_ref() == member.export_name => {
-                    Some(binding.0.as_str().to_string())
-                }
-                _ => None,
-            })
-    }
-
-    pub(super) fn fail_fast(&self) -> bool {
-        self.outcomes.fail_fast()
-    }
-
     /// Drop the name-keyed catalogue scratch index now that the
     /// explicit-requests loop is finished. Destructure siblings and
     /// the residual sweep don't consult this index.
@@ -726,74 +896,95 @@ impl ChunkPlanBuilder {
         self.deferred_binding_claims_by_name = HashMap::new();
     }
 
-    /// Destructure-atomicity: a destructuring declarator like
-    /// `const { x, y } = obj` binds multiple names from a single
-    /// pattern that the lowerer's `split_var_decl` moves as one
-    /// unit. If the spec claims any one binding from such a pattern,
-    /// every sibling binding must travel to the same module —
-    /// otherwise the residual's export list would list a name whose
-    /// declarator has already moved away, and `node` would reject the
-    /// resulting module with `SyntaxError: Export 'y' is not defined
-    /// in module`.
-    ///
-    /// Implicitly-pulled siblings join the claimed module with their
-    /// own binding name as the export name. They aren't separately
-    /// spec'd, but the destructure pattern must keep its full name
-    /// set together regardless. Conflicting claims (two siblings
-    /// claimed by different modules) are rejected.
-    pub(super) fn pull_destructure_siblings(
+    /// Apply the shared placement-kernel decision to each retained
+    /// destructuring declarator. The kernel owns the colocation rule; this
+    /// builder applies only its one-owner pull recommendation to the canonical
+    /// binding catalogue and export plans. Conflicting requests stay intact
+    /// for the final projection to report through the shared candidate path.
+    pub(super) fn apply_destructuring_group_placement(
         &mut self,
-        destructure_siblings: &BTreeMap<String, BTreeSet<String>>,
-        chunk_top_level_mark: swc_common::Mark,
-    ) -> Result<()> {
-        for (claimed_name, sibling_set) in destructure_siblings {
-            let claimed_id = top_level_id(claimed_name, chunk_top_level_mark);
-            let Some(owner_index) = owned_destination(&self.bindings_catalogue, &claimed_id) else {
-                continue;
-            };
-            let owner_module_id = ModuleId(owner_index);
-            for sibling in sibling_set {
-                if sibling == claimed_name {
-                    continue;
-                }
-                let sibling_id = top_level_id(sibling, chunk_top_level_mark);
-                match owned_destination(&self.bindings_catalogue, &sibling_id) {
-                    None => {
-                        self.bindings_catalogue.insert(
-                            sibling_id,
-                            BindingKind::Owned {
-                                module: owner_module_id,
-                            },
-                        );
-                        let plan = &mut self.module_plans[owner_index];
-                        plan.bindings.insert(sibling.clone(), sibling.clone());
+        destructuring_groups: &[DestructuringDeclaratorGroup],
+    ) {
+        // Overlapping `var` declarators can share a hygienic binding. Iterate
+        // until no more siblings move, so a pull through a later group also
+        // reaches earlier groups that share the newly placed binding.
+        loop {
+            let mut moved_sibling = false;
+            for group in destructuring_groups {
+                // The request-planning check intentionally sees explicit owners
+                // only. A residual-owned sibling is still movable and is pulled
+                // together with an unclaimed sibling below, matching the existing
+                // plan-construction behavior.
+                let explicit_owners = group.bindings.iter().filter_map(|binding| {
+                    owned_destination(&self.bindings_catalogue, binding)
+                        .filter(|destination| Some(*destination) != self.residual_plan_index)
+                        .map(|destination| (binding.clone(), ModuleId(destination)))
+                });
+                let decision = classify_destructuring_group_owners(group, explicit_owners);
+                match &decision.classification {
+                    DestructuringGroupOwnerClassification::Unclaimed => {}
+                    // Keep every authored owner request for final projection.
+                    // Do not turn the planning classifier into a second veto.
+                    DestructuringGroupOwnerClassification::Split { .. } => {}
+                    DestructuringGroupOwnerClassification::OneOwner { destination } => {
+                        let already_owned: BTreeSet<_> = decision
+                            .owners
+                            .iter()
+                            .filter(|(_, owner)| owner == destination)
+                            .map(|(binding, _)| binding.clone())
+                            .collect();
+                        let bindings: Vec<_> = group
+                            .bindings
+                            .iter()
+                            .filter(|binding| !already_owned.contains(*binding))
+                            .collect();
+                        let owner_index = destination.0;
+                        for sibling_id in bindings {
+                            let sibling = sibling_id.0.to_string();
+                            match owned_destination(&self.bindings_catalogue, sibling_id) {
+                                None => {
+                                    self.bindings_catalogue.insert(
+                                        sibling_id.clone(),
+                                        BindingKind::Owned {
+                                            module: *destination,
+                                        },
+                                    );
+                                    self.module_plans[owner_index]
+                                        .bindings
+                                        .insert(sibling.clone(), sibling);
+                                    moved_sibling = true;
+                                }
+                                Some(other_index)
+                                    if Some(other_index) == self.residual_plan_index =>
+                                {
+                                    self.bindings_catalogue.insert(
+                                        sibling_id.clone(),
+                                        BindingKind::Owned {
+                                            module: *destination,
+                                        },
+                                    );
+                                    self.module_plans[other_index].bindings.remove(&sibling);
+                                    self.module_plans[owner_index]
+                                        .bindings
+                                        .insert(sibling.clone(), sibling);
+                                    moved_sibling = true;
+                                }
+                                Some(other_index) if other_index == owner_index => {}
+                                Some(other_index) => {
+                                    unreachable!(
+                                        "shared destructuring decision missed explicit destination {} for binding {sibling}",
+                                        other_index
+                                    );
+                                }
+                            }
+                        }
                     }
-                    Some(other_index) if Some(other_index) == self.residual_plan_index => {
-                        self.bindings_catalogue.insert(
-                            sibling_id,
-                            BindingKind::Owned {
-                                module: owner_module_id,
-                            },
-                        );
-                        self.module_plans[other_index].bindings.remove(sibling);
-                        let plan = &mut self.module_plans[owner_index];
-                        plan.bindings.insert(sibling.clone(), sibling.clone());
-                    }
-                    Some(other_index) if other_index != owner_index => {
-                        let owner_plan_id = self.module_plans[owner_index].id.clone();
-                        let other_plan_id = self.module_plans[other_index].id.clone();
-                        bail!(
-                            "destructure declarator binds {claimed_name} (claimed by module \
-                             {owner_plan_id}) and {sibling} (claimed by module {other_plan_id}); \
-                             destructuring declarators must move atomically — claim both \
-                             bindings from the same module or claim neither.",
-                        );
-                    }
-                    Some(_) => {}
                 }
             }
+            if !moved_sibling {
+                break;
+            }
         }
-        Ok(())
     }
 
     /// Bindings declared by an anonymously-claimed statement (e.g. a
@@ -814,188 +1005,154 @@ impl ChunkPlanBuilder {
             };
             let module = ModuleId(plan_index);
             for (name, id) in &decl.bindings {
-                if let Some(existing) = owned_destination(&self.bindings_catalogue, id) {
-                    if Some(existing) != self.residual_plan_index {
+                let existing = owned_destination(&self.bindings_catalogue, id);
+                let already_adopted_here = self.module_plans[plan_index]
+                    .anonymous_binding_statement_origins
+                    .contains_key(name);
+                if let Some(existing) = existing {
+                    if Some(existing) == self.residual_plan_index {
+                        if let Some(residual_index) = self.residual_plan_index {
+                            self.module_plans[residual_index].bindings.remove(name);
+                        }
+                    } else if existing == plan_index && already_adopted_here {
+                        self.module_plans[plan_index]
+                            .anonymous_binding_statement_origins
+                            .entry(name.clone())
+                            .or_default()
+                            .insert(decl.statement);
+                        continue;
+                    } else {
                         continue;
                     }
-                    if let Some(residual_index) = self.residual_plan_index {
-                        self.module_plans[residual_index].bindings.remove(name);
-                    }
                 }
+                let has_explicit_claim = self.module_plans[plan_index]
+                    .binding_claim_origins
+                    .contains_key(name);
                 self.module_plans[plan_index]
                     .bindings
                     .entry(name.clone())
                     .or_insert_with(|| name.clone());
                 self.bindings_catalogue
                     .insert(id.clone(), BindingKind::Owned { module });
+                if !has_explicit_claim {
+                    self.module_plans[plan_index]
+                        .anonymous_binding_statement_origins
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(decl.statement);
+                }
             }
         }
     }
 
     /// A nested `var` is declared by its enclosing top-level control-flow
-    /// statement. Unlike a direct `var` declaration, that statement cannot be
-    /// split out of the entry body while leaving the surrounding control flow
-    /// behind. Route it whole only when all of its bindings and any anonymous
-    /// statement claim already agree on one destination.
+    /// statement. The shared placement kernel decides whether retained binding
+    /// owners and any explicit whole-statement request agree. Planning applies
+    /// that destination to the indivisible statement; an unclaimed statement
+    /// remains available to entry/residual routing.
     pub(super) fn route_nested_var_statements(
         &mut self,
-        body: &[ModuleItem],
-        declarations: &[TopLevelDecl],
-    ) -> Result<()> {
-        for decl in declarations {
-            let Some(ModuleItem::Stmt(statement)) = body.get(decl.statement.0) else {
+        nested_var_statements: &[NestedVarStatement],
+    ) {
+        for nested in nested_var_statements {
+            let owners = nested
+                .bindings
+                .iter()
+                .filter_map(|binding| {
+                    owned_destination(&self.bindings_catalogue, binding)
+                        .map(|destination| (binding.clone(), ModuleId(destination)))
+                })
+                .collect();
+            let whole_statement_request = self
+                .whole_statement_assignment
+                .get(&nested.statement)
+                .copied()
+                .map(ModuleId);
+            let check = classify_nested_var_placement(nested, owners, whole_statement_request);
+            if check.destinations().is_empty() {
                 continue;
+            }
+            if !check.missing_bindings.is_empty() {
+                // Preserve partial ownership for the final projection's typed
+                // refusal instead of manufacturing a statement destination.
+                continue;
+            }
+
+            let destination = match &check.classification {
+                NestedVarDestinationClassification::Unclaimed => continue,
+                NestedVarDestinationClassification::OneDestination { destination } => *destination,
+                NestedVarDestinationClassification::SplitDestinations { .. } => continue,
             };
-            // Direct variable declarations can be split by declarator in the
-            // emitter. `TopLevelDecl`s for other direct declaration kinds do
-            // not represent hoisted nested vars either.
-            if matches!(statement, Stmt::Decl(_)) {
-                continue;
-            }
-
-            let assigned_destinations = decl
-                .bindings
-                .iter()
-                .filter_map(|(_, id)| owned_destination(&self.bindings_catalogue, id))
-                .chain(
-                    self.whole_statement_assignment
-                        .get(&decl.statement)
-                        .copied(),
-                )
-                .collect::<BTreeSet<_>>();
-            if assigned_destinations.is_empty() {
-                continue;
-            }
-            let missing_bindings = decl
-                .bindings
-                .iter()
-                .filter(|(_, id)| owned_destination(&self.bindings_catalogue, id).is_none())
-                .map(|(name, _)| name.as_str())
-                .collect::<Vec<_>>();
-            if !missing_bindings.is_empty() {
-                bail!(
-                    "top-level control-flow statement at body index {} also declares unassigned \
-                     bindings ({}); assign them to the same module before extracting the statement",
-                    decl.statement,
-                    missing_bindings.join(", "),
-                );
-            }
-            if assigned_destinations.len() > 1 {
-                let destinations = assigned_destinations
-                    .iter()
-                    .map(|index| self.module_plans[*index].id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                bail!(
-                    "top-level control-flow statement at body index {} declares bindings assigned \
-                     to different modules ({destinations}); assign all nested var bindings to one module",
-                    decl.statement,
-                );
-            }
-
-            let destination = *assigned_destinations
-                .first()
-                .expect("assigned_destinations is nonempty");
             self.whole_statement_assignment
-                .insert(decl.statement, destination);
-            let plan = &mut self.module_plans[destination];
-            plan.anonymous_statements.push(decl.statement);
+                .insert(nested.statement, destination.0);
+            let plan = &mut self.module_plans[destination.0];
+            plan.anonymous_statements.push(nested.statement);
             plan.anonymous_statements.sort_unstable();
             plan.anonymous_statements.dedup();
         }
-        Ok(())
     }
 
-    /// Residual sweep: route every chunk top-level binding the spec
-    /// did not claim to the chunk's catchall destination.
-    ///
-    /// Two shapes:
-    ///
-    /// 1. A memberless residual request was synthesized (or supplied
-    ///    by the spec) — build a new residual plan, append it, and
-    ///    point `residual_plan_index` at it.
-    /// 2. A `logical_modules` entry already pins itself at the
-    ///    catchall target — repurpose that plan: mark it `Unassigned`
-    ///    and append unclaimed bindings to its members.
-    ///
-    /// `None` for both `residual_request` and `catchall_target`
-    /// leaves `residual_plan_index` unset, which is the
-    /// `InlineInEntry` / `PerAtomicGroup` shape.
+    /// Route unclaimed bindings only after all explicit claims and optional
+    /// ownership filtering. A retained explicit catchall plan is reused; when
+    /// omitted, the same request supplies only its residual destination.
     pub(super) fn add_residual_sweep(
         &mut self,
-        residual_request: Option<&LogicalRequest>,
-        catchall_target_for_overflow: Option<&str>,
+        catchall_request: Option<&LogicalRequest>,
         declarations: &[TopLevelDecl],
         target_dir: &str,
     ) -> Result<()> {
-        if let Some(residual) = residual_request {
-            let residual_index = self.module_plans.len();
-            let residual_module_id = ModuleId(residual_index);
-            let mut residual_bindings = HashMap::<String, String>::new();
-            for decl in declarations {
-                for (name, id) in &decl.bindings {
-                    if owned_destination(&self.bindings_catalogue, id).is_none() {
-                        residual_bindings.insert(name.clone(), name.clone());
-                        self.bindings_catalogue.insert(
-                            id.clone(),
-                            BindingKind::Owned {
-                                module: residual_module_id,
-                            },
-                        );
-                    }
+        let Some(request) = catchall_request else {
+            return Ok(());
+        };
+        let unclaimed: Vec<_> = declarations
+            .iter()
+            .flat_map(|declaration| &declaration.bindings)
+            .filter(|(_, binding)| owned_destination(&self.bindings_catalogue, binding).is_none())
+            .collect();
+        let owner_index = match self
+            .module_plans
+            .iter()
+            .position(|plan| plan.target_path == request.target_path)
+        {
+            Some(index) => index,
+            None => {
+                if unclaimed.is_empty() {
+                    return Ok(());
                 }
-            }
-            if !residual_bindings.is_empty() {
+                let index = self.module_plans.len();
                 self.module_plans.push(ModulePlan {
-                    id: residual.id.clone(),
-                    target_file: target_file_for_request(target_dir, &residual.target_path)?,
-                    target_path: residual.target_path.clone(),
+                    id: request.id.clone(),
+                    target_file: target_file_for_request(target_dir, &request.target_path)?,
+                    target_path: request.target_path.clone(),
                     role: ModuleRole::Unassigned,
-                    bindings: residual_bindings,
+                    bindings: HashMap::new(),
                     spec_named_bindings: BTreeSet::new(),
                     anonymous_statements: Vec::new(),
+                    anonymous_statement_selector_indices: BTreeMap::new(),
+                    anonymous_binding_statement_origins: BTreeMap::new(),
                     anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
                     binding_comments: BTreeMap::new(),
                     binding_claim_origins: BTreeMap::new(),
                 });
-                self.residual_plan_index = Some(residual_index);
+                index
             }
-        } else if let Some(catchall_target) = catchall_target_for_overflow {
-            // No memberless residual request was synthesized — an
-            // explicit `logical_modules` entry already pinned itself at
-            // the catchall target. Append unclaimed bindings to that
-            // plan so the residual sweep still has a home, and mark
-            // it Unassigned. The role preserves the legacy residual
-            // report/artifact projection for default-assigned outputs;
-            // it does not select the physical DFS root.
-            let owner_index = self
-                .module_plans
-                .iter()
-                .position(|plan| plan.target_path == catchall_target);
-            if let Some(owner_index) = owner_index {
-                let owner_module_id = ModuleId(owner_index);
-                let owner_plan = &mut self.module_plans[owner_index];
-                owner_plan.role = ModuleRole::Unassigned;
-                for decl in declarations {
-                    for (name, id) in &decl.bindings {
-                        if owned_destination(&self.bindings_catalogue, id).is_none() {
-                            owner_plan
-                                .bindings
-                                .entry(name.clone())
-                                .or_insert_with(|| name.clone());
-                            self.bindings_catalogue.insert(
-                                id.clone(),
-                                BindingKind::Owned {
-                                    module: owner_module_id,
-                                },
-                            );
-                        }
-                    }
-                }
-                self.residual_plan_index = Some(owner_index);
-            }
+        };
+        let owner_plan = &mut self.module_plans[owner_index];
+        owner_plan.role = ModuleRole::Unassigned;
+        for (name, binding) in unclaimed {
+            owner_plan
+                .bindings
+                .entry(name.clone())
+                .or_insert_with(|| name.clone());
+            self.bindings_catalogue.insert(
+                binding.clone(),
+                BindingKind::Owned {
+                    module: ModuleId(owner_index),
+                },
+            );
         }
+        self.residual_plan_index = Some(owner_index);
         Ok(())
     }
 
@@ -1007,12 +1164,21 @@ impl ChunkPlanBuilder {
     pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
-        body: &[ModuleItem],
-    ) {
+        layout: &SourceUnitLayout,
+    ) -> Result<()> {
         let Some(index) = self.residual_plan_index else {
-            return;
+            return Ok(());
         };
         let graph = &precomputed.dependency_graph;
+        let source_unit_statements: HashMap<SourceUnitId, StatementId> = graph
+            .iter_nodes()
+            .map(|node| {
+                let location = layout.by_source_unit(node.id).with_context(|| {
+                    format!("source unit {} has no checked syntax location", node.id.0)
+                })?;
+                Ok((node.id, location.statement))
+            })
+            .collect::<Result<_>>()?;
         let mut body_indices = BTreeSet::new();
         let mut catchall_source_units = BTreeSet::new();
         for node in graph.iter_nodes() {
@@ -1023,9 +1189,8 @@ impl ChunkPlanBuilder {
             {
                 catchall_source_units.insert(node.id);
             } else if node.class() == SourceUnitClass::AnonymousStatement
-                && let Some(body_index) =
-                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                && self.whole_statement_assignment.get(&body_index) == Some(&index)
+                && let Some(body_index) = source_unit_statements.get(&node.id)
+                && self.whole_statement_assignment.get(body_index) == Some(&index)
             {
                 catchall_source_units.insert(node.id);
             }
@@ -1037,14 +1202,12 @@ impl ChunkPlanBuilder {
                     return false;
                 };
                 if node.class() == SourceUnitClass::AnonymousStatement {
-                    let Some(body_index) =
-                        statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                    else {
+                    let Some(body_index) = source_unit_statements.get(&source_unit_id) else {
                         return false;
                     };
                     return self
                         .whole_statement_assignment
-                        .get(&body_index)
+                        .get(body_index)
                         .is_none_or(|&assigned| assigned == index);
                 }
                 let in_catchall = node.declared.iter().all(|binding| {
@@ -1061,14 +1224,13 @@ impl ChunkPlanBuilder {
                     continue;
                 };
                 if node.class() == SourceUnitClass::AnonymousStatement
-                    && let Some(body_index) =
-                        statement_for_source_unit_ordinal(body, node.statement_ordinal)
+                    && let Some(body_index) = source_unit_statements.get(&source_unit_id)
                     && self
                         .whole_statement_assignment
-                        .get(&body_index)
+                        .get(body_index)
                         .is_none_or(|&assigned| assigned == index)
                 {
-                    body_indices.insert(body_index);
+                    body_indices.insert(*body_index);
                     catchall_source_units.insert(source_unit_id);
                 }
             }
@@ -1089,19 +1251,17 @@ impl ChunkPlanBuilder {
                 if node.class() == SourceUnitClass::BindingDeclaration {
                     continue;
                 }
-                let Some(body_index) =
-                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                else {
-                    continue;
-                };
+                let body_index = source_unit_statements
+                    .get(&node.id)
+                    .expect("every graph node was checked against the source-unit layout");
                 if self
                     .whole_statement_assignment
-                    .get(&body_index)
+                    .get(body_index)
                     .is_some_and(|&assigned| assigned != index)
                 {
                     continue;
                 }
-                body_indices.insert(body_index);
+                body_indices.insert(*body_index);
                 if catchall_source_units.insert(node.id) {
                     pending.push(node.id);
                 }
@@ -1114,10 +1274,8 @@ impl ChunkPlanBuilder {
                 .iter_nodes()
                 .filter(|node| node.class() == SourceUnitClass::AnonymousStatement)
             {
-                if let Some(body_index) =
-                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                {
-                    body_indices.insert(body_index);
+                if let Some(body_index) = source_unit_statements.get(&node.id) {
+                    body_indices.insert(*body_index);
                 }
             }
         }
@@ -1130,30 +1288,307 @@ impl ChunkPlanBuilder {
                 .anonymous_statements
                 .push(body_index);
         }
+        Ok(())
     }
 
     /// `PerAtomicGroup` mode: every unclaimed atomic factor group gets
-    /// its own synthesized plan at `__auto/atomic_groups/NNNN`. Run after rebind folding
-    /// so the residual sweep and fold decisions have already settled which
-    /// atomic groups are still unclaimed. Bindings
+    /// its own synthesized plan at `__auto/atomic_groups/NNNN`. Run after the
+    /// residual sweep has settled which atomic groups are still unclaimed. Bindings
     /// previously parked at the residual plan are moved out into the
     /// synthesized plan; the residual plan's `bindings` map is
     /// pruned to match.
     pub(super) fn synthesize_per_atomic_group(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
-        body: &[ModuleItem],
+        layout: &SourceUnitLayout,
         target_dir: &str,
     ) -> Result<()> {
+        let groups = self.wholly_unclaimed_atomic_groups(precomputed, layout)?;
+        self.synthesize_source_unit_groups(
+            groups,
+            precomputed,
+            layout,
+            target_dir,
+            "__auto/atomic_groups",
+            false,
+        )
+    }
+
+    /// Complete a partially claimed atomic group only for an explicitly
+    /// opted-in authored owner. This runs after ownership subset filtering. Groups with zero or multiple current owners, and
+    /// groups whose sole owner is not listed, remain untouched for ordinary
+    /// residual routing and the complete-assignment gate.
+    pub(super) fn route_partial_atomic_groups_to_named_owners(
+        &mut self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        opted_in_owner_paths: &[String],
+        single_authored_owner_groups: &BTreeMap<Vec<SourceUnitId>, String>,
+    ) -> Result<()> {
+        if opted_in_owner_paths.is_empty() {
+            return Ok(());
+        }
+
         let dependency_graph = &precomputed.dependency_graph;
-        let atomic_groups = &precomputed.atomic_groups;
         let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut source_unit_statement_ordinal: HashMap<SourceUnitId, SourceUnitOrdinal> =
-            HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in dependency_graph.iter_nodes() {
+            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
+        }
+
+        let opted_in_owner_paths: BTreeSet<String> = opted_in_owner_paths.iter().cloned().collect();
+        let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
+            .atomic_groups
+            .iter()
+            .map(|atomic_group| &atomic_group.members)
+            .collect();
+        atomic_groups.sort_by_key(|members| members.iter().next().copied());
+
+        for members in atomic_groups {
+            let member_key: Vec<_> = members.iter().copied().collect();
+            // Ownership subsets must not turn a two-owner authored atom into
+            // an eligible one-owner atom by removing one of its owners.
+            if !single_authored_owner_groups.contains_key(&member_key) {
+                continue;
+            }
+            let mut current_owners = BTreeSet::<usize>::new();
+            let mut unowned_bindings = Vec::<(SourceUnitId, Id)>::new();
+            let mut unowned_anonymous = Vec::<(SourceUnitId, StatementId)>::new();
+            let mut has_imported_binding = false;
+
+            for &source_unit_id in members {
+                let names = source_unit_declared_names
+                    .get(&source_unit_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if names.is_empty() {
+                    let body_index = *source_unit_statements
+                        .get(&source_unit_id)
+                        .expect("every graph node was checked against the source-unit layout");
+                    match self.whole_statement_assignment.get(&body_index).copied() {
+                        Some(owner) => {
+                            current_owners.insert(owner);
+                        }
+                        None => unowned_anonymous.push((source_unit_id, body_index)),
+                    }
+                    continue;
+                }
+
+                for name in names {
+                    match self.bindings_catalogue.get(name) {
+                        Some(BindingKind::Owned { module }) => {
+                            current_owners.insert(module.0);
+                        }
+                        Some(BindingKind::Imported { .. }) => {
+                            // Imported re-exports are not declarations that
+                            // this chunk can adopt into an authored owner.
+                            has_imported_binding = true;
+                        }
+                        None => unowned_bindings.push((source_unit_id, name.clone())),
+                    }
+                }
+            }
+
+            if has_imported_binding || current_owners.len() != 1 {
+                continue;
+            }
+            let owner_index = *current_owners
+                .iter()
+                .next()
+                .expect("the owner count was checked above");
+            let Some((owner_role, owner_path)) = self
+                .module_plans
+                .get(owner_index)
+                .map(|plan| (plan.role, plan.target_path.clone()))
+            else {
+                bail!("atomic group owner index {owner_index} is outside the module plan");
+            };
+            if owner_role != ModuleRole::Specified
+                || !opted_in_owner_paths.contains(&owner_path)
+                || single_authored_owner_groups.get(&member_key) != Some(&owner_path)
+            {
+                continue;
+            }
+            if unowned_bindings.is_empty() && unowned_anonymous.is_empty() {
+                continue;
+            }
+
+            let owner_module = ModuleId(owner_index);
+            let mut adopted_source_unit_ids = BTreeSet::new();
+            for (source_unit_id, binding) in unowned_bindings {
+                let name = binding.0.to_string();
+                let owner_plan = &mut self.module_plans[owner_index];
+                owner_plan
+                    .bindings
+                    .entry(name.clone())
+                    .or_insert_with(|| name.clone());
+                self.bindings_catalogue.insert(
+                    binding,
+                    BindingKind::Owned {
+                        module: owner_module,
+                    },
+                );
+                adopted_source_unit_ids.insert(source_unit_id);
+            }
+            for (source_unit_id, body_index) in unowned_anonymous {
+                self.whole_statement_assignment
+                    .insert(body_index, owner_index);
+                self.module_plans[owner_index]
+                    .anonymous_statements
+                    .push(body_index);
+                adopted_source_unit_ids.insert(source_unit_id);
+            }
+            let anonymous_statements = &mut self.module_plans[owner_index].anonymous_statements;
+            anonymous_statements.sort_unstable();
+            anonymous_statements.dedup();
+
+            self.atomic_group_owner_completions
+                .push(AtomicGroupOwnerCompletion {
+                    owner_path,
+                    atomic_group_source_unit_ids: members.iter().copied().collect(),
+                    adopted_source_unit_ids: adopted_source_unit_ids.into_iter().collect(),
+                });
+        }
+        Ok(())
+    }
+
+    /// Snapshot which atoms had exactly one opted-in authored owner before an
+    /// ownership subset can remove plans or claims. Completion itself runs
+    /// later, after subset filtering.
+    pub(super) fn single_authored_owner_atomic_groups(
+        &self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        opted_in_owner_paths: &[String],
+    ) -> Result<BTreeMap<Vec<SourceUnitId>, String>> {
+        if opted_in_owner_paths.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let dependency_graph = &precomputed.dependency_graph;
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in dependency_graph.iter_nodes() {
+            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
+        }
+
+        let opted_in_owner_paths: BTreeSet<&str> =
+            opted_in_owner_paths.iter().map(String::as_str).collect();
+        let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
+            .atomic_groups
+            .iter()
+            .map(|atomic_group| &atomic_group.members)
+            .collect();
+        atomic_groups.sort_by_key(|members| members.iter().next().copied());
+
+        let mut eligible_groups = BTreeMap::new();
+        for members in atomic_groups {
+            let mut current_owners = BTreeSet::<usize>::new();
+            let mut has_imported_binding = false;
+            for &source_unit_id in members {
+                let names = source_unit_declared_names
+                    .get(&source_unit_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if names.is_empty() {
+                    let body_index = *source_unit_statements
+                        .get(&source_unit_id)
+                        .expect("every graph node was checked against the source-unit layout");
+                    if let Some(owner) = self.whole_statement_assignment.get(&body_index) {
+                        current_owners.insert(*owner);
+                    }
+                    continue;
+                }
+                for name in names {
+                    match self.bindings_catalogue.get(name) {
+                        Some(BindingKind::Owned { module }) => {
+                            current_owners.insert(module.0);
+                        }
+                        Some(BindingKind::Imported { .. }) => has_imported_binding = true,
+                        None => {}
+                    }
+                }
+            }
+
+            if has_imported_binding || current_owners.len() != 1 {
+                continue;
+            }
+            let owner_index = *current_owners
+                .iter()
+                .next()
+                .expect("the owner count was checked above");
+            let Some(owner_plan) = self.module_plans.get(owner_index) else {
+                bail!("atomic group owner index {owner_index} is outside the module plan");
+            };
+            if owner_plan.role == ModuleRole::Specified
+                && opted_in_owner_paths.contains(owner_plan.target_path.as_str())
+            {
+                eligible_groups.insert(
+                    members.iter().copied().collect(),
+                    owner_plan.target_path.clone(),
+                );
+            }
+        }
+        Ok(eligible_groups)
+    }
+
+    /// Coarse residual routing merges wholly-unclaimed atomic groups when
+    /// their strict constraining-edge reachability to existing owners agrees
+    /// within one interval between fixed owners' fine-plan evaluations. This
+    /// signature/interval partition is only a candidate heuristic: alternating
+    /// source-order edges across distinct signatures can still form a cycle.
+    /// The materializer checks the resulting actual gate SCCs and may contract
+    /// a whole SCC only when every member has generated-residual provenance.
+    pub(super) fn synthesize_coarse_atomic_groups(
+        &mut self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        source_exports_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
+        target_dir: &str,
+    ) -> Result<()> {
+        let atomic_groups = self.wholly_unclaimed_atomic_groups(precomputed, layout)?;
+        if atomic_groups.is_empty() {
+            return Ok(());
+        }
+        let groups = self.coarse_residual_groups(
+            precomputed,
+            layout,
+            &atomic_groups,
+            source_exports_by_statement,
+        )?;
+        self.synthesize_source_unit_groups(
+            groups.iter(),
+            precomputed,
+            layout,
+            target_dir,
+            "__auto/residual_groups",
+            true,
+        )
+    }
+
+    fn wholly_unclaimed_atomic_groups<'a>(
+        &self,
+        precomputed: &'a DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+    ) -> Result<Vec<&'a BTreeSet<SourceUnitId>>> {
+        let dependency_graph = &precomputed.dependency_graph;
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
         for node in dependency_graph.iter_nodes() {
             let ids: Vec<Id> = node.declared.iter().cloned().collect();
             source_unit_declared_names.insert(node.id, ids);
-            source_unit_statement_ordinal.insert(node.id, node.statement_ordinal);
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
         }
 
         let residual_plan_index = self.residual_plan_index;
@@ -1180,14 +1615,10 @@ impl ChunkPlanBuilder {
                 }
             }
             if names.is_empty() {
-                let Some(stmt_ord) = source_unit_statement_ordinal.get(&source_unit).copied()
-                else {
-                    return true;
-                };
-                let Some(body_idx) = statement_for_source_unit_ordinal(body, stmt_ord) else {
-                    return true;
-                };
-                match whole_statement_assignment.get(&body_idx).copied() {
+                let body_idx = source_unit_statements
+                    .get(&source_unit)
+                    .expect("every graph node was checked against the source-unit layout");
+                match whole_statement_assignment.get(body_idx).copied() {
                     None => return true,
                     Some(idx) if Some(idx) == residual_plan_index => return true,
                     Some(_) => return false,
@@ -1196,7 +1627,8 @@ impl ChunkPlanBuilder {
             true
         };
 
-        let mut unclaimed_atomic_groups: Vec<&BTreeSet<SourceUnitId>> = atomic_groups
+        let mut unclaimed_atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
+            .atomic_groups
             .iter()
             .filter(|atomic_group| {
                 atomic_group
@@ -1209,11 +1641,182 @@ impl ChunkPlanBuilder {
             .collect();
         // Stable iteration order: smallest SourceUnitId first.
         unclaimed_atomic_groups.sort_by_key(|members| members.iter().next().copied());
+        Ok(unclaimed_atomic_groups)
+    }
 
-        for (idx, members) in unclaimed_atomic_groups.into_iter().enumerate() {
+    fn coarse_residual_groups(
+        &self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        atomic_groups: &[&BTreeSet<SourceUnitId>],
+        source_exports_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
+    ) -> Result<Vec<BTreeSet<SourceUnitId>>> {
+        let dependency_graph = &precomputed.dependency_graph;
+        // Match fine lowering's ID domain, including its tie breaks: generated
+        // plans follow explicit plans, and entry follows every generated plan.
+        let first_virtual_module = self.module_plans.len();
+        let entry_module = ModuleId(
+            self.module_plans
+                .len()
+                .checked_add(atomic_groups.len())
+                .context("residual entry module ID overflowed")?,
+        );
+        let mut source_unit_claims = Vec::<(SourceUnitId, ModuleId)>::new();
+        for (statement, destination) in &self.whole_statement_assignment {
+            for location in layout.for_statement(*statement) {
+                source_unit_claims.push((location.source_unit, ModuleId(*destination)));
+            }
+        }
+
+        let mut source_unit_export_surfaces = HashMap::<SourceUnitId, PublicExportSurface>::new();
+        for node in dependency_graph.iter_nodes() {
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            let mut surface = PublicExportSurface::default();
+            for name in &node.declared {
+                surface.add_binding(name.0.to_string(), name.clone());
+            }
+            if let Some(exports) = source_exports_by_statement.get(&location.statement) {
+                surface.add_source_identities(exports);
+            }
+            source_unit_export_surfaces.insert(node.id, surface);
+        }
+
+        let mut virtual_modules = BTreeSet::new();
+        let mut candidate_modules =
+            Vec::<(ModuleId, &BTreeSet<SourceUnitId>, PublicExportSurface)>::new();
+        for (idx, members) in atomic_groups.iter().enumerate() {
+            let module_id = ModuleId(
+                first_virtual_module
+                    .checked_add(idx)
+                    .context("temporary residual module IDs overflowed")?,
+            );
+            virtual_modules.insert(module_id);
+            let mut export_surface = PublicExportSurface::default();
+            for source_unit in members.iter() {
+                let unit_surface =
+                    source_unit_export_surfaces
+                        .get(source_unit)
+                        .with_context(|| {
+                            format!("source unit {} has no export surface", source_unit.0)
+                        })?;
+                export_surface.merge(unit_surface);
+            }
+            candidate_modules.push((module_id, *members, export_surface));
+            for source_unit in members.iter() {
+                source_unit_claims.push((*source_unit, module_id));
+            }
+        }
+
+        let assignment = assemble_assignment_with_source_unit_claims(
+            dependency_graph,
+            &precomputed.atomic_groups,
+            &self.bindings_catalogue,
+            &source_unit_claims,
+            EntryDestination::from_module_id(entry_module),
+        )?
+        .assignment;
+        let canonical_edges = chunk_constraining_module_edges(dependency_graph, &assignment);
+        let evaluation_order =
+            simulated_evaluation_post_order(&canonical_edges, dependency_graph, &assignment);
+        let mut successors = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
+        for &(from, to) in canonical_edges.edges.keys() {
+            successors.entry(from).or_default().insert(to);
+        }
+        drop(canonical_edges);
+
+        // A destination is fixed when it already owns at least one source
+        // unit outside the candidate atomic groups. This includes a retained
+        // residual placeholder and includes entry only when entry actually
+        // owns units. Empty planned destinations cannot influence reachability.
+        let fixed_destinations: BTreeSet<ModuleId> = assignment
+            .iter()
+            .map(|(_, destination)| destination)
+            .filter(|destination| !virtual_modules.contains(destination))
+            .collect();
+        let mut fixed_positions: Vec<usize> = fixed_destinations
+            .iter()
+            .filter_map(|destination| evaluation_order.get(destination).copied())
+            .collect();
+        fixed_positions.sort_unstable();
+        let mut groups_by_signature =
+            BTreeMap::<(usize, BTreeSet<ModuleId>), Vec<CoarseResidualBucket>>::new();
+        let mut groups = Vec::new();
+        for (virtual_module, members, export_surface) in candidate_modules {
+            // Entry imports every assigned destination, so source-aware
+            // simulation includes isolated candidate modules in the same
+            // evaluation order as the emitted tree. Every virtual module has
+            // at least one assigned source unit and must therefore appear.
+            let position = *evaluation_order
+                .get(&virtual_module)
+                .expect("assigned virtual residual module is imported from entry");
+            let interval = fixed_positions.partition_point(|fixed| *fixed < position);
+            let mut reachable = BTreeSet::new();
+            let mut visited = BTreeSet::from([virtual_module]);
+            let mut pending = VecDeque::from([virtual_module]);
+            while let Some(from) = pending.pop_front() {
+                for to in successors.get(&from).into_iter().flatten() {
+                    if fixed_destinations.contains(to) {
+                        reachable.insert(*to);
+                    }
+                    if visited.insert(*to) {
+                        pending.push_back(*to);
+                    }
+                }
+            }
+            let buckets = groups_by_signature
+                .entry((interval, reachable))
+                .or_default();
+            let existing_bucket = buckets
+                .iter_mut()
+                .find(|bucket| bucket.export_surface.is_compatible_with(&export_surface));
+            if let Some(bucket) = existing_bucket {
+                bucket.source_units.extend(members.iter().copied());
+                bucket.export_surface.merge(&export_surface);
+            } else {
+                buckets.push(CoarseResidualBucket {
+                    source_units: members.iter().copied().collect(),
+                    export_surface,
+                });
+            }
+        }
+
+        groups.extend(
+            groups_by_signature
+                .into_values()
+                .flatten()
+                .map(|bucket| bucket.source_units),
+        );
+        groups.sort_by_key(|members| members.iter().next().copied());
+        Ok(groups)
+    }
+
+    fn synthesize_source_unit_groups<'a>(
+        &mut self,
+        groups: impl IntoIterator<Item = &'a BTreeSet<SourceUnitId>>,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        target_dir: &str,
+        path_prefix: &str,
+        generated_residual: bool,
+    ) -> Result<()> {
+        let dependency_graph = &precomputed.dependency_graph;
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in dependency_graph.iter_nodes() {
+            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
+        }
+
+        let residual_plan_index = self.residual_plan_index;
+        for (idx, members) in groups.into_iter().enumerate() {
             let synthetic_idx = self.module_plans.len();
             let synthetic_module_id = ModuleId(synthetic_idx);
-            let target_path = format!("__auto/atomic_groups/{idx:04}");
+            let target_path = format!("{path_prefix}/{idx:04}");
             let target_file = target_file_for_request(target_dir, &target_path)?;
             let mut bindings = HashMap::<String, String>::new();
             let mut anonymous_statements = Vec::<StatementId>::new();
@@ -1223,16 +1826,12 @@ impl ChunkPlanBuilder {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
                 if names.is_empty() {
-                    let Some(stmt_ord) = source_unit_statement_ordinal.get(source_unit).copied()
-                    else {
-                        continue;
-                    };
-                    let Some(body_idx) = statement_for_source_unit_ordinal(body, stmt_ord) else {
-                        continue;
-                    };
+                    let body_idx = source_unit_statements
+                        .get(source_unit)
+                        .expect("every graph node was checked against the source-unit layout");
                     self.whole_statement_assignment
-                        .insert(body_idx, synthetic_idx);
-                    anonymous_statements.push(body_idx);
+                        .insert(*body_idx, synthetic_idx);
+                    anonymous_statements.push(*body_idx);
                     continue;
                 }
                 for name in names {
@@ -1240,9 +1839,8 @@ impl ChunkPlanBuilder {
                     bindings.insert(name_str.clone(), name_str.clone());
                     // Move the binding out of the residual plan (if it
                     // was staged there by the sweep above) into the
-                    // synthesized plan. The residual plan's
-                    // bindings/anonymous-ordinal maps are pruned so it
-                    // doesn't double-claim members.
+                    // synthesized plan. The residual plan's bindings are
+                    // pruned so it doesn't double-claim members.
                     if let Some(prev) = owned_destination(&self.bindings_catalogue, name)
                         && Some(prev) == residual_plan_index
                         && let Some(residual_idx) = residual_plan_index
@@ -1266,71 +1864,18 @@ impl ChunkPlanBuilder {
                 bindings,
                 spec_named_bindings: BTreeSet::new(),
                 anonymous_statements,
+                anonymous_statement_selector_indices: BTreeMap::new(),
+                anonymous_binding_statement_origins: BTreeMap::new(),
                 anonymous_statement_comments: BTreeMap::new(),
                 comment: None,
                 binding_comments: BTreeMap::new(),
                 binding_claim_origins: BTreeMap::new(),
             });
-        }
-        Ok(())
-    }
-
-    /// Apply a batch of rebind-fold decisions produced by
-    /// `lowering/rebind_fold.rs`.
-    ///
-    /// Each fold reroutes a single binding from its previous plan
-    /// (if any) to the cycle's explicit destination. The
-    /// `bindings_catalogue` records the new destination, and bindings
-    /// that were previously parked at the residual plan are pruned
-    /// from that plan's binding list so the residual doesn't
-    /// double-claim them.
-    ///
-    /// Folds are produced in atomic-group iteration order; we do not
-    /// reorder them here. The mutations are idempotent in the sense
-    /// that `module_plans[dest].bindings.entry(name).or_insert_with`
-    /// preserves any existing entry under that name.
-    pub(super) fn apply_rebind_folds(&mut self, folds: Vec<RebindFold>) {
-        let residual_plan_index = self.residual_plan_index;
-        for RebindFold {
-            binding,
-            dest,
-            from_residual,
-        } in folds
-        {
-            let name = binding.0.as_ref().to_string();
-            self.bindings_catalogue.insert(
-                binding,
-                BindingKind::Owned {
-                    module: ModuleId(dest),
-                },
-            );
-            self.module_plans[dest]
-                .bindings
-                .entry(name.clone())
-                .or_insert_with(|| name.clone());
-            if from_residual && let Some(residual) = residual_plan_index {
-                self.module_plans[residual].bindings.remove(&name);
+            if generated_residual {
+                self.generated_residual_plans.insert(synthetic_idx);
             }
         }
-    }
-
-    /// Derive the owned-only view required by rebind analysis.
-    /// This is a snapshot, never independently mutated construction state.
-    pub(super) fn owned_binding_destinations(&self) -> HashMap<Id, usize> {
-        self.bindings_catalogue
-            .iter()
-            .filter_map(|(id, kind)| match kind {
-                BindingKind::Owned { module } => Some((id.clone(), module.0)),
-                BindingKind::Imported { .. } => None,
-            })
-            .collect()
-    }
-
-    /// The residual landing-site plan index, if one was created by the residual
-    /// sweep. Needed by rebind folding to know which existing claims count as
-    /// "swept" (and hence still foldable).
-    pub(super) fn residual_plan_index(&self) -> Option<usize> {
-        self.residual_plan_index
+        Ok(())
     }
 
     pub(super) fn selector_outcome_report(&self) -> Option<SelectorOutcomeReport> {
@@ -1343,6 +1888,8 @@ impl ChunkPlanBuilder {
             module_plans: self.module_plans,
             bindings_catalogue: BindingCatalogue::new(chunk_id, self.bindings_catalogue),
             whole_statement_assignment: self.whole_statement_assignment,
+            generated_residual_plans: self.generated_residual_plans,
+            atomic_group_owner_completions: self.atomic_group_owner_completions,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
     }

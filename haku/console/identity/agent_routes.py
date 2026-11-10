@@ -10,13 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.identity.enrollment import (
+from haku.console.identity.agent_management import (
     AccessProfileUnavailableError,
     AgentAccessProfileManagedByDeploymentError,
     AgentNotFoundError,
     OperatorAgent,
 )
-from haku.console.identity.operator_agents import AgentEnrollmentServiceDep
+from haku.console.identity.operator_agents import AgentManagementServiceDep
 from haku.console.identity.operator_auth import OperatorSession, operator_session
 
 router = APIRouter(prefix="/api/agent-enrollment", tags=["agents"])
@@ -67,7 +67,7 @@ def _agent_view(agent: OperatorAgent) -> AgentView:
 
 
 @router.get("/agents", response_model=AgentListResponse)
-async def list_agents(service: AgentEnrollmentServiceDep, session: OperatorSessionDep) -> AgentListResponse:
+async def list_agents(service: AgentManagementServiceDep, session: OperatorSessionDep) -> AgentListResponse:
     operator = _require_operator(session)
     return AgentListResponse(
         agents=[_agent_view(agent) for agent in await service.list_agents(operator_id=operator.operator_id)],
@@ -79,7 +79,7 @@ async def list_agents(service: AgentEnrollmentServiceDep, session: OperatorSessi
 async def update_agent_access_profile(
     agent_id: UUID,
     body: UpdateAgentAccessProfileRequest,
-    service: AgentEnrollmentServiceDep,
+    service: AgentManagementServiceDep,
     session: OperatorSessionDep,
 ) -> AgentView:
     operator = _require_operator(session)

@@ -1,6 +1,7 @@
 # Action recovery and cancellation
 
-Commands are `agentplane actions …`; use the generated [OpenAPI reference](/openapi.json) for HTTP routes and schemas.
+Commands are `agentplane actions …`; each command's `--help` lists its flags and exit statuses.
+For MCP clients, use the Action request tools and their current input schemas.
 Keep the request ID and original idempotency key until the task is settled.
 
 ## Lost submission response

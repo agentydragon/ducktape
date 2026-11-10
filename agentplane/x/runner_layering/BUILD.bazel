@@ -2,10 +2,16 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_EXEC_PROPERTIES")
+load(
+    "//agentplane/env/e2e/testing:exec_properties.bzl",
+    "NATIVE_RUNNER_DOCKER_ENV",
+    "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
+)
 load("//devinfra/cpio:defs.bzl", "cpio_archive")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# gazelle:resolve py agentplane.x.runner_layering.tools_rootfs //agentplane/x/runner_layering:tools_rootfs
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,12 +19,14 @@ go_binary(
     name = "boot_init",
     srcs = ["boot_init.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering/boot_init",
+    race = "off",
 )
 
 go_binary(
     name = "child_exec",
     srcs = ["child_exec.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering/child_exec",
+    race = "off",
 )
 
 pkg_files(
@@ -57,17 +65,17 @@ oci_image(
     ],
 )
 
-oci_layout_rloc(
+oci_layout_py(
     name = "tools_rootfs",
     image = ":workload_tools_image",
 )
 
 py_binary(
     name = "local_vm_probe",
+    args = ["--kernel-rlocation=$(rlocationpath @firecracker_vmlinux_6_1_128//file)"],
     data = [
         ":base_initramfs",
-        ":tools_rootfs",
-        "//devinfra/firecracker:firecracker_layer",
+        "//devinfra/x/firecracker:firecracker_layer",
         "@agentplane_codex_cli_linux_x64//:codex_binary",
         "@agentplane_codex_cli_linux_x64//:codex_bwrap",
         "@claude_code_cli_linux_x64//:claude",
@@ -83,8 +91,9 @@ py_library(
     name = "local_vm",
     srcs = ["local_vm.py"],
     deps = [
-        "//util/bazel:runfiles",
+        "//agentplane/x/runner_layering:tools_rootfs",
         "@pypi//httpx",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -94,29 +103,32 @@ py_test(
     srcs = ["test_sparse_root.py"],
     data = [
         ":child_exec",  # keep: the sparse-root Codex process fence
-        ":tools_rootfs",  # keep: independent tools image for sparse-root probe
-        "//agentplane/runner:main_bin",  # keep: the runner as its own process
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: the environment Runtime as its own process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex and bwrap
     ],
-    exec_properties = NATIVE_RUNNER_EXEC_PROPERTIES,
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
+        ":local_vm",
         "//:conftest",
+        "//agentplane/env/e2e/testing:driver",
+        "//agentplane/env/e2e/testing:events",
+        "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:process_fixtures",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner/testing:driver",
-        "//agentplane/runner/testing:events",
-        "//agentplane/runner/testing:launches",
-        "//agentplane/runner/testing:process_fixtures",
+        "//agentplane/proto:session_pb2",
         "//agentplane/testing:scripted_model",
-        "//util/bazel:runfiles",
+        "//agentplane/x/runner_layering:tools_rootfs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -125,10 +137,15 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//agentplane/runner/testing:driver",
-        "//agentplane/runner/testing:fixtures",
-        "//agentplane/runner/testing:gateway",
-        "//agentplane/runner/testing:process_fixtures",
+        "//agentplane/env/e2e/testing:driver",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )

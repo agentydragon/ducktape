@@ -52,7 +52,7 @@ The executor was `sjc-prod-r2204m05vm4kwn`, runner
 `b649d525-ce52-4d3d-8501-6fcc85876e32`.
 
 This matches the Firecracker workspace attachment symptom previously recorded
-in [the July/October BuildBuddy investigation](../../../devinfra/debug/buildbuddy_firecracker_workspace_attach_stalls_2026_07.md).
+in [the July/October BuildBuddy investigation](../../../devinfra/buildbuddy/debug/buildbuddy_firecracker_workspace_attach_stalls_2026_07.md).
 BuildBuddy's current public source (commit
 [`a04caa7`](https://github.com/buildbuddy-io/buildbuddy/commit/a04caa741548187c77dc991c8d8384c6788e24a9))
 calls `TaskFinished` and `TreeFetcher.Wait()` at task end; `TransferDuration`

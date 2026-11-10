@@ -34,6 +34,7 @@
 //! `pre_existing_public_export_names` and suffix-mints a
 //! non-colliding name.)
 
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail};
@@ -41,7 +42,7 @@ use binding_targets::{declaration_name_strings, module_export_name};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use artifact::{ChunkBundle, ChunkId, EmissionFiles};
+use artifact::{ChunkBundle, EmissionFiles};
 use js_ast::{ParsedJsModule, SourceLineIndex};
 
 /// `excluded_chunk_ids`: chunks excluded from the emission set (fully

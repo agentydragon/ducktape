@@ -32,6 +32,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.53.0",
     "httpx>=0.27.0",
+    "Authlib>=1.8.0",
     "dbus-next>=0.2.3",
     "httpx2[ws]>=2.13.0",
     # mcp/fastmcp v4 use httpx2 for SSE and no longer pull this in transitively;
@@ -53,7 +54,6 @@ dependencies = [
 
     # Async
     "anyio>=4.15.1",
-    "aiosqlite>=0.18.0",
     "aiodocker>=0.22.0",
     "asyncpg>=0.29.0",
 
@@ -91,7 +91,6 @@ dependencies = [
     "PyYAML>=6.0",
     "jinja2>=3.1",
     "pathspec",
-    "canonicaljson>=1.6.0",
     "tomli-w>=1.0.0",
     # HCL parsing: cluster/validation/test_nebula_mesh.py parses ovh-nodes.tf
     # structurally instead of regex-scraping it. pygohcl wraps HashiCorp's Go HCL2
@@ -233,7 +232,7 @@ dependencies = [
     # Mako template rendering
     "mako>=1.3",
 
-    # agentplane/system_tests/k3s: the bcrypt hash of the operator password in the fixture's Dex config.
+    # agentplane/system_tests/deployment: the bcrypt hash of the operator password in the fixture's Dex config.
     "bcrypt>=5.0.0",
 
     # gterm-theme
@@ -270,7 +269,7 @@ dependencies = [
     "PyHamcrest>=2.1",
     "mypy==2.3.1",
 
-    # Protobuf and gRPC code generation for //agentplane/runner: grpcio-tools bundles protoc
+    # Protobuf and gRPC code generation for //agentplane/env/runtime/control: grpcio-tools bundles protoc
     # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
     "grpcio>=1.84.0",
     # grpc.health.v1, which the agentplane services serve for Kubernetes gRPC probes.

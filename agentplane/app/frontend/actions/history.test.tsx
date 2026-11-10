@@ -4,8 +4,26 @@ import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
-import type { JsonValue } from "./types";
+import { clone, create, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
+import {
+  ActionGroupSchema,
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ActionState,
+  DecisionSchema,
+  ExecutorKind,
+  ListActionRequestHistoryResponseSchema,
+  MatchedPolicySchema,
+  PolicyDecision_ReasonCode,
+  PolicyDecisionSchema,
+  PolicyEvidenceSchema,
+  PolicyKind,
+  PolicySource,
+  type ListActionRequestHistoryResponse,
+  type ActionGroup,
+  type ActionRequest,
+} from "../../../action_service/action_service_pb";
 import { TestIntersectionObserver } from "../../../../util/frontend/test_intersection_observer.js";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
@@ -31,8 +49,8 @@ async function showNextPage(container: HTMLElement): Promise<void> {
 /** The history view over one page of `rows`, reading `groups` (a failure, when a `Response`) as the
  * Action groups; resolves once the page has loaded. */
 async function renderHistory(
-  rows: ActionRequestView[] | Response,
-  groups: ActionGroupView[] | Response = []
+  rows: ActionRequest[] | Response,
+  groups: ActionGroup[] | Response = []
 ): Promise<HTMLDivElement> {
   // The page waits for the groups, so they have arrived by the time it shows.
   let resolve = (): void => {};
@@ -44,7 +62,7 @@ async function renderHistory(
     }
     if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
     await groupsAnswered;
-    return rows instanceof Response ? rows.clone() : { items: rows, next_cursor: null };
+    return rows instanceof Response ? rows.clone() : historyPage(rows);
   });
   const container = await renderLive(
     <MemoryRouter>
@@ -55,49 +73,60 @@ async function renderHistory(
   return container;
 }
 
-function group(key: string, executorKind: "mcp" | "pod"): ActionGroupView {
-  return {
+function historyPage(actionRequests: ActionRequest[], nextCursor?: string): ListActionRequestHistoryResponse {
+  return create(ListActionRequestHistoryResponseSchema, { actionRequests, nextCursor });
+}
+
+function group(key: string, executorKind: ExecutorKind): ActionGroup {
+  return create(ActionGroupSchema, {
     key,
     title: key,
     description: `test group ${key}`,
-    executor_kind: executorKind,
-    executor_description: "test executor",
+    executorKind,
+    executorDescription: "test executor",
     available: true,
-    health: null,
     actions: [],
-    direct_tools: [],
-  };
+    directTools: [],
+  });
 }
 
-function succeeded(groupKey: string, result: NonNullable<ActionRequestView["execution"]>["result"]): ActionRequestView {
-  const row = request("succeeded", 1);
-  return { ...row, action: { group: groupKey, name: "test_tool" }, execution: { ...row.execution!, result } };
+function succeeded(groupKey: string, result: JsonValue): ActionRequest {
+  const row = request(ActionState.SUCCEEDED, 1);
+  row.action = create(ActionIdentitySchema, { group: groupKey, name: "test_tool" });
+  row.execution!.result = fromJson(ValueSchema, result);
+  return row;
 }
 
-function gmailDraft(): ActionRequestView {
-  const row = request("succeeded", 1);
-  return {
-    ...row,
-    action: { group: "gmail", name: "drafts_create" },
-    arguments: {
-      to: ["reader@example.com"],
-      cc: ["copy@example.com"],
-      subject: "Release notes",
-      body: "The release is ready.\nPlease review it.",
-    },
-    title: "Prepare the release email",
-    execution: {
-      ...row.execution!,
-      result: {
-        content: [],
-        structuredContent: {
-          id: "draft-123",
-          message: { payload: { headers: [{ name: "Subject", value: "Release notes saved" }] } },
-        },
-        isError: false,
-      },
-    },
+function withDecisionTime(row: ActionRequest, value: string): ActionRequest {
+  const copy = clone(ActionRequestSchema, row);
+  if (copy.decision === undefined) throw new Error("Fixture has no Decision.");
+  copy.decision.decidedAt = fromJson(TimestampSchema, value);
+  return copy;
+}
+
+function stateName(state: ActionState): string {
+  return ActionState[state].replace("ACTION_STATE_", "").toLowerCase();
+}
+
+function gmailDraft(): ActionRequest {
+  const row = request(ActionState.SUCCEEDED, 1);
+  row.action = create(ActionIdentitySchema, { group: "gmail", name: "drafts_create" });
+  row.arguments = {
+    to: ["reader@example.com"],
+    cc: ["copy@example.com"],
+    subject: "Release notes",
+    body: "The release is ready.\nPlease review it.",
   };
+  row.title = "Prepare the release email";
+  row.execution!.result = fromJson(ValueSchema, {
+    content: [],
+    structuredContent: {
+      id: "draft-123",
+      message: { payload: { headers: [{ name: "Subject", value: "Release notes saved" }] } },
+    },
+    isError: false,
+  });
+  return row;
 }
 
 // base64 of "test-image-bytes": nothing here decodes it.
@@ -122,14 +151,14 @@ describe("ActionHistory", () => {
 
   it("renders every terminal outcome with its decision, result, and error", async () => {
     const states: ActionState[] = [
-      "allowed",
-      "denied",
-      "dispatching",
-      "running",
-      "succeeded",
-      "failed",
-      "cancelled",
-      "execution_unknown",
+      ActionState.ALLOWED,
+      ActionState.DENIED,
+      ActionState.DISPATCHING,
+      ActionState.RUNNING,
+      ActionState.SUCCEEDED,
+      ActionState.FAILED,
+      ActionState.CANCELLED,
+      ActionState.EXECUTION_UNKNOWN,
     ];
     const container = await renderHistory(states.map(request));
 
@@ -140,18 +169,16 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain(DECISION_NOTE);
     // The caller's own framing stays on the receipt, beside the operator's decision note.
     for (const state of states) {
-      expect(container.textContent).toContain(`test title for the ${state} fixture`);
-      expect(container.textContent).toContain(`test description adding what the ${state} title leaves out`);
+      expect(container.textContent).toContain(`test title for the ${stateName(state)} fixture`);
+      expect(container.textContent).toContain(`test description adding what the ${stateName(state)} title leaves out`);
     }
     expect(container.textContent).toContain("Result");
     expect(container.textContent).toContain("Execution error");
   });
 
   it("shows one status, with the operator's decision and wait in the timestamp line", async () => {
-    const row = succeeded("test_sandbox", { ok: true });
-    const container = await renderHistory([
-      { ...row, decision: { ...row.decision!, decided_at: "2026-09-05T12:00:56Z" } },
-    ]);
+    const row = withDecisionTime(succeeded("test_sandbox", { ok: true }), "2026-09-05T12:00:56Z");
+    const container = await renderHistory([row]);
     const state = container.querySelector('[data-testid="action-execution-state"]');
     expect(state?.textContent).toBe("succeeded");
     expect(state?.closest('[data-testid="action-execution-outcome"]')).toBeNull();
@@ -167,31 +194,32 @@ describe("ActionHistory", () => {
 
   it("opens failed receipts and makes tool errors visible even when dispatch succeeded", async () => {
     const row = succeeded("test_mcp", { content: [{ type: "text", text: "permission rejected" }], isError: true });
-    const container = await renderHistory([row], [group("test_mcp", "mcp")]);
+    const container = await renderHistory([row], [group("test_mcp", ExecutorKind.MCP)]);
     expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Tool error");
     const summary = [...container.querySelectorAll("button")].find((node) => node.textContent === "Receipt details");
     expect(summary?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("shows a command failure in the summary while retaining its decision", async () => {
-    const container = await renderHistory([sshExec("succeeded", { exit_code: 7 })], [group("ssh", "mcp")]);
+    const container = await renderHistory(
+      [sshExec(ActionState.SUCCEEDED, { exit_code: 7 })],
+      [group("ssh", ExecutorKind.MCP)]
+    );
     expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Command exited 7");
     expect(container.textContent).toContain("Approved · Completed");
   });
 
   it("names a request's decision once while it has not run", async () => {
-    const row = request("denied", 1);
-    const container = await renderHistory([
-      { ...row, decision: { ...row.decision!, decided_at: "2026-09-05T12:02:00Z" } },
-    ]);
+    const row = withDecisionTime(request(ActionState.DENIED, 1), "2026-09-05T12:02:00Z");
+    const container = await renderHistory([row]);
     expect(container.querySelector('[data-testid="action-execution-state"]')?.textContent).toBe("Denied");
     expect(container.textContent).toContain("Decided after 2 minutes · Updated");
   });
 
   it("retains the exact arguments inside the receipt disclosure", async () => {
-    const container = await renderHistory([request("succeeded", 1)]);
+    const container = await renderHistory([request(ActionState.SUCCEEDED, 1)]);
     expect(container.textContent).toContain("Exact arguments");
-    const block = [...container.querySelectorAll(".agentplane-code-block")].find((node) =>
+    const block = [...container.querySelectorAll(".ui-code-block")].find((node) =>
       node.textContent?.includes("test-exact-token")
     );
     if (!block) throw new Error("missing the arguments");
@@ -204,28 +232,28 @@ describe("ActionHistory", () => {
   });
 
   it("renders the auto-approving policy when the Decision carries policy evidence", async () => {
-    const base = request("succeeded", 1);
-    const row: ActionRequestView = {
-      ...base,
-      decision: {
-        ...base.decision!,
-        provider: "action_policy_set",
-        operator: null,
-        decision_note: null,
-        policy_evidence: {
-          bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
-          policy_sets: [{ namespace: "agentplane-visual", name: "fixture-auto-allow", generation: 1 }],
-          matched: {
-            namespace: "agentplane-visual",
-            policy_set: "fixture-auto-allow",
-            source: "rules",
-            index: 0,
-            type: "exact_actions",
-            repository: null,
-          },
-        },
+    const base = request(ActionState.SUCCEEDED, 1);
+    const row = clone(ActionRequestSchema, base);
+    row.decision = create(DecisionSchema, {
+      ...base.decision!,
+      decider: {
+        case: "policy",
+        value: create(PolicyDecisionSchema, {
+          reasonCode: PolicyDecision_ReasonCode.AUTO_APPROVE,
+          evidence: create(PolicyEvidenceSchema, {
+            bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resourceVersion: "12345" }],
+            policySets: [{ namespace: "agentplane-visual", name: "fixture-auto-allow", generation: 1n }],
+            matched: create(MatchedPolicySchema, {
+              namespace: "agentplane-visual",
+              policySet: "fixture-auto-allow",
+              source: PolicySource.RULES,
+              index: 0,
+              type: PolicyKind.EXACT_ACTIONS,
+            }),
+          }),
+        }),
       },
-    };
+    });
     const container = await renderHistory([row]);
     expect(container.textContent).toContain("Auto-approved via policy fixture-auto-allow · Completed");
   });
@@ -235,8 +263,8 @@ describe("ActionHistory", () => {
       if (path === "/upstream/actions/v1/action-groups") return [];
       if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       return query.get("cursor") === "page2"
-        ? { items: [request("succeeded", 2)], next_cursor: null }
-        : { items: [request("denied", 1)], next_cursor: "page2" };
+        ? historyPage([request(ActionState.SUCCEEDED, 2)])
+        : historyPage([request(ActionState.DENIED, 1)], "page2");
     });
     const container = await renderLive(
       <MemoryRouter>
@@ -261,15 +289,15 @@ describe("ActionHistory", () => {
       if (path === "/upstream/actions/v1/action-groups") return [];
       if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
       const all = query.get("includeAutoAllowed") === "true";
-      return {
-        items: [
+      return historyPage(
+        [
           request(
-            all ? "succeeded" : query.has("cursor") ? "cancelled" : "denied",
+            all ? ActionState.SUCCEEDED : query.has("cursor") ? ActionState.CANCELLED : ActionState.DENIED,
             all ? 3 : query.has("cursor") ? 2 : 1
           ),
         ],
-        next_cursor: query.has("cursor") ? null : "page2",
-      };
+        query.has("cursor") ? undefined : "page2"
+      );
     });
     const container = await renderLive(
       <MemoryRouter>
@@ -298,14 +326,18 @@ describe("ActionHistory", () => {
   });
 
   it("refreshes an unfinished receipt beyond the newest page on invalidation", async () => {
-    const older = request("running", 2);
+    const older = request(ActionState.RUNNING, 2);
     const sent = answerApi(({ path, query }) => {
       if (path === "/upstream/actions/v1/action-groups") return [];
-      if (path === `/upstream/actions/v1/action-requests/${older.id}`)
-        return { ...older, state: "succeeded", version: 3 };
+      if (path === `/upstream/actions/v1/action-requests/${older.id}`) {
+        const update = clone(ActionRequestSchema, older);
+        update.state = ActionState.SUCCEEDED;
+        update.version = 3n;
+        return update;
+      }
       if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
-      if (query.has("cursor")) return { items: [older], next_cursor: null };
-      return { items: [request("denied", 1)], next_cursor: "page2" };
+      if (query.has("cursor")) return historyPage([older]);
+      return historyPage([request(ActionState.DENIED, 1)], "page2");
     });
     const container = await renderLive(
       <MemoryRouter>
@@ -325,10 +357,10 @@ describe("ActionHistory", () => {
     const sent = answerApi(({ path, query }) => {
       if (path === "/upstream/actions/v1/action-groups") return [];
       if (path !== "/upstream/actions/v1/action-requests:history") return undefined;
-      if (!query.has("cursor")) return { items: [request("denied", 1)], next_cursor: "page2" };
+      if (!query.has("cursor")) return historyPage([request(ActionState.DENIED, 1)], "page2");
       return fail
         ? Response.json({ detail: "try again" }, { status: 503 })
-        : { items: [request("succeeded", 2)], next_cursor: null };
+        : historyPage([request(ActionState.SUCCEEDED, 2)]);
     });
     const container = await renderLive(
       <MemoryRouter>
@@ -348,7 +380,7 @@ describe("ActionHistory", () => {
   it("restores the all-actions filter from its URL", async () => {
     const sent = answerApi(({ path }) => {
       if (path === "/upstream/actions/v1/action-groups") return [];
-      if (path === "/upstream/actions/v1/action-requests:history") return { items: [], next_cursor: null };
+      if (path === "/upstream/actions/v1/action-requests:history") return historyPage([]);
       return undefined;
     });
     const container = await renderLive(
@@ -366,14 +398,14 @@ describe("ActionHistory", () => {
   });
 
   it("draws an MCP group's result the way the tool answered it", async () => {
-    const container = await renderHistory([succeeded("test_mcp", IMAGE_RESULT)], [group("test_mcp", "mcp")]);
+    const container = await renderHistory([succeeded("test_mcp", IMAGE_RESULT)], [group("test_mcp", ExecutorKind.MCP)]);
     expect(container.querySelector("img")?.getAttribute("src")).toBe(`data:image/png;base64,${IMAGE_DATA}`);
     expect(container.textContent).toContain("test caption");
     expect(container.textContent).not.toContain('"content"');
   });
 
   it("switches an MCP result between the tool's answer and its stored JSON", async () => {
-    const container = await renderHistory([succeeded("test_mcp", IMAGE_RESULT)], [group("test_mcp", "mcp")]);
+    const container = await renderHistory([succeeded("test_mcp", IMAGE_RESULT)], [group("test_mcp", ExecutorKind.MCP)]);
     const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(raw).not.toBeNull();
     await act(async () => raw!.click());
@@ -382,10 +414,10 @@ describe("ActionHistory", () => {
   });
 
   it("turns an ssh exec call's request and response to their JSON together, and back", async () => {
-    const container = await renderHistory([sshExec("succeeded")], [group("ssh", "mcp")]);
+    const container = await renderHistory([sshExec(ActionState.SUCCEEDED)], [group("ssh", ExecutorKind.MCP)]);
     // The request widget shows the command alone in its block, the response widget the exit code.
     const drawn = (): { request: boolean; response: boolean } => ({
-      request: [...container.querySelectorAll(".agentplane-code-block")].some(
+      request: [...container.querySelectorAll(".ui-code-block")].some(
         (block) =>
           [...block.querySelectorAll(".cm-line")]
             .map((line) => line.textContent ?? "")
@@ -406,7 +438,7 @@ describe("ActionHistory", () => {
   });
 
   it("shows a Gmail draft's arguments and result together, with both available in Raw", async () => {
-    const container = await renderHistory([gmailDraft()], [group("gmail", "mcp")]);
+    const container = await renderHistory([gmailDraft()], [group("gmail", ExecutorKind.MCP)]);
     expect(container.textContent).toContain("Call");
     expect(container.textContent).toContain("Release notes saved");
     expect(container.textContent).toContain("reader@example.com");
@@ -427,7 +459,10 @@ describe("ActionHistory", () => {
   });
 
   it("keeps a sandbox group's result as its stored JSON, without a Raw switch, even one shaped like a CallToolResult", async () => {
-    const container = await renderHistory([succeeded("test_sandbox", IMAGE_RESULT)], [group("test_sandbox", "pod")]);
+    const container = await renderHistory(
+      [succeeded("test_sandbox", IMAGE_RESULT)],
+      [group("test_sandbox", ExecutorKind.POD)]
+    );
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain('"mimeType": "image/png"');
@@ -445,11 +480,11 @@ describe("ActionHistory", () => {
 });
 
 it("renders native sandbox results and keeps the original payload available through Raw", async () => {
-  const row = request("succeeded", 1);
-  row.action = { group: "sandbox", name: "dispose" };
+  const row = request(ActionState.SUCCEEDED, 1);
+  row.action = create(ActionIdentitySchema, { group: "sandbox", name: "dispose" });
   row.arguments = { name: "absent-sandbox" };
-  row.execution!.result = { name: "absent-sandbox", existed: false };
-  const container = await renderHistory([row], [group("sandbox", "pod")]);
+  row.execution!.result = fromJson(ValueSchema, { name: "absent-sandbox", existed: false });
+  const container = await renderHistory([row], [group("sandbox", ExecutorKind.POD)]);
   expect(container.textContent).toContain("already absent");
   const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
   expect(raw).not.toBeNull();

@@ -1,4 +1,4 @@
-"""Lightweight client for the workload's redacted `/v1/rules` snapshot.
+"""Lightweight client for the workload's redacted egress rules snapshot.
 
 This view is informational: the proxy remains the admission authority. Returned
 placeholders are inert strings, never the substituted credentials.
@@ -7,9 +7,10 @@ placeholders are inert strings, never the substituted credentials.
 import os
 import re
 import ssl
+import subprocess
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 class StringList(BaseModel):
@@ -106,19 +107,24 @@ class Rules(BaseModel):
         return matches[0]
 
 
-def load_rules(*, client: httpx.Client | None = None) -> Rules:
-    url = os.environ.get("AGENTPLANE_EGRESS_URL", "http://egress.agentplane-staging.svc.cluster.local")
-    credential = os.environ.get("AGENTPLANE_EGRESS_CREDENTIAL", "agentplane-credential-agentplane-workload")
-    if client is None:
-        with create_client(timeout=30) as owned_client:
-            return _load_rules(owned_client, url=url, credential=credential)
-    return _load_rules(client, url=url, credential=credential)
+class RulesError(RuntimeError):
+    """Rules could not be loaded; the message excludes CLI output."""
 
 
-def _load_rules(client: httpx.Client, *, url: str, credential: str) -> Rules:
-    response = client.get(f"{url.rstrip('/')}/v1/rules", headers={"Authorization": f"Bearer {credential}"})
-    response.raise_for_status()
-    return Rules.model_validate(response.json())
+def load_rules() -> Rules:
+    """Ask the Agentplane CLI for the current workload's rules over gRPC."""
+    try:
+        result = subprocess.run(
+            ["agentplane", "egress", "rules", "--json"],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=30,
+        )
+        return Rules.model_validate_json(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValidationError):
+        # A failed command or response may contain details not intended for logs.
+        raise RulesError("Unable to load Agentplane egress rules") from None
 
 
 def create_client(*, timeout: float) -> httpx.Client:

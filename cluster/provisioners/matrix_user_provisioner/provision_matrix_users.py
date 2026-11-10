@@ -15,7 +15,6 @@ import hmac
 import logging
 import os
 import urllib.parse
-from typing import Protocol
 
 import httpx
 
@@ -31,16 +30,7 @@ SERVER_NAME = "allegedly.works"
 BOT_SPECS = ((PUBLIC_CODER_AGENT_BOT_USERNAME, PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "PUBLIC_CODER_AGENT_BOT_PASSWORD"),)
 
 
-class SynapseClient(Protocol):
-    """The subset of httpx.Client's interface this module needs — lets tests
-    inject a lightweight fake without subclassing httpx.Client."""
-
-    def get(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response: ...
-    def post(self, url: str, *, json: dict | None = None) -> httpx.Response: ...
-    def put(self, url: str, *, json: dict | None = None, headers: dict[str, str] | None = None) -> httpx.Response: ...
-
-
-def register_admin(client: SynapseClient, registration_secret: str, admin_password: str) -> None:
+def register_admin(client: httpx.Client, registration_secret: str, admin_password: str) -> None:
     """Phase 1: Register provisioner as admin via shared-secret."""
     register_url = f"{SYNAPSE_URL}/_synapse/admin/v1/register"
     nonce = client.get(register_url).json()["nonce"]
@@ -60,7 +50,7 @@ def register_admin(client: SynapseClient, registration_secret: str, admin_passwo
     logger.info("Phase 1: Registered admin @%s", resp.json()["user_id"])
 
 
-def admin_login(client: SynapseClient, admin_password: str) -> str:
+def admin_login(client: httpx.Client, admin_password: str) -> str:
     """Log in as the provisioner admin and return its access token.
 
     Pins `device_id` so re-runs reuse one device instead of leaving a new one
@@ -84,7 +74,7 @@ def _admin_user_url(encoded_mxid: str) -> str:
     return f"{SYNAPSE_URL}/_synapse/admin/v2/users/{encoded_mxid}"
 
 
-def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> bool:
+def _bot_exists(client: httpx.Client, access_token: str, encoded_mxid: str) -> bool:
     """Check if bot user already exists in Synapse."""
     resp = client.get(_admin_user_url(encoded_mxid), headers={"Authorization": f"Bearer {access_token}"})
     if resp.status_code == 404:
@@ -96,7 +86,7 @@ def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> 
 
 
 def upsert_bot(
-    client: SynapseClient, admin_token: str, bot_password: str, *, bot_username: str, bot_displayname: str
+    client: httpx.Client, admin_token: str, bot_password: str, *, bot_username: str, bot_displayname: str
 ) -> None:
     """Phase 2: Ensure the bot user exists via the admin API."""
     bot_mxid = f"@{bot_username}:{SERVER_NAME}"

@@ -25,7 +25,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpec,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom,
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFromSecretRef,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFrom,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecResources,
@@ -92,12 +91,6 @@ def secret_var(name: str, key: SecretKey) -> TerraformV1Alpha2SpecVars:
         value_from=TerraformV1Alpha2SpecVarsValueFrom(
             secret_key_ref=TerraformV1Alpha2SpecVarsValueFromSecretKeyRef(name=key.secret.name, key=key.key)
         ),
-    )
-
-
-def secret_env_from(secret: str) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom:
-    return TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom(
-        secret_ref=TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFromSecretRef(name=secret)
     )
 
 

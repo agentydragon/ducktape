@@ -1,7 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -62,12 +61,6 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
-oci_layout_rloc(
-    name = "static_test_image",
-    testonly = True,
-    image = ":static_image",
-)
-
 py_test(
     name = "test_static_image",
     size = "medium",
@@ -75,11 +68,11 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/app/frontend/serving/testing:image",
-        "//util:oci",
+        "//devinfra/oci",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
         "@pypi//testcontainers",
     ],
 )

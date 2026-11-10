@@ -35,6 +35,8 @@ import pygit2
 from devinfra.gc import git_repo, worktree_gc
 from devinfra.gc.git_repo import GitError, Worktree
 from devinfra.gc.pull_request import PrInfo
+from devinfra.gc.removal import Failed, RemovalResult, Removed
+from devinfra.gc.verdict import Prunable, Retained, Review
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
 logger = logging.getLogger(__name__)
@@ -53,19 +55,19 @@ class ForeignClone:
 
 
 @dataclass(frozen=True, slots=True)
-class PrunableForeignClone:
+class PrunableForeignClone(Prunable):
     clone: ForeignClone
     reason: str
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedForeignClone:
+class RetainedForeignClone(Retained):
     clone: ForeignClone
     reason: str
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewForeignClone:
+class ReviewForeignClone(Review):
     clone: ForeignClone
     reason: str
 
@@ -93,7 +95,8 @@ def _find_repo_root(path: Path) -> tuple[Path, pygit2.Repository] | None:
             continue
         try:
             pg = pygit2.Repository(os.fspath(candidate))
-        except pygit2.GitError:
+        except git_repo.INSPECTION_ERRORS as error:
+            logger.warning("Cannot inspect candidate repository %s: %s", candidate, error)
             continue
         return candidate, pg
     return None
@@ -117,17 +120,29 @@ def discover_foreign_clones(candidate_workspaces: set[Path], *, known_paths: set
         candidate_path, pg = found
         if candidate_path in known_paths:
             continue
-        if not git_repo.remote_urls(pg) & repo_remotes:
-            continue
         try:
+            if not git_repo.remote_urls(pg) & repo_remotes:
+                continue
             roots.add(git_repo.main_worktree(candidate_path))
-        except (OSError, subprocess.CalledProcessError) as error:
-            logger.warning("cannot resolve the main worktree of candidate clone %s: %s", candidate_path, error)
+        except git_repo.INSPECTION_ERRORS as error:
+            logger.warning("Cannot inspect candidate clone %s: %s", candidate_path, error)
     return sorted(roots)
 
 
 def classify_foreign_clone(
     root: Path, *, pr_states: dict[str, PrInfo], active_path: Path | None = None, proc_root: Path = Path("/proc")
+) -> ForeignCloneClassification:
+    """Classify one clone, protecting the entire clone if any inspection fails."""
+    try:
+        return _classify_foreign_clone(root, pr_states=pr_states, active_path=active_path, proc_root=proc_root)
+    except git_repo.INSPECTION_ERRORS as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.warning("Cannot inspect foreign clone %s: %s", root, detail)
+        return ReviewForeignClone(ForeignClone(root), f"cannot inspect: {detail}")
+
+
+def _classify_foreign_clone(
+    root: Path, *, pr_states: dict[str, PrInfo], active_path: Path | None, proc_root: Path
 ) -> ForeignCloneClassification:
     """Classify one foreign clone: prunable only when every worktree it holds is.
 
@@ -170,36 +185,22 @@ def classify_foreign_clone(
     return ReviewForeignClone(clone, reason)
 
 
-@dataclass(frozen=True, slots=True)
-class PrunedForeignClone:
-    root: Path
-
-
-@dataclass(frozen=True, slots=True)
-class FailedForeignClone:
-    root: Path
-    error: str
-
-
-type ForeignCloneRemovalResult = PrunedForeignClone | FailedForeignClone
-
-
-def prune_foreign_clone(clone: ForeignClone) -> ForeignCloneRemovalResult:
+def prune_foreign_clone(clone: ForeignClone) -> RemovalResult[Path]:
     """Remove every non-root worktree properly (`git worktree remove`), then the root's own
     directory — safe once its worktrees are gone, since nothing else depends on it.
 
     The caller re-scans and passes only a still-prunable `ForeignClone` here, the same
     revalidate-then-act contract `worktree_gc.remove_worktree` documents; `git worktree remove`
-    itself refuses a member that turned dirty since, surfacing as `FailedForeignClone`.
+    itself refuses a member that turned dirty since, surfacing as `Failed`.
     """
     for member in clone.members:
         if member.path == clone.root:
             continue
         result = worktree_gc.remove_worktree(clone.root, member.path)
-        if isinstance(result, worktree_gc.FailedWorktree):
-            return FailedForeignClone(clone.root, f"removing {member.path}: {result.error}")
+        if isinstance(result, Failed):
+            return Failed(clone.root, f"removing {member.path}: {result.error}")
     try:
         shutil.rmtree(clone.root)
     except OSError as error:
-        return FailedForeignClone(clone.root, str(error))
-    return PrunedForeignClone(clone.root)
+        return Failed(clone.root, str(error))
+    return Removed(clone.root)
