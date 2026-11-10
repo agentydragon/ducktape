@@ -5,10 +5,11 @@ import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { ActionsSidebarSection } from "./actions/sidebar";
+import { HistoryRecorderTools } from "../../../util/frontend/transcript/history_recorder_tools";
 import { ResizeHandle, usePaneSize } from "../../../util/frontend/resize_handle";
 import "./sidebar.css";
 import { ThreadList } from "./threads/thread_list";
-import { ThreadViewRecorderTools } from "./threads/thread_view_recorder_tools";
+import { threadViewRecorder } from "./threads/thread_view_recorder";
 
 // Matches sidebar.css's own phone breakpoint.
 const PHONE_QUERY = "(max-width: 560px)";
@@ -98,7 +99,12 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
       </div>
       <div className="agentplane-sidebar-footer">
         <div className="agentplane-sidebar-recorder">
-          <ThreadViewRecorderTools />
+          <HistoryRecorderTools
+            recorder={threadViewRecorder}
+            label="Thread view recorder"
+            downloadPrefix="agentplane-thread-view-recording"
+            position="top-start"
+          />
         </div>
         <Tooltip label="Sandboxes" withArrow>
           <ActionIcon
