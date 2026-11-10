@@ -133,9 +133,16 @@ pub struct Unit {
     targets: Vec<Binding>,
     replaces: Vec<Binding>,
     /// Providers with private state the statement may run: `0` is this
-    /// chunk, the rest are import sources.
+    /// chunk, the rest are import sources, `ANY_PROVIDER` is all of them.
     providers: Vec<u32>,
+    /// Lazy-module thunks the statement calls when it runs, and those of
+    /// them no earlier definition calls: this statement may run the module.
+    lazy_uses: Vec<Binding>,
+    lazy_first: Vec<Binding>,
 }
+
+/// A lazy module's body may run code of any provider.
+const ANY_PROVIDER: u32 = u32::MAX;
 
 pub struct Tier0 {
     pub units: Vec<Unit>,
@@ -143,9 +150,13 @@ pub struct Tier0 {
     reach_stamp: Vec<u32>,
     /// Per binding: the first impure ordinal that may assign it.
     write_stamp: Vec<u32>,
+    /// Per binding: the impure unit that declares it.
+    declarer: Vec<u32>,
     /// Per impure unit: the closure of its own mentions.
     own_reach: FxHashMap<usize, FxHashSet<Binding>>,
     pub bindings: usize,
+    /// Per source unit: the names it declares.
+    pub declared_names: Vec<Vec<String>>,
     /// `eval` and `with` sites; any makes every statement impure.
     pub refused: usize,
     /// `await` outside any function: other modules may run in between, so
@@ -165,6 +176,11 @@ pub struct Tier0 {
     pub premised_reading_imports: usize,
     /// Site premises that changed a statement's class.
     pub site_premise_uses: usize,
+    pub derived: DerivedCounts,
+    /// Definitions that may run a lazy module's body, and those that call a
+    /// thunk an earlier definition already called.
+    pub lazy_first_uses: usize,
+    pub lazy_later_uses: usize,
     commuting: FxHashSet<(usize, usize)>,
     /// Per intrinsic global: the pure definitions that depend on it being
     /// unmodified.
@@ -362,18 +378,34 @@ struct Classifier<'a> {
     /// Nesting depth in the arguments of premised calls.
     premised_args: usize,
     providers: Vec<u32>,
+    /// Lazy-module thunks the statement calls when it runs.
+    lazy_uses: Vec<Binding>,
     /// A site premise waives the census for this statement.
     native_site: bool,
     never_written: &'a FxHashSet<String>,
 }
 
 /// Premises resolved to this chunk's bindings.
+/// Bindings of the chunk whose contract derivation found.
+#[derive(Default, Clone, serde::Serialize)]
+pub struct DerivedCounts {
+    pub allocators: usize,
+    pub namespace_members: usize,
+    pub lazy_wrappers: usize,
+    pub interop_helpers: usize,
+    pub lazy_modules: usize,
+    /// Those of `lazy_modules` whose body is in this chunk.
+    pub local_lazy_modules: usize,
+}
+
 #[derive(Default)]
 pub struct ResolvedPremises {
     callees: FxHashMap<Binding, (PremiseKind, usize)>,
     members: FxHashMap<(Binding, String), (PremiseKind, usize)>,
     /// Per imported binding: its source, numbered from 1.
     providers: FxHashMap<Binding, u32>,
+    /// Per derived allocator: the bindings a call of it reads.
+    allocator_reads: FxHashMap<Binding, Vec<Binding>>,
     pub given: usize,
     pub matched: usize,
 }
@@ -694,14 +726,23 @@ impl Classifier<'_> {
                 prop: MemberProp::Ident(member),
                 ..
             }) => {
-                let Expr::Ident(namespace) = &**obj else {
-                    return None;
+                // `ns.member` or `ns.default.member`.
+                let (namespace, path) = match &**obj {
+                    Expr::Ident(namespace) => (namespace, member.sym.to_string()),
+                    Expr::Member(MemberExpr {
+                        obj,
+                        prop: MemberProp::Ident(first),
+                        ..
+                    }) => match &**obj {
+                        Expr::Ident(namespace) => {
+                            (namespace, format!("{}.{}", first.sym, member.sym))
+                        }
+                        _ => return None,
+                    },
+                    _ => return None,
                 };
                 let binding = *self.bindings.get(&namespace.to_id())?;
-                let (kind, target) = *self
-                    .premises
-                    .members
-                    .get(&(binding, member.sym.to_string()))?;
+                let (kind, target) = *self.premises.members.get(&(binding, path))?;
                 Some((kind, target, binding))
             }
             _ => None,
@@ -722,15 +763,36 @@ impl Classifier<'_> {
         let Some((kind, _, callee_binding)) = self.premise(callee) else {
             return false;
         };
+        let lazy_call = |expr: &Expr| {
+            matches!(expr, Expr::Call(CallExpr { callee: Callee::Expr(callee), args, .. })
+            if args.is_empty() && matches!(
+                self.premise(callee),
+                Some((PremiseKind::LazyModule, _, _))
+            ))
+        };
         let applies = match kind {
             PremiseKind::PureNew => constructs,
-            PremiseKind::PureCall | PremiseKind::CallbackFactory => !constructs,
+            PremiseKind::PureCall | PremiseKind::CallbackFactory | PremiseKind::Allocator => {
+                !constructs
+            }
+            PremiseKind::LazyModule => !constructs && args.is_empty(),
+            PremiseKind::InteropNamespace => {
+                !constructs && args.first().is_some_and(|arg| lazy_call(&arg.expr))
+            }
             PremiseKind::DecoratorHelper
             | PremiseKind::Decorator
             | PremiseKind::ContainedDecorator => false,
         };
         if !applies || args.iter().any(|arg| arg.spread.is_some()) {
             return false;
+        }
+        if let Some(reads) = self.premises.allocator_reads.get(&callee_binding) {
+            self.eager.extend(reads);
+        }
+        if kind == PremiseKind::LazyModule {
+            // The exports object is the provider's.
+            self.lazy_uses.push(callee_binding);
+            self.deep.push(callee_binding);
         }
         let before = self.eager.len();
         self.premised_args += 1;
@@ -741,7 +803,7 @@ impl Classifier<'_> {
         }
         if kind == PremiseKind::CallbackFactory {
             self.providers.push(self.premises.provider(callee_binding));
-        } else {
+        } else if !matches!(kind, PremiseKind::Allocator | PremiseKind::LazyModule) {
             // The callee may call its function arguments at once, and read
             // the objects its arguments reference. The callees of nested
             // premised calls are not arguments.
@@ -1178,6 +1240,8 @@ pub struct Options {
     /// Facts about the program's other chunks, when they were read.
     pub program: Option<ProgramFacts>,
     pub premises: Premises,
+    /// Derive callee contracts from their bodies.
+    pub derive: bool,
 }
 
 fn resolve_premises(
@@ -1396,7 +1460,49 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut top_level_awaits = 0;
     let mut intrinsics_denied = 0;
     let mut premise_uses: std::collections::BTreeMap<PremiseKind, usize> = Default::default();
-    let premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
+    let mut premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
+    let mut derived = DerivedCounts::default();
+    if options.derive {
+        // An author premise on the same callee wins.
+        let found = crate::derive::derive(module, unresolved, options.program.as_ref());
+        let binding = |id: &Id| bindings.get(id).copied();
+        let mut callee = |id: &Id, kind: PremiseKind, count: &mut usize| {
+            if let Some(binding) = binding(id) {
+                *count += 1;
+                premises.callees.entry(binding).or_insert((kind, 0));
+            }
+        };
+        for (id, reads) in &found.allocators {
+            callee(id, PremiseKind::Allocator, &mut derived.allocators);
+            if let Some(allocator) = bindings.get(id) {
+                let reads = reads.iter().filter_map(|id| bindings.get(id).copied());
+                premises.allocator_reads.insert(*allocator, reads.collect());
+            }
+        }
+        for id in &found.wrappers {
+            callee(id, PremiseKind::Allocator, &mut derived.lazy_wrappers);
+        }
+        for id in &found.interop {
+            callee(
+                id,
+                PremiseKind::InteropNamespace,
+                &mut derived.interop_helpers,
+            );
+        }
+        for (id, _, local) in &found.lazy {
+            callee(id, PremiseKind::LazyModule, &mut derived.lazy_modules);
+            derived.local_lazy_modules += usize::from(*local);
+        }
+        for (id, path) in &found.members {
+            if let Some(binding) = binding(id) {
+                derived.namespace_members += 1;
+                premises
+                    .members
+                    .entry((binding, path.clone()))
+                    .or_insert((PremiseKind::Allocator, 0));
+            }
+        }
+    }
     let mut families_used: std::collections::BTreeMap<&'static str, usize> = Default::default();
     let object_aliases = crate::helpers::prepass(module, unresolved).object_aliases;
     let mut census = census(module, unresolved, &object_aliases);
@@ -1447,6 +1553,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             callee_slots: FxHashSet::default(),
             premised_args: 0,
             providers: Vec::new(),
+            lazy_uses: Vec::new(),
             native_site: site == Some(SiteKind::NativeOperation),
             never_written: &never_written,
         };
@@ -1516,7 +1623,38 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             targets: classifier.targets,
             replaces: classifier.replaces,
             providers: classifier.providers,
+            lazy_uses: classifier.lazy_uses,
+            lazy_first: Vec::new(),
         });
+    }
+    // The first definition to call a lazy module's thunk may run the module
+    // body. An imported module's body is another chunk's code; a local one
+    // is this chunk's, and the statement stays impure.
+    let mut initialized: FxHashSet<Binding> = FxHashSet::default();
+    let (mut lazy_first_uses, mut lazy_later_uses) = (0, 0);
+    for unit in &mut units {
+        if !matches!(unit.kind, Kind::Pure | Kind::Contained) {
+            unit.lazy_uses.clear();
+            continue;
+        }
+        let firsts: Vec<Binding> = unit
+            .lazy_uses
+            .iter()
+            .copied()
+            .filter(|thunk| initialized.insert(*thunk))
+            .collect();
+        if firsts.is_empty() {
+            lazy_later_uses += usize::from(!unit.lazy_uses.is_empty());
+            continue;
+        }
+        lazy_first_uses += 1;
+        if firsts.iter().all(|thunk| imports.contains(thunk)) {
+            unit.kind = Kind::Contained;
+            unit.providers.push(ANY_PROVIDER);
+        } else {
+            unit.kind = Kind::Impure(ImpureCause::CallLocal);
+        }
+        unit.lazy_first = firsts;
     }
     if refused > 0 {
         // `eval` or `with` can name any binding: nothing is a pure definition.
@@ -1583,6 +1721,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     // An assignment can run once its unit runs, if the unit is impure, or
     // once a binding the unit declares is reachable.
     let mut write_stamp = vec![NEVER; binding_count];
+    let mut declarer = vec![NEVER; binding_count];
     for (ordinal, unit) in units.iter().enumerate() {
         let enabled = match unit.kind {
             Kind::Impure(_) => ordinal as u32,
@@ -1593,13 +1732,22 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 .min()
                 .unwrap_or(NEVER),
         };
-        let own_declarations: &[Binding] = match unit.kind {
-            Kind::Impure(_) => &unit.declared,
-            _ => &[],
-        };
-        for binding in unit.assigns.iter().chain(own_declarations) {
+        for binding in &unit.assigns {
             let stamp = &mut write_stamp[*binding as usize];
             *stamp = (*stamp).min(enabled);
+        }
+        // An impure declaration writes its bindings when it runs, and only
+        // then. A binding with two of them is treated as assigned.
+        if matches!(unit.kind, Kind::Impure(_)) {
+            for binding in &unit.declared {
+                let declarer = &mut declarer[*binding as usize];
+                if *declarer == NEVER {
+                    *declarer = ordinal as u32;
+                } else {
+                    let stamp = &mut write_stamp[*binding as usize];
+                    *stamp = (*stamp).min(*declarer);
+                }
+            }
         }
     }
     // A premised call may read, and through a function it is given run,
@@ -1628,9 +1776,27 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         premised_reading_imports +=
             usize::from(unit.deep.iter().any(|binding| imports.contains(binding)));
     }
+    let declared_names = {
+        let mut names = vec![String::new(); binding_count];
+        for (id, binding) in &bindings {
+            names[*binding as usize] = id.0.to_string();
+        }
+        units
+            .iter()
+            .map(|unit| {
+                unit.declared
+                    .iter()
+                    .map(|binding| names[*binding as usize].clone())
+                    .collect()
+            })
+            .collect()
+    };
     Tier0 {
         premised_reading_imports,
         site_premise_uses,
+        derived,
+        lazy_first_uses,
+        lazy_later_uses,
         commuting: options
             .premises
             .commuting
@@ -1643,8 +1809,10 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         units,
         reach_stamp,
         write_stamp,
+        declarer,
         own_reach,
         bindings: binding_count,
+        declared_names,
         refused,
         top_level_awaits,
         exports_reachable,
@@ -1671,7 +1839,9 @@ impl Tier0 {
                 }
             }
         }
-        let written = |binding: &Binding| self.write_stamp[*binding as usize] <= at;
+        let written = |binding: &Binding| {
+            self.write_stamp[*binding as usize] <= at || self.declarer[*binding as usize] == at
+        };
         if unit
             .eager
             .iter()
@@ -1695,7 +1865,9 @@ impl Tier0 {
         if unit.targets.iter().chain(&unit.replaces).any(reached) || unit.deep_stamp <= at {
             return Some(Conflict::ObjectState);
         }
-        let written = |binding: &Binding| self.write_stamp[*binding as usize] <= at;
+        let written = |binding: &Binding| {
+            self.write_stamp[*binding as usize] <= at || self.declarer[*binding as usize] == at
+        };
         (unit
             .eager
             .iter()
@@ -1707,6 +1879,17 @@ impl Tier0 {
 
     fn confined_with_definition(&self, confined: usize, definition: usize) -> Option<Conflict> {
         let (statement, unit) = (&self.units[confined], &self.units[definition]);
+        // A lazy module's body may call what earlier impure statements
+        // leaked, the target among it.
+        if !unit.lazy_first.is_empty()
+            && statement
+                .targets
+                .iter()
+                .chain(&statement.replaces)
+                .any(|binding| self.reach_stamp[*binding as usize] <= definition as u32)
+        {
+            return Some(Conflict::ObjectState);
+        }
         let involved = |binding: &Binding| {
             statement.eager.contains(binding)
                 || statement.deep.contains(binding)
@@ -1774,10 +1957,16 @@ impl Tier0 {
         }
         // A contained statement is a definition that also runs a provider.
         let impure = |unit: &Unit| matches!(unit.kind, Kind::Impure(_));
+        let any = |unit: &Unit| unit.providers.contains(&ANY_PROVIDER);
         let shares_provider = first
             .providers
             .iter()
-            .any(|provider| second.providers.contains(provider));
+            .any(|provider| second.providers.contains(provider))
+            || (any(first) && !second.providers.is_empty())
+            || (any(second) && !first.providers.is_empty())
+            // A later use relies on the module having run.
+            || first.lazy_first.iter().any(|thunk| second.lazy_uses.contains(thunk))
+            || second.lazy_first.iter().any(|thunk| first.lazy_uses.contains(thunk));
         if (impure(first) && !second.providers.is_empty())
             || (impure(second) && !first.providers.is_empty())
             || shares_provider
@@ -1811,8 +2000,20 @@ impl Tier0 {
                     .declared
                     .iter()
                     .any(|binding| second.declared.contains(binding));
-                (reads(first, second) || reads(second, first) || redeclares)
-                    .then_some(Conflict::EagerRead)
+                if reads(first, second) || reads(second, first) || redeclares {
+                    return Some(Conflict::EagerRead);
+                }
+                // A lazy module's body may call what earlier impure
+                // statements leaked.
+                let leaked = |runner: usize, definition: &Unit| {
+                    !self.units[runner].lazy_first.is_empty()
+                        && matches!(definition.kind, Kind::Pure | Kind::Contained)
+                        && definition
+                            .declared
+                            .iter()
+                            .any(|binding| self.reach_stamp[*binding as usize] <= runner as u32)
+                };
+                (leaked(a, second) || leaked(b, first)).then_some(Conflict::ReachEscaped)
             }
         }
     }

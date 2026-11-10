@@ -38,6 +38,15 @@ pub enum PremiseKind {
     /// A decorator that may also read and write state private to its
     /// provider.
     ContainedDecorator,
+    /// `f(args)` returns a fresh result that retains its arguments, as a
+    /// callback factory does, and has no state of its own.
+    Allocator,
+    /// The binding holds a lazy module's thunk: `f()` runs the module body
+    /// the first time and returns the module's exports every time.
+    LazyModule,
+    /// `f(lazy())` returns a fresh namespace object over a lazy module's
+    /// exports and reads only that exports object.
+    InteropNamespace,
 }
 
 /// How the chunk names the callee.

@@ -101,6 +101,7 @@ fn tier0_refuses_every_divergent_swap() {
                 what_if_pure: Default::default(),
                 program: None,
                 premises: Default::default(),
+                derive: false,
             };
             let accepted = accepted(|name, source| {
                 let parsed = js_ast::parse_js_module(name, source).expect("the fixture parses");
@@ -129,6 +130,7 @@ fn last_is_pure(source: &str) -> bool {
         what_if_pure: Default::default(),
         program: None,
         premises: Default::default(),
+        derive: false,
     };
     let analysis = tier0::analyze(&parsed.module, unresolved, &options);
     analysis.units.last().expect("a statement").kind == tier0::Kind::Pure
@@ -296,6 +298,7 @@ fn tier0(source: &str, exports_reachable: bool) -> tier0::Tier0 {
         what_if_pure: Default::default(),
         program: None,
         premises: Default::default(),
+        derive: false,
     };
     tier0::analyze(&parsed.module, unresolved, &options)
 }
@@ -414,6 +417,7 @@ fn tier0_premises_are_trusted_and_bounded() {
                     what_if_pure: Default::default(),
                     program: None,
                     premises: serde_json::from_str(premises).expect("the premises parse"),
+                    derive: false,
                 };
                 let analysis = tier0::analyze(&parsed.module, unresolved, &options);
                 let units = analysis.units.len();
@@ -426,6 +430,124 @@ fn tier0_premises_are_trusted_and_bounded() {
                 head.starts_with("commutes"),
                 "{head}"
             );
+        }
+    });
+}
+
+/// Programs importing `./dep.js`, the first block, in the layout of the
+/// premise fixtures; the second line of each is unused.
+const DERIVE_FIXTURES: &str = include_str!("derive_fixtures.txt");
+
+/// Derivation from bodies decides exactly the fixtures marked `commutes`.
+#[test]
+fn tier0_derivation_matches_node() {
+    let directory = std::env::temp_dir().join(format!("summary_effects_{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a scratch directory");
+    let mut blocks = DERIVE_FIXTURES.split("### ").skip(1);
+    let (_, dep) = blocks
+        .next()
+        .and_then(|block| block.split_once('\n'))
+        .expect("a dep block");
+    std::fs::write(directory.join("dep.js"), dep).expect("writing the provider");
+    let chunk = directory.join("main.js");
+    js_ast::with_swc_globals(|| {
+        for block in blocks {
+            let (head, rest) = block.split_once('\n').expect("a head line");
+            let (_, source) = rest.split_once('\n').expect("an unused line");
+            std::fs::write(&chunk, source).expect("writing the chunk");
+            let conflict = |derive: bool| {
+                let parsed = js_ast::parse_js_module("fixture", source).expect("it parses");
+                let unresolved =
+                    swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+                let options = tier0::Options {
+                    exports_reachable: false,
+                    upgrades: ALL_UPGRADES.into_iter().collect(),
+                    what_if_pure: Default::default(),
+                    program: Some(
+                        summary_effects::program::load(&directory, &chunk, None)
+                            .expect("the program loads"),
+                    ),
+                    premises: Default::default(),
+                    derive,
+                };
+                let analysis = tier0::analyze(&parsed.module, unresolved, &options);
+                let units = analysis.units.len();
+                analysis.conflict(units - 3, units - 2)
+            };
+            assert!(
+                conflict(false).is_some(),
+                "{head}: refused without derivation"
+            );
+            assert_eq!(
+                conflict(true).is_none(),
+                head.starts_with("commutes"),
+                "{head}"
+            );
+        }
+    });
+    std::fs::remove_dir_all(&directory).expect("removing the scratch directory");
+}
+
+/// Whether derivation alone makes the last statement of `source` a pure
+/// definition.
+fn last_is_derived_pure(source: &str) -> bool {
+    let parsed = js_ast::parse_js_module("classification", source).expect("the source parses");
+    let unresolved = swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+    let options = tier0::Options {
+        exports_reachable: false,
+        upgrades: ALL_UPGRADES.into_iter().collect(),
+        what_if_pure: Default::default(),
+        program: None,
+        premises: Default::default(),
+        derive: true,
+    };
+    let analysis = tier0::analyze(&parsed.module, unresolved, &options);
+    analysis.units.last().expect("a statement").kind == tier0::Kind::Pure
+}
+
+#[test]
+fn tier0_allocators_stop_at_their_near_misses() {
+    js_ast::with_swc_globals(|| {
+        for allocator in [
+            "function make(a) { return { a }; } const x = make(1);",
+            "const wrap = (f) => ({ f, list: [f] }); const x = wrap(() => 1);",
+            "function ctx(v) { return v = { current: v }, v.self = v, v; } const x = ctx(1);",
+            "function pair(a, b) { var o = { a }; o.b = b; return o; } const x = pair(1, 2);",
+            "function outer(a) { return inner(a); } function inner(a) { return [a]; } const x = outer(1);",
+            "const k = Symbol.for('t'); function tagged(a) { return { k, a }; } const x = tagged(1);",
+            "function opt(a, b) { return { a, b: b === void 0 ? null : b }; } const x = opt(1);",
+            "const later = (f) => () => f; const x = later(1);",
+        ] {
+            assert!(last_is_derived_pure(allocator), "{allocator}");
+        }
+        for other in [
+            // Reads, calls or writes what it is given.
+            "function f(o) { return { v: o.v }; } const x = f({});",
+            "function f(g) { return { v: g() }; } const x = f(() => 1);",
+            "function f(o) { o.v = 1; return o; } const x = f({});",
+            "function f(a) { return { ...a }; } const x = f({});",
+            "function f(a) { return { [a]: 1 }; } const x = f('k');",
+            "function f(a) { return a + 1; } const x = f(1);",
+            "function f(a) { return `${a}`; } const x = f(1);",
+            "function f(a = {}) { return { a }; } const x = f();",
+            "function f({ a }) { return { a }; } const x = f({});",
+            // Touches state outside itself.
+            "let n = 0; function f() { return { n }; } n = 1; const x = f();",
+            "const seen = []; function f(a) { seen.push(a); return {}; } const x = f(1);",
+            "const box = {}; function f(a) { box.a = a; return {}; } const x = f(1);",
+            "let last; function f(a) { last = a; return {}; } const x = f(1);",
+            "function f(a) { return new Thing(a); } const x = f(1);",
+            "function f(a) { return other(a); } function other(a) { return a.x; } const x = f({});",
+            // Not one plain synchronous body.
+            "async function f(a) { return { a }; } const x = f(1);",
+            "function* f(a) { return { a }; } const x = f(1);",
+            "function f(a) { if (a) return {}; return []; } const x = f(1);",
+            "function f(a) { return { get a() { return a; } }; } const x = f(1);",
+            // The binding may hold another function.
+            "function f(a) { return { a }; } f = (a) => a.x; const x = f(1);",
+            "var f = (a) => ({ a }); var f = (a) => a.x; const x = f(1);",
+        ] {
+            assert!(!last_is_derived_pure(other), "{other}");
         }
     });
 }

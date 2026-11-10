@@ -636,6 +636,9 @@ pub struct Tier0Report {
     pub premise_uses: BTreeMap<crate::premises::PremiseKind, usize>,
     pub premised_reading_imports: usize,
     pub site_premise_uses: usize,
+    pub derived: tier0::DerivedCounts,
+    pub lazy_first_uses: usize,
+    pub lazy_later_uses: usize,
     pub impure_causes: BTreeMap<ImpureCause, usize>,
     /// Pure definitions that depend on an intrinsic family being unmodified.
     pub intrinsic_families_used: BTreeMap<&'static str, usize>,
@@ -665,6 +668,9 @@ pub struct Tier0Report {
     pub current: Option<Tier0Comparison>,
     pub examples: Vec<Tier0Pair>,
     pub impure_examples: BTreeMap<ImpureCause, Vec<String>>,
+    /// With `--examples`: per declared name, the ordinal of its source unit,
+    /// for writing premises.
+    pub declaring_units: BTreeMap<String, Vec<usize>>,
     /// With `--examples`: every impure statement's ordinal, cause and start.
     pub impure_statements: Vec<(usize, ImpureCause, String)>,
 }
@@ -872,6 +878,9 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         premise_uses: analysis.premise_uses.clone(),
         premised_reading_imports: analysis.premised_reading_imports,
         site_premise_uses: analysis.site_premise_uses,
+        derived: analysis.derived.clone(),
+        lazy_first_uses: analysis.lazy_first_uses,
+        lazy_later_uses: analysis.lazy_later_uses,
         impure_causes,
         intrinsic_families_used: analysis.families_used.clone(),
         globals_written: analysis.census.written.len(),
@@ -919,6 +928,17 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         current,
         examples,
         impure_examples,
+        declaring_units: {
+            let mut units: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+            if with_examples {
+                for (ordinal, names) in analysis.declared_names.iter().enumerate() {
+                    for name in names {
+                        units.entry(name.clone()).or_default().push(ordinal);
+                    }
+                }
+            }
+            units
+        },
         impure_statements,
     })
 }

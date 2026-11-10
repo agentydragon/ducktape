@@ -23,7 +23,7 @@ Swapped pairs left unproven:
 | ------------------------ | ------: | ----------: | ---------------------: | ----------: | ------: |
 | Committed spec, `editor` |   3,589 |           0 |                    710 |         571 |       0 |
 | Committed spec, `main`   |   3,029 |           0 |                  1,556 |   no result |       0 |
-| Stress, `editor`         | 423,683 |           0 |                140,477 |     not run |   2,383 |
+| Stress, `editor`         | 423,683 |           0 |                140,477 |     not run |   2,124 |
 | Stress, `main`           | 169,613 |           0 |                 71,392 |     not run |     784 |
 
 The stress assignment is one module per atomic group (`per_atomic_group` for
@@ -57,15 +57,14 @@ modules.
 | Measure                                                     |        `main` |        `editor` |
 | ----------------------------------------------------------- | ------------: | --------------: |
 | Statements: impure / pure / hoisted / inert                 | 714/720/186/8 | 337/1,327/117/6 |
-| Unproven pairs                                              |           784 |           2,383 |
+| Unproven pairs                                              |           784 |           2,124 |
 | … both statements impure                                    |           276 |           1,672 |
 | … definition reachable from the impure statement's own code |            55 |              16 |
 | … reachable only through earlier leaks                      |           453 |             436 |
-| … assignment to, or eager read of, a written binding        |             0 |             259 |
-| Statements in an unproven pair                              |           392 |             420 |
-| Modules in an unproven pair, of all                         |   170 / 1,301 |     111 / 1,271 |
-| Groups of modules to co-locate (largest)                    |       2 (167) |         1 (111) |
-| Modules no unproven pair touches                            |         1,131 |           1,160 |
+| Statements in an unproven pair                              |           392 |             390 |
+| Modules in an unproven pair, of all                         |   170 / 1,301 |     108 / 1,271 |
+| Groups of modules to co-locate (largest)                    |       2 (167) |         1 (108) |
+| Modules no unproven pair touches                            |         1,131 |           1,163 |
 
 The current effect verdict puts 994 (`main`) and 1,065 (`editor`) modules in
 one component.
@@ -87,8 +86,6 @@ agree here to within one module.
   calls of local functions. Candidates for a bounded upgrade: constant-number
   bindings, native constructors with literal arguments, local callees proven
   to only allocate.
-- All but 9 `tier0`-unproven `editor` pairs are also unproven by the current
-  effect verdict; all `main` ones are.
 - `--exports-reachable` (another chunk in an import cycle may call this
   chunk's exports during its initialization) leaves `main` unchanged and
   raises `editor` to 127,669 unproven pairs in one 1,046-module component.
@@ -102,11 +99,11 @@ for the near-misses that must stay impure. Stress assignment, cumulative:
 
 | Upgrade                                               | `main` unproven | `main` modules (largest) | `editor` unproven | `editor` modules (largest) |
 | ----------------------------------------------------- | --------------: | -----------------------: | ----------------: | -------------------------: |
-| none                                                  |             784 |                170 (167) |             2,383 |                  111 (111) |
-| operators over primitive-only bindings                |             521 |                170 (167) |             2,107 |                    50 (44) |
-| + intrinsic allocators (`new Map()`, typed arrays, …) |             515 |                167 (167) |             2,076 |                    50 (44) |
-| + `class X extends <intrinsic>`                       |             515 |                167 (167) |             1,153 |                    46 (40) |
-| + intrinsic member reads                              |             515 |                167 (167) |             1,153 |                    46 (40) |
+| none                                                  |             784 |                170 (167) |             2,124 |                  108 (108) |
+| operators over primitive-only bindings                |             521 |                170 (167) |             1,848 |                    47 (43) |
+| + intrinsic allocators (`new Map()`, typed arrays, …) |             515 |                167 (167) |             1,821 |                    47 (43) |
+| + `class X extends <intrinsic>`                       |             515 |                167 (167) |               902 |                    43 (39) |
+| + intrinsic member reads                              |             515 |                167 (167) |               902 |                    43 (39) |
 
 The committed spec stays at 0 unproven pairs throughout.
 
@@ -143,26 +140,26 @@ counts statements impure for a cause as pure), with the first two upgrades:
 
 | Counted as pure                    | `main` unproven / modules | `editor` unproven / modules |
 | ---------------------------------- | ------------------------: | --------------------------: |
-| nothing                            |                 515 / 167 |                  2,076 / 50 |
-| calls of imported functions        |                  268 / 94 |                  2,036 / 47 |
-| calls of members                   |                 420 / 119 |                  1,704 / 47 |
-| calls of local functions           |                 497 / 167 |                    650 / 50 |
-| all three                          |                  123 / 35 |                    383 / 44 |
-| all three and `X.p = …` statements |                   18 / 10 |                    371 / 44 |
+| nothing                            |                 515 / 167 |                  1,821 / 47 |
+| calls of imported functions        |                  268 / 94 |                  1,792 / 44 |
+| calls of members                   |                 420 / 119 |                  1,650 / 45 |
+| calls of local functions           |                 497 / 167 |                    559 / 47 |
+| all three                          |                  123 / 35 |                    343 / 42 |
+| all three and `X.p = …` statements |                   18 / 10 |                    331 / 42 |
 
 ### Preconditions
 
 The report's `preconditions` block says, for the input at hand, whether each
 assumption holds and what the analysis fell back to.
 
-| Precondition                                                     | Check                                                                                                               | Fallback                                   |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| No `eval` or `with`                                              | syntax                                                                                                              | every statement is impure                  |
-| No top-level `await`                                             | syntax                                                                                                              | the statement is impure; exports reachable |
-| Not on an import cycle                                           | `--program-chunks <dir>`: static cycle, or a dynamic `import()` in the chunk's static dependencies that may load it | exports reachable (`--exports-reachable`)  |
-| Intrinsics unmodified by program code                            | the census, over the chunk or over `--program-chunks`                                                               | the intrinsic use is impure                |
-| Escaped intrinsics are modified only through `.prototype` stores | none: a stated premise for `intrinsic_families_escaped`                                                             |                                            |
-| Intrinsics unmodified by unknown code                            | none: a stated premise for `intrinsic_families_used`                                                                |                                            |
+| Precondition                                                     | Check                                                                                                                                                                                  | Fallback                                   |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| No `eval` or `with`                                              | syntax                                                                                                                                                                                 | every statement is impure                  |
+| No top-level `await`                                             | syntax                                                                                                                                                                                 | the statement is impure; exports reachable |
+| Not on an import cycle                                           | `--program-chunks <dir>` (with `--program-file-list` where chunks are stored under aliases): static cycle, or a dynamic `import()` in the chunk's static dependencies that may load it | exports reachable (`--exports-reachable`)  |
+| Intrinsics unmodified by program code                            | the census, over the chunk or over `--program-chunks`                                                                                                                                  | the intrinsic use is impure                |
+| Escaped intrinsics are modified only through `.prototype` stores | none: a stated premise for `intrinsic_families_escaped`                                                                                                                                |                                            |
+| Intrinsics unmodified by unknown code                            | none: a stated premise for `intrinsic_families_used`                                                                                                                                   |                                            |
 
 `import.meta.require("<literal>")` counts as a static import wherever it is
 written: it evaluates the required chunk before it returns, so a chunk that
@@ -179,7 +176,7 @@ or top-level `await`; neither `main` nor `editor` is on an import cycle, so
 refuses 2 of `editor`'s 38 intrinsic uses (the `toString` reads above) and
 none of `main`'s 17; the unproven pairs and modules are those of the last
 upgrade row. Before the census followed aliases it refused all of them, and
-`editor` fell back to 2,107 unproven pairs.
+`editor` fell back to the primitive-bindings row.
 
 The fixture `tier0_export_cycle_needs_the_precondition` shows the pair the
 cycle precondition decides.
@@ -301,6 +298,87 @@ callback, a `decorator` that writes a shared registry, a `decorator` that
 reads outside state) and tier 0 accepts a swap Node observes. Without
 premises tier 0 refuses all 37.
 
+### Derived contracts
+
+`--derive` reads callee bodies instead of taking premises; with
+`--program-chunks` it follows imports into the providing chunk
+(`x/summary_effects/derive.rs`). Three derivations, all syntactic:
+
+- **Allocator.** A function whose body only builds a fresh value from its
+  parameters: literals, closures, parameters and never-reassigned top-level
+  bindings as values, `p === void 0 ? … : …`, stores into objects the body
+  itself allocated, calls of other allocators. It reads no property of a
+  parameter, calls no parameter, and cannot throw. A call with
+  pure-definition arguments is a pure definition that retains its arguments
+  and eagerly reads the top-level bindings the body uses.
+- **Bundler helpers, by shape.** The lazy CommonJS wrapper and the interop
+  namespace helper are recognized by comparing their bodies, up to renaming
+  and aliases of `Object.*`, with canonical sources. A helper written
+  differently is not recognized; the premise kinds `lazy_module`,
+  `interop_namespace` and `allocator` state the same contracts by hand.
+- **Members of a lazy module.** `ns.member` and `ns.default.member`, where
+  `ns` is a lazy module's exports directly or through the interop helper, are
+  resolved to the single top-level `exports.member = …` of the module body
+  (following `module.exports = other()`), and classified as allocators.
+
+A lazy module's thunk runs the module body the first time it is called. The
+first definition in source order that calls a thunk is _contained_ in every
+provider (the body is arbitrary code of another chunk) and conflicts with any
+definition an earlier impure statement leaked, since the body may call what
+was leaked. If the body is in this chunk the statement stays impure. Every
+later definition that calls the same thunk is a pure definition that stays
+after the first one and, because it reads the provider's exports object,
+ordered against every impure statement.
+
+Not derived, by decision: functions that read properties of a parameter (the
+JSX factory, which would need a rule for fresh literal arguments), and
+anything with a loop, a branch or a call outside the allocator set. Not
+checked: that a lazy module's exports are assigned only by the top-level
+statements of its body.
+
+`derive_fixtures.txt` holds 14 two-chunk programs run under Node in both
+orders (5 admitted with Node agreeing, 9 refused with Node showing the
+divergence), and `tier0_allocators_stop_at_their_near_misses` holds 8 bodies
+that are allocators and 21 that are not.
+
+Excalidraw, all upgrades, program-wide census. The hand-written premise files
+are 2 callees for `main` (the action-registering factory and a local atom
+factory, both `callback_factory`) and 3 for `editor` (the icon wrapper and the
+two JSX factories, `pure_call`); they are premises written by reading the
+callees, not derived.
+
+| Stress assignment       | `main` unproven | `main` modules, authored (largest) | `editor` unproven | `editor` modules, authored (largest) |
+| ----------------------- | --------------: | ---------------------------------: | ----------------: | -----------------------------------: |
+| upgrades only           |             515 |                          166 (166) |               902 |                              42 (38) |
+| + derivation            |             443 |                          131 (131) |               824 |                              40 (36) |
+| + hand-written premises |             258 |                            51 (51) |               724 |                              40 (36) |
+
+| Statements impure for a call of | `main`: upgrades → derived → with premises | `editor`       |
+| ------------------------------- | ------------------------------------------ | -------------- |
+| an imported function            | 434 → 93 → 4                               | 26 → 4 → 4     |
+| a member                        | 82 → 14 → 14                               | 32 → 15 → 13   |
+| a local function                | 31 → 34 → 19                               | 172 → 179 → 52 |
+
+- Derivation alone resolves all 325 `interop(lazy())` statements of `main`
+  (8 first uses, 317 later ones), its 12 wrapper calls, and 68 member calls
+  (`forwardRef`, `memo`, `createContext`, …); in `editor`, 14 wrapper calls
+  and 17 `memo` calls. The 8 first uses of `editor`'s lazy modules are of
+  local bodies and stay impure, now counted as local calls.
+- None of `editor`'s 160 icon statements (a local wrapper around a JSX call)
+  is derived: the wrapper calls a class-name helper and the JSX factory reads
+  its argument. With the three premises 127 of them become pure definitions;
+  the rest have an argument that is not a pure definition.
+- `editor` keeps 404 `object_state` pairs with premises: 101 icon statements
+  pass one shared attributes object, and four impure statements come after
+  an impure statement that can reach it.
+- The committed spec stays at 0 unproven pairs in every row.
+- `main`'s 317 later uses stay ordered against every impure statement
+  (`premised_reading_imports` 320).
+
+An impure declaration is now charged with writing its bindings only when it
+runs, not whenever a later impure statement runs; that alone took `editor`'s
+upgrade row from 1,153 to 902.
+
 ### Shapes from a large private consumer corpus
 
 `tier0_synthetic_shape_families` fixes the verdicts for three generic shapes.
@@ -420,7 +498,7 @@ summary_effects_bin --mode tier0 \
 ```
 
 Only `--chunk` is required; `--effect-report` supplies the emitted order.
-`--upgrade` takes any of `primitive-bindings`, `native-allocators`,
+`--derive` enables § Derived contracts. `--upgrade` takes any of `primitive-bindings`, `native-allocators`,
 `intrinsic-heritage`, `intrinsic-member-reads`; `--program-chunks <dir>` reads
 every chunk of the program for the cycle check and the census; `--premises
 <json>` is described under § Premises.

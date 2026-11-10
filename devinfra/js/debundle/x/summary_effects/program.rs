@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -21,6 +21,20 @@ pub struct ProgramFacts {
     pub on_import_cycle: bool,
     /// What any chunk of the program writes on globals.
     pub census: Census,
+    /// Every chunk, parsed, by the path imports resolve to.
+    pub modules: Vec<(PathBuf, js_ast::ParsedJsModule)>,
+    /// The analysed chunk's path among them.
+    pub chunk: PathBuf,
+    /// Imported file name to the name the chunk is stored under.
+    aliases: FxHashMap<PathBuf, PathBuf>,
+}
+
+impl ProgramFacts {
+    /// The index in `modules` of the chunk `specifier` names in `from`.
+    pub fn resolve(&self, from: &Path, specifier: &str) -> Option<usize> {
+        let target = resolve(from, specifier, &self.aliases)?;
+        self.modules.iter().position(|(path, _)| *path == target)
+    }
 }
 
 #[derive(Default)]
@@ -78,7 +92,7 @@ impl Visit for Imports {
 
 /// `from`'s directory joined with a relative specifier, without touching the
 /// file system; `None` for a bare (package) specifier.
-fn resolve(from: &Path, specifier: &str) -> Option<PathBuf> {
+fn resolve(from: &Path, specifier: &str, aliases: &FxHashMap<PathBuf, PathBuf>) -> Option<PathBuf> {
     if !specifier.starts_with('.') && !specifier.starts_with('/') {
         return None;
     }
@@ -92,6 +106,9 @@ fn resolve(from: &Path, specifier: &str) -> Option<PathBuf> {
             }
             other => out.push(other),
         }
+    }
+    if let Some(alias) = aliases.get(&out) {
+        return Some(alias.clone());
     }
     Some(out)
 }
@@ -109,10 +126,26 @@ fn files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 /// Reads every `.js` file under `root` and relates them to `chunk`.
-pub fn load(root: &Path, chunk: &Path) -> Result<ProgramFacts> {
+/// `file_list` is the pipeline's `js-files.txt`: its `alias<TAB>original`
+/// lines name chunks stored under `alias` that imports name `original`.
+pub fn load(root: &Path, chunk: &Path, file_list: Option<&Path>) -> Result<ProgramFacts> {
     let mut paths = Vec::new();
     files(root, &mut paths)?;
     paths.sort();
+    let canonical_root = root
+        .canonicalize()
+        .with_context(|| format!("resolving {}", root.display()))?;
+    let mut aliases = FxHashMap::default();
+    if let Some(list) = file_list {
+        let text =
+            std::fs::read_to_string(list).with_context(|| format!("reading {}", list.display()))?;
+        for line in text.lines() {
+            if let Some((alias, original)) = line.split_once('\t') {
+                aliases.insert(canonical_root.join(original), canonical_root.join(alias));
+            }
+        }
+    }
+    let mut modules = Vec::new();
     let chunk = chunk
         .canonicalize()
         .with_context(|| format!("resolving {}", chunk.display()))?;
@@ -128,7 +161,8 @@ pub fn load(root: &Path, chunk: &Path) -> Result<ProgramFacts> {
         parsed.module.visit_with(&mut imports);
         let aliases = prepass(&parsed.module, unresolved).object_aliases;
         merged.merge(census(&parsed.module, unresolved, &aliases));
-        graph.insert(path, imports);
+        graph.insert(path.clone(), imports);
+        modules.push((path, parsed));
     }
     anyhow::ensure!(
         graph.contains_key(&chunk),
@@ -144,7 +178,7 @@ pub fn load(root: &Path, chunk: &Path) -> Result<ProgramFacts> {
                 continue;
             };
             for specifier in &imports.statics {
-                if let Some(target) = resolve(&path, specifier)
+                if let Some(target) = resolve(&path, specifier, &aliases)
                     && seen.insert(target.clone())
                 {
                     pending.push(target);
@@ -162,7 +196,7 @@ pub fn load(root: &Path, chunk: &Path) -> Result<ProgramFacts> {
             imports.dynamics.iter().any(|specifier| {
                 match specifier
                     .as_deref()
-                    .and_then(|specifier| resolve(dependency, specifier))
+                    .and_then(|specifier| resolve(dependency, specifier, &aliases))
                 {
                     Some(target) => target == chunk || static_closure(&target).contains(&chunk),
                     None => true,
@@ -181,5 +215,8 @@ pub fn load(root: &Path, chunk: &Path) -> Result<ProgramFacts> {
         chunks: graph.len(),
         on_import_cycle: static_cycle || dynamic_cycle || unknown_require,
         census: merged,
+        modules,
+        chunk,
+        aliases,
     })
 }

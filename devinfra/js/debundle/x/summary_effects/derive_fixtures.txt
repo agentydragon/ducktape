@@ -1,0 +1,99 @@
+### dep
+var __create = Object.create; var __defProp = Object.defineProperty; var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames; var __getProtoOf = Object.getPrototypeOf; var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __copyProps = (to, from, except, desc) => { if (from && typeof from == "object" || typeof from == "function") for (let key of __getOwnPropNames(from)) !__hasOwnProp.call(to, key) && key !== except && __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable }); return to; };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target, mod));
+export var log = [];
+var require_lib = __commonJS((exports) => { log.push('lib'); var tag = Symbol.for('t'); exports.wrap = function (render) { return { tag, render }; }; exports.read = function (o) { return o.v; }; });
+var require_other = __commonJS((exports, module) => { log.push('other'); module.exports = { name: 'other' }; });
+export function make(a, b) { return { a, b: [b] }; }
+export function context(value) { return value = { current: value }, value.self = value, value; }
+export function reads(o) { return { v: o.v }; }
+export function calls(f) { return { v: f() }; }
+export function extend() { require_lib().extra = 1; }
+export { __commonJS, __toESM, require_lib, require_other };
+### commutes same: allocator across an impure statement
+-
+import { make } from './dep.js'; let state = 0;
+state = 1;
+const a = make(1, 2);
+console.log(state + a.a);
+### commutes same: allocator that stores into its own object
+-
+import { context } from './dep.js'; let state = 0;
+state = 1;
+const a = context(2);
+console.log(state + a.self.current);
+### commutes same: allocator retains a callback that reads a later definition
+-
+import { make } from './dep.js';
+const a = make(() => later, 0);
+var later = 1;
+console.log(a.a());
+### ordered differs: a function that reads its argument is no allocator
+-
+import { reads } from './dep.js'; const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const a = reads(o);
+console.log(a.v);
+### ordered differs: a function that calls its argument is no allocator
+-
+import { calls } from './dep.js';
+const a = calls(() => later);
+var later = 1;
+console.log(a.v);
+### commutes same: two later uses of a lazy module
+-
+import { __toESM, require_lib } from './dep.js'; const first = __toESM(require_lib());
+const a = __toESM(require_lib());
+const b = __toESM(require_lib());
+console.log(a.wrap === b.wrap);
+### ordered differs: first uses of two lazy modules
+-
+import { __toESM, require_lib, require_other, log } from './dep.js';
+const a = __toESM(require_lib());
+const b = __toESM(require_other());
+console.log(log.join());
+### ordered differs: an impure statement changes a lazy module's exports
+-
+import { __toESM, require_lib, extend } from './dep.js'; const first = require_lib();
+extend();
+const b = __toESM(require_lib());
+console.log('extra' in b);
+### ordered differs: an impure statement observes a lazy module's first use
+-
+import { require_lib, log } from './dep.js'; let seen;
+const a = require_lib();
+seen = log.length;
+console.log(seen);
+### commutes same: an allocator member of a lazy module across an impure statement
+-
+import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib()); let state = 0;
+state = 1;
+const c = ns.wrap(() => 1);
+console.log(state + c.render());
+### ordered differs: a member that reads its argument is no allocator
+-
+import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib()); const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const c = ns.read(o);
+console.log(c);
+### ordered differs: the first use of a local lazy module runs this chunk's code
+-
+import { __commonJS } from './dep.js'; let state = 0; const local = __commonJS((exports) => { state = 1; exports.x = 1; });
+const a = local();
+const seen = state;
+console.log(seen);
+### ordered differs: an allocator reads a constant defined later
+-
+function tagged(a) { return { k, a }; }
+const x = tagged(1);
+const k = 2;
+console.log(x.k);
+### ordered differs: an allocator calls one that reads a constant defined later
+-
+function tagged(a) { return { k, a }; } function outer(a) { return [tagged(a)]; }
+const x = outer(1);
+const k = 2;
+console.log(x[0].k);

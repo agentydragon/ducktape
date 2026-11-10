@@ -2,6 +2,7 @@
 //! for one chunk, and the swapped-pair check over its effect sets.
 
 mod bits;
+pub mod derive;
 pub mod effects;
 pub mod generate;
 mod helpers;

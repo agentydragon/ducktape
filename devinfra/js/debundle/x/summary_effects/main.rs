@@ -47,6 +47,14 @@ struct Cli {
     /// any chunk writes on globals.
     #[arg(long)]
     program_chunks: Option<PathBuf>,
+    /// The pipeline's `js-files.txt` for `--program-chunks`: its
+    /// `alias<TAB>original` lines map imported file names to stored ones.
+    #[arg(long, requires = "program_chunks")]
+    program_file_list: Option<PathBuf>,
+    /// Tier 0: derive callee contracts from their bodies, across chunks with
+    /// `--program-chunks`.
+    #[arg(long)]
+    derive: bool,
     /// Tier 0: bounded widenings of "pure definition" to enable.
     #[arg(long, value_enum, value_delimiter = ',')]
     upgrade: Vec<tier0::Upgrade>,
@@ -127,6 +135,7 @@ fn main() -> Result<()> {
     let (exports_reachable, upgrades, what_if_pure) =
         (cli.exports_reachable, cli.upgrade, cli.what_if_pure);
     let (program_chunks, chunk_path) = (cli.program_chunks, cli.chunk.clone());
+    let (program_file_list, derive) = (cli.program_file_list, cli.derive);
     // Minified chunks nest expressions deeper than the default stack.
     let rendered = std::thread::Builder::new()
         .stack_size(STACK_BYTES)
@@ -146,7 +155,13 @@ fn main() -> Result<()> {
                     Mode::Tier0 => {
                         let program = program_chunks
                             .as_deref()
-                            .map(|root| summary_effects::program::load(root, &chunk_path))
+                            .map(|root| {
+                                summary_effects::program::load(
+                                    root,
+                                    &chunk_path,
+                                    program_file_list.as_deref(),
+                                )
+                            })
                             .transpose()?;
                         let options = tier0::Options {
                             exports_reachable,
@@ -154,6 +169,7 @@ fn main() -> Result<()> {
                             what_if_pure: what_if_pure.into_iter().collect(),
                             program,
                             premises,
+                            derive,
                         };
                         serde_json::to_string_pretty(&tier0_report(inputs, &options)?)?
                     }
