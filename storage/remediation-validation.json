@@ -32,5 +32,43 @@
     "result": "Fullness and index suites passed."
   },
   "visual_review": "Inspected the HDD chart on desktop and mobile in light and dark themes, the volume table, and the root index.",
-  "prior_validation": "https://github.com/agentydragon/ducktape/blob/08f402b6401bfe33996d8f917d2a627a2eeda740/storage/remediation-validation.json"
+  "prior_validation": "https://github.com/agentydragon/ducktape/blob/08f402b6401bfe33996d8f917d2a627a2eeda740/storage/remediation-validation.json",
+  "followup_layout_candidate": {
+    "prepared_at_utc": "2026-11-10T22:57:13Z",
+    "scope": "Five existing follow-up findings integrated with Langfuse, ClickHouse, and Zot report analysis; no new measurements or evidence JSON changes.",
+    "files_sha256": {
+      "README.md": "3ba84842f2ab06debae6b25394373ba2448bab446971f0dd8355211dde24fc0b",
+      "index.html": "15943173f1e9aedfad28b5d72b83e3e1366338e215d8d4f35d4dcb1e3a3f0762",
+      "storage/index.html": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
+      "storage/remediation.js": "7fb7059b7532d59314c1bd7c44d00a2827e5c7d7282468101e0526471f64ae0d",
+      "storage/remediation-evidence.json": "da27beecae239e447ab5f4442d7cb6ef5c16502e87a945a2f5b7af73bafe1f33",
+      "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+    },
+    "browser_test": {
+      "target": "//x/storage_followups_layout_preview:layout_test",
+      "execution": "RBE with real jsDelivr and esm.sh resources; exact report files copied from this branch.",
+      "cases": [
+        "1280x900 light",
+        "1280x900 dark",
+        "390x844 light",
+        "390x844 dark"
+      ],
+      "checks": [
+        "Seaweed fullness section retained: nine HDD chart bars and six volume rows",
+        "Q&A card section removed; evidence placed beside the Langfuse analysis, ClickHouse resize plan, and Zot intervention",
+        "All five answers and detail statements rendered and all source URLs linked",
+        "Pinned Mantine CSS and React/Mantine modules return HTTP 200 from the real CDN",
+        "Responsive page width and live system color-scheme changes"
+      ],
+      "captures": [
+        "Langfuse analysis",
+        "ClickHouse volume plan",
+        "Zot intervention",
+        "Seaweed compression context"
+      ],
+      "result": "Pending; no pass or screenshot review claimed yet."
+    }
+  }
 }

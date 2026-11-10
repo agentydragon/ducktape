@@ -52,6 +52,152 @@ function Figure({ title, caption, children, slug }) {
   <//>`;
 }
 
+function followup(data, id) {
+  const item = data.followup_questions.questions.find(
+    (entry) => entry.id === id,
+  );
+  if (!item) throw new Error("Missing follow-up evidence: " + id);
+  return item;
+}
+
+function EvidenceLinks({ sources }) {
+  return html`<${Group} gap="md" wrap="wrap">
+    ${sources.map((source) => html`<${Anchor} size="sm" href=${source.url} key=${source.url}>${source.label}<//>`)}
+  <//>`;
+}
+
+function EvidenceDetails({ item }) {
+  return html`<${Stack} gap="sm">
+    <${Text} fw=${600}>${item.answer}<//>
+    ${item.details.map((detail, index) => html`<${Text} size="sm" key=${index}>${detail}<//>`)}
+    <${EvidenceLinks} sources=${item.sources} />
+  <//>`;
+}
+
+function ZotInterventionEvidence({ data, optionId }) {
+  if (optionId !== "single_zot") return null;
+  const usage = followup(data, "zot-usage");
+  const retention = followup(data, "zot-retention");
+  return html`<${Stack} gap="sm" data-zot-context>
+    <${Text} size="sm">
+      On November 10, Zot served 1,782 successful manifest GETs and about 105.7
+      GB in successful blob response bodies over 24 hours. That confirms active
+      use; response bytes include upstream misses and repeat transfers, so they
+      are not measured savings. Current metrics also do not provide an all-pulls
+      denominator for a cache-hit rate.
+    <//>
+    <${Accordion} variant="separated">
+      <${Accordion.Item} value="demand">
+        <${Accordion.Control}>Demand measurements and coverage limits<//>
+        <${Accordion.Panel}>
+          <${EvidenceDetails} item=${usage} />
+        <//>
+      <//>
+      <${Accordion.Item} value="retention">
+        <${Accordion.Control}
+          >Configured retention and observed garbage collection<//
+        >
+        <${Accordion.Panel}>
+          <${EvidenceDetails} item=${retention} />
+        <//>
+      <//>
+    <//>
+  <//>`;
+}
+
+function ClickHouseResizeEvidence({ data }) {
+  const resize = followup(data, "clickhouse-resize");
+  const steps = [
+    {
+      stage: "Baseline",
+      replicas: "2",
+      action: "Existing copies on 103656 and 102453",
+    },
+    {
+      stage: "Add temporary copy",
+      replicas: "3",
+      action: "Create a new PVC on 103711",
+    },
+    {
+      stage: "Retire old 103656 copy",
+      replicas: "2",
+      action: "Remove it after the temporary copy catches up",
+    },
+    {
+      stage: "Add 103656 replacement",
+      replicas: "3",
+      action: "Create the 300-GiB replacement PVC",
+    },
+    {
+      stage: "Retire old 102453 copy",
+      replicas: "2",
+      action: "Remove it after the new copy catches up",
+    },
+    {
+      stage: "Add 102453 replacement",
+      replicas: "3",
+      action: "Create the 300-GiB replacement PVC",
+    },
+    {
+      stage: "Retire temporary copy",
+      replicas: "2",
+      action: "Remove the temporary PVC on 103711",
+    },
+  ];
+  return html`<${Stack} component="section" id="clickhouse-resize" gap="sm">
+    <${Title} order=${3}>Replacing the ClickHouse volumes<//>
+    <${Text} c="dimmed" size="sm">
+      ${"Read-only resize follow-ups observed " + data.followup_questions.observed_utc + ". This proposal does not update or remeasure the volume inventory."}
+    <//>
+    <${Text} fw=${600}>${resize.answer}<//>
+    <${Text} size="sm"> ${resize.details[0]} <//>
+    <${Text} size="sm">
+      Hard node anti-affinity permits at most three replicas on the three HDD
+      hosts. To finish on both original hosts while keeping two replicas online,
+      add the temporary copy and replace each original copy in turn. The plan is
+      2→3→2→3→2→3→2 and uses three new PVCs and transfers.
+    <//>
+    <${Table.ScrollContainer} minWidth=${690}>
+      <${Table} striped withTableBorder>
+        <${Table.Thead}>
+          <${Table.Tr}>
+            <${Table.Th}>Stage<//><${Table.Th}>Active replicas<//
+            ><${Table.Th}>Placement action<//>
+          <//>
+        <//>
+        <${Table.Tbody}>
+          ${steps.map(
+            (step) =>
+              html`<${Table.Tr} key=${step.stage}>
+                <${Table.Td}>${step.stage}<//>
+                <${Table.Td}>${step.replicas}<//>
+                <${Table.Td}>${step.action}<//>
+              <//>`,
+          )}
+        <//>
+      <//>
+    <//>
+    <${Alert} color="yellow" title="Capacity checked; rotation not rehearsed">
+      A 300-GiB claim on 103711 passed read-only capacity checks, but it
+      temporarily raises that node's already-overcommitted limits. Treat the
+      table as a proposed sequence.
+    <//>
+    <${Accordion} variant="separated">
+      <${Accordion.Item} value="placement-and-gates">
+        <${Accordion.Control}>Placement alternatives and safety checks<//>
+        <${Accordion.Panel}>
+          <${Stack} gap="sm">
+            <${Text} size="sm">${resize.details[1]}<//>
+            <${Text} size="sm">${resize.details[2]}<//>
+            <${Text} size="sm">${resize.details[3]}<//>
+            <${EvidenceLinks} sources=${resize.sources} />
+          <//>
+        <//>
+      <//>
+    <//>
+  <//>`;
+}
+
 function Options({ data }) {
   const [decisions, setDecisions] = useState(loadDecisions);
   const [filter, setFilter] = useState("all");
@@ -82,7 +228,9 @@ function Options({ data }) {
           2,
         ) + "\n",
       ],
-      { type: "application/json" },
+      {
+        type: "application/json",
+      },
     );
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -124,6 +272,7 @@ function Options({ data }) {
                   withBorder
                   p="md"
                   radius="md"
+                  id=${"option-" + option.id}
                   key=${option.id}
                 >
                   <${Stack} gap="sm">
@@ -142,6 +291,10 @@ function Options({ data }) {
                     <${Text} size="sm" c="dimmed"
                       ><strong>Evidence:</strong> ${option.confidence}<//
                     >
+                    <${ZotInterventionEvidence}
+                      data=${data}
+                      optionId=${option.id}
+                    />
                     ${option.link ? html`<${Anchor} href=${option.link} size="sm">Supporting issue or plan<//>` : null}
                     <${NativeSelect}
                       label=${`Decision for ${option.title}`}
@@ -477,6 +630,40 @@ function LangfuseEvidence({ data }) {
         <//>
       <//>
     <//>
+    <${Stack} component="section" id="seaweed-storage-compression" gap="sm">
+      <${Title} order=${3}>SeaweedFS chunk compression in the Langfuse path<//>
+      <${Text} c="dimmed" size="sm">
+        ${"Read-only object and implementation follow-ups observed " + data.followup_questions.observed_utc + ". These supplement the earlier size inventory."}
+      <//>
+      <${Text} size="sm">
+        Langfuse uploads plain JSON. SeaweedFS independently gzip-compresses
+        eligible chunks at level 1 and returns the original JSON through S3. The
+        November 10 sample found this behavior on new OTEL objects, but does not
+        establish a bucket-wide compression rate or savings beyond storage
+        compression already in use. The fetched-body chart above is not an
+        incremental disk-savings measurement.
+      <//>
+      <${Accordion} variant="separated">
+        <${Accordion.Item} value="langfuse-object-sample">
+          <${Accordion.Control}
+            >November 10 Langfuse object sample and bounds<//
+          >
+          <${Accordion.Panel}>
+            <${EvidenceDetails}
+              item=${followup(data, "langfuse-compression")}
+            />
+          <//>
+        <//>
+        <${Accordion.Item} value="seaweed-implementation">
+          <${Accordion.Control}
+            >SeaweedFS 4.53 behavior and operator settings<//
+          >
+          <${Accordion.Panel}>
+            <${EvidenceDetails} item=${followup(data, "seaweed-compression")} />
+          <//>
+        <//>
+      <//>
+    <//>
     <${Figure}
       title="ClickHouse column footprint"
       caption="Compressed GB on one ClickHouse replica, from active parts; there are two replicas. These are footprints, not proven savings. Full metadata and both parameter columns overlap in sampled tool definitions."
@@ -505,6 +692,7 @@ function LangfuseEvidence({ data }) {
         >
       <//>
     <//>
+    <${ClickHouseResizeEvidence} data=${data} />
     <${Accordion} variant="separated">
       <${Accordion.Item} value="mechanism">
         <${Accordion.Control}>What the ClickHouse investigation found<//>
@@ -535,43 +723,6 @@ function LangfuseEvidence({ data }) {
           <//>
         <//>
       <//>
-    <//>
-  <//>`;
-}
-
-function StorageQuestions({ data }) {
-  const followups = data.followup_questions;
-  return html`<${Stack}
-    component="section"
-    id="storage-questions"
-    gap="md"
-    my="xl"
-  >
-    <${Title} order=${2}>Storage questions answered<//>
-    <${Text} c="dimmed" size="sm">
-      ${`Read-only follow-up observations: ${followups.observed_utc}. Values describe that window, not live state.`}
-    <//>
-    <${SimpleGrid} cols=${{ base: 1, lg: 2 }} spacing="md">
-      ${followups.questions.map(
-        (item) =>
-          html`<${Paper}
-            component="article"
-            withBorder
-            p="md"
-            radius="md"
-            key=${item.id}
-            data-question=${item.id}
-          >
-            <${Stack} gap="sm">
-              <${Title} order=${3}>${item.question}<//>
-              <${Text} fw=${600}>${item.answer}<//>
-              ${item.details.map((detail, index) => html`<${Text} size="sm" key=${index}>${detail}<//>`)}
-              <${Group} gap="md">
-                ${item.sources.map((source) => html`<${Anchor} size="sm" href=${source.url} key=${source.url}>${source.label}<//>`)}
-              <//>
-            <//>
-          <//>`,
-      )}
     <//>
   <//>`;
 }
@@ -909,8 +1060,8 @@ export function StorageRemediation() {
       <${Anchor} href="#budget">Budget scenario<//>
       <${Anchor} href="#seaweed-volumes">Seaweed volume fullness<//>
       <${Anchor} href="#langfuse">Langfuse evidence<//>
+      <${Anchor} href="#clickhouse-resize">ClickHouse volume plan<//>
       <${Anchor} href="#observability">Mimir and Loki<//>
-      <${Anchor} href="#storage-questions">Storage questions<//>
       <${Anchor} href="#options">Options<//>
       <${Anchor} href="#prior-inventory">9 Nov inventory<//>
       <${Anchor} href="./remediation-evidence.json">Evidence JSON<//>
@@ -921,7 +1072,6 @@ export function StorageRemediation() {
       but it does not shrink a PVC. Seaweed's HDD volumes are single-copy at the
       Piraeus layer; Seaweed provides two object copies.
     <//>
-    <${StorageQuestions} data=${data} />
     <${BudgetScenario} data=${data} />
     <${SeaweedVolumeFullness} data=${data} />
     <${LangfuseEvidence} data=${data} />
