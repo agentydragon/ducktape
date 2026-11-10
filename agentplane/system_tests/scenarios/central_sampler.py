@@ -403,31 +403,34 @@ async def _follow_code_mode_cell(
     output_blocks: list[str] = []
     visible_blocks: list[str] = []
     waits = 0
-    async with asyncio.timeout(timeout_s):
-        while True:
-            (output,) = [output for output in request.tool_outputs if output.call_id == call_id]
-            output_blocks.extend(output.blocks)
-            visible_blocks.extend(
-                [*request.user_texts, *(block for item in request.tool_outputs for block in item.blocks)]
-            )
-            running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
-            if running is None:
-                return request, "\n".join(output_blocks), "\n".join(visible_blocks)
-            waits += 1
-            wait_call_id = f"{call_id}-wait-{waits}"
-            async with request._exchange as exchange:
-                await exchange.send(
-                    *responses_sse.response_stream(
-                        [
-                            responses_sse.FunctionCall(
-                                wait_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 10000}
-                            )
-                        ],
-                        model=MODEL,
-                    ).events
+    try:
+        async with asyncio.timeout(timeout_s):
+            while True:
+                (output,) = [output for output in request.tool_outputs if output.call_id == call_id]
+                output_blocks.extend(output.blocks)
+                visible_blocks.extend(
+                    [*request.user_texts, *(block for item in request.tool_outputs for block in item.blocks)]
                 )
-            request = await model.request()
-            call_id = wait_call_id
+                running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
+                if running is None:
+                    return request, "\n".join(output_blocks), "\n".join(visible_blocks)
+                waits += 1
+                wait_call_id = f"{call_id}-wait-{waits}"
+                async with request._exchange as exchange:
+                    await exchange.send(
+                        *responses_sse.response_stream(
+                            [
+                                responses_sse.FunctionCall(
+                                    wait_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 10000}
+                                )
+                            ],
+                            model=MODEL,
+                        ).events
+                    )
+                request = await model.request()
+                call_id = wait_call_id
+    except TimeoutError:
+        pytest.fail(f"original code-mode cell still running after {timeout_s}s and {waits} waits: {output_blocks[-2:]}")
 
 
 async def _wait_for_failed_gateway_resume(
