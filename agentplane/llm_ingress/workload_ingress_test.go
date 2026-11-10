@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -27,7 +29,7 @@ func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
-	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews)
+	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews, nil)
 
 	request, err := http.NewRequest(http.MethodPost, serverURL+"/v1/responses", strings.NewReader(`{"model":"test"}`))
 	if err != nil {
@@ -69,12 +71,48 @@ func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
 	}
 }
 
+func TestWorkloadListenerAttributesAnIdentityCallerByItsIdentity(t *testing.T) {
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-identity", testPolicyNamespace)
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	serverURL, client := newWorkloadIngressTestServer(
+		t, workload.Workload, backendServer.URL, api.TokenReviews(), &resolver.Identities{PolicyNamespace: testPolicyNamespace},
+	)
+
+	response, err := client.Post(serverURL+"/v1/responses", "application/json", strings.NewReader(`{"model":"test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("Identity SVID request status = %d, body = %s", response.StatusCode, body)
+	}
+	requests := backend.snapshotRequests()
+	if len(requests) != 1 {
+		t.Fatalf("LiteLLM requests = %d, want 1", len(requests))
+	}
+	var metadata map[string]string
+	if err := json.Unmarshal([]byte(requests[0].headers.Get("x-litellm-spend-logs-metadata")), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"agentplane.identity":     workload.Subject.Identity.Name,
+		"agentplane.identity_uid": workload.Subject.Identity.UID,
+		"agentplane.pod_name":     workload.Subject.PodName,
+		"agentplane.pod_uid":      workload.Subject.PodUID,
+	}
+	if !maps.Equal(metadata, want) {
+		t.Fatalf("forwarded metadata = %v, want the Identity subject %v alone", metadata, want)
+	}
+}
+
 func TestWorkloadListenerDoesNotFallBackToValidBearerForStaleSVID(t *testing.T) {
 	workload := workloadauthtesting.NewWorkload(t, api, testNamespace, "llm-stale-svid")
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
-	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews)
+	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, reviews, nil)
 
 	workload.Issue(t, "ffffffffffffffffffffffffffffffff")
 	validBearer := workloadToken(t, "llm-bearer-fallback")
@@ -119,13 +157,14 @@ func newWorkloadIngressTestServer(
 	workload workloadauthtesting.Workload,
 	backendURL string,
 	reviews auth.TokenReviews,
+	identities *resolver.Identities,
 ) (string, *http.Client) {
 	t.Helper()
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 
-	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, nil)
+	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, identities)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,3 +229,5 @@ func newWorkloadIngressTestServer(
 }
 
 var _ auth.TokenReviews = (*countingTokenReviews)(nil)
+
+const testPolicyNamespace = "llm-ingress-test-policy"
