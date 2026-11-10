@@ -205,7 +205,9 @@ impl StatementFacts {
         }
         let completed = own_heap.completed_initialization;
         effects.coverage_dependencies = completed.map(|proof| proof.dependencies());
-        if completed.is_some() {
+        // Root statements only: an initializer seal does not yet rule out a
+        // member write outside its kernel ledger.
+        if completed.is_some() && self.kind == StatementKind::SideEffect {
             // The receipt's general-heap domain is closed: every member write
             // the owner executed was a modeled store whose exact cell is in
             // its synchronous heap contents, recorded below. That attributes

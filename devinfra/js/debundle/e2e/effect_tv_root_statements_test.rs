@@ -5,6 +5,17 @@
 use debundle_e2e_graph_support::effect_validation::*;
 use debundle_e2e_support::*;
 
+/// Both legacy graph policies the sealed store feeds: the default strict
+/// chain and the opt-in `local_property_effects`.
+fn under_both_policies(
+    opts: impl Fn() -> FixtureOpts<'static>,
+) -> [(bool, FixtureOpts<'static>); 2] {
+    [
+        (false, opts()),
+        (true, opts().with_local_property_effects()),
+    ]
+}
+
 fn source_path(rejected: &RejectedFixture) -> std::path::PathBuf {
     rejected
         .source_root
@@ -53,16 +64,22 @@ fn a_store_to_an_existing_record_slot_commutes_with_an_independent_declaration()
         let source = format!(
             "const independentLabel = 'label';\nconst record = {{ value: 0 }};\nconst independent = 7;\n{store}\nconst shown = typeof record.value === 'function' ? record.value() : record.value;\nconsole.log(independent, shown);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module_with_anon(
-                "record",
-                &[Member::new("independentLabel"), Member::new("record")],
-                &[store.as_str()],
-            )],
-        ));
-        assert_preserved_entry_output(&fixture, expected);
-        assert_effect_verdict_accepts(&fixture, &store);
+        let source: &'static str = Box::leak(source.into_boxed_str());
+        let store: &'static str = Box::leak(store.into_boxed_str());
+        for (local, opts) in under_both_policies(|| {
+            FixtureOpts::new(
+                source,
+                vec![logical_module_with_anon(
+                    "record",
+                    &[Member::new("independentLabel"), Member::new("record")],
+                    &[store],
+                )],
+            )
+        }) {
+            let fixture = run_fixture(opts);
+            assert_preserved_entry_output(&fixture, expected);
+            assert_effect_verdict_accepts(&fixture, &format!("{store} local={local}"));
+        }
     }
 }
 
@@ -73,16 +90,149 @@ fn a_store_to_an_existing_record_slot_commutes_with_an_independent_declaration()
 #[test]
 fn a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
     let source = "const record = { value: 0 };\nfunction read() { return record.value; }\nconst before = read();\nrecord.value = 1;\nconsole.log(before, record.value);\nexport { before };\n";
+    // Under `local_property_effects` the sealed store's heap frontier is a
+    // summary; its `own_property` write still orders the reader first.
+    for (_, opts) in under_both_policies(|| {
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "record",
+                    &[Member::new("record")],
+                    &["record.value = 1;"],
+                ),
+                logical_module("reader", &[Member::new("read"), Member::new("before")]),
+            ],
+        )
+    }) {
+        let rejected = run_emit_on_rejection_fixture(opts);
+        assert_covered_slot_conflict(&rejected);
+        assert_node_output(&source_path(&rejected), "0 1\n", "");
+        assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    }
+}
+
+/// The same swap with a direct member read as the reader, whichever lane
+/// executes it: the legacy gate keeps the reader before the sealed store
+/// under either policy, and the moved program prints the new value.
+#[test]
+fn a_store_moved_before_a_direct_reader_of_its_slot_is_refused() {
+    let source = "const record = { value: 0 };\nconst before = record.value;\nrecord.value = 1;\nconsole.log(before, record.value);\nexport { before };\n";
+    for (local, opts) in under_both_policies(|| {
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "record",
+                    &[Member::new("record")],
+                    &["record.value = 1;"],
+                ),
+                logical_module("reader", &[Member::new("before")]),
+            ],
+        )
+    }) {
+        let rejected = run_emit_on_rejection_fixture(opts);
+        let effects = rejected.effect_translation_validation();
+        assert_eq!(
+            effects["legacy_gate_accepts"], false,
+            "local={local}: {effects:#}"
+        );
+        assert_ne!(
+            effects["decision"]["status"], "accepted",
+            "local={local}: {effects:#}"
+        );
+        assert_node_output(&source_path(&rejected), "0 1\n", "");
+        assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    }
+}
+
+/// A native descriptor projection reads every projected value slot: moving
+/// the store ahead of it is a covered `own_property` conflict, and the moved
+/// program copies the new value.
+#[test]
+fn a_store_moved_before_a_descriptor_projection_of_its_record_is_a_cell_conflict() {
+    let source = "const record = { value: 0 };\nconst copied = Object.getOwnPropertyDescriptors(record);\nrecord.value = 1;\nconsole.log(copied.value.value, record.value);\nexport { copied };\n";
+    for (_, opts) in under_both_policies(|| {
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "record",
+                    &[Member::new("record")],
+                    &["record.value = 1;"],
+                ),
+                logical_module("copy", &[Member::new("copied")]),
+            ],
+        )
+    }) {
+        let rejected = run_emit_on_rejection_fixture(opts);
+        // The projection's owner still carries a legacy dataflow-opacity bit,
+        // so the row is also havoc; the slot conflict itself is modeled.
+        let effects = rejected.effect_translation_validation();
+        assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
+        assert_eq!(effects["decision"]["status"], "conflict", "{effects:#}");
+        assert_eq!(
+            effects["decision"]["modeled_may_conflict"], true,
+            "{effects:#}"
+        );
+        assert!(
+            examples(&effects).iter().any(|row| {
+                row["cells"].as_array().is_some_and(|cells| {
+                    cells.iter().any(|cell| {
+                        cell["cell"]["kind"] == "own_property"
+                            && cell["cell"]["property"] == "value"
+                    })
+                })
+            }),
+            "{effects:#}"
+        );
+        assert_node_output(&source_path(&rejected), "0 1\n", "");
+        assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    }
+}
+
+/// The store of an array into a record slot reads the array binding but not
+/// its contents: a later reader of the array's length is not ordered by it,
+/// and the relocation is accepted by both gates under either policy.
+#[test]
+fn storing_an_array_into_a_record_does_not_order_a_reader_of_its_contents() {
+    let source = "const list = [];\nconst record = { items: null };\nconst marker = 1;\nrecord.items = list;\nconst size = list.length;\nconsole.log(marker, size, record.items === list);\n";
+    for (local, opts) in under_both_policies(|| {
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "record",
+                &[Member::new("list"), Member::new("record")],
+                &["record.items = list;"],
+            )],
+        )
+    }) {
+        let fixture = run_fixture(opts);
+        assert_preserved_entry_output(&fixture, "1 0 true\n");
+        assert_effect_verdict_accepts(&fixture, &format!("array store local={local}"));
+    }
+}
+
+/// `delete` in another statement removes the slot the store would replace:
+/// the store then adds a property. Moving the store ahead of the delete
+/// changes the output; the delete is not a covered operation, so the verdict
+/// cannot accept the swap.
+#[test]
+fn a_store_moved_across_a_delete_of_its_slot_is_refused() {
+    let source = "const record = { value: 0 };\ndelete record.value;\nrecord.value = 1;\nconsole.log('value' in record, record.value);\n";
     let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
         source,
-        vec![
-            logical_module_with_anon("record", &[Member::new("record")], &["record.value = 1;"]),
-            logical_module("reader", &[Member::new("read"), Member::new("before")]),
-        ],
+        vec![logical_module_with_anon(
+            "record",
+            &[Member::new("record")],
+            &["record.value = 1;"],
+        )],
     ));
-    assert_covered_slot_conflict(&rejected);
-    assert_node_output(&source_path(&rejected), "0 1\n", "");
-    assert_node_output(&rejected.entry_path(), "1 1\n", "");
+    let effects = rejected.effect_translation_validation();
+    assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
+    assert_ne!(effects["decision"]["status"], "accepted", "{effects:#}");
+    assert_node_output(&source_path(&rejected), "true 1\n", "");
+    assert_node_output(&rejected.entry_path(), "false undefined\n", "");
 }
 
 /// Headline witness: two stores to different records are ordered by the
