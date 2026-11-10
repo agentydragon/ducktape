@@ -222,15 +222,57 @@ struct Handled {
     loads_unknown: bool,
     /// A direct `eval`, which can name any binding.
     evals: bool,
+    /// `binding.name` pairs used other than as the object of a named read:
+    /// the object the member holds may be held or changed elsewhere.
+    inner: FxHashSet<(Id, String)>,
+    /// Set to the chunk's unresolved context to also pass over uses of a
+    /// whole binding that neither change nor keep the object it holds, if
+    /// that is a plain literal: `Object.keys`, `values` and `entries` of it,
+    /// `k in it`, `for (k in it)`, `it[k]` read, `{ ...it }`, `typeof`,
+    /// `!` and strict comparison.
+    relaxed: Option<SyntaxContext>,
+    /// Such a use called a static of `Object`.
+    object_statics: bool,
 }
 
-/// The bindings of `module` mentioned other than to read a named member:
-/// stored to, deleted from, called as a receiver, read under a computed
-/// key, or used as a value. `None` if a direct `eval` may mention any.
-pub fn handled_bindings(module: &Module) -> Option<FxHashSet<Id>> {
-    let mut handled = Handled::default();
+/// How a chunk mentions its bindings.
+pub struct Mentions {
+    /// Bindings mentioned other than to read a named member: stored to,
+    /// deleted from, called as a receiver, or used as a value.
+    pub handled: FxHashSet<Id>,
+    /// `binding.name` pairs whose value is used other than to read a named
+    /// member of it.
+    pub inner: FxHashSet<(Id, String)>,
+    /// A use passed over as harmless relies on `Object.keys`, `values` or
+    /// `entries` being the intrinsic.
+    pub object_statics: bool,
+}
+
+/// The mentions of `module`'s bindings; with `relaxed`, the chunk's
+/// unresolved context, uses of a whole binding that cannot change or keep a
+/// plain literal are passed over. `None` if a direct `eval` may mention any
+/// binding.
+pub fn mentions(module: &Module, relaxed: Option<SyntaxContext>) -> Option<Mentions> {
+    let mut handled = Handled {
+        relaxed,
+        ..Handled::default()
+    };
     module.visit_with(&mut handled);
-    (!handled.evals).then_some(handled.bindings)
+    (!handled.evals).then_some(Mentions {
+        handled: handled.bindings,
+        inner: handled.inner,
+        object_statics: handled.object_statics,
+    })
+}
+
+/// `binding.name`.
+fn named_member(member: &MemberExpr) -> Option<(Id, String)> {
+    match (&*member.obj, &member.prop) {
+        (Expr::Ident(binding), MemberProp::Ident(name)) => {
+            Some((binding.to_id(), name.sym.to_string()))
+        }
+        _ => None,
+    }
 }
 
 impl Handled {
@@ -240,11 +282,25 @@ impl Handled {
         while let Expr::Paren(paren) = expr {
             expr = &paren.expr;
         }
-        if let Expr::Member(MemberExpr { obj, .. }) = expr
-            && let Expr::Ident(binding) = &**obj
-        {
-            self.bindings.insert(binding.to_id());
+        if let Expr::Member(member) = expr {
+            self.used_member(member);
         }
+    }
+
+    fn used_member(&mut self, member: &MemberExpr) {
+        match &*member.obj {
+            Expr::Ident(binding) => {
+                self.bindings.insert(binding.to_id());
+            }
+            Expr::Member(inner) => self.inner.extend(named_member(inner)),
+            _ => {}
+        }
+    }
+
+    /// A binding used whole in a way that neither changes nor keeps a plain
+    /// literal it holds.
+    fn harmless(&self, expr: &Expr) -> bool {
+        self.relaxed.is_some() && matches!(expr, Expr::Ident(_))
     }
 }
 
@@ -257,11 +313,57 @@ impl Visit for Handled {
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
-        // `binding.name` reads one property and keeps nothing.
-        if matches!(&*member.obj, Expr::Ident(_)) && matches!(member.prop, MemberProp::Ident(_)) {
+        // `binding.name` reads one property and keeps nothing of the
+        // binding's object; what it does with the member's is the parent's
+        // to say, and here the parent is not a named read of it.
+        if let Some(pair) = named_member(member) {
+            self.inner.insert(pair);
+            return;
+        }
+        // `binding.name.other` reads through the member's object.
+        if let (Expr::Member(inner), MemberProp::Ident(_)) = (&*member.obj, &member.prop)
+            && named_member(inner).is_some()
+        {
+            return;
+        }
+        // `binding[key]` read.
+        if let (true, MemberProp::Computed(key)) = (self.harmless(&member.obj), &member.prop) {
+            key.visit_with(self);
             return;
         }
         member.visit_children_with(self);
+    }
+
+    fn visit_bin_expr(&mut self, binary: &BinExpr) {
+        let passes = |side: &Expr| match binary.op {
+            BinaryOp::In => std::ptr::eq(side, &*binary.right) && self.harmless(side),
+            BinaryOp::EqEqEq | BinaryOp::NotEqEq => self.harmless(side),
+            _ => false,
+        };
+        let (left, right) = (passes(&binary.left), passes(&binary.right));
+        if !left {
+            binary.left.visit_with(self);
+        }
+        if !right {
+            binary.right.visit_with(self);
+        }
+    }
+
+    fn visit_for_in_stmt(&mut self, looped: &ForInStmt) {
+        looped.left.visit_with(self);
+        if !self.harmless(&looped.right) {
+            looped.right.visit_with(self);
+        }
+        looped.body.visit_with(self);
+    }
+
+    fn visit_prop_or_spread(&mut self, prop: &PropOrSpread) {
+        if let PropOrSpread::Spread(spread) = prop
+            && self.harmless(&spread.expr)
+        {
+            return;
+        }
+        prop.visit_children_with(self);
     }
 
     fn visit_prop(&mut self, prop: &Prop) {
@@ -273,11 +375,7 @@ impl Visit for Handled {
 
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         match &assign.left {
-            AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr { obj, .. })) => {
-                if let Expr::Ident(binding) = &**obj {
-                    self.bindings.insert(binding.to_id());
-                }
-            }
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => self.used_member(member),
             AssignTarget::Simple(SimpleAssignTarget::Paren(paren)) => self.used(&paren.expr),
             _ => {}
         }
@@ -308,6 +406,9 @@ impl Visit for Handled {
         if unary.op == UnaryOp::Delete {
             self.used(&unary.arg);
         }
+        if matches!(unary.op, UnaryOp::TypeOf | UnaryOp::Bang) && self.harmless(&unary.arg) {
+            return;
+        }
         unary.visit_children_with(self);
     }
 
@@ -324,6 +425,20 @@ impl Visit for Handled {
     fn visit_call_expr(&mut self, call: &CallExpr) {
         match &call.callee {
             Callee::Expr(callee) => {
+                // `Object.keys(binding)`.
+                let lists = matches!(&**callee, Expr::Member(MemberExpr {
+                    obj,
+                    prop: MemberProp::Ident(method),
+                    ..
+                }) if matches!(&*method.sym, "keys" | "values" | "entries")
+                    && matches!(&**obj, Expr::Ident(object)
+                        if Some(object.ctxt) == self.relaxed && &*object.sym == "Object"));
+                if let (true, [ExprOrSpread { spread: None, expr }]) = (lists, call.args.as_slice())
+                    && self.harmless(expr)
+                {
+                    self.object_statics = true;
+                    return;
+                }
                 self.used(callee);
                 self.evals |= matches!(&**callee, Expr::Ident(name) if &*name.sym == "eval");
                 let requires = matches!(&**callee, Expr::Member(MemberExpr {

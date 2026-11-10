@@ -246,3 +246,15 @@ import { factory } from './dep.js';
 const a = factory(() => 1);
 const b = factory(() => 2);
 console.log(a.fn() + b.fn());
+### commutes same: a named read of an immutable binding across an impure statement that passes it on
+{"immutable_bindings":[1]}
+import { snapshot } from './dep.js'; const table = { key: 'a' }; let seen;
+seen = snapshot(table);
+const label = table.key;
+console.log(seen.key, label);
+### commutes differs: an immutable-binding premise that is false
+{"immutable_bindings":[0]}
+const table = { key: 'a' }; function rename(t) { t.key = 'b'; }
+rename(table);
+const label = table.key;
+console.log(label);

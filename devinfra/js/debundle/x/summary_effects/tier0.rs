@@ -321,6 +321,146 @@ pub enum Upgrade {
     /// A read of an imported binding: the definition stays ordered against
     /// every impure statement.
     ImportReads,
+    /// `(function (e) { e[e.A = 0] = "A"; e.B = "b"; })(E || (E = {}))` for a
+    /// binding declared without a value and assigned nowhere else: its
+    /// effects are confined to `E` (`enum_definition`).
+    EnumDefinitions,
+}
+
+/// The named data properties of an object literal: the key, whether the
+/// value is written as a primitive, and the value.
+fn literal_keys(object: &ObjectLit) -> Vec<(String, bool, Option<&Expr>)> {
+    object
+        .props
+        .iter()
+        .filter_map(|prop| match prop {
+            PropOrSpread::Prop(prop) => match &**prop {
+                Prop::Shorthand(key) => Some((key.sym.to_string(), false, None)),
+                Prop::KeyValue(pair) => {
+                    let primitive = literal_only(&pair.value);
+                    let value = Some(&*pair.value);
+                    match &pair.key {
+                        PropName::Ident(key) => Some((key.sym.to_string(), primitive, value)),
+                        PropName::Str(key) => Some((js_ast::str_value(key), primitive, value)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            PropOrSpread::Spread(_) => None,
+        })
+        .collect()
+}
+
+fn unparen(mut expr: &Expr) -> &Expr {
+    while let Expr::Paren(paren) = expr {
+        expr = &paren.expr;
+    }
+    expr
+}
+
+/// The binding an enum-shaped statement defines: an inline function of one
+/// parameter whose body only stores literals on the parameter under literal
+/// names, called with `E || (E = {})`.
+fn enum_definition(expr: &Expr) -> Option<&Ident> {
+    let Expr::Call(CallExpr {
+        callee: Callee::Expr(callee),
+        args,
+        ..
+    }) = unparen(expr)
+    else {
+        return None;
+    };
+    let [
+        ExprOrSpread {
+            spread: None,
+            expr: argument,
+        },
+    ] = args.as_slice()
+    else {
+        return None;
+    };
+    let Expr::Bin(BinExpr {
+        op: BinaryOp::LogicalOr,
+        left,
+        right,
+        ..
+    }) = unparen(argument)
+    else {
+        return None;
+    };
+    let (Expr::Ident(target), Expr::Assign(assign)) = (unparen(left), unparen(right)) else {
+        return None;
+    };
+    let fresh = assign.op == AssignOp::Assign
+        && matches!(&assign.left, AssignTarget::Simple(SimpleAssignTarget::Ident(assigned))
+            if assigned.id.to_id() == target.to_id())
+        && matches!(unparen(&assign.right), Expr::Object(object) if object.props.is_empty());
+    let Expr::Fn(FnExpr {
+        ident: None,
+        function,
+    }) = unparen(callee)
+    else {
+        return None;
+    };
+    let [
+        Param {
+            pat: Pat::Ident(param),
+            decorators,
+            ..
+        },
+    ] = function.params.as_slice()
+    else {
+        return None;
+    };
+    if !fresh || !decorators.is_empty() || function.is_async || function.is_generator {
+        return None;
+    }
+    let param = param.id.to_id();
+    let on_param = |expr: &Expr| matches!(expr, Expr::Ident(ident) if ident.to_id() == param);
+    // `e.name = literal`, `e["name"] = literal`.
+    let named = |assign: &AssignExpr| {
+        let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
+            return false;
+        };
+        let key = match &member.prop {
+            MemberProp::Ident(_) => true,
+            MemberProp::Computed(computed) => matches!(&*computed.expr, Expr::Lit(Lit::Str(_))),
+            MemberProp::PrivateName(_) => false,
+        };
+        assign.op == AssignOp::Assign && key && on_param(&member.obj) && literal_only(&assign.right)
+    };
+    let store = |expr: &Expr| {
+        let Expr::Assign(assign) = unparen(expr) else {
+            return false;
+        };
+        if named(assign) {
+            return true;
+        }
+        // `e[e.name = literal] = "name"`.
+        let AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Computed(computed),
+            ..
+        })) = &assign.left
+        else {
+            return false;
+        };
+        assign.op == AssignOp::Assign
+            && on_param(obj)
+            && matches!(&*assign.right, Expr::Lit(Lit::Str(_)))
+            && matches!(unparen(&computed.expr), Expr::Assign(inner) if named(inner))
+    };
+    let stores_only = function.body.as_ref()?.stmts.iter().all(|statement| {
+        let Stmt::Expr(statement) = statement else {
+            return false;
+        };
+        match unparen(&statement.expr) {
+            Expr::Seq(seq) => seq.exprs.iter().all(|part| store(part)),
+            other => store(other),
+        }
+    });
+    stores_only.then_some(target)
 }
 
 /// The global a recognized intrinsic use depends on, with the properties of
@@ -463,6 +603,12 @@ struct Classifier<'a> {
     /// Bindings that only ever hold one array literal.
     arrays: &'a FxHashSet<Binding>,
     settled: &'a Settled,
+    /// Members of such literals written as plain object literals, with
+    /// their keys, where the inner object cannot change either.
+    sealed_members: &'a FxHashSet<(Binding, String)>,
+    nested_literals: &'a FxHashMap<(Binding, String), FxHashMap<String, bool>>,
+    /// Bindings only enum-shaped statements assign: see `enum_definition`.
+    enums: &'a FxHashSet<Binding>,
     /// Literals nothing in the chunk can change: see `sealed_literals`.
     sealed: &'a FxHashSet<Binding>,
     /// Literals the statement reads a property of.
@@ -951,6 +1097,37 @@ impl Classifier<'_> {
         }
     }
 
+    /// `table.member.key` where `table.member` is written as a plain object
+    /// literal with that key and neither object can change.
+    fn nested_member_read(&self, expr: &Expr) -> Option<Binding> {
+        if !self.upgrades.contains(&Upgrade::LiteralMemberReads) {
+            return None;
+        }
+        let Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(key),
+            ..
+        }) = expr
+        else {
+            return None;
+        };
+        let Expr::Member(MemberExpr {
+            obj: table,
+            prop: MemberProp::Ident(member),
+            ..
+        }) = &**obj
+        else {
+            return None;
+        };
+        let Expr::Ident(table) = &**table else {
+            return None;
+        };
+        let pair = (*self.bindings.get(&table.to_id())?, member.sym.to_string());
+        (self.sealed_members.contains(&pair)
+            && self.nested_literals.get(&pair)?.contains_key(&*key.sym))
+        .then_some(pair.0)
+    }
+
     /// `table.key` for a binding that only ever holds one plain object
     /// literal with that key.
     fn literal_member_read(&self, expr: &Expr) -> Option<Binding> {
@@ -1177,6 +1354,14 @@ impl Classifier<'_> {
     /// `Target = helper(decorators, Target)` under a decorator-helper
     /// premise.
     fn confined(&mut self, expr: &Expr) -> bool {
+        if let Some(binding) = enum_definition(expr)
+            .and_then(|target| self.bindings.get(&target.to_id()))
+            .filter(|binding| self.enums.contains(*binding))
+        {
+            self.targets.push(*binding);
+            self.replaces.push(*binding);
+            return true;
+        }
         let (call, assigned) = match expr {
             Expr::Paren(paren) => return self.confined(&paren.expr),
             Expr::Call(call) => (call, None),
@@ -1357,6 +1542,10 @@ impl Classifier<'_> {
         }
         if let Some(table) = self.literal_member_read(expr) {
             self.read_literal(table);
+            return Ok(());
+        }
+        if let Some(table) = self.nested_member_read(expr) {
+            self.eager.push(table);
             return Ok(());
         }
         if let Some(dependencies) = self.intrinsic_member_read(expr) {
@@ -1649,6 +1838,45 @@ fn declared_ids(decl: &Decl, out: &mut Vec<Id>) {
     }
 }
 
+/// How often each binding is assigned by a plain `=`, and the bindings
+/// assigned any other way.
+#[derive(Default)]
+struct AssignmentCounts {
+    plain: FxHashMap<Id, usize>,
+    other: FxHashSet<Id>,
+}
+
+impl Visit for AssignmentCounts {
+    fn visit_assign_expr(&mut self, assign: &AssignExpr) {
+        match &assign.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(target))
+                if assign.op == AssignOp::Assign =>
+            {
+                *self.plain.entry(target.id.to_id()).or_default() += 1;
+            }
+            _ => self.other.extend(crate::helpers::assigned_ids(assign)),
+        }
+        assign.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, update: &UpdateExpr) {
+        self.other.extend(crate::helpers::assigned_ids(update));
+        update.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, looped: &ForInStmt) {
+        self.other
+            .extend(crate::helpers::assigned_ids(&looped.left));
+        looped.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, looped: &ForOfStmt) {
+        self.other
+            .extend(crate::helpers::assigned_ids(&looped.left));
+        looped.visit_children_with(self);
+    }
+}
+
 enum Source<'a> {
     Item(&'a ModuleItem),
     Declarator(&'a VarDeclarator),
@@ -1852,8 +2080,55 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     }
     // Bindings declared once and never assigned, by a class or by a plain
     // object literal.
+    // Bindings declared once without a value and assigned only as the
+    // argument of enum-shaped statements.
+    let mut enum_statements: FxHashMap<Binding, usize> = FxHashMap::default();
+    let mut valueless: FxHashSet<Binding> = FxHashSet::default();
+    for (source, declared) in sources.iter().zip(&declared_by_unit) {
+        match source {
+            Source::Item(ModuleItem::Stmt(Stmt::Expr(statement))) => {
+                if let Some(binding) = enum_definition(&statement.expr)
+                    .and_then(|target| bindings.get(&target.to_id()))
+                {
+                    *enum_statements.entry(*binding).or_default() += 1;
+                }
+            }
+            Source::Declarator(VarDeclarator { init: None, .. }) => {
+                valueless.extend(declared.iter().copied());
+            }
+            Source::Item(
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Var(var),
+                    ..
+                })),
+            ) if var.decls.iter().all(|declarator| declarator.init.is_none()) => {
+                valueless.extend(declared.iter().copied());
+            }
+            _ => {}
+        }
+    }
+    let mut assignments = AssignmentCounts::default();
+    module.visit_with(&mut assignments);
+    let enums: FxHashSet<Binding> = if options.upgrades.contains(&Upgrade::EnumDefinitions) {
+        bindings
+            .iter()
+            .filter(|(id, binding)| {
+                valueless.contains(*binding)
+                    && declarations[**binding as usize] == 1
+                    && !assignments.other.contains(*id)
+                    && enum_statements.get(*binding).copied().unwrap_or(0) > 0
+                    && assignments.plain.get(*id) == enum_statements.get(*binding)
+            })
+            .map(|(_, binding)| *binding)
+            .collect()
+    } else {
+        FxHashSet::default()
+    };
     let mut classes: FxHashSet<Binding> = FxHashSet::default();
     let mut literals: FxHashMap<Binding, FxHashMap<String, bool>> = FxHashMap::default();
+    let mut nested_literals: FxHashMap<(Binding, String), FxHashMap<String, bool>> =
+        FxHashMap::default();
     let mut symbols: FxHashSet<Binding> = FxHashSet::default();
     let mut arrays: FxHashSet<Binding> = FxHashSet::default();
     for (source, declared) in sources.iter().zip(&declared_by_unit) {
@@ -1920,21 +2195,19 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             Some(Expr::Object(object))
                 if crate::derive::plain_literal(init.expect("an object")) =>
             {
-                let keys = object.props.iter().filter_map(|prop| match prop {
-                    PropOrSpread::Prop(prop) => match &**prop {
-                        Prop::Shorthand(key) => Some((key.sym.to_string(), false)),
-                        Prop::KeyValue(pair) => {
-                            let primitive = literal_only(&pair.value);
-                            match &pair.key {
-                                PropName::Ident(key) => Some((key.sym.to_string(), primitive)),
-                                PropName::Str(key) => Some((js_ast::str_value(key), primitive)),
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    },
-                    PropOrSpread::Spread(_) => None,
-                });
+                let keys = literal_keys(object);
+                for (member, _, value) in &keys {
+                    if let Some(value) = value
+                        && let Expr::Object(inner) = unparen(value)
+                        && crate::derive::plain_literal(unparen(value))
+                    {
+                        let inner_keys = literal_keys(inner)
+                            .into_iter()
+                            .map(|(key, primitive, _)| (key, primitive));
+                        nested_literals.insert((*binding, member.clone()), inner_keys.collect());
+                    }
+                }
+                let keys = keys.into_iter().map(|(key, primitive, _)| (key, primitive));
                 literals.insert(*binding, keys.collect());
             }
             _ => {}
@@ -1946,22 +2219,6 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         .then(|| crate::derive::derive(module, unresolved, options.program.as_ref()));
     // Off an import cycle the exporting chunk has run, and no code of the
     // program touches these objects except to read named members.
-    // A literal no statement of the chunk mentions other than to read a
-    // named member, and that is not exported, is never held by anything but
-    // its binding: no code can change it.
-    let sealed: FxHashSet<Binding> = crate::derive::handled_bindings(module)
-        .map(|handled| {
-            bindings
-                .iter()
-                .filter(|(id, binding)| {
-                    literals.contains_key(*binding)
-                        && !handled.contains(*id)
-                        && !exported.contains(*binding)
-                })
-                .map(|(_, binding)| *binding)
-                .collect()
-        })
-        .unwrap_or_default();
     let mut settled = Settled::default();
     let off_cycle = options
         .program
@@ -2118,6 +2375,60 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         // A write by any chunk of the program counts.
         census.merge(program.census.clone());
     }
+    // A literal that is not exported and that no statement of the chunk
+    // mentions other than to read a named member is never held by anything
+    // but its binding: no code can change it. Nor can the uses of the whole
+    // binding that `derive::mentions` passes over, if `Object`'s statics are
+    // the intrinsics. A premise says the same of a binding outright.
+    let unexported_literal = |binding: &Binding| {
+        literals
+            .get(binding)
+            .is_some_and(|keys| !keys.contains_key("__proto__"))
+            && !exported.contains(binding)
+    };
+    let strict = crate::derive::mentions(module, None);
+    let relaxed = crate::derive::mentions(module, Some(unresolved)).filter(|mentions| {
+        !mentions.object_statics
+            || census.untouched("Object", &["keys", "values", "entries"], false)
+    });
+    let unhandled = |mentions: &Option<crate::derive::Mentions>| -> FxHashSet<Binding> {
+        let Some(mentions) = mentions else {
+            return FxHashSet::default();
+        };
+        bindings
+            .iter()
+            .filter(|(id, binding)| unexported_literal(binding) && !mentions.handled.contains(*id))
+            .map(|(_, binding)| *binding)
+            .collect()
+    };
+    let premised: FxHashSet<Binding> = options
+        .premises
+        .immutable_bindings
+        .iter()
+        .filter_map(|unit| declared_by_unit.get(*unit))
+        .flatten()
+        .copied()
+        .filter(|binding| literals.contains_key(binding))
+        .collect();
+    // The object a member of such a literal holds is as written while every
+    // use of that member reads a named member of it.
+    let mut sealed_members: FxHashSet<(Binding, String)> = FxHashSet::default();
+    if let Some(mentions) = &strict {
+        let whole = unhandled(&strict);
+        for ((binding, member), _) in &nested_literals {
+            let id = bindings
+                .iter()
+                .find(|(_, candidate)| *candidate == binding)
+                .map(|(id, _)| id.clone());
+            let untouched = id.is_some_and(|id| !mentions.inner.contains(&(id, member.clone())));
+            if untouched && (whole.contains(binding) || premised.contains(binding)) {
+                sealed_members.insert((*binding, member.clone()));
+            }
+        }
+    }
+    let mut sealed = unhandled(&strict);
+    sealed.extend(unhandled(&relaxed));
+    sealed.extend(&premised);
     let mut units = Vec::with_capacity(sources.len());
     let never_written: FxHashSet<String> = options
         .premises
@@ -2153,6 +2464,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             arrays: &arrays,
             settled: &settled,
             sealed: &sealed,
+            sealed_members: &sealed_members,
+            nested_literals: &nested_literals,
+            enums: &enums,
             pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,

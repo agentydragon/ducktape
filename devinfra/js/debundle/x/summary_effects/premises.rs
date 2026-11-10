@@ -117,6 +117,11 @@ pub struct Premises {
     /// Globals no code of the program modifies, whatever the census found.
     #[serde(default)]
     pub intrinsics_never_written: Vec<String>,
+    /// Source units declaring a binding whose object no code changes: its
+    /// own properties stay as the declaration wrote them. Read only for a
+    /// binding that only ever holds one plain object literal.
+    #[serde(default)]
+    pub immutable_bindings: Vec<usize>,
     /// Pairs of source units certified to commute.
     #[serde(default)]
     pub commuting: Vec<(usize, usize)>,

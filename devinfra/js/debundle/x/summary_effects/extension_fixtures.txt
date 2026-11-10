@@ -229,3 +229,87 @@ const O = Object; const key = ['ke', 'ys'].join(''); function install(k, v) { O[
 install(key, 1);
 const keys = Object.keys;
 console.log(typeof keys);
+### commutes same: an enum definition across an impure statement that cannot reach it
+-
+var Color; let state = 0;
+state = 1;
+(function (e) { e[e.Red = 0] = "Red"; e.Blue = "b"; })(Color || (Color = {}));
+console.log(state, Color.Red, Color[0], Color.Blue);
+### commutes same: two enum definitions of different bindings
+-
+var Color, Size;
+(function (e) { e[e.Red = 0] = "Red"; e[e.Green = 1] = "Green"; })(Color || (Color = {}));
+(function (e) { e["Small"] = "s"; e.Large = -1; })(Size || (Size = {}));
+console.log(Color[1], Size.Small, Size.Large);
+### ordered differs: an impure statement reads the enum
+-
+var Color; let seen; function peek() { seen = Color && Color.Red; }
+peek();
+(function (e) { e[e.Red = 0] = "Red"; })(Color || (Color = {}));
+console.log(seen);
+### ordered differs: the enum binding is assigned elsewhere
+-
+var Color; function reset() { Color = { Red: 9 }; }
+reset();
+(function (e) { e[e.Red = 0] = "Red"; })(Color || (Color = {}));
+console.log(Color.Red, Color[0]);
+### ordered differs: two enum statements on one binding
+-
+var Color;
+(function (e) { e.Red = 1; })(Color || (Color = {}));
+(function (e) { e.Red = 2; })(Color || (Color = {}));
+console.log(Color.Red);
+### ordered differs: an enum-shaped statement whose value is a call
+-
+var Color; let n = 0; function next() { return ++n; }
+n = 5;
+(function (e) { e.Red = next(); })(Color || (Color = {}));
+console.log(Color.Red);
+### ordered differs: a definition reads the enum binding when it runs
+-
+var Color;
+(function (e) { e[e.Red = 0] = "Red"; })(Color || (Color = {}));
+const table = { c: Color };
+console.log(typeof table.c);
+### commutes same: a literal also listed, tested and copied, across an impure statement that reaches it
+-
+const table = { key: 'a', other: 1 }; let seen; function peek() { seen = [Object.keys(table).length, 'key' in table, { ...table }.other, table === null, typeof table, table[seen]]; for (const k in table) seen.push(k); }
+peek();
+const label = table.key;
+console.log(seen.length, label);
+### ordered differs: the literal is listed and also handed to a function that changes it
+-
+const table = { key: 'a' }; function rename(t) { t.key = 'b'; } function both() { rename(table); return Object.keys(table); }
+both();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is changed through a static that is not a listing
+-
+const table = { key: 'a' }; let held; function keep() { held = Object.assign(table, { key: 'b' }); }
+keep();
+const label = table.key;
+console.log(label);
+### commutes same: a member of an inline literal inside a literal, across an impure statement that reaches it
+-
+const table = { colors: { red: '#f00', blue: '#00f' }, size: 1 }; let seen; function peek() { seen = table.colors.blue; }
+peek();
+const red = table.colors.red;
+console.log(seen, red);
+### ordered differs: the inner literal is stored to
+-
+const table = { colors: { red: '#f00' } }; function repaint() { table.colors.red = '#000'; }
+repaint();
+const red = table.colors.red;
+console.log(red);
+### ordered differs: the inner literal is handed out and changed
+-
+const table = { colors: { red: '#f00' } }; function repaint() { const inner = table.colors; inner.red = '#000'; }
+repaint();
+const red = table.colors.red;
+console.log(red);
+### ordered differs: the inner literal is reached through a listing of the outer one
+-
+const table = { colors: { red: '#f00' } }; function repaint() { Object.values(table)[0].red = '#000'; }
+repaint();
+const red = table.colors.red;
+console.log(red);

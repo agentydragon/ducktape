@@ -16,7 +16,8 @@ const ALL_UPGRADES: [tier0::Upgrade; 4] = [
     tier0::Upgrade::IntrinsicHeritage,
     tier0::Upgrade::IntrinsicMemberReads,
 ];
-const LATER_UPGRADES: [tier0::Upgrade; 4] = [
+const LATER_UPGRADES: [tier0::Upgrade; 5] = [
+    tier0::Upgrade::EnumDefinitions,
     tier0::Upgrade::LocalHeritage,
     tier0::Upgrade::StaticFields,
     tier0::Upgrade::LiteralMemberReads,
@@ -516,7 +517,7 @@ fn tier0_premises_are_trusted_and_bounded() {
                     swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
                 let options = tier0::Options {
                     exports_reachable: false,
-                    upgrades: ALL_UPGRADES.into_iter().collect(),
+                    upgrades: ALL_UPGRADES.into_iter().chain(LATER_UPGRADES).collect(),
                     what_if_pure: Default::default(),
                     program: None,
                     premises: serde_json::from_str(premises).expect("the premises parse"),
