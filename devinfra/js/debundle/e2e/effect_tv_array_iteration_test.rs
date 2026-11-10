@@ -543,30 +543,133 @@ fn a_record_root_with_an_aliased_store_rewinds() {
     ));
     assert_preserved_entry_output(&fixture, "7 2\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "aliased store");
-}
-
-/// Opposing control: a closure read from an element field keeps its
-/// identity, so invoking it later reads the state it closes over. Moving
-/// the invocation before that state's writer prints the old value.
-#[test]
-fn an_invoked_field_closure_stays_after_the_writer_of_its_state() {
-    assert_rejected_split_diverges(
-        "const store = { value: 0 };\nconst items = [{ executor: () => store.value }];\nconst fns = items.map((entry) => entry.executor);\nstore.value = 1;\nconst observed = fns[0]();\nconsole.log(observed, store.value);\n",
-        &["store", "items", "fns"],
-        "1 1\n",
-        "0 1\n",
+    let report = fixture.effect_translation_validation();
+    let attempts = &report["coverage"]["root_attempts"];
+    assert_eq!(attempts["sealed"], 0, "{report:#}");
+    assert_eq!(
+        attempts["rewound"],
+        serde_json::json!({ "open_effect_ledger": 1 }),
+        "{report:#}"
     );
 }
 
-/// Opposing control: the row reads each element field at the current
-/// prefix and records its `OwnProperty` cell, so a store to that field
-/// stays before the iteration that reads it.
-#[test]
-fn a_store_to_a_read_field_stays_before_the_iteration() {
-    assert_rejected_split_diverges(
-        "const items = [{ executor: () => 'original' }];\nitems[0].executor = () => 'replaced';\nconst fns = items.map((entry) => entry.executor);\nconst observed = fns[0]();\nconsole.log(observed);\n",
-        &["items", "fns"],
-        "replaced\n",
-        "original\n",
+/// A record root read by the iteration, and a store to one element through
+/// the binding `item` in a statement the split moves after it. Every root
+/// attempt seals and none rewinds, so the effect decision is the row's own.
+fn record_store_split(store: &str, init: &str, iterate: &str, print: &str) -> RejectedFixture {
+    let source = format!(
+        "{init}\nconst entries = [item, {{ size: 2, executor: () => 3, other: 1 }}];\nconst patched = (() => {{ {store} return 0; }})();\nconst result = {iterate};\nconsole.log({print}, patched);\n"
     );
+    run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("reader", &[Member::new("patched")]),
+                logical_module(
+                    "run",
+                    &[
+                        Member::new("item"),
+                        Member::new("entries"),
+                        Member::new("result"),
+                    ],
+                ),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    )
+}
+
+const SIZE_RECORD: &str = "const item = { size: 1, other: 5 };";
+const SIZE_SUM: &str = "entries.reduce((t, e) => t + e.size, 0)";
+const EXECUTOR_RECORD: &str = "const item = { executor: () => 1, other: 5 };";
+const EXECUTOR_MAP: &str = "entries.map((e) => e.executor)";
+const EXECUTOR_RESULTS: &str = "result.map((f) => f()).join(',')";
+
+/// Opposing control: the row reads each element field at the current prefix
+/// and records its `OwnProperty` cell, so a store to a field the callback
+/// reads, a primitive or a closure, conflicts with the iteration (a modeled
+/// may-conflict, not havoc), and moving the iteration first reads the old
+/// value under Node.
+#[test]
+fn a_store_to_a_field_the_callback_reads_conflicts_with_the_iteration() {
+    for (store, init, iterate, print, original, emitted) in [
+        (
+            "item.size = 10;",
+            SIZE_RECORD,
+            SIZE_SUM,
+            "result",
+            "12 0\n",
+            "3 0\n",
+        ),
+        (
+            "item.executor = () => 2;",
+            EXECUTOR_RECORD,
+            EXECUTOR_MAP,
+            EXECUTOR_RESULTS,
+            "2,3 0\n",
+            "1,3 0\n",
+        ),
+    ] {
+        let rejected = record_store_split(store, init, iterate, print);
+        let report = rejected.effect_translation_validation();
+        assert_eq!(
+            report["coverage"]["root_attempts"],
+            serde_json::json!({ "sealed": 2, "rewound": {} }),
+            "{store}: {report:#}"
+        );
+        assert_eq!(
+            report["decision"]["status"], "conflict",
+            "{store}: {report:#}"
+        );
+        assert_eq!(report["decision"]["havoc"], false, "{store}: {report:#}");
+        assert_eq!(
+            report["decision"]["modeled_may_conflict"], true,
+            "{store}: {report:#}"
+        );
+        assert_node_output(
+            &rejected
+                .source_root
+                .join(format!("{}.js", rejected.chunk_id)),
+            original,
+            "",
+        );
+        assert_node_output(&rejected.entry_path(), emitted, "");
+    }
+}
+
+/// A store to a field no callback reads commutes with the iteration: the
+/// effect decision accepts the split, and the moved tree prints the source's
+/// output.
+#[test]
+fn a_store_to_a_field_the_callback_does_not_read_commutes_with_the_iteration() {
+    for (store, init, iterate, print, expected) in [
+        ("item.other = 9;", SIZE_RECORD, SIZE_SUM, "result", "3 0\n"),
+        (
+            "item.other = 2;",
+            EXECUTOR_RECORD,
+            EXECUTOR_MAP,
+            EXECUTOR_RESULTS,
+            "1,3 0\n",
+        ),
+    ] {
+        let rejected = record_store_split(store, init, iterate, print);
+        let report = rejected.effect_translation_validation();
+        assert_eq!(
+            report["coverage"]["root_attempts"],
+            serde_json::json!({ "sealed": 2, "rewound": {} }),
+            "{store}: {report:#}"
+        );
+        assert_eq!(
+            report["decision"]["status"], "accepted",
+            "{store}: {report:#}"
+        );
+        assert_node_output(
+            &rejected
+                .source_root
+                .join(format!("{}.js", rejected.chunk_id)),
+            expected,
+            "",
+        );
+        assert_node_output(&rejected.entry_path(), expected, "");
+    }
 }

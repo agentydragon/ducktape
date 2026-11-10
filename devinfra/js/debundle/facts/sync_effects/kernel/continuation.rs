@@ -1169,8 +1169,11 @@ impl LocalContinuation {
                 }
                 // Capture the applicable prefix-tracked lane alongside the LHS
                 // reference. The RHS may rebind the source cell, but JavaScript
-                // has already evaluated the original receiver value.
-                let prefix_tracked = context.prefix_tracked_receiver(&receiver, &receivers);
+                // has already evaluated the original receiver value. Only a
+                // module binding's value stores through the prefix: an element
+                // record a frame local holds is tracked for reads alone.
+                let prefix_tracked = !self.frame.environment.contains_key(&receiver)
+                    && context.prefix_tracked_receiver(&receiver, &receivers);
                 self.steps.push(Step::StoreField {
                     receivers,
                     prefix_tracked,
