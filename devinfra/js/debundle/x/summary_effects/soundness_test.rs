@@ -866,3 +866,59 @@ fn tier0_later_upgrades_match_node() {
         }
     });
 }
+
+/// Every fixture the pipeline's `e2e/` tests run through
+/// `run_emit_on_rejection_fixture`, as `### <effect verdict>: <test>`, the
+/// emitted order, and the source. The verdict is the current engine's
+/// effect translation validation of that order.
+const E2E_REJECTIONS: &str = include_str!("e2e_rejection_fixtures.txt");
+
+/// Where the current engine's effect verdict refuses an emitted order, so
+/// does tier 0, with nothing on and with everything on. The fixtures it
+/// accepts are rejected by the pipeline for where a binding is assigned,
+/// not for the order of statements.
+#[test]
+fn tier0_refuses_the_orders_the_engine_refuses() {
+    js_ast::with_swc_globals(|| {
+        let mut refused = 0;
+        for block in E2E_REJECTIONS.split("### ").skip(1) {
+            let (head, rest) = block.split_once('\n').expect("a head line");
+            let (order, source) = rest.split_once('\n').expect("an order line");
+            if head.starts_with("accepted") {
+                continue;
+            }
+            let order: Vec<usize> = order
+                .split(',')
+                .map(|unit| unit.parse().expect("a unit ordinal"))
+                .collect();
+            for everything in [false, true] {
+                let parsed = js_ast::parse_js_module("fixture", source).expect("it parses");
+                let unresolved =
+                    swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+                let upgrades = [ALL_UPGRADES.as_slice(), LATER_UPGRADES.as_slice()].concat();
+                let options = tier0::Options {
+                    exports_reachable: false,
+                    upgrades: if everything {
+                        upgrades.into_iter().collect()
+                    } else {
+                        Default::default()
+                    },
+                    what_if_pure: Default::default(),
+                    program: None,
+                    premises: Default::default(),
+                    derive: everything,
+                };
+                let analysis = tier0::analyze(&parsed.module, unresolved, &options);
+                let positions = summary_effects::pairs::positions(&order, analysis.units.len());
+                let unproven = (0..order.len()).any(|low| {
+                    (low + 1..order.len()).any(|high| {
+                        positions[low] > positions[high] && analysis.conflict(low, high).is_some()
+                    })
+                });
+                assert!(unproven, "{head} (everything on: {everything})");
+            }
+            refused += 1;
+        }
+        assert_eq!(refused, 79);
+    });
+}

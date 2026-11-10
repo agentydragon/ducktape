@@ -57,6 +57,7 @@ rust_test(
     compile_data = [
         "definition_fixtures.txt",
         "derive_fixtures.txt",
+        "e2e_rejection_fixtures.txt",
         "extension_fixtures.txt",
         "premise_fixtures.txt",
         "reach_fixtures.txt",

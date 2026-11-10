@@ -27,6 +27,9 @@ pub struct ProgramFacts {
     pub chunk: PathBuf,
     /// Top-level `await` sites in any chunk of the program.
     pub top_level_awaits: usize,
+    /// Relative or rooted import specifiers, in any chunk, that name no
+    /// chunk read: each is an edge the cycle verdict does not see.
+    pub unresolved_specifiers: usize,
     resolution: Resolution,
 }
 
@@ -284,6 +287,21 @@ pub fn load(
         modules,
         chunk,
         top_level_awaits,
+        unresolved_specifiers: graph
+            .iter()
+            .flat_map(|(path, imports)| {
+                let dynamics = imports.dynamics.iter().flatten();
+                imports
+                    .statics
+                    .iter()
+                    .chain(dynamics)
+                    .map(move |specifier| (path, specifier))
+            })
+            .filter(|(path, specifier)| {
+                resolve(path, specifier, &resolution)
+                    .is_some_and(|target| !graph.contains_key(&target))
+            })
+            .count(),
         resolution,
     })
 }

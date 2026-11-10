@@ -44,6 +44,15 @@ the large private consumer corpus it was 1.8 s of 2.8 s for a chunk with 18
 million swapped pairs. A sweep over impure statements and reach stamps would
 avoid the quadratic visit; it was not needed at these sizes.
 
+On the inlined shape (commit `6114b352`: 75 chunks, 4.94 MB, 5,298 source
+units, every chunk inlined in its entry) `tier0` with all eight upgrades and
+derivation takes 0.13 s of parsing, 1.8 s of analysis and 0.09 s of pair
+checks summed over the 75 chunks, at 89 MiB peak; the current engine's
+analysis of that corpus took 304 s. Each chunk was run as its own process,
+which reads the whole program again every time (22 s of wall time in all), so
+the 1.8 s includes 75 rounds of indexing every chunk for derivation. That
+shape has no swapped pairs, so the run gives time only.
+
 `points-to` on `main` (803 KB) had not converged after 15 minutes. The current
 engine analyses the `editor` chunk in about 14–16 s on this shape.
 
@@ -543,6 +552,28 @@ never applied, so arguments of `new Map(x)` did not escape; `instanceof` did
 not call `Symbol.hasInstance`), not gaps in the formulation.
 
 Not done: the Node-divergence tests under `e2e/` have not been adapted.
+
+### The pipeline's refusal controls
+
+`e2e_rejection_fixtures.txt` holds every fixture the pipeline's `e2e/` tests
+run through `run_emit_on_rejection_fixture` on `devel` at `bd88ea50`: 88
+distinct pairs of a single-chunk source and an emitted order, from 14 test
+files, with the current engine's effect verdict of that order. They were
+collected by making that helper write the source and its
+`effect_translation_validation.json` to the test's undeclared outputs in a
+scratch checkout; nothing in `e2e/` is changed here.
+
+- The engine's effect verdict refuses 79 of the orders (60 `conflict`, 19
+  `incomplete`). `tier0` refuses all 79, with no upgrade and with all eight
+  upgrades and derivation; `tier0_refuses_the_orders_the_engine_refuses`
+  holds it to that.
+- The engine's effect verdict accepts the other 9; the pipeline rejects them
+  because a statement would assign a binding through a read-only import, a
+  question of placement that neither effect analysis decides. Of these, 3
+  swap nothing, `tier0` refuses 4 anyway, and it accepts 2, as the engine's
+  effect verdict does: a function declaration moved after its callers, and
+  `new` of a class with no constructor moved before a binding its methods
+  write.
 
 ## `points-to`: what convergence took
 

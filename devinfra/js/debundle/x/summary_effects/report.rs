@@ -617,6 +617,12 @@ pub struct Tier0Report {
     pub exports_reachable: bool,
     /// How many program chunks were read for cycle and census facts.
     pub program_chunks: Option<usize>,
+    /// Top-level `await` sites in the program; any makes dynamic imports
+    /// count for the cycle verdict.
+    pub program_top_level_awaits: Option<usize>,
+    /// Relative or rooted import specifiers that name no chunk read. Each is
+    /// an edge the cycle verdict and derivation do not see.
+    pub program_unresolved_specifiers: Option<usize>,
     pub upgrades: Vec<tier0::Upgrade>,
     /// Non-empty marks the report an unsound estimate.
     pub what_if_pure: Vec<ImpureCause>,
@@ -866,6 +872,14 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         chunk: file_name(chunk),
         exports_reachable: analysis.exports_reachable,
         program_chunks: options.program.as_ref().map(|program| program.chunks),
+        program_top_level_awaits: options
+            .program
+            .as_ref()
+            .map(|program| program.top_level_awaits),
+        program_unresolved_specifiers: options
+            .program
+            .as_ref()
+            .map(|program| program.unresolved_specifiers),
         upgrades: options.upgrades.iter().copied().collect(),
         what_if_pure: options.what_if_pure.iter().copied().collect(),
         parse_ms,
