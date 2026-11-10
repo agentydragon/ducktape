@@ -3,6 +3,7 @@
 import yaml
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
+from keda_scaledobject_crds.sh import keda
 from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecMaxUnavailable,
     VirtualMachinePoolSpecSelector,
@@ -41,11 +42,12 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, piraeus
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine_pool import container_disk_pool_template
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.kubevirt.virtual_machine_pool import VirtualMachinePool
@@ -65,6 +67,41 @@ _VM_SHUTDOWN_GRACE_SECONDS = 87_000
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
+AUTOSCALER_NAME = f"{NAME}-autoscaler"
+AUTOSCALER_OUTPUT_DIR = f"{GENERATED_ROOT}/{AUTOSCALER_NAME}"
+
+# One task can have reservations on several executors. This is a demand proxy,
+# not a count of distinct queued tasks. The assigned CPU gauge is present even
+# before the first task; the queue gauge is created only after a group queues.
+_METRICS_TARGET = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS_PORT_NAME}"'
+_WORKER_PODS = (
+    f'max by (namespace, pod) (kube_pod_info{{namespace="{NAMESPACE}",'
+    f'created_by_kind="VirtualMachineInstance",created_by_name=~"{NAME}-[0-9]+"}})'
+)
+_UP = f"up{{{_METRICS_TARGET}}}"
+_REGISTERED = f'buildbuddy_health_check_status{{{_METRICS_TARGET},health_check_name="registered_to_scheduler"}}'
+_HEALTHY_WORKERS = (
+    f"({_UP} == 1) and (time() - timestamp({_UP}) < 180) "
+    f"and on (namespace, pod) ({_REGISTERED} == 1) "
+    f"and on (namespace, pod) (time() - timestamp({_REGISTERED}) < 180) "
+    f"and on (namespace, pod) ({_WORKER_PODS})"
+)
+_ASSIGNED_CPU_METRIC = f"buildbuddy_remote_execution_assigned_milli_cpu{{{_METRICS_TARGET}}}"
+_ASSIGNED_CPU = (
+    f"{_ASSIGNED_CPU_METRIC} and (time() - timestamp({_ASSIGNED_CPU_METRIC}) < 180)"
+    f" and on (namespace, pod) ({_HEALTHY_WORKERS})"
+)
+_QUEUE = f"buildbuddy_remote_execution_queue_length{{{_METRICS_TARGET}}} and on (namespace, pod) ({_HEALTHY_WORKERS})"
+_POOL_REPLICAS = f'kube_customresource_kubevirt_vmpool_desired_replicas{{namespace="{NAMESPACE}",name="{NAME}"}}'
+_DESIRED_REPLICAS = f"max({_POOL_REPLICAS} and (time() - timestamp({_POOL_REPLICAS}) < 180))"
+_REPORTING_WORKERS = f"(count(({_ASSIGNED_CPU})) or vector(0))"
+# Hold at the desired size while a requested VM is still booting or its scrape
+# is missing. Missing/stale pool state returns an empty vector, so KEDA holds.
+_DEMAND_QUERY = (
+    f"((sum(clamp_max(({_ASSIGNED_CPU}), 1)) + "
+    f"(sum(({_QUEUE})) or 0 * sum(({_ASSIGNED_CPU})))) "
+    f"and on () ({_REPORTING_WORKERS} == {_DESIRED_REPLICAS})) or ({_DESIRED_REPLICAS})"
+)
 # Eight GiB suffices for the one test CI gates on this pool. During test_firecracker (commit
 # 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy invocation f6ad2fda-409c-446f-8ade-8ac18f5da377, 2026-11-10)
 # guest memory in use, MemTotal less MemAvailable, peaked at 2.8 GiB on both workers, sampled over the VM console
@@ -254,7 +291,8 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
         # SSD pool. Not a raw block volume: CDI's importer runs as a non-root user, which cannot open the device.
         # TODO(https://github.com/agentydragon/ducktape/issues/15297): use raw block once containerd on these nodes
         # sets device_ownership_from_security_context.
-        # The contents rebuild, so the class's single unreplicated copy is enough.
+        # The contents rebuild, so a single local copy is enough. Deleting the
+        # member's PVC also deletes its LINSTOR volume and frees the SSD space.
         data_volume_templates=[
             VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplates(
                 metadata={"name": "work"},
@@ -262,7 +300,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                     source=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecSource(blank={}),
                     storage=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorage(
                         access_modes=["ReadWriteOnce"],
-                        storage_class_name="piraeus-ssd-local",
+                        storage_class_name=piraeus.SSD_LOCAL_DELETE,
                         volume_mode="Filesystem",
                         resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplatesSpecStorageResources(
                             requests={
@@ -315,8 +353,8 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
         selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
         virtual_machine_template=_pool_worker_template(),
-        replicas=2,
-        # A template change replaces VMs one at a time, so the pool is never left without an executor.
+        # HPA owns replicas. KubeVirt defaults to one before the autoscaler starts.
+        # A template change replaces at most one VM at a time.
         max_unavailable=VirtualMachinePoolSpecMaxUnavailable.from_number(1),
     )
     NetworkPolicy(
@@ -384,10 +422,83 @@ def chart(app: App) -> Chart:
                             "No BuildBuddy KVM worker has been ready and scrapable for 2 minutes, so tests targeting "
                             "pool kvm-vm fail immediately instead of queueing."
                         ),
-                    )
+                    ),
+                    Rule.alert(
+                        "BuildBuddyKvmAutoscalerMetricsMissing",
+                        f"absent({_DEMAND_QUERY})",
+                        for_="5m",
+                        labels={"severity": "warning"},
+                        summary="KVM worker autoscaler lacks pool metrics",
+                        description="KEDA holds the current VM count until fresh pool metrics are available.",
+                    ),
+                    Rule.alert(
+                        "BuildBuddyKvmWorkerNotReporting",
+                        f"{_REPORTING_WORKERS} < {_DESIRED_REPLICAS}",
+                        for_="15m",
+                        labels={"severity": "warning"},
+                        summary="KVM worker has not registered or is not scrapable",
+                        description="The autoscaler holds its current size until every requested worker reports metrics.",
+                    ),
                 ],
             )
         ],
+    )
+    return chart
+
+
+def autoscaler_chart(app: App) -> Chart:
+    chart = Chart(app, AUTOSCALER_NAME, disable_resource_name_hashes=True)
+    keda.ScaledObject(
+        chart,
+        "scaled-object",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        spec=keda.ScaledObjectSpec(
+            scale_target_ref=keda.ScaledObjectSpecScaleTargetRef(
+                api_version=VirtualMachinePool.GVK.api_version, kind=VirtualMachinePool.GVK.kind, name=NAME
+            ),
+            min_replica_count=1,
+            max_replica_count=3,
+            polling_interval=30,
+            fallback=keda.ScaledObjectSpecFallback(
+                failure_threshold=3,
+                replicas=1,
+                behavior=keda.ScaledObjectSpecFallbackBehavior.CURRENT_REPLICAS_IF_HIGHER,
+            ),
+            advanced=keda.ScaledObjectSpecAdvanced(
+                horizontal_pod_autoscaler_config=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfig(
+                    behavior=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehavior(
+                        scale_up=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehaviorScaleUp(
+                            stabilization_window_seconds=120,
+                            policies=[
+                                keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehaviorScaleUpPolicies(
+                                    type="Pods", value=1, period_seconds=900
+                                )
+                            ],
+                        ),
+                        scale_down=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehaviorScaleDown(
+                            stabilization_window_seconds=900,
+                            policies=[
+                                keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehaviorScaleDownPolicies(
+                                    type="Pods", value=1, period_seconds=300
+                                )
+                            ],
+                        ),
+                    )
+                )
+            ),
+            triggers=[
+                keda.ScaledObjectSpecTriggers(
+                    type="prometheus",
+                    metric_type="AverageValue",
+                    metadata={
+                        "serverAddress": f"{mimir.GATEWAY_URL}/prometheus",
+                        "query": _DEMAND_QUERY,
+                        "threshold": "1",
+                        "ignoreNullValues": "false",
+                    },
+                )
+            ],
+        ),
     )
     return chart
 
@@ -398,6 +509,7 @@ def buildbuddy_kvm_worker(
     executor: Kustomization,
     kubevirt: Kustomization,
     monitoring_crds: Kustomization,
+    piraeus: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -405,5 +517,21 @@ def buildbuddy_kvm_worker(
         directory,
         timeout="15m",
         suspend=False,
-        depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(executor, kubevirt, monitoring_crds, piraeus),
+    )
+
+
+def autoscaler(
+    chart: Chart,
+    directory: RenderedDirectory,
+    worker: Kustomization,
+    keda_operator: Kustomization,
+    monitoring: Kustomization,
+    mimir_backend: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        AUTOSCALER_NAME,
+        directory,
+        depends_on=flux_kustomization_depends_on_many(worker, keda_operator, monitoring, mimir_backend),
     )

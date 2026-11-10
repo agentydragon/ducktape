@@ -1,16 +1,18 @@
 # KVM workers
 
-A KubeVirt `VirtualMachinePool` of two VMs, each containing a BuildBuddy executor for the manual
+A KubeVirt `VirtualMachinePool` of one to three VMs, each containing a BuildBuddy executor for the manual
 `kvm-vm` pool; BuildBuddy schedules across them, one action per VM. Required pod anti-affinity keeps
 the members on different nodes without naming a node, so one node failure or its disk contention
 reaches only one worker. Each VM boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
 vCPUs, 8 GiB RAM and an 80 GiB disk for Docker layers, action workspaces and cache.
-The disk is a blank image on a filesystem volume from `piraeus-ssd-local`, created per VM by a CDI
+The disk is a blank image on a filesystem volume from `piraeus-ssd-local-delete`, created per VM by a CDI
 `DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
 raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
 copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node. A template change
 restarts each member in place and keeps its volume, cache and image store; deleting a member deletes the
-volume claim, but the class retains the underlying volume, so remove a leftover by hand. A member counts as ready once its executor has registered with BuildBuddy (the
+volume claim and its underlying volume. Existing volumes created with `piraeus-ssd-local` retain their
+old reclaim policy and leave a volume behind when their claim is deleted; clean those up separately.
+A member counts as ready once its executor has registered with BuildBuddy (the
 executor's `/readyz` on port 8080, which needs the `server-type` header), so the pool restarts members one at a time
 and waits for each to register before the next. Pool scale-in asks KubeVirt to shut down the
 VM through ACPI; the executor stops accepting work and drains active tasks for up to the
@@ -28,6 +30,19 @@ Both Docker's data root and containerd's image store use the work disk; Docker 2
 containerd image store does not follow Docker's `data-root` setting.
 Actions also bind K3s's data directory from the ext4 work disk so its nested overlayfs
 snapshotter has a supported backing filesystem.
+
+KEDA scales the pool from BuildBuddy's executor metrics in Mimir. Demand combines busy workers and
+queued reservations; BuildBuddy can place more than one reservation for a task, so this is a proxy for
+backlog rather than an exact task count. Scale-up requires a two-minute stabilized recommendation and
+adds at most one VM per 15 minutes. It holds the requested count while a VM is booting, unregistered,
+or missing metrics, and alerts if that persists. Scale-down uses a 15-minute stabilization window and
+removes at most one VM every five minutes. Missing pool metrics hold the current count. Newly provisioned
+workers need time to install packages and warm their local cache.
+
+Before enabling autoscaling, deploy the longer executor drain timeout and verify that both existing
+workers have rolled out and registered with it. The initial rollout can interrupt a busy worker still
+using the old short timeout; schedule it for a quiet window. Graceful drain is bounded and does not
+guarantee that every possible action completes before shutdown.
 The guest sets kubelet's kernel defaults at boot. The KVM fixture prepares its private
 Docker cgroup and network namespaces; guest-wide sysctls remain read-only in the action.
 K3s pulls its bundled images through Zot, with public registry fallback disabled, using
