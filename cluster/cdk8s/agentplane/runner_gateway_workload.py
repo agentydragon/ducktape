@@ -362,8 +362,8 @@ class RunnerGateway(Construct):
                     if self.env.central_sampler is not None
                     else []
                 ),
-                # Managed Sandboxes reach the Dispatcher through the central proxy; the substituted
-                # Sandbox-audience bearer remains the Gateway's caller identity.
+                # Managed Sandboxes reach the Dispatcher through the central proxy; the Gateway
+                # authenticates them by their Sandbox SVID.
                 egress.proxy(namespace).pods.admit(dispatcher.pod_port),
                 self.sandbox_controller_pods.admit(proxy.pod_port),
                 *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
