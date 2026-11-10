@@ -67,11 +67,12 @@ added.
 - **Older traces hold extra copies.** In `events_full`:
   - Traces from before the `llm_only` scope hold each input twice, on the HTTP span and on
     the model-call span. In late October that was 3387 of 3391 traces with input.
-  - Before 2026-10-24, the v1 exporter also emitted a `raw_gen_ai_request` span holding the
-    request again as `llm.invocation_parameters`, `llm.None.tools` and `llm.None.messages`,
-    and the parent span carried `llm.invocation_parameters` too. Langfuse copied those
-    attributes into `metadata.attributes`. In August that came to 131 GiB of raw metadata on
-    `raw_gen_ai_request` rows and 71 GiB on parent spans, beside 45 GiB of input.
+  - Before 2026-10-24, the v1 exporter's parent `litellm_request` spans also carry the request
+    as `llm.invocation_parameters` in `metadata.attributes` (71 GiB raw in August, beside 45 GiB
+    of input). It is the only copy of those calls' tool definitions, so it stays.
+  - The same exporter's `raw_gen_ai_request` child spans repeated the request three more times
+    (131 GiB raw metadata in August). They were deleted from `events_full`/`events_core` on
+    2026-11-09 with `ALTER TABLE … DELETE WHERE name = 'raw_gen_ai_request'`.
 
 ### Levers
 
@@ -81,12 +82,15 @@ GenAI mapper still emits tool schemas (`gen_ai.tool.*`), so those keep arriving.
 ## Langfuse-side retention
 
 - **Data retention:** Langfuse's built-in data retention is Enterprise-only when
-  self-hosted. The OSS alternative is a ClickHouse TTL you add yourself.
+  self-hosted. The OSS alternative is a ClickHouse TTL you add yourself: #15330.
 - **Legacy tables:** v4 writes only `events_full`/`events_core`. `cluster/cdk8s/langfuse.py`
   pins `LANGFUSE_MIGRATION_V4_WRITE_MODE=events_only`, and the legacy `traces`/`observations`
   tables were truncated on 2026-11-08.
 - **Raw S3 payloads:** the raw ingestion payloads in S3 never expire: #15022.
-  Freed thin-pool space needs a trim: #15021.
+- **Thin-pool space:** LINSTOR volumes mount with `discard` (#15044, #15021), so space ClickHouse
+  frees returns to the LVM-thin pools.
+- **ClickHouse memory:** rewriting a large `events_full` part (rows with ~400 KB of metadata) needs
+  ~8 GiB, hence ClickHouse's 16Gi limit (`cluster/cdk8s/clickhouse/installation.py`).
 
 ## Open: props correlation keys
 
