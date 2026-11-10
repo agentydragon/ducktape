@@ -428,6 +428,53 @@ An impure declaration is now charged with writing its bindings only when it
 runs, not whenever a later impure statement runs; that alone took `editor`'s
 upgrade row from 1,153 to 902.
 
+### Later upgrades
+
+Four more `--upgrade` values, each a rule for a statement shape that stayed
+impure:
+
+- `local-heritage`: `class X extends B` where `B` is a local binding that
+  only ever holds one class (declared once by a class declaration or a class
+  expression, never assigned). The definition reads `B` eagerly and runs
+  nothing: a class's `prototype` cannot be replaced. A function as base does
+  not qualify, since its `prototype` can.
+- `static-fields`: a static field whose initializer is a pure-definition
+  expression; it defines an own property of the new class.
+- `literal-member-reads`: `table.key` where `table` only ever holds one plain
+  object literal that has `key`. The definition reads `table` eagerly and
+  stays ordered against any impure statement that can reach the object. It
+  is a pure definition only if no impure statement can have reached the
+  object before it, which is decided by assuming every such read pure and
+  then making impure each one an earlier impure statement reaches, until
+  none is left.
+- `import-reads`: a read of an imported binding is a pure definition that
+  stays ordered against every impure statement, since another chunk's code
+  may change what the import holds.
+
+`extension_fixtures.txt` holds 14 programs run under Node in both orders (6
+admitted with Node agreeing, 8 refused with Node showing the divergence:
+a base that is rebound, a function base whose prototype is replaced, a
+literal changed between, a property made an accessor by an earlier
+statement, a property the literal lacks). The 129 order-dependent statements
+of § Soundness fixtures are refused with all eight upgrades on.
+
+Excalidraw, stress assignment, program-wide census, unproven pairs / authored
+modules in a pair (largest group):
+
+| Configuration                         |          `main` |      `editor` |
+| ------------------------------------- | --------------: | ------------: |
+| first four upgrades                   | 515 / 166 (166) | 902 / 42 (38) |
+| all eight upgrades                    |     341 / 4 (4) | 464 / 29 (25) |
+| all eight + derivation                |     128 / 4 (4) | 422 / 27 (23) |
+| all eight + derivation + 2/3 premises |     106 / 3 (3) | 372 / 27 (23) |
+
+`main`'s drop from 166 modules to 4 is one statement: an object literal that
+reads two imports. As an impure statement it conflicted with every definition
+an earlier impure statement had leaked (174 pairs across the chunk); as a
+definition that reads imports it conflicts only with the impure statements,
+which share a few modules. The committed spec stays at 0 unproven pairs in
+every row.
+
 ### Shapes from a large private consumer corpus
 
 `tier0_synthetic_shape_families` fixes the verdicts for three generic shapes.
@@ -547,7 +594,8 @@ summary_effects_bin --mode tier0 \
 ```
 
 Only `--chunk` is required; `--effect-report` supplies the emitted order.
-`--derive` enables § Derived contracts. `--upgrade` takes any of `primitive-bindings`, `native-allocators`,
+`--derive` enables § Derived contracts; § Later upgrades lists four more
+`--upgrade` values. `--upgrade` takes any of `primitive-bindings`, `native-allocators`,
 `intrinsic-heritage`, `intrinsic-member-reads`; `--program-chunks <dir>` reads
 every chunk of the program for the cycle check and the census; `--premises
 <json>` is described under § Premises.

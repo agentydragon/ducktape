@@ -1,0 +1,87 @@
+### dep
+export let value = 1;
+export function bump() { value = 2; }
+### commutes same: a class extending a local class across an impure statement
+-
+class Base {} let state = 0;
+state = 1;
+class Derived extends Base {}
+console.log(state, Object.getPrototypeOf(Derived) === Base);
+### ordered differs: a class before its local base class
+-
+let unused;
+class Base {}
+class Derived extends Base {}
+console.log(Object.getPrototypeOf(Derived) === Base);
+### ordered differs: a base binding that is rebound
+-
+let Base = class {}; function swap() { Base = class { static tag = 1; }; }
+swap();
+class Derived extends Base {}
+console.log(Derived.tag);
+### ordered differs: a function base whose prototype is replaced
+-
+function Base() {} function patch() { Base.prototype = { tag: 1 }; }
+patch();
+class Derived extends Base {}
+console.log(new Derived().tag);
+### commutes same: static fields with literal and function initializers
+-
+let state = 0;
+state = 1;
+class K { static limit = 3; static make = () => state; static table = { a: [1] }; }
+console.log(state, K.limit, K.make(), K.table.a[0]);
+### ordered differs: a static field that reads a binding an impure statement writes
+-
+let state = 0;
+state = 1;
+class K { static seen = [state]; }
+console.log(K.seen[0]);
+### commutes same: a property read of a literal across an impure statement
+-
+const table = { a: 1, b: 2 }; let state = 0;
+state = 1;
+const a = table.a;
+console.log(state + a);
+### commutes same: two property reads of one literal
+-
+const table = { a: 1, b: 2 };
+const a = table.a;
+const b = table.b;
+console.log(a + b);
+### ordered differs: the literal is changed between
+-
+const table = { a: 1 }; function bump() { table.a = 2; }
+bump();
+const a = table.a;
+console.log(a);
+### ordered differs: an earlier statement made the property an accessor
+-
+const table = { a: 1 }; Object.defineProperty(table, 'a', { get() { return later; } });
+const a = table.a;
+var later = 1;
+console.log(a);
+### ordered differs: a property the literal does not have
+-
+const table = {}; function patch() { Object.prototype.inherited = 1; }
+patch();
+const a = table.inherited;
+console.log(a);
+### ordered differs: a property read before the literal's definition
+-
+let unused;
+const table = { a: 1 };
+const a = table.a;
+console.log(a);
+### commutes same: two reads of an import
+-
+import { value } from './dep.js';
+const a = value;
+const b = value;
+console.log(a + b);
+### ordered differs: an import another chunk's code changes
+-
+import { value, bump } from './dep.js';
+bump();
+const v = value;
+console.log(v);

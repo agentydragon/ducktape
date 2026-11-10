@@ -139,6 +139,9 @@ pub struct Unit {
     /// them no earlier definition calls: this statement may run the module.
     lazy_uses: Vec<Binding>,
     lazy_first: Vec<Binding>,
+    /// Literals the definition reads a property of: it is a pure definition
+    /// only while no impure statement can have reached them before it.
+    pristine: Vec<Binding>,
 }
 
 /// A lazy module's body may run code of any provider.
@@ -303,6 +306,19 @@ pub enum Upgrade {
     /// A read of a data property of an intrinsic namespace or prototype,
     /// such as `Object.prototype.toString` or `Math.PI`.
     IntrinsicMemberReads,
+    /// A class extending a local binding that only ever holds a class: the
+    /// definition reads that binding and runs nothing.
+    LocalHeritage,
+    /// Static class fields whose initializer is a pure-definition
+    /// expression.
+    StaticFields,
+    /// `table.key` where `table` only ever holds one plain object literal
+    /// that has `key`, and no impure statement can have reached the object
+    /// before the read.
+    LiteralMemberReads,
+    /// A read of an imported binding: the definition stays ordered against
+    /// every impure statement.
+    ImportReads,
 }
 
 /// The global a recognized intrinsic use depends on, with the properties of
@@ -359,6 +375,12 @@ struct Classifier<'a> {
     imports: &'a FxHashSet<Binding>,
     /// Bindings proven to only ever hold a primitive.
     primitives: &'a FxHashSet<Binding>,
+    /// Bindings that only ever hold one class.
+    classes: &'a FxHashSet<Binding>,
+    /// Bindings that only ever hold one plain object literal, with its keys.
+    literals: &'a FxHashMap<Binding, FxHashSet<String>>,
+    /// Literals the statement reads a property of.
+    pristine: Vec<Binding>,
     upgrades: &'a FxHashSet<Upgrade>,
     census: &'a Census,
     unresolved: SyntaxContext,
@@ -741,6 +763,30 @@ impl Classifier<'_> {
         ok
     }
 
+    /// `table.key` for a binding that only ever holds one plain object
+    /// literal with that key.
+    fn literal_member_read(&self, expr: &Expr) -> Option<Binding> {
+        if !self.upgrades.contains(&Upgrade::LiteralMemberReads) {
+            return None;
+        }
+        let Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(key),
+            ..
+        }) = expr
+        else {
+            return None;
+        };
+        let Expr::Ident(table) = &**obj else {
+            return None;
+        };
+        let binding = *self.bindings.get(&table.to_id())?;
+        self.literals
+            .get(&binding)?
+            .contains(&*key.sym)
+            .then_some(binding)
+    }
+
     /// The premise on a callee expression, with the binding it reads.
     fn premise(&self, callee: &Expr) -> Option<(Vec<PremiseKind>, usize, Binding)> {
         match callee {
@@ -1012,8 +1058,23 @@ impl Classifier<'_> {
     /// A class whose definition runs nothing: no `extends`, static block,
     /// static initializer, computed key or decorator.
     fn class(&mut self, class: &Class) -> Result<(), ImpureCause> {
+        let local_base = |heritage: &Expr| match heritage {
+            Expr::Ident(base) => self
+                .bindings
+                .get(&base.to_id())
+                .copied()
+                .filter(|binding| self.classes.contains(binding)),
+            _ => None,
+        };
         let heritage = match &class.super_class {
             None => true,
+            Some(heritage)
+                if self.upgrades.contains(&Upgrade::LocalHeritage)
+                    && local_base(heritage).is_some() =>
+            {
+                self.eager.extend(local_base(heritage));
+                true
+            }
             Some(heritage) if self.upgrades.contains(&Upgrade::IntrinsicHeritage) => self
                 .global(heritage)
                 .and_then(|name| HERITAGE.iter().find(|known| **known == name).copied())
@@ -1024,14 +1085,23 @@ impl Classifier<'_> {
             return Err(ImpureCause::ClassEagerPart);
         }
         for member in &class.body {
-            let (key, is_static_value) = match member {
+            let (key, static_value) = match member {
                 ClassMember::Constructor(_) | ClassMember::Empty(_) => continue,
-                ClassMember::Method(method) => (Some(&method.key), false),
-                ClassMember::PrivateMethod(_) => (None, false),
-                ClassMember::ClassProp(prop) => (Some(&prop.key), prop.is_static),
-                ClassMember::PrivateProp(prop) => (None, prop.is_static),
+                ClassMember::Method(method) => (Some(&method.key), None),
+                ClassMember::PrivateMethod(_) => (None, None),
+                ClassMember::ClassProp(prop) => {
+                    (Some(&prop.key), prop.is_static.then_some(&prop.value))
+                }
+                ClassMember::PrivateProp(prop) => (None, prop.is_static.then_some(&prop.value)),
                 _ => return Err(ImpureCause::ClassEagerPart),
             };
+            // A static field defines an own property of the new class.
+            let is_static_value = static_value.is_some_and(|value| {
+                !self.upgrades.contains(&Upgrade::StaticFields)
+                    || value
+                        .as_deref()
+                        .is_some_and(|value| self.pure(value).is_err())
+            });
             let decorated = match member {
                 ClassMember::Method(method) => !method.function.decorators.is_empty(),
                 ClassMember::ClassProp(prop) => !prop.decorators.is_empty(),
@@ -1061,6 +1131,12 @@ impl Classifier<'_> {
             return Ok(());
         }
         if self.premised_allocation(expr) {
+            return Ok(());
+        }
+        if let Some(table) = self.literal_member_read(expr) {
+            self.eager.push(table);
+            self.deep.push(table);
+            self.pristine.push(table);
             return Ok(());
         }
         if let Some(dependencies) = self.intrinsic_member_read(expr) {
@@ -1094,8 +1170,18 @@ impl Classifier<'_> {
             Expr::Ident(ident) => match self.bindings.get(&ident.to_id()) {
                 // An argument of a premised call: the unit is then ordered
                 // against every impure statement.
-                Some(binding) if self.imports.contains(binding) && self.premised_args == 0 => {
+                Some(binding)
+                    if self.imports.contains(binding)
+                        && self.premised_args == 0
+                        && !self.upgrades.contains(&Upgrade::ImportReads) =>
+                {
                     Err(ImpureCause::ForeignRead)
+                }
+                // Another chunk's code may change what the import holds.
+                Some(binding) if self.imports.contains(binding) => {
+                    self.eager.push(*binding);
+                    self.deep.push(*binding);
+                    Ok(())
                 }
                 Some(binding) => {
                     self.eager.push(*binding);
@@ -1488,6 +1574,69 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     for binding in declared_by_unit.iter().flatten() {
         declarations[*binding as usize] += 1;
     }
+    // Bindings declared once and never assigned, by a class or by a plain
+    // object literal.
+    let mut classes: FxHashSet<Binding> = FxHashSet::default();
+    let mut literals: FxHashMap<Binding, FxHashSet<String>> = FxHashMap::default();
+    for (source, declared) in sources.iter().zip(&declared_by_unit) {
+        let [binding] = declared.as_slice() else {
+            continue;
+        };
+        if declarations[*binding as usize] != 1 || assigned_anywhere.contains(binding) {
+            continue;
+        }
+        let declarator = match source {
+            Source::Declarator(declarator) => *declarator,
+            Source::Item(
+                ModuleItem::Stmt(Stmt::Decl(Decl::Class(_)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Class(_),
+                    ..
+                })),
+            ) => {
+                classes.insert(*binding);
+                continue;
+            }
+            Source::Item(
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Var(var),
+                    ..
+                })),
+            ) => match var.decls.as_slice() {
+                [declarator] => declarator,
+                _ => continue,
+            },
+            Source::Item(_) => continue,
+        };
+        if !matches!(declarator.name, Pat::Ident(_)) {
+            continue;
+        }
+        let init = declarator.init.as_deref();
+        match init {
+            Some(Expr::Class(_)) => {
+                classes.insert(*binding);
+            }
+            Some(Expr::Object(object))
+                if crate::derive::plain_literal(init.expect("an object")) =>
+            {
+                let keys = object.props.iter().filter_map(|prop| match prop {
+                    PropOrSpread::Prop(prop) => match &**prop {
+                        Prop::Shorthand(key) => Some(key.sym.to_string()),
+                        Prop::KeyValue(pair) => match &pair.key {
+                            PropName::Ident(key) => Some(key.sym.to_string()),
+                            PropName::Str(key) => Some(js_ast::str_value(key)),
+                            _ => None,
+                        },
+                        _ => None,
+                    },
+                    PropOrSpread::Spread(_) => None,
+                });
+                literals.insert(*binding, keys.collect());
+            }
+            _ => {}
+        }
+    }
     let mut primitives: FxHashSet<Binding> = FxHashSet::default();
     if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
         // The initializer of each binding declared by one identifier
@@ -1638,6 +1787,9 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             bindings: &bindings,
             imports: &imports,
             primitives: &primitives,
+            classes: &classes,
+            literals: &literals,
+            pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,
             unresolved,
@@ -1731,6 +1883,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             providers: classifier.providers,
             lazy_uses: classifier.lazy_uses,
             lazy_first: Vec::new(),
+            pristine: classifier.pristine,
         });
     }
     // The first definition to call a lazy module's thunk may run the module
@@ -1793,33 +1946,64 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         }
     };
 
-    let mut reach_stamp = vec![NEVER; binding_count];
     let exports_reachable = options.exports_reachable
         || top_level_awaits > 0
         || options
             .program
             .as_ref()
             .is_some_and(|program| program.on_import_cycle);
-    if exports_reachable {
-        let seeds: Vec<Binding> = exported.iter().copied().collect();
-        closure(&seeds, &mut |binding| {
-            let fresh = reach_stamp[binding as usize] == NEVER;
-            reach_stamp[binding as usize] = 0;
-            fresh
-        });
-    }
+    // Per binding: the first impure ordinal whose reach holds it.
+    let reach = |units: &[Unit]| {
+        let mut reach_stamp = vec![NEVER; binding_count];
+        if exports_reachable {
+            let seeds: Vec<Binding> = exported.iter().copied().collect();
+            closure(&seeds, &mut |binding| {
+                let fresh = reach_stamp[binding as usize] == NEVER;
+                reach_stamp[binding as usize] = 0;
+                fresh
+            });
+        }
+        for (ordinal, unit) in units.iter().enumerate() {
+            if !matches!(unit.kind, Kind::Impure(_)) {
+                continue;
+            }
+            closure(&unit.mentions, &mut |binding| {
+                let fresh = reach_stamp[binding as usize] == NEVER;
+                if fresh {
+                    reach_stamp[binding as usize] = ordinal as u32;
+                }
+                fresh
+            });
+        }
+        reach_stamp
+    };
+    // A property read of a literal runs no code only while the literal is as
+    // written. Assume every such read is a pure definition, then make impure
+    // each one an earlier impure statement can reach, until none is left:
+    // making one impure only widens what is reached.
+    let reach_stamp = loop {
+        let reach_stamp = reach(&units);
+        let mut changed = false;
+        for (ordinal, unit) in units.iter_mut().enumerate() {
+            let reached = unit
+                .pristine
+                .iter()
+                .any(|table| reach_stamp[*table as usize] <= ordinal as u32);
+            if reached && !matches!(unit.kind, Kind::Impure(_)) {
+                unit.kind = Kind::Impure(ImpureCause::MemberRead);
+                unit.providers.clear();
+                changed = true;
+            }
+        }
+        if !changed {
+            break reach_stamp;
+        }
+    };
     let mut own_reach = FxHashMap::default();
     for (ordinal, unit) in units.iter().enumerate() {
         if !matches!(unit.kind, Kind::Impure(_)) {
             continue;
         }
-        closure(&unit.mentions, &mut |binding| {
-            let fresh = reach_stamp[binding as usize] == NEVER;
-            if fresh {
-                reach_stamp[binding as usize] = ordinal as u32;
-            }
-            fresh
-        });
         let mut own = FxHashSet::default();
         closure(&unit.mentions, &mut |binding| own.insert(binding));
         own_reach.insert(ordinal, own);
