@@ -6,7 +6,7 @@
   "request_start_clock": "Not retained",
   "assembled_at_utc": "2026-11-09T07:58:35.452343+00:00",
   "scope": "Read-only inventory38BucketCRs,23CNPGclusters,20latestactivebackups,2cachePVCs,6thin-pools;productresearchchecksandretirementdispositions.",
-  "visual_validation": "See remediation-validation.json for validation of the updated page. The historical presentation-validation.json refers to the prior report bytes.",
+  "visual_validation": "See remediation-validation.json for validation of the updated page and the root index. The historical presentation-validation.json refers to the prior report bytes.",
   "report_html_sha256": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
   "evidence_sha256": "a26d0c635c268ddb8cce5b95b3dc38a41b58f36c3344af4da20ec42726d3f894",
   "presentation_validation": "../presentation-validation.json",
@@ -14,8 +14,9 @@
   "presentation_scope": "React/Mantine component and chart presentation update. Original measurement/source windows retained; no new CI, recurrence or storage measurements.",
   "historical_report_html_sha256": "ab976732db211e9e2d001eee7bf0909dcca37ecf56e87ce2c700602684a2c7e7",
   "historical_visual_validation": "The prior presentation-validation.json applies to the original 2026-11-09 report bytes identified by historical_report_html_sha256, not the modified report.",
-  "remediation_script_sha256": "bf539d5ddd5e11cb99f46ef418a3e9bc33803767e7ec0ca9970e473b7953e692",
-  "remediation_evidence_sha256": "608270fd704a4e79ddba86aeb5a7dea4b83c39a77db2f7bedae90941ffe76de6",
+  "remediation_script_sha256": "9c7dcd3b05c8dedb365841f954328f12931b508b8fbf81d7362e778da5cc14d4",
+  "remediation_evidence_sha256": "365283a84edf8fa94b0d22540e2387b2525abd8cb5883bd24c10f7749793ddc5",
   "remediation_snapshot_utc": "2026-11-10T19:20:23Z",
-  "remediation_validation": "remediation-validation.json"
+  "remediation_validation": "remediation-validation.json",
+  "observability_snapshot_utc": "2026-11-10T21:12:00Z–21:28:00Z"
 }

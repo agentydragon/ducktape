@@ -1,15 +1,25 @@
 {
-  "validated_at_utc": "2026-11-10T19:55:52.606756+00:00",
-  "scope": "The updated storage page and its shared presentation files; the earlier inventory retains its own 2026-11-09 observation window.",
+  "validated_at_utc": "2026-11-10T21:56:28.990080+00:00",
+  "scope": "The updated storage page, root index, and shared presentation files; the earlier inventory retains its own 2026-11-09 observation window.",
   "files_sha256": {
+    "index.html": "84f59e774b5f94b445e3cc3305d6be4b66e89f8f9dc3f0c3078ae604ba694f89",
     "storage/index.html": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
-    "storage/remediation.js": "bf539d5ddd5e11cb99f46ef418a3e9bc33803767e7ec0ca9970e473b7953e692",
-    "storage/remediation-evidence.json": "608270fd704a4e79ddba86aeb5a7dea4b83c39a77db2f7bedae90941ffe76de6",
+    "storage/remediation.js": "9c7dcd3b05c8dedb365841f954328f12931b508b8fbf81d7362e778da5cc14d4",
+    "storage/remediation-evidence.json": "365283a84edf8fa94b0d22540e2387b2525abd8cb5883bd24c10f7749793ddc5",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "browser_test": {
-    "invocation": "https://app.buildbuddy.io/invocation/6873f4cd-d1d9-4721-9339-5c76b81baeb2",
+    "invocations": [
+      {
+        "url": "https://app.buildbuddy.io/invocation/a2afd0b2-994a-4146-8ce4-e49bdd3acad6",
+        "result": "Home: 4/4 passed. Report: 10/12 passed; two dark controls cases timed out."
+      },
+      {
+        "url": "https://app.buildbuddy.io/invocation/3e4cfdee-6ebb-4366-8a6f-286ba27843e2",
+        "result": "Focused retry of the two dark controls cases: 2/2 passed."
+      }
+    ],
     "execution": "Bazel remote execution using a temporary test harness serving byte-identical copies of the listed site files and real pinned CDN resources.",
     "cases": [
       "1280x900 light",
@@ -18,23 +28,26 @@
       "390x844 dark"
     ],
     "checks": [
-      "Rendered chart bars and no page-wide horizontal overflow",
+      "Home index links and responsive layout",
+      "Rendered existing and new chart bars and no page-wide horizontal overflow",
+      "Mimir and Loki evidence disclosures and aggregate queries",
       "Scenario arithmetic and mutually exclusive ClickHouse options",
       "Decision filtering and persistence across reload",
-      "ClickHouse evidence disclosure",
-      "Live system color preference changes",
-      "Compression summary values"
+      "Live system color preference changes"
     ],
     "captures": [
+      "home-card",
       "overview",
-      "pool",
-      "age",
-      "compression",
-      "columns",
-      "option",
+      "mimir-age",
+      "mimir-series",
+      "loki-sources",
+      "mimir-details",
+      "audit",
+      "ksm",
+      "methods",
       "scenario"
     ],
-    "result": "passed"
+    "result": "All cases passed across the two invocations; the matrix had two timeouts that passed in the focused retry."
   },
-  "visual_review": "Inspected desktop and mobile screenshots in both themes, including the pool, S3 age, compression and ClickHouse charts and an intervention card. A compression text spacing issue found during review was corrected and the checks rerun."
+  "visual_review": "Inspected desktop and mobile screenshots in both themes, including the new charts and evidence panels. Query examples wrap on narrow screens."
 }

@@ -426,6 +426,275 @@ function LangfuseEvidence({ data }) {
   <//>`;
 }
 
+function ObservabilityEvidence({ data }) {
+  const evidence = data.observability;
+  const mib = evidence.mimir_series.map((row) => ({
+    name: row.name,
+    thousands: row.series / 1000,
+  }));
+  return html`<${Stack} component="section" id="observability" gap="md" my="xl">
+    <${Title} order=${2}>Mimir and Loki: what is using space<//>
+    <${Text}>
+      ${`Read-only observations at ${evidence.observed_utc}. The charts use different measures: Mimir blocks are compressed object bytes, series counts describe current cardinality, and Loki's index estimates uncompressed log volume. They cannot be added together.`}
+    <//>
+    <${SimpleGrid} cols=${{ base: 1, lg: 2 }} spacing="md">
+      <${Figure}
+        title="Mimir blocks by data age"
+        caption="GB logical, 171 block metadata records and their filer object sizes. A live S3 listing found 239.7 GB; the bucket status and exporter reported 272.0 and 211.7 GB. Blocks crossing a cutoff are counted on the newer side."
+        slug="mimir-age"
+      >
+        <${BarChart}
+          h=${245}
+          data=${evidence.mimir_block_ages}
+          dataKey="age"
+          type="stacked"
+          series=${[
+            { name: "index", label: "Index", color: "grape.6" },
+            {
+              name: "chunks_other",
+              label: "Chunks and other",
+              color: "blue.6",
+            },
+          ]}
+          withLegend
+          barProps=${{ isAnimationActive: false }}
+          yAxisProps=${{ width: 48, tickFormatter: (value) => Number(value).toFixed(0) }}
+          barChartProps=${{ margin: { right: 10, bottom: 8 } }}
+          valueFormatter=${(value) => `${Number(value).toFixed(1)} GB`}
+        />
+        <${Table} striped mt="sm">
+          <${Table.Thead}
+            ><${Table.Tr}><${Table.Th}>Age<//><${Table.Th}>Total<//><//><//
+          >
+          <${Table.Tbody}>
+            ${evidence.mimir_block_ages.map((row) => html`<${Table.Tr} key=${row.age}><${Table.Td}>${row.age}<//><${Table.Td}>${(row.index + row.chunks_other).toFixed(1)} GB<//><//>`)}
+          <//>
+        <//>
+      <//>
+      <${Figure}
+        title="Mimir current series"
+        caption="Thousands of series at one instant. Source-less HTTP entries still identify destinations; filtering them loses that history. Series counts do not establish compressed-byte savings."
+        slug="mimir-series"
+      >
+        <${BarChart}
+          h=${245}
+          data=${mib}
+          dataKey="name"
+          orientation="vertical"
+          series=${[{ name: "thousands", label: "Thousands", color: "indigo.6" }]}
+          yAxisProps=${{ width: 150 }}
+          withBarValueLabel
+          barProps=${{ isAnimationActive: false }}
+          barChartProps=${{ margin: { right: 42, bottom: 8 } }}
+          valueFormatter=${(value) => `${Number(value).toFixed(0)}k`}
+        />
+        <${Text} size="sm" mt="sm">
+          133,686 of 1,073,249 current series are source-less Hubble HTTP flows.
+          All Hubble flow series number 290,331. Historical per-destination
+          attribution is intentional; check ad-hoc uses before filtering.
+        <//>
+      <//>
+    <//>
+    <${Figure}
+      title="Loki: two large sources over time"
+      caption="Indexed, uncompressed GB for selected jobs, not on-disk bytes. Thirty-day queries can count overlapping chunks at boundaries; other jobs and streams without a job label are omitted."
+      slug="loki-sources"
+    >
+      <${BarChart}
+        h=${245}
+        data=${evidence.loki_indexed_jobs}
+        dataKey="age"
+        type="stacked"
+        series=${[
+          { name: "Talos", label: "Talos node logs", color: "teal.6" },
+          { name: "KubeState", label: "kube-state-metrics", color: "orange.6" },
+        ]}
+        withLegend
+        barProps=${{ isAnimationActive: false }}
+        yAxisProps=${{ width: 48, tickFormatter: (value) => Number(value).toFixed(0) }}
+        barChartProps=${{ margin: { right: 10, bottom: 8 } }}
+        valueFormatter=${(value) => `${Number(value).toFixed(1)} GB`}
+      />
+      <${Table} striped mt="sm">
+        <${Table.Thead}
+          ><${Table.Tr}
+            ><${Table.Th}>Age<//><${Table.Th}>Talos<//
+            ><${Table.Th}>kube-state<//><//
+          ><//
+        >
+        <${Table.Tbody}>
+          ${evidence.loki_indexed_jobs.map((row) => html`<${Table.Tr} key=${row.age}><${Table.Td}>${row.age}<//><${Table.Td}>${row.Talos.toFixed(1)} GB<//><${Table.Td}>${row.KubeState.toFixed(1)} GB<//><//>`)}
+        <//>
+      <//>
+    <//>
+    <${Accordion} variant="separated">
+      <${Accordion.Item} value="mimir-details">
+        <${Accordion.Control}>Mimir: retention and series details<//>
+        <${Accordion.Panel}>
+          <${Stack} gap="sm">
+            <${Text}>
+              The S3 listing contained 963 objects and 239.718 GB logical; filer
+              metadata reported 239.927 GB including bookkeeping. The Bucket
+              status and exporter disagreed, so their values are not
+              interchangeable. The 171 block metadata records cover June 2 to
+              November 10, about 161 days, despite a 365-day retention setting.
+            <//>
+            <${Text}>
+              Blocks older than 90 days hold 100.238 GB logical, or about 200.5
+              GB with two Seaweed copies. A 90-day limit would lose all older
+              metric history; 180 days would remove none of the observed blocks.
+              Compaction, deletion markers, vacuum and discard affect actual
+              reclaim. Neither change reduces declared PVC limits.
+            <//>
+            <${Text}>
+              Of 1,073,249 current series, 290,331 are Hubble flows, including
+              207,086 L7 HTTP and 133,686 L7 HTTP with no source. The last group
+              is 12.5% of all current series and still identifies destinations.
+              Historical flow attribution is intentional; inspect ad-hoc uses
+              before filtering. A filter changes future ingestion only, and its
+              compressed-byte savings are unmeasured. Dropping a label can
+              collapse distinct series into duplicate samples. The Hubble
+              ServiceMonitor scrapes every 60 seconds. No exact reference to
+              this metric was found in repository dashboards and rules or live
+              PrometheusRules; ad-hoc and externally provisioned uses are
+              unknown.
+            <//>
+            <${Text}>
+              Other large families include API-server request-duration buckets
+              (43,740 current series), request-body-size buckets (37,152), etcd
+              request-duration buckets (30,710), and API-server SLI buckets
+              (25,352). ControlPlaneLeasePutLatency alerts use the first
+              histogram. Historical all-series queries at 7 and 30 days timed
+              out, so these current shares do not establish historical shares.
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Accordion.Item} value="audit">
+        <${Accordion.Control}>Why Talos audit logs are noisy<//>
+        <${Accordion.Panel}>
+          <${Stack} gap="sm">
+            <${Text}>
+              Four five-minute windows attributed 75–86% of Talos log bytes to
+              auditd. All 3,000 sampled AVC denials had permissive=1; 2,943
+              involved DRBD and unlabeled_t, and 2,996 reported directory
+              writes. These sampled denials were not enforced; that does not
+              establish cluster-wide SELinux policy. In nine 1,000-line samples,
+              86.4% of audit bytes were associated with permissive
+              DRBD/unlabeled events, ranging from 18.4% to 99.9% by window.
+              These samples were stratified by time and node, not by bytes.
+            <//>
+            <${Text}>
+              Audit events include multiple PATH, SYSCALL, CWD, PROCTITLE and
+              EOE records. Preserve security evidence while investigating the
+              labeling and policy cause; do not silence every denial or manually
+              relabel volumes. Talos chunks in four short windows compressed to
+              5.9–7.3% of scanned raw bytes.
+            <//>
+            <${Text}>
+              If all auditd output disappeared, the 286.384 GB of indexed Talos
+              raw volume over 30 days, multiplied by the sampled 75–86% audit
+              share, 5.9–7.3% compression and two copies, suggests roughly 25–36
+              GB physical per 30 days. This is a low-confidence broad scenario,
+              not measured reclaim or a recommendation to discard all audit
+              history; a targeted fix would save less.
+            <//>
+            <${Text}>
+              Vector currently labels streams by job and node; the Talos service
+              is a JSON field. Service-specific retention cannot select those
+              existing streams. Splitting future streams by a stable service
+              label could enable targeted retention, with security, cardinality
+              and lost-history tradeoffs.
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Accordion.Item} value="ksm">
+        <${Accordion.Control}>The older kube-state-metrics spike<//>
+        <${Accordion.Panel}>
+          <${Stack} gap="sm">
+            <${Text}>
+              ${"The August 12–September 10 spike was repeated missing spec.suspend errors. All 1,500 sampled lines had that pattern; "}
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/5864"
+              >
+                the September 9 fix<//
+              >
+              ${" is present in the live configuration. Four short chunk samples compressed to 4.1–5.9%, so the 182.569 GB indexed raw estimate is not disk reclaim."}
+            <//>
+            <${Text}>
+              The old entries should age out under 90-day retention. A query
+              just beyond 90 days still returned a 19.7 MB index estimate, so
+              neither complete deletion nor physical reclaim is proven.
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Accordion.Item} value="methods">
+        <${Accordion.Control}>Methods and reproducible aggregate queries<//>
+        <${Accordion.Panel}>
+          <${Stack} gap="sm">
+            <${Text}>
+              The read-only snapshot is non-atomic and uses decimal bytes. The
+              Mimir and Loki buckets use two Seaweed object copies on
+              single-copy Piraeus HDD claims. Mimir block age uses each
+              meta.json maxTime joined to filer object sizes; crossing blocks
+              count on the newer side. Object modification time is not data age.
+            <//>
+            <${Text}>
+              Loki's index-volume API returns approximate uncompressed chunk
+              bytes; chunks overlapping window boundaries can be counted more
+              than once. The deployment allows at most 30 days plus one hour per
+              query. The chart excludes streams without a job label. The Loki
+              Bucket status reported 120.654 GB logical, while the exporter
+              reported 95.890 GB logical and 241.336 GB physical; these do not
+              establish a precise per-source physical share.
+            <//>
+            <${Anchor}
+              href="https://github.com/grafana/loki/blob/v3.6.11/pkg/storage/stores/shipper/indexshipper/tsdb/store.go"
+            >
+              Loki's indexed size uses approximate uncompressed chunk bytes
+            <//>
+            <${Text}>
+              These PromQL expressions reproduce the current series counts and
+              leading API-server families, using a local forward to the Mimir
+              gateway:
+            <//>
+            <${Code}
+              block
+              style=${{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+              >${`count({__name__!=""})
+count(hubble_flows_processed_total)
+count(hubble_flows_processed_total{type="L7",subtype="HTTP",source=""})
+topk(30, count by (__name__) ({job="apiserver"}))`}<//
+            >
+            <${Text}>
+              This LogQL expression aggregates Talos bytes by service and level
+              in bounded five-minute windows, using a local forward to Loki
+              read:
+            <//>
+            <${Code}
+              block
+              style=${{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+              >${`sum by (talos_service, talos_level) (
+  bytes_over_time({job="talos-node"} | json [5m])
+)`}<//
+            >
+            <${Text}>
+              For job-level history, query /loki/api/v1/index/volume with
+              selector {job=~".+"}, targetLabels=job and explicit 30-day
+              intervals. For audit attribution, correlate AVC, PATH, SYSCALL and
+              other records by audit event ID in bounded, time- and
+              node-stratified samples. No raw log lines or credentials were
+              saved in this report.
+            <//>
+          <//>
+        <//>
+      <//>
+    <//>
+  <//>`;
+}
+
 export function StorageRemediation() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
@@ -465,9 +734,9 @@ export function StorageRemediation() {
         the data and recovery guarantees that matter.
       <//>
       <${Text} c="dimmed" size="sm" mt="sm">
-        Pool and filer observations were collected separately around 19:13–19:20
-        UTC. Bucket usage timestamps can be older. Counts and projections are
-        not live.
+        Pool and Langfuse observations were collected around 19:13–19:20 UTC;
+        Mimir and Loki evidence was collected around 21:12–21:28 UTC. Bucket
+        usage timestamps can be older. Counts and projections are not live.
       <//>
     </header>
     <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md">
@@ -489,6 +758,7 @@ export function StorageRemediation() {
     <${Group} component="nav" gap="md">
       <${Anchor} href="#budget">Budget scenario<//>
       <${Anchor} href="#langfuse">Langfuse evidence<//>
+      <${Anchor} href="#observability">Mimir and Loki<//>
       <${Anchor} href="#options">Options<//>
       <${Anchor} href="#prior-inventory">9 Nov inventory<//>
       <${Anchor} href="./remediation-evidence.json">Evidence JSON<//>
@@ -501,6 +771,7 @@ export function StorageRemediation() {
     <//>
     <${BudgetScenario} data=${data} />
     <${LangfuseEvidence} data=${data} />
+    <${ObservabilityEvidence} data=${data} />
     <${Options} data=${data} />
     <${Text} c="dimmed" size="sm">
       Evidence includes the original observation window, uncertainty,
