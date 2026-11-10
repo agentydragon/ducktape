@@ -225,7 +225,7 @@ func delegatedBearing(t *testing.T, token string, account auth.Account, uid stri
 		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
 		}},
-		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {

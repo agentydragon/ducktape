@@ -97,7 +97,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Helper()
 		ctx, err := workloadgrpc.WithDelegation(t.Context(), &delegationpb.Delegation{
 			EffectiveCaller: &delegationpb.Delegation_Identity{Identity: identity},
-			ActionRequestId: requestID, ActionExecutionId: executionID,
+			Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: requestID, ExecutionId: executionID}},
 		})
 		if err != nil {
 			t.Fatal(err)

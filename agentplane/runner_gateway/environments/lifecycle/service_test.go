@@ -253,7 +253,7 @@ func delegatedContext(t *testing.T, effectiveUID string) context.Context {
 		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: executionAccount.Namespace, Name: executionAccount.Name}, Uid: effectiveUID,
 		}},
-		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {

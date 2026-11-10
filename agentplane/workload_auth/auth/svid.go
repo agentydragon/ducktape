@@ -252,10 +252,17 @@ func (r *Resolver) ResolveSubjectRequest(request *http.Request) (Subject, error)
 	return r.ResolveSubject(requestContext(request))
 }
 
+// requestContext carries an HTTP request's credentials as the gRPC middleware reads them. The
+// delegation header is base64 on the wire (EncodeDelegationHeader), as gRPC's own `-bin` transport.
 func requestContext(request *http.Request) context.Context {
+	envelopes := request.Header.Values(DelegationMetadataKey)
+	decoded := make([]string, len(envelopes))
+	for index, envelope := range envelopes {
+		decoded[index] = decodeDelegationHeader(envelope)
+	}
 	ctx := metadata.NewIncomingContext(request.Context(), metadata.MD{
 		"authorization":       request.Header.Values("Authorization"),
-		DelegationMetadataKey: request.Header.Values(DelegationMetadataKey),
+		DelegationMetadataKey: decoded,
 	})
 	if request.TLS != nil {
 		ctx = peer.NewContext(ctx, &peer.Peer{AuthInfo: credentials.TLSInfo{State: *request.TLS}})

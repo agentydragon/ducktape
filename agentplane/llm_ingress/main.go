@@ -18,15 +18,32 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for the central
+// samplers' delegated Identity callers.
+func kubernetesIdentityUIDs(kubeConfig *rest.Config, policyNamespace string) (auth.IdentityUIDReader, error) {
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	return auth.KubernetesIdentityUIDs(objects, policyNamespace)
+}
 
 func main() {
 	c, err := loadConfig()
@@ -78,7 +95,13 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	handler, err := newIngressHandler(c, callers, logger)
+	var identityUIDs auth.IdentityUIDReader
+	if c.CentralSamplerIdentityCallers {
+		if identityUIDs, err = kubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace); err != nil {
+			return err
+		}
+	}
+	handler, err := newIngressHandler(c, callers, identityUIDs, logger)
 	if err != nil {
 		return err
 	}

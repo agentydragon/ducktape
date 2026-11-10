@@ -32,8 +32,12 @@ const (
 type AuthType string
 
 const (
-	AuthTypeBearer          AuthType = "bearer"
-	AuthTypeAnthropicAPIKey AuthType = "anthropic_api_key"
+	AuthTypeBearer AuthType = "bearer"
+	// AuthTypeAgentplaneIngress is Agentplane's LLM ingress: the credential is the sampler's
+	// projected workload token, and a Session executing as an Identity is sampled as a delegating
+	// actor for that Identity (providerAuthorization).
+	AuthTypeAgentplaneIngress AuthType = "agentplane_ingress"
+	AuthTypeAnthropicAPIKey   AuthType = "anthropic_api_key"
 )
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
@@ -166,9 +170,9 @@ func (c ConnectionConfig) Validate() error {
 		return errors.New("connection auth requires exactly one of credential and credential_file")
 	}
 	switch c.Auth.Type {
-	case AuthTypeBearer, AuthTypeAnthropicAPIKey:
+	case AuthTypeBearer, AuthTypeAgentplaneIngress, AuthTypeAnthropicAPIKey:
 	default:
-		return errors.New("connection auth.type must be bearer or anthropic_api_key")
+		return errors.New("connection auth.type must be bearer, agentplane_ingress or anthropic_api_key")
 	}
 	return nil
 }
@@ -301,8 +305,8 @@ func (s Settings) Validate() error {
 		if !ok {
 			return fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
 		}
-		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer {
-			return fmt.Errorf("model %s responses API requires bearer connection auth", model)
+		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
+			return fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model)
 		}
 		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
 			return fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model)

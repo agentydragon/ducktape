@@ -293,5 +293,5 @@ func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, 
 		t.Fatal(err)
 	}
 	connection := ConnectionConfig{BaseURL: server.URL, Auth: AuthConfig{Credential: "fixture-key"}}
-	return adapter.Sample(t.Context(), server.Client(), connection, responses.Request{}, []byte(`{}`), evidence, nil, false)
+	return adapter.Sample(t.Context(), server.Client(), connection, responses.Request{}, []byte(`{}`), evidence, providerAttribution{}, false)
 }

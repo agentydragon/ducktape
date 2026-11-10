@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
@@ -21,9 +22,14 @@ import (
 )
 
 const (
-	// DelegationMetadataKey carries the serialized Delegation protobuf as gRPC binary metadata.
+	// DelegationMetadataKey carries the serialized Delegation protobuf as gRPC binary metadata. An
+	// HTTP request carries it as a header of the same name holding the base64 form
+	// (EncodeDelegationHeader), as gRPC itself transports `-bin` metadata.
 	DelegationMetadataKey = "agentplane-delegation-bin"
-	delegatedScheme       = "Agentplane-Delegated "
+	// DelegatedScheme is the authorization scheme of a delegated call: the actor's own
+	// destination-audience token, with the effective caller in the envelope.
+	DelegatedScheme       = "Agentplane-Delegated"
+	delegatedScheme       = DelegatedScheme + " "
 	maxDelegationBytes    = 4096
 	maxDelegatedTokenSize = 16384
 	maxServiceAccountUID  = 256
@@ -106,15 +112,16 @@ type delegationPolicy struct {
 
 // AllowDelegationFrom adds a separately authenticated delegated mode while preserving this Rule's
 // direct mode. The Rule must still be placed in Methods under each full RPC method that permits it.
-// identities, nil when the receiver resolves no Identity, reads the Identities a delegator granted
-// IdentityCallers may assert; a Rule admitting no direct Identity caller never admits a delegated
-// one.
+// serviceAccounts reads the accounts a delegator with CallerNamespaces may assert, and identities,
+// nil when the receiver resolves no Identity, the Identities a delegator granted IdentityCallers may
+// assert; each is required by the grants that use it. A Rule admitting no direct Identity caller
+// never admits a delegated one.
 func (r Rule) AllowDelegationFrom(delegators []Delegator, serviceAccounts ServiceAccountUIDReader, identities IdentityUIDReader) (Rule, error) {
 	if r.kind == ruleRefuse || r.kind == rulePublic || r.resolver == nil {
 		return Rule{}, fmt.Errorf("delegation requires an authenticated direct rule")
 	}
-	if serviceAccounts == nil || len(delegators) == 0 {
-		return Rule{}, fmt.Errorf("ServiceAccount reader and delegators are required")
+	if len(delegators) == 0 {
+		return Rule{}, fmt.Errorf("delegators are required")
 	}
 	configured := make(map[Account]delegatorGrant, len(delegators))
 	for _, delegator := range delegators {
@@ -129,6 +136,9 @@ func (r Rule) AllowDelegationFrom(delegators []Delegator, serviceAccounts Servic
 		}
 		if len(delegator.CallerNamespaces) == 0 && !delegator.IdentityCallers {
 			return Rule{}, fmt.Errorf("delegator caller scope is empty")
+		}
+		if len(delegator.CallerNamespaces) != 0 && serviceAccounts == nil {
+			return Rule{}, fmt.Errorf("delegator may assert ServiceAccounts, but the receiver resolves none")
 		}
 		if delegator.IdentityCallers && identities == nil {
 			return Rule{}, fmt.Errorf("delegator may assert Identities, but the receiver resolves none")
@@ -194,13 +204,45 @@ func validDelegation(envelope *delegationpb.Delegation) bool {
 	default:
 		return false
 	}
-	if _, err := uuid.Parse(envelope.GetActionRequestId()); err != nil {
+	switch provenance := envelope.GetProvenance().(type) {
+	case *delegationpb.Delegation_Action:
+		for _, id := range []string{provenance.Action.GetRequestId(), provenance.Action.GetExecutionId()} {
+			if _, err := uuid.Parse(id); err != nil {
+				return false
+			}
+		}
+		return true
+	case *delegationpb.Delegation_Session:
+		// History and LLM ingress key the Session by its canonical spelling, so only that is valid.
+		parsed, err := uuid.Parse(provenance.Session.GetSessionId())
+		return err == nil && parsed.String() == provenance.Session.GetSessionId()
+	default:
 		return false
 	}
-	if _, err := uuid.Parse(envelope.GetActionExecutionId()); err != nil {
-		return false
+}
+
+// EncodeDelegationHeader is the HTTP header form of a validated envelope: standard base64, as gRPC
+// transports `-bin` metadata. An HTTP receiver decodes it in its request context.
+func EncodeDelegationHeader(envelope *delegationpb.Delegation) (string, error) {
+	encoded, err := MarshalDelegation(envelope)
+	if err != nil {
+		return "", err
 	}
-	return true
+	return base64.StdEncoding.EncodeToString(encoded), nil
+}
+
+// decodeDelegationHeader reverses EncodeDelegationHeader, accepting padded or raw base64 as gRPC
+// does. An undecodable value yields an empty envelope, which admission refuses.
+func decodeDelegationHeader(value string) string {
+	encoding := base64.StdEncoding
+	if len(value)%4 != 0 {
+		encoding = base64.RawStdEncoding
+	}
+	decoded, err := encoding.DecodeString(value)
+	if err != nil {
+		return ""
+	}
+	return string(decoded)
 }
 
 func validAccount(account Account) bool {

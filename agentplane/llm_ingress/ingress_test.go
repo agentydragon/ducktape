@@ -114,7 +114,7 @@ func newConfiguredIngressTestHandler(t *testing.T, reviews auth.TokenReviews, c 
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newIngressHandler(c, resolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler, err := newIngressHandler(c, resolver, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,9 +519,14 @@ func mustRequest(t *testing.T, method, url string, headers http.Header) *http.Re
 	return req
 }
 
+// directCaller is the attribution of a subject admitted directly.
+func directCaller(subject auth.Subject) verifiedCaller {
+	return verifiedCaller{claims: subjectClaims(subject), logAttrs: callerLogAttrs(subject)}
+}
+
 // forwardedHeaders applies what Rewrite applies to the outgoing request headers.
 func forwardedHeaders(headers http.Header, subject auth.Subject, attribution attributionConfig) (http.Header, error) {
-	verified, err := verifiedRequestHeaders(subject, testBackendKey, attribution, "")
+	verified, err := verifiedRequestHeaders(subjectClaims(subject), testBackendKey, attribution, "")
 	if err != nil {
 		return nil, err
 	}
@@ -838,7 +843,7 @@ func TestForwardSlotCancellationDoesNotWriteGatewayErrorOrWarning(t *testing.T) 
 	incoming := httptest.NewRequest(http.MethodPost, "/v1/responses?request_token=secret", nil).WithContext(requestContext)
 	response := httptest.NewRecorder()
 
-	handler.forward(response, incoming, auth.Principal{})
+	handler.forward(response, incoming, directCaller(auth.Principal{}))
 
 	if response.Code != http.StatusOK || response.Body.Len() != 0 || logs.Len() != 0 || len(handler.pool) != 1 {
 		t.Fatalf("canceled slot wait wrote a response or warning: code=%d body=%q logs=%s pool=%d",
@@ -1242,9 +1247,9 @@ func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
 
 func TestIdentityCallerIsLoggedByKindAndNameNotAsAnEmptyAccount(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	attrs := requestLogAttrs("request-id", request, auth.IdentityPrincipal{
+	attrs := requestLogAttrs("request-id", request, directCaller(auth.IdentityPrincipal{
 		Identity: auth.Identity{Name: "agent-a", UID: "identity-a-uid"}, PodName: "sandbox-a", PodUID: "pod-a-uid",
-	})
+	}))
 	logged := map[any]any{}
 	for i := 0; i+1 < len(attrs); i += 2 {
 		logged[attrs[i]] = attrs[i+1]

@@ -167,3 +167,15 @@ This is an asserted conversation identity from an explicitly trusted shared samp
 replace TokenReview or authorize arbitrary Session reads. LiteLLM promotes the configured Session
 metadata into exported traces; the frontend's metadata-key setting selects the matching Langfuse
 filter. Existing wrapped harness attribution continues to use its Sandbox identity.
+
+With `central_sampler_identity_callers: true` (requires `policy_namespace` and
+`central_sampler_accounts`), those accounts may also call as delegating actors under the
+[delegated authorization contract](../docs/delegated_authorization.md): `Authorization:
+Agentplane-Delegated <sampler token>` plus the base64 `agentplane-delegation-bin` envelope naming
+an Identity of the policy namespace and the Session it serves. The ingress verifies the sampler's
+token and its grant, reads the Identity live and refuses a stale or missing incarnation, then
+attributes the call to that Identity: `identity` and `identity_uid` are the Identity's, `pod_name`
+and `pod_uid` the sampler's Pod, the one that made the call, and `agentplane.session_id` comes from
+the envelope, so a delegated call may not also claim a Session by header. The envelope is stripped
+like every other caller header. A sampler calling for a Session with no Identity keeps using the
+bearer path above. Claiming a Session never implies this grant.

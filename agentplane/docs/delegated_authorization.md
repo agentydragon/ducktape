@@ -3,8 +3,10 @@
 Status: **approved contract; shared protocol primitives, durable Action caller-UID retention, and the
 Runner Gateway Dispatcher, EnvironmentService, and History Service receiving paths are implemented.
 An Identity effective caller is implemented in the shared middleware, Dispatcher and History, and
-Action Service's Session delegation sends one for an Identity's request. Caller-delegating Action
-adapters and their end-to-end use remain separate work.**
+Action Service's Session delegation sends one for an Identity's request. The central sampler is the
+first non-Action actor: it makes its provider calls through LLM ingress for the Identity the
+Session executes as. Caller-delegating Action adapters and their end-to-end use remain separate
+work.**
 Use this contract when an Agentplane service invokes another service on behalf of a ServiceAccount
 or an Identity. The first consumer is routine caller-privilege Actions. Direct callers continue using the
 [workload authentication](workload_authentication.md) contract.
@@ -13,11 +15,11 @@ or an Identity. The first consumer is routine caller-privilege Actions. Direct c
 
 Keep these facts separate:
 
-| Fact             | Source                                                                            | Use                                                                                           |
-| ---------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Actor            | Destination-audience token verified by the receiving backend                      | Authenticate the service making this RPC and check its permission to delegate on this method. |
-| Effective caller | Trusted delegation envelope: SA namespace, name and UID, or Identity name and UID | Apply the backend's ordinary caller authorization.                                            |
-| Provenance       | Durable request/execution identifiers supplied by the actor                       | Correlate admissions and effects across services.                                             |
+| Fact             | Source                                                                                      | Use                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Actor            | Destination-audience token verified by the receiving backend                                | Authenticate the service making this RPC and check its permission to delegate on this method. |
+| Effective caller | Trusted delegation envelope: SA namespace, name and UID, or Identity name and UID           | Apply the backend's ordinary caller authorization.                                            |
+| Provenance       | The actor's durable record the call serves: an Action's request and execution, or a Session | Correlate admissions and effects across services.                                             |
 
 A delegated call uses the effective caller's permissions. Membership of the actor in a privileged
 backend allowlist must not select a privileged path for that call. Parentage, creator labels,
@@ -48,17 +50,24 @@ agentplane-delegation-bin: <serialized Delegation protobuf>
 **Deviation:** `Agentplane-Delegated` is an Agentplane authorization scheme. It uses the existing
 TokenReview mechanism for the token, but explicitly selects delegated authorization. The envelope
 uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC library handles
-its transport encoding.
+its transport encoding. An HTTP receiver (LLM ingress) takes the same two headers, the envelope in
+standard base64 as gRPC itself transports `-bin` metadata, and admits the request through the same
+middleware (`Rule.AdmitRequest`).
 
 The envelope is `Delegation` in [`delegation.proto`](../proto/delegation.proto), a messages-only
 schema in package `agentplane.proto` that reuses `ServiceAccountIdentity` and `Identity` from
 [`identity.proto`](../proto/identity.proto). Its effective caller is a `oneof`: `caller`, a
-ServiceAccount, or `identity`, an Identity in the receiver's policy namespace.
+ServiceAccount, or `identity`, an Identity in the receiver's policy namespace. Its provenance is a
+second `oneof` of typed profiles: `action`, the Action Service's request and execution records, or
+`session`, the central Session a sampler acts for.
 
 All fields are required by this profile's validation: exactly one effective caller (a valid SA
-reference with a nonempty opaque SA UID, or a valid Identity name with a nonempty UID) and valid
-request/execution UUIDs. Neither the actor nor its credentials appear in this envelope.
-The Action execution ID is the existing execution record's ID, never its lease token.
+reference with a nonempty opaque SA UID, or a valid Identity name with a nonempty UID) and exactly
+one provenance profile with valid UUIDs (a Session ID in its canonical spelling). Neither the actor
+nor its credentials appear in this envelope. The Action execution ID is the existing execution
+record's ID, never its lease token. A receiver consumes the profile its method serves: the
+Dispatcher records an Action's correlation, LLM ingress attributes the call to the Session a
+sampler names.
 
 Actions constructs the envelope from its authenticated, durable request and execution records.
 Tool arguments cannot supply or override it. Admission stores the verified caller UID with the
@@ -151,10 +160,17 @@ Services needing caller delegation reuse the authentication mode, actor/caller d
 per-method trust checks and shared client/server implementation. No application or Actions lookup
 is required by the receiving backend. A caller need not have a Session or an execution environment.
 
-The initial envelope's provenance is Action-specific. A concrete non-Action consumer should add a
-typed provenance profile through shared schema evolution; it must not invent Action IDs or require
-Actions to be deployed. Keep the identity and authorization rules above. Do not add speculative
-generic grants, a delegation-chain service or arbitrary provenance maps ahead of a consumer.
+A concrete non-Action consumer adds a typed provenance profile through shared schema evolution;
+it must not invent Action IDs or require Actions to be deployed. The central sampler is one: it
+authenticates as itself and holds no agent key, and each call's effective caller is the Identity
+the Dispatcher recorded the Session as executing as, read from the sampler's own Session record,
+with the Session as provenance; neither JavaScript nor tool arguments can name or override it. A
+Session whose Sandbox named no Identity has none to delegate, and the sampler then calls as itself
+exactly as before Identities existed ([sampler contract](../central_sampler/SPEC.md#identity-and-admission)).
+Receivers grant the sampler per method and by scope like any actor: LLM ingress on inference
+(`central_sampler_identity_callers`), over the Identities of its policy namespace. Keep the
+identity and authorization rules above. Do not add speculative generic grants, a
+delegation-chain service or arbitrary provenance maps ahead of a consumer.
 
 Trust is not transitive. A further hop needs its own explicitly trusted actor and target method.
 Construct outgoing context from an admitted identity or trusted durable record; never blindly

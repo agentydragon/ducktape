@@ -103,10 +103,9 @@ func (e *Executor) delegatedContext(ctx context.Context, request store.Execution
 	if request.RequestID == uuid.Nil || request.ExecutionID == uuid.Nil {
 		return nil, errors.New("the Action correlation identity is incomplete")
 	}
-	envelope := &delegationpb.Delegation{
-		ActionRequestId:   request.RequestID.String(),
-		ActionExecutionId: request.ExecutionID.String(),
-	}
+	envelope := &delegationpb.Delegation{Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{
+		RequestId: request.RequestID.String(), ExecutionId: request.ExecutionID.String(),
+	}}}
 	switch caller := request.Caller.(type) {
 	case store.ServiceAccountCaller:
 		if caller.UID == nil || strings.TrimSpace(*caller.UID) == "" {
