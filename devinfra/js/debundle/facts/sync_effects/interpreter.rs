@@ -90,7 +90,7 @@ use crate::facts::sync_effects::property_inference::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
-    DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
+    DataflowOpacityCause, EffectCell, LocalClassConstructionProof, LocalClassConstructionShapes,
     NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic, SetIterableShapes,
     StatementPurityContext, TopLevelNativeIterableOperandSite, set_iterables::SetIterableProof,
 };
@@ -741,6 +741,10 @@ pub(super) struct NativeCallResolution {
     plan: CheckedNativePlan,
     iterable: Option<NativeIterableReceipt>,
     operation_coverage: Option<EffectCoverageFragment>,
+    /// Source cells an own-property projection row reads: the object's shape
+    /// and, for descriptors, every projected value slot. A closed native
+    /// receipt covers the heap domain only together with these reads.
+    projected_reads: Vec<EffectCell>,
     /// Prerequisites of the admission: callee identity, operand proofs and
     /// the prefix premises they read. The admitted row runs no user code, so
     /// these also cover the operation's effect domains.
@@ -2508,6 +2512,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let mut ordinary_operands = BTreeSet::new();
         let mut own_property_projection = None;
+        let mut projected_reads = Vec::new();
         let mut application = None;
         let mut definition = None;
         for mutation in row.mutates {
@@ -2572,17 +2577,37 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     ordinary_operands.extend([target, descriptors]);
                 }
                 Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(index)) => {
-                    own_property_projection = Some(self.own_property_projection(
+                    let proof = self.own_property_projection(
                         args.get(index)?,
                         OwnPropertyRequest::Descriptors {
                             native_call: native_call.clone()?,
                         },
-                    )?);
+                    )?;
+                    let OwnPropertyProjection::Descriptors(projection) = &proof.projection else {
+                        return None;
+                    };
+                    let source = projection.source_object;
+                    projected_reads.push(EffectCell::ObjectShape(source));
+                    projected_reads.extend(projection.ordered_names.iter().map(|name| {
+                        EffectCell::OwnProperty {
+                            origin: source,
+                            property: name.clone(),
+                        }
+                    }));
+                    own_property_projection = Some(proof);
                     ordinary_operands.insert(index);
                 }
                 Mutation::FreshOwnKeysOf(ArgSel::Arg(index)) => {
+                    let source_values = args.get(index)?;
+                    // The projection admits only a singleton ordinary record.
+                    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, source))) =
+                        source_values.first()
+                    else {
+                        return None;
+                    };
+                    projected_reads.push(EffectCell::ObjectShape(*source));
                     own_property_projection = Some(self.own_property_projection(
-                        args.get(index)?,
+                        source_values,
                         OwnPropertyRequest::Names {
                             native_call: native_call.clone()?,
                         },
@@ -2672,6 +2697,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             plan,
             iterable,
             operation_coverage,
+            projected_reads,
             dependencies,
         })
     }
@@ -3043,6 +3069,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             plan,
             iterable,
             operation_coverage,
+            projected_reads: _,
             dependencies: _,
         } = resolution;
         let fresh = match native_operation::execute(self, plan) {
@@ -10786,6 +10813,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     });
                 }
                 outcome.effect_coverage = coverage;
+            }
+            for cell in &resolution.projected_reads {
+                outcome
+                    .effects
+                    .record_heap_read(cell.clone(), self.state.assumption.is_none());
             }
             if let Some(receipt) = &resolution.iterable {
                 outcome.effects.record_heap_contents(
