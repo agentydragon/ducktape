@@ -1257,3 +1257,67 @@ fn iterations_without_an_installed_iterator_keep_the_split() {
         assert_preserved_entry_output(&fixture, "0 0\n");
     }
 }
+
+/// Opposing control: `new` of a guarded plain function with a direct effect
+/// (a call, a store, a parameter default); `this` saved by a top-level
+/// construction and its stored callback called from another statement; and
+/// a getter that reaches `second` only through a capture, copied by
+/// `Object.defineProperties`. Each reaches `second`.
+#[test]
+fn constructions_and_copied_getters_reach_their_effects() {
+    for (definitions, extra) in [
+        (
+            "function F() { if (first()) {} second(); }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function F() { if (first()) {} counter = 1; }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function F(x = second()) { if (first()) {} }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function F() { if (first()) {} second(); }\nfunction flag() { new F(); return noop; }\nfunction run() { return flag()(); }",
+            &["F"][..],
+        ),
+        (
+            "let saved = null;\nfunction F() { saved = this; this.fn = second; }\nconst inst = new F();\nfunction flag() { return saved; }\nfunction run() { return flag().fn(); }",
+            &["saved", "F", "inst"][..],
+        ),
+        (
+            "function mk(h) { return { get x() { return h; } }; }\nconst src = mk(second);\nfunction flag() { const o = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src)); return o.x; }\nfunction run() { return flag()(); }",
+            &["mk", "src"][..],
+        ),
+        (
+            "function mk(h) { return { get x() { h(); return noop; } }; }\nconst src = mk(second);\nfunction flag() { const o = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src)); o.x; return noop; }\nfunction run() { flag(); return 0; }",
+            &["mk", "src"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(definitions, extra);
+    }
+}
+
+/// Positive anchor for the control above: the same shapes over the
+/// effect-free `first` keep the split.
+#[test]
+fn constructions_and_copied_getters_without_effects_keep_the_split() {
+    for (definitions, extra) in [
+        (
+            "let saved = null;\nfunction F() { saved = this; this.fn = first; }\nconst inst = new F();\nfunction flag() { return saved; }\nfunction run() { return flag().fn(); }",
+            &["saved", "F", "inst"][..],
+        ),
+        (
+            "function F() { if (first()) {} first(); }\nfunction flag() { new F(); return noop; }\nfunction run() { flag(); return 0; }",
+            &["F"][..],
+        ),
+        (
+            "function mk(h) { return { get x() { return h; } }; }\nconst src = mk(first);\nfunction flag() { const o = Object.defineProperties({}, Object.getOwnPropertyDescriptors(src)); return o.x; }\nfunction run() { return flag()(); }",
+            &["mk", "src"][..],
+        ),
+    ] {
+        let fixture = with_reader_split(definitions, extra, run_fixture);
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
