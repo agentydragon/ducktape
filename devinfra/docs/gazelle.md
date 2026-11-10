@@ -3,6 +3,8 @@
 Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates them;
 a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
 unresolvable import) is the drift check, and CI runs it on every PR (§ Drift check).
+For generator changes, `bb run //devinfra:gazelle -- -mode=diff` builds the
+current generator and checks the local tree in one invocation.
 Code-shape conventions (per-file libraries, `main_module` binaries, test-glob
 reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
 

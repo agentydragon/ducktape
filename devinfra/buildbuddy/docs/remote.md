@@ -74,13 +74,14 @@ happens on the runner.
 `--config=buildbuddy_{bes_backend,bes_results_url,remote_cache}` and, for
 `build` and non-remote `run`, `--remote_upload_local_results`.
 
-`bbr build` also defaults to `--remote_build_event_upload=all` so the CLI can
-download locally generated outputs such as template-expanded launchers.
-Bazel's default `minimal` mode advertises their CAS URIs without uploading
-them; `--remote_upload_local_results` alone does not cover these internal
-actions. Explicit user arguments can override the default. Direct `bb remote
-build` callers need to supply the upload flag themselves. See the
-[Gazelle artifact diagnosis](../debug/bb_remote_peers_exhausted.md).
+For a specific `bbr build` or `bb remote build` call that needs locally
+generated regular files downloaded, pass `--remote_build_event_upload=all`
+after the Bazel verb. Bazel's default `minimal` BEP mode advertises their CAS
+URIs without uploading them; `--remote_upload_local_results` alone does not
+cover internal actions such as template expansion. `bbr` leaves this policy
+to each caller. This flag does not guarantee runfiles or declared directory
+contents; see the [upstream limitation](https://github.com/buildbuddy-io/buildbuddy/pull/12935#discussion_r3743154048)
+and [Gazelle artifact diagnosis](../debug/bb_remote_peers_exhausted.md).
 
 ### 3. Runner bootstrap
 

@@ -227,9 +227,6 @@ def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
         *startup_options,
         *([verb] if verb else []),
         *invocation_id_flag,
-        # bb remote downloads build outputs from BEP. Bazel's default minimal
-        # upload mode advertises local template outputs without uploading them.
-        *(["--remote_build_event_upload=all"] if verb == "build" else []),
         *_bazelrc_args(),
         *command_options,
     ]
