@@ -3418,9 +3418,13 @@ The delegation envelope becomes "acting on behalf of this Identity" only (operat
 actor is a platform component, authenticated as a ServiceAccount and authorized by component role;
 the effective caller is always an Identity (name, and UID where fenced), never a ServiceAccount.
 Today `Delegation.caller` is a `ServiceAccountIdentity`, and Identity callers do not fit it (#15296
-left the Action Service's delegated path ServiceAccount-only). A prerequisite PR adds an Identity
-effective caller beside it, with receivers accepting either; here the ServiceAccount effective-caller
-fields are deleted, after Sessions and standing workloads have moved to Identities. Anything that
+left the Action Service's delegated path ServiceAccount-only). #15389 added an Identity effective
+caller beside it (the `identity` member of the `effective_caller` oneof, granted per actor by
+`identity_callers`), accepted by Dispatcher and History and sent by Action Service Session
+delegation; staging enables it by rendering `identity_callers` and `policy_namespace` for the Runner
+Gateway and History. Here the ServiceAccount effective-caller fields (`Delegation.caller`,
+`caller_namespaces`, `auth.DelegatedAdmission` with its ServiceAccount UID reader) are deleted, after
+Sessions and standing workloads have moved to Identities. Anything that
 binds policy to a platform component's ServiceAccount as though it were an identity is reviewed
 against this framing here or under `SESSION_IDENTITY_AUTHZ`.
 **Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant

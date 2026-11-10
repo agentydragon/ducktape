@@ -229,10 +229,11 @@ func MethodsWithDelegation(
 	resolver *auth.Resolver,
 	delegator auth.Delegator,
 	serviceAccounts auth.ServiceAccountUIDReader,
+	identities auth.IdentityUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
 	methods, err := Methods(auth.ReviewedServiceAccountOrIdentity(resolver)).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts,
+		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts, identities,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated Dispatcher methods: %w", err)
@@ -245,21 +246,44 @@ func (s *Service) caller(ctx context.Context) (Caller, error) {
 	if err != nil {
 		return nil, err
 	}
-	if identity, ok := admitted.(auth.IdentityAdmission); ok {
+	switch identity := admitted.(type) {
+	case auth.IdentityAdmission:
 		return identityCaller(identity.Caller)
+	case auth.DelegatedIdentityAdmission:
+		return delegatedIdentityCaller(identity)
 	}
 	return s.serviceAccountCaller(ctx)
+}
+
+// delegatedIdentityCaller is a trusted platform component acting for an Identity. It is authorized
+// exactly as that Identity's own workload would be, and records the component that named it.
+func delegatedIdentityCaller(admission auth.DelegatedIdentityAdmission) (IdentityCaller, error) {
+	actor := admission.Actor
+	caller := IdentityCaller{
+		Identity: &identitypb.Identity{Name: admission.EffectiveCaller.Name, Uid: admission.EffectiveCaller.UID},
+		Proof: IdentityDelegation{
+			Actor:    serviceAccountIdentityFor(actor.Account, actor.ServiceAccountUID),
+			ActorPod: PodIdentity{Name: actor.PodName, UID: actor.PodUID},
+			Action: ActionCorrelation{
+				RequestID: admission.Provenance.GetActionRequestId(), ExecutionID: admission.Provenance.GetActionExecutionId(),
+			},
+		},
+	}
+	if err := validateCaller(caller, nil); err != nil {
+		return IdentityCaller{}, status.Error(codes.Unauthenticated, "delegated Identity caller is incomplete")
+	}
+	return caller, nil
 }
 
 func identityCaller(principal auth.IdentityPrincipal) (IdentityCaller, error) {
 	if principal.Identity.Name == "" || principal.Identity.UID == "" || (principal.PodName == "") != (principal.PodUID == "") {
 		return IdentityCaller{}, status.Error(codes.Unauthenticated, "Identity caller is incomplete")
 	}
-	caller := IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}}
+	proof := IdentitySVID{}
 	if principal.PodName != "" {
-		caller.Pod = &PodIdentity{Name: principal.PodName, UID: principal.PodUID}
+		proof.Pod = &PodIdentity{Name: principal.PodName, UID: principal.PodUID}
 	}
-	return caller, nil
+	return IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}, Proof: proof}, nil
 }
 
 func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCaller, error) {
@@ -520,8 +544,9 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, err
 	}
-	// An Identity creates no Session, not even on a Sandbox acting as it: creating a Session is
-	// lifecycle control, which needs an explicit grant that does not exist yet. How a Session asks for a sub-Session is
+	// An Identity creates no Session, directly or through a platform component acting for it, not
+	// even on a Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit
+	// grant that does not exist yet. How a Session asks for a sub-Session is
 	// SESSION_SUBAGENT_DELEGATION (agentplane/plans/task_dag.md).
 	if _, ok := caller.(IdentityCaller); ok {
 		return nil, status.Error(codes.PermissionDenied, "an Identity caller cannot create a Session")

@@ -66,18 +66,22 @@ admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmi
 as an `IdentityAdmission`.
 
 Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
-pins exact actor ServiceAccounts and per-actor caller namespace scopes to the Rule; attaching that
-Rule to a full method name is the method trust grant. It preserves the Rule's ordinary direct path.
-Delegation requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is
-reviewed for this service's audience. The asserted caller
-must match the live ServiceAccount UID. A method with no delegation policy rejects the delegated
-scheme and any delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a
-direct call.
+pins exact actor ServiceAccounts and per-actor caller scopes to the Rule; attaching that Rule to a
+full method name is the method trust grant. It preserves the Rule's ordinary direct path. Delegation
+requires a concrete TokenReview `Resolver`; the actor token must be Pod-bound and is reviewed for
+this service's audience. An asserted ServiceAccount must be in the actor's caller namespaces and
+match the live ServiceAccount UID. An asserted Identity needs the actor's separate
+`Delegator.IdentityCallers` grant, a Rule whose direct mode admits Identity callers
+(`ReviewedServiceAccountOrIdentity`, `AnySubject`, `SVIDOrAccounts`), and the live Identity's UID in
+the receiver's policy namespace (`KubernetesIdentityUIDs`, an uncached read); otherwise it is
+`PERMISSION_DENIED`. A method with no delegation policy rejects the delegated scheme and any
+delegation envelope; `Bearer` plus an envelope is rejected rather than treated as a direct call.
 
 Handlers can read the typed result with `Admitted` or use `EffectiveCaller` for ordinary account
 checks. `DirectAdmission` keeps the direct caller and optional Pod proof together;
 `DelegatedAdmission` keeps the actor's Pod-bound `Principal`, effective ServiceAccount identity and
-provenance separate. A delegated actor is never installed in the legacy `Caller` context, which
+provenance separate, and `DelegatedIdentityAdmission` the same with an effective `Identity`, which
+`EffectiveCaller` refuses as it refuses an `IdentityAdmission`. A delegated actor is never installed in the legacy `Caller` context, which
 continues to mean the direct principal. For TokenReview callers that principal is Pod-bound; other
 `AnyAccount` sources supply only the fields they prove. The effective caller is account identity
 only and cannot prove a Pod binding.

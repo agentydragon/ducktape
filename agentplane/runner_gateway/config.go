@@ -69,7 +69,10 @@ type config struct {
 type delegationConfig struct {
 	Actor            auth.Account `mapstructure:"actor"`
 	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
-	Methods          []string     `mapstructure:"methods"`
+	// IdentityCallers lets the actor assert Identities in policy_namespace, a grant separate from
+	// caller_namespaces. It requires policy_namespace.
+	IdentityCallers bool     `mapstructure:"identity_callers"`
+	Methods         []string `mapstructure:"methods"`
 }
 
 func defaultConfig() config {
@@ -155,8 +158,11 @@ func (c *config) validate() error {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
 	}
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
-		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
-		return errors.New("delegation requires an actor, caller namespaces and methods")
+		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
+	}
+	if c.Delegation != nil && c.Delegation.IdentityCallers && c.PolicyNamespace == "" {
+		return errors.New("delegation.identity_callers requires policy_namespace")
 	}
 	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
 		return errors.New("proxy_port must be between 1 and 65535")
