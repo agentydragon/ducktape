@@ -70,6 +70,13 @@ Separate configured, registered, healthy, busy and draining capacity. If these
 cannot be observed, state the specific missing evidence rather than calculating
 utilization from a guessed denominator.
 
+For the in-cluster `kvm-vm` pool, inspect the [BuildBuddy executor pool dashboard](https://grafana.allegedly.works/d/buildbuddy-executor-pool)
+over the investigation window for executor registration, active task stages and
+guest CPU, memory and work-filesystem usage. Confirm the scrapes are present and
+the dashboard is deployed before relying on it. Its executor-local queue is not
+the central scheduler's pool backlog; correlate it with native execution records
+and eligible capacity rather than inferring pool-wide waiting from that chart.
+
 Partition by scheduler/service, managed versus self-hosted ownership, pool,
 required capabilities, isolation and materially different resource shapes before
 aggregating by mnemonic or target. Do not compare an OCI build action with a
