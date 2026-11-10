@@ -50,6 +50,14 @@
     7d:  32% used  ↻ 4d  leaves ~25% unused at reset
   '''
 # ---
+# name: test_renders_shared_fixture[claude_reset_grants]
+  '''
+  Claude
+    Fable resets: 2 remaining · expires Jan 29, 12:00 UTC
+    Full resets: 1 remaining · expires Feb 15 · paused
+    7d:  95% used  ↻ 2d  exhausts ~1d 17h before reset
+  '''
+# ---
 # name: test_renders_shared_fixture[empty]
   '''
   Claude

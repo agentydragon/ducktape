@@ -188,6 +188,16 @@ window with a positive balance is marked as having paid credits available; the b
 the provider's latest reading, not a per-request charge ledger. Earned resets
 remain separate from this balance.
 
+Claude's usage scrape requests `cedar_ember=1` with the Claude Code OAuth
+user-agent format, which exposes its reset grants in the same captured response.
+The CLI, GNOME popup and browser show their remaining count, scope and expiry;
+Fable resets are distinct from full resets. Paused and scheduled grants stay
+labelled; a held count does not imply every grant is redeemable right now. An
+absent, ineligible or malformed inventory means unknown, not
+zero. If Anthropic rejects the optional query, the scrape retries ordinary usage.
+Raw responses, including the inventory, remain in `/v1/providers/claude/raw`
+and `aiquota.raw_http_observations`. AIQuota never redeems resets.
+
 Claude's OAuth provider also reports a prepaid monetary balance through its
 organization's `/api/oauth/organizations/{uuid}/prepaid/credits` endpoint. AIQuota
 first reads `/api/oauth/profile` to obtain the organization UUID, then parses the

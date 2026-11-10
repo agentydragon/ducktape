@@ -160,6 +160,7 @@ py_test(
     srcs = ["test_claude.py"],
     data = [
         "fixtures/claude_prepaid_credits.json",
+        "fixtures/claude_reset_grants.json",
         "fixtures/claude_usage.json",
     ],
     deps = [

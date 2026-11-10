@@ -133,6 +133,11 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             balances = string_reply(session.call("GetBalanceText", "claude"))
             assert header == "Claude — Prepaid balance: $123.45"
             assert not balances
+        elif fixture_name == "claude_reset_grants":
+            grants = string_reply(session.call("GetGrantText", "claude"))
+            assert "Fable resets: 2" in grants
+            assert "Full resets: 1" in grants
+            assert "paused" in grants
         elif fixture_name == "claude_prepaid_balance_unavailable":
             header = string_reply(session.call("GetHeaderText", "claude"))
             balances = string_reply(session.call("GetBalanceText", "claude"))

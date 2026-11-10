@@ -241,6 +241,7 @@ def _provider_view(
         else None
     )
     balances, grants = _credit_rows(selection, display_openai_platform_credits, display_anthropic_credits, stale_since)
+    grants.extend(_reset_grant_rows(source, now))
     status = None
     if any(window.reset_pending for window in display_windows):
         status = "Reset time passed · awaiting updated usage"
@@ -332,6 +333,25 @@ def _window_view(
         exhausted=exhausted,
         reset_pending=reset_pending,
     )
+
+
+def _reset_grant_rows(result: FetchSuccess | None, now: datetime) -> list[GrantView]:
+    if result is None:
+        return []
+    groups: dict[tuple[str, datetime | None, str | None], tuple[int, int]] = {}
+    for grant in result.claude_reset_grants or []:
+        if grant.remaining == 0 or (grant.expires_at is not None and grant.expires_at <= now):
+            continue
+        status = (
+            "paused" if grant.paused else "scheduled" if grant.starts_at is not None and grant.starts_at > now else None
+        )
+        key = (grant.label, grant.expires_at, status)
+        remaining, original = groups.get(key, (0, 0))
+        groups[key] = (remaining + grant.remaining, original + grant.original)
+    return [
+        GrantView(label=label, remaining=str(remaining), original=str(original), expires_at=expiry, status=status)
+        for (label, expiry, status), (remaining, original) in groups.items()
+    ]
 
 
 def _credit_rows(

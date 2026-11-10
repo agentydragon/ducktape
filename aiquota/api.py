@@ -179,7 +179,19 @@ class SnapshotFeed:
 
 
 def _next_view_transition(snapshot: QuotaSnapshot) -> datetime | None:
-    changes = [provider.burn.changes_at for provider in to_view(snapshot.quotas).providers if provider.burn is not None]
+    now = datetime.now(UTC)
+    providers = to_view(snapshot.quotas, now).providers
+    changes = [provider.burn.changes_at for provider in providers if provider.burn is not None]
+    for provider in providers:
+        result = provider.display.result
+        if result is None:
+            continue
+        for grant in result.claude_reset_grants or []:
+            changes.extend(
+                transition
+                for transition in (grant.starts_at, grant.expires_at)
+                if transition is not None and transition > now
+            )
     return min(changes) if changes else None
 
 
