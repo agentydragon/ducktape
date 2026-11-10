@@ -146,6 +146,23 @@ enum IterationProof {
     Unknown,
 }
 
+/// An ordinary call's local target, for `Executor::execute_local_call_target`.
+struct LocalCallTarget<'a> {
+    key: u32,
+    captured: Option<CapturedContext>,
+    args: &'a [Values],
+    argument_selections: &'a [Option<CallableSelection>],
+    coverage_target: Option<&'a (
+        u32,
+        LocalBodyIdentity,
+        LocalBodyIdentity,
+        Box<ProofDependencies>,
+    )>,
+    single_target: bool,
+    needs_value: bool,
+    call_span: Span,
+}
+
 pub(super) fn from_flow(values: FlowValues) -> Values {
     values.into_iter().map(AbstractValue::Value).collect()
 }
@@ -7698,6 +7715,90 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         )
     }
 
+    /// One local function or closure target of an ordinary call: invoke
+    /// it, keep its receipt when it is the call's covered target, and absorb
+    /// its effects. Kept out of line for `execute_call`'s frame size, which
+    /// bounds the supported call depth.
+    #[inline(never)]
+    fn execute_local_call_target(
+        &mut self,
+        target: LocalCallTarget<'_>,
+        result_values: &mut Values,
+        result_selection: &mut Option<CallableSelection>,
+        outcome: &mut Outcome,
+    ) {
+        let LocalCallTarget {
+            key,
+            captured,
+            args,
+            argument_selections,
+            coverage_target,
+            single_target,
+            needs_value,
+            call_span,
+        } = target;
+        let mut nested = self.invoke_selected(
+            key,
+            args.to_vec(),
+            argument_selections.to_vec(),
+            captured,
+            false,
+        );
+        if single_target && coverage_target.is_some() {
+            *result_selection = nested.return_selection.clone();
+        }
+        if let Some((expected, caller, target, prerequisites)) = coverage_target
+            && *expected == key
+        {
+            let mut effect_coverage = nested.effect_coverage.clone();
+            effect_coverage.depend_on(prerequisites);
+            effect_coverage.selected_local_call(LocalCallReceipt {
+                caller: caller.clone(),
+                call_span,
+                target: target.clone(),
+                dependencies: prerequisites.clone(),
+            });
+            outcome.effect_coverage = effect_coverage;
+        }
+        if needs_value {
+            result_values.extend(nested.returns.iter().cloned());
+        }
+        self.apply_rebind_effects(&nested.effects.rebinds);
+        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+        outcome.executed_owners.extend(nested.executed_owners);
+        outcome.unknown_call |= nested.unknown_call;
+        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+    }
+
+    /// Runs each local plain function among `targets` for `new`, and
+    /// absorbs its effects into `outcome`.
+    #[inline(never)]
+    fn construct_plain_functions(
+        &mut self,
+        targets: &Values,
+        args: &[Values],
+        outcome: &mut Outcome,
+    ) {
+        for target in targets {
+            let (key, captured) = match target {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key)) => (*key, None),
+                AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
+                    (*key, Some(captured.clone()))
+                }
+                _ => continue,
+            };
+            if !self.inputs.index.callables.contains_key(&key) {
+                continue;
+            }
+            let mut nested = self.invoke(key, args.to_vec(), captured, false);
+            self.apply_rebind_effects(&nested.effects.rebinds);
+            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+            outcome.executed_owners.extend(nested.executed_owners);
+            outcome.unknown_call |= nested.unknown_call;
+            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+        }
+    }
+
     /// The flat lane's invocation of an admitted constructor body.
     fn invoke_checked_constructor(
         &mut self,
@@ -11739,6 +11840,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let single_target = targets.len() == 1;
         let mut result_selection = None;
+        // `new` of a local plain function runs its body with an untracked
+        // `this`: what it stores through `this` or into other bindings is
+        // part of the call's effects. The instance stays unknown (the
+        // unknown-callee arm below).
+        if call.kind == CallKind::New {
+            self.construct_plain_functions(&targets, &args, outcome);
+        }
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
@@ -11903,74 +12011,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     if call.kind == CallKind::Call =>
                 {
-                    let mut nested = self.invoke_selected(
-                        key,
-                        args.clone(),
-                        argument_selections.clone(),
-                        None,
-                        false,
-                    );
-                    if single_target && coverage_target.is_some() {
-                        result_selection = nested.return_selection.clone();
-                    }
-                    if let Some((expected, caller, target, prerequisites)) = &coverage_target
-                        && *expected == key
-                    {
-                        let mut effect_coverage = nested.effect_coverage.clone();
-                        effect_coverage.depend_on(prerequisites);
-                        effect_coverage.selected_local_call(LocalCallReceipt {
-                            caller: caller.clone(),
+                    self.execute_local_call_target(
+                        LocalCallTarget {
+                            key,
+                            captured: None,
+                            args: &args,
+                            argument_selections: &argument_selections,
+                            coverage_target: coverage_target.as_ref(),
+                            single_target,
+                            needs_value,
                             call_span: call.span,
-                            target: target.clone(),
-                            dependencies: prerequisites.clone(),
-                        });
-                        outcome.effect_coverage = effect_coverage;
-                    }
-                    if needs_value {
-                        result_values.extend(nested.returns.iter().cloned());
-                    }
-                    self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome
-                        .absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-                    outcome.executed_owners.extend(nested.executed_owners);
-                    outcome.unknown_call |= nested.unknown_call;
-                    outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+                        },
+                        &mut result_values,
+                        &mut result_selection,
+                        outcome,
+                    );
                 }
                 AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)
                     if call.kind == CallKind::Call =>
                 {
-                    let mut nested = self.invoke_selected(
-                        key,
-                        args.clone(),
-                        argument_selections.clone(),
-                        Some(captured),
-                        false,
-                    );
-                    if single_target && coverage_target.is_some() {
-                        result_selection = nested.return_selection.clone();
-                    }
-                    if let Some((expected, caller, target, prerequisites)) = &coverage_target
-                        && *expected == key
-                    {
-                        let mut effect_coverage = nested.effect_coverage.clone();
-                        effect_coverage.depend_on(prerequisites);
-                        effect_coverage.selected_local_call(LocalCallReceipt {
-                            caller: caller.clone(),
+                    self.execute_local_call_target(
+                        LocalCallTarget {
+                            key,
+                            captured: Some(captured),
+                            args: &args,
+                            argument_selections: &argument_selections,
+                            coverage_target: coverage_target.as_ref(),
+                            single_target,
+                            needs_value,
                             call_span: call.span,
-                            target: target.clone(),
-                            dependencies: prerequisites.clone(),
-                        });
-                        outcome.effect_coverage = effect_coverage;
-                    }
-                    if needs_value {
-                        result_values.extend(nested.returns.iter().cloned());
-                    }
-                    self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome
-                        .absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-                    outcome.executed_owners.extend(nested.executed_owners);
-                    outcome.unknown_call |= nested.unknown_call;
-                    outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+                        },
+                        &mut result_values,
+                        &mut result_selection,
+                        outcome,
+                    );
                 }
                 _ => {
                     outcome.lose_call_target(call.owner, call.span);
