@@ -132,7 +132,10 @@ different identity is placed on or attached to the environment (operator, 2026-1
 the identity out from under a harness); `EnvironmentService`, in Dispatcher's process, refuses with
 the Sessions named. A bypass such as `kubectl edit` is caught by Dispatcher's delivery and wake path
 refusing a mismatched Session, so it strands Sessions rather than re-attributing them. Workspace and
-state volumes carry over, and the app says the next agent sees what the previous one left.
+state volumes carry over: the next identity reads whatever the previous one left, including anything
+privileged it wrote there. That is an accepted risk of choosing to change an environment's identity,
+not something the controllers prevent (operator, 2026-11-10); the app shows it when an identity
+change is requested, and the environment's page lists the identities it has run as.
 
 ## Central Sessions with no environment
 
