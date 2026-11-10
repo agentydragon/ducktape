@@ -58,8 +58,8 @@ The targets union for `environment` is `sandboxes` and `boundIdentity`, either o
 
 - **`sandboxes`**: a Sandbox by name, optionally pinned to one incarnation by UID, matched exactly
   as `session_inbox_access` matches it (`inboxaccess.Rule.covers`).
-- **`boundIdentity: {name: I}`**: a Sandbox matches when its live `spec.identity.name` equals `I` at
-  evaluation time, read from the Sandbox, never from a cache of past matches. The rule pins no
+- **`boundIdentity: {name: I}`**: a Sandbox matches when its current `spec.identity.name` equals `I`,
+  as the evaluator's Sandbox informer sees it; nothing records which Sandboxes once matched. The rule pins no
   Identity UID: `spec.identity` is name-only, and the incarnation a Sandbox runs as is the Sandbox's
   record (its current `WorkloadCredential`). A recreated `I` therefore matches the same Sandboxes, as
   it acts in them; the caller's own incarnation is fenced by the reader's subject lookup, which names
@@ -108,8 +108,10 @@ All points read one shared index: `policy/reader`'s `Index[R]` with rule type `e
 beside the evaluator (as `inboxaccess.ParseRule`), `Grants(reader.Identity{Name, UID})` for the
 subject, and a `EnvironmentReady` binding condition through `WatchRules`. EnvironmentService, the
 lifecycle manager and Dispatcher share the Runner Gateway process, so the Gateway holds one index and
-passes it to each. The target is the live, uncached Sandbox the lifecycle manager already rereads on
-every conflict, so a rebind between check and patch is caught by the reread.
+passes it to each. Reads and list filtering match against the Gateway's Sandbox informer, so a
+just-rebound Sandbox may show for one informer lag. Mutations recheck the match against the uncached
+Sandbox the lifecycle manager already rereads and patches under its `resourceVersion`, so a rebind
+between check and patch is caught there.
 
 | Evaluator                                                 | Caller it evaluates                                                                                    | Reads                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
