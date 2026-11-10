@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
@@ -152,7 +153,7 @@ func (f *fixture) policySet(name string, rules ...policyapi.Rule) *policyapi.Pol
 	}
 }
 
-func (f *fixture) policyBinding(namespace, name string, subject policyapi.ServiceAccountRef, sets ...string) *policyapi.PolicyBinding {
+func (f *fixture) policyBinding(namespace, name string, subject reader.ServiceAccount, sets ...string) *policyapi.PolicyBinding {
 	return &policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
 		Spec:       policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Namespace: subject.Namespace, Name: subject.Name}, PolicySets: sets},

@@ -46,6 +46,12 @@ var (
 	reader      = ServiceReaderPrincipal{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-reader"}}
 )
 
+// accountOf is the ServiceAccount a request records as its caller; the zero value for any other kind of caller.
+func accountOf(recorded Caller) ServiceAccount {
+	serviceAccount, _ := recorded.(ServiceAccountCaller)
+	return serviceAccount.Account
+}
+
 // input is a submission named by its key. Copies change what they set.
 func input(key string) ActionRequestInput {
 	return ActionRequestInput{
@@ -56,12 +62,12 @@ func input(key string) ActionRequestInput {
 	}
 }
 
-func (f fixture) submit(t *testing.T, owner CallerPrincipal, key string) ActionRequest {
+func (f fixture) submit(t *testing.T, owner Owner, key string) ActionRequest {
 	t.Helper()
 	return f.submitInput(t, owner, input(key), Admission{RequestID: uuid.New()})
 }
 
-func (f fixture) submitInput(t *testing.T, owner CallerPrincipal, body ActionRequestInput, admission Admission) ActionRequest {
+func (f fixture) submitInput(t *testing.T, owner Owner, body ActionRequestInput, admission Admission) ActionRequest {
 	t.Helper()
 	request, err := f.Submit(t.Context(), owner, body, admission)
 	if err != nil {
@@ -71,7 +77,7 @@ func (f fixture) submitInput(t *testing.T, owner CallerPrincipal, body ActionReq
 }
 
 // allowed is a request an operator allowed, so its Execution awaits dispatch.
-func (f fixture) allowed(t *testing.T, owner CallerPrincipal, key string) ActionRequest {
+func (f fixture) allowed(t *testing.T, owner Owner, key string) ActionRequest {
 	t.Helper()
 	return f.decide(t, f.submit(t, owner, key), VerdictAllow)
 }

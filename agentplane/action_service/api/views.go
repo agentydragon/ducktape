@@ -92,14 +92,25 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 	if err != nil {
 		return nil, err
 	}
-	return &action_servicepb.ActionRequest{
+	view := &action_servicepb.ActionRequest{
 		Id: request.ID.String(), IdempotencyKey: request.IdempotencyKey,
 		Action:    &action_servicepb.ActionIdentity{Group: request.Action.Group, Name: request.Action.Name},
 		Arguments: arguments, Title: request.Title, Description: request.Description,
-		Caller: request.Caller.Proto(), CallerUid: request.CallerUID, State: request.State, Version: request.Version,
+		State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
-	}, nil
+	}
+	switch caller := request.Caller.(type) {
+	case store.ServiceAccountCaller:
+		view.Caller, view.CallerUid = caller.Account.Proto(), caller.UID
+	case store.IdentityCaller:
+		view.CallerIdentity = caller.Identity.Proto()
+	case store.UnknownCaller:
+		// A newer release's kind of caller: the receipt names none, as the field says.
+	default:
+		panic(fmt.Sprintf("unknown caller %T", caller))
+	}
+	return view, nil
 }
 
 func requestViews(requests []store.ActionRequest) ([]*action_servicepb.ActionRequest, error) {
@@ -216,8 +227,11 @@ func validateActionActor(actor *action_servicepb.Principal) error {
 			return nil
 		}
 	}
+	if identity := actor.GetCallerIdentity(); identity != nil && identity.GetName() != "" && identity.GetUid() != "" && actor.CallerUid == nil {
+		return nil
+	}
 	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" && actor.CallerUid == nil {
 		return nil
 	}
-	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
+	return fmt.Errorf("an Action actor needs a caller account, a caller Identity, or an operator issuer and subject")
 }

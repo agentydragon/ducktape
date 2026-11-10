@@ -100,7 +100,12 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return worker.Succeeded(e.launch(ctx, request.Caller, args))
+		caller, ok := request.Caller.(store.ServiceAccountCaller)
+		if !ok {
+			return store.ExecutionOutcome{}, refuse("caller_not_service_account",
+				"a launch binds its launcher grants to the calling ServiceAccount, and this request's caller is not one")
+		}
+		return worker.Succeeded(e.launch(ctx, caller.Account, args))
 	case contract.ActionCreateSession:
 		args, err := e.inputs.CreateSession.Decode(request.Arguments)
 		if err != nil {

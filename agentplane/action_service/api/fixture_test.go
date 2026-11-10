@@ -134,6 +134,9 @@ func (labeledAccounts) Admits(account auth.Account) bool {
 	return err == nil && found.Labels[callerLabel] == "true"
 }
 
+// AdmitsIdentity admits no Identity: this fixture's callers present bearers, which only name ServiceAccounts.
+func (labeledAccounts) AdmitsIdentity(auth.Identity) bool { return false }
+
 // served is the API over a database of its own, on a gRPC server with its HTTP facade, as main serves it.
 type served struct {
 	store  *store.Store
