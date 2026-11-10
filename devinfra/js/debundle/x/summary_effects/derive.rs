@@ -827,6 +827,34 @@ impl<'a> Resolver<'a> {
                 Role::Unknown
             };
         }
+        // `const alias = ns.member`: the member of a lazy module's exports,
+        // which the module has assigned by the time the alias is declared.
+        if let Def::Value(Expr::Member(member)) = def {
+            let mut uses = MemberUses::default();
+            uses.visit_member_expr(member);
+            let Expr::Ident(base) = member_base(member) else {
+                return Role::Unknown;
+            };
+            let Role::Namespace { lazy, interop } = self.role(chunk, &base.to_id()) else {
+                return Role::Unknown;
+            };
+            // The longest path is the whole expression.
+            let path = uses
+                .paths
+                .iter()
+                .map(|(_, path)| path)
+                .max_by_key(|path| path.len());
+            let name = match path.and_then(|path| path.split_once('.').or(Some(("", path)))) {
+                Some(("", name)) => name,
+                Some(("default", name)) if interop && !self.es_module(&lazy) => name,
+                _ => return Role::Unknown,
+            };
+            return if depth_of(member) <= 2 && self.member(&lazy, name, 0) {
+                Role::Allocator
+            } else {
+                Role::Unknown
+            };
+        }
         let Def::Value(Expr::Call(call)) = def else {
             return Role::Unknown;
         };
@@ -1441,6 +1469,11 @@ impl<'a> Resolver<'a> {
                         Prop::KeyValue(pair) if !matches!(pair.key, PropName::Computed(_)) => {
                             self.value(&pair.value, scope)?;
                         }
+                        // Methods and accessors are defined, not run.
+                        Prop::Method(MethodProp { key, .. })
+                        | Prop::Getter(GetterProp { key, .. })
+                        | Prop::Setter(SetterProp { key, .. })
+                            if !matches!(key, PropName::Computed(_)) => {}
                         _ => return None,
                     }
                 }
@@ -1704,6 +1737,22 @@ impl<'a> Resolver<'a> {
         let mut mentions = MentionsEsModule(false);
         value.visit_with(&mut mentions);
         mentions.0
+    }
+}
+
+/// The expression a chain of member reads starts from.
+fn member_base(member: &MemberExpr) -> &Expr {
+    match &*member.obj {
+        Expr::Member(inner) => member_base(inner),
+        other => other,
+    }
+}
+
+/// How many member reads the chain makes.
+fn depth_of(member: &MemberExpr) -> usize {
+    match &*member.obj {
+        Expr::Member(inner) => 1 + depth_of(inner),
+        _ => 1,
     }
 }
 

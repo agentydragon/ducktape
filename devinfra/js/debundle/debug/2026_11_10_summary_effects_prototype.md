@@ -151,6 +151,11 @@ assigned, or a parameter of a function that is only ever called by name with
 such a binding in that position. That the global object escaped refuses
 nothing by itself; it only makes every intrinsic count as escaped.
 
+A read of a static member counts as independent of every prototype only for
+a name the namespace owns (`Object.defineProperty`, `Math.PI`; a fixed
+table). Any other name (`Math.toString`, a name that does not exist) is
+answered by `Function.prototype` or `Object.prototype` and depends on both.
+
 A store into the record a global holds, `(x[K] ??= {})[u] = v` or through a
 binding initialized with `x[K] ??= {}`, is charged to the one global `K`
 names when `K` resolves to a string (a literal, a binding that only ever
@@ -422,6 +427,10 @@ premises tier 0 refuses all 39.
   It needs the chunk off an import cycle, like primitive imports. Excalidraw
   has 22 such imports in `main` and 1 in `editor`; the stress numbers do not
   move.
+- **Aliases of a lazy module's member.** `const alias = ns.member` (or
+  `ns.default.member`), declared once and never assigned, in this chunk or
+  exported by another, is an allocator when the member is: the module has
+  assigned its exports by the time the alias is declared.
 - **Members of a lazy module.** `ns.member` and `ns.default.member`, where
   `ns` is a lazy module's exports directly or through the interop helper, are
   resolved to the single top-level `exports.member = …` of the module body
@@ -442,8 +451,8 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 28 two-chunk programs run under Node in both
-orders (14 admitted with Node agreeing, 14 refused with Node showing the
+`derive_fixtures.txt` holds 31 two-chunk programs run under Node in both
+orders (16 admitted with Node agreeing, 15 refused with Node showing the
 divergence). `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition

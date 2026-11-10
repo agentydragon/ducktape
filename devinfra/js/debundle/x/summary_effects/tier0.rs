@@ -347,6 +347,82 @@ const NAMESPACES: [&str; 14] = [
     "Reflect", "Date", "Promise", "Map", "Set",
 ];
 
+/// Own properties of intrinsic namespaces. A read of one is not answered by
+/// any prototype object; any other name is looked up on `Function.prototype`
+/// or `Object.prototype`.
+const OWN_STATICS: [(&str, &[&str]); 9] = [
+    (
+        "Object",
+        &[
+            "assign",
+            "create",
+            "defineProperties",
+            "defineProperty",
+            "entries",
+            "freeze",
+            "fromEntries",
+            "getOwnPropertyDescriptor",
+            "getOwnPropertyDescriptors",
+            "getOwnPropertyNames",
+            "getOwnPropertySymbols",
+            "getPrototypeOf",
+            "is",
+            "isFrozen",
+            "keys",
+            "setPrototypeOf",
+            "values",
+        ],
+    ),
+    ("Array", &["from", "isArray", "of"]),
+    (
+        "Symbol",
+        &[
+            "asyncIterator",
+            "for",
+            "hasInstance",
+            "iterator",
+            "toPrimitive",
+            "toStringTag",
+        ],
+    ),
+    (
+        "Math",
+        &[
+            "PI", "abs", "ceil", "cos", "floor", "max", "min", "pow", "random", "round", "sin",
+            "sqrt", "trunc",
+        ],
+    ),
+    (
+        "Number",
+        &[
+            "EPSILON",
+            "MAX_SAFE_INTEGER",
+            "MIN_SAFE_INTEGER",
+            "isFinite",
+            "isInteger",
+            "isNaN",
+            "parseFloat",
+            "parseInt",
+        ],
+    ),
+    ("String", &["fromCharCode", "fromCodePoint", "raw"]),
+    ("JSON", &["parse", "stringify"]),
+    (
+        "Reflect",
+        &[
+            "apply",
+            "construct",
+            "defineProperty",
+            "get",
+            "getPrototypeOf",
+            "has",
+            "ownKeys",
+            "set",
+        ],
+    ),
+    ("Date", &["UTC", "now", "parse"]),
+];
+
 /// Globals whose `prototype` holds only data properties, apart from the
 /// names in `PROTOTYPE_ACCESSORS`.
 const DATA_PROTOTYPES: [&str; 6] = ["Object", "Array", "Function", "String", "Number", "Boolean"];
@@ -1281,10 +1357,20 @@ impl Classifier<'_> {
                 }) => prop.sym.to_string(),
                 _ => unreachable!("an intrinsic member read is a named member"),
             };
-            // `G.prototype.x` is a member of the prototype object.
+            // `G.prototype.x` is a member of the prototype object, and a
+            // name `G` does not own is answered by one.
+            let own_static = dependencies.iter().all(|(global, _)| {
+                OWN_STATICS
+                    .iter()
+                    .any(|(owner, names)| owner == global && names.contains(&&*prop))
+            });
             let on_prototype = matches!(expr, Expr::Member(MemberExpr { obj, .. })
                 if matches!(&**obj, Expr::Member(_)));
-            if self.untouched(dependencies, Some(&prop), on_prototype) {
+            let mut dependencies = dependencies;
+            if !own_static {
+                dependencies.extend([("Object", &[] as &[_]), ("Function", &[] as &[_])]);
+            }
+            if self.untouched(dependencies, Some(&prop), on_prototype || !own_static) {
                 return Ok(());
             }
         }

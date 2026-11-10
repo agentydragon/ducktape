@@ -229,6 +229,9 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "const known = [Map]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const a = new Map([['k', 1]]);",
             "const known = [Object]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const ts = Object.prototype.toString;",
             "function mixin(Target, k) { Target.prototype[k] = 1; } mixin(Map, 'set'); const a = new Map([['k', 1]]);",
+            // A static the namespace inherits is a prototype member.
+            "const known = [Object]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const inherited = Math.toString;",
+            "const known = [Function]; function ext(C, k) { C.prototype[k] = 1; } ext(Unknown, 'x'); const inherited = Object.missing;",
             "class Local {} function mixin(Target) { Target.prototype[k] = 1; } mixin(Local); [Map].forEach(mixin); const a = new Map([['k', 1]]);",
             "let Local = class {}; Local = Map; [Map].forEach(Boolean); Local.prototype[k] = 1; const a = new Map([['k', 1]]);",
             // The record of a global whose name is not known may be any
@@ -593,6 +596,11 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "function debounce(fn, ms) { let timer; function wrapped(...args) { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); } wrapped.cancel = () => clearTimeout(timer); return wrapped; } const x = debounce(() => {}, 10);",
             "function debounce(fn, wait = 100, options = { leading: false }) { const queue = []; let timer; function run(...args) { queue.push(args); timer = setTimeout(fn, wait); } return run; } const x = debounce(() => {});",
             "function f(a = {}) { return { a }; } const x = f();",
+            // A collection constructed empty and kept by closures.
+            "function emitter() { let s = new Set; let subscribe = (f) => (s.add(f), () => s.delete(f)); let notify = (v) => { for (let f of s) f(v); }; return { subscribe, notify }; } const x = emitter();",
+            "const emitter = () => { const s = new Set(), m = new Map(); return { subscribe(f) { s.add(f); }, get size() { return m.size; } }; }; const x = emitter();",
+            "function box(v) { return { get v() { return v; }, set v(next) { v = next; }, *each() { yield v; } }; } const x = box(1);",
+            "function f(a) { return { get a() { return a; } }; } const x = f(1);",
             // Accessors are defined, not run.
             "class Logger { seen = new Set(); constructor(name) { this.name = name; } get size() { return this.seen.size; } set level(value) { this.seen.add(value); } } const x = new Logger('a');",
             // Fields that only allocate.
@@ -633,7 +641,6 @@ fn tier0_allocators_stop_at_their_near_misses() {
             "async function f(a) { return { a }; } const x = f(1);",
             "function* f(a) { return { a }; } const x = f(1);",
             "function f(a) { if (a) return {}; return []; } const x = f(1);",
-            "function f(a) { return { get a() { return a; } }; } const x = f(1);",
             // The outer function itself is asynchronous, or runs its inner one.
             "async function guard(check) { function run() {} return run; } const x = guard(1);",
             "function guard(check) { function run() { return check(); } return run(); } const x = guard(() => 1);",

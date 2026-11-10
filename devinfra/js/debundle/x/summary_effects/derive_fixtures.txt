@@ -26,6 +26,8 @@ export function setMutable(value) { mutable = value; }
 export const THEME = { color: 'red', size: 4, nested: { a: 1 } };
 export const TOUCHED = { color: 'red' };
 export function recolor() { TOUCHED.color = 'blue'; }
+var require_third = __commonJS((exports) => { exports.box = function (v) { return { v }; }; exports.peek = function (o) { return o.v; }; });
+const third = __toESM(require_third()); export const box = third.box; export const peek = third.peek; export const boxDefault = third.default.box;
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -195,3 +197,21 @@ import { TOUCHED, recolor } from './dep.js';
 recolor();
 const label = `${TOUCHED.color}`;
 console.log(label);
+### commutes same: an exported alias of a lazy module's allocator member, across an impure statement
+-
+import { box, boxDefault } from './dep.js'; let state = 0;
+state = 1;
+const c = [box(() => state), boxDefault(2)];
+console.log(state, c[1].v);
+### ordered differs: an exported alias of a member that reads its argument
+-
+import { peek } from './dep.js'; const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const c = peek(o);
+console.log(c);
+### commutes same: a local alias of a lazy module's allocator member, across an impure statement
+-
+import { __toESM, require_lib } from './dep.js'; const ns = __toESM(require_lib()); const wrap = ns.wrap; let state = 0;
+state = 1;
+const c = wrap(() => 1);
+console.log(state + c.render());
