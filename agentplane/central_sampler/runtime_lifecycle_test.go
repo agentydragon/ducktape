@@ -98,6 +98,7 @@ func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
+	logged := captureLogs(t)
 	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60})
 	claimCommitted := make(chan struct{}, 1)
 	runtime.claimLease = func(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
@@ -137,6 +138,18 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	assertRuntimeWaitsForGate(t, done, "the committed release to return")
 	close(allowReleaseReturn)
 	waitRuntimeDone(t, done)
+
+	exit := logged("central sampler drain releasing Session")
+	// slog widens int attributes to int64.
+	generation := int64(owner.Generation)
+	if exit["session_id"] != session.ID || exit["generation"] != generation || exit["active_command"] != "" ||
+		exit["live_cells"] != int64(0) || exit["live_processes"] != int64(0) || exit["unresolved_intents"] != int64(0) || exit["pending"] != false {
+		t.Fatalf("drain exit record=%v", exit)
+	}
+	released := logged("central sampler lease released")
+	if released["session_id"] != session.ID || released["generation"] != generation || released["reason"] != string(releaseDrain) {
+		t.Fatalf("lease release record=%v", released)
+	}
 
 	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
