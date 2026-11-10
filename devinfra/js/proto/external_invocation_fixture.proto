@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package ducktape.proto_test;
+
+import "proto/invocation.proto";
+
+message ExternalInvocation {
+  invocation.Invocation invocation = 1;
+}

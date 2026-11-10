@@ -1,8 +1,8 @@
 # Gazelle exclusions
-# Resolve upstream Google API proto imports to the shared googleapis repository.
-# gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto
-# gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto
-# gazelle:resolve proto google/rpc/code.proto @googleapis//google/rpc:code_proto
+# Resolve shared Google proto imports to their virtual roots.
+# gazelle:resolve proto google/api/annotations.proto //third_party/googleapis:api_proto
+# gazelle:resolve proto google/rpc/status.proto //third_party/googleapis:rpc_proto
+# gazelle:resolve proto google/rpc/code.proto //third_party/googleapis:rpc_proto
 # Most .gitignore patterns are handled by .bazelignore (root-level directories)
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible

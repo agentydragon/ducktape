@@ -1,4 +1,4 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -34,12 +34,10 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "policy_types_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":policy_types_proto",
     visibility = ["//agentplane:__subpackages__"],
+    deps = [":policy_types_proto"],
 )
 
 go_library(

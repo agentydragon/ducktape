@@ -1,4 +1,4 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -7,6 +7,9 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+# gazelle:resolve py agentplane.app.app_service_pb2 //agentplane/app:app_service_pb2
+# gazelle:resolve py google.api.annotations_pb2 //agentplane/app:app_service_pb2
 load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = [
@@ -31,7 +34,7 @@ proto_library(
     deps = [
         "//agentplane/proto:session_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
@@ -54,16 +57,9 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "app_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":app_service_proto",
-    deps = [
-        "//agentplane/proto:session_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
-        "//google/api:annotations_pb",
-    ],
+    deps = [":app_service_proto"],
 )
 
 py_proto_library_with_mypy_stubs(
@@ -71,10 +67,22 @@ py_proto_library_with_mypy_stubs(
     deps = [":app_service_proto"],
 )
 
+py_test(
+    name = "test_proto_bindings",
+    srcs = ["test_proto_bindings.py"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app:app_service_pb2",
+        "//agentplane/proto:environment_lifecycle_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf stubs
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
-# No test here is small, and none of that is about the tests being slow: on the CI executor image
+# The integration tests below are not small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
 # -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU
 # burned at all. <devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md> is the class.

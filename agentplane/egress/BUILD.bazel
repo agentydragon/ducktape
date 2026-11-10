@@ -1,4 +1,4 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -203,7 +203,7 @@ proto_library(
     deps = [
         ":egress_rules_proto",
         "//agentplane/proto:identity_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -213,7 +213,7 @@ py_proto_library_with_mypy_stubs(
     name = "egress_admin_pb2",
     deps = [
         ":egress_admin_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
     ],
 )
 
@@ -273,26 +273,14 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "egress_rules_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":egress_rules_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:identity_pb",
-    ],
+    deps = [":egress_rules_proto"],
 )
 
-ts_proto_library(
+js_library(
     name = "egress_admin_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":egress_admin_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":egress_rules_pb",
-        "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
-    ],
+    deps = [":egress_admin_proto"],
 )

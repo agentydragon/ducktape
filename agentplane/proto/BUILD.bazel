@@ -1,8 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("//devinfra/js/proto:stage.bzl", "stage_protobuf_es")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
@@ -19,12 +17,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":identity_proto"],
 )
 
-ts_proto_library(
+js_library(
     name = "identity_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":identity_proto",
     visibility = ["//visibility:public"],
+    deps = [":identity_proto"],
 )
 
 go_proto_library(
@@ -40,12 +36,10 @@ proto_library(
     visibility = ["//visibility:public"],
 )
 
-ts_proto_library(
+js_library(
     name = "kubernetes_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":kubernetes_proto",
     visibility = ["//visibility:public"],
+    deps = [":kubernetes_proto"],
 )
 
 go_proto_library(
@@ -60,7 +54,7 @@ proto_library(
     srcs = ["environment_lifecycle.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "@googleapis//google/rpc:status_proto",
+        "//third_party/googleapis:rpc_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -70,40 +64,14 @@ py_proto_library_with_mypy_stubs(
     visibility = ["//visibility:public"],
     deps = [
         ":environment_lifecycle_proto",
-        "@googleapis//google/rpc:status_proto",
+        "//third_party/googleapis:rpc_proto",
     ],
 )
 
-stage_protobuf_es(
-    name = "status_generated",
-    proto = "@googleapis//google/rpc:status_proto",
-)
-
 js_library(
-    name = "status_pb",
-    srcs = [":status_generated"],
-    deps = ["//:node_modules/@bufbuild/protobuf"],
-)
-
-stage_protobuf_es(
-    name = "code_generated",
-    proto = "@googleapis//google/rpc:code_proto",
-)
-
-js_library(
-    name = "code_pb",
-    srcs = [":code_generated"],
-    deps = ["//:node_modules/@bufbuild/protobuf"],
-)
-
-ts_proto_library(
     name = "environment_lifecycle_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":environment_lifecycle_proto",
-    protoc_gen_options = {"rewrite_imports": "./google/rpc/status_pb.js:./agentplane/proto"},
     visibility = ["//visibility:public"],
-    deps = [":status_pb"],
+    deps = [":environment_lifecycle_proto"],
 )
 
 go_proto_library(
@@ -143,12 +111,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":command_proto"],
 )
 
-ts_proto_library(
+js_library(
     name = "command_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":command_proto",
     visibility = ["//visibility:public"],
+    deps = [":command_proto"],
 )
 
 proto_library(
@@ -167,13 +133,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":event_proto"],
 )
 
-ts_proto_library(
+js_library(
     name = "event_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":event_proto",
     visibility = ["//visibility:public"],
-    deps = [":command_pb"],
+    deps = [":event_proto"],
 )
 
 proto_library(
@@ -189,13 +152,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":event_log_proto"],
 )
 
-ts_proto_library(
+js_library(
     name = "event_log_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":event_log_proto",
     visibility = ["//visibility:public"],
-    deps = [":event_pb"],
+    deps = [":event_log_proto"],
 )
 
 proto_library(
@@ -214,13 +174,10 @@ py_proto_library_with_mypy_stubs(
     deps = [":session_proto"],
 )
 
-ts_proto_library(
+js_library(
     name = "session_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":session_proto",
     visibility = ["//visibility:public"],
-    deps = [":identity_pb"],
+    deps = [":session_proto"],
 )
 
 proto_library(

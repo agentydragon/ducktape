@@ -1,0 +1,20 @@
+load("//devinfra/js/proto:virtual_proto.bzl", "virtual_proto_library")
+
+# gazelle:proto disable
+
+package(default_visibility = ["//visibility:public"])
+
+virtual_proto_library(
+    name = "api_proto",
+    protos = ["@googleapis//google/api:annotations_proto"],
+    deps = ["@protobuf//:descriptor_proto"],
+)
+
+virtual_proto_library(
+    name = "rpc_proto",
+    protos = [
+        "@googleapis//google/rpc:code_proto",
+        "@googleapis//google/rpc:status_proto",
+    ],
+    deps = ["@protobuf//:any_proto"],
+)

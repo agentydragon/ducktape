@@ -1,1 +1,15 @@
+load("//devinfra/js/proto:virtual_proto.bzl", "virtual_proto_library")
+
 exports_files(["BUILD.protos.bazel"])
+
+virtual_proto_library(
+    name = "build_event_stream_proto",
+    protos = ["@buildbuddy_protos//:build_event_stream_proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@protobuf//:any_proto",
+        "@protobuf//:descriptor_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
