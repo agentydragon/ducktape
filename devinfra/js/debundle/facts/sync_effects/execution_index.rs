@@ -11823,6 +11823,18 @@ impl ExecutionIndex {
         self.record_iterated_value(value);
     }
 
+    fn record_head_iterated_defaults(&mut self, head: &ForHead) {
+        match head {
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    self.record_iterated_defaults(&declarator.name);
+                }
+            }
+            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
+            ForHead::UsingDecl(_) => {}
+        }
+    }
+
     fn record_iterated_defaults(&mut self, pattern: &Pat) {
         let mut defaults = Vec::new();
         iterated_defaults(pattern, &mut defaults);
@@ -12629,6 +12641,19 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        // An array pattern in the head iterates each key, a string.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        if head_iterates {
+            self.record_iterated_value(ValueExpr::NonCallable(PrimKinds::STRING));
+        }
+        self.record_head_iterated_defaults(&node.left);
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
@@ -12652,15 +12677,7 @@ impl Visit for ExecutionIndex {
         if head_iterates && !entries {
             self.record_iterated_value(ValueExpr::Unknown);
         }
-        match &node.left {
-            ForHead::VarDecl(declaration) => {
-                for declarator in &declaration.decls {
-                    self.record_iterated_defaults(&declarator.name);
-                }
-            }
-            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
-            ForHead::UsingDecl(_) => {}
-        }
+        self.record_head_iterated_defaults(&node.left);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
