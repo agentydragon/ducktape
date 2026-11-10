@@ -69,6 +69,12 @@ pub(super) enum LocalBodyIdentity {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
     },
+    /// An imported callable whose call the importer replaced by its derived
+    /// foreign call summary.
+    Imported {
+        defining_module: String,
+        export: String,
+    },
 }
 
 /// One selected direct local invocation. The flat edge set avoids expanding
@@ -326,6 +332,13 @@ impl LocalBodyIdentity {
             } => LexicalBindingEffectBody::Native {
                 intrinsic: *intrinsic,
                 property: property.clone(),
+            },
+            Self::Imported {
+                defining_module,
+                export,
+            } => LexicalBindingEffectBody::Imported {
+                defining_module: defining_module.clone(),
+                export: export.clone(),
             },
         }
     }
@@ -758,6 +771,10 @@ enum LocalBodyKey {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
     },
+    Imported {
+        defining_module: String,
+        export: String,
+    },
 }
 
 /// Exact identity for a flat local call edge. Span coordinates are used
@@ -794,6 +811,13 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
         } => LocalBodyKey::Native {
             intrinsic: *intrinsic,
             property: property.clone(),
+        },
+        LocalBodyIdentity::Imported {
+            defining_module,
+            export,
+        } => LocalBodyKey::Imported {
+            defining_module: defining_module.clone(),
+            export: export.clone(),
         },
     }
 }

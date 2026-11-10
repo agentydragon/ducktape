@@ -120,8 +120,7 @@ pub(super) fn assign(
                 .world_mut()
                 .module
                 .prefix_values
-                .entry(id.clone())
-                .or_default()
+                .entry_or_default(id)
                 .extend(values);
             if let Some(selection) = selection
                 && selection.matches(&executor.state.world.module.prefix_values[id])

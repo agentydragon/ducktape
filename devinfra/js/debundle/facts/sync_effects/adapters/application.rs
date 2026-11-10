@@ -33,6 +33,7 @@ use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
 };
+use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::builtins;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
@@ -268,6 +269,20 @@ impl LocalExecutionContext<'_, '_, '_> {
             .filter(|summary| summary.provider_cell_reads.is_empty())
     }
 
+    /// As `substituted_summary`, for the call itself: a retaining factory's
+    /// summary is the receipt only for the call shape its transfer
+    /// substitutes.
+    fn substituted_call_summary(
+        &self,
+        call: &super::super::execution_index::Call,
+    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+        if call.has_spread {
+            return None;
+        }
+        self.substituted_summary(call.kind, &call.callee)
+            .or_else(|| self.executor.retaining_factory_summary(call).cloned())
+    }
+
     /// The kernel evaluated `new`'s callee and arguments in order. A checked
     /// local class runs its lowered body through the kernel's construct rule;
     /// a refused construction keeps the flat lane's typed loss; any other
@@ -489,8 +504,11 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         // A published foreign call summary has proved the provider binding
         // available to this importer, so reading it as a callee is a normal
         // declarative read under the summary's premises.
-        let summary =
-            self.substituted_summary(CallKind::Call, &ValueExpr::Binding(binding.clone()));
+        let summary = self
+            .calls()
+            .iter()
+            .find(|call| call.kind == CallKind::Call && call.span == call_span)
+            .and_then(|call| self.substituted_call_summary(call));
         if let Some(summary) = summary
             && !result
                 .allocation
@@ -640,9 +658,8 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         .declared_pure_initializers
                         .contains(identity.binding.0.as_ref())
                 });
-        let substituted_summary = (!call.has_spread)
-            .then(|| self.substituted_summary(call.kind, &call.callee))
-            .flatten();
+        let substituted_summary = self.substituted_call_summary(&call);
+        let caller = self.executor.local_body_identity_for_call(&call);
         let result = self.executor.request(RuntimeOperation::Call {
             call,
             environment: frame.environment.clone(),
@@ -728,6 +745,17 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     if !normal_value {
                         // An unavailable operand throws before the body runs.
                         effects.uncertain_completion();
+                    }
+                    if let Some(caller) = caller {
+                        effects.selected_local_call(LocalCallReceipt {
+                            caller,
+                            call_span: span,
+                            target: LocalBodyIdentity::Imported {
+                                defining_module: summary.defining_module.clone(),
+                                export: summary.export.clone(),
+                            },
+                            dependencies: Box::new(summary.dependencies.clone()),
+                        });
                     }
                     effects
                 } else {
@@ -885,6 +913,11 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
             effects.depend_on(&self.executor.settled_prefix_dependencies());
             effects
         } else {
+            if !captures.cells.is_empty() {
+                self.executor.observations.refuse_owner_coverage(
+                    OwnerInitializationCoverageRefusalReason::CallbackCapturesLiveCell,
+                );
+            }
             EffectCoverageFragment::default()
         };
         Ok(ClosureAdmission {

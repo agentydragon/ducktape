@@ -437,6 +437,31 @@ pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
 }
 
+/// The xfail form of a positive the gate still refuses: the split is valid
+/// (the tree emitted on rejection prints `expected_stdout`, the source's
+/// output) but not provable yet, and today's refusal is the typed candidate
+/// status `pending`, returned with the assessment for the caller's own typed
+/// reason. Once the gate accepts the split this fails so the caller
+/// is converted to a positive.
+pub fn assert_pending_split_preserves_output(
+    opts: FixtureOpts<'_>,
+    pending: &str,
+    expected_stdout: &str,
+) -> Value {
+    let rejected = run_rejection_fixture_with_options(
+        opts,
+        &["--emit-on-rejection"],
+        3,
+        true,
+        "capability landed: convert this pending split to a positive",
+    );
+    assert_node_output(&rejected.entry_path(), expected_stdout, "");
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+    assert_eq!(assessment["status"], pending, "{assessment:#}");
+    assessment
+}
+
 /// `debundle run --emit-on-rejection` over a spec that fails for more than
 /// the gate's rejection: the run exits 1 like any other refusal.
 pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
@@ -545,7 +570,13 @@ pub fn run_rejection_fixture_with_args(
     extra_args: &[&str],
     exit_code: i32,
 ) -> RejectedFixture {
-    run_rejection_fixture_with_options(opts, extra_args, exit_code, true)
+    run_rejection_fixture_with_options(
+        opts,
+        extra_args,
+        exit_code,
+        true,
+        "expected spec to be rejected",
+    )
 }
 
 /// Run a rejected fixture without `--graphs`, for CLI options that conflict
@@ -555,7 +586,13 @@ pub fn run_rejection_fixture_without_graphs_with_args(
     extra_args: &[&str],
     exit_code: i32,
 ) -> RejectedFixture {
-    run_rejection_fixture_with_options(opts, extra_args, exit_code, false)
+    run_rejection_fixture_with_options(
+        opts,
+        extra_args,
+        exit_code,
+        false,
+        "expected spec to be rejected",
+    )
 }
 
 fn run_rejection_fixture_with_options(
@@ -563,6 +600,7 @@ fn run_rejection_fixture_with_options(
     extra_args: &[&str],
     exit_code: i32,
     graphs: bool,
+    unexpected_status: &str,
 ) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
 
@@ -583,7 +621,7 @@ fn run_rejection_fixture_with_options(
     assert_eq!(
         result.status.code(),
         Some(exit_code),
-        "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
+        "{unexpected_status}\nstdout:\n{}\nstderr:\n{}",
         result.stdout,
         result.stderr,
     );
