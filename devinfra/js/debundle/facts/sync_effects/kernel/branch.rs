@@ -20,7 +20,7 @@ pub(super) fn test_selected(frame: &mut LocalFrame) {
 /// primitive kind set keeps no literal, so every kind but `null`, `undefined`
 /// (always falsy) and symbols (always truthy) is on both sides. Objects and
 /// functions are truthy; a value of unknown kind is on both sides.
-pub(in crate::facts::sync_effects) fn split_truthiness(values: &Values) -> (Values, Values) {
+pub(super) fn split_truthiness(values: &Values) -> (Values, Values) {
     let mut truthy = Values::new();
     let mut falsy = Values::new();
     for value in values {
