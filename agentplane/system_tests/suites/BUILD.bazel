@@ -15,6 +15,27 @@ exports_files(["test_vm.py"])
 k3s_suite(
     name = "test_firecracker",
     srcs = ["test_firecracker.py"],
+    # Sized by measurement on one passing, uncached run, commit 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy
+    # invocation f6ad2fda-409c-446f-8ade-8ac18f5da377 (2026-11-10):
+    # - Memory: the K3s node working set peaked at 2,942 MiB and resident memory at 1,699 MiB in
+    #   `test.outputs/memory/working-sets.jsonl` (`bbapi artifact cat <invocation> working-sets.jsonl`). The same
+    #   samples' usage including page cache reached 7,861 MiB, which is not need. Guest memory in use, MemTotal less
+    #   MemAvailable, peaked at 2.8 GiB on both workers; that was sampled over the VM console and not retained.
+    #   6GB (BuildBuddy reads it as 6 GiB) is about twice the peak working set.
+    # - CPU: four matches the worker's four vCPUs. Eight were no faster (warm means 251.064 s at four, 268.020 s at
+    #   eight): https://github.com/agentydragon/ducktape/blob/791540fbaa160bde261e469adfdd2fcc84f378ec/devinfra/buildbuddy/debug/2026_11_09_hil_kvm_worker_canary.md
+    # - Disk: the whole work disk held 15 of 79 GB shortly after the run, including the executor's file cache and
+    #   image store, read with `df -B1G /var/lib/k3s-env` in a kvm-vm action; not retained.
+    # Verified at invocation ff1d84df-d048-4872-aa6b-0886c2363230 (2026-11-10): the executor assigned 6.44 GB and 4000
+    # milli-CPU, as `buildbuddy_remote_execution_assigned_ram_bytes` and `..._assigned_milli_cpu` show in Mimir. The
+    # execution platform's default of three compute units still rides along; the explicit values win. Do not clear it
+    # with an empty value: invocation 90e96273-cba5-4176-825b-8af7119ddb5d did, and the executor then assigned only
+    # 1.03 GB and 1000 milli-CPU.
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+    },
     require_kvm = True,
     stack = "firecracker",
     deps = [
