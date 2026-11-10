@@ -42,6 +42,11 @@ pub struct ProgramFacts {
     pub unresolved_dynamic_specifiers: usize,
     /// Exports, in any chunk, that only ever hold one string.
     pub string_exports: usize,
+    /// Literal specifiers, static or dynamic, that are neither relative nor
+    /// under a declared root: packages, `node:` built-ins, URLs. They are
+    /// taken to name no chunk of the program, which holds unless an import
+    /// map or a bundler alias maps one onto a chunk.
+    pub external_specifiers: std::collections::BTreeSet<String>,
     /// Per chunk path, the exports that are a `const` initialized with a
     /// string literal, and the string.
     exported_strings: FxHashMap<PathBuf, FxHashMap<String, String>>,
@@ -317,6 +322,8 @@ struct Imports {
     /// `await` and `for await` outside any function.
     top_level_awaits: usize,
     function_depth: usize,
+    /// `import()` calls already accounted for in `dynamics`, by position.
+    wrapped: FxHashSet<u32>,
 }
 
 impl Visit for Imports {
@@ -374,7 +381,7 @@ impl Visit for Imports {
                 _ => self.unknown_requires += 1,
             }
         }
-        if matches!(call.callee, Callee::Import(_)) {
+        if matches!(call.callee, Callee::Import(_)) && !self.wrapped.contains(&call.span.lo.0) {
             self.dynamics
                 .push(match call.args.first().map(|arg| &*arg.expr) {
                     Some(Expr::Lit(Lit::Str(specifier))) => Some(js_ast::str_value(specifier)),
@@ -500,7 +507,14 @@ pub fn load(
             );
             continue;
         };
-        let mut imports = Imports::default();
+        // An `import(param)` of a wrapper only ever called with literals
+        // loads those literals.
+        let wrappers = crate::derive::import_wrappers(&parsed.module);
+        let mut imports = Imports {
+            wrapped: wrappers.consumed,
+            dynamics: wrappers.specifiers.into_iter().map(Some).collect(),
+            ..Imports::default()
+        };
         parsed.module.visit_with(&mut imports);
         graph.insert(path.clone(), imports);
         modules.push((path, parsed));
@@ -574,6 +588,19 @@ pub fn load(
         merged.refuse_everything();
     }
     let top_level_awaits: usize = graph.values().map(|imports| imports.top_level_awaits).sum();
+    let external_specifiers: std::collections::BTreeSet<String> = graph
+        .iter()
+        .flat_map(|(path, imports)| {
+            let dynamics = imports.dynamics.iter().flatten();
+            imports
+                .statics
+                .iter()
+                .chain(dynamics)
+                .filter(|specifier| resolve(path, specifier, &resolution).is_none())
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .collect();
     let mut program = ProgramFacts {
         chunks: graph.len(),
         on_import_cycle: true,
@@ -587,6 +614,7 @@ pub fn load(
         unresolved_static_specifiers,
         unresolved_dynamic_specifiers,
         string_exports: exported.values().map(FxHashMap::len).sum(),
+        external_specifiers,
         exported_strings: exported,
         resolution,
     };

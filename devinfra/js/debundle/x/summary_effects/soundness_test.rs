@@ -1130,6 +1130,20 @@ fn exported_literals_settle_only_when_every_chunk_reads_them_by_name() {
         0
     );
     assert_eq!(dynamic("const p = import('./a.js'); return p;"), 0);
+    // An `import(param)` in a function only ever called directly with
+    // string literals loads those literals; one that names no chunk of the
+    // program loads none of them.
+    let wrapper =
+        |uses: &str| settled(format!("const load = (spec) => import(spec);\n{uses}\n").as_bytes());
+    assert_eq!(
+        wrapper("export const both = () => Promise.all([load('node:fs'), load('pkg')]);"),
+        1
+    );
+    assert_eq!(wrapper("export const held = [load];"), 0);
+    assert_eq!(wrapper("export const any = (x) => load(x);"), 0);
+    assert_eq!(wrapper("export const own = () => load('./a.js');"), 0);
+    assert_eq!(wrapper("export { load };"), 0);
+    assert_eq!(wrapper("export const spread = (xs) => load(...xs);"), 0);
 }
 
 /// Programs for the upgrades, in the layout of the premise fixtures; the second line of each is unused.

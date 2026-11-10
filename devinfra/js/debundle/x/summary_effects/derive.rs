@@ -330,6 +330,243 @@ struct SettledLiterals {
     refused: FxHashMap<(usize, Id), SettledRefusal>,
 }
 
+/// `import(param)` calls whose specifier is known after all: `param` is a
+/// parameter of a top-level function that is declared once, never assigned,
+/// not exported and only ever called directly, with a string literal there
+/// at every call.
+#[derive(Default)]
+pub struct ImportWrappers {
+    /// The `import()` calls accounted for, by position.
+    pub consumed: FxHashSet<u32>,
+    /// The specifiers they load.
+    pub specifiers: Vec<String>,
+}
+
+struct ParamImports<'a> {
+    params: &'a [Option<Id>],
+    /// Parameter position and call position.
+    found: Vec<(usize, u32)>,
+}
+
+impl Visit for ParamImports<'_> {
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let (Callee::Import(_), [ExprOrSpread { spread: None, expr }]) =
+            (&call.callee, call.args.as_slice())
+            && let Expr::Ident(specifier) = &**expr
+            && let Some(position) = self
+                .params
+                .iter()
+                .position(|param| param.as_ref() == Some(&specifier.to_id()))
+        {
+            self.found.push((position, call.span.lo.0));
+        }
+        call.visit_children_with(self);
+    }
+}
+
+/// How the candidate wrappers are used: the literal at each argument of
+/// each direct call, and the ones mentioned in any other way.
+struct WrapperUses<'a> {
+    candidates: &'a FxHashSet<Id>,
+    calls: FxHashMap<Id, Vec<Vec<Option<String>>>>,
+    other: FxHashSet<Id>,
+}
+
+impl Visit for WrapperUses<'_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Ident(ident) = expr
+            && self.candidates.contains(&ident.to_id())
+        {
+            self.other.insert(ident.to_id());
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_prop(&mut self, prop: &Prop) {
+        if let Prop::Shorthand(ident) = prop {
+            self.other.insert(ident.to_id());
+        }
+        prop.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(callee) = &**callee
+            && self.candidates.contains(&callee.to_id())
+        {
+            let arguments = call
+                .args
+                .iter()
+                .map(|arg| match (&arg.spread, &*arg.expr) {
+                    (None, Expr::Lit(Lit::Str(value))) => Some(js_ast::str_value(value)),
+                    _ => None,
+                })
+                .collect();
+            // A spread hides which argument lands where.
+            if call.args.iter().any(|arg| arg.spread.is_some()) {
+                self.other.insert(callee.to_id());
+            }
+            self.calls
+                .entry(callee.to_id())
+                .or_default()
+                .push(arguments);
+            call.args.visit_with(self);
+            return;
+        }
+        call.visit_children_with(self);
+    }
+}
+
+/// A top-level function, its plain parameters, and the `import(param)`
+/// calls in it by parameter position and call position.
+type WrapperCandidate = (Id, Vec<Option<Id>>, Vec<(usize, u32)>);
+
+pub fn import_wrappers(module: &Module) -> ImportWrappers {
+    let mut declared: FxHashMap<Id, usize> = FxHashMap::default();
+    let mut exported: FxHashSet<Id> = FxHashSet::default();
+    let mut functions: Vec<WrapperCandidate> = Vec::new();
+    let plain = |params: Vec<&Pat>| -> Vec<Option<Id>> {
+        params
+            .into_iter()
+            .map(|param| match param {
+                Pat::Ident(name) => Some(name.id.to_id()),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut declare = |decl: &Decl, is_exported: bool| {
+        let mut bind =
+            |id: Id, params: Option<Vec<Option<Id>>>, body: &dyn Fn(&mut ParamImports)| {
+                *declared.entry(id.clone()).or_default() += 1;
+                if is_exported {
+                    exported.insert(id.clone());
+                }
+                if let Some(params) = params {
+                    let mut imports = ParamImports {
+                        params: &params,
+                        found: Vec::new(),
+                    };
+                    body(&mut imports);
+                    let found = imports.found;
+                    if !found.is_empty() {
+                        functions.push((id, params, found));
+                    }
+                }
+            };
+        match decl {
+            Decl::Fn(function) => bind(
+                function.ident.to_id(),
+                Some(plain(
+                    function
+                        .function
+                        .params
+                        .iter()
+                        .map(|param| &param.pat)
+                        .collect(),
+                )),
+                &|imports| function.function.visit_with(imports),
+            ),
+            Decl::Class(class) => bind(class.ident.to_id(), None, &|_| {}),
+            Decl::Var(var) => {
+                for declarator in &var.decls {
+                    let Pat::Ident(name) = &declarator.name else {
+                        continue;
+                    };
+                    match declarator.init.as_deref() {
+                        Some(Expr::Arrow(arrow)) => bind(
+                            name.id.to_id(),
+                            Some(plain(arrow.params.iter().collect())),
+                            &|imports| arrow.visit_with(imports),
+                        ),
+                        Some(Expr::Fn(function)) => bind(
+                            name.id.to_id(),
+                            Some(plain(
+                                function
+                                    .function
+                                    .params
+                                    .iter()
+                                    .map(|param| &param.pat)
+                                    .collect(),
+                            )),
+                            &|imports| function.function.visit_with(imports),
+                        ),
+                        _ => bind(name.id.to_id(), None, &|_| {}),
+                    }
+                }
+            }
+            _ => {}
+        }
+    };
+    for item in &module.body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(decl)) => declare(decl, false),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => declare(&export.decl, true),
+            _ => {}
+        }
+    }
+    for item in &module.body {
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
+            src: None,
+            specifiers,
+            ..
+        })) = item
+        {
+            for specifier in specifiers {
+                if let ExportSpecifier::Named(ExportNamedSpecifier {
+                    orig: ModuleExportName::Ident(local),
+                    ..
+                }) = specifier
+                {
+                    exported.insert(local.to_id());
+                }
+            }
+        }
+    }
+    let mut out = ImportWrappers::default();
+    if functions.is_empty() {
+        return out;
+    }
+    let assigned = assigned_ids(module);
+    let candidates: FxHashSet<Id> = functions
+        .iter()
+        .filter(|(id, params, _)| {
+            declared[id] == 1
+                && !assigned.contains(id)
+                && !exported.contains(id)
+                && params
+                    .iter()
+                    .flatten()
+                    .all(|param| !assigned.contains(param))
+        })
+        .map(|(id, _, _)| id.clone())
+        .collect();
+    let mut uses = WrapperUses {
+        candidates: &candidates,
+        calls: FxHashMap::default(),
+        other: FxHashSet::default(),
+    };
+    module.visit_with(&mut uses);
+    for (id, _, found) in &functions {
+        if !candidates.contains(id) || uses.other.contains(id) {
+            continue;
+        }
+        let calls = uses.calls.get(id).map_or(&[][..], Vec::as_slice);
+        let literals: Option<Vec<String>> = found
+            .iter()
+            .flat_map(|(position, _)| {
+                calls
+                    .iter()
+                    .map(move |arguments| arguments.get(*position).cloned().flatten())
+            })
+            .collect();
+        if let Some(literals) = literals {
+            out.consumed.extend(found.iter().map(|(_, call)| *call));
+            out.specifiers.extend(literals);
+        }
+    }
+    out
+}
+
 /// How a chunk mentions its bindings.
 pub struct Mentions {
     /// Bindings mentioned other than to read a named member: stored to,
@@ -756,7 +993,12 @@ impl<'a> Chunk<'a> {
         private.retain(|id, _| declared[id] == 1);
         let mut stores = Stores::default();
         module.visit_with(&mut stores);
-        let mut handled = Handled::default();
+        let wrappers = import_wrappers(module);
+        let mut handled = Handled {
+            consumed: wrappers.consumed,
+            loaded: wrappers.specifiers,
+            ..Handled::default()
+        };
         module.visit_with(&mut handled);
         let export_all = module
             .body

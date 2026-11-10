@@ -218,6 +218,16 @@ counts statements impure for a cause as pure), with the first two upgrades:
 
 ### Preconditions
 
+A literal specifier that is neither relative nor under a declared root (a
+package name, a `node:` built-in, a URL) is taken to name no chunk of the
+program. That holds unless an import map or a bundler alias maps such a
+specifier onto a chunk; the report counts them
+(`program_external_specifier_count`) and lists them with `--examples`.
+`import(param)` counts as loading known specifiers when `param` is a
+parameter of a top-level function that is declared once, never assigned, not
+exported and only ever called directly with a string literal in that
+position; any other `import()` of a non-literal is an unknown load.
+
 The program facts describe the chunks that were read. A static import
 specifier that names no chunk read is a chunk that runs before its importer
 and was not seen: with any, the program is taken to write every global and

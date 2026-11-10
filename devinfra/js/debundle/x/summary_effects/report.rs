@@ -680,6 +680,13 @@ pub struct Tier0Report {
     /// Exports, in any chunk, that only ever hold one string, and the
     /// analysed chunk's imports of one: they name census keys.
     pub program_string_exports: Option<usize>,
+    /// Distinct literal specifiers that are neither relative nor under a
+    /// declared root (packages, `node:` built-ins, URLs): taken to name no
+    /// chunk of the program, which holds unless an import map or a bundler
+    /// alias maps one onto a chunk.
+    pub program_external_specifier_count: Option<usize>,
+    /// With `--examples`: those specifiers.
+    pub program_external_specifiers: Vec<String>,
     pub imported_string_bindings: Option<usize>,
     pub upgrades: Vec<tier0::Upgrade>,
     /// Non-empty marks the report an unsound estimate.
@@ -971,6 +978,16 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .program
             .as_ref()
             .map(|program| program.unresolved_dynamic_specifiers),
+        program_external_specifier_count: options
+            .program
+            .as_ref()
+            .map(|program| program.external_specifiers.len()),
+        program_external_specifiers: options
+            .program
+            .iter()
+            .filter(|_| with_examples)
+            .flat_map(|program| program.external_specifiers.iter().cloned())
+            .collect(),
         program_string_exports: options
             .program
             .as_ref()
