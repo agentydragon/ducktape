@@ -2,13 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
@@ -23,33 +23,27 @@ type workload struct {
 // runs in the Sandbox of its own name; an Identity caller in the Sandbox controlling its workload
 // credential. Either fails with errSandboxMissing when that Sandbox is gone.
 func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
-	admission, err := auth.Admitted(ctx)
+	caller, err := s.admittedActor(ctx)
 	if err != nil {
-		return workload{}, admissionRefused{err}
+		return workload{}, err
 	}
-	if identity, ok := admission.(auth.IdentityAdmission); ok {
-		owner, ok := identity.Caller.Workload.Owner.(auth.ControllerOwner)
-		if !ok || owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
-			return workload{}, errSandboxMissing
-		}
-		ref := model.DestinationRef{Namespace: identity.Caller.Workload.Namespace, Name: owner.Name, UID: owner.UID}
-		if _, err := s.sandbox(ctx, ref); err != nil {
+	switch caller := caller.(type) {
+	case identityActor:
+		if _, err := s.sandbox(ctx, caller.sandbox); err != nil {
 			return workload{}, err
 		}
-		caller := model.Identity{Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID}
-		inboxOwner, err := s.identityOwner(ctx, caller, ref)
-		return workload{owner: inboxOwner, sandbox: ref}, err
+		inboxOwner, err := s.identityOwner(ctx, caller.identity, caller.sandbox)
+		return workload{owner: inboxOwner, sandbox: caller.sandbox}, err
+	case accountActor:
+		view, err := s.sandbox(ctx, model.DestinationRef{Namespace: caller.account.Namespace, Name: caller.account.Name})
+		if err != nil {
+			return workload{}, err
+		}
+		inboxOwner, err := s.owner(ctx, caller.account, view.Identity.Uid)
+		return workload{owner: inboxOwner, sandbox: model.DestinationRef{Namespace: caller.account.Namespace, Name: caller.account.Name, UID: view.Identity.Uid}}, err
+	default:
+		panic(fmt.Sprintf("unknown actor %T", caller))
 	}
-	account, err := s.caller(ctx)
-	if err != nil {
-		return workload{}, err
-	}
-	view, err := s.sandbox(ctx, model.DestinationRef{Namespace: account.Namespace, Name: account.Name})
-	if err != nil {
-		return workload{}, err
-	}
-	inboxOwner, err := s.owner(ctx, account, view.Identity.Uid)
-	return workload{owner: inboxOwner, sandbox: model.DestinationRef{Namespace: account.Namespace, Name: account.Name, UID: view.Identity.Uid}}, err
 }
 
 func (s *Notifications) owner(ctx context.Context, account model.ServiceAccount, sandboxUID string) (store.Owner, error) {

@@ -289,6 +289,7 @@ func (w *Worker) establishOwner(ctx context.Context, claim *store.Claim, session
 		if errors.Is(err, store.ErrNotFound) {
 			return errOwnerMismatch
 		}
+		claim.OwnerIdentity = &identity
 		return err
 	}
 	uid, err := sessionidentity.AccountUID(session, claim.SessionID, claim.DestinationRef, claim.Owner)

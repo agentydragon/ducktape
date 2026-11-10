@@ -35,6 +35,19 @@ type Claim struct {
 	staleCheckAt *time.Time
 }
 
+// Holder is the inbox's owner as the claim proved it: its ServiceAccount incarnation once established,
+// else its Identity incarnation once established, else its ServiceAccount with no UID, which owns nothing.
+func (c Claim) Holder() Owner {
+	switch {
+	case c.OwnerUID != nil:
+		return AccountOwner{Account: c.Owner, AccountUID: *c.OwnerUID, SandboxUID: c.DestinationRef.UID}
+	case c.OwnerIdentity != nil:
+		return IdentityOwner{Identity: *c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
+	default:
+		return AccountOwner{Account: c.Owner, SandboxUID: c.DestinationRef.UID}
+	}
+}
+
 // heldInbox is the claimed inbox as a fenced call reads it, locked for update.
 type heldInbox struct {
 	Inbox
