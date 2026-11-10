@@ -411,6 +411,45 @@ fn census_locates_whole_writes_with_their_alias_chain() {
 }
 
 #[test]
+fn census_tells_conditional_named_writes_from_plain_ones() {
+    js_ast::with_swc_globals(|| {
+        let source = "Symbol.asyncIterator || (Symbol.asyncIterator = Symbol('x')); if (!Object.hasOwn) Object.hasOwn = () => true; Map.prototype.extra = 1; typeof Symbol === 'function' || (globalThis.Symbol = () => 1);";
+        let census = tier0(source, false).census;
+        let named: Vec<(&str, bool, &str, bool)> = census
+            .named_write_sites
+            .iter()
+            .map(|site| {
+                (
+                    site.global.as_str(),
+                    site.prototype,
+                    site.member.as_str(),
+                    site.conditional,
+                )
+            })
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("Symbol", false, "asyncIterator", true),
+                ("Object", false, "hasOwn", true),
+                ("Map", true, "extra", false),
+            ]
+        );
+        let [replaced] = census.whole_write_sites.as_slice() else {
+            panic!("{:?}", census.whole_write_sites);
+        };
+        assert_eq!(
+            (
+                replaced.standard_global(),
+                replaced.kind,
+                replaced.conditional
+            ),
+            (Some("Symbol"), WholeWrite::GlobalObjectMember, true)
+        );
+    });
+}
+
+#[test]
 fn tier0_export_cycle_needs_the_precondition() {
     js_ast::with_swc_globals(|| {
         let source = "import { run } from './other.js';\n\

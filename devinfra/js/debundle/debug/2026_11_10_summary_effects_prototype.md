@@ -167,6 +167,12 @@ reason (`intrinsic_refusals`: an unnamed or prefixed store on the global
 object, a write of the value, a write of the prototype, or an escaped
 intrinsic with a store through an unfollowed `.prototype`).
 
+Stores under a name are listed too (`named_write_sites`: family, value or
+prototype side, chunk, offset, mutating function; the member only with
+`--examples`). Both lists say whether the store runs only under a condition
+(`G.m || (G.m = …)`, `if`, `?:`, `&&`, `??`, `||=`, `??=`), the shape of a
+polyfill.
+
 The report lists each store that counts as a write of a whole global the
 language defines (`whole_write_sites`): the family, the chunk, the byte
 offset of the store's target, how it counted (the binding assigned, a member
@@ -485,6 +491,10 @@ and tier 0 accepts a swap Node observes. Without premises tier 0 refuses all 41.
   once and never assigns it, and this chunk is off an import cycle (the
   exporter has finished evaluating). A premised call that reads the
   imported object keeps its ordering.
+  A class may extend such an import when its exporting chunk declares it as
+  a class (a class's `prototype` cannot be replaced; a function's can, so a
+  function base stays refused): the definition reads the import and runs
+  nothing.
 - **Program-wide unchangeable literals.** A literal of this chunk that the
   whole program only reads named members of (the settled-import conditions,
   seen from the exporting side) counts as unchangeable although exported.
@@ -521,8 +531,8 @@ resolved: classes and helpers declared inside a lazy module's body, `export
 *`. Not checked: that a lazy module's exports are assigned only by the
 top-level statements of its body.
 
-`derive_fixtures.txt` holds 50 two-chunk programs run under Node in both
-orders (24 admitted with Node agreeing, 26 refused with Node showing the
+`derive_fixtures.txt` holds 55 two-chunk programs run under Node in both
+orders (25 admitted with Node agreeing, 30 refused with Node showing the
 divergence); seven of them exercise the census across chunks, not derivation. `tier0_allocators_stop_at_their_near_misses` lists bodies that
 are allocators and near-misses that are not, and
 `tier0_derivation_classifies_callee_families` has one synthetic definition

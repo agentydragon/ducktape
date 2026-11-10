@@ -31,6 +31,7 @@ const third = __toESM(require_third()); export const box = third.box; export con
 const before = 1, LISTED = '__listed__', after = 2; export { before, LISTED, after }; export let LOOSE = 'Set'; export function loosen() { LOOSE = 'Map'; } export var HOISTED = '__hoisted__'; export var CHANGED = 'Set'; export function change() { CHANGED = 'Map'; } export const REGISTRY = '__records__'; export const SLOT = ['S', 'et'].join(''); const HIDDEN = 'Set'; export { HIDDEN as RENAMED };
 export var __export = (target, all) => { for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); }; export var eager = (target, all) => { for (var name in all) __defProp(target, name, { value: all[name](), enumerable: true }); };
 export var __exportAll = (all, flag) => { let target = {}; for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); return flag || __defProp(target, Symbol.toStringTag, { value: 'Module' }), target; }; export var __exportIf = (all, flag) => { let target = {}; for (var name in all) __defProp(target, name, { get: all[name], enumerable: true }); if (!flag) __defProp(target, Symbol.toStringTag, { value: 'Module' }); return target; }; export var eagerAll = (all) => { let target = {}; for (var name in all) target[name] = all[name](); return target; };
+export let Swappable = class { tag() { return 'a'; } }; export function swap() { Swappable = class { tag() { return 'b'; } }; } export function Legacy() {} Legacy.prototype.tag = function () { return 'a'; }; export function relegate() { Legacy.prototype = { tag() { return 'b'; } }; }
 export { __commonJS, __toESM, require_lib, require_other };
 ### commutes same: allocator across an impure statement
 -
@@ -332,3 +333,33 @@ import { mutable, setMutable } from './dep.js';
 setMutable(5);
 const bundle = { mutable };
 console.log(bundle.mutable);
+### commutes same: a class extending an imported class its chunk never reassigns, across an impure statement
+-
+import { Store } from './dep.js'; let state = 0; function note(o) { o.noted = state; }
+state = 1;
+class Derived extends Store { constructor() { super('d'); note(this); } }
+console.log(new Derived().noted, new Derived().name);
+### ordered differs: a class extending an imported binding its chunk reassigns
+-
+import { Swappable, swap } from './dep.js';
+swap();
+class Derived extends Swappable {}
+console.log(new Derived().tag());
+### ordered differs: a class extending an imported function whose prototype its chunk replaces
+-
+import { Legacy, relegate } from './dep.js';
+relegate();
+class Derived extends Legacy {}
+console.log(new Derived().tag());
+### ordered differs: a class extending an imported class, with a static field that calls
+-
+import { Store } from './dep.js'; let n = 0; const next = () => ++n;
+n = 5;
+class Derived extends Store { static id = next(); }
+console.log(Derived.id);
+### ordered differs: a class extending an imported class, with a computed member key that calls
+-
+import { Store } from './dep.js'; let n = 0; const next = () => ++n;
+n = 5;
+class Derived extends Store { [next()]() {} }
+console.log(Object.getOwnPropertyNames(Derived.prototype).join());

@@ -121,6 +121,9 @@ pub struct WholeWriteSite {
     /// The function that modifies its first argument, for a store made by
     /// calling one.
     pub mutator: Option<&'static str>,
+    /// The store runs only under a condition (`G.m || (G.m = …)`, `if`,
+    /// `?:`, `&&`, `??`, `||=`, `??=`): the shape of a polyfill.
+    pub conditional: bool,
     /// Byte offsets of the values that carried the global to the target,
     /// from the store back: each is an initializer, assigned value, default
     /// or argument that gave the next binding its alias.
@@ -142,8 +145,24 @@ impl WholeWriteSite {
     }
 }
 
+/// A store on a global's value or `prototype` under a name.
+#[derive(Debug, Clone)]
+pub struct NamedWriteSite {
+    pub global: String,
+    /// On the `prototype`, not on the value.
+    pub prototype: bool,
+    pub member: String,
+    pub chunk: Option<usize>,
+    /// Byte offset of the store's target.
+    pub offset: u32,
+    pub mutator: Option<&'static str>,
+    pub conditional: bool,
+}
+
 #[derive(Default, Clone)]
 pub struct Census {
+    /// Each store behind a named entry of `written` or `prototype_written`.
+    pub named_write_sites: Vec<NamedWriteSite>,
     /// Each store behind a `Writes::any`.
     pub whole_write_sites: Vec<WholeWriteSite>,
     /// Per global: writes of the binding and of the value it holds.
@@ -182,6 +201,9 @@ impl Census {
         for site in &mut self.whole_write_sites {
             site.chunk = Some(index);
         }
+        for site in &mut self.named_write_sites {
+            site.chunk = Some(index);
+        }
     }
 
     /// Adds what another chunk writes.
@@ -189,6 +211,7 @@ impl Census {
         self.all |= other.all;
         self.all_sites.extend(other.all_sites);
         self.whole_write_sites.extend(other.whole_write_sites);
+        self.named_write_sites.extend(other.named_write_sites);
         self.prefixes.extend(other.prefixes);
         self.escaped_all |= other.escaped_all;
         self.escaped.extend(other.escaped);
@@ -993,6 +1016,9 @@ struct Visitor<'a> {
     exported: Vec<Id>,
     /// The mutator whose call is being recorded as a store.
     mutator: Option<&'static str>,
+    /// Inside a branch, the right of a short-circuit or a conditional
+    /// assignment.
+    conditional: bool,
 }
 
 fn span_key(span: Span) -> (u32, u32) {
@@ -1088,6 +1114,7 @@ impl Visitor<'_> {
             offset: target.span().lo.0,
             kind,
             mutator: self.mutator,
+            conditional: self.conditional,
             chain: self.flow.chain(target),
         });
     }
@@ -1106,13 +1133,20 @@ impl Visitor<'_> {
                     Some(prefix) => self.census.prefixes.push(prefix.clone()),
                     None => self.unnamed_global_store(target),
                 },
-                (Intrinsic::Object(global), Some(name)) => {
-                    self.writes(global.clone(), false)
+                (Intrinsic::Object(global) | Intrinsic::Prototype(global), Some(name)) => {
+                    let prototype = matches!(intrinsic, Intrinsic::Prototype(_));
+                    self.writes(global.clone(), prototype)
                         .props
                         .insert(name.clone());
-                }
-                (Intrinsic::Prototype(global), Some(name)) => {
-                    self.writes(global.clone(), true).props.insert(name.clone());
+                    self.census.named_write_sites.push(NamedWriteSite {
+                        global: global.clone(),
+                        prototype,
+                        member: name.clone(),
+                        chunk: None,
+                        offset: target.span().lo.0,
+                        mutator: self.mutator,
+                        conditional: self.conditional,
+                    });
                 }
                 (Intrinsic::Object(global), None) => {
                     self.whole(global, target, WholeWrite::UnnamedKey);
@@ -1279,6 +1313,11 @@ impl Visit for Visitor<'_> {
     }
 
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
+        let outer = self.conditional;
+        self.conditional |= matches!(
+            assign.op,
+            AssignOp::OrAssign | AssignOp::AndAssign | AssignOp::NullishAssign
+        );
         match &assign.left {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
                 self.store(&member.obj, &member.prop);
@@ -1293,6 +1332,7 @@ impl Visit for Visitor<'_> {
             }
             _ => {}
         }
+        self.conditional = outer;
         assign.visit_children_with(self);
     }
 
@@ -1362,6 +1402,13 @@ impl Visit for Visitor<'_> {
                 self.consume(&binary.left);
                 self.consume(&binary.right);
             }
+            BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
+                binary.left.visit_with(self);
+                let outer = std::mem::replace(&mut self.conditional, true);
+                binary.right.visit_with(self);
+                self.conditional = outer;
+                return;
+            }
             _ => {}
         }
         binary.visit_children_with(self);
@@ -1369,12 +1416,20 @@ impl Visit for Visitor<'_> {
 
     fn visit_cond_expr(&mut self, cond: &CondExpr) {
         self.consume(&cond.test);
-        cond.visit_children_with(self);
+        cond.test.visit_with(self);
+        let outer = std::mem::replace(&mut self.conditional, true);
+        cond.cons.visit_with(self);
+        cond.alt.visit_with(self);
+        self.conditional = outer;
     }
 
     fn visit_if_stmt(&mut self, statement: &IfStmt) {
         self.consume(&statement.test);
-        statement.visit_children_with(self);
+        statement.test.visit_with(self);
+        let outer = std::mem::replace(&mut self.conditional, true);
+        statement.cons.visit_with(self);
+        statement.alt.visit_with(self);
+        self.conditional = outer;
     }
 
     fn visit_expr_stmt(&mut self, statement: &ExprStmt) {
@@ -1496,6 +1551,7 @@ pub fn census(
         used: FxHashSet::default(),
         exported: Vec::new(),
         mutator: None,
+        conditional: false,
     };
     module.visit_with(&mut visitor);
     let unused = visitor

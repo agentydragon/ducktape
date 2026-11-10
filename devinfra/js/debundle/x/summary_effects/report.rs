@@ -102,9 +102,25 @@ pub struct WholeWriteSiteRow {
     pub offset: u32,
     pub kind: crate::intrinsics::WholeWrite,
     pub mutator: Option<&'static str>,
+    /// The store runs only under a condition: the shape of a polyfill.
+    pub conditional: bool,
     /// Byte offsets of the values that carried the global to the target,
     /// nearest first.
     pub alias_chain: Vec<u32>,
+}
+
+/// A store under a name on a global the language defines.
+#[derive(Serialize)]
+pub struct NamedWriteSiteRow {
+    pub family: &'static str,
+    /// On the family's `prototype`, not on its value.
+    pub prototype: bool,
+    /// With `--examples`: the member stored.
+    pub member: Option<String>,
+    pub chunk: Option<usize>,
+    pub offset: u32,
+    pub mutator: Option<&'static str>,
+    pub conditional: bool,
 }
 
 #[derive(Serialize)]
@@ -728,6 +744,9 @@ pub struct Tier0Report {
     /// Each store that counts as a write of a whole global the language
     /// defines.
     pub whole_write_sites: Vec<WholeWriteSiteRow>,
+    /// Each store under a name on such a global or its `prototype`: these
+    /// refuse only uses of that member.
+    pub named_write_sites: Vec<NamedWriteSiteRow>,
     /// Such stores on other globals.
     pub whole_write_sites_other_globals: usize,
     pub global_object_escaped: bool,
@@ -1050,7 +1069,24 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
                     offset: site.offset,
                     kind: site.kind,
                     mutator: site.mutator,
+                    conditional: site.conditional,
                     alias_chain: site.chain.clone(),
+                })
+            })
+            .collect(),
+        named_write_sites: analysis
+            .census
+            .named_write_sites
+            .iter()
+            .filter_map(|site| {
+                Some(NamedWriteSiteRow {
+                    family: crate::intrinsics::standard_global(&site.global)?,
+                    prototype: site.prototype,
+                    member: with_examples.then(|| site.member.clone()),
+                    chunk: site.chunk,
+                    offset: site.offset,
+                    mutator: site.mutator,
+                    conditional: site.conditional,
                 })
             })
             .collect(),

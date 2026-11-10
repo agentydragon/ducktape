@@ -2331,6 +2331,8 @@ pub struct Derived {
     /// chunk has run: a namespace import, or a binding its chunk declares
     /// once and never assigns.
     pub stable_imports: Vec<Id>,
+    /// Those of them their chunk declares as a class.
+    pub stable_class_imports: Vec<Id>,
     /// Bindings of this chunk holding an object literal nothing in the
     /// program handles except to read a named member, exported or not.
     pub settled_locals: Vec<Id>,
@@ -2393,11 +2395,15 @@ pub fn derive(
     imported.sort();
     for id in &imported {
         let namespace = resolver.chunks[0].imports[id].1 == "*";
-        let fixed = resolver.home(0, id).is_some_and(|(chunk, home)| {
-            chunk != 0 && resolver.chunks[chunk].defs.contains_key(&home)
-        });
-        if namespace || fixed {
+        let home = resolver
+            .home(0, id)
+            .filter(|(chunk, _)| *chunk != 0)
+            .and_then(|(chunk, home)| resolver.chunks[chunk].defs.get(&home).copied());
+        if namespace || home.is_some() {
             derived.stable_imports.push(id.clone());
+        }
+        if matches!(home, Some(Def::Class(_) | Def::Value(Expr::Class(_)))) {
+            derived.stable_class_imports.push(id.clone());
         }
     }
     if let Some(program) = program {

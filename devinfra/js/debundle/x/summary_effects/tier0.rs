@@ -850,6 +850,9 @@ pub struct ResolvedPremises {
     /// Derived: imports whose value is fixed once their chunk has run, for
     /// a chunk off any import cycle.
     stable_imports: FxHashSet<Binding>,
+    /// Derived: those of them whose exporting chunk declares a class: its
+    /// `prototype` cannot be replaced.
+    stable_class_imports: FxHashSet<Binding>,
     /// Derived: literals of this chunk the whole program only reads named
     /// members of.
     settled_locals: FxHashSet<Binding>,
@@ -1763,11 +1766,10 @@ impl Classifier<'_> {
     /// static initializer, computed key or decorator.
     fn class(&mut self, class: &Class) -> Result<(), ImpureCause> {
         let local_base = |heritage: &Expr| match heritage {
-            Expr::Ident(base) => self
-                .bindings
-                .get(&base.to_id())
-                .copied()
-                .filter(|binding| self.classes.contains(binding)),
+            Expr::Ident(base) => self.bindings.get(&base.to_id()).copied().filter(|binding| {
+                self.classes.contains(binding)
+                    || self.premises.stable_class_imports.contains(binding)
+            }),
             _ => None,
         };
         let heritage = match &class.super_class {
@@ -2783,6 +2785,8 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             let stable = found.stable_imports.iter().filter_map(binding);
             premises.stable_imports.extend(stable);
             derived.stable_imports = premises.stable_imports.len();
+            let classes = found.stable_class_imports.iter().filter_map(binding);
+            premises.stable_class_imports.extend(classes);
         }
         let locals = found.settled_locals.iter().filter_map(binding);
         premises.settled_locals.extend(locals);
