@@ -59,6 +59,8 @@ only the identity fields it proves. `Accounts` applies an explicit account allow
 and applies the account allowlist only to bearer callers, preserving History's sampler writer policy.
 `ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver` and
 admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmission`.
+`ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity
+as an `IdentityAdmission`.
 
 Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
 pins exact actor ServiceAccounts and per-actor caller namespace scopes to the Rule; attaching that

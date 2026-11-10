@@ -27,8 +27,12 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	RunnerSecurity               environment_runtime_transport.Security   `mapstructure:"runner_security"`
-	Namespace                    string                                   `mapstructure:"sandbox_namespace"`
+	RunnerSecurity environment_runtime_transport.Security `mapstructure:"runner_security"`
+	Namespace      string                                 `mapstructure:"sandbox_namespace"`
+	// PolicyNamespace holds the Identities a workload SVID may name; empty refuses Identity callers.
+	// CLEANUP(added 2026-11-10): make it required once SANDBOX_IDENTITY_SPEC lands
+	// (agentplane/plans/task_dag.md): a switched Sandbox must reach this service on day one.
+	PolicyNamespace              string                                   `mapstructure:"policy_namespace"`
 	DispatcherDatabaseURL        string                                   `mapstructure:"dispatcher_database_url"`
 	PodName                      string                                   `mapstructure:"pod_name"`
 	PodIP                        string                                   `mapstructure:"pod_ip"`

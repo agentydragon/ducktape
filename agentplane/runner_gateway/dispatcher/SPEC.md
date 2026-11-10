@@ -87,6 +87,14 @@ It scopes existing Sessions and existing environments; it does not create enviro
   require the Sandbox to still name that exact Identity incarnation, or none for a Session recorded with none;
   otherwise the work fails `execution_identity_changed`, so an Identity changed while the Sandbox was stopped
   strands its Sessions rather than re-attributing them.
+- An Identity caller (a workload SVID naming an Identity, admitted only once the Gateway's optional
+  `policy_namespace` is set) is never privileged. Its new `CreateSession` must target a Sandbox whose
+  `spec.identity` currently names its exact Identity incarnation (name and UID) and whose managed
+  ServiceAccount exists. It reads, writes, cancels and watches only Sessions whose recorded execution
+  Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
+  require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor, in
+  columns separate from ServiceAccount attribution. Its queued work never requests a wake: lifecycle wake
+  authority is still decided by ServiceAccount.
 - Legacy openings whose owner columns are NULL stay distinct from new/pending rows. The current owner of a
   same-named ServiceAccount is not retroactively granted those Sessions.
 

@@ -242,13 +242,47 @@ func (r *Resolver) ResolveReviewedCaller(ctx context.Context) (ReviewedCaller, e
 		if err != nil {
 			return ReviewedCaller{}, err
 		}
-		caller := ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)}
-		// A standing workload's credential proves no Pod.
-		if principal.IsPodBound() {
-			caller.Pod = &principal
-		}
-		return caller, nil
+		return reviewedSVIDCaller(principal), nil
 	}
+	return r.resolveReviewedBearer(ctx)
+}
+
+// ReviewedSubject is a reviewed ServiceAccount caller, or an IdentityPrincipal, which only a
+// workload SVID yields.
+type ReviewedSubject interface{ isReviewedSubject() }
+
+func (ReviewedCaller) isReviewedSubject()    {}
+func (IdentityPrincipal) isReviewedSubject() {}
+
+// resolveReviewedSubject is ResolveReviewedCaller for a method that also admits Identity callers.
+func (r *Resolver) resolveReviewedSubject(ctx context.Context) (ReviewedSubject, error) {
+	subject, secured, err := r.resolveSVIDSubject(ctx)
+	if !secured {
+		return r.resolveReviewedBearer(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch subject := subject.(type) {
+	case Principal:
+		return reviewedSVIDCaller(subject), nil
+	case IdentityPrincipal:
+		return subject, nil
+	default:
+		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+	}
+}
+
+func reviewedSVIDCaller(principal Principal) ReviewedCaller {
+	caller := ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)}
+	// A standing workload's credential proves no Pod.
+	if principal.IsPodBound() {
+		caller.Pod = &principal
+	}
+	return caller
+}
+
+func (r *Resolver) resolveReviewedBearer(ctx context.Context) (ReviewedCaller, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ReviewedCaller{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())

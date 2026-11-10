@@ -64,7 +64,8 @@ follows it; code that differs converges on it.
   (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
   `Rule` (`Accounts` for an allowlist, `AnyAccount` for any account the `Resolver` serves,
   `ReviewedServiceAccount` when a handler needs a verified ServiceAccount UID with an optional Pod
-  proof, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
+  proof, `AnySubject` or `ReviewedServiceAccountOrIdentity` when it also serves Identity callers, read
+  with `auth.Admitted`, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
   refused before its credentials are resolved, so a new RPC is closed until its Rule is written. The package
   owning a servicer exports its `Methods`; the handler reads the admitted identity with
   `auth.Caller`, `auth.AdmittedReviewedCaller`, or `auth.EffectiveCaller` as appropriate. Delegation
