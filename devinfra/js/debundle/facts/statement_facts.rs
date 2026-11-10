@@ -146,6 +146,10 @@ pub struct StatementFacts {
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
     pub havoc: BTreeSet<DataflowOpacityCause>,
+    /// Causes `trusted_dataflow_summaries` removed from `havoc`, including an
+    /// opaque at-init call it kept out. Empty when the premise changed nothing
+    /// for this statement (docs/premise_provenance.md).
+    pub trusted_summary_discharged: BTreeSet<DataflowOpacityCause>,
     /// Heap-content cells of the statement's own at-init syntax. These are
     /// distinct from binding effects: mutating an array changes its contents,
     /// not the binding that names it. Its calls' cells are
@@ -568,6 +572,11 @@ pub struct ChunkFactAnalysis {
     /// `Array`). Surfaced for the same trust-surface-shrinking
     /// reason as `redundant_purity_hints`.
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
+    /// Author-declared `purity: pure` hints no statement of this chunk reads
+    /// by name. The classifier consults a hint only at a direct call of the
+    /// name, and the code graph only at a read of the name as an import, so
+    /// these hints changed no fact (docs/premise_provenance.md).
+    pub unconsulted_purity_hints: BTreeSet<String>,
 }
 
 fn apply_initializer_binding_effects(
@@ -658,6 +667,12 @@ impl ChunkFactAnalysis {
     /// execution consumed. The interpreter's only reader of these entries,
     /// `host_call_does_not_reenter`, records each use it grants, so an entry
     /// absent here changed no fact of this chunk.
+    pub fn consumed_trusted_dataflow_summaries(&self) -> bool {
+        self.facts
+            .iter()
+            .any(|fact| !fact.trusted_summary_discharged.is_empty())
+    }
+
     pub fn consumed_reentry_free_operations(&self) -> BTreeSet<spec::ReentryFreeOperation> {
         self.facts
             .iter()

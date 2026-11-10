@@ -195,6 +195,10 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 	if err := outcome.Validate(); err != nil {
 		return err
 	}
+	failure, err := encodeExecutionError(outcome.Error)
+	if err != nil {
+		return err
+	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		row, err := getRequest(ctx, tx, id, true)
 		if err != nil {
@@ -225,7 +229,7 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 			SET state = $2, result = $3::jsonb, error = $4::jsonb, completed_at = COALESCE($5, completed_at),
 				reconciled_at = COALESCE($6, reconciled_at)
 			WHERE request_id = $1`,
-			id, outcome.State, jsonParam(jsonValue(outcome.Result)), jsonParam(jsonValue(outcome.Error)), completedAt,
+			id, outcome.State, jsonParam(jsonValue(outcome.Result)), jsonParam(failure), completedAt,
 			reconciledAt); err != nil {
 			return err
 		}
@@ -236,8 +240,8 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 // ExpireStaleLeases ends the Executions in flight whose lease lapsed as unknown, and returns their requests in ID
 // order. It never replays them: the effect may have happened.
 //
-// The recorded reason tells an operator whether the executor is gone (UnknownExecutorLost: its own health heartbeat
-// is also older than executorHealthTimeout) or only this attempt stopped renewing (UnknownLeaseExpired). Both are
+// The recorded reason tells an operator whether the executor is gone (EXECUTOR_LOST: its own health heartbeat
+// is also older than executorHealthTimeout) or only this attempt stopped renewing (LEASE_EXPIRED). Both are
 // equally final.
 func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout time.Duration) ([]uuid.UUID, error) {
 	var expired []uuid.UUID
@@ -274,9 +278,9 @@ func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout tim
 			if err != nil {
 				return err
 			}
-			reason := UnknownLeaseExpired
+			reason := action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED
 			if silent {
-				reason = UnknownExecutorLost
+				reason = action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST
 			}
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE action_execution SET state = $2, error = $3::jsonb, completed_at = $4 WHERE request_id = $1`,

@@ -337,7 +337,7 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	}
 	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
 	if c.RPC.Has(listener.SPIFFE) {
-		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces)
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces, nil)
 		if err != nil {
 			return nil, err
 		}

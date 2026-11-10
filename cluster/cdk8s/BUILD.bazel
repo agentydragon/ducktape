@@ -66,13 +66,11 @@ py_library(
         ":config_format",
         ":flux",
         ":manifest_roots",
-        "//cluster/cdk8s/kubevirt:virtual_machine",
         "//cluster/cdk8s/kubevirt:virtual_machine_pool",
         "//cluster/cdk8s/oci_cache:zot",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:virtual_machine_pool",
-        "//cluster/cdk8s/providers/kubevirt:virtualmachine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachinepool",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
@@ -849,26 +847,6 @@ py_library(
 )
 
 py_library(
-    name = "haku_egress_proxy",
-    srcs = ["haku_egress_proxy.py"],
-    deps = [
-        ":cilium",
-        ":egress_fences",
-        ":flux",
-        ":generation",
-        ":manifest_roots",
-        ":namespaces",
-        ":node_scheduling",
-        ":secret_ref",
-        ":service_ref",
-        "//cluster/cdk8s/cert_manager:interception_ca",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
-    ],
-)
-
-py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
@@ -989,30 +967,6 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//tomli_w",
-    ],
-)
-
-py_library(
-    name = "egress_fences",
-    srcs = ["egress_fences.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":cilium",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
-        "//cluster/cdk8s/providers/cilium:network_policy",
-        "@pypi//cdk8s",
-    ],
-)
-
-py_test(
-    name = "test_egress_fences",
-    srcs = ["test_egress_fences.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":egress_fences",
-        "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1642,7 +1596,6 @@ py_library(
         ":google_mcp",
         ":grafana_dashboards",
         ":ha_mcp",
-        ":haku_egress_proxy",
         ":headlamp",
         ":hubble_ui",
         ":keda",

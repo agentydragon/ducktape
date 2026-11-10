@@ -38,7 +38,7 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::reports::source_unit_key;
-use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, PurityHintOwner};
+use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{
     BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
     ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
@@ -510,9 +510,28 @@ pub(super) fn finish_logical_chunk(
                     &precomputed.unused_commuting_statements,
                     &redundant_admission_overrides,
                     &analysis.redundant_purity_hints,
+                    &analysis.unconsulted_purity_hints,
                     graph_context.resolved_member_sites,
-                ),
+                )
+                .into_iter()
+                .chain(
+                    projection
+                        .chunk_analysis_inputs
+                        .get(chunk_id)
+                        .is_some_and(|inputs| inputs.trusted_dataflow_summaries)
+                        .then(|| {
+                            LintFinding::trusted_dataflow_summaries(
+                                chunk_id,
+                                analysis.consumed_trusted_dataflow_summaries(),
+                            )
+                        }),
+                )
+                .collect(),
                 consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
+                loader_key_uses: export_reentry_reports
+                    .values()
+                    .map(|report| loader_key_uses(&report.loader))
+                    .fold(LoaderKeyUses::default(), LoaderKeyUses::join),
             },
         )?;
     }
@@ -1201,12 +1220,14 @@ enum GateOutcome<'a> {
 /// the documented `debundle gate list/describe` follow-up works.
 /// The chunk's `spec lint` findings whose signal the run computes anyway:
 /// unused `commuting_statements` entries, admission overrides that suppress
-/// nothing, and `purity: pure` hints the classifier infers without the hint.
+/// nothing, `purity: pure` hints no statement reads by name, and those the
+/// classifier infers without the hint.
 fn spec_lint_findings(
     chunk_id: &str,
     unused_commuting_statements: &[analysis::CommutingStatementsUnused],
     redundant_admission_overrides: &[spec::AdmissionCheck],
     redundant_purity_hints: &[analysis::RedundantPurityHint],
+    unconsulted_purity_hints: &BTreeSet<String>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Vec<LintFinding> {
     let purity_owner = |binding: &str| {
@@ -1240,10 +1261,49 @@ fn spec_lint_findings(
                 .iter()
                 .map(|check| LintFinding::redundant_admission_override(chunk_id, *check)),
         )
-        .chain(redundant_purity_hints.iter().map(|hint| {
-            LintFinding::redundant_purity_hint(chunk_id, hint, purity_owner(&hint.binding_name))
-        }))
+        .chain(
+            unconsulted_purity_hints.iter().map(|binding| {
+                LintFinding::unconsulted_purity_hint(chunk_id, purity_owner(binding))
+            }),
+        )
+        .chain(
+            redundant_purity_hints
+                .iter()
+                .filter(|hint| !unconsulted_purity_hints.contains(&hint.binding_name))
+                .map(|hint| {
+                    LintFinding::redundant_purity_hint(
+                        chunk_id,
+                        hint,
+                        purity_owner(&hint.binding_name),
+                    )
+                }),
+        )
         .collect()
+}
+
+/// The loader keys one target's loader closure consumed. A closure whose only
+/// failure is reach-back still sets a `reentry_through` policy, but records
+/// nothing (it assumes its dependencies only when closed).
+fn loader_key_uses(
+    loader: &staged_analysis::loader_surface::ExportReentryLoaderDerivation,
+) -> LoaderKeyUses {
+    use staged_analysis::loader_surface::ExportReentryLoaderDerivation;
+    match loader {
+        ExportReentryLoaderDerivation::LoaderClosure {
+            reentry_through: Some(_),
+            ..
+        } => LoaderKeyUses::Unattributed,
+        ExportReentryLoaderDerivation::LoaderClosure {
+            host_keys,
+            premise_keys,
+            ..
+        } => LoaderKeyUses::Recorded {
+            host_keys: host_keys.clone(),
+            premise_keys: premise_keys.clone(),
+        },
+        ExportReentryLoaderDerivation::NoSynchronousLoader
+        | ExportReentryLoaderDerivation::NoHostLoaderSites => LoaderKeyUses::default(),
+    }
 }
 
 /// The chunk's `selector_diagnostics.json`, where `spec validate` collects

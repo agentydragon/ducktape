@@ -2,6 +2,7 @@ import { toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, ValueSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import {
+  ExecutionErrorSchema,
   McpLifecycle,
   McpUnavailableReason,
   type ActionIdentity,
@@ -19,8 +20,9 @@ export function executionResult(execution: Execution | undefined): JsonValue | u
   return execution?.result === undefined ? undefined : toJson(ValueSchema, execution.result);
 }
 
-export function executionError(execution: Execution | undefined): JsonObject | undefined {
-  return execution?.error;
+/** The typed error as its ProtoJSON, which the history view shows as is. */
+export function executionError(execution: Execution | undefined): JsonValue | undefined {
+  return execution?.error === undefined ? undefined : toJson(ExecutionErrorSchema, execution.error);
 }
 
 export function actionIdentity(request: ActionRequest): ActionIdentity {

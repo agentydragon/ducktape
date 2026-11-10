@@ -270,6 +270,23 @@ impl<'a> DescriptorHeap<'a> {
         self.literal().dense_array(allocation, slots);
     }
 
+    /// A fresh array whose elements are some of `contents`, in unknown
+    /// positions. It keeps only their reachability: no slot, length or
+    /// primitive-contents claim. Unlike a tainted literal it is not marked
+    /// tainted: it has no accessor, and the site never seeds a writability
+    /// witness, so the row-execution, spread and own-data proofs that need a
+    /// dense or primitive snapshot or a source record shape all refuse it.
+    pub(in crate::facts::sync_effects) fn contents_array(
+        &mut self,
+        allocation: u32,
+        contents: Values,
+    ) {
+        let mut literal = self.literal();
+        literal.invalidate_dense_array(allocation);
+        literal.invalidate_primitive_array(allocation);
+        literal.record(allocation, BTreeMap::from([(None, contents)]));
+    }
+
     /// Commit a checked primitive-keyed definition: the payload joins the
     /// target's dynamic-key slot and the literal writability witness is gone.
     pub(in crate::facts::sync_effects) fn define_dynamic_key(

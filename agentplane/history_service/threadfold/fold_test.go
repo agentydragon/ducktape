@@ -707,7 +707,7 @@ func TestSettledRangesAreSkippedWhenCheckingContiguity(t *testing.T) {
 func TestSamplerBoundariesPreserveDisplayProjection(t *testing.T) {
 	entries := []*eventlogpb.EventEntry{
 		entry(1, &eventpb.Event{Observation: &eventpb.Event_BoundaryRecord{BoundaryRecord: &eventpb.BoundaryRecord{Boundary: "provider", Direction: "response", Payload: []byte(`{"type":"response.output_item.added"}`)}}}),
-		entry(2, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{OperationId: "request", Kind: "provider", Phase: "response"}}}, 1),
+		entry(2, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{OperationId: "request", Kind: eventpb.ExecutionProgress_KIND_PROVIDER, Phase: eventpb.ExecutionProgress_PHASE_RECEIVED}}}, 1),
 		itemStarted(3, "answer", eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "", 1),
 		textCompleted(4, "answer", "central answer", 1),
 	}

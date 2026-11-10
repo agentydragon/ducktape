@@ -157,17 +157,11 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 	view := &action_servicepb.Execution{
 		Id: execution.ID.String(), State: state, CreatedAt: timestamppb.New(execution.CreatedAt),
 		StartedAt: timestamp(execution.StartedAt), CompletedAt: timestamp(execution.CompletedAt),
-		ReconciledAt: timestamp(execution.ReconciledAt),
+		ReconciledAt: timestamp(execution.ReconciledAt), Error: execution.Error,
 	}
 	if execution.Result != nil {
 		view.Result = &structpb.Value{}
 		if err := jsonView("result", execution.Result, view.Result); err != nil {
-			return nil, err
-		}
-	}
-	if execution.Error != nil {
-		view.Error = &structpb.Struct{}
-		if err := jsonView("error", execution.Error, view.Error); err != nil {
 			return nil, err
 		}
 	}

@@ -14,9 +14,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::reports::spec_lint::{
     ChunkSpecLint, InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintRule,
-    LintedAnnotation, PurityHintOwner,
+    LintedAnnotation, LoaderKeyUses, PurityHintOwner,
 };
 use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
@@ -65,6 +66,9 @@ struct SpecLintReport {
     /// not clean.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unlinted_chunks: Vec<String>,
+    /// The pass's own failure when it stopped after linting some chunks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pass_error: Option<String>,
     /// One row per withheld-annotation run of `--probe-analysis`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     probes: Vec<ProbeTiming>,
@@ -99,13 +103,23 @@ enum ProbeTarget {
     },
     /// A consumed `host_behavior.reentry_free_operations` entry.
     ReentryFreeOperation(ReentryFreeOperation),
+    /// A consumed `chunk_analysis_options.<chunk>.trusted_dataflow_summaries`.
+    TrustedDataflowSummaries { chunk: String },
+    /// A consumed `host_behavior` loader key.
+    LoaderHostBehavior(HostBehaviorKey),
+    /// A consumed loader `program_premises` key.
+    LoaderProgramPremise(ProgramPremiseKey),
 }
 
 impl ProbeTarget {
     fn chunk(&self) -> Option<&str> {
         match self {
-            Self::PurityHint { chunk, .. } => Some(chunk),
-            Self::ReentryFreeOperation(_) => None,
+            Self::PurityHint { chunk, .. } | Self::TrustedDataflowSummaries { chunk } => {
+                Some(chunk)
+            }
+            Self::ReentryFreeOperation(_)
+            | Self::LoaderHostBehavior(_)
+            | Self::LoaderProgramPremise(_) => None,
         }
     }
 
@@ -117,6 +131,15 @@ impl ProbeTarget {
             Self::ReentryFreeOperation(operation) => LintedAnnotation::ReentryFreeOperation {
                 operation: *operation,
             },
+            Self::LoaderHostBehavior(key) => LintedAnnotation::LoaderHostBehavior { key: *key },
+            Self::LoaderProgramPremise(key) => LintedAnnotation::LoaderProgramPremise { key: *key },
+            Self::TrustedDataflowSummaries { chunk } => {
+                LintedAnnotation::TrustedDataflowSummaries {
+                    spec_location: format!(
+                        "chunk_analysis_options.{chunk}.trusted_dataflow_summaries"
+                    ),
+                }
+            }
         }
     }
 
@@ -155,6 +178,44 @@ impl ProbeTarget {
                     "reentry-free operation {operation:?} vanished from the spec"
                 );
             }
+            Self::LoaderHostBehavior(key) => {
+                let host = &mut spec.host_behavior;
+                let removed = match key {
+                    HostBehaviorKey::LoaderResultForEvaluatingModule => {
+                        host.loader_result_for_evaluating_module.take().is_some()
+                    }
+                    HostBehaviorKey::SynchronousLoadRunsAppCallbacks => {
+                        host.synchronous_load_runs_app_callbacks.take().is_some()
+                    }
+                    HostBehaviorKey::SynchronousLoadDrainsMicrotasks => {
+                        host.synchronous_load_drains_microtasks.take().is_some()
+                    }
+                    HostBehaviorKey::ReentryFreeEmbeddedLoader(loader) => {
+                        host.reentry_free_embedded_loaders.remove(loader)
+                    }
+                    _ => false,
+                };
+                ensure!(removed, "loader key {key:?} vanished from the spec");
+            }
+            Self::LoaderProgramPremise(key) => {
+                ensure!(
+                    *key == ProgramPremiseKey::NonLiteralLoaderCalls
+                        && spec.program_premises.non_literal_loader_calls
+                            != spec::NonLiteralLoaderCalls::Unknown,
+                    "loader premise {key:?} vanished from the spec"
+                );
+                spec.program_premises.non_literal_loader_calls = Default::default();
+            }
+            Self::TrustedDataflowSummaries { chunk } => {
+                let options = spec
+                    .chunk_analysis_options
+                    .get_mut(chunk)
+                    .filter(|options| options.trusted_dataflow_summaries)
+                    .with_context(|| {
+                        format!("trusted_dataflow_summaries for {chunk:?} vanished from the spec")
+                    })?;
+                options.trusted_dataflow_summaries = false;
+            }
         }
         Ok(spec)
     }
@@ -184,16 +245,16 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
         .iter()
         .flat_map(|(_, chunk)| chunk.consumed_reentry_free_operations.iter().copied())
         .collect();
-    let mut findings: Vec<LintFinding> = reports
-        .into_iter()
-        .flat_map(|(_, chunk)| chunk.findings)
-        .collect();
-    for operation in &spec.host_behavior.reentry_free_operations {
-        let verdict = if !unlinted_chunks.is_empty() {
+    let loader_uses = reports
+        .iter()
+        .map(|(_, chunk)| chunk.loader_key_uses.clone())
+        .fold(LoaderKeyUses::default(), LoaderKeyUses::join);
+    let provenance_verdict = |consumed: bool| {
+        if !unlinted_chunks.is_empty() {
             InferenceVerdict::Inconclusive {
                 reason: InconclusiveReason::UnlintedChunks,
             }
-        } else if consumed.contains(operation) {
+        } else if consumed {
             InferenceVerdict::Inconclusive {
                 reason: InconclusiveReason::Consumed,
             }
@@ -201,12 +262,49 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
             InferenceVerdict::Inferable {
                 reason: InferableReason::NeverConsumed,
             }
+        }
+    };
+    let mut findings: Vec<LintFinding> = reports
+        .into_iter()
+        .flat_map(|(_, chunk)| chunk.findings)
+        .collect();
+    for operation in &spec.host_behavior.reentry_free_operations {
+        findings.push(LintFinding::reentry_free_operation(
+            *operation,
+            provenance_verdict(consumed.contains(operation)),
+        ));
+    }
+    for key in authored_loader_host_keys(&spec.host_behavior) {
+        let consumed = match &loader_uses {
+            LoaderKeyUses::Recorded { host_keys, .. } => host_keys.contains(&key),
+            LoaderKeyUses::Unattributed => true,
         };
-        findings.push(LintFinding::reentry_free_operation(*operation, verdict));
+        findings.push(LintFinding::program_wide(
+            LintedAnnotation::LoaderHostBehavior { key },
+            provenance_verdict(consumed),
+        ));
+    }
+    if spec.program_premises.non_literal_loader_calls != spec::NonLiteralLoaderCalls::Unknown {
+        let key = ProgramPremiseKey::NonLiteralLoaderCalls;
+        // Spec validation requires this premise beside an `napi` embedded
+        // loader, so withholding it is never a valid edit then.
+        let consumed = spec
+            .host_behavior
+            .reentry_free_embedded_loaders
+            .contains(&spec::EmbeddedLoader::Napi)
+            || match &loader_uses {
+                LoaderKeyUses::Recorded { premise_keys, .. } => premise_keys.contains(&key),
+                LoaderKeyUses::Unattributed => true,
+            };
+        findings.push(LintFinding::program_wide(
+            LintedAnnotation::LoaderProgramPremise { key },
+            provenance_verdict(consumed),
+        ));
     }
     let mut report = SpecLintReport {
         findings,
         unlinted_chunks,
+        pass_error: pass.error.map(|error| format!("{error:#}")),
         probes: Vec::new(),
     };
     if args.probe_analysis {
@@ -215,9 +313,30 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
     print_report(&report, format, render_text).context("writing spec lint output")
 }
 
+/// The loader keys the spec sets to a value the loader closure accepts:
+/// declared but `unknown` values are treated as undeclared and never consumed.
+fn authored_loader_host_keys(host: &spec::HostBehavior) -> Vec<HostBehaviorKey> {
+    let mut keys = Vec::new();
+    if host.loader_result_for_evaluating_module.is_some() {
+        keys.push(HostBehaviorKey::LoaderResultForEvaluatingModule);
+    }
+    if host.synchronous_load_runs_app_callbacks.is_some() {
+        keys.push(HostBehaviorKey::SynchronousLoadRunsAppCallbacks);
+    }
+    if host.synchronous_load_drains_microtasks.is_some() {
+        keys.push(HostBehaviorKey::SynchronousLoadDrainsMicrotasks);
+    }
+    keys.extend(
+        host.reentry_free_embedded_loaders
+            .iter()
+            .map(|loader| HostBehaviorKey::ReentryFreeEmbeddedLoader(*loader)),
+    );
+    keys
+}
+
 /// Withhold each selected annotation in turn and compare the run with the
-/// baseline: every `purity: pure` hint, and every `reentry_free_operations`
-/// entry some chunk consumed (an unconsumed one is already exact). A probed
+/// baseline: every `purity: pure` hint, and every provenance-decided premise
+/// some analysis consumed (an unconsumed one is already exact). A probed
 /// annotation's finding replaces its cheap lead.
 fn probe_annotations(
     args: &SpecLintArgs,
@@ -226,22 +345,46 @@ fn probe_annotations(
     report: &mut SpecLintReport,
 ) -> Result<()> {
     let chunks: BTreeSet<_> = args.probe_chunks.iter().cloned().collect();
-    let consumed_operations = report.findings.iter().filter_map(|finding| match finding {
-        LintFinding {
-            annotation: LintedAnnotation::ReentryFreeOperation { operation },
-            verdict:
-                InferenceVerdict::Inconclusive {
-                    reason: InconclusiveReason::Consumed,
-                },
-            ..
-        } => Some(ProbeTarget::ReentryFreeOperation(*operation)),
-        _ => None,
+    let consumed = report.findings.iter().filter_map(|finding| {
+        if !matches!(
+            finding.verdict,
+            InferenceVerdict::Inconclusive {
+                reason: InconclusiveReason::Consumed,
+            }
+        ) {
+            return None;
+        }
+        match (&finding.annotation, &finding.chunk) {
+            (LintedAnnotation::ReentryFreeOperation { operation }, _) => {
+                Some(ProbeTarget::ReentryFreeOperation(*operation))
+            }
+            (LintedAnnotation::LoaderHostBehavior { key }, _) => {
+                Some(ProbeTarget::LoaderHostBehavior(*key))
+            }
+            (LintedAnnotation::LoaderProgramPremise { key }, _) => {
+                Some(ProbeTarget::LoaderProgramPremise(*key))
+            }
+            (LintedAnnotation::TrustedDataflowSummaries { .. }, Some(chunk)) => {
+                Some(ProbeTarget::TrustedDataflowSummaries {
+                    chunk: chunk.clone(),
+                })
+            }
+            _ => None,
+        }
     });
     let targets: Vec<_> = purity_targets(spec)
         .into_iter()
-        .chain(consumed_operations.collect::<Vec<_>>())
+        .chain(consumed.collect::<Vec<_>>())
         .filter(|target| {
             chunks.is_empty() || target.chunk().is_some_and(|chunk| chunks.contains(chunk))
+        })
+        // Provenance already decided these exactly.
+        .filter(|target| {
+            !report.findings.iter().any(|finding| {
+                finding.annotation == target.annotation()
+                    && finding.chunk.as_deref() == target.chunk()
+                    && matches!(finding.verdict, InferenceVerdict::Inferable { .. })
+            })
         })
         .collect();
     if targets.is_empty() {
@@ -398,6 +541,11 @@ fn report_tree(root: &Path) -> Result<BTreeMap<PathBuf, String>> {
     Ok(files)
 }
 
+/// The snake_case spelling a serialized key carries.
+fn snake(value: &impl Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_default()
+}
+
 fn render_text(report: &SpecLintReport, out: &mut String) {
     for finding in &report.findings {
         let (severity, verdict) = match &finding.verdict {
@@ -458,6 +606,15 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 spec_location,
                 check,
             } => format!("admission override `{check}` at {spec_location}"),
+            LintedAnnotation::LoaderHostBehavior { key } => {
+                format!("`host_behavior` loader key {}", snake(key))
+            }
+            LintedAnnotation::LoaderProgramPremise { key } => {
+                format!("`program_premises` loader key {}", snake(key))
+            }
+            LintedAnnotation::TrustedDataflowSummaries { spec_location } => {
+                format!("`trusted_dataflow_summaries` at {spec_location}")
+            }
             LintedAnnotation::ReentryFreeOperation { operation } => format!(
                 "`host_behavior.reentry_free_operations` entry `{}`",
                 serde_json::to_value(operation)
@@ -480,6 +637,12 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
         let _ = writeln!(
             out,
             "{severity}[inferable_annotation]: {scope}: {subject}: {verdict}"
+        );
+    }
+    if let Some(error) = &report.pass_error {
+        let _ = writeln!(
+            out,
+            "note: the lint pass failed after linting some chunks: {error}"
         );
     }
     for chunk in &report.unlinted_chunks {

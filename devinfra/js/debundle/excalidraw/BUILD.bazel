@@ -1,6 +1,7 @@
 load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@rules_rust//rust:defs.bzl", "rust_test")
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -8,16 +9,22 @@ package(default_testonly = True)
 
 js_library(
     name = "app",
-    srcs = ["app/main.js"],
+    srcs = [
+        "app/main.js",
+        "app/vendor/clsx.js",
+        "app/vendor/roughjs.js",
+    ],
     deps = [
         "//:node_modules/@excalidraw/excalidraw",
+        "//:node_modules/clsx",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//:node_modules/roughjs",
     ],
 )
 
 # Production build: minified, identifier-mangled, tree-shaken ESM, split at
-# Excalidraw's dynamic-import boundaries.
+# Excalidraw's dynamic-import boundaries and into the `app/vendor/` chunks.
 esbuild(
     name = "bundle",
     config = {
@@ -30,12 +37,17 @@ esbuild(
         "loader": {".woff2": "file"},
     },
     define = {"process.env.NODE_ENV": "\"production\""},
-    entry_point = "app/main.js",
+    entry_points = [
+        "app/main.js",
+        "app/vendor/clsx.js",
+        "app/vendor/roughjs.js",
+    ],
     # The text-to-diagram dialog's lazy mermaid closure (~170 chunks, d3,
     # cytoscape, katex) would dominate the corpus; it stays an unresolved
     # dynamic import, so only that dialog fails to load.
     external = ["@excalidraw/mermaid-to-excalidraw"],
     format = "esm",
+    metafile = True,
     minify = True,
     output_dir = True,
     platform = "browser",
@@ -48,7 +60,10 @@ esbuild(
 py_library(
     name = "gen_inputs",
     srcs = ["gen_inputs.py"],
-    deps = ["@pypi//pyyaml"],
+    deps = [
+        "@pypi//more_itertools",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_binary(
@@ -60,6 +75,8 @@ py_binary(
 run_binary(
     name = "inputs",
     srcs = [
+        "app/index.html",
+        "spec/chunk_aliases.yaml",
         "spec/config_template.yaml",
         ":bundle",
     ],
@@ -69,11 +86,19 @@ run_binary(
     ],
     args = [
         "--bundle-dir",
-        "$(execpath :bundle)",
+        "$(RULEDIR)/bundle",
+        "--metafile",
+        "$(RULEDIR)/bundle_metadata.json",
+        "--chunks-dir",
+        "$(RULEDIR)/chunks",
         "--inputs-root",
-        package_name() + "/bundle",
+        package_name() + "/chunks",
         "--template",
         "$(execpath spec/config_template.yaml)",
+        "--aliases",
+        "$(execpath spec/chunk_aliases.yaml)",
+        "--index-html",
+        "$(execpath app/index.html)",
         "--js-list",
         "$(execpath js-files.txt)",
         "--js-list-path",
@@ -81,16 +106,17 @@ run_binary(
         "--config",
         "$(execpath config.yaml)",
     ],
+    out_dirs = ["chunks"],
     tool = ":gen_inputs_bin",
 )
 
-# Bundle chunks and their JS list share bazel-bin, the root the generated
-# config's `inputs` paths resolve against.
+# Chunks and their JS list share bazel-bin, the root the generated config's
+# `inputs` paths resolve against.
 filegroup(
     name = "source",
     srcs = [
         "js-files.txt",
-        ":bundle",
+        ":inputs",
     ],
 )
 
@@ -99,15 +125,16 @@ filegroup(
     srcs = glob(["spec/**"]),
 )
 
-# Residual baseline: the unmodified chunks with no module claims and no vendor
-# substitutions. `postsubmit`: DebundleAnalyze takes ~5 minutes of mostly
-# single-threaded CPU on RBE (README.md § Cost), so pull requests skip it.
+# The spec: a few source-anchored modules and vendor swaps (README.md § Spec).
 debundle_pipeline(
     name = "debundle",
     input_data = [":source"],
+    package_roots = {
+        "//:node_modules/clsx/dir": "clsx",
+        "//:node_modules/roughjs/dir": "roughjs",
+    },
     spec_tree_inputs = [":spec"],
     split_dependency_graphs = True,
-    tags = ["postsubmit"],
     tree_config = "config.yaml",
     tree_modules = "spec/modules",
     tree_source_root = ":source",
@@ -118,7 +145,6 @@ filegroup(
     name = "analysis",
     srcs = [":debundle"],
     output_group = "analysis",
-    tags = ["postsubmit"],
 )
 
 py_test(
@@ -132,11 +158,84 @@ py_test(
         "DEBUNDLE_JS_LIST": "$(rlocationpath js-files.txt)",
         "DEBUNDLE_OUT": "$(rlocationpath :debundle)",
     },
-    tags = ["postsubmit"],
     deps = [
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+rust_test(
+    name = "spec_output_test",
+    srcs = ["spec_output_test.rs"],
+    crate_root = "spec_output_test.rs",
+    data = [":debundle"],
+    edition = "2024",
+    env = {"DEBUNDLE_OUT": "$(rlocationpath :debundle)"},
+    deps = [
+        "//devinfra/js/debundle/e2e:support",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+        "@rules_rust//tools/runfiles",
+    ],
+)
+
+# Per-chunk verdicts and emitted-file hashes; an engine change diffs this file
+# between its base and its head.
+run_binary(
+    name = "canonical_summary",
+    srcs = [":debundle"],
+    outs = ["canonical_summary.json"],
+    args = [
+        "--out-dir",
+        "$(execpath :debundle)",
+        "--summary",
+        "$(execpath canonical_summary.json)",
+    ],
+    tool = ":summarize_tree_bin",
+)
+
+py_binary(
+    name = "summarize_tree_bin",
+    main_module = "devinfra.js.debundle.excalidraw.summarize_tree",
+    deps = [":summarize_tree"],
+)
+
+py_library(
+    name = "summarize_tree",
+    srcs = ["summarize_tree.py"],
+)
+
+# Browser smoke over the accepted tree.
+py_test(
+    name = "test_smoke",
+    srcs = ["test_smoke.py"],
+    data = [
+        ":debundle",
+        "//:node_modules/@excalidraw/excalidraw/dir",
+        "//:node_modules/clsx/dir",
+        "//:node_modules/roughjs/dir",
+    ],
+    env = {
+        "DEBUNDLE_OUT": "$(rlocationpath :debundle)",
+        "EXCALIDRAW_PACKAGE": "$(rlocationpath //:node_modules/@excalidraw/excalidraw/dir)",
+        "PACKAGE_ROOTS": json.encode({
+            "clsx": "$(rlocationpath //:node_modules/clsx/dir)",
+            "roughjs": "$(rlocationpath //:node_modules/roughjs/dir)",
+        }),
+    },
+    tags = ["visual"],
+    deps = [
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing/frontend_visual:context",
+        "//util/testing/frontend_visual:fixtures",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
         "@rules_python//python/runfiles",
     ],
 )

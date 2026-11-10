@@ -706,11 +706,24 @@ fn analyze_chunk_with_policy_and_sync(
             }
         }
     }
+    let read_names: BTreeSet<&str> = facts
+        .iter()
+        .flat_map(|fact| fact.reads.eager.iter().chain(&fact.reads.lazy))
+        .map(|id| id.0.as_ref())
+        .collect();
+    let unconsulted_purity_hints = hints
+        .assumptions
+        .declared_pure
+        .iter()
+        .filter(|name| !read_names.contains(name.as_str()))
+        .cloned()
+        .collect();
     ChunkFactAnalysis {
         facts,
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
+        unconsulted_purity_hints,
     }
 }
 
@@ -812,10 +825,16 @@ fn assemble_statement_facts(
     // binding edges + rebind co-location rather than the S-chain.
     // The trusted syntactic summary stands in for every havoc but a
     // dynamic cell write, which no summary can name.
+    // `trusted_summary_discharged` records every cause the summary removed, so
+    // an empty set means `trusted_dataflow_summaries` changed nothing here.
+    let mut trusted_summary_discharged = BTreeSet::new();
     if hints.assumptions.trusted_dataflow_summaries
         && !havoc.contains(&DataflowOpacityCause::DynamicCellWrites)
     {
-        havoc.clear();
+        trusted_summary_discharged = std::mem::take(&mut havoc);
+        if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
+            trusted_summary_discharged.insert(DataflowOpacityCause::OpaqueAtInitCall);
+        }
     } else if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
         havoc.insert(DataflowOpacityCause::OpaqueAtInitCall);
     }
@@ -852,6 +871,7 @@ fn assemble_statement_facts(
         global_writes,
         global_reads,
         havoc,
+        trusted_summary_discharged,
         heap_contents: super::HeapContentCells::default(),
         heap_one_shot_allocation: None,
         deferred_heap_allocations: BTreeSet::new(),

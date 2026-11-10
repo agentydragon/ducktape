@@ -44,7 +44,6 @@ from cluster.cdk8s import (
     google_mcp,
     grafana_dashboards,
     ha_mcp,
-    haku_egress_proxy,
     headlamp,
     hubble_ui,
     keda,
@@ -306,7 +305,6 @@ def generate_manifests(root: Path) -> None:
     grocy_user_perms.write_manifests(root)
     oci_cache_zot.write_manifests(root)
     tana_mcp.write_manifests(root)
-    haku_egress_proxy.write_manifests(root)
     parked_augur_evidence.write_manifests(root)
     ducktape_flux.write_manifests(root)
     flux_sources.write_manifests(root)
@@ -1849,10 +1847,6 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
-    haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
-    haku_egress_proxy.haku_egress_proxy(
-        flux_chart, haku_egress_proxy_artifact, cert_manager_kustomization, cert_manager_trust_kustomization
-    )
     haku_ui_image_webhook_artifact = artifact("haku-ui-image-webhook", haku_ui_image_webhook.OUTPUT_DIR)
     haku_ui_image_webhook.haku_ui_image_webhook(
         flux_chart,
@@ -2060,7 +2054,6 @@ def generate_manifests(root: Path) -> None:
             clickhouse_artifact,
             github_secrets_sync_secrets_artifact,
             grafana_instance_artifact,
-            haku_egress_proxy_artifact,
             haku_rbac_artifact,
             seaweedfs_csi_artifact,
             seaweedfs_public_s3_artifact,

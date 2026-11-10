@@ -8,6 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"github.com/google/uuid"
 )
@@ -64,7 +65,9 @@ func healthyIndex() fakeIndex {
 
 func failingIndex() fakeIndex {
 	return fakeIndex{Synced: true, Failing: map[watchhealth.Kind]watchhealth.Failure{
-		policy.Secrets: {Error: "test-failure", Since: started},
+		policy.Secrets:                   {Error: "test-failure", Since: started},
+		reader.PolicySets:                {Error: "test-failure", Since: started},
+		watchhealth.Kind("test-unnamed"): {Error: "test-failure", Since: started},
 	}}
 }
 

@@ -18,50 +18,17 @@ cost). Remaining: everything below.
 
 ## Spec scope
 
-Not the round-trip minimum — the spec should exercise realistic-ish
-module extraction and rename paths, the same shape a private-corpus
-spec runs. Concretely:
-
-- `vendor` marks with `level: swap` over a couple of
-  Excalidraw's actual vendor chunks (React, Roughjs, Pointers, etc.)
-  so vendor-swap edge cases (`named_from_default`,
-  `named_from_module_default`, default-only, JSON-default) get covered
-  on a real bundle, not only synthetic fixtures.
-- `materialize_logical_modules` over a handful of pre-identified
-  Excalidraw source modules — pick ones whose shape is recognisable
-  in the compiled output (a clearly-bounded React component, a pure
-  geometry helper, a state slice). Goal: prove the materialiser
-  recovers approximately the right symbols/files from a real
-  scrambled bundle.
-- A small set of `logical_modules` rename entries on identifiers
-  visible in the compiled output. Goal: exercise the rename pipeline
-  at realistic aggressiveness.
-- `emit_browser_harness`, relying on the always-on emission-time
-  specifier canonicalization, so a test-owned runner can serve the
-  resulting app.
-
-The exact module list / rename list is part of the implementation —
-pick stable shapes that are unlikely to drift wildly when Excalidraw
-upgrades. Stale picks become a self-test: if the materialiser fails
-to find them, that's a real signal (either the bundle moved or our
-matchers regressed).
+Landed: <../excalidraw/README.md> § Spec (source-anchored modules in two chunks,
+whole-chunk and partial vendor swaps, renames through module members). Still to
+add when the engine supports them: `named_from_default`,
+`named_from_module_default` and JSON-default swap shapes (none occurs in this
+esbuild output), and `emit_browser_harness` for the smoke below.
 
 ## Smoke target contract
 
-- runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
-  similar);
-- builds the Excalidraw bundle through the shared `debundle_pipeline`
-  rule (<../pipeline.bzl>), tagged `postsubmit` like the baseline;
-- starts a test-owned server for the resulting harness and package
-  mappings;
-- drives headless Chromium against that server, asserting:
-  - no failed asset requests,
-  - no console errors,
-  - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`
-    or whichever stable selector Excalidraw exposes),
-  - a small interaction works (click the rectangle tool, click on
-    the canvas, verify a shape was added — proves the React app is
-    reactive after debundle).
+Landed: `//devinfra/js/debundle/excalidraw:test_smoke` (<../excalidraw/README.md>
+§ Spec). Not yet covered: lazy chunks reached by `import()` after startup
+(locales, font subsetting, file system), and a published screenshot.
 
 ## Hosting
 

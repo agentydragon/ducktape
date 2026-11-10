@@ -177,6 +177,9 @@ importers:
       cdk8s-cli:
         specifier: ^2.207.58
         version: 2.207.58
+      clsx:
+        specifier: 1.1.1
+        version: 1.1.1
       esbuild:
         specifier: '>=0.28.0'
         version: 0.28.2
@@ -216,6 +219,9 @@ importers:
       quicktype-core:
         specifier: 26.0.0
         version: 26.0.0
+      roughjs:
+        specifier: 4.6.4
+        version: 4.6.4
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3

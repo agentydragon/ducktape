@@ -10,6 +10,7 @@ from constructs import Construct
 from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePool as _VirtualMachinePool,
     VirtualMachinePoolSpec,
+    VirtualMachinePoolSpecMaxUnavailable,
     VirtualMachinePoolSpecSelector,
     VirtualMachinePoolSpecVirtualMachineTemplate,
 )
@@ -18,7 +19,8 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
 class VirtualMachinePool(_VirtualMachinePool):
     """`selector` and `virtual_machine_template` are the only fields the CRD requires; the selector
     must match the labels of `virtual_machine_template`'s metadata. `None` leaves an optional field
-    unset, so KubeVirt's own default applies (a pool created without `replicas` runs one VM)."""
+    unset, so KubeVirt's own default applies (a pool created without `replicas` runs one VM, and one without
+    `max_unavailable` may replace every VM at once when its template changes)."""
 
     def __init__(
         self,
@@ -29,12 +31,16 @@ class VirtualMachinePool(_VirtualMachinePool):
         selector: VirtualMachinePoolSpecSelector,
         virtual_machine_template: VirtualMachinePoolSpecVirtualMachineTemplate,
         replicas: int | None = None,
+        max_unavailable: VirtualMachinePoolSpecMaxUnavailable | None = None,
     ) -> None:
         super().__init__(
             scope,
             id,
             metadata=metadata,
             spec=VirtualMachinePoolSpec(
-                selector=selector, virtual_machine_template=virtual_machine_template, replicas=replicas
+                selector=selector,
+                virtual_machine_template=virtual_machine_template,
+                replicas=replicas,
+                max_unavailable=max_unavailable,
             ),
         )

@@ -10,6 +10,7 @@ from playwright.async_api import Page, expect
 from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
 from agentplane.app.frontend.testing.visual_assertions import (
     _assert_phone_composer_layout,
+    _expect_notice_badges,
     _open_phone_navigation,
     _open_standalone_reasoning,
 )
@@ -35,23 +36,12 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=view.page.locator("#app"))
 
 
-async def expect_notice_badges(page: Page, *, stale: bool) -> None:
-    """The fixture's unprocessed-count and failed-delivery badges in the sidebar, all
-    painted, and faded exactly when the notice stream is down."""
-    badges = page.get_by_role("navigation").locator(".agentplane-thread-list-row-notices")
-    for state, count in [("pending", 4), ("error", 2)]:
-        await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
-    for badge in await badges.all():
-        await expect(badge).to_be_visible()
-        await expect(badge).to_have_css("opacity", "0.5" if stale else "1")
-
-
 async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) -> None:
     """Unprocessed-entry counts and a failed delivery on Thread rows; an empty inbox shows nothing."""
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    await expect_notice_badges(page, stale=False)
+    await _expect_notice_badges(page, stale=False)
     await view.capture(target=page.get_by_role("navigation"))
 
 
@@ -248,7 +238,7 @@ async def test_mobile_navigation_drawer_threads_disconnected_phone(view: VisualP
     await app.age_outage(10000)
     page = await open_phone_drawer(view, app)
     await expect(page.locator('[data-connection="degraded"]').first).to_be_visible()
-    await expect_notice_badges(page, stale=True)
+    await _expect_notice_badges(page, stale=True)
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -294,7 +284,7 @@ async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: Agentp
     assert point is not None
     await page.get_by_role("button", name="Toggle navigation").click()
     await expect(page.locator(".agentplane-sidebar-open")).to_be_visible()
-    await expect_notice_badges(page, stale=False)
+    await _expect_notice_badges(page, stale=False)
     # Probe where the actual high-z floating button was painted, not an arbitrary
     # uncovered patch of the drawer.
     assert await page.evaluate(

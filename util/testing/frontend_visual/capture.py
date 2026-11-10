@@ -32,6 +32,8 @@ from util.testing.frontend_visual.page_capture import (
     PageErrors,
     RequestFence,
     assert_network_settled,
+    hidden_caret,
+    repaint,
     screenshot_locator,
     wait_for_stable,
 )
@@ -282,6 +284,7 @@ class VisualPage:
             and animations != "allow"
         ):
             raise ValueError("DevTools captures require animations to be pinned before mount")
+        await repaint(self.page)
         if target is not None and (count := await target.count()) != 1:
             raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
         page_diagnostics = (
@@ -294,7 +297,8 @@ class VisualPage:
                 self.page, target, context=context, scale=scale, animations=animations
             )
         elif self.devtools_viewport is not None and not full_page and scale == "device":
-            screenshot = await self.devtools_viewport.screenshot()
+            async with hidden_caret(self.page):
+                screenshot = await self.devtools_viewport.screenshot()
         else:
             screenshot = await self.page.screenshot(full_page=full_page, scale=scale, animations=animations)
         await self.check(context=context)

@@ -355,6 +355,7 @@ ts_library(
         "//x/ai_session_archive/frontend:__pkg__",
     ],
     deps = [
+        ":code_block",
         ":disclosure",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
