@@ -3,6 +3,9 @@
 This script runs inside the BuildBuddy runner VM. It records explicit,
 non-secret data into a persistent probe directory so a later recycled VM can
 read the previous run's local probe logs.
+
+CI invokes it with bare `python3`, outside Bazel's Python environment, so its
+imports must remain standard-library only.
 """
 
 from __future__ import annotations
@@ -112,10 +115,6 @@ def run_command(argv: list[str], *, timeout: float = 2.0) -> CommandResult:
     return CommandResult(argv=argv, returncode=proc.returncode, stdout=proc.stdout.strip(), stderr=proc.stderr.strip())
 
 
-def command_json(result: CommandResult) -> dict[str, Any]:
-    return dataclasses.asdict(result)
-
-
 def filesystem_stats() -> list[dict[str, Any]]:
     """Capture capacity and free space for runner filesystems.
 
@@ -126,8 +125,8 @@ def filesystem_stats() -> list[dict[str, Any]]:
     return [
         {
             "path": path,
-            "df": command_json(run_command(["df", "-P", "-k", path])),
-            "statfs": command_json(run_command(["stat", "-f", path])),
+            "df": dataclasses.asdict(run_command(["df", "-P", "-k", path])),
+            "statfs": dataclasses.asdict(run_command(["stat", "-f", path])),
         }
         for path in FILESYSTEM_PATHS
     ]
@@ -428,7 +427,7 @@ def snapshot(
 
 def snapshot_for_json(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data)
-    out["git"] = {k: command_json(v) for k, v in data["git"].items()}
+    out["git"] = {k: dataclasses.asdict(v) for k, v in data["git"].items()}
     return out
 
 
@@ -518,7 +517,7 @@ def upload_archive(archive: Path) -> dict[str, Any]:
     return {
         "attempted": True,
         "digest": extract_digest(result.stdout) or extract_digest(result.stderr),
-        "result": command_json(result),
+        "result": dataclasses.asdict(result),
     }
 
 
