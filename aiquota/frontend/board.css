@@ -21,7 +21,7 @@
   --aiquota-track: var(--mantine-color-gray-light);
   --aiquota-tick: var(--mantine-color-dimmed);
   --aiquota-cool: var(--mantine-color-blue-text);
-  --aiquota-ok: var(--mantine-color-teal-text);
+  --aiquota-ok: var(--mantine-color-text);
   --aiquota-warn: var(--mantine-color-yellow-text);
   --aiquota-hot: var(--mantine-color-red-text);
   --aiquota-unknown: var(--mantine-color-dimmed);
@@ -205,6 +205,10 @@
   font-weight: 650;
   margin: 0;
   padding: 8px 10px;
+}
+
+.aiquota-status-urgent {
+  background: color-mix(in srgb, var(--aiquota-hot) 12%, transparent);
 }
 
 .aiquota-extra-usage {
