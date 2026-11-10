@@ -785,3 +785,44 @@ fn iterating_native_arrays_keeps_the_split() {
         assert_preserved_entry_output(&fixture, "0 0\n");
     }
 }
+
+const SUPER_BASES: &[&str] = &[
+    "function Base(f) { f(); }",
+    "class Base { constructor(f) { f(); } }",
+];
+
+fn super_capture_definitions(base: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{base}\nfunction make(h) {{ {guard}return class extends Base {{ constructor() {{ super(h); }} }}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make({value}); return new C(); }}"
+    )
+}
+
+/// Opposing control: a class value carries no captured context, so its
+/// constructor's `super(h)` runs the base on unknown arguments later. The
+/// class's creation publishes the enclosing locals its members read, so the
+/// base calling its argument reaches `second`.
+#[test]
+fn a_class_publishes_the_enclosing_locals_its_members_read() {
+    for base in SUPER_BASES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &super_capture_definitions(base, guard, "second"),
+                &["Base", "make"],
+            );
+        }
+    }
+}
+
+/// Positive anchor: the same classes passing only the effect-free `first`
+/// keep the split.
+#[test]
+fn a_class_capturing_only_effect_free_functions_keeps_the_split() {
+    for base in SUPER_BASES {
+        let fixture = with_reader_split(
+            &super_capture_definitions(base, "if (first()) {} ", "first"),
+            &["Base", "make"],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}
