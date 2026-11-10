@@ -17,10 +17,12 @@ picks h1 or prior-knowledge h2c) and one `httputil.ReverseProxy` per admitted re
   either way.
 
 Consequences the standard library transport owns: hijacked CONNECT connections sit outside
-`http.Server` shutdown, so the proxy tracks tunnels itself to drain; the upstream transport is
-single-use per admitted request (`DisableKeepAlives`, which covers HTTP/2 too), so a pooled or
-coalesced connection can never carry a request to an address other than the one the admission
-pinned.
+`http.Server` shutdown, so the proxy tracks tunnels itself to drain. `http.Transport` pools by the
+URL's host, not by the address an admission pinned, so the proxy keeps one transport per pin
+(admitted authority, pinned address, scheme and protocol) in a bounded LRU: a pooled connection
+only carries requests whose admission pinned that same address, and a host that re-resolves gets a
+new pool while the old one idles out. Single-use connections would hold the same invariant, at a
+TCP and TLS handshake per request.
 
 ## Sidecar relay: a per-connection request loop, not `httputil.ReverseProxy`
 
