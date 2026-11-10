@@ -31,6 +31,13 @@ from x.ai_session_archive.database import (
 from x.ai_session_archive.models import Harness, SessionKind
 from x.ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from x.ai_session_archive.statuses import (
+    CodexMetadataStatus,
+    SnapshotCaptureStatus,
+    SnapshotFileStatus,
+    SnapshotInventoryStatus,
+    SnapshotProcessingStatus,
+)
 from x.ai_session_archive.usage_observations import usage_observations_for_record
 
 PARSER_VERSION = "jsonl-v1"
@@ -155,7 +162,8 @@ class SnapshotIngestor:
             self._process_snapshot(snapshot)
         with self._session_factory() as db:
             all_inventoried = all(
-                row.inventory_status == "complete" and row.processing_status == "complete"
+                row.inventory_status == SnapshotInventoryStatus.COMPLETE
+                and row.processing_status == SnapshotProcessingStatus.COMPLETE
                 for row in db.scalars(
                     select(ResticSnapshotRow).where(
                         ResticSnapshotRow.machine_id == self._source.machine_id,
@@ -189,10 +197,10 @@ class SnapshotIngestor:
             tree_id=snapshot.tree_id,
             paths=list(snapshot.paths),
             comparison_snapshot_id=None,
-            inventory_status="pending",
-            processing_status="pending",
-            codex_metadata_status="pending",
-            capture_status="unknown",
+            inventory_status=SnapshotInventoryStatus.PENDING,
+            processing_status=SnapshotProcessingStatus.PENDING,
+            codex_metadata_status=CodexMetadataStatus.PENDING,
+            capture_status=SnapshotCaptureStatus.UNKNOWN,
         )
 
     def _ensure_source(self) -> None:
@@ -230,7 +238,7 @@ class SnapshotIngestor:
                         db.add(row)
                         db.flush()
                     _assert_snapshot_identity(row, snapshot)
-                    if row.inventory_status == "complete":
+                    if row.inventory_status == SnapshotInventoryStatus.COMPLETE:
                         return
                     comparison_snapshot_id = self._usable_parent(db, snapshot, available_snapshot_ids)
 
@@ -252,7 +260,7 @@ class SnapshotIngestor:
                     if row is None:
                         raise RuntimeError(f"snapshot ledger row disappeared for {snapshot.id}")
                     _assert_snapshot_identity(row, snapshot)
-                    if row.inventory_status == "complete":
+                    if row.inventory_status == SnapshotInventoryStatus.COMPLETE:
                         return
                     current_comparison_snapshot_id = self._usable_parent(
                         db, snapshot, available_snapshot_ids, lock=True
@@ -286,8 +294,8 @@ class SnapshotIngestor:
                                 error=error,
                             )
                         )
-                    row.inventory_status = "complete"
-                    row.processing_status = "pending"
+                    row.inventory_status = SnapshotInventoryStatus.COMPLETE
+                    row.processing_status = SnapshotProcessingStatus.PENDING
                     return
         except Exception as exc:
             self._mark_inventory_failed(snapshot, exc)
@@ -312,7 +320,10 @@ class SnapshotIngestor:
         if parent is None:
             # A pruned/missing diff base cannot safely seed path state. Inventory this snapshot itself.
             return None
-        if parent.inventory_status != "complete" or parent.processing_status != "complete":
+        if (
+            parent.inventory_status != SnapshotInventoryStatus.COMPLETE
+            or parent.processing_status != SnapshotProcessingStatus.COMPLETE
+        ):
             # Work is independent when listed directly; never inherit from an unfinished ledger position.
             return None
         return parent_id
@@ -326,11 +337,14 @@ class SnapshotIngestor:
                 continue
             location = self._classify(file.path)
             if location is None:
-                status, error = "unclassified", None
+                status, error = SnapshotFileStatus.UNCLASSIFIED, None
             elif file.file_type != "file":
-                status, error = "not_indexed", f"JSONL path is a {file.file_type}, not a regular file"
+                status, error = (
+                    SnapshotFileStatus.NOT_INDEXED,
+                    f"JSONL path is a {file.file_type}, not a regular file",
+                )
             else:
-                status, error = "pending", None
+                status, error = SnapshotFileStatus.PENDING, None
             entries.append(
                 (file.path, "inventory", file.file_type, file.byte_size, file.modified_at, status, error, location)
             )
@@ -348,13 +362,13 @@ class SnapshotIngestor:
             modifier = ",".join(dict.fromkeys(modifiers))
             location = self._classify(path)
             if location is None:
-                status, error = "unclassified", None
+                status, error = SnapshotFileStatus.UNCLASSIFIED, None
             elif modifier == "-":
-                status, error = "deleted", None
+                status, error = SnapshotFileStatus.DELETED, None
             elif any(part not in _KNOWN_DIFF_MODIFIERS for part in modifiers):
-                status, error = "failed", f"unrecognized Restic diff modifier: {modifier}"
+                status, error = SnapshotFileStatus.FAILED, f"unrecognized Restic diff modifier: {modifier}"
             else:
-                status, error = "pending", None
+                status, error = SnapshotFileStatus.PENDING, None
             entries.append((path, modifier, "file", 0, None, status, error, location))
         return entries
 
@@ -459,7 +473,7 @@ class SnapshotIngestor:
                 )
             )
         for file_row in files:
-            if file_row.status not in ("pending", "failed"):
+            if file_row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
                 continue
             self._process_file(snapshot, file_row.path)
         with self._session_factory() as db, db.begin():
@@ -473,8 +487,8 @@ class SnapshotIngestor:
             )
             if snapshot_row is None:
                 return
-            if snapshot_row.inventory_status != "complete":
-                snapshot_row.processing_status = "failed"
+            if snapshot_row.inventory_status != SnapshotInventoryStatus.COMPLETE:
+                snapshot_row.processing_status = SnapshotProcessingStatus.FAILED
                 return
             statuses = list(
                 db.scalars(
@@ -484,8 +498,10 @@ class SnapshotIngestor:
                     )
                 )
             )
-            failed = any(status in ("pending", "failed") for status in statuses)
-            snapshot_row.processing_status = "failed" if failed else "complete"
+            failed = any(status in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED) for status in statuses)
+            snapshot_row.processing_status = (
+                SnapshotProcessingStatus.FAILED if failed else SnapshotProcessingStatus.COMPLETE
+            )
 
     def _process_codex_metadata(self, snapshot: ResticSnapshot, *, refresh_completed: bool = False) -> None:
         refresh_kinds = False
@@ -494,7 +510,7 @@ class SnapshotIngestor:
             if row is None:
                 row = self._new_snapshot_row(snapshot)
                 db.add(row)
-            if row.codex_metadata_status in ("complete", "partial"):
+            if row.codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL):
                 if not refresh_completed:
                     return
                 refresh_kinds = bool(
@@ -536,7 +552,7 @@ class SnapshotIngestor:
                                     item.session_kind.value if item is not None else SessionKind.UNKNOWN.value
                                 )
                     return
-                if row.codex_metadata_status in ("complete", "partial"):
+                if row.codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL):
                     return
                 for item in observations:
                     existing_observation = existing_observations.get(item.native_session_id)
@@ -559,14 +575,20 @@ class SnapshotIngestor:
                         existing_observation.title_source = item.title_source
                         existing_observation.updated_at = item.updated_at
                         existing_observation.session_kind = item.session_kind.value
-                row.codex_metadata_status = "failed" if retry_errors else "partial" if warnings else "complete"
+                row.codex_metadata_status = (
+                    CodexMetadataStatus.FAILED
+                    if retry_errors
+                    else CodexMetadataStatus.PARTIAL
+                    if warnings
+                    else CodexMetadataStatus.COMPLETE
+                )
                 issues = [*retry_errors, *warnings]
                 row.codex_metadata_error = "; ".join(issues)[:4000] if issues else None
         except Exception as exc:
             with self._session_factory() as db, db.begin():
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
                 if row is not None and not refresh_kinds:
-                    row.codex_metadata_status = "failed"
+                    row.codex_metadata_status = CodexMetadataStatus.FAILED
                     row.codex_metadata_error = _error_text(exc)
 
     def _project_codex_titles(self, *, allow_index_only: bool) -> None:
@@ -757,14 +779,14 @@ class SnapshotIngestor:
                     )
                     .with_for_update()
                 )
-                if row is None or row.status not in ("pending", "failed"):
+                if row is None or row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
                     return
                 location = self._classify(path)
                 if location is None:
-                    row.status = "unclassified"
+                    row.status = SnapshotFileStatus.UNCLASSIFIED
                     return
                 if row.change_kind == "-":
-                    row.status = "deleted"
+                    row.status = SnapshotFileStatus.DELETED
                     return
                 if any(
                     part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")
@@ -801,7 +823,7 @@ class SnapshotIngestor:
                         )
                         .with_for_update()
                     )
-                    if row is None or row.status not in ("pending", "failed"):
+                    if row is None or row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
                         return
                     if _SnapshotFileIdentity.from_row(row) != file_identity:
                         raise RuntimeError(f"snapshot file identity changed while reading {path}")
@@ -831,7 +853,7 @@ class SnapshotIngestor:
                     row.file_version_id = version_row.id
                     row.byte_size = byte_size
                     row.file_type = "file"
-                    row.status = "complete" if version_row.complete else "partial"
+                    row.status = SnapshotFileStatus.COMPLETE if version_row.complete else SnapshotFileStatus.PARTIAL
                     row.error = None
                     self._update_session_metadata(db, session_row, metadata)
         except Exception as exc:
@@ -1026,7 +1048,11 @@ class SnapshotIngestor:
             ),
             {"machine_id": current.machine_id, "snapshot_id": current.snapshot_id, "path": current.path},
         ).first()
-        if prior is None or prior.status not in ("complete", "partial") or prior.file_version_id is None:
+        if (
+            prior is None
+            or prior.status not in (SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)
+            or prior.file_version_id is None
+        ):
             return None
         return db.get(FileVersionRow, prior.file_version_id)
 
@@ -1143,7 +1169,7 @@ class SnapshotIngestor:
             )
             .where(
                 SnapshotFileRow.session_id == SessionRow.id,
-                SnapshotFileRow.status.in_(("complete", "partial")),
+                SnapshotFileRow.status.in_((SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)),
                 SnapshotFileRow.file_version_id.is_not(None),
             )
             .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
@@ -1249,11 +1275,11 @@ class SnapshotIngestor:
             if row is None:
                 row = self._new_snapshot_row(snapshot)
                 db.add(row)
-            if row.inventory_status == "complete":
+            if row.inventory_status == SnapshotInventoryStatus.COMPLETE:
                 return
-            row.inventory_status = "failed"
+            row.inventory_status = SnapshotInventoryStatus.FAILED
             row.inventory_error = _error_text(exc)
-            row.processing_status = "failed"
+            row.processing_status = SnapshotProcessingStatus.FAILED
 
     def _mark_file_failed(self, snapshot_id: str, path: str, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
@@ -1266,8 +1292,8 @@ class SnapshotIngestor:
                 )
                 .with_for_update()
             )
-            if row is not None and row.status in ("pending", "failed"):
-                row.status = "failed"
+            if row is not None and row.status in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
+                row.status = SnapshotFileStatus.FAILED
                 row.error = _error_text(exc)
 
     def _report(self, available_snapshot_ids: set[str]) -> IngestReport:
@@ -1291,22 +1317,22 @@ class SnapshotIngestor:
         return IngestReport(
             snapshots_seen=len(available_snapshot_ids),
             snapshots_complete=sum(
-                row.inventory_status == "complete"
-                and row.processing_status == "complete"
-                and row.codex_metadata_status in ("complete", "partial")
+                row.inventory_status == SnapshotInventoryStatus.COMPLETE
+                and row.processing_status == SnapshotProcessingStatus.COMPLETE
+                and row.codex_metadata_status in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL)
                 for row in snapshots
             ),
             snapshots_incomplete=sum(
-                row.inventory_status != "complete"
-                or row.processing_status != "complete"
-                or row.codex_metadata_status not in ("complete", "partial")
+                row.inventory_status != SnapshotInventoryStatus.COMPLETE
+                or row.processing_status != SnapshotProcessingStatus.COMPLETE
+                or row.codex_metadata_status not in (CodexMetadataStatus.COMPLETE, CodexMetadataStatus.PARTIAL)
                 for row in snapshots
             ),
-            files_complete=sum(row.status == "complete" for row in files),
-            files_partial=sum(row.status == "partial" for row in files),
-            files_failed=sum(row.status == "failed" for row in files),
-            files_unclassified=sum(row.status == "unclassified" for row in files),
-            codex_metadata_partial=sum(row.codex_metadata_status == "partial" for row in snapshots),
+            files_complete=sum(row.status == SnapshotFileStatus.COMPLETE for row in files),
+            files_partial=sum(row.status == SnapshotFileStatus.PARTIAL for row in files),
+            files_failed=sum(row.status == SnapshotFileStatus.FAILED for row in files),
+            files_unclassified=sum(row.status == SnapshotFileStatus.UNCLASSIFIED for row in files),
+            codex_metadata_partial=sum(row.codex_metadata_status == CodexMetadataStatus.PARTIAL for row in snapshots),
         )
 
 
