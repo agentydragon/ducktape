@@ -58,6 +58,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -329,7 +330,8 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 	return identity, notifier, err
 }
 
-// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount.
+// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount, or, by
+// SVID, its Identity of the policy namespace.
 func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.tokenAudience(), c.CallerServiceAccountNamespaces)
 	if err != nil {
@@ -337,7 +339,8 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	}
 	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
 	if c.RPC.Has(listener.SPIFFE) {
-		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces, nil)
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {
 			return nil, err
 		}

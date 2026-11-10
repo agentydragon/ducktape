@@ -24,7 +24,7 @@ type querier interface {
 type rowScanner interface{ Scan(...any) error }
 
 const requestColumns = `id, idempotency_key, action_group, action_name, arguments, title, description, caller_namespace, caller_name, caller_uid,
-	state, version, created_at, updated_at, history_at`
+	caller_identity_name, caller_identity_uid, state, version, created_at, updated_at, history_at`
 
 // requestRow is a request with the position in history its first non-pending Event gave it.
 type requestRow struct {
@@ -60,15 +60,24 @@ func utc(t *time.Time) *time.Time {
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
 	var arguments []byte
-	var callerUID sql.NullString
+	var callerNamespace, callerName, callerUID, identityName, identityUID sql.NullString
 	var state string
-	if err := row.Scan(&r.ID, &r.IdempotencyKey, &r.Action.Group, &r.Action.Name, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
-		&r.Caller.Name, &callerUID, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
+	if err := row.Scan(&r.ID, &r.IdempotencyKey, &r.Action.Group, &r.Action.Name, &arguments, &r.Title, &r.Description, &callerNamespace,
+		&callerName, &callerUID, &identityName, &identityUID, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
 		return requestRow{}, err
 	}
-	if callerUID.Valid {
-		uid := callerUID.String
-		r.CallerUID = &uid
+	switch {
+	case callerNamespace.Valid && callerName.Valid:
+		caller := ServiceAccountCaller{Account: ServiceAccount{Namespace: callerNamespace.String, Name: callerName.String}}
+		if callerUID.Valid {
+			uid := callerUID.String
+			caller.UID = &uid
+		}
+		r.Caller = caller
+	case identityName.Valid && identityUID.Valid:
+		r.Caller = IdentityCaller{Identity: Identity{Name: identityName.String, UID: identityUID.String}}
+	default:
+		r.Caller = UnknownCaller{}
 	}
 	if err := r.Action.Validate(); err != nil {
 		return requestRow{}, fmt.Errorf("request %s typed Action identity: %w", r.ID, err)
@@ -96,15 +105,29 @@ func getRequest(ctx context.Context, q querier, id uuid.UUID, lock bool) (reques
 	return row, err
 }
 
-// mayBeReadBy preserves name-scoped ownership. UID pins request provenance but does not change existing read scope.
+// mayBeReadBy is ownedBy for an Owner; an operator and a service reader read every request.
 func (r requestRow) mayBeReadBy(principal ReadPrincipal) bool {
 	switch principal := principal.(type) {
-	case CallerPrincipal:
-		return r.Caller == principal.Account
+	case Owner:
+		return ownedBy(r.Caller, principal)
 	case OperatorPrincipal, ServiceReaderPrincipal:
 		return true
 	default:
 		return false
+	}
+}
+
+// ownedBy preserves a ServiceAccount's name-scoped ownership: its UID pins request provenance but does not change
+// read scope. An Identity owns by incarnation.
+func ownedBy(caller Caller, owner Owner) bool {
+	switch owner := owner.(type) {
+	case CallerPrincipal:
+		recorded, ok := caller.(ServiceAccountCaller)
+		return ok && recorded.Account == owner.Account
+	case IdentityPrincipal:
+		return caller == IdentityCaller{Identity: owner.Identity}
+	default:
+		panic(fmt.Sprintf("unknown owner %T", owner))
 	}
 }
 
@@ -289,6 +312,13 @@ func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 		return &action_servicepb.Principal{
 			Principal: &action_servicepb.Principal_Caller{Caller: principal.Account.Proto()}, CallerUid: &uid,
 		}, nil
+	case IdentityPrincipal:
+		if err := principal.Identity.validate(); err != nil {
+			return nil, invalid("%s", err)
+		}
+		return &action_servicepb.Principal{
+			Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: principal.Identity.Proto()},
+		}, nil
 	case OperatorPrincipal:
 		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: principal.Issuer, Subject: principal.Subject}}}, nil
 	default:
@@ -296,18 +326,34 @@ func recordedActor(principal Principal) (*action_servicepb.Principal, error) {
 	}
 }
 
-// Submit stores an admitted request for the caller. The UID pins its account incarnation, while ownership and the
-// caller's idempotency key remain scoped by namespace/name: a second submission under the key is a
-// ConflictIdempotencyKeyUsed, and the original request is read back by key.
-func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input ActionRequestInput, admission Admission) (ActionRequest, error) {
+// Submit stores an admitted request for its owner. A ServiceAccount's UID pins its account incarnation, while
+// ownership and its idempotency key remain scoped by namespace/name; an Identity's are scoped by incarnation. A second
+// submission under the key is a ConflictIdempotencyKeyUsed, and the original request is read back by key.
+func (s *Store) Submit(ctx context.Context, owner Owner, input ActionRequestInput, admission Admission) (ActionRequest, error) {
 	if err := input.Validate(); err != nil {
 		return ActionRequest{}, err
 	}
-	if err := validateServiceAccount(caller.Account); err != nil {
-		return ActionRequest{}, err
-	}
-	if caller.ServiceAccountUID == "" {
-		return ActionRequest{}, invalid("caller ServiceAccount UID is required")
+	// The owner's columns, and the unique key a repeated idempotency key conflicts on.
+	var namespace, name, uid, identityName, identityUID *string
+	var conflict string
+	switch owner := owner.(type) {
+	case CallerPrincipal:
+		if err := validateServiceAccount(owner.Account); err != nil {
+			return ActionRequest{}, err
+		}
+		if owner.ServiceAccountUID == "" {
+			return ActionRequest{}, invalid("caller ServiceAccount UID is required")
+		}
+		namespace, name, uid = &owner.Account.Namespace, &owner.Account.Name, &owner.ServiceAccountUID
+		conflict = "caller_namespace, caller_name, idempotency_key"
+	case IdentityPrincipal:
+		if err := owner.Identity.validate(); err != nil {
+			return ActionRequest{}, invalid("%s", err)
+		}
+		identityName, identityUID = &owner.Identity.Name, &owner.Identity.UID
+		conflict = "caller_identity_name, caller_identity_uid, idempotency_key"
+	default:
+		panic(fmt.Sprintf("unknown owner %T", owner))
 	}
 	if admission.Vote != nil {
 		if err := admission.Vote.Validate(); err != nil {
@@ -319,12 +365,13 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
 			INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title,
-				description, caller_namespace, caller_name, caller_uid, state, version, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, 'decision_pending', 1, $11, $11)
-			ON CONFLICT (caller_namespace, caller_name, idempotency_key) DO NOTHING
+				description, caller_namespace, caller_name, caller_uid, caller_identity_name, caller_identity_uid,
+				state, version, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, 'decision_pending', 1, $13, $13)
+			ON CONFLICT (`+conflict+`) DO NOTHING
 			RETURNING `+requestColumns,
 			admission.RequestID, input.IdempotencyKey, input.Action.Group, input.Action.Name, string(input.Arguments),
-			input.Title, input.Description, caller.Account.Namespace, caller.Account.Name, caller.ServiceAccountUID, at))
+			input.Title, input.Description, namespace, name, uid, identityName, identityUID, at))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,
@@ -474,12 +521,15 @@ func (q *query) arg(value any) string {
 	return fmt.Sprintf("$%d", len(q.args))
 }
 
-// readableBy is the condition mayBeReadBy applies: a caller reads requests by namespace/name, an operator and a
-// service reader every owner's. Caller UID is provenance and does not change this existing ownership scope.
+// readableBy is the condition mayBeReadBy applies: a ServiceAccount reads requests by namespace/name, an Identity by
+// incarnation, an operator and a service reader every owner's. Caller UID is provenance and does not change a
+// ServiceAccount's ownership scope.
 func (q *query) readableBy(principal ReadPrincipal) []string {
 	switch principal := principal.(type) {
 	case CallerPrincipal:
 		return []string{"caller_namespace = " + q.arg(principal.Account.Namespace) + " AND caller_name = " + q.arg(principal.Account.Name)}
+	case IdentityPrincipal:
+		return []string{"caller_identity_name = " + q.arg(principal.Identity.Name) + " AND caller_identity_uid = " + q.arg(principal.Identity.UID)}
 	case OperatorPrincipal, ServiceReaderPrincipal:
 		return nil
 	default:

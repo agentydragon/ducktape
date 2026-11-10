@@ -191,7 +191,7 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 	t.Helper()
 	outcome, err := f.executor.attempt(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: testGroup, Name: action},
-		Arguments: json.RawMessage(arguments), Caller: caller,
+		Arguments: json.RawMessage(arguments), Caller: store.ServiceAccountCaller{Account: caller},
 	})
 	return attempted{t, outcome, err}
 }

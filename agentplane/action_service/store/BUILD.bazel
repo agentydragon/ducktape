@@ -51,6 +51,7 @@ go_test(
         "claims_integration_test.go",
         "decisions_integration_test.go",
         "golden_vectors_test.go",
+        "identity_integration_test.go",
         "integration_testmain_test.go",
         "leases_integration_test.go",
         "python_rows_integration_test.go",

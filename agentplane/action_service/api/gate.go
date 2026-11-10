@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage_servicepb"
@@ -20,11 +21,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// Callers says whether a ServiceAccount may call as a workload: whether it carries the
+// Callers says whether a workload may call: a ServiceAccount whether it carries the
 // `agentplane.allegedly.works/use-action-service` label, in a view of the ServiceAccounts the service can vouch
-// for. An implementation logs its refusals.
+// for; an Identity incarnation whether a live PolicyBinding names it. An implementation logs its refusals.
 type Callers interface {
 	Admits(account auth.Account) bool
+	AdmitsIdentity(identity auth.Identity) bool
 }
 
 // errDraining is a call that reaches a service that no longer accepts work.
@@ -137,11 +139,18 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 		if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 || g.svid == nil {
 			return admission{}, unauthenticated
 		}
-		principal, err := g.svid.Resolve(ctx)
+		subject, err := g.svid.ResolveSubject(ctx)
 		if err != nil {
 			return admission{}, err
 		}
-		return g.workloadAccount(principal.Account, principal.ServiceAccountUID)
+		switch subject := subject.(type) {
+		case auth.Principal:
+			return g.workloadAccount(subject.Account, subject.ServiceAccountUID)
+		case auth.IdentityPrincipal:
+			return g.workloadIdentity(subject.Identity)
+		default:
+			panic(fmt.Sprintf("unknown workload subject %T", subject))
+		}
 	}
 	token, err := bearer(ctx)
 	if err != nil {
@@ -177,6 +186,15 @@ func (g *Gate) workloadAccount(accountRef auth.Account, uid string) (admission, 
 	return admission{principal: store.CallerPrincipal{
 		Account: account, ServiceAccountUID: uid,
 	}}, nil
+}
+
+// workloadIdentity admits an Identity incarnation a live PolicyBinding names, as itself. No Identity is a service
+// reader: the reader allowlist names ServiceAccounts.
+func (g *Gate) workloadIdentity(identity auth.Identity) (admission, error) {
+	if !g.callers.AdmitsIdentity(identity) {
+		return admission{}, unauthenticated
+	}
+	return admission{principal: store.IdentityPrincipal{Identity: store.Identity{Name: identity.Name, UID: identity.UID}}}, nil
 }
 
 // Operator is the issuer and subject of the operator the Gate admitted a call of an operator-only service as.

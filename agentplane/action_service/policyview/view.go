@@ -24,7 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
@@ -41,11 +40,16 @@ const (
 
 // View is the subject's effective Action policy as reader may see it, from the resolution admission decides from.
 // While the index is unavailable it holds no binding and no policy, as nothing then auto-decides.
-func View(index *informer.Index, subject policyapi.ServiceAccountRef, viewer Reader) *action_servicepb.CallerActionPolicy {
+func View(index *informer.Index, subject reader.Subject, viewer Reader) *action_servicepb.CallerActionPolicy {
 	resolved, synced := index.Resolve(subject)
-	view := &action_servicepb.CallerActionPolicy{
-		Subject: &identitypb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name},
-		Synced:  synced,
+	view := &action_servicepb.CallerActionPolicy{Synced: synced}
+	switch subject := subject.(type) {
+	case reader.ServiceAccount:
+		view.Subject = &identitypb.ServiceAccount{Namespace: subject.Namespace, Name: subject.Name}
+	case reader.Identity:
+		view.Identity = &identitypb.Identity{Name: subject.Name, Uid: string(subject.UID)}
+	default:
+		panic(fmt.Sprintf("unknown policy subject %T", subject))
 	}
 	approvable := sets.New[store.ActionIdentity]()
 	for _, bound := range resolved {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -12,12 +13,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // providerTimeout bounds the decision provider at admission: a GitHub lookup that has not answered
@@ -34,9 +36,9 @@ type Submissions struct {
 }
 
 func (s *Service) SubmitActionRequest(ctx context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
-	var caller store.CallerPrincipal
+	var caller store.Owner
 	switch principal := admitted(ctx).principal.(type) {
-	case store.CallerPrincipal:
+	case store.Owner:
 		caller = principal
 	case store.OperatorPrincipal:
 		return nil, status.Error(codes.PermissionDenied, "an operator cannot submit a request")
@@ -125,11 +127,20 @@ func (s *Service) runnable(action store.ActionIdentity) (catalog.ActionDefinitio
 
 // decide asks the decision provider about the request, against the caller's bindings as the policy index holds them
 // now. Nothing is decided while the index is unavailable.
-func (s *Service) decide(ctx context.Context, caller store.CallerPrincipal, action store.ActionIdentity, arguments map[string]any) policies.Decision {
+func (s *Service) decide(ctx context.Context, caller store.Owner, action store.ActionIdentity, arguments map[string]any) policies.Decision {
 	ctx, cancel := context.WithTimeout(ctx, providerTimeout)
 	defer cancel()
-	bindings := s.policy.ResolveBindings(policyapi.ServiceAccountRef{
-		Namespace: caller.Account.Namespace, Name: caller.Account.Name,
-	})
-	return s.submissions.Provider.Decide(ctx, bindings, action, arguments)
+	return s.submissions.Provider.Decide(ctx, s.policy.ResolveBindings(policySubject(caller)), action, arguments)
+}
+
+// policySubject is whom the owner's PolicyBindings name: its ServiceAccount, or its Identity incarnation.
+func policySubject(owner store.Owner) reader.Subject {
+	switch owner := owner.(type) {
+	case store.CallerPrincipal:
+		return reader.ServiceAccount{Namespace: owner.Account.Namespace, Name: owner.Account.Name}
+	case store.IdentityPrincipal:
+		return reader.Identity{Name: owner.Identity.Name, UID: types.UID(owner.Identity.UID)}
+	default:
+		panic(fmt.Sprintf("unknown owner %T", owner))
+	}
 }

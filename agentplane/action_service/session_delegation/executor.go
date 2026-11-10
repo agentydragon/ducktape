@@ -75,11 +75,17 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 }
 
 func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	delegated, err := e.delegatedContext(ctx, request)
+	caller, ok := request.Caller.(store.ServiceAccountCaller)
+	if !ok {
+		// The delegation envelope names a ServiceAccount, as the Session APIs authorize by one.
+		return worker.Failed("caller_not_service_account",
+			"Session delegation forwards a calling ServiceAccount, and this request's caller is not one"), nil
+	}
+	delegated, err := e.delegatedContext(ctx, request, caller)
 	if err != nil {
 		return worker.Failed("caller_identity_unavailable", err.Error()), nil
 	}
-	result, err := e.dispatch(delegated, request)
+	result, err := e.dispatch(delegated, request, caller.Account.Namespace)
 	var refused *refusal
 	var resumeOutcome *resumeOutcomeError
 	switch {
@@ -96,17 +102,17 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	}
 }
 
-func (e *Executor) delegatedContext(ctx context.Context, request store.ExecutionRequest) (context.Context, error) {
-	if request.CallerUID == nil || strings.TrimSpace(*request.CallerUID) == "" {
+func (e *Executor) delegatedContext(ctx context.Context, request store.ExecutionRequest, caller store.ServiceAccountCaller) (context.Context, error) {
+	if caller.UID == nil || strings.TrimSpace(*caller.UID) == "" {
 		return nil, errors.New("the admitted caller ServiceAccount UID was not recorded")
 	}
-	if request.Caller.Namespace == "" || request.Caller.Name == "" || request.RequestID == uuid.Nil || request.ExecutionID == uuid.Nil {
+	if caller.Account.Namespace == "" || caller.Account.Name == "" || request.RequestID == uuid.Nil || request.ExecutionID == uuid.Nil {
 		return nil, errors.New("the admitted caller or Action correlation identity is incomplete")
 	}
 	envelope := &delegationpb.Delegation{
 		Caller: &identitypb.ServiceAccountIdentity{
-			Account: &identitypb.ServiceAccount{Namespace: request.Caller.Namespace, Name: request.Caller.Name},
-			Uid:     *request.CallerUID,
+			Account: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name},
+			Uid:     *caller.UID,
 		},
 		ActionRequestId:   request.RequestID.String(),
 		ActionExecutionId: request.ExecutionID.String(),
@@ -114,7 +120,7 @@ func (e *Executor) delegatedContext(ctx context.Context, request store.Execution
 	return workloadgrpc.WithDelegation(ctx, envelope)
 }
 
-func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (any, error) {
+func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest, callerNamespace string) (any, error) {
 	switch request.Action.Name {
 	case contract.ActionListEnvironments:
 		args, err := e.inputs.ListEnvironments.Decode(request.Arguments)
@@ -135,7 +141,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
 			return nil, err
 		}
 		response, err := e.environment.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
@@ -153,7 +159,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 	case "get":
 		switch e.group {
 		case contract.GroupEnvironments:
-			return e.getEnvironment(ctx, request)
+			return e.getEnvironment(ctx, request, callerNamespace)
 		case contract.GroupSessions:
 			return e.getSession(ctx, request)
 		default:
@@ -164,7 +170,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
 			return nil, err
 		}
 		harness, err := args.Spec.Harness.Proto()
@@ -199,7 +205,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
 			return nil, err
 		}
 		response, err := e.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
@@ -283,7 +289,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return nil, err
 		}
-		if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+		if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
 			return nil, err
 		}
 		response, err := e.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
@@ -298,12 +304,12 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 	}
 }
 
-func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRequest) (any, error) {
+func (e *Executor) getEnvironment(ctx context.Context, request store.ExecutionRequest, callerNamespace string) (any, error) {
 	args, err := e.inputs.GetEnvironment.Decode(request.Arguments)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateTargetNamespace(request.Caller.Namespace, args.Target); err != nil {
+	if err := validateTargetNamespace(callerNamespace, args.Target); err != nil {
 		return nil, err
 	}
 	getRequest := &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{
