@@ -45,7 +45,15 @@ unless fully swapped, a non-empty emitted entry, and every static chunk import
 names an input chunk. `spec_output_test` asserts the spec's effects through the
 e2e helpers: claimed modules' export specifiers, `blobToArrayBuffer` reading a
 `Blob` under Node, the clsx import rewrite and strip, and the swap report.
-Dynamic imports and browser loading are left to the live-browser smoke.
+`test_smoke` loads the accepted tree's browser harness in headless Chromium
+from a test-owned server. The server serves `app/`, Excalidraw's fonts from
+the package (`app/index.html` sets `EXCALIDRAW_ASSET_PATH`), and the swapped
+packages from their Bazel package roots, through an import map it builds from
+`reports/vendor_swaps.json`. The test waits for the harness `load` marker and
+the toolbar, draws a rectangle, and asserts that undo becomes enabled, with no
+console or page errors, harness-recorded errors, or failed requests. It
+exercises only what startup and drawing load: no lazy locale, font-subsetting
+or file-system chunk.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the
