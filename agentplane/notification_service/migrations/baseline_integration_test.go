@@ -74,11 +74,11 @@ func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (model.Service
 func TestFreshBaselineSupportsNotificationStore(t *testing.T) {
 	db := cloneDatabase(t)
 	owner, subscription := seedSubscription(t, db, "fresh-session")
-	inboxes, err := newStore(db).ListInboxes(t.Context(), store.Owner{Account: owner, AccountUID: "test-account-uid", SandboxUID: "adoption-uid"})
+	inboxes, err := newStore(db).ListInboxes(t.Context(), store.AccountOwner{Account: owner, AccountUID: "test-account-uid", SandboxUID: "adoption-uid"})
 	if err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
 		t.Fatalf("fresh inboxes = %+v, error %v", inboxes, err)
 	}
-	assertApplied(t, db, 14)
+	assertApplied(t, db, 15)
 	if err := applyBaseline(t.Context(), db); err != nil {
 		t.Fatal("previous binary baseline provider on expanded schema:", err)
 	}

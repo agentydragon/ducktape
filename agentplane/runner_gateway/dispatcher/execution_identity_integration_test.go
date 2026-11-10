@@ -77,6 +77,10 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) || !proto.Equal(stored.ExecutionPrincipal, owner) {
 		t.Fatalf("stored Session executes as %v / %v (%v), want %v beside %v", stored.ExecutionIdentity, stored.ExecutionPrincipal, err, named, owner)
 	}
+	read, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: placed})
+	if err != nil || !proto.Equal(read.GetSession().GetIdentity(), named) {
+		t.Fatalf("GetSession reads the Session as executing as %v (%v), want %v", read.GetSession().GetIdentity(), err, named)
+	}
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, account: owner, identity: named}
 	runner := &placingRunner{placed: make(chan SessionExecution, 2)}

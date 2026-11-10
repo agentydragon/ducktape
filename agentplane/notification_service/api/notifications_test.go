@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
@@ -639,5 +640,31 @@ func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) 
 	page, err := s.client.ReadInbox(bearing(t, operatorToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(page.GetEntries()) != 1 || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() {
 		t.Fatalf("retained operator view = %v, %v", page, err)
+	}
+}
+
+// A subscription's inbox is also owned by the Identity the Session authority recorded the Session as
+// executing as, so the Sandbox's runner keeps it once it runs as that Identity.
+func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *testing.T) {
+	server := newServer(t)
+	identity := &identitypb.Identity{Name: "test-agent", Uid: "test-agent-uid"}
+	server.openings.placements[testSession].Identity = identity
+	response, err := server.client.CreateSubscription(bearing(t, sandboxToken), createRequest("identity"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := func(uid string) []store.Inbox {
+		t.Helper()
+		inboxes, err := server.store.ListInboxes(t.Context(), store.IdentityOwner{Identity: model.Identity{Name: identity.Name, UID: uid}, SandboxUID: sandboxUID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return inboxes
+	}
+	if inboxes := owned(identity.Uid); len(inboxes) != 1 || inboxes[0].ID.String() != response.GetSubscription().GetInboxId() {
+		t.Fatalf("the Session's Identity owns %v, want the subscription's inbox", inboxes)
+	}
+	if inboxes := owned("test-successor-uid"); len(inboxes) != 0 {
+		t.Fatalf("a same-named successor Identity owns %v", inboxes)
 	}
 }

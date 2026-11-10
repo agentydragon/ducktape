@@ -58,24 +58,29 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 	if !slices.Contains(sessions, body.SessionID) {
 		return store.Subscription{}, errNoSession
 	}
+	var access *store.GitHubAccessKey
 	switch source := body.Source.(type) {
 	case model.ActionsSource:
 		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence, ownerUID); err != nil {
 			return store.Subscription{}, err
 		}
-		return s.store.Subscribe(ctx, owner, body, nil, ownerUID)
 	case model.GitHubSource:
 		if s.github == nil {
 			return store.Subscription{}, errGitHubDisabled
 		}
-		access, err := s.github.Authorize(ctx, source)
+		authorized, err := s.github.Authorize(ctx, source)
 		if err != nil {
 			return store.Subscription{}, err
 		}
-		return s.store.Subscribe(ctx, owner, body, &access, ownerUID)
+		access = &authorized
 	default:
 		return store.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
 	}
+	subscription, err := s.store.Subscribe(ctx, owner, body, access, ownerUID)
+	if err != nil {
+		return store.Subscription{}, err
+	}
+	return subscription, s.establishIdentity(ctx, session.GetSession(), body.DestinationRef, body.SessionID)
 }
 
 // destination resolves the Sandbox the reference names to the exact incarnation, which must run as the owner. A

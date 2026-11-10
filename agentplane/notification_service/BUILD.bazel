@@ -146,6 +146,7 @@ go_library(
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/listener",
+        "//agentplane/workload_identity/resolver",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",

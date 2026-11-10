@@ -87,6 +87,8 @@ It scopes existing Sessions and existing environments; it does not create enviro
   require the Sandbox to still name that exact Identity incarnation, or none for a Session recorded with none;
   otherwise the work fails `execution_identity_changed`, so an Identity changed while the Sandbox was stopped
   strands its Sessions rather than re-attributing them.
+  `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
+  `Session.execution_identity`, the execution ServiceAccount.
 - An Identity caller (a workload SVID naming an Identity, admitted only once the Gateway's optional
   `policy_namespace` is set) is never privileged. Its new `CreateSession` must target a Sandbox whose
   `spec.identity` currently names its exact Identity incarnation (name and UID) and whose managed
