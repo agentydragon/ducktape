@@ -121,6 +121,9 @@ pub struct NamedWriteSiteRow {
     pub offset: u32,
     pub mutator: Option<&'static str>,
     pub conditional: bool,
+    /// The store runs only when a test of this same member finds it
+    /// missing: `intrinsic_members_present` can lift it.
+    pub guarded_by_member: bool,
 }
 
 #[derive(Serialize)]
@@ -1116,6 +1119,7 @@ pub fn tier0_report_indexed(
                     offset: site.offset,
                     mutator: site.mutator,
                     conditional: site.conditional,
+                    guarded_by_member: site.guarded_by_member,
                 })
             })
             .collect(),

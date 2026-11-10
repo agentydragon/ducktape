@@ -258,3 +258,33 @@ const table = { key: 'a' }; function rename(t) { t.key = 'b'; }
 rename(table);
 const label = table.key;
 console.log(label);
+### commutes same: a read of a member the host defines, with a polyfill guarded by a test of it
+{"intrinsic_members_present":["Symbol.iterator","Array.prototype.includes"]}
+if (typeof Symbol.iterator != "symbol") try { Symbol.iterator = Symbol.for("it"); } catch {} Array.prototype.includes || (Array.prototype.includes = function () { return false; }); let state = 0;
+state = 1;
+const read = [Symbol.iterator, Array.prototype.includes];
+console.log(state, typeof read[0], typeof read[1]);
+### commutes differs: a member-present premise that is false
+{"intrinsic_members_present":["Symbol.madeUp"]}
+function fill() { Symbol.madeUp || (Symbol.madeUp = Symbol.for("m")); }
+fill();
+const made = Symbol.madeUp;
+console.log(typeof made);
+### ordered differs: a store of the member that no test of it guards
+{"intrinsic_members_present":["Symbol.madeUp"]}
+function fill() { Symbol.madeUp = Symbol.for("m"); }
+fill();
+const made = Symbol.madeUp;
+console.log(typeof made);
+### ordered differs: a store of the member guarded by a test of another member
+{"intrinsic_members_present":["Symbol.madeUp"]}
+function fill() { Symbol.otherMadeUp || (Symbol.madeUp = Symbol.for("m")); }
+fill();
+const made = Symbol.madeUp;
+console.log(typeof made);
+### ordered differs: a store of the member where the test finds it present
+{"intrinsic_members_present":["Array.prototype.includes"]}
+function swap() { if (Array.prototype.includes) Array.prototype.includes = 1; }
+swap();
+const read = Array.prototype.includes;
+console.log(typeof read);

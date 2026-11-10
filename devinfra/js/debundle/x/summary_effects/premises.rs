@@ -122,6 +122,12 @@ pub struct Premises {
     /// binding that only ever holds one plain object literal.
     #[serde(default)]
     pub immutable_bindings: Vec<usize>,
+    /// Members the host defines with their standard value, as `G.m` or
+    /// `G.prototype.m`: a store of one that runs only when a test of that
+    /// member finds it missing then never runs. A store that is not guarded
+    /// so stays a write.
+    #[serde(default)]
+    pub intrinsic_members_present: Vec<String>,
     /// Pairs of source units certified to commute.
     #[serde(default)]
     pub commuting: Vec<(usize, usize)>,

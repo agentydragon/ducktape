@@ -157,7 +157,15 @@ pub struct NamedWriteSite {
     pub offset: u32,
     pub mutator: Option<&'static str>,
     pub conditional: bool,
+    /// The store is in code that runs only when a test of this same member
+    /// finds it missing: `G.m || (G.m = …)`, `G.m ??= …`, `if (!G.m) …`,
+    /// `typeof G.m == "undefined" && …`, `typeof G.m != "symbol"` for a
+    /// member of `Symbol` and `!= "function"` for one of another global.
+    pub guarded_by_member: bool,
 }
+
+/// A member of a global's value (`prototype` false) or of its `prototype`.
+type Member = (String, bool, String);
 
 #[derive(Default, Clone)]
 pub struct Census {
@@ -260,6 +268,30 @@ impl Census {
                 && written(writes)
         });
         !self.all && !named && !(self.escaped(global) && written(&self.unfollowed_prototype_stores))
+    }
+
+    /// Takes the host to define `member` (`G.m` or `G.prototype.m`): the
+    /// stores of it that run only when a test finds it missing then never
+    /// run. If every store of it is one, it counts as unwritten.
+    pub fn assume_present(&mut self, member: &str) {
+        let (global, prototype, name) = match member.split('.').collect::<Vec<_>>().as_slice() {
+            [global, name] => (*global, false, *name),
+            [global, "prototype", name] => (*global, true, *name),
+            _ => return,
+        };
+        let stores = self.named_write_sites.iter().filter(|site| {
+            site.global == global && site.prototype == prototype && site.member == name
+        });
+        if stores.clone().all(|site| site.guarded_by_member) {
+            let side = if prototype {
+                &mut self.prototype_written
+            } else {
+                &mut self.written
+            };
+            if let Some(writes) = side.get_mut(global) {
+                writes.props.remove(name);
+            }
+        }
     }
 
     /// Why a use of the global is not known to be untouched.
@@ -1019,6 +1051,8 @@ struct Visitor<'a> {
     /// Inside a branch, the right of a short-circuit or a conditional
     /// assignment.
     conditional: bool,
+    /// Members a test around the code being visited found missing.
+    missing: Vec<Member>,
 }
 
 fn span_key(span: Span) -> (u32, u32) {
@@ -1089,6 +1123,76 @@ impl Visitor<'_> {
         side.entry(global).or_default()
     }
 
+    /// `G.m` or `G.prototype.m` for one global `G`.
+    fn member(&self, expr: &Expr) -> Option<Member> {
+        let Expr::Member(member) = strip(expr) else {
+            return None;
+        };
+        let name = key(&member.prop, self.flow.unresolved, &self.flow.keys)?;
+        match self.flow.taint(&member.obj).as_slice() {
+            [Intrinsic::Object(global)] => Some((global.clone(), false, name)),
+            [Intrinsic::Prototype(global)] => Some((global.clone(), true, name)),
+            _ => None,
+        }
+    }
+
+    /// The member `test` finds missing when it is true.
+    fn missing_when_true(&self, test: &Expr) -> Option<Member> {
+        match strip(test) {
+            Expr::Unary(unary) if unary.op == UnaryOp::Bang => self.member(&unary.arg),
+            Expr::Bin(binary) => {
+                let (equal, differs) = (
+                    matches!(binary.op, BinaryOp::EqEq | BinaryOp::EqEqEq),
+                    matches!(binary.op, BinaryOp::NotEq | BinaryOp::NotEqEq),
+                );
+                let string = |expr: &Expr| match strip(expr) {
+                    Expr::Lit(Lit::Str(value)) => Some(js_ast::str_value(value)),
+                    _ => None,
+                };
+                let absent = |expr: &Expr| match strip(expr) {
+                    Expr::Lit(Lit::Null(_)) => true,
+                    Expr::Ident(ident) => {
+                        ident.ctxt == self.flow.unresolved && &*ident.sym == "undefined"
+                    }
+                    Expr::Unary(unary) => {
+                        unary.op == UnaryOp::Void && matches!(&*unary.arg, Expr::Lit(_))
+                    }
+                    _ => false,
+                };
+                // `typeof G.m == "undefined"`, `typeof G.m != "symbol"`.
+                if let Expr::Unary(unary) = strip(&binary.left)
+                    && unary.op == UnaryOp::TypeOf
+                    && let Some(kind) = string(&binary.right)
+                {
+                    let member = self.member(&unary.arg)?;
+                    let standard = if member.0 == "Symbol" {
+                        "symbol"
+                    } else {
+                        "function"
+                    };
+                    let finds_missing =
+                        (equal && kind == "undefined") || (differs && kind == standard);
+                    return finds_missing.then_some(member);
+                }
+                // `G.m == null`, `G.m === undefined`.
+                (equal && absent(&binary.right))
+                    .then(|| self.member(&binary.left))
+                    .flatten()
+            }
+            _ => None,
+        }
+    }
+
+    /// Visits `node` as code that runs only when `member` is missing.
+    fn visit_guarded(&mut self, member: Option<Member>, node: &impl VisitWith<Self>) {
+        let guarded = member.is_some();
+        self.missing.extend(member);
+        node.visit_with(self);
+        if guarded {
+            self.missing.pop();
+        }
+    }
+
     /// Records a write of the whole of `global`, or of its `prototype`,
     /// through `target`.
     fn whole(&mut self, global: &str, target: &Expr, kind: WholeWrite) {
@@ -1138,6 +1242,7 @@ impl Visitor<'_> {
                     self.writes(global.clone(), prototype)
                         .props
                         .insert(name.clone());
+                    let member = (global.clone(), prototype, name.clone());
                     self.census.named_write_sites.push(NamedWriteSite {
                         global: global.clone(),
                         prototype,
@@ -1146,6 +1251,7 @@ impl Visitor<'_> {
                         offset: target.span().lo.0,
                         mutator: self.mutator,
                         conditional: self.conditional,
+                        guarded_by_member: taint.len() == 1 && self.missing.contains(&member),
                     });
                 }
                 (Intrinsic::Object(global), None) => {
@@ -1318,6 +1424,16 @@ impl Visit for Visitor<'_> {
             assign.op,
             AssignOp::OrAssign | AssignOp::AndAssign | AssignOp::NullishAssign
         );
+        // `G.m ||= v` stores only when `G.m` is missing.
+        let own = match (&assign.op, &assign.left) {
+            (
+                AssignOp::OrAssign | AssignOp::NullishAssign,
+                AssignTarget::Simple(SimpleAssignTarget::Member(member)),
+            ) => self.member(&Expr::Member(member.clone())),
+            _ => None,
+        };
+        let guarded = own.is_some();
+        self.missing.extend(own);
         match &assign.left {
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
                 self.store(&member.obj, &member.prop);
@@ -1331,6 +1447,9 @@ impl Visit for Visitor<'_> {
                 }
             }
             _ => {}
+        }
+        if guarded {
+            self.missing.pop();
         }
         self.conditional = outer;
         assign.visit_children_with(self);
@@ -1404,8 +1523,15 @@ impl Visit for Visitor<'_> {
             }
             BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
                 binary.left.visit_with(self);
+                // The right runs when `G.m` on the left is missing, or
+                // when a test on the left finds it so.
+                let missing = if binary.op == BinaryOp::LogicalAnd {
+                    self.missing_when_true(&binary.left)
+                } else {
+                    self.member(&binary.left)
+                };
                 let outer = std::mem::replace(&mut self.conditional, true);
-                binary.right.visit_with(self);
+                self.visit_guarded(missing, &binary.right);
                 self.conditional = outer;
                 return;
             }
@@ -1418,8 +1544,8 @@ impl Visit for Visitor<'_> {
         self.consume(&cond.test);
         cond.test.visit_with(self);
         let outer = std::mem::replace(&mut self.conditional, true);
-        cond.cons.visit_with(self);
-        cond.alt.visit_with(self);
+        self.visit_guarded(self.missing_when_true(&cond.test), &cond.cons);
+        self.visit_guarded(self.member(&cond.test), &cond.alt);
         self.conditional = outer;
     }
 
@@ -1427,8 +1553,8 @@ impl Visit for Visitor<'_> {
         self.consume(&statement.test);
         statement.test.visit_with(self);
         let outer = std::mem::replace(&mut self.conditional, true);
-        statement.cons.visit_with(self);
-        statement.alt.visit_with(self);
+        self.visit_guarded(self.missing_when_true(&statement.test), &statement.cons);
+        self.visit_guarded(self.member(&statement.test), &statement.alt);
         self.conditional = outer;
     }
 
@@ -1552,6 +1678,7 @@ pub fn census(
         exported: Vec::new(),
         mutator: None,
         conditional: false,
+        missing: Vec::new(),
     };
     module.visit_with(&mut visitor);
     let unused = visitor

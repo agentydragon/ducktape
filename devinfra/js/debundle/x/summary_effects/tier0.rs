@@ -2858,6 +2858,9 @@ pub fn analyze_indexed(
         // A write by any chunk of the program counts.
         census.merge(program.census.clone());
     }
+    for member in &options.premises.intrinsic_members_present {
+        census.assume_present(member);
+    }
     // A literal that is not exported and that no statement of the chunk
     // mentions other than to read a named member is never held by anything
     // but its binding: no code can change it. Nor can the uses of the whole
