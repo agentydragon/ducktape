@@ -1,1687 +1,302 @@
 {
   "repository": "https://github.com/agentydragon/ducktape",
-  "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
-  "prior_report_branch_commit": "a7aba03c0c745de172872fda1393303cbd55dd70",
-  "window_utc": ["2026-10-30T22:10:00Z", "2026-11-01T21:45:00Z"],
-  "collected_at_utc": "2026-11-01T22:06:21.333266+00:00",
-  "tracker": {
-    "method": "GetTargetStats and paginated GetTargetFlakeSamples via bbapi with dynamic duration bounds; canonical repo; all recorded branches; target tracking selectively excludes PR runs",
-    "stats": [
-      {
-        "label": "//agentplane/system_tests/suites:test_vm",
-        "total": 45,
-        "failed": 5,
-        "likely_flaky": 4
-      },
-      {
-        "label": "//agentplane/app:test_bridge",
-        "total": 25,
-        "failed": 2,
-        "likely_flaky": 2
-      },
-      {
-        "label": "//agentplane/app:test_thread_window_browser",
-        "total": 25,
-        "failed": 2,
-        "likely_flaky": 2
-      },
-      {
-        "label": "//agentplane/app:test_thread_browser",
-        "total": 26,
-        "failed": 1,
-        "likely_flaky": 1
-      }
-    ],
-    "sample_counts": {
-      "//agentplane/system_tests/suites:test_vm": 4,
-      "//agentplane/app:test_bridge": 2,
-      "//agentplane/app:test_thread_window_browser": 2,
-      "//agentplane/app:test_thread_browser": 1
+  "source_devel_commit": "17ed98e8ea69787689c908a3ed49749b6ee7e554",
+  "window_utc": ["2026-11-03T00:00:00Z", "2026-11-10T23:13:00Z"],
+  "collected_at_utc": "2026-11-10T23:15:00Z",
+  "sampling_design": "Eight-day devel-filtered VM stats and branch-unverified target history, plus selected #15493 PR attempts. No repository-wide PR job census or complete fresh physical denominator.",
+  "vm_target_tracking": {
+    "target": "//agentplane/system_tests/suites:test_vm",
+    "source": "bbapi target stats --branch devel and paginated target history --count 0; exact canonical repository, since 2026-11-03; stats until 2026-11-11 but data collected by 23:04 UTC on 2026-11-10. Selected history invocation metadata says BRANCH_NAME=devel; branch is not encoded in each history row.",
+    "stats_api": {
+      "total_runs": 98,
+      "failed_runs": 28,
+      "likely_flaky_runs": 8,
+      "note": "GetTargetStats API aggregate. Its 98 runs are not equated with the 917 history rows or a verified fresh physical execution denominator."
     },
-    "sample_pagination_terminal": {
-      "//agentplane/system_tests/suites:test_vm": true,
-      "//agentplane/app:test_bridge": true,
-      "//agentplane/app:test_thread_window_browser": true,
-      "//agentplane/app:test_thread_browser": true
-    },
-    "collection_provenance": {
-      "window_utc": ["2026-10-30T22:10:00+00:00", "2026-11-01T21:45:00+00:00"],
-      "repo": "https://github.com/agentydragon/ducktape",
-      "calls": [
-        {
-          "name": "target-stats-exact.json",
-          "request_started_utc": "2026-11-01T21:51:45.027465+00:00",
-          "request_finished_utc": "2026-11-01T21:51:45.264682+00:00",
-          "bytes": 917
-        },
-        {
-          "name": "flakes-exact-0.json",
-          "request_started_utc": "2026-11-01T21:51:45.264889+00:00",
-          "request_finished_utc": "2026-11-01T21:51:46.090426+00:00",
-          "bytes": 93746
-        },
-        {
-          "name": "flakes-exact-1.json",
-          "request_started_utc": "2026-11-01T21:51:46.090631+00:00",
-          "request_finished_utc": "2026-11-01T21:51:46.781604+00:00",
-          "bytes": 26415
-        },
-        {
-          "name": "flakes-exact-2.json",
-          "request_started_utc": "2026-11-01T21:51:46.781867+00:00",
-          "request_finished_utc": "2026-11-01T21:51:47.323849+00:00",
-          "bytes": 32289
-        },
-        {
-          "name": "flakes-exact-3.json",
-          "request_started_utc": "2026-11-01T21:51:47.324012+00:00",
-          "request_finished_utc": "2026-11-01T21:51:47.795074+00:00",
-          "bytes": 11232
-        }
-      ]
-    }
-  },
-  "actions_job_attempt_subset": {
-    "window_utc": ["2026-11-01T02:30:00Z", "2026-11-01T21:45:00Z"],
-    "collected_at_utc": "2026-11-01T21:59:14Z",
-    "unit": "exact named GitHub Actions job attempts created in the subset window, grouped by parent workflow event; cancellations excluded from conclusive success/failure denominator",
-    "name": "bazel-ci / Test & Build",
-    "groups": {
-      "devel_push": {
-        "attempts": 102,
-        "conclusions": {
-          "success": 80,
-          "cancelled": 20,
-          "failure": 2
-        }
-      },
-      "pull_request": {
-        "attempts": 317,
-        "conclusions": {
-          "success": 159,
-          "failure": 64,
-          "cancelled": 94
-        }
-      },
-      "other_events": {
-        "attempts": 7,
-        "conclusions": {
-          "cancelled": 5,
-          "failure": 1,
-          "success": 1
-        }
-      }
-    },
-    "excluded_other_event_attempts": 7,
-    "note": "A failed job is not a flaky target; PR failures mix source, build, test, infrastructure and runner errors. Active runs without a created named job are outside these counts."
-  },
-  "all_branch_target_history": {
-    "//agentplane/system_tests/suites:test_vm": {
+    "history": {
+      "rows": 917,
       "verdicts": {
-        "PASSED": 279,
-        "FAILED": 4,
-        "FAILED_TO_BUILD": 1
+        "PASSED": 889,
+        "FAILED": 13,
+        "FAILED_TO_BUILD": 15
       },
-      "rows": 284,
-      "same_full_sha_pass_after_failure_in_this_query": false,
-      "cache_exposure": "not established for full history; many repeated pass timestamps indicate index reuse",
-      "scope_note": "Focused PR retry is documented separately and was not surfaced by these target-history rows."
+      "by_created_day_utc": {
+        "2026-11-03": {
+          "PASSED": 69,
+          "FAILED": 3,
+          "FAILED_TO_BUILD": 1
+        },
+        "2026-11-04": {
+          "PASSED": 179
+        },
+        "2026-11-05": {
+          "PASSED": 76
+        },
+        "2026-11-06": {
+          "PASSED": 130,
+          "FAILED": 1
+        },
+        "2026-11-07": {
+          "PASSED": 126,
+          "FAILED": 3
+        },
+        "2026-11-08": {
+          "PASSED": 98
+        },
+        "2026-11-09": {
+          "PASSED": 67,
+          "FAILED": 3,
+          "FAILED_TO_BUILD": 13
+        },
+        "2026-11-10": {
+          "PASSED": 144,
+          "FAILED": 3,
+          "FAILED_TO_BUILD": 1
+        }
+      },
+      "earliest_created_at_utc": "2026-11-03T00:31:25.313000Z",
+      "latest_created_at_utc": "2026-11-10T22:46:26.812000Z",
+      "cache_status": "not established for all rows; repeated start times indicate reuse and cannot prove physical exposure",
+      "pagination": "--count 0 requested all pages; no count cap",
+      "pr_15493_invocations_absent": true
     },
-    "//agentplane/app:test_bridge": {
-      "verdicts": {
-        "PASSED": 282,
-        "FAILED": 2
-      },
-      "rows": 284,
-      "same_full_sha_pass_after_failure_in_this_query": false,
-      "cache_exposure": "not established for full history; many repeated pass timestamps indicate index reuse",
-      "scope_note": "Focused PR retry is documented separately and was not surfaced by these target-history rows."
+    "flake_heuristic": {
+      "samples": 8,
+      "sample_invocation_ids": [
+        "c3a9fd9f-e61f-5e11-8d20-4ff9ccf8d81f",
+        "1bee75e5-c6ae-5f5f-9776-d1cd085a8d22",
+        "993090b5-818b-5fd1-a093-892740372ed0",
+        "79acbe48-12c4-579a-a163-3c8ab29771a9",
+        "4789e905-f7c7-5cc3-b41a-796ae236dba4",
+        "ee8b4d09-93de-5b36-bbb6-8aa03c2da3bb",
+        "6c4f5c10-51e1-57bf-b3c4-99f4e67ef006",
+        "0f46c99a-c8cf-50dd-b128-a5ef0328c62d"
+      ],
+      "meaning": "BuildBuddy likely_flaky_runs compares nearby target outcomes; samples are not verified same-SHA recoveries."
     },
-    "//agentplane/app:test_thread_window_browser": {
-      "verdicts": {
-        "PASSED": 282,
-        "FAILED": 2
+    "fresh_comparator": {
+      "invocation_id": "48ba5dfd-30d7-51a2-9702-cb73f8be45c8",
+      "url": "https://app.buildbuddy.io/invocation/48ba5dfd-30d7-51a2-9702-cb73f8be45c8",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
+      "test_summary": {
+        "overall_status": "PASSED",
+        "total_run_count": 1,
+        "cached_runs": 0,
+        "cache_basis": "All matching TestResult events have remote execution strategy; zero cached is an omitted protobuf scalar.",
+        "test_result_statuses": ["PASSED"],
+        "test_result_strategies": ["remote"]
       },
-      "rows": 284,
-      "same_full_sha_pass_after_failure_in_this_query": false,
-      "cache_exposure": "not established for full history; many repeated pass timestamps indicate index reuse",
-      "scope_note": "Focused PR retry is documented separately and was not surfaced by these target-history rows."
+      "test_action_digest": "88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
+      "test_execution_ids": [
+        "/uploads/8df707ee-dc51-46c3-963d-57446163d1b3/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850"
+      ],
+      "tested_sha": "495c724344db7352bed4b6e4ab4f141597ea90be"
     },
-    "//agentplane/app:test_thread_browser": {
-      "verdicts": {
-        "PASSED": 283,
-        "FAILED": 1
-      },
-      "rows": 284,
-      "same_full_sha_pass_after_failure_in_this_query": false,
-      "cache_exposure": "not established for full history; many repeated pass timestamps indicate index reuse",
-      "scope_note": "Focused PR retry is documented separately and was not surfaced by these target-history rows."
-    }
+    "measurement_window_utc": ["2026-11-03T00:00:00Z", "2026-11-10T23:04:00Z"],
+    "branch_provenance_limit": "Devel-filtered GetTargetStats is branch-specific. The 917 history rows lack branch per row; sampled invocation metadata is devel, but the entire history population cannot be called branch-verified mainline."
   },
-  "selected_physical_samples": [
-    {
-      "label": "//agentplane/system_tests/suites:test_vm",
-      "invocation_id": "30ec0a28-e567-55a3-8799-a2ce309fc1f3",
-      "tested_sha": "97f630fd23a5a58d020cfb55548128575ba58914",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-11-01T05:04:14.719Z",
-      "duration_seconds": "635.869s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 1,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/cf36668f-1f79-43b3-8af9-b072b7fe73e1/blobs/d50dc4b23625242f280503ecb4434fa7a6e7f12b319ad5233e359989681116c0/534",
-          "status": {
-            "code": 14,
-            "message": "error pausing VM: Patch \"http://localhost/vm\": dial unix /buildbuddy/remotebuilds/firecracker/2b4a91f7-64bf-4804-8a80-1fced9f82f38/root/run/fc.sock: connect: connection refused"
-          },
-          "exit_code": -2,
-          "started_utc": "2026-11-01T05:04:18.417859Z",
-          "finished_utc": "2026-11-01T05:07:34.956110Z"
-        },
-        {
-          "id": "/uploads/a72962a8-251b-48e3-b273-f2ab86a57fa3/blobs/d50dc4b23625242f280503ecb4434fa7a6e7f12b319ad5233e359989681116c0/534",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-11-01T05:07:37.445175Z",
-          "finished_utc": "2026-11-01T05:18:13.314246Z"
-        }
-      ]
+  "pr_15493": {
+    "url": "https://github.com/agentydragon/ducktape/pull/15493",
+    "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
+    "tested_synthetic_merge_sha": "31568ce99bd545d962e7212c9d43101227e662e8",
+    "github_run_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369",
+    "github_run_id": 42911870369,
+    "github_test_build_job_attempts_at_collection": {
+      "1": "failure",
+      "2": "failure",
+      "3": "failure",
+      "4": "failure"
     },
-    {
-      "label": "//agentplane/system_tests/suites:test_vm",
-      "invocation_id": "dfdf2518-43c2-5cb0-850b-8edbd3bd084f",
-      "tested_sha": "cd40824f42b4a6f7a2a4c1a9f637619c4cb5561a",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-10-31T10:47:07.834Z",
-      "duration_seconds": "655.309s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 1,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/980f1a06-dc70-430b-b771-df58c0d2c6a9/blobs/f2b01097202ea8474f696b36d2de18d2bcfcce63ab9cf4cef017b6a10982ac28/534",
-          "status": {
-            "code": 14,
-            "message": "error pausing VM: Patch \"http://localhost/vm\": dial unix /buildbuddy/remotebuilds/firecracker/e39eb6f3-2667-4810-a4a3-fa9b00522cfd/root/run/fc.sock: connect: connection refused"
-          },
-          "exit_code": -2,
-          "started_utc": "2026-10-31T10:47:10.220445Z",
-          "finished_utc": "2026-10-31T10:50:05.000462Z"
+    "selected_bazel_test_results": [
+      {
+        "invocation_id": "5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
+        "url": "https://app.buildbuddy.io/invocation/5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
+        "test_summary": {
+          "overall_status": "FAILED",
+          "total_run_count": 1,
+          "cached_runs": 0,
+          "cache_basis": "All matching TestResult events have remote execution strategy; zero cached is an omitted protobuf scalar.",
+          "test_result_statuses": ["FAILED"],
+          "test_result_strategies": ["remote"]
         },
-        {
-          "id": "/uploads/605b824c-8891-4609-b943-7d654e1cde96/blobs/f2b01097202ea8474f696b36d2de18d2bcfcce63ab9cf4cef017b6a10982ac28/534",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-10-31T10:50:07.190659Z",
-          "finished_utc": "2026-10-31T11:01:02.500397Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/system_tests/suites:test_vm",
-      "invocation_id": "04ba8a12-f684-5c39-8b15-5a643f4e8a98",
-      "tested_sha": "aca2575f96ecc7625ed11d94eed7bfaef588ae4e",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-10-31T01:26:40.239Z",
-      "duration_seconds": "341.378s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 1,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/98668547-48d7-4487-869b-dd52bc3ab41e/blobs/dce6fd31fe96aa4d9b6ecde00c9914ec762da78013ec041d29ff2f6c07f2d970/534",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-10-31T01:26:30.243871Z",
-          "finished_utc": "2026-10-31T01:32:11.622277Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/system_tests/suites:test_vm",
-      "invocation_id": "ca76018e-1c98-5b86-9b03-ecba43ed672b",
-      "tested_sha": "b13094a1ded74565a8f227cdfc986d4a788758e7",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-10-30T22:41:49.236Z",
-      "duration_seconds": "277.406s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 1,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/500eb56a-2e06-4b85-9246-e0dd885186aa/blobs/a5beef7c3debd50bc93cfc36994fd85f7077c765176bf3a6fa5fc67f1124fbf7/534",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-10-30T22:41:49.863459Z",
-          "finished_utc": "2026-10-30T22:46:27.269667Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/app:test_bridge",
-      "invocation_id": "2367c65d-49d9-57e3-889e-4d20245fd8b0",
-      "tested_sha": "5e3643ef2d2620a5797a1bfc431549b3f4baaaf1",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-11-01T05:00:09.836Z",
-      "duration_seconds": "316.640s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 2,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
+        "test_action_digest": "88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
+        "test_execution_ids": [
+          "/uploads/91cdfab9-e49a-4882-bb1c-5cbc15574f6a/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850"
+        ]
+      },
+      {
+        "invocation_id": "8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
+        "url": "https://app.buildbuddy.io/invocation/8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
+        "test_summary": {
+          "overall_status": "FAILED",
+          "total_run_count": 1,
+          "cached_runs": 0,
+          "cache_basis": "All matching TestResult events have remote execution strategy; zero cached is an omitted protobuf scalar.",
+          "test_result_statuses": ["FAILED"],
+          "test_result_strategies": ["remote"]
         },
-        {
-          "shard": 2,
-          "status": "PASSED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/bc42ef56-cb66-4731-beff-17006711de13/blobs/81516acb16f1628b12eb4cf1f1cad7e9d93a892598fe20fac35e87a2c7bd4100/579",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-11-01T05:00:10.505602Z",
-          "finished_utc": "2026-11-01T05:02:49.405998Z"
+        "test_action_digest": "88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
+        "test_execution_ids": [
+          "/uploads/08a1a264-7ee3-42a6-8b2e-e5f8bb90d146/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850"
+        ]
+      },
+      {
+        "invocation_id": "bcefe708-4e57-5d94-a33c-b33fdae6e31a",
+        "url": "https://app.buildbuddy.io/invocation/bcefe708-4e57-5d94-a33c-b33fdae6e31a",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "configuration_id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf",
+        "test_summary": {
+          "overall_status": "FAILED",
+          "total_run_count": 1,
+          "cached_runs": 0,
+          "cache_basis": "TestResult has remote execution strategy; zero cached is an omitted protobuf scalar.",
+          "test_result_statuses": ["FAILED"],
+          "test_result_strategies": ["remote"],
+          "duration_seconds": 739.222
         },
-        {
-          "id": "/uploads/b22797a3-20dd-48b8-8d4f-c55e5a40b29a/blobs/57509944302d0a11f2807b0c8cea32247aa006ecadc0ae052638ae29cfdbff14/579",
-          "status": {},
-          "exit_code": null,
-          "started_utc": "2026-11-01T05:00:12.933666Z",
-          "finished_utc": "2026-11-01T05:02:50.673765Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/app:test_bridge",
-      "invocation_id": "d9dd1586-bf30-56ec-a897-b8ca18888ee3",
-      "tested_sha": "3032eff1951990f0bd87c1ec81f92856effe7b12",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-11-01T02:21:01.257Z",
-      "duration_seconds": "340.128s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 2,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 2,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/7077c41d-5766-47df-8ac7-253804c591a0/blobs/decf7bed7ee547f5704f807e00a9904884c21aacf568b2cf1874fbd3c197bdb4/579",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-11-01T02:21:02.361274Z",
-          "finished_utc": "2026-11-01T02:24:11.875496Z"
-        },
-        {
-          "id": "/uploads/485f8dcb-c273-49c3-8ca5-163a1940ddb8/blobs/332fb2847ee08d6482563a2e8b0adf456f3832bcd4812e3d75260f1e44d9eb0f/579",
-          "status": {},
-          "exit_code": null,
-          "started_utc": "2026-11-01T02:21:02.979399Z",
-          "finished_utc": "2026-11-01T02:23:33.593931Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/app:test_thread_window_browser",
-      "invocation_id": "418a1037-87c3-5e58-9cd9-25034322c814",
-      "tested_sha": "85d673e5a698c6fb246b49a9dbba277b78ac0f9f",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-10-31T10:07:33.960Z",
-      "duration_seconds": "178.456s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 1,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/9a720c41-9e4c-492f-90c0-8dcb066a2437/blobs/794e0148f4e5672730d9a693c411ea893838a49528166de24f87af10a187ea78/499",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-10-31T10:07:35.086615Z",
-          "finished_utc": "2026-10-31T10:10:33.543092Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/app:test_thread_window_browser",
-      "invocation_id": "af15a737-6679-564c-8031-fbf8aabe4b43",
-      "tested_sha": "a9190914ed7c05f41d51bd2993e8af538732ec54",
-      "branch": "devel",
-      "status": "FAILED",
-      "start_time_utc": "2026-10-31T09:14:48.350Z",
-      "duration_seconds": "165.831s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 1,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 1,
-          "status": "FAILED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_executions": [
-        {
-          "id": "/uploads/ccb7f8a8-d65c-4f33-b142-c52f0493553d/blobs/6818e40c9242dcc6c1aa013c1b4d894cb91119c46fd6abcc809e514915b05d8c/499",
-          "status": {},
-          "exit_code": 1,
-          "started_utc": "2026-10-31T09:14:50.233531Z",
-          "finished_utc": "2026-10-31T09:17:36.064581Z"
-        }
-      ]
-    },
-    {
-      "label": "//agentplane/app:test_thread_browser",
-      "invocation_id": "30ec0a28-e567-55a3-8799-a2ce309fc1f3",
-      "tested_sha": "97f630fd23a5a58d020cfb55548128575ba58914",
-      "status": "FAILED",
-      "start_time_utc": "2026-11-01T05:04:19.737Z",
-      "duration_seconds": "1563.274s",
-      "configuration_ids": [
-        "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
-      ],
-      "total_runs": 16,
-      "total_cached": 0,
-      "shards": [
-        {
-          "shard": 11,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 14,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 3,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 9,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 4,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 12,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 7,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 10,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 8,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 13,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 16,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 1,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 15,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 2,
-          "status": "FAILED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 6,
-          "status": "PASSED",
-          "strategy": "remote"
-        },
-        {
-          "shard": 5,
-          "status": "PASSED",
-          "strategy": "remote"
-        }
-      ],
-      "physical_test_execution_ids": [
-        "/uploads/430b4970-7306-47ed-b57f-1ffcbce6b06c/blobs/d1cf6211c88c198d6b460a83fc9febed3e2f58ae69835bccdcd0b3f6f38b772a/499",
-        "/uploads/aee40d2c-14c9-4e01-8c84-45964801880d/blobs/ea053609ac9567457b6e9c34d0f88cc5c78994d388bd4e10862f096cef3c3c95/499",
-        "/uploads/04d43c26-ffba-4114-8e00-e5feca7cf1a5/blobs/8e4308dac6bf223ae9b6e16f638172523c37bc228cc18a29cbb9e16a8e28a38c/499",
-        "/uploads/f05b12f9-6322-432a-8369-5e9e883cf1e9/blobs/a26d1699f9c4f290bafaff79ee8ded8f7c52c7c8b4681272c7836494d196655d/499",
-        "/uploads/76696c03-ebd9-45a9-bcf8-f441cd79d220/blobs/2f250513ee236583bdd8cfff821ad01023b5fc561a9f8e4bfb257dbbc00ae66e/499",
-        "/uploads/173f3a25-a566-4a14-8961-1f996811ffd6/blobs/2da165c0d4bfa9dffdfead95ea025ce6dcd4b51f7e54bef2ecd0f648382d07c5/499",
-        "/uploads/26f1cd14-82c3-499f-84e3-d852ce0b9bb2/blobs/2a6a0adeed2f32f4e4cdeba532ae39a4fcebf20b083bec5de08afb60835badc2/499",
-        "/uploads/d2635467-4616-4704-b50a-0c7888b20767/blobs/e1f854bf8ed29d5d024694ef0025a599ba088cd6ab9ce19453b8bb5b639f2fa3/499",
-        "/uploads/e96919a3-2f02-432b-b478-9a60df09feb0/blobs/799ca97ddde81e375413839feb8a732bf94ddee9b5457824f04607330a8876dd/499",
-        "/uploads/5cc98904-82b6-4470-aedd-2feaac585ae6/blobs/ed4c31aa790775115cf1810a9dbb6cb2bcdd9e1404afba9223feb4cc72547b38/499",
-        "/uploads/961bc35b-ca51-4fa0-8ce6-ff49370a3665/blobs/84870cc5bb35e10f28e357fbdde3ff32afb20f4d19bb81ff103b9d115607abce/499",
-        "/uploads/97d4dda3-a44f-4803-a9ae-3a52e8388c91/blobs/72d1a0f3ff67f95472e5cd84b3dc222b60e3c0e8e588c371708366c84c50f020/499",
-        "/uploads/62d5e1df-4500-41f3-bfad-77023bc4e70c/blobs/fe4f78c111fdc58ea32225c8b59b84ab448e4cbd0b771d5c5372d06de83b9162/499",
-        "/uploads/2d71f070-69c2-40a7-a3b0-9c2e2e7b86d1/blobs/1966cfcc4de191a611a12182b2d067aa478e35d6fc4568d370bfbeea50778205/499",
-        "/uploads/33e72bcb-b6a3-4af1-9c69-1ac411523e1d/blobs/b746e690384aa4217495ea48284ef67af2436f0b6d0beb443cbbbe8fd09acdfb/499",
-        "/uploads/2a496f6b-15d4-4e96-a34e-76b376d88e97/blobs/3953dbe93bb695a17fb5cbece2785b593446a4dc22f09106a9d93e38f6ac2fe2/499"
-      ]
-    }
-  ],
-  "selected_same_tree_pr_retry": {
-    "selection": "one exact PR-head retry case from the 1 November Actions cohort; selected for a long green gate, not sampled to estimate population flake rate",
-    "pr_association": 13504,
-    "pr_head": "98befe057c978373299f9e8158441c814391460f",
-    "tested_synthetic_merge_tree": "4ef0fbccedc4d09936e631cf8b314e22bf2f696d",
-    "same_test_tree_both_attempts": true,
-    "common_bazel_config": [
-      "--config=rbe",
-      "--config=ci",
-      "--remote_default_exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5"
-    ],
-    "common_configured_targets": 526,
-    "attempt_1": {
-      "job_id": 124969284458,
-      "created_at": "2026-11-01T20:29:51Z",
-      "started_at": "2026-11-01T20:29:53Z",
-      "remote_step": ["2026-11-01T20:30:20Z", "2026-11-01T20:42:43Z"],
-      "completed_at": "2026-11-01T20:42:47Z",
-      "conclusion": "failure",
-      "test_invocation_id": "947804bf-f4df-5382-8197-91d93314cd4c",
-      "test_bes": ["2026-11-01T20:31:04.756Z", "2026-11-01T20:42:41.021Z"],
-      "test_elapsed_s": 696.265,
-      "critical_path_s": 670.61,
-      "action_count": 372,
-      "action_cache_hits": 210,
-      "action_cache_misses": 308,
-      "vm_target": "//agentplane/system_tests/suites:test_vm",
-      "vm_target_status": "FAILED",
-      "vm_total_run_count": 1,
-      "vm_attempt_count": 1,
-      "vm_target_duration_s": 631.638,
-      "vm_execution": ["2026-11-01T20:32:08.727Z", "2026-11-01T20:42:40.366Z"],
-      "vm_process_s": 631.639,
-      "vm_cpu_s": 2467.295,
-      "vm_peak_memory_gb": 7.075,
-      "vm_stack_setup_s": 235.64,
-      "vm_case_s": 361.74,
-      "vm_junit_case_verdict": "PASS; pytest timeout during teardown diagnostics at 600-second test deadline",
-      "guest_ready_max_s": 181.48,
-      "vm_executor_worker": "fc4e1484-b459-4c7a-859b-776b52327720",
-      "physical_test_runner": {
-        "execution_id": "/uploads/e72af944-87f5-4536-94aa-3db32fd1c916/blobs/5de8ecc7991f27cb74d441b24f35e99d604fda8e75b733807b13b8a4b668e64c/534",
-        "action_digest": {
-          "hash": "5de8ecc7991f27cb74d441b24f35e99d604fda8e75b733807b13b8a4b668e64c",
-          "sizeBytes": "534"
-        },
-        "worker": "fc4e1484-b459-4c7a-859b-776b52327720",
-        "started_at": "2026-11-01T20:32:08.727235Z",
-        "ended_at": "2026-11-01T20:42:40.365851Z"
-      }
-    },
-    "failed_job_end_to_rerun_creation_s": 569,
-    "attempt_2": {
-      "job_id": 124975049906,
-      "created_at": "2026-11-01T20:52:16Z",
-      "started_at": "2026-11-01T20:52:18Z",
-      "remote_step": ["2026-11-01T20:52:46Z", "2026-11-01T20:59:32Z"],
-      "completed_at": "2026-11-01T20:59:35Z",
-      "conclusion": "success",
-      "test_invocation_id": "dadb26c4-952c-5f8d-af1d-5f5337b2612e",
-      "test_bes": ["2026-11-01T20:53:28.446Z", "2026-11-01T20:59:27.124Z"],
-      "test_elapsed_s": 358.678,
-      "critical_path_s": 355.89,
-      "action_count": 2,
-      "action_cache_hits": 1,
-      "action_cache_misses": 2,
-      "vm_target": "//agentplane/system_tests/suites:test_vm",
-      "vm_target_status": "PASSED",
-      "vm_total_run_count": 1,
-      "vm_attempt_count": 1,
-      "vm_target_duration_s": 354.098,
-      "vm_execution": ["2026-11-01T20:53:32.418Z", "2026-11-01T20:59:26.516Z"],
-      "vm_process_s": 354.098,
-      "vm_cpu_s": 1191.628,
-      "vm_peak_memory_gb": 7.187,
-      "vm_executor_worker": "d3b4482f-52e5-433b-ac34-6657010e7753",
-      "physical_test_runner": {
-        "execution_id": "/uploads/2a94e3ba-97e8-4106-a4fd-ba6d0505a0e8/blobs/5de8ecc7991f27cb74d441b24f35e99d604fda8e75b733807b13b8a4b668e64c/534",
-        "action_digest": {
-          "hash": "5de8ecc7991f27cb74d441b24f35e99d604fda8e75b733807b13b8a4b668e64c",
-          "sizeBytes": "534"
-        },
-        "worker": "d3b4482f-52e5-433b-ac34-6657010e7753",
-        "started_at": "2026-11-01T20:53:32.418254Z",
-        "ended_at": "2026-11-01T20:59:26.516267Z"
-      }
-    },
-    "conclusion": "One selected same-tested-tree noncached VM target failed then passed on another fresh worker. First case assertions passed but aggregate pytest 600-second deadline interrupted teardown. Action-cache exposure changed; difference in physical duration is not a causal code-saving estimate. Rerun initiator cannot be distinguished from outer actor metadata.",
-    "source": "../latency-mechanisms/pr-case-followup.json and named raw invocation/execution JSON"
-  },
-  "vm_failure_clusters": [
-    {
-      "invocation_id": "30ec0a28-e567-55a3-8799-a2ce309fc1f3",
-      "first_physical_attempt": "Firecracker pause fc.sock refused, code 14, 196.5 s",
-      "test_attempt": "pytest 600 s deadline during active sandbox cleanup; stack setup 238.1 s and concurrent scenario 361.7 s; no idle wedge established",
-      "trace": "test-spans.jsonl"
-    },
-    {
-      "invocation_id": "dfdf2518-43c2-5cb0-850b-8edbd3bd084f",
-      "first_physical_attempt": "Firecracker pause fc.sock refused, code 14, 174.8 s",
-      "test_attempt": "OOM scenario memory-before command waited to its own 300.0 s bound; other scenarios completed in 170.1 s; later pytest 600 s deadline",
-      "trace": "test-spans.jsonl",
-      "native_journal": {
-        "session_id": "01502443-a8c6-410e-b7b2-d95db22a9aa5",
-        "sandbox_uid": "f71eac2e-a691-4332-8020-fe9568d77fca",
-        "admitted_at": "2026-10-31T10:54:26.566488333Z",
-        "last_cursor": 1,
-        "last_model_activity_at": null,
-        "launch_outcome": "LAUNCH_OUTCOME_PENDING",
-        "observed_events": [
-          "commandAdmitted submitInput: Run the requested shell command and report its result."
-        ],
-        "missing_boundary": "no model activity, tool call, native tool execution or response event in retained session journal before 300-second command timeout",
-        "retained_files": [
-          "oom-01502443-a8c6-410e-b7b2-d95db22a9aa5.json",
-          "oom-01502443-a8c6-410e-b7b2-d95db22a9aa5.jsonl"
+        "test_action_digest": "a77ce2e6a7c8d5c4c3f20171fb79146a21e9519aeaef936250d2409c533ae6b6/1850",
+        "test_execution_ids": [
+          "/uploads/71eb7cfc-0d8d-468c-9f79-d362e507824e/blobs/a77ce2e6a7c8d5c4c3f20171fb79146a21e9519aeaef936250d2409c533ae6b6/1850"
         ]
       }
+    ],
+    "attempt_1": {
+      "buildbuddy_child": "5d2cc998-8c9b-5d7f-8b67-9509593f00ae",
+      "verdict": "one fresh remote FAILED VM test, 724.016 s",
+      "first_missing_progress": "Codex setup accepted VM2 input at 22:19:10 UTC and app-server launch completed 22:19:11.506; both CRI and independent serial consoles end around 22:19:11.5, guest monotonic about 86 s; no harness completion or failure event before the 300 s turn wait ends at 22:24:10.",
+      "later_effects": "pytest outer timeout at 600 s and sandbox teardown leak; K3s API timeout warnings are not established as the first cause.",
+      "limits": "QEMU was reported running with vCPUs HLT later; available evidence does not distinguish guest kernel timer, userspace wedge, or telemetry loss.",
+      "retained_artifacts": [
+        "test.log",
+        "test-spans.jsonl",
+        "process-spans.jsonl",
+        "VM2 CRI console",
+        "VM2 QEMU serial",
+        "VM2 QEMU status",
+        "session metadata"
+      ]
     },
-    {
-      "invocation_id": "04ba8a12-f684-5c39-8b15-5a643f4e8a98",
-      "test_attempt": "central sampler setup interrupted; first executor response unknown; unsettled model exchange is teardown consequence",
-      "trace": "vm-phases.jsonl"
-    },
-    {
-      "invocation_id": "ca76018e-1c98-5b86-9b03-ecba43ed672b",
-      "test_attempt": "guest shutdown marker missing for one launcher during teardown; no scenario assertion failed",
-      "trace": "vm-phases.jsonl"
-    }
-  ],
-  "other_failure_clusters": [
-    {
-      "label": "//agentplane/app:test_thread_window_browser",
-      "invocation_ids": [
-        "418a1037-87c3-5e58-9cd9-25034322c814",
-        "af15a737-6679-564c-8031-fbf8aabe4b43"
+    "attempt_2": {
+      "buildbuddy_child": "d1131cb0-8e38-509f-8b02-eaca85afba23",
+      "test_verdict": "none: RBE execution failed before a TestResult",
+      "physical_executions": [
+        {
+          "id": "/uploads/14d90697-50ab-461b-97a0-b4d9b3b943e8/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
+          "worker": "84f34bc5-705b-490d-af75-f679643a2514",
+          "host": "gke-prod-hs6in-spot-executor-c3-2b496e5e-5dxg",
+          "duration_seconds_approx": 188.2,
+          "observation": "guest Linux 5.15.0 general-protection fault at update_blocked_averages+0x273, kernel panic, Firecracker exit; subsequent pause failed with fc.sock connection refused",
+          "vm_log_tail_cas": "9a722578078f334356e2e651f8ca4ae94bba617d8d21d01353999c265cb608c0/46101"
+        },
+        {
+          "id": "/uploads/4292ad4f-aac6-42e2-9ce1-862f73007f83/blobs/88a417ef177c880cea19732b91e1b66506cf12f00c5ae5ca9fe1f2704164a2b6/1850",
+          "worker": "797ca2c7-42d7-4430-8035-2a51e1800e76",
+          "host": "gke-prod-dtib7-spot-executor-c2-66369769-k94w",
+          "duration_seconds_approx": 0.5,
+          "observation": "snapshot/load failed: Could not set TSC scaling within the snapshot: Invalid argument (os error 22)"
+        }
       ],
-      "assertion": "after a held older page lands while reader is back, new tail append cursor 334 not observed in projection within 30 s; same test and assertion on two different source SHAs",
-      "trace_observation": "both failed traces show DOM projection 264 persisting through 30-second wait; no appended tail item; live entity-shape GET has no retained response body; no History.record or per-cursor Electric log",
-      "comparable_physical_pass": {
-        "invocation_id": "0e35611e-ea00-5397-845c-3ca20ee4a2d2",
-        "source_sha": "01bc3bb7288da1fb5832d862b599c137f2ed9bf5",
-        "target": "PASSED",
-        "physical_TestRunner_execution_id": "/uploads/718e5672-1405-4973-a2cc-347f0a764406/blobs/3b54100aa03b88e6e2156667627f7924db74d1fdd87abb8dbb4ba8fb0c648fd2/499",
-        "trace_observation": "DOM projection 264 then 334",
-        "same_source_as_failures": false
+      "root_cause_limits": "The first physical attempt cold-booted and did not create the failing snapshot. The failed snapshot creator/CPU/TSC values are not exposed; C3-to-C2 across these attempts does not prove cross-model reuse caused the restore failure.",
+      "related_issue": "https://github.com/agentydragon/ducktape/issues/14952",
+      "rejected_policy_candidate": {
+        "proposal": "allow-remote-snapshots=false plus snapshot-read-policy=local-only for VM test",
+        "reason": "BuildBuddy shouldSaveLocalSnapshot returns false for a restored local snapshot when remote snapshots are disabled, before the save policy is considered; changed k3s fingerprints would not refresh the local snapshot.",
+        "source_note": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/debug/k3s_persistence.md#L230-L236",
+        "status": "rejected; no provider policy changed"
       },
-      "first_missing_boundary": "between ReplicationSource.append and rendered view revision; copy to History, Electric shape, client apply not individually observable in retained traces",
-      "next_discriminator": "log copied cursor at History.record, durable view_state revision, Electric shape cursor and browser received/applied cursor on timeout"
+      "snapshot_tracking_issue": "https://github.com/agentydragon/ducktape/issues/15581"
     },
-    {
-      "label": "//agentplane/app:test_bridge",
-      "invocation_id": "2367c65d-49d9-57e3-889e-4d20245fd8b0",
-      "assertion": "codex shutdown recovery case; runner process exited 1, then gateway returned UNAVAILABLE another replica holds runner connection; owner/epoch change reason unknown"
+    "attempt_3": {
+      "buildbuddy_child": "8dd3217e-38a2-5b1c-a46f-fa0b55149e12",
+      "verdict": "one fresh remote FAILED VM test, 451.645 s",
+      "first_failure": "VM1 guest supervision fixture subtest reap_retries_property_deadline_on_connected_manager failed at final assertSystemdProofEmpty / ReadSystemdUnit with context deadline exceeded; native unit had exited status 23.",
+      "rerun": "same fixture reran later in the test and passed, but check_boot retained the earlier failure marker and correctly rejected boot evidence",
+      "context_limit": "The 10 s readCtx spans prior retries, WriteLine, Wait, stream joins and final proof read. Retained logs do not timestamp Wait completion or final read entry; it is unknown whether context was already ended before that read or the D-Bus call consumed the remaining budget.",
+      "source": "https://github.com/agentydragon/ducktape/blob/31568ce99bd545d962e7212c9d43101227e662e8/agentplane/env/runtime/supervision/systemd_kernel_test.go#L547-L613",
+      "diagnostic_pr": "https://github.com/agentydragon/ducktape/pull/15571"
     },
-    {
-      "label": "//agentplane/app:test_bridge",
-      "invocation_id": "d9dd1586-bf30-56ec-a897-b8ca18888ee3",
-      "assertion": "after History ingress fence released Runner last_cursor advanced 51 to 52; test required exact unchanged cursor, likely background progress but event identity unknown"
+    "fixture_timeout_change": "PR head changed central_sampler turn_timeout_seconds 60 to 240 only inside if central_sampler; local-model-vm renders central_sampler=false. The VM driver's independent TURN_SECONDS remains 300; this PR setting did not cause or prolong these VM waits.",
+    "fixture_timeout_sources": {
+      "central_sampler_conditional": "https://github.com/agentydragon/ducktape/blob/a065ad40c83321f6a15612c48ca221422695ce10/agentplane/system_tests/deployment/fixture_chart.py#L195-L225",
+      "vm_fixture_variant": "https://github.com/agentydragon/ducktape/blob/a065ad40c83321f6a15612c48ca221422695ce10/agentplane/system_tests/deployment/render_fixture.py#L90-L100",
+      "driver_turn_bound": "https://github.com/agentydragon/ducktape/blob/a065ad40c83321f6a15612c48ca221422695ce10/agentplane/system_tests/driver/agent.py#L38"
     },
-    {
-      "label": "//agentplane/app:test_thread_browser",
-      "invocation_id": "30ec0a28-e567-55a3-8799-a2ce309fc1f3",
-      "assertion": "History geometry did not admit current committed measurements in phone case; separate visual investigation needed"
-    }
-  ],
-  "merged_pr_census": {
-    "repository": "https://github.com/agentydragon/ducktape",
-    "window_utc": ["2026-10-30T22:10:00Z", "2026-11-01T21:45:00Z"],
-    "method": "complete UTC-day merged-PR partitions; current exact-head CheckRun rollups compared with mergedAt; latest visible matching attempt per named gate",
-    "historical_attempts_complete": false,
-    "historical_attempt_uncertainty": "statusCheckRollup exposes current latest-visible checks, not complete historical attempts; later reruns can hide the state that was visible at merge",
-    "partitions": [
-      {
-        "day_utc": "2026-10-30",
-        "reported": 210,
-        "returned": 210,
-        "complete": true
+    "measurement_window_utc": ["2026-11-10T22:10:23Z", "2026-11-10T23:13:00Z"],
+    "attempt_4": {
+      "buildbuddy_child": "bcefe708-4e57-5d94-a33c-b33fdae6e31a",
+      "github_job": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130188140965",
+      "verdict": "one fresh remote FAILED VM test, 739.222 s; pytest-timeout >600 s",
+      "physical_execution_id": "/uploads/71eb7cfc-0d8d-468c-9f79-d362e507824e/blobs/a77ce2e6a7c8d5c4c3f20171fb79146a21e9519aeaef936250d2409c533ae6b6/1850",
+      "worker": "6f085186-527d-455f-9e42-57fa874bba7c",
+      "host": "sjc-prod-r2208m03vm5ppr",
+      "persistence": "cold; firecracker.VMMetadata.lastExecutedTask=null and persistence-suite.json outcome=cold",
+      "first_failure": "JUnit test start 23:00:52.406424 UTC; pytest 600 s deadline about 23:10:52.406. Test failed with Timeout (>600.0s) from pytest-timeout, not a scenario assertion.",
+      "setup": "system_test.stack.setup 23:00:54.227\u201323:06:17.756 =323.5 s; k3s bootstrap 36.8 s; serial image imports include KubeVirt virt-launcher 46.6 s and VM guest root 49.1 s.",
+      "scenario": "system_test.case 23:06:21.257\u201323:11:25.398 =304.1 s; three concurrent scenarios. At pytest deadline VM1 final turn.wait was active (23:10:45.205\u201323:10:52.975), VM2 and OOM sandbox delete had been accepted (23:10:18.130 and 23:10:36.847) but lacked deleted events. VM1 sandbox cleanup started 23:10:53.166 and recorded deleted 23:11:25.389.",
+      "mechanism_limit": "The aggregate 600 s budget was exhausted with active setup and scenarios. VM2/OOM cleanup spans ended around the pytest deadline without deleted events; teardown Kubernetes events show their VM shutdown/deletion continuing. These data do not prove a deletion wedge or explain why setup/import took these durations. No timeout increase is justified by matched timing evidence yet.",
+      "action_digest_note": "Different test-action digest from attempts 1\u20133 despite the same tested synthetic merge SHA; do not treat it as a same-action execution.",
+      "artifact_cas": {
+        "test_log": "a1c5a7e4a28b52f31cd7ebd0975ddd33c385bc2d0dee93cf0d4453094aaca916/59658",
+        "junit_xml": "e0d07ac70d8727a9d8f0d835b3bff9814918f5c7e5af57cf2e304b52aa415fdd/3037",
+        "test_spans": "e653fcf2e71e483636a1229c381d8aa99760b8e8f164ddd638acd64e275c6f47/93179",
+        "persistence_receipt": "ccd5b6683f6afeff8ebee1261e40bb12220e95504b35e6c5a491c10f29e19c27/1683"
       },
-      {
-        "day_utc": "2026-10-31",
-        "reported": 208,
-        "returned": 208,
-        "complete": true
+      "setup_phase_counts": {
+        "image_import_spans": 26,
+        "image_import_span_seconds_sum": 272.4,
+        "image_prune_spans": 8,
+        "image_prune_span_seconds_sum": 3.9,
+        "remove_undeclared_seconds": 0.4,
+        "interpretation": "Import spans are serial with one importer, but overlap other stack setup; their sum is not an additional critical-path duration. Pruning is too small to explain the 600 s deadline."
       },
-      {
-        "day_utc": "2026-11-01",
-        "reported": 127,
-        "returned": 127,
-        "complete": true
-      }
-    ],
-    "returned_total": 545,
-    "window_merged_pr_count": 360,
-    "gate_names": [
-      "bazel-ci / Test & Build",
-      "Pre-commit checks",
-      "Build artifacts + imports check"
-    ],
-    "pr_level_classes": {
-      "all_gates_visible_green_by_merge": 334,
-      "latest_attempt_straddled_merge": 10,
-      "latest_attempt_started_after_merge": 3,
-      "missing_from_current_rollup": 12,
-      "visible_red_by_merge": 1
-    },
-    "gate_level_classes": {
-      "bazel-ci / Test & Build": {
-        "visible_green_by_merge": 334,
-        "latest_attempt_straddled_merge": 9,
-        "latest_attempt_started_after_merge": 3,
-        "missing_from_current_rollup": 12,
-        "visible_red_by_merge": 1,
-        "unclassifiable_current_rollup": 1
-      },
-      "Pre-commit checks": {
-        "visible_green_by_merge": 338,
-        "latest_attempt_started_after_merge": 4,
-        "missing_from_current_rollup": 12,
-        "latest_attempt_straddled_merge": 6
-      },
-      "Build artifacts + imports check": {
-        "visible_green_by_merge": 337,
-        "latest_attempt_straddled_merge": 7,
-        "latest_attempt_started_after_merge": 4,
-        "missing_from_current_rollup": 12
+      "source_assessment": {
+        "stack_importer": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/deployment/stack.py#L461-L527",
+        "stored_blob_dedup": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/baseline.py#L555-L632",
+        "historical_parallel_trial": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/debug/stack_timings.md#L15-L31",
+        "controlled_pruning_pressure_experiment": "https://github.com/agentydragon/ducktape/blob/17ed98e8ea69787689c908a3ed49749b6ee7e554/agentplane/system_tests/k3s/debug/2026_11_02_image_store_pressure.md#L30-L68",
+        "finding": "Existing importer overlaps one serial, blob-deduplicated stream with other setup. A historical concurrent-import trial was slower on a generally slower worker and cannot establish a speedup; controlled image-store pressure evidence supports retaining pruning. No source regression or safe optimization sufficient to avert this attempt is established."
       }
     }
   },
-  "merged_pr_non_green_candidates": [
-    {
-      "number": 13125,
-      "merged_at": "2026-10-30T22:18:57Z",
-      "head_sha": "0eb2b563f40fb6de5bce003fff60c6534ac546f8",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-10-30T22:18:44Z",
-          "completed_at": "2026-10-30T22:22:17Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137232549/job/124342579434"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:20:07Z",
-          "completed_at": "2026-10-30T22:21:09Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137232492/job/124342581941"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:18:40Z",
-          "completed_at": "2026-10-30T22:20:00Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137232374/job/124342582279"
-        }
-      }
-    },
-    {
-      "number": 13123,
-      "merged_at": "2026-10-30T22:19:33Z",
-      "head_sha": "67e8edf24db9a3284211fe6c737e2d884a0133ed",
-      "overall": "latest_attempt_started_after_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-10-30T22:28:33Z",
-          "completed_at": "2026-10-30T22:35:49Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137306956/job/124342820792"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:20:45Z",
-          "completed_at": "2026-10-30T22:21:50Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137306946/job/124342823731"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:22:40Z",
-          "completed_at": "2026-10-30T22:24:41Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137306736/job/124342822008"
-        }
-      }
-    },
-    {
-      "number": 13127,
-      "merged_at": "2026-10-30T22:21:51Z",
-      "head_sha": "e8169507b4fbb790773724b7b41ecc03121e4c6d",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-10-30T22:21:16Z",
-          "completed_at": "2026-10-30T22:36:06Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137229702/job/124342569760"
-        },
-        "Pre-commit checks": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:18:59Z",
-          "completed_at": "2026-10-30T22:20:06Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137229564/job/124342568313"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:22:35Z",
-          "completed_at": "2026-10-30T22:24:18Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137229662/job/124342569483"
-        }
-      }
-    },
-    {
-      "number": 13117,
-      "merged_at": "2026-10-30T22:22:48Z",
-      "head_sha": "4f0ae681adc978e5b0e9d39699b8de88a0161347",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:22:32Z",
-          "completed_at": "2026-10-30T22:33:34Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137230818/job/124342572929"
-        },
-        "Pre-commit checks": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:19:58Z",
-          "completed_at": "2026-10-30T22:21:08Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137230786/job/124342572199"
-        },
-        "Build artifacts + imports check": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-30T22:20:02Z",
-          "completed_at": "2026-10-30T22:21:12Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41137230902/job/124342573284"
-        }
-      }
-    },
-    {
-      "number": 13156,
-      "merged_at": "2026-10-30T23:54:18Z",
-      "head_sha": "e837c622a8049985293fe465973680ea7e5c5e2e",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13178,
-      "merged_at": "2026-10-31T01:03:20Z",
-      "head_sha": "4d03ab7d99b83ef9ee998870a29709353f8f7a48",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:02:23Z",
-          "completed_at": "2026-10-31T01:14:33Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153332781/job/124394573359"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:02:22Z",
-          "completed_at": "2026-10-31T01:03:23Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153332795/job/124394573161"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:02:23Z",
-          "completed_at": "2026-10-31T01:03:46Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153332766/job/124394573115"
-        }
-      }
-    },
-    {
-      "number": 13177,
-      "merged_at": "2026-10-31T01:03:35Z",
-      "head_sha": "14e02d49c57c88626ec95e76845d3015a9429eaa",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-10-31T01:03:37Z",
-          "completed_at": "2026-10-31T01:16:40Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153424759/job/124394860842"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:03:29Z",
-          "completed_at": "2026-10-31T01:04:28Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153424764/job/124394860678"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:03:34Z",
-          "completed_at": "2026-10-31T01:05:00Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153424763/job/124394860610"
-        }
-      }
-    },
-    {
-      "number": 13179,
-      "merged_at": "2026-10-31T01:04:19Z",
-      "head_sha": "014eb99c462d0d7845bb213922e91d7b1d9480be",
-      "overall": "latest_attempt_started_after_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-10-31T01:04:55Z",
-          "completed_at": "2026-10-31T01:15:49Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153485441/job/124395052385"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:04:32Z",
-          "completed_at": "2026-10-31T01:05:37Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153485427/job/124395144236"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:04:55Z",
-          "completed_at": "2026-10-31T01:06:16Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153485406/job/124395244963"
-        }
-      }
-    },
-    {
-      "number": 13181,
-      "merged_at": "2026-10-31T01:23:51Z",
-      "head_sha": "de5aeeee76affc742e0076b0b589f636a4ecf3af",
-      "overall": "visible_red_by_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "visible_red_by_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-10-31T01:09:39Z",
-          "completed_at": "2026-10-31T01:21:01Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153863966/job/124396239058"
-        },
-        "Pre-commit checks": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:09:26Z",
-          "completed_at": "2026-10-31T01:10:37Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153863911/job/124396444516"
-        },
-        "Build artifacts + imports check": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T01:09:41Z",
-          "completed_at": "2026-10-31T01:11:04Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41153863902/job/124396510574"
-        }
-      }
-    },
-    {
-      "number": 13235,
-      "merged_at": "2026-10-31T05:41:11Z",
-      "head_sha": "6dbd8a0c5d7446b3f31be79687c565c8b80152d3",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T05:40:40Z",
-          "completed_at": "2026-10-31T05:51:42Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41173543063/job/124456313824"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T05:40:40Z",
-          "completed_at": "2026-10-31T05:41:42Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41173543042/job/124456313493"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-10-31T05:40:40Z",
-          "completed_at": "2026-10-31T05:41:59Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41173543051/job/124456313401"
-        }
-      }
-    },
-    {
-      "number": 13256,
-      "merged_at": "2026-10-31T06:29:51Z",
-      "head_sha": "08e1e4fc4283072eea00914d9d5ee2c431b06e91",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13311,
-      "merged_at": "2026-10-31T09:59:52Z",
-      "head_sha": "b3fcf3bba6b09560bda3c686f1e52142e75c0e64",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13318,
-      "merged_at": "2026-10-31T10:01:51Z",
-      "head_sha": "e238345daf56af7c70ce874a36e75f3f9f08b200",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13350,
-      "merged_at": "2026-10-31T13:46:44Z",
-      "head_sha": "790a675dc940522d7581b3fb7e655410a581ec1f",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13366,
-      "merged_at": "2026-10-31T19:54:19Z",
-      "head_sha": "30d9abc8b459abadca5174f8ea016c1d50849c0b",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13405,
-      "merged_at": "2026-11-01T01:30:12Z",
-      "head_sha": "64a4b9bcdb8bb7738c47cdac3051a57c4c72cbec",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13409,
-      "merged_at": "2026-11-01T01:39:53Z",
-      "head_sha": "44e830860e0be4f627bd1ecda9530c5ec611f109",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T01:39:02Z",
-          "completed_at": "2026-11-01T01:41:05Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41261934057/job/124716792546"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T01:39:12Z",
-          "completed_at": "2026-11-01T01:40:17Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41261933908/job/124716791873"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T01:39:16Z",
-          "completed_at": "2026-11-01T01:40:28Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41261933904/job/124716791938"
-        }
-      }
-    },
-    {
-      "number": 13415,
-      "merged_at": "2026-11-01T02:36:29Z",
-      "head_sha": "6e1eb845d8074db41b19260f674afc2e7d3c7763",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13416,
-      "merged_at": "2026-11-01T02:42:37Z",
-      "head_sha": "9f8a1be3c42b7229e102ab367c201cea2fec0feb",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13431,
-      "merged_at": "2026-11-01T03:54:13Z",
-      "head_sha": "7a9d581b52eb189ecb04856a64524436d41fcd3b",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13434,
-      "merged_at": "2026-11-01T04:20:39Z",
-      "head_sha": "563d5127fdee367408fd2c2cc3f54d357c6c75ab",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T04:16:37Z",
-          "completed_at": "2026-11-01T04:24:35Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41272451704/job/124747828423"
-        },
-        "Pre-commit checks": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T04:16:37Z",
-          "completed_at": "2026-11-01T04:17:38Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41272451729/job/124747828414"
-        },
-        "Build artifacts + imports check": {
-          "class": "visible_green_by_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T04:16:56Z",
-          "completed_at": "2026-11-01T04:18:15Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41272451705/job/124747828507"
-        }
-      }
-    },
-    {
-      "number": 13454,
-      "merged_at": "2026-11-01T06:01:59Z",
-      "head_sha": "81db3260bc62c2ce74f51ab98d82dd23e7858f77",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-11-01T06:01:49Z",
-          "completed_at": "2026-11-01T06:06:22Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41279152882/job/124767309145"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T06:01:45Z",
-          "completed_at": "2026-11-01T06:02:48Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41279152750/job/124767310267"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T06:01:45Z",
-          "completed_at": "2026-11-01T06:03:04Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41279152714/job/124767311790"
-        }
-      }
-    },
-    {
-      "number": 13463,
-      "merged_at": "2026-11-01T06:43:38Z",
-      "head_sha": "a52950f33e9f22343dbb54f1edd3460ce74433de",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    },
-    {
-      "number": 13489,
-      "merged_at": "2026-11-01T09:02:11Z",
-      "head_sha": "fb6d4123d4f1d0889c05140178633b52851f3840",
-      "overall": "latest_attempt_started_after_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "unclassifiable_current_rollup",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T09:57:54Z",
-          "completed_at": "2026-11-01T09:00:25Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41291021686/job/124802124011"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T09:57:54Z",
-          "completed_at": "2026-11-01T09:59:06Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41291021744/job/124802123939"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_started_after_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T09:57:55Z",
-          "completed_at": "2026-11-01T09:59:22Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41291021614/job/124802123435"
-        }
-      }
-    },
-    {
-      "number": 13462,
-      "merged_at": "2026-11-01T09:13:49Z",
-      "head_sha": "72bcfd77cc203a74040f9628935259b3f316b6f3",
-      "overall": "latest_attempt_straddled_merge",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "FAILURE",
-          "started_at": "2026-11-01T09:12:51Z",
-          "completed_at": "2026-11-01T09:30:08Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41287892701/job/124792837799"
-        },
-        "Pre-commit checks": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T09:12:51Z",
-          "completed_at": "2026-11-01T09:13:59Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41287892643/job/124792837580"
-        },
-        "Build artifacts + imports check": {
-          "class": "latest_attempt_straddled_merge",
-          "conclusion": "SUCCESS",
-          "started_at": "2026-11-01T09:12:51Z",
-          "completed_at": "2026-11-01T09:14:05Z",
-          "url": "https://github.com/agentydragon/ducktape/actions/runs/41287892653/job/124792837787"
-        }
-      }
-    },
-    {
-      "number": 13487,
-      "merged_at": "2026-11-01T09:53:26Z",
-      "head_sha": "f0dfb3b7ea6f349bf418bd367ec0ef04188b121c",
-      "overall": "missing_from_current_rollup",
-      "gates": {
-        "bazel-ci / Test & Build": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Pre-commit checks": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        },
-        "Build artifacts + imports check": {
-          "class": "missing_from_current_rollup",
-          "conclusion": null,
-          "started_at": null,
-          "completed_at": null,
-          "url": null
-        }
-      }
-    }
-  ],
-  "red_at_merge_diagnosis": {
-    "pr": 13181,
-    "pr_head": "de5aeeee76affc742e0076b0b589f636a4ecf3af",
-    "runner_tested_merge_sha_prefix": "159668cb",
-    "bazel_job_url": "https://github.com/agentydragon/ducktape/actions/runs/41153863966/job/124396239058",
-    "failed_target": "//agentplane/system_tests/k3s:test_render",
-    "failure": "KeyError integrated_connection_service at test_render.py:152; removed key still asserted",
-    "followup_fix_commit": "80de09117c",
-    "followup_pr": 13186,
-    "bypass_audit_proven": false
-  },
-  "prior_dispositions": {
-    "prior_window": ["2026-10-23T22:10:00Z", "2026-10-30T22:10:00Z"],
-    "prior_source": "49475cae74abd6a669879908f63c04fa78f41242",
-    "bounded_action_retry": "#12896 landed; no current effect estimate",
-    "dispatcher_journal": "#12702 controlled lock test passed on fix and failed on rollback; no current post-fix recurrence established",
-    "remote_log_observer": "Prior 3 selected INTERNAL resets resubmitted outer runs; new recurrence count not collected here",
-    "vm_first_response": "one further current-window interruption, 04ba8a12, on a changed SHA; source as of de5f moves central sampler out of VM suite, making target-label exposure noncomparable",
-    "vm_oom_health": "prior distinct legacy failure; new memory-before stall is a different phase",
-    "streaming_channel_race": "#12629 landed; recurrence unmeasured",
-    "identity_and_sandbox_access": "prior targets removed or changed; do not reopen from historical tracker counts"
+  "prior_snapshot": {
+    "branch_commit": "4aa6b2d2148fc8365a04985680295b39c2542d29",
+    "source_devel_commit": "de5f671002f516e952c3dfafcbf06659a4bc731b",
+    "measured_window_utc": ["2026-10-30T22:10:00Z", "2026-11-01T21:45:00Z"],
+    "presentation_only_update_utc": "2026-11-09",
+    "measured_vm_stats": "5 failed / 45 tracked VM target outcomes in that earlier window; not a current-window rate",
+    "unresolved": [
+      "VM sampler first response and guest shutdown evidence",
+      "prior VM OOM exec-server restart and distinct memory-before stall",
+      "Firecracker pause failures without guest lifecycle evidence for those older physical attempts",
+      "thread projection cursor 334 and bridge event/owner identity",
+      "remote-log observer resubmission after INTERNAL reset"
+    ],
+    "landed_unmeasured": [
+      "#12702 Dispatcher SQLite journal repair",
+      "#12896 bounded Bazel action retry",
+      "#12629 streaming channel race patch"
+    ]
   },
   "limits": [
-    "Tracker likely_flaky heuristic uses pass-fail-pass across different revisions/configurations; its nine samples are not verified same-source recoveries. A separate selected PR retry is verified same-tree.",
-    "Selected failed target records prove noncached test-result events and physical execution IDs, but complete physical denominator was not collected.",
-    "Target-history rows include cached results and cannot be used as physical exposure.",
-    "Current merged-PR rollup may hide earlier reruns; no explicit bypass/audit event was established.",
-    "Raw logs and traces retained only in local scratch."
+    "This is a focused VM and #15493 snapshot, not a repository-wide failure-rate census. No complete GitHub PR job or merged-PR population was collected for this new window.",
+    "GetTargetStats 98 and target-history 917 use different API definitions; neither is a verified count of fresh physical executions. Complete cache status was not retrieved.",
+    "The target history lacks a per-row branch field; selected invocation metadata confirms devel, and the #15493 PR child IDs are absent. The report does not claim every indexed row is independently branch-verified.",
+    "The four #15493 failed jobs are a selected PR run, not a full PR-attempt census; three fresh failed VM TestResults and one RBE pre-verdict failure must remain separate. Attempt 4 used a different test-action digest.",
+    "The devel-filtered stats and branch-unverified target history sample ended at 23:04 UTC; selected PR observations ended at 23:13 UTC. The separate populations and cutoffs are not combined into one rate.",
+    "No guest kernel trace after the VM2 console cutoff, snapshot creator metadata, or timestamp at entry to the final systemd proof read was retained.",
+    "Full API payloads, logs and profiles remain in local scratch; only reviewed measurements and identifiers are published."
   ],
   "report_validation": {
-    "invocation_id": "0ab77479-9c78-4b32-afbe-fd2e35f132d5",
-    "url": "https://app.buildbuddy.io/invocation/0ab77479-9c78-4b32-afbe-fd2e35f132d5",
-    "target": "//x/ci_report_preview:visual_test",
-    "result": "PASSED, 1/1 test; 10.27 seconds test duration",
-    "report_html_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
-    "viewports": [
-      {
-        "report": "reliability",
-        "report_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
-        "viewport": {
-          "name": "desktop",
-          "width": 1280,
-          "height": 900
-        },
-        "internal_link_count": 43,
-        "details_expanded": 0,
-        "interactive_controls_exercised": [],
-        "document_dimensions_with_details_open": {
-          "viewport_width": 1280,
-          "document_width": 1280,
-          "body_width": 1280
-        },
-        "captures": [
-          {
-            "name": "reliability-desktop-first-screen.png",
-            "sha256": "b4514b2e5b8e98b1f0611b84f04c4129ad604e6b973fc3d2ed11c1182370bd99"
-          },
-          {
-            "name": "reliability-desktop-actions.png",
-            "sha256": "d5a00fa65b4dfab03f0cf826774bd53cff8c7493a8f591413a334eab9d6ada65"
-          },
-          {
-            "name": "reliability-desktop-population.png",
-            "sha256": "a78fb8012d90d5265204f69901ca13646c885a63e58c482b0100ac2e24763856"
-          },
-          {
-            "name": "reliability-desktop-vm.png",
-            "sha256": "8d2fa0371d840abaecff1fe291d481cded7e8a6d169088459e72d22f2b67f28f"
-          },
-          {
-            "name": "reliability-desktop-app.png",
-            "sha256": "196c6f5094408de0bb68aa69336becca7e7ddc2dfdda9cd219dc444423f3bae1"
-          },
-          {
-            "name": "reliability-desktop-merges.png",
-            "sha256": "e54f120cf77e0e4bed813004c3a7e4294a8a49ed9bddf105bd2e120a45208cc0"
-          },
-          {
-            "name": "reliability-desktop-continuity.png",
-            "sha256": "e1deb6a301d435e729a8b0f1b17b1380871dbc7df7416582e9b169b0959b82da"
-          },
-          {
-            "name": "reliability-desktop-method.png",
-            "sha256": "32b80fa4d373d069e8a46b37e8952a07eb45fca6ca432544732267225cd742ab"
-          }
-        ]
-      },
-      {
-        "report": "reliability",
-        "report_sha256": "62fec8f56a414138dcdd27a7883c18045fc01845b43ef81d97ad5b463c88f4a9",
-        "viewport": {
-          "name": "mobile",
-          "width": 390,
-          "height": 844
-        },
-        "internal_link_count": 43,
-        "details_expanded": 0,
-        "interactive_controls_exercised": [],
-        "document_dimensions_with_details_open": {
-          "viewport_width": 390,
-          "document_width": 390,
-          "body_width": 390
-        },
-        "captures": [
-          {
-            "name": "reliability-mobile-first-screen.png",
-            "sha256": "69248b55f977082fa7bbeca2ee11c03ec21b1ca1ccc57ef3da29f779f80323cb"
-          },
-          {
-            "name": "reliability-mobile-actions.png",
-            "sha256": "2c1a65c881a1d0e7adae3547242a977d6a9fc87e881a838528de75880cde7cef"
-          },
-          {
-            "name": "reliability-mobile-population.png",
-            "sha256": "7b709c000006831d479550c72e3c45efe8735070cf3558ddbbc06153ab7730c4"
-          },
-          {
-            "name": "reliability-mobile-vm.png",
-            "sha256": "c5d153be85b648c4583ab6b5ead0b58c26d344d1931218557713d853bcfb7809"
-          },
-          {
-            "name": "reliability-mobile-app.png",
-            "sha256": "0921962846bdff450bc67f6421c57d350db19d6be89a8f581da325604edc43e0"
-          },
-          {
-            "name": "reliability-mobile-merges.png",
-            "sha256": "fc2cdfb1b78a64070147571245b9e33a8375197093066405dcdbb8201d9d86ce"
-          },
-          {
-            "name": "reliability-mobile-continuity.png",
-            "sha256": "4396980c3aeac37b55716666906b00399ab2cc567cf0c9791226186558fc2c7a"
-          },
-          {
-            "name": "reliability-mobile-method.png",
-            "sha256": "5a44cc237c53ff3ea38923b3bd2e74e7b6eff3318242522558436ec395b593b9"
-          }
-        ]
-      }
-    ],
-    "visual_review": "Root visually reviewed desktop/mobile first screens, latency recommendation/runtime sections and reliability app diagnoses. Mobile prose table layout revised and re-reviewed. Final test verifies anchors, expanded details, render/network health and document overflow.",
-    "validation_scope": "Ephemeral Bazel/RBE harness, not a new shipped source test; no production policy changed."
+    "desktop_width_px": 1440,
+    "mobile_width_px": 390,
+    "themes": ["light", "dark"],
+    "visual_review": "Initial desktop/mobile light/dark screenshots inspected. Final desktop light and mobile dark screenshots inspected after the fourth attempt and issue links; desktop Attempt and BuildBuddy columns remain on one line, mobile cards and bars show no observed horizontal clipping.",
+    "live_browser": "Chrome CDP confirmed Mantine chart rendered, five section links present, and document color scheme changed light to dark to light when prefers-color-scheme changed.",
+    "local_screenshots": "desktop-light-final3.png and mobile-dark-final3.png in task scratch; not published"
   }
 }
