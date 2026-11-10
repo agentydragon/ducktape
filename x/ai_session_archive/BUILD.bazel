@@ -345,6 +345,7 @@ py_test(
         ":database",
         ":ingest",
         ":models",
+        ":restic",
         ":testing",
         "//:conftest",
         "//util/testing:postgres_fixtures",
