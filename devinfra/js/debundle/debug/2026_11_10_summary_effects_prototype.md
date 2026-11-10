@@ -35,8 +35,14 @@ Cost on the `editor` chunk (517 KB, 1,787 source units):
 
 | Analysis    | Time                                          | Peak RSS |
 | ----------- | --------------------------------------------- | -------: |
-| `tier0`     | 28 ms parse, 6 ms analysis, 26 ms pair check  |    24 MB |
+| `tier0`     | 28 ms parse, 30 ms analysis, 32 ms pair check |    26 MB |
 | `points-to` | 120 s solve, 21 s summaries, 151 s pair check |   4.9 GB |
+
+Most of `tier0`'s analysis time is the intrinsic census (6 ms without it). The
+pair check visits every pair of statements, so it is the part that grows: on
+the large private consumer corpus it was 1.8 s of 2.8 s for a chunk with 18
+million swapped pairs. A sweep over impure statements and reach stamps would
+avoid the quadratic visit; it was not needed at these sizes.
 
 `points-to` on `main` (803 KB) had not converged after 15 minutes. The current
 engine analyses the `editor` chunk in about 14–16 s on this shape.
@@ -64,6 +70,14 @@ modules.
 The current effect verdict puts 994 (`main`) and 1,065 (`editor`) modules in
 one component.
 
+Statements no module lists form the entry residual. The report counts damage
+both ways: `module_damage` with the residual as one module,
+`modules_merging_into_entry` for the authored modules an unproven pair chains
+to it, and `authored_module_damage` over pairs with both statements in
+authored modules, which is the measure of what authored modules must merge
+with each other. The stress assignment has no residual to speak of, so the two
+agree here to within one module.
+
 - "Reachable only through earlier leaks" is the price of closing the legacy
   gate's gap (it follows a statement's own closure, not callbacks leaked by
   earlier statements).
@@ -90,22 +104,33 @@ for the near-misses that must stay impure. Stress assignment, cumulative:
 | ----------------------------------------------------- | --------------: | -----------------------: | ----------------: | -------------------------: |
 | none                                                  |             784 |                170 (167) |             2,383 |                  111 (111) |
 | operators over primitive-only bindings                |             521 |                170 (167) |             2,107 |                    50 (44) |
-| + intrinsic allocators (`new Map()`, typed arrays, …) |             521 |                170 (167) |             2,076 |                    50 (44) |
-| + `class X extends <intrinsic>`                       |             521 |                170 (167) |             1,153 |                    46 (40) |
-| + intrinsic member reads                              |             521 |                170 (167) |             1,153 |                    46 (40) |
+| + intrinsic allocators (`new Map()`, typed arrays, …) |             515 |                167 (167) |             2,076 |                    50 (44) |
+| + `class X extends <intrinsic>`                       |             515 |                167 (167) |             1,153 |                    46 (40) |
+| + intrinsic member reads                              |             515 |                167 (167) |             1,153 |                    46 (40) |
 
 The committed spec stays at 0 unproven pairs throughout.
 
-The intrinsic rules consult a census of what the chunk itself writes on
-globals (`x/summary_effects/intrinsics.rs`): a use is pure only if the global
-binding and the properties the use depends on are untouched, and a global used
-as a value anywhere counts as touched. That census costs `main` its eleven
-`new Map()`-style statements (`typeof WeakMap == "function" ? WeakMap : Map`
-aliases the constructors; without the census the allocator rule gives 515
-unproven pairs and 167 modules) and both chunks every `Object.*` read. `main`
-writes `Array.prototype.at` and `Error.prepareStackTrace`; neither disables a
-rule, because each rule names the properties it depends on. The census sees one
-chunk; writes by other chunks are a per-program fact.
+The intrinsic rules consult a census of what the program writes on globals
+(`x/summary_effects/intrinsics.rs`): a use is pure only if the global binding
+and the properties the use depends on are untouched. `main` writes
+`Array.prototype.at` and `Error.prepareStackTrace`; neither disables a rule,
+because each rule names the properties it depends on.
+
+Using an intrinsic as a value is not a write. The census follows an intrinsic
+constructor, its `prototype` and the global object through local bindings
+(`const M = typeof WeakMap == "function" ? WeakMap : Map`), and through the
+parameters of local functions called by name or where they are written, and
+charges each store through such an alias to the intrinsic, by property name.
+The global object is not followed into a function called by name: through
+shared parameters it reached an unrelated `x[i] = …` in `main` and refused
+everything. A value that goes anywhere else (a literal, a member, a return, an
+argument of code the chunk does not define) has _escaped_. An escaped
+intrinsic is charged only with the stores the program makes through
+`<anything>.prototype`, by property name; that no other store lands on it is
+a premise (§ Preconditions). On this corpus the global object escapes in
+`main` and in `editor`, so every intrinsic counts as escaped; the program
+makes 89 distinctly named stores through an unfollowed `.prototype` and none
+under a computed key, and none of the names is one a rule depends on.
 
 A callee summary for local functions that only allocate was not built. The
 statements it was meant for are not allocator calls: in `editor`, 160 of 172
@@ -129,23 +154,31 @@ counts statements impure for a cause as pure), with the first two upgrades:
 The report's `preconditions` block says, for the input at hand, whether each
 assumption holds and what the analysis fell back to.
 
-| Precondition                          | Check                                                                                                               | Fallback                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| No `eval` or `with`                   | syntax                                                                                                              | every statement is impure                  |
-| No top-level `await`                  | syntax                                                                                                              | the statement is impure; exports reachable |
-| Not on an import cycle                | `--program-chunks <dir>`: static cycle, or a dynamic `import()` in the chunk's static dependencies that may load it | exports reachable (`--exports-reachable`)  |
-| Intrinsics unmodified by program code | the census, over the chunk or over `--program-chunks`                                                               | the intrinsic use is impure                |
-| Intrinsics unmodified by unknown code | none: a stated premise for `intrinsic_families_used`                                                                |                                            |
+| Precondition                                                     | Check                                                                                                               | Fallback                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| No `eval` or `with`                                              | syntax                                                                                                              | every statement is impure                  |
+| No top-level `await`                                             | syntax                                                                                                              | the statement is impure; exports reachable |
+| Not on an import cycle                                           | `--program-chunks <dir>`: static cycle, or a dynamic `import()` in the chunk's static dependencies that may load it | exports reachable (`--exports-reachable`)  |
+| Intrinsics unmodified by program code                            | the census, over the chunk or over `--program-chunks`                                                               | the intrinsic use is impure                |
+| Escaped intrinsics are modified only through `.prototype` stores | none: a stated premise for `intrinsic_families_escaped`                                                             |                                            |
+| Intrinsics unmodified by unknown code                            | none: a stated premise for `intrinsic_families_used`                                                                |                                            |
+
+`import.meta.require("<literal>")` counts as a static import wherever it is
+written: it evaluates the required chunk before it returns, so a chunk that
+requires one that statically imports it is on a cycle. A `require` of anything
+but a string literal, in the chunk or its dependencies, counts as a cycle.
+
+The escape premise does not cover an intrinsic obtained without naming it
+(`[].constructor`, `Object.getPrototypeOf(x)`) or through a destructuring
+pattern; the census does not see those either way.
 
 On the Excalidraw corpus (79 chunks, read in about 0.3 s): no `eval`, `with`
 or top-level `await`; neither `main` nor `editor` is on an import cycle, so
-`editor`'s exports need not count as reachable. The program-wide census,
-though, finds every intrinsic the upgrades rely on used as a value in some
-chunk, so with `--program-chunks` all intrinsic upgrades are refused (15 uses
-in `main`, 25 in `editor`) and `editor` falls back to the primitive-bindings
-row: 2,107 unproven pairs, 50 modules. The census's "used as a value means
-touched" rule is the conservative part; narrowing it means following aliases
-of intrinsic constructors.
+`editor`'s exports need not count as reachable. The program-wide census
+refuses 2 of `editor`'s 38 intrinsic uses (another chunk writes a property of
+`Object` that they read) and none of `main`'s 17; the unproven pairs and
+modules are those of the last upgrade row. Before the census followed aliases
+it refused all of them, and `editor` fell back to 2,107 unproven pairs.
 
 The fixture `tier0_export_cycle_needs_the_precondition` shows the pair the
 cycle precondition decides.
@@ -344,6 +377,10 @@ summary_effects_bin --mode tier0 \
 ```
 
 Only `--chunk` is required; `--effect-report` supplies the emitted order.
+`--upgrade` takes any of `primitive-bindings`, `native-allocators`,
+`intrinsic-heritage`, `intrinsic-member-reads`; `--program-chunks <dir>` reads
+every chunk of the program for the cycle check and the census; `--premises
+<json>` is described under § Premises.
 Without `--examples` the report holds counts, ordinals, classes and timings
 only: no source text, identifiers or property names. `--mode points-to` takes
 `--function-heap {site,function,global}`.

@@ -642,6 +642,18 @@ pub struct Tier0Report {
     pub globals_written_unnamed: usize,
     /// With `--examples`: per written global, the property names, or `*`.
     pub globals_written_detail: BTreeMap<String, Vec<String>>,
+    /// The intrinsics in `intrinsic_families_used` whose value flows where
+    /// the census does not follow it.
+    pub intrinsic_families_escaped: Vec<&'static str>,
+    /// Property names stored through `<unfollowed>.prototype`, which count
+    /// against every escaped intrinsic, and whether one has an unnamed key.
+    /// The global object is stored to under an unnamed key (every intrinsic
+    /// use is then refused), or flows where the census does not follow it
+    /// (every intrinsic then counts as escaped).
+    pub global_object_written_unnamed: bool,
+    pub global_object_escaped: bool,
+    pub unfollowed_prototype_store_names: usize,
+    pub unfollowed_prototype_store_unnamed: bool,
     pub all_pairs: u64,
     pub all_pairs_conflicting: u64,
     pub all_pairs_by_class: BTreeMap<String, u64>,
@@ -823,6 +835,12 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             },
         },
         Precondition {
+            name: "escaped_intrinsics_modified_only_through_prototype_stores",
+            holds: None,
+            violating_sites: 0,
+            fallback: "assumed for the globals in intrinsic_families_escaped",
+        },
+        Precondition {
             name: "intrinsics_unmodified_by_unknown_code",
             holds: None,
             violating_sites: 0,
@@ -872,6 +890,16 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
                 (global.clone(), props)
             })
             .collect(),
+        intrinsic_families_escaped: analysis
+            .families_used
+            .keys()
+            .copied()
+            .filter(|global| analysis.census.escaped(global))
+            .collect(),
+        global_object_written_unnamed: analysis.census.all,
+        global_object_escaped: analysis.census.escaped_all,
+        unfollowed_prototype_store_names: analysis.census.unfollowed_prototype_stores.props.len(),
+        unfollowed_prototype_store_unnamed: analysis.census.unfollowed_prototype_stores.any,
         all_pairs: (n * n.saturating_sub(1) / 2) as u64,
         all_pairs_conflicting,
         all_pairs_by_class,

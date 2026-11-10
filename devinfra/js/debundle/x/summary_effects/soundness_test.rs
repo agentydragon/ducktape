@@ -200,14 +200,38 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "Map.prototype.set = function () {}; const a = new Map([['k', 1]]);",
             "Array.prototype[Symbol.iterator] = function* () {}; const a = new Set([1]);",
             "globalThis.Map = class {}; const a = new Map();",
-            "const proto = Set.prototype; const a = new Set([1]);",
-            "function patch(target) {} patch(Map); const a = new Map();",
+            // A store through an alias the census follows.
+            "const proto = Set.prototype; proto.add = function () {}; const a = new Set([1]);",
+            "const S = Set; S.prototype.add = function () {}; const a = new Set([1]);",
+            "let S; S = typeof Set === 'function' ? Set : null; S.prototype.add = 1; const a = new Set([1]);",
+            "function patch(target) { target.prototype.set = 1; } patch(Map); const a = new Map([['k', 1]]);",
+            "const patch = (target, name = 'set') => { target[name] = 1; }; patch(Map.prototype); const a = new Map([['k', 1]]);",
+            "const root = typeof globalThis === 'object' ? globalThis : window; root.Map = class {}; const a = new Map();",
+            "const root = globalThis; root[k] = 1; const a = new Map();",
+            "(function (root) { root.Map = class {}; })(globalThis); const a = new Map();",
+            "((root, name) => { root[name] = 1; })(window, 'Map'); const a = new Map();",
+            // A store through `.prototype` of something an escaped
+            // constructor may have reached.
+            "[Map, Set].forEach((C) => { C.prototype.set = 1; }); const a = new Map([['k', 1]]);",
+            "const known = { Map }; for (const k in known) known[k].prototype[k] = 1; const a = new Map();",
+            "export const M = Map; function f(C) { C.prototype.set = 1; } const a = new Map([['k', 1]]);",
+            "function patch(target) { target.prototype.set = 1; } patch(Set); [Map].forEach(patch); const a = new Map([['k', 1]]);",
             "Object.defineProperty(Object, 'freeze', { value() {} }); const a = Object.freeze({});",
         ] {
             assert!(!last_is_pure(impure), "{impure}");
         }
-        // A write to an unrelated property leaves the allocation pure.
+        // Using an intrinsic as a value does not modify it, nor does a
+        // write to an unrelated property.
         for pure in [
+            "const proto = Set.prototype; const a = new Set([1]);",
+            "window[Symbol.for('tag')] = true; const a = new Map();",
+            "function listen(target) { target.onload = null; } listen(window); const a = new Map();",
+            "function check(target) { return typeof target; } check(Map); const a = new Map();",
+            "const supported = [Map, Set].every(Boolean); const a = new Map();",
+            "const M = typeof Map === 'function' ? Map : null; const a = new Map();",
+            "const S = Set; S.prototype.extra = 1; const a = new Set([1]);",
+            "[Map, Set].forEach((C) => { C.prototype.extra = 1; }); const a = new Map([['k', 1]]);",
+            "function f(o) { o.prototype = {}; o.set = 1; } const known = [Map]; const a = new Map([['k', 1]]);",
             "Array.prototype.at = function () {}; const a = new Set([1]);",
             "Object.defineProperty(Array.prototype, 'at', { value() {} }); const a = new Set([1]);",
             "Error.stackTraceLimit = 50; const a = class extends Error {};",

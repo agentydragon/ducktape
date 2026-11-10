@@ -28,6 +28,8 @@ struct Imports {
     statics: Vec<String>,
     /// `None` for a specifier that is not a string literal.
     dynamics: Vec<Option<String>>,
+    /// `import.meta.require` of something other than a string literal.
+    unknown_requires: usize,
 }
 
 impl Visit for Imports {
@@ -46,6 +48,23 @@ impl Visit for Imports {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        // `import.meta.require("./x.js")` evaluates the chunk before it
+        // returns, wherever the call is written.
+        let requires = matches!(&call.callee, Callee::Expr(callee)
+            if matches!(&**callee, Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(method),
+                ..
+            }) if &*method.sym == "require"
+                && matches!(&**obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)));
+        if requires {
+            match call.args.first().map(|arg| &*arg.expr) {
+                Some(Expr::Lit(Lit::Str(specifier))) => {
+                    self.statics.push(js_ast::str_value(specifier));
+                }
+                _ => self.unknown_requires += 1,
+            }
+        }
         if matches!(call.callee, Callee::Import(_)) {
             self.dynamics
                 .push(match call.args.first().map(|arg| &*arg.expr) {
@@ -151,9 +170,16 @@ pub fn load(root: &Path, chunk: &Path) -> Result<ProgramFacts> {
             })
         })
     });
+    // A synchronous load of an unknown chunk, by this chunk or one it has
+    // loaded, may be of a chunk that imports this one.
+    let unknown_require = std::iter::once(&chunk).chain(&dependencies).any(|path| {
+        graph
+            .get(path)
+            .is_some_and(|imports| imports.unknown_requires > 0)
+    });
     Ok(ProgramFacts {
         chunks: graph.len(),
-        on_import_cycle: static_cycle || dynamic_cycle,
+        on_import_cycle: static_cycle || dynamic_cycle || unknown_require,
         census: merged,
     })
 }
