@@ -1,0 +1,9 @@
+# Stable chunk IDs for hashed esbuild chunks: each alias names the chunk that
+# bundles this module (a path below `node_modules/`). Read by gen_inputs.py.
+
+# Editor code shared by `main` and the lazy chunks; fractional-indexing is one
+# of the dependencies esbuild places only there.
+editor: fractional-indexing/src/index.js
+# Shared chunks split out by the `app/vendor/` entry points.
+vendor/clsx_lib: clsx/dist/clsx.m.js
+vendor/roughjs_lib: roughjs/bin/rough.js
