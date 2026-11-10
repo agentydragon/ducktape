@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session as DbSession, aliased, load_only
 
 from x.ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
 from x.ai_session_archive.codex_metadata import classify_codex_source, read_codex_titles
+from x.ai_session_archive.codex_title_projection import ensure_codex_title_candidates
 from x.ai_session_archive.database import (
+    CodexTitleCandidateRow,
     CodexTitleObservationRow,
     FileVersionRecordRow,
     FileVersionRow,
@@ -524,6 +526,7 @@ class SnapshotIngestor:
                     row.codex_metadata_error = _error_text(exc)
 
     def _project_codex_titles(self, *, allow_index_only: bool) -> None:
+        ensure_codex_title_candidates(self._session_factory, self._source.machine_id)
         with self._session_factory() as db, db.begin():
             sessions = list(
                 db.scalars(
@@ -538,73 +541,22 @@ class SnapshotIngestor:
                 if row.native_session_id and not row.native_session_id_conflict and not row.native_session_id_inferred:
                     by_native.setdefault(row.native_session_id, []).append(row)
             latest: dict[UUID, tuple[datetime, str, str]] = {}
-            observations = db.execute(
-                select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
-                .join(
-                    ResticSnapshotRow,
-                    (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
-                    & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
-                )
-                .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
-                .where(CodexTitleObservationRow.title.is_not(None))
-                # Matching below depends only on native ID and physical path.
-                # Older observations of that pair cannot win the title rank.
-                # Reduce them in PostgreSQL before SQLAlchemy buffers ORM rows:
-                # the full history contains millions of observations per host.
-                .distinct(CodexTitleObservationRow.native_session_id, CodexTitleObservationRow.source_path)
-                .order_by(
-                    CodexTitleObservationRow.native_session_id,
-                    CodexTitleObservationRow.source_path,
-                    ResticSnapshotRow.captured_at.desc(),
-                    CodexTitleObservationRow.snapshot_id.desc(),
-                    CodexTitleObservationRow.title.desc(),
-                )
-            )
-            for observation, captured_at in observations:
-                assert observation.title is not None
-                match = by_path.get(observation.source_path) if observation.source_path else None
-                if match is not None and match.native_session_id != observation.native_session_id:
-                    continue
-                if match is None and not observation.source_path and allow_index_only:
-                    candidates = by_native.get(observation.native_session_id, [])
-                    match = candidates[0] if len(candidates) == 1 else None
-                if match is None:
-                    continue
-                rank = (captured_at, observation.snapshot_id, observation.title)
-                if match.id not in latest or rank > latest[match.id]:
-                    latest[match.id] = rank
-
             latest_kinds: dict[UUID, tuple[datetime, str, str]] = {}
-            kind_observations = db.execute(
-                select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
-                .join(
-                    ResticSnapshotRow,
-                    (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
-                    & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
-                )
-                .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
-                .where(CodexTitleObservationRow.session_kind.is_not(None))
-                .distinct(CodexTitleObservationRow.native_session_id, CodexTitleObservationRow.source_path)
-                .order_by(
-                    CodexTitleObservationRow.native_session_id,
-                    CodexTitleObservationRow.source_path,
-                    ResticSnapshotRow.captured_at.desc(),
-                    CodexTitleObservationRow.snapshot_id.desc(),
-                )
-            )
-            for observation, captured_at in kind_observations:
-                assert observation.session_kind is not None
-                match = by_path.get(observation.source_path) if observation.source_path else None
-                if match is not None and match.native_session_id != observation.native_session_id:
+            for candidate in db.scalars(
+                select(CodexTitleCandidateRow).where(CodexTitleCandidateRow.machine_id == self._source.machine_id)
+            ):
+                match = by_path.get(candidate.source_path) if candidate.source_path else None
+                if match is not None and match.native_session_id != candidate.native_session_id:
                     continue
-                if match is None and not observation.source_path and allow_index_only:
-                    candidates = by_native.get(observation.native_session_id, [])
-                    match = candidates[0] if len(candidates) == 1 else None
+                if match is None and not candidate.source_path and allow_index_only:
+                    matches = by_native.get(candidate.native_session_id, [])
+                    match = matches[0] if len(matches) == 1 else None
                 if match is None:
                     continue
-                rank = (captured_at, observation.snapshot_id, observation.session_kind)
-                if match.id not in latest_kinds or rank > latest_kinds[match.id]:
-                    latest_kinds[match.id] = rank
+                rank = (candidate.captured_at, candidate.snapshot_id, candidate.value)
+                target = latest if candidate.field == "title" else latest_kinds
+                if match.id not in target or rank > target[match.id]:
+                    target[match.id] = rank
             for row in sessions:
                 if row.id in latest:
                     row.title = latest[row.id][2]
@@ -1005,32 +957,19 @@ class SnapshotIngestor:
     def _apply_latest_codex_title(self, db: DbSession, row: SessionRow) -> None:
         if row.native_session_id_conflict or not row.native_session_id:
             return
-        observations = (
-            select(CodexTitleObservationRow)
-            .join(
-                ResticSnapshotRow,
-                (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
-                & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
+        candidates = dict(
+            db.execute(
+                select(CodexTitleCandidateRow.field, CodexTitleCandidateRow.value).where(
+                    CodexTitleCandidateRow.machine_id == row.machine_id,
+                    CodexTitleCandidateRow.native_session_id == row.native_session_id,
+                    CodexTitleCandidateRow.source_path == row.source_path,
+                )
             )
-            .where(
-                CodexTitleObservationRow.machine_id == row.machine_id,
-                CodexTitleObservationRow.native_session_id == row.native_session_id,
-                CodexTitleObservationRow.source_path == row.source_path,
-            )
-            .order_by(ResticSnapshotRow.captured_at.desc(), CodexTitleObservationRow.snapshot_id.desc())
+            .tuples()
+            .all()
         )
-        title, kind = db.execute(
-            select(
-                observations.with_only_columns(CodexTitleObservationRow.title)
-                .where(CodexTitleObservationRow.title.is_not(None))
-                .limit(1)
-                .scalar_subquery(),
-                observations.with_only_columns(CodexTitleObservationRow.session_kind)
-                .where(CodexTitleObservationRow.session_kind.is_not(None))
-                .limit(1)
-                .scalar_subquery(),
-            )
-        ).one()
+        title = candidates.get("title")
+        kind = candidates.get("session_kind")
         if title is not None:
             row.title = title
             row.codex_title_from_metadata = True
