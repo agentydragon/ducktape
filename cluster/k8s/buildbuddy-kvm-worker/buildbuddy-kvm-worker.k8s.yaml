@@ -1000,7 +1000,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
         kubevirt.io/domain: buildbuddy-kvm-worker
     spec:
       affinity:
@@ -1232,7 +1232,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker-2
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
         kubevirt.io/domain: buildbuddy-kvm-worker-2
     spec:
       affinity:
@@ -1439,7 +1439,7 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
   name: buildbuddy-kvm-worker-metrics
   namespace: buildbuddy-executor
 spec:
@@ -1449,7 +1449,7 @@ spec:
       protocol: TCP
       targetPort: 9090
   selector:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
   type: ClusterIP
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -1463,7 +1463,7 @@ spec:
       port: metrics
   selector:
     matchLabels:
-      app.kubernetes.io/part-of: buildbuddy-kvm-workers
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

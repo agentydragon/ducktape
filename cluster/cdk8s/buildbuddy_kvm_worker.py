@@ -48,7 +48,7 @@ _METRICS_PORT = 9090
 _METRICS_PORT_NAME = "metrics"
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Selects every worker's pods for one Service, whatever their names.
-_WORKER_LABELS = {"app.kubernetes.io/part-of": NAME + "s"}
+_WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
 _IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
