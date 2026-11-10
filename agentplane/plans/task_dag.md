@@ -3043,6 +3043,9 @@ flowchart LR
     EGRESS_IDENTITY_RULES -->|consumers first| SANDBOX_IDENTITY_SPEC
     SERVICES_IDENTITY_PRINCIPAL -->|consumers first| SANDBOX_IDENTITY_SPEC
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
+    SANDBOX_IDENTITY_SPEC --> SESSION_SA_PRINCIPAL_REMOVAL[Blocked: Sessions carry no ServiceAccount]
+    SESSION_SA_PRINCIPAL_REMOVAL --> IDENTITY_CUTOVER
+    SESSION_SA_PRINCIPAL_REMOVAL --> SESSION_IDENTITY_AUTHZ
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
     SESSION_IDENTITY_AUTHZ[Design: Session reads and sends authorized by identity]
@@ -3244,6 +3247,29 @@ needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delive
 projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
 Kubernetes use rule has nothing in the accounts namespace.
 
+### `SESSION_SA_PRINCIPAL_REMOVAL` — Sessions carry no ServiceAccount
+
+**Blocked on `SANDBOX_IDENTITY_SPEC`.** The contract step of expand → switch → contract (operator,
+2026-11-10). The end state: a Session has an Identity, never a ServiceAccount execution principal;
+Agentplane-internal authentication is by SVID, and Kubernetes is reached only at egress, by
+impersonation through a use rule. `SERVICES_IDENTITY_PRINCIPAL` expanded every Session consumer to
+carry an Identity beside the ServiceAccount; `SANDBOX_IDENTITY_SPEC` switches every Sandbox to run as
+its Identity; this node deletes the ServiceAccount side for Sessions:
+
+- Dispatcher: `Attached.execution_principal` (`ServiceAccountIdentity`), the Session's ServiceAccount
+  execution principal and its columns, and the placement and delivery branches for a Sandbox that
+  still has its ServiceAccount (#15360's dual path).
+- History: the ServiceAccount `writer_*` and `execution_*` columns and `storage.OwnedBy`, keeping
+  `OwnedByIdentity` (and its successor under `SESSION_IDENTITY_AUTHZ`).
+- Notification: ServiceAccount-owned inboxes, the ServiceAccount sender columns and quota, and the
+  special case for a subscription spanning Sessions of both kinds.
+- Action Service: a ServiceAccount caller remains only for backends that are not Sessions; a
+  Sandbox-originated caller is always an Identity.
+
+Sessions from before the switch are retired at the switch, not migrated: no Sandboxes run on staging
+then. **Exit:** no Session-facing code path, column or wire field names a ServiceAccount, and the
+services' tests pass without one.
+
 ### `APP_IDENTITIES_UI` — identities in the app
 
 **In progress (team lead, 2026-11-09: a first slice); parallel with the service work.**
@@ -3298,7 +3324,8 @@ Sandboxes run as Identities (`IDENTITY_CUTOVER`). It also depends on open questi
 [plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), who creates a launched
 Sandbox's Identity. The Sandbox-anchored sites carry `TODO(SESSION_IDENTITY_AUTHZ)`. **Exit:** a
 decided design for send, inbox and History-read authorization keyed on the Session's Identity, and
-the PRs it implies.
+the PRs it implies. It follows `SESSION_SA_PRINCIPAL_REMOVAL`: once a Session has only an Identity,
+the Sandbox is the only remaining anchor to replace.
 
 ### `IDENTITY_CUTOVER` — the staging cutover
 
@@ -3320,6 +3347,22 @@ and proves the Identity by delegated authorization, decided by the operator on 2
 app's Identity consent and rebind (`APP_IDENTITIES_UI`) land together with their remaining
 prerequisite: the edge's stored caller (`bound_caller` and each grant's `original_caller`) becomes a
 ServiceAccount-or-Identity union or is rewritten to an Identity.
+Standing workloads already speak SPIFFE: Haku UI, Anki and Jupyter, and the `haku-ci` egress relay,
+present SVIDs, but their `WorkloadCredential` subjects are still the ServiceAccounts
+`haku-sandbox/haku-ui` and `haku-ci/haku-ci-egress`, held for policy binding, not for authentication
+(operator, 2026-11-10). Here Haku UI, Anki and Jupyter take one shared Identity (today's shared
+`haku-ui` account) and the relay its own: their standing `WorkloadCredential`s name Identity
+subjects, their `PolicyBinding`s move to `subject.identity`, and the ServiceAccount subjects and any
+Role or RoleBinding that existed only to carry them are deleted. The resolver's ServiceAccount
+branch (`workload_identity/resolver`, `resolver.ServiceAccount`) goes once these records have moved.
+`auth.Subject`'s ServiceAccount variant goes once no backend caller authenticates as a
+ServiceAccount. Today these do, by TokenReview bearer, per staging's rendered settings: the app (History
+`reader_accounts`, Environment readers and managers, Policy Controller readers), the central sampler
+(History `sampler_accounts`, Dispatcher `executor_callers`), the Action Service's launch and Session
+delegation executors (Dispatcher callers, environment launchers), the MCP edge (delegation actor,
+`mintable_accounts`) and the gateway proxy's callers. **Open question for the operator:** which of
+these move to standing SVIDs with Identity subjects, and which must stay ServiceAccount-authenticated
+(the MCP edge's minted tokens are already planned to go here; the rest have no recorded decision).
 Once every service admits its workload callers through `auth.AnySubject`, a mechanical rename makes
 `auth.Principal`, today the ServiceAccount variant of `auth.Subject`, `AccountPrincipal` (team lead,
 2026-11-10).

@@ -217,6 +217,13 @@ from the moment the proxy drops the Kubernetes-audience token until the agent re
 account's credential. Running Sandboxes are replaced, since a Pod's ServiceAccount cannot change in
 place.
 
+**End state for Sessions** (operator, 2026-11-10): a Session has an Identity, never a ServiceAccount;
+Kubernetes is reached only at egress, by impersonation through a use rule. The services get there by
+expand → switch → contract: they first accept Identity callers and record Identities beside the
+ServiceAccount (`SERVICES_IDENTITY_PRINCIPAL`, `EGRESS_IDENTITY_RULES`), Sandboxes then run as their
+Identity (`SANDBOX_IDENTITY_SPEC`), and the Session ServiceAccount paths are then deleted
+([`SESSION_SA_PRINCIPAL_REMOVAL`](task_dag.md#session_sa_principal_removal--sessions-carry-no-serviceaccount)).
+
 ## Open questions and tricky bits
 
 1. **Pod-bound checks per route.** Services verify the SVID themselves (decided 2026-11-05); settle
