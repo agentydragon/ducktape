@@ -726,13 +726,19 @@ async def _roll_gateway_for_central_session(
 async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
     """Require the user-facing History projection to include a completed sampler turn."""
     stream = deployed.sampler.FollowEvents(
-        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=10,
     )
     terminal = None
-    async for frame in stream:
-        event = frame.entry.event
-        if event.HasField("turn_completed") and event.turn_completed.turn_id == command_id:
-            terminal = frame.entry
+    try:
+        async for frame in stream:
+            event = frame.entry.event
+            if event.HasField("turn_completed") and event.turn_completed.turn_id == command_id:
+                terminal = frame.entry
+                break
+    finally:
+        stream.cancel()
     assert terminal is not None, f"sampler has no terminal event for {command_id}"
     assert terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED, terminal.event.turn_completed
     async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
