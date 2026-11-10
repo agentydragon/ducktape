@@ -1,6 +1,6 @@
 module ducktape.build/tofu-controller
 
-go 1.26.6
+go 1.27.3
 
 require (
 	github.com/flux-iac/tofu-controller v0.16.7-0.20261028091259-e2db61bdd264

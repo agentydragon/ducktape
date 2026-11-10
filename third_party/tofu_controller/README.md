@@ -1,7 +1,7 @@
 # tofu-controller with ExternalArtifact sources
 
 Builds the pinned upstream [tofu-controller](https://github.com/flux-iac/tofu-controller)
-manager with local patches that let a `Terraform` take a Flux `ExternalArtifact` (as produced
+manager with upstream support for a `Terraform` taking a Flux `ExternalArtifact` (as produced
 by source-watcher's `ArtifactGenerator`) as its `sourceRef`, so each module can reconcile
 from its own artifact instead of the whole repository's (#9271). Go dependencies are isolated
 from Ducktape's; `rules_oci` packages the manager into a distroless image.
@@ -21,7 +21,8 @@ commit [`e2db61b`](https://github.com/flux-iac/tofu-controller/commit/e2db61bdd2
 which merged [PR #1901](https://github.com/flux-iac/tofu-controller/pull/1901).
 `MODULE.bazel` fetches both official Go proxy zips for that commit with `archive_override`.
 
-`patches/bazel.patch` exports the CRD YAML: build glue, not part of upstream source.
+`patches/bazel.patch` exports the CRD YAML; `patches/kustomize-embed.patch` makes embedded
+Kustomize schemas visible to Bazel. Both are build glue.
 
 The controller's tests, including the `ExternalArtifact` envtest case, live with the upstream
 source and run in its own CI: they need a `kube-apiserver` and a `tofu` binary, so Ducktape only
