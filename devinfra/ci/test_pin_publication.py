@@ -186,6 +186,17 @@ def test_normal_job_conclusions_match_release_cancellation_policy(conclusion: st
     assert attempt == ("" if conclusion in {"cancelled", "skipped"} else "2")
 
 
+def test_cancelled_bazel_job_cannot_inherit_old_package_publication() -> None:
+    assert job_attempts(
+        [
+            job("bazel-ci / Test & Build", 2, conclusion="cancelled"),
+            job("release / Compute release matrix", 1),
+            job("release / Release package", 1),
+        ],
+        run_attempt=2,
+    ) == ("", {})
+
+
 @pytest.mark.parametrize(
     "changes",
     [

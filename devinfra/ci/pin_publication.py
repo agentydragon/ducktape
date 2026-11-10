@@ -121,6 +121,8 @@ def job_attempts(jobs: Iterable[Any], *, run_attempt: int) -> tuple[str, dict[st
         if attempt <= run_attempt and len(matching) == 1:
             latest[name] = matching[0]
     normal = latest.get("bazel-ci / Test & Build")
+    if normal and normal.conclusion == "cancelled":
+        return "", {}  # ci.yml does not run publication after a cancelled bazel-ci job.
     normal_attempt = (
         str(normal.run_attempt)
         if normal and normal.status == "completed" and normal.conclusion in {"success", "failure", "timed_out"}
