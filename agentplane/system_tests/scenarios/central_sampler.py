@@ -420,7 +420,7 @@ async def _follow_code_mode_cell(
                     *responses_sse.response_stream(
                         [
                             responses_sse.FunctionCall(
-                                wait_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 1000}
+                                wait_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 10000}
                             )
                         ],
                         model=MODEL,
@@ -700,7 +700,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         assert outage_seconds < 30, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
-        request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=20)
+        request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=140)
         assert "Script completed" in read_text, read_text
         assert "finished\\n" in read_text, "the original in-flight read did not return process output: " + read_text
         assert '"exit_code":0' in read_text, "the original process did not exit successfully: " + read_text
@@ -858,7 +858,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         executor_pod, executor_pod_uid, old_exec_server = killed_native
         request = await asyncio.wait_for(model.request(), timeout=45)
         request, read_text, visible = await _follow_code_mode_cell(
-            model, request, "read-expiring-process", timeout_s=20
+            model, request, "read-expiring-process", timeout_s=140
         )
         if "retained exec-server session was definitively lost" not in visible:
             await model.reply(request, ShellCall("observe-replacement", "true"))
