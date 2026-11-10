@@ -91,5 +91,25 @@ async def test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume(
     )
 
 
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_gateway_roll_keeps_live_central_read_and_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.gateway_roll_keeps_live_central_read_and_turn(
+        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-roll")
+    )
+
+
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_gateway_expiry_notifies_active_central_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.gateway_outage_expires_native_session_then_notifies_model(
+        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-expiry")
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

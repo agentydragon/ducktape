@@ -22,6 +22,7 @@ from agentplane.system_tests.driver.central_sampler import (
     CentralStack,
     capture_sampler_diagnostics,
     central_stack,
+    sampler_caller_after_gateway_roll,
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -208,6 +209,479 @@ async def _wait_for_turn_status(
             raise TimeoutError(f"History ended before turn {turn_id} completed")
         finally:
             events.cancel()
+
+
+async def _started_gateway_roll_process(deployed: CentralStack, session_id: str) -> tuple[int, str]:
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+    )
+    cursor = 0
+    process_ids = []
+    async for frame in stream:
+        cursor = frame.entry.cursor
+        event = frame.entry.event
+        if not event.HasField("boundary_record"):
+            continue
+        boundary = event.boundary_record
+        if boundary.boundary != "executor" or boundary.direction != "dispatch" or boundary.fragment_count != 1:
+            continue
+        payload = json.loads(boundary.payload)
+        if payload.get("method") == "process/start" and "gateway-roll-marker" in json.dumps(payload.get("params")):
+            process_ids.append(payload["params"]["processId"])
+    (process_id,) = process_ids
+    return cursor, process_id
+
+
+async def _wait_for_executor_dispatch_after(
+    deployed: CentralStack, session_id: str, cursor: int, process_id: str
+) -> str:
+    """Follow the model cell into its delegated write_stdin and blocking process read."""
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, after_cursor=cursor, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=30,
+    )
+    model_cell_sent = False
+    delegated_read = False
+    try:
+        async for frame in stream:
+            event = frame.entry.event
+            if not event.HasField("boundary_record"):
+                continue
+            boundary = event.boundary_record
+            if boundary.fragment_count != 1:
+                continue
+            payload = json.loads(boundary.payload)
+            if boundary.boundary == "javascript" and boundary.direction == "send":
+                model_cell_sent |= '"tool_call_id":"read-live-process"' in json.dumps(payload, separators=(",", ":"))
+            elif boundary.boundary == "tool" and boundary.direction == "dispatch" and model_cell_sent:
+                delegated_read |= payload.get("tool_name", {}).get("name") == "write_stdin" and bool(
+                    payload.get("cell_id")
+                )
+            elif (
+                boundary.boundary == "executor"
+                and boundary.direction == "dispatch"
+                and delegated_read
+                and payload.get("method") == "process/read"
+                and payload.get("params", {}).get("processId") == process_id
+                and payload.get("params", {}).get("waitMs", 0) > 0
+            ):
+                return boundary.correlation_id
+        raise TimeoutError("the live process read never reached the executor")
+    finally:
+        stream.cancel()
+
+
+async def _wait_for_failed_gateway_resume(deployed: CentralStack, session_id: str, after_cursor: int) -> str:
+    """A failed resume in retained History proves its preceding event prefix is complete."""
+    resume_intents: set[str] = set()
+    read_cell_result = None
+    cursor = after_cursor
+    async with asyncio.timeout(15):
+        while True:
+            page = await deployed.history.read_session_events(session_id, after_cursor=cursor, limit=1000)
+            for entry in page.entries:
+                cursor = entry.cursor
+                event = entry.event
+                if not event.HasField("boundary_record"):
+                    continue
+                boundary = event.boundary_record
+                if boundary.fragment_count != 1:
+                    continue
+                payload = json.loads(boundary.payload)
+                if boundary.boundary == "cell" and boundary.direction == "result":
+                    if payload.get("call_id") == "read-live-process":
+                        read_cell_result = payload
+                    continue
+                if boundary.boundary != "executor":
+                    continue
+                if boundary.direction == "dispatch" and payload.get("method") == "initialize":
+                    if payload.get("resume_session_id"):
+                        resume_intents.add(boundary.correlation_id)
+                elif (
+                    boundary.direction == "result"
+                    and boundary.correlation_id in resume_intents
+                    and payload.get("method") == "initialize"
+                    and payload.get("transport_error")
+                ):
+                    assert read_cell_result is None, (
+                        "the model-facing process read returned before the verified failed Gateway resume: "
+                        + json.dumps(read_cell_result)
+                    )
+                    return boundary.correlation_id
+            await asyncio.sleep(0.1)
+
+
+async def _roll_gateway_for_central_session(
+    cluster: Cluster,
+    deployed: CentralStack,
+    *,
+    failed_resume_after: tuple[str, int] | None = None,
+    hold_down_seconds: float = 0,
+) -> tuple[CentralStack, float, str, str]:
+    """Roll only the disposable k3s Gateway, proving an actual service outage."""
+    old_pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+    )["items"]
+    (old_pod,) = [pod for pod in old_pods if not pod["metadata"].get("deletionTimestamp")]
+    old_uid = old_pod["metadata"]["uid"]
+    started = asyncio.get_running_loop().time()
+    try:
+        await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
+        await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
+        gateway_slices = json.loads(
+            await cluster.kubectl(
+                "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
+            )
+        )["items"]
+        assert not any(
+            endpoint.get("conditions", {}).get("ready", True)
+            for item in gateway_slices
+            for endpoint in item.get("endpoints") or []
+        ), "Gateway Service retained a ready endpoint after its only Pod was deleted"
+        if failed_resume_after is not None:
+            await _wait_for_failed_gateway_resume(deployed, *failed_resume_after)
+        if hold_down_seconds:
+            await asyncio.sleep(hold_down_seconds)
+    finally:
+        await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=1")
+        await cluster.kubectl("rollout", "status", "deployment/runner-gateway", "--timeout=120s")
+    new_pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/name=runner-gateway", "-o", "json")
+    )["items"]
+    (new_pod,) = [pod for pod in new_pods if not pod["metadata"].get("deletionTimestamp")]
+    new_uid = new_pod["metadata"]["uid"]
+    assert new_uid != old_uid
+    async with asyncio.timeout(45):
+        while True:
+            slices = json.loads(
+                await cluster.kubectl(
+                    "get",
+                    "endpointslices",
+                    "-l",
+                    f"kubernetes.io/service-name={deployed.sandbox}-control",
+                    "-o",
+                    "json",
+                )
+            )["items"]
+            if any(
+                endpoint.get("conditions", {}).get("ready")
+                and new_pod["status"]["podIP"] in endpoint.get("addresses", [])
+                for item in slices
+                for endpoint in item.get("endpoints", [])
+            ):
+                break
+            await asyncio.sleep(0.2)
+    return (
+        await sampler_caller_after_gateway_roll(cluster, deployed),
+        asyncio.get_running_loop().time() - started,
+        old_uid,
+        new_uid,
+    )
+
+
+async def _wait_for_folded_turn(deployed: CentralStack, session_id: str, command_id: str) -> None:
+    """Require the user-facing History projection to include a completed sampler turn."""
+    stream = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
+    )
+    terminal = None
+    async for frame in stream:
+        event = frame.entry.event
+        if event.HasField("turn_completed") and event.turn_completed.turn_id == command_id:
+            terminal = frame.entry
+    assert terminal is not None, f"sampler has no terminal event for {command_id}"
+    assert terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED, terminal.event.turn_completed
+    async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
+        async for _ in changes:
+            try:
+                summary = await deployed.history.get_session_summary(session_id)
+            except ServiceError as error:
+                if error.code == grpc.StatusCode.NOT_FOUND:
+                    continue
+                raise
+            if summary.folded_through >= terminal.cursor:
+                assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
+                assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
+                return
+    raise TimeoutError(f"History did not fold completed turn {command_id} through cursor {terminal.cursor}")
+
+
+async def _assert_projected_ready_for_input(deployed: CentralStack, session_id: str) -> None:
+    entities = await deployed.history.read_thread_entities(
+        history_service_pb2.ReadThreadEntitiesRequest(
+            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+        )
+    )
+    (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
+    assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
+    assert not view.controls.HasField("active_turn_id"), view
+
+
+async def gateway_roll_keeps_live_central_read_and_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """A real Gateway outage interrupts process/read, then the same call and turn finish."""
+    session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        spec = session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
+            ),
+            cwd=executor.cwd,
+            model=MODEL,
+        )
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec, setup_script=":\n"),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command,
+                text="Start a process, wait for its result, and report the single side effect.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        command = "printf 'once\\n' >> gateway-roll-marker; sleep 20; printf 'finished\\n'"
+        start_cell = (
+            "const started = await tools.exec_command({cmd: " + json.dumps(command) + ", yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            'store("gateway-roll-handle", started.session_id);\n'
+            "text(JSON.stringify({session_id: started.session_id, output: started.output}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("start-live-process", "exec", start_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        assert any(
+            output.call_id == "start-live-process" and "session_id" in "\n".join(output.blocks)
+            for output in request.tool_outputs
+        )
+        await _wait_for_execution_progress(
+            deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
+        )
+        cursor, process_id = await _started_gateway_roll_process(deployed, session_id)
+        read_cell = (
+            'const handle = load("gateway-roll-handle");\n'
+            "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
+            "text(JSON.stringify({handle, result}));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("read-live-process", "exec", read_cell)], model=MODEL
+                ).events
+            )
+        read_intent = await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id)
+        recovered, outage_seconds, old_gateway_uid, new_gateway_uid = await _roll_gateway_for_central_session(
+            cluster, deployed, failed_resume_after=(session_id, cursor)
+        )
+        assert outage_seconds < 25, f"Gateway fixture outage exceeded native session grace: {outage_seconds:.1f}s"
+        request = await asyncio.wait_for(model.request(), timeout=45)
+        assert request.native.client_metadata.session_id == session_id
+        (read_output,) = [output for output in request.tool_outputs if output.call_id == "read-live-process"]
+        read_text = "\n".join(read_output.blocks)
+        assert "Script completed" in read_text, read_text
+        assert "finished\\n" in read_text, "the original in-flight read did not return process output: " + read_text
+        assert '"exit_code":0' in read_text, "the original process did not exit successfully: " + read_text
+        await model.reply(request, ShellCall("verify-once", "cat gateway-roll-marker"))
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        (marker_output,) = [output for output in request.tool_outputs if output.call_id == "verify-once"]
+        marker_text = "\n".join(marker_output.blocks)
+        _, marker_separator, marker_json = marker_text.partition("Output:\n")
+        assert marker_separator, marker_text
+        marker_result = json.loads(marker_json.strip())
+        assert marker_result["exit_code"] == 0, marker_result
+        assert marker_result["output"] == "once\n", f"the executor mutation was replayed or lost: {marker_result}"
+        await model.reply(request, Text("The running process finished after the Gateway recovered; marker: once."))
+        await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, first_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await recovered.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=recovered.sandbox_uid,
+                command_id=second_command,
+                text="Confirm the Session still accepts another input.",
+            ),
+            metadata=recovered.metadata,
+            timeout=15,
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any("Confirm the Session still accepts" in text for text in request.user_texts)
+        await model.reply(request, Text("The same Session accepted the next input."))
+        await _wait_for_turn_status(recovered, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, second_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        snapshot = await recovered.sampler.GetSession(
+            sampler_pb2.GetSessionRequest(session_id=session_id), metadata=recovered.sampler_metadata, timeout=10
+        )
+        assert not snapshot.blocked
+        entities = await recovered.history.read_thread_entities(
+            history_service_pb2.ReadThreadEntitiesRequest(
+                session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+            )
+        )
+        for command_id in (first_command, second_command):
+            assert any(
+                entity.HasField("confirmed_input") and command_id in entity.confirmed_input.origin_command_ids
+                for entity in entities.entities
+            ), f"History did not project input {command_id}"
+        (undeclared_outputs_dir() / "central-sampler-gateway-roll.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "first_command_id": first_command,
+                    "second_command_id": second_command,
+                    "old_gateway_uid": old_gateway_uid,
+                    "new_gateway_uid": new_gateway_uid,
+                    "original_process_id": process_id,
+                    "in_flight_read_intent": read_intent,
+                    "outage_seconds": outage_seconds,
+                    "read_output": read_text,
+                    "marker_output": marker_text,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+
+
+async def gateway_outage_expires_native_session_then_notifies_model(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+) -> None:
+    """A detached native session that expires is replaced visibly, with no old mutation replay."""
+    session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        spec = session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
+            ),
+            cwd=executor.cwd,
+            model=MODEL,
+        )
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec, setup_script=":\n"),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=first_command,
+                text="Start one long-running process and continue this turn after any executor disruption.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        start_cell = (
+            "const started = await tools.exec_command({cmd: "
+            + json.dumps("printf 'once\\n' >> gateway-loss-marker; sleep 120")
+            + ", yield_time_ms: 1000});\n"
+            'if (started.session_id === undefined) throw new Error("process was not left running");\n'
+            "text(JSON.stringify(started));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("start-expiring-process", "exec", start_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any(
+            output.call_id == "start-expiring-process" and "session_id" in "\n".join(output.blocks)
+            for output in request.tool_outputs
+        )
+        # Keep this model request unanswered: the original turn remains active throughout the outage.
+        recovered, outage_seconds, old_gateway_uid, new_gateway_uid = await _roll_gateway_for_central_session(
+            cluster, deployed, hold_down_seconds=40
+        )
+        assert outage_seconds >= 40, outage_seconds
+        first_attempt = (
+            "try { text(await tools.exec_command({cmd: "
+            + json.dumps("printf 'attempted\\n' >> gateway-loss-marker")
+            + '})); } catch (error) { text("old-session-error=" + String(error)); }'
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("observe-expired-session", "exec", first_attempt)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        visible = "\n".join(
+            [*request.user_texts, *(block for output in request.tool_outputs for block in output.blocks)]
+        )
+        assert "retained exec-server session was definitively lost" in visible, visible
+        assert "no mutation was replayed" in visible, visible
+        await model.reply(
+            request,
+            ShellCall("continue-on-fresh-session", "printf 'fresh\\n' >> gateway-loss-marker; cat gateway-loss-marker"),
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        (fresh_output,) = [output for output in request.tool_outputs if output.call_id == "continue-on-fresh-session"]
+        fresh_text = "\n".join(fresh_output.blocks)
+        _, fresh_separator, fresh_json = fresh_text.partition("Output:\n")
+        assert fresh_separator, fresh_text
+        fresh_result = json.loads(fresh_json.strip())
+        assert fresh_result["exit_code"] == 0, fresh_result
+        assert fresh_result["output"] == "once\nfresh\n", fresh_result
+        await model.reply(request, Text("The new executor continued without replaying the old operation."))
+        await _wait_for_turn_status(recovered, session_id, first_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, first_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        await recovered.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=recovered.sandbox_uid,
+                command_id=second_command,
+                text="Confirm the replacement executor left this Session able to accept another input.",
+            ),
+            metadata=recovered.metadata,
+            timeout=15,
+        )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert any("Confirm the replacement executor" in text for text in request.user_texts)
+        await model.reply(request, Text("The replacement executor Session accepted the next input."))
+        await _wait_for_turn_status(recovered, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(recovered, session_id, second_command)
+        await _assert_projected_ready_for_input(recovered, session_id)
+        (undeclared_outputs_dir() / "central-sampler-gateway-expiry.json").write_text(
+            json.dumps(
+                {
+                    "session_id": session_id,
+                    "old_gateway_uid": old_gateway_uid,
+                    "new_gateway_uid": new_gateway_uid,
+                    "outage_seconds": outage_seconds,
+                    "model_visible_notice": visible,
+                    "fresh_output": fresh_text,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
 
 
 async def dispatcher_central_setup_tool_and_retained_answer(
