@@ -257,6 +257,27 @@ def test_stale_fallback(session: GnomeSession) -> None:
     assert "HTTP 503 Service Unavailable" in popup.details
 
 
+def test_warnings_precede_readings_and_spend_precedes_windows(session: GnomeSession) -> None:
+    _reload_fixture(session, "stale_fallback")
+    session.open_menu()
+    try:
+        positions = json.loads(string_reply(session.call("GetRowPositions", "claude")))
+        assert positions["status"] < positions["window"]
+    finally:
+        session.close_menu()
+
+    _reload_fixture(session, "extra_enabled_not_burning")
+    session.open_menu()
+    try:
+        popup = _ProviderPopup(session, "claude")
+        assert "Extra spend" not in popup.status
+        assert "Extra spend this month: $2,324.85" in popup.text("GetSpendText")
+        positions = json.loads(popup.text("GetRowPositions"))
+        assert positions["spend"] < positions["window"]
+    finally:
+        session.close_menu()
+
+
 def test_openai_platform_credits(session: GnomeSession) -> None:
     _reload_fixture(session, "openai_platform_credits")
     popup = _ProviderPopup(session, "openai_platform")
@@ -469,6 +490,8 @@ def test_render_distinct_prepaid_and_quota_staleness(
 
     geometry = session.open_menu()
     try:
+        positions = json.loads(popup.text("GetRowPositions"))
+        assert positions["status"] < positions["balance"] < positions["window"]
         capture_menu.capture(geometry, label="Claude distinct staleness")
     finally:
         session.close_menu()

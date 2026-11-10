@@ -141,6 +141,23 @@ function sampleQuotas(): AllQuotasView {
 }
 
 describe("QuotaBoard", () => {
+  it("puts fresh exhaustion above readings and styles it as urgent; pending resets are warnings", () => {
+    const quotas = sampleQuotas();
+    render(quotas);
+    let card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    let status = card.querySelector(".aiquota-status-row")!;
+    expect(status.classList.contains("aiquota-status-urgent")).toBe(true);
+    expect(status.compareDocumentPosition(card.querySelector(".aiquota-readings")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+
+    render(quotas, Date.parse("2026-01-15T14:31:00Z"));
+    card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    status = card.querySelector(".aiquota-status-row")!;
+    expect(status.textContent).toContain("awaiting updated usage");
+    expect(status.classList.contains("aiquota-status-urgent")).toBe(false);
+  });
+
   it("groups providers, renders normalized balances and grants, and keeps paid windows visible", () => {
     render(sampleQuotas());
 

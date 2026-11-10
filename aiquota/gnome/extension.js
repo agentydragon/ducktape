@@ -316,6 +316,8 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetReadingGroups"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="groups"/></method>' +
           '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetBurnText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetSpendText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetRowPositions"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="positions"/></method>' +
           '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelProviders"><arg type="s" direction="out" name="providers"/></method>' +
@@ -359,6 +361,18 @@ const QuotaIndicator = GObject.registerClass(
             this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
           GetBurnText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.burnRow?._summaryLabel.get_text() ?? "",
+          GetSpendText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.spendRow?._summaryLabel.get_text() ?? "",
+          GetRowPositions: (provider) => {
+            const p = this._providers.find(({ id }) => id === provider);
+            if (!p) return "{}";
+            return JSON.stringify({
+              status: p.statusRow.get_transformed_position()[1],
+              balance: p.readingSections[0].balanceRow.get_transformed_position()[1],
+              spend: p.spendRow.get_transformed_position()[1],
+              window: p.windowRows[0].get_transformed_position()[1],
+            });
+          },
           GetResetText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
           GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",
@@ -681,11 +695,13 @@ const QuotaIndicator = GObject.registerClass(
         p.resetRow = this._makeTextRow();
         p.statusRow = this._makeTextRow();
         p.burnRow = this._makeTextRow();
+        p.spendRow = this._makeTextRow();
         p.windowRows = Array.from({ length: Math.max(1, effectiveState(p.state).windows.length) }, () =>
           this._makeQuotaRow("quota")
         );
         p.detailsItem = this._makeDetailsSubmenu("Details");
         this.menu.addMenuItem(p.header);
+        this.menu.addMenuItem(p.statusRow);
         for (const section of p.readingSections) {
           if (section.header) {
             section.header.label.add_style_class_name("quota-popup-header");
@@ -696,8 +712,8 @@ const QuotaIndicator = GObject.registerClass(
           this.menu.addMenuItem(section.grantRow);
         }
         this.menu.addMenuItem(p.resetRow);
-        this.menu.addMenuItem(p.statusRow);
         this.menu.addMenuItem(p.burnRow);
+        this.menu.addMenuItem(p.spendRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
         this.menu.addMenuItem(p.detailsItem);
         p.header.label.add_style_class_name("quota-popup-header");
@@ -1016,6 +1032,7 @@ const QuotaIndicator = GObject.registerClass(
         this._renderResetRow(p.resetRow, p.state);
         this._renderStatusRow(p.statusRow, p.state);
         this._renderBurnRow(p.burnRow, p.state);
+        this._renderSpendRow(p.spendRow, p.state);
         const { windows, staleAge } = effectiveState(p.state);
         windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
         p.windowRows.forEach((row, index) => (row.visible = index < windows.length));
@@ -1073,14 +1090,20 @@ const QuotaIndicator = GObject.registerClass(
       if (status) parts.push(status);
       if (state.errorSummary) parts.push(state.errorSummary);
       if (staleAge != null) parts.push(`Stale · observation ${formatAge(staleAge)} old`);
-      const extraSpend = formatExtraSpend(state.extraSpend);
-      if (extraSpend) parts.push(extraSpend);
       if (!hasData) parts.push("No quota or balance readings");
       item.visible = parts.length > 0;
       item._summaryLabel.set_text(parts.join(" · "));
       item._summaryLabel.remove_style_class_name("quota-popup-status-warning");
-      if (state.errorSummary || staleAge != null || resetPending)
-        item._summaryLabel.add_style_class_name("quota-popup-status-warning");
+      item._summaryLabel.remove_style_class_name("quota-popup-status-urgent");
+      if (state.errorSummary || (status && staleAge == null && !resetPending))
+        item._summaryLabel.add_style_class_name("quota-popup-status-urgent");
+      else if (staleAge != null || resetPending) item._summaryLabel.add_style_class_name("quota-popup-status-warning");
+    }
+
+    _renderSpendRow(item, state) {
+      const spend = formatExtraSpend(state.extraSpend);
+      item.visible = spend != null;
+      item._summaryLabel.set_text(spend ?? "");
     }
 
     _renderBurnRow(item, state) {
