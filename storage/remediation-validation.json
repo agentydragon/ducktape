@@ -1,0 +1,40 @@
+{
+  "validated_at_utc": "2026-11-10T19:55:52.606756+00:00",
+  "scope": "The updated storage page and its shared presentation files; the earlier inventory retains its own 2026-11-09 observation window.",
+  "files_sha256": {
+    "storage/index.html": "44dfbc8954adb7611b7c2466482823b84afef47a3ebbf1f72580b1d8c3dfa0d9",
+    "storage/remediation.js": "bf539d5ddd5e11cb99f46ef418a3e9bc33803767e7ec0ca9970e473b7953e692",
+    "storage/remediation-evidence.json": "608270fd704a4e79ddba86aeb5a7dea4b83c39a77db2f7bedae90941ffe76de6",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+  },
+  "browser_test": {
+    "invocation": "https://app.buildbuddy.io/invocation/6873f4cd-d1d9-4721-9339-5c76b81baeb2",
+    "execution": "Bazel remote execution using a temporary test harness serving byte-identical copies of the listed site files and real pinned CDN resources.",
+    "cases": [
+      "1280x900 light",
+      "1280x900 dark",
+      "390x844 light",
+      "390x844 dark"
+    ],
+    "checks": [
+      "Rendered chart bars and no page-wide horizontal overflow",
+      "Scenario arithmetic and mutually exclusive ClickHouse options",
+      "Decision filtering and persistence across reload",
+      "ClickHouse evidence disclosure",
+      "Live system color preference changes",
+      "Compression summary values"
+    ],
+    "captures": [
+      "overview",
+      "pool",
+      "age",
+      "compression",
+      "columns",
+      "option",
+      "scenario"
+    ],
+    "result": "passed"
+  },
+  "visual_review": "Inspected desktop and mobile screenshots in both themes, including the pool, S3 age, compression and ClickHouse charts and an intervention card. A compression text spacing issue found during review was corrected and the checks rerun."
+}

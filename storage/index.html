@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Cluster storage · 9 November 2026</title>
+    <title>Cluster storage · remediation and inventory</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -68,6 +68,7 @@
         Title,
       } from "@mantine/core";
       import { html, mount } from "../report.js";
+      import { StorageRemediation } from "./remediation.js";
       import { useState } from "react";
       import { BarChart } from "@mantine/charts";
       const buckets = [
@@ -1404,15 +1405,16 @@
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
         >
-          <header>
+          <${StorageRemediation} />
+          <header id="prior-inventory">
             <${Text} component="p" my="sm">
-              ${"Ducktape · Storage · 9 November 2026 UTC"}
+              ${"Previous inventory · 9 November 2026 UTC; measurements below have not been refreshed."}
             <//>
-            <${Title} order=${1} mt="md" mb="sm">
-              ${" Two backup retirements landed. Object storage still has a job. "}
+            <${Title} order=${2} mt="md" mb="sm">
+              ${" Previous inventory: two backup retirements landed. "}
             <//>
             <${Text} component="p" my="sm">
-              ${" The rebuildable session projection and Nix cache database no longer have backup Bucket CRs. The current inventory is smaller, while Langfuse and observability remain its largest consumers. Keep durable application data and the remaining PostgreSQL recovery chains; lower bucket totals are not a physical-reclaim measurement. "}
+              ${" The rebuildable session projection and Nix cache database no longer have backup Bucket CRs. That inventory was smaller, while Langfuse and observability were its largest consumers. Keep durable application data and the remaining PostgreSQL recovery chains; lower bucket totals are not a physical-reclaim measurement. "}
             <//>
             <${Text} c="dimmed" component="p" my="sm">
               ${" Bucket response written 07:52 UTC; six thin-pool reads completed 07:54 UTC. This is a non-atomic read-only snapshot, with each bucket's last usage clock retained. No deletion, trim, compaction or migration was performed. "}
