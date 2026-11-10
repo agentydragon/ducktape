@@ -13,6 +13,7 @@ import {
   formatAge as sharedFormatAge,
   formatExtraSpend as sharedFormatExtraSpend,
   refreshWindowTiming,
+  showResetCredits,
   staleObservationAt,
   formatClock,
   formatDuration as sharedFormatDuration,
@@ -125,7 +126,7 @@ function formatExpiry(expiry, details = false) {
 function formatGrant(grant, details = false, includeGroup = false) {
   const parts = [];
   if (includeGroup && grant.group) parts.push(grant.group);
-  parts.push(`${grant.label}: ${grant.remaining}`);
+  parts.push(`${grant.label}: ${grant.remaining} left`);
   parts.push(formatExpiry(grant.expires_at, details));
   if (details) parts.push(`original ${grant.original}`);
   const scope = details ? (grant.scope_detail ?? grant.scope) : grant.scope;
@@ -170,7 +171,8 @@ function formatBurnSummary(burn) {
   if (!changesAt) return null;
   const until = formatDuration(Math.max(0, (changesAt.getTime() - nowMs()) / 1000));
   if (burn.in_peak) {
-    return `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until})`;
+    const scope = burn.applies_to ? ` · ${burn.applies_to}` : "";
+    return `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until})${scope}`;
   }
   return `${formatMultiplier(burn.multiplier)} burn — next ${formatMultiplier(burn.peak_multiplier)} in ${until}`;
 }
@@ -313,6 +315,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetGrantText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetReadingGroups"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="groups"/></method>' +
           '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetBurnText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelProviders"><arg type="s" direction="out" name="providers"/></method>' +
@@ -322,6 +325,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetEmptyLabelText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
+          '<method name="SetPresentationTime"><arg type="d" direction="in" name="now"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
           '<method name="FetchView"/>' +
@@ -353,6 +357,8 @@ const QuotaIndicator = GObject.registerClass(
             ),
           GetStatusText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
+          GetBurnText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.burnRow?._summaryLabel.get_text() ?? "",
           GetResetText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
           GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",
@@ -389,6 +395,11 @@ const QuotaIndicator = GObject.registerClass(
             this._renderPopup();
           },
           GetStreamStatus: () => this._statusRow._summaryLabel.get_text(),
+          SetPresentationTime: (now) => {
+            fixtureNowMs = now;
+            this._renderPanel();
+            this._renderPopup();
+          },
           SetViewForTest: (view) => this._acceptView(view),
           ConnectDaemon: () => this._connectDaemon(),
           FetchView: () => this._fetchView(),
@@ -1037,17 +1048,18 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderResetRow(item, state) {
-      const exhausted = state.windows.some((window) => window.exhausted);
       const count = state.availableResetCredits;
-      const summary =
-        count > 0 || (count === 0 && exhausted)
-          ? formatBankedResets(
-              count,
-              state.availableResetCreditExpiries,
-              state.resetCreditExpiryLookupFailed,
-              new Date(nowMs())
-            )
-          : null;
+      const summary = showResetCredits(
+        count,
+        state.windows.map((window) => withLiveReset(window))
+      )
+        ? formatBankedResets(
+            count,
+            state.availableResetCreditExpiries,
+            state.resetCreditExpiryLookupFailed,
+            new Date(nowMs())
+          )
+        : null;
       item.visible = summary != null;
       item._summaryLabel.set_text(summary == null ? "" : `Banked resets: ${summary}`);
     }
@@ -1104,8 +1116,7 @@ const QuotaIndicator = GObject.registerClass(
         new Date(nowMs()),
         true
       );
-      if (resetDetails && (state.availableResetCredits > 0 || state.windows.some((window) => window.exhausted)))
-        details.push(`Banked resets: ${resetDetails}`);
+      if (resetDetails !== null) details.push(`Banked resets: ${resetDetails}`);
       const schedule = formatPeakSchedule(state.burn);
       if (schedule && (state.windows.length || state.balances.length || state.grants.length)) details.push(schedule);
       this._renderDetails(item, details);

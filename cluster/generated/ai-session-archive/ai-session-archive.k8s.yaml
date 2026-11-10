@@ -175,13 +175,15 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
-        - env:
+        - args:
+            - --migrate-database
+          env:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: session-archive-db-hdd-app
-          image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+          image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
           imagePullPolicy: IfNotPresent
           name: migrate-database
           resources:
@@ -313,13 +315,15 @@ spec:
           imagePullSecrets:
             - name: forgejo-images-creds
           initContainers:
-            - env:
+            - args:
+                - --migrate-database
+              env:
                 - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:
                       key: uri
                       name: session-archive-db-hdd-app
-              image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
               resources:
@@ -423,13 +427,15 @@ spec:
           imagePullSecrets:
             - name: forgejo-images-creds
           initContainers:
-            - env:
+            - args:
+                - --migrate-database
+              env:
                 - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:
                       key: uri
                       name: session-archive-db-hdd-app
-              image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
               resources:
@@ -533,13 +539,15 @@ spec:
           imagePullSecrets:
             - name: forgejo-images-creds
           initContainers:
-            - env:
+            - args:
+                - --migrate-database
+              env:
                 - name: DATABASE_URL
                   valueFrom:
                     secretKeyRef:
                       key: uri
                       name: session-archive-db-hdd-app
-              image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
               resources:

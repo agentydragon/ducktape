@@ -698,7 +698,12 @@ export function SustainabilityPage() {
       window.history.replaceState(window.history.state, "", windowHash(view.window_days));
     }
   }, [selectedWindowDays, view?.window_days]);
-  const statusLabel = view?.status === "provisional" ? "Provisional" : (view?.status ?? "loading");
+  const statusLabel =
+    view?.status === "provisional"
+      ? "Provisional"
+      : view?.status === "unavailable" && view.annualized_spending_minor_units != null
+        ? "Partial"
+        : (view?.status ?? "loading");
   const statusColor = view ? statusColors[view.status] : "gray";
 
   return (
@@ -794,9 +799,17 @@ export function SustainabilityPage() {
                     {view.period_end} (complete days, {view.time_zone})
                   </Text>
                   {view.status === "unavailable" && (
-                    <Alert color="orange" title="Estimate unavailable">
-                      Current spending or portfolio data is not sufficient to calculate this estimate. Review the source
-                      status and issues below.
+                    <Alert
+                      color="orange"
+                      title={
+                        view.annualized_spending_minor_units == null
+                          ? "Estimate unavailable"
+                          : "Withdrawal rate unavailable"
+                      }
+                    >
+                      {view.annualized_spending_minor_units == null
+                        ? "Current spending or portfolio data is not sufficient to calculate this estimate. Review the source status and issues below."
+                        : "Spending information is available, but a withdrawal rate cannot be calculated. Review the portfolio status and issues below."}
                     </Alert>
                   )}
                   {(view.status === "ready" || view.status === "provisional") && (

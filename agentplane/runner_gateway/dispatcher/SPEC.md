@@ -28,8 +28,9 @@ It scopes existing Sessions and existing environments; it does not create enviro
 ## Delegated callers
 
 - An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,
-  and the exact full RPC method names that accept delegated calls. It does not inherit `dispatcher_callers` or
-  `wake_callers`; the latter remains a separate trusted automatic-wake broker grant.
+  whether it may assert Identities (`identity_callers`, which requires `policy_namespace`), and the exact full RPC
+  method names that accept delegated calls. It does not inherit `dispatcher_callers` or `wake_callers`; the latter
+  remains a separate trusted automatic-wake broker grant.
 - Shared workload-auth middleware admits the Actions token only on the configured Dispatcher and EnvironmentService methods and rechecks the effective caller's current ServiceAccount UID
   before the handler runs. Direct and delegated calls both use the typed `EffectiveCaller` admission. Missing or replaced
   ServiceAccounts fail closed, and backend lookup failures return `UNAVAILABLE`.
@@ -42,6 +43,12 @@ It scopes existing Sessions and existing environments; it does not create enviro
   Action request and execution UUIDs are correlation fields only. Existing Session IDs, command IDs and domain request
   equality remain the reconciliation keys; a retry returns the original attribution and cannot duplicate an effect or
   rewrite its admission evidence.
+- A delegated Identity caller is authorized exactly as that Identity's own workload: it reads, writes, cancels and
+  watches only Sessions recorded with its exact Identity incarnation, which middleware checked against the live
+  Identity. It never opens a Session (`CreateSession` is `PERMISSION_DENIED`) and its queued work never requests a
+  wake. Its dispatch rows record the Identity, the actor's ServiceAccount and Pod and the Action correlation in
+  columns of their own, which a replica predating them reads as unattributed. EnvironmentService admits no
+  Identity caller, delegated or direct.
 - No credentials or Action lease token are persisted. The Gateway performs no Actions or app lookup. Delegation does not
   alter the Runner transport boundary below.
 

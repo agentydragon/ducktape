@@ -250,6 +250,7 @@ py_test(
     name = "test_ingest",
     srcs = ["test_ingest.py"],
     deps = [
+        ":database",
         ":ingest",
         ":models",
         ":record_json",
@@ -377,6 +378,7 @@ py_test(
         ":database",
         ":ingest",
         ":models",
+        ":restic",
         ":testing",
         "//:conftest",
         "//util/testing:postgres_fixtures",

@@ -164,6 +164,10 @@ tax assumption, funding and withdrawal percentages remain unavailable; consumpti
 Rates are finite decimal fractions and are serialized as JSON strings; currency amounts remain integer minor units.
 The reference markers are scenarios, not guarantees of lifetime sustainability.
 
+If a portfolio valuation is unavailable, complete spending history remains visible in dollars. The chart can include
+modeled withdrawal taxes when a tax assumption exists; withdrawal percentages and reference comparisons remain hidden
+until a usable portfolio is available. Missing spending history is still shown as a gap.
+
 Reversal reconciliation is shared with private reports through typed reason codes, matched record references,
 purchase days and posting selector bounds. Resolve all retained history before selecting a report period.
 An unresolved assertion excludes neither leg: ordinary classification and refund handling continue. Affected

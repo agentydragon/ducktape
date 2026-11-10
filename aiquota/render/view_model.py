@@ -335,6 +335,15 @@ def _window_view(
     )
 
 
+# Keep the default visibility rule in sync with shared/presentation.ts.
+def show_reset_credits(count: int | None, windows: list[WindowView], *, details: bool = False) -> bool:
+    return count is not None and (
+        count > 0
+        or details
+        or (any(window.exhausted for window in windows) and not any(window.reset_pending for window in windows))
+    )
+
+
 def _reset_grant_rows(result: FetchSuccess | None, now: datetime) -> list[GrantView]:
     if result is None:
         return []
