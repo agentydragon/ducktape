@@ -138,7 +138,6 @@ def chart(app: App) -> Chart:
             "ha-mcp",
             "haku-ci",
             "haku-console",
-            "haku-egress-proxy",
             "haku-mailbox",
             "home-assistant",
             "litellm",
