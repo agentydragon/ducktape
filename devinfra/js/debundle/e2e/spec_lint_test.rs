@@ -189,10 +189,11 @@ fn lint_reports_nothing_for_consumed_annotations() {
 /// A `purity: pure` hint whose name no statement of its chunk reads is never
 /// consulted (the classifier reads a hint only at a direct call of the name):
 /// it is `inferable` without a probe, and the run emits the same tree without
-/// that hint. `seven` is called, so its hint stays a classifier lead.
+/// that hint. `seven` is called, so its hint stays a classifier lead. Any
+/// read counts, an export specifier included, so `unused` is not exported.
 #[test]
 fn unread_purity_hint_is_inferable_from_provenance() {
-    const UNREAD: &str = "function seven() { return 7; }\nfunction unused() { return 8; }\nconsole.log(seven());\nexport { seven, unused };\n";
+    const UNREAD: &str = "function seven() { return 7; }\nfunction unused() { return 8; }\nconsole.log(seven());\nexport { seven };\n";
     // `seven` keeps its hint; only `unused`'s varies.
     let opts = |unused_hinted: bool| {
         let unused = Member::new("unused");
