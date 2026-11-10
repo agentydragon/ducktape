@@ -17,16 +17,15 @@ Only these CNPG cluster profiles are permitted:
 | Profile             | Instances | Pin                                      | Storage                                            | Anti-affinity                      |
 | ------------------- | --------- | ---------------------------------------- | -------------------------------------------------- | ---------------------------------- |
 | **OVH-HA**          | 2 or 3    | `topology.kubernetes.io/zone: hil-ovh`   | HDD: `piraeus-hdd-local`; SSD: `piraeus-ssd-local` | required, `kubernetes.io/hostname` |
-| **OVH-single**      | 1         | `topology.kubernetes.io/zone: hil-ovh`   | `piraeus-hdd-local`                                | n/a                                |
+| **OVH-single**      | 1         | `topology.kubernetes.io/zone: hil-ovh`   | `piraeus-hdd-2`                                    | n/a                                |
 | **Proxmox-single**  | 1         | `topology.kubernetes.io/region: proxmox` | `piraeus-ssd-local`                                | n/a                                |
 | **Optiplex-single** | 1         | `kubernetes.io/hostname: optiplex`       | `piraeus-ssd-local`                                | n/a                                |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Instances run on separate nodes.
 
-**OVH-single**: The session archive uses one CNPG instance on a single-copy HDD
-volume. Restic is the source of truth, but history present only in pruned snapshots
-cannot be rebuilt from the remaining backups.
+**OVH-single**: The disposable session archive uses one CNPG instance on a
+two-copy HDD volume; there is no second PostgreSQL replica.
 
 **Placement** (callers choose a `cluster.ClusterPlacement` preset): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
@@ -36,8 +35,6 @@ profiles rather than deriving scheduling eligibility from the storage-class
 string:
 
 - `cluster.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
-  control-plane toleration.
-- `cluster.OVH_PIRAEUS_HDD`: `HIL_OVH`, `piraeus-hdd-local`, with the same
   control-plane toleration.
 
 The Piraeus SSD profile allows scheduling onto the current OVH SSD pool nodes,

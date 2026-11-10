@@ -4,7 +4,7 @@ metadata:
   annotations:
     cnpg.io/skipWalArchiving: enabled
     description: Disposable, Restic-derived view of workstation AI session history.
-  name: session-archive-db-hdd
+  name: session-archive-db
   namespace: session-backup
 spec:
   affinity:
@@ -35,7 +35,7 @@ spec:
   storage:
     resizeInUseVolumes: false
     size: 100Gi
-    storageClass: piraeus-hdd-local
+    storageClass: piraeus-hdd-2
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
@@ -64,6 +64,62 @@ spec:
     accessKeyField: AWS_ACCESS_KEY_ID
     name: session-backup-db-backups-s3-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    cnpg.io/skipWalArchiving: enabled
+    description: Streaming replica for migration of the session archive to single-copy HDD.
+  name: session-archive-db-hdd
+  namespace: session-backup
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    pg_basebackup:
+      database: ai_session_archive
+      owner: ai_session_archive
+      source: session-archive-db
+  externalClusters:
+    - connectionParameters:
+        dbname: postgres
+        host: session-archive-db-rw.session-backup.svc.cluster.local
+        user: streaming_replica
+      name: session-archive-db
+      sslCert:
+        key: tls.crt
+        name: session-archive-db-replication
+      sslKey:
+        key: tls.key
+        name: session-archive-db-replication
+      sslRootCert:
+        key: ca.crt
+        name: session-archive-db-ca
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 1
+  postgresql:
+    parameters:
+      wal_receiver_timeout: 60s
+      wal_sender_timeout: 60s
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  replica:
+    enabled: true
+    source: session-archive-db
+  storage:
+    resizeInUseVolumes: false
+    size: 100Gi
+    storageClass: piraeus-hdd-local
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -112,7 +168,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: uri
-                  name: session-archive-db-hdd-app
+                  name: session-archive-db-app
             - name: AI_SESSION_ARCHIVE_PUBLIC_BASE_URL
               value: https://ai-session-archive.allegedly.works
             - name: AI_SESSION_ARCHIVE_PORT
@@ -180,7 +236,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: uri
-                  name: session-archive-db-hdd-app
+                  name: session-archive-db-app
           image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
           imagePullPolicy: IfNotPresent
           name: migrate-database
@@ -285,7 +341,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-hdd-app
+                      name: session-archive-db-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/wyrm2
                 - name: RESTIC_CACHE_DIR
@@ -318,7 +374,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-hdd-app
+                      name: session-archive-db-app
               image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
@@ -395,7 +451,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-hdd-app
+                      name: session-archive-db-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/rugged
                 - name: RESTIC_CACHE_DIR
@@ -428,7 +484,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-hdd-app
+                      name: session-archive-db-app
               image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
@@ -505,7 +561,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-hdd-app
+                      name: session-archive-db-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/iguana
                 - name: RESTIC_CACHE_DIR
@@ -538,7 +594,7 @@ spec:
                   valueFrom:
                     secretKeyRef:
                       key: uri
-                      name: session-archive-db-hdd-app
+                      name: session-archive-db-app
               image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
               imagePullPolicy: IfNotPresent
               name: migrate-database
@@ -605,7 +661,7 @@ spec:
             - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
-            k8s:cnpg.io/cluster: session-archive-db-hdd
+            k8s:cnpg.io/cluster: session-archive-db
       toPorts:
         - ports:
             - port: "5432"
@@ -652,7 +708,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:cnpg.io/cluster: session-archive-db-hdd
+            k8s:cnpg.io/cluster: session-archive-db
       toPorts:
         - ports:
             - port: "5432"
