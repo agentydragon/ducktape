@@ -133,6 +133,10 @@ async def repaint(page: Page) -> None:
         session = await page.context.new_cdp_session(page)
         stack.push_async_callback(session.detach)
         await session.send("LayerTree.enable")
+        # TODO: Possible ~40 ms/capture saving (~2-3% of a visual shard, measured on RBE 2026-11-10):
+        # keep the domain enabled through the screenshot and disable it after, so the screenshot's own
+        # frame carries the full repaint and the two-frame wait here goes away. It changes the ordering
+        # this relies on, so it needs the x10 determinism runs that #15287 used before it lands.
         await wait_for_stable(page)
         await session.send("LayerTree.disable")
 
