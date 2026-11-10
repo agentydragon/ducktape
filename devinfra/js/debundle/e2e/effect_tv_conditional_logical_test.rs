@@ -892,6 +892,133 @@ fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
     }
 }
 
+// The analyzer's class values do not retain their creation environment. The
+// superclass can be an enclosing value reached through an expression, a
+// local object, or a factory; a later `new` must still reach it.
+const COMPOUND_CLASS_HERITAGE: &[(&str, &str, &[&str])] = &[
+    ("return class extends (0, h) {};", "", &[]),
+    (
+        "const o = { Base: h }; return class extends o.Base {};",
+        "",
+        &[],
+    ),
+    (
+        "return class extends mixin(h) {};",
+        "function mixin(v) { return v; }",
+        &["mixin"],
+    ),
+    ("return class extends (first() ? first : h) {};", "", &[]),
+    ("return class extends (h || first) {};", "", &[]),
+    (
+        "function factory() { return h; } return class extends factory() {};",
+        "",
+        &[],
+    ),
+    (
+        "const factory = () => h; return class extends factory() {};",
+        "",
+        &[],
+    ),
+    // These were already rejected: keep the unknown-property and unknown-syntax
+    // controls beside the newly covered cases.
+    (
+        "const o = { Base: h }; const key = 'Base'; return class extends o[key] {};",
+        "",
+        &[],
+    ),
+    (
+        "const factory = () => h; return class extends factory`` {};",
+        "",
+        &[],
+    ),
+];
+
+fn compound_heritage_definitions(make: &str, prefix: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{prefix}\n{}",
+        class_capture_definitions(
+            make,
+            "const C = make({value}); return new C();",
+            guard,
+            value
+        ),
+    )
+}
+
+#[test]
+fn a_class_publishes_compound_heritage_captures() {
+    for &(make, prefix, extra) in COMPOUND_CLASS_HERITAGE {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &compound_heritage_definitions(make, prefix, guard, "second"),
+                &members,
+            );
+        }
+    }
+}
+
+#[test]
+fn a_class_with_effect_free_compound_heritage_keeps_the_split() {
+    for &(make, prefix, extra) in COMPOUND_CLASS_HERITAGE {
+        let mut members = vec!["make"];
+        members.extend_from_slice(extra);
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &compound_heritage_definitions(make, prefix, guard, "first"),
+                &members,
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+#[test]
+fn compound_heritage_does_not_publish_an_unrelated_parameter() {
+    let definitions = "function make(h, unused) { return class extends (0, h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(first, second); return new C(); }";
+    let fixture = with_reader_split(definitions, &["make"], run_fixture);
+    assert_preserved_entry_output(&fixture, "0 0\n");
+}
+
+#[test]
+fn a_constructor_created_in_the_heritage_keeps_its_effects() {
+    for body in ["second();", "counter = 1;"] {
+        let definitions = format!(
+            "function make() {{ return class extends (0, function Base() {{ {body} }}) {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
+        );
+        assert_reader_split_diverges_with(&definitions, &["make"]);
+    }
+}
+
+#[test]
+fn a_local_heritage_factory_can_return_a_module_callback() {
+    for (value, effectful) in [("second", true), ("first", false)] {
+        let definitions = format!(
+            "function make() {{ const factory = () => {value}; return class extends factory() {{}}; }}\nfunction flag() {{ return 0; }}\nfunction run() {{ const C = make(); return new C(); }}"
+        );
+        if effectful {
+            assert_reader_split_diverges_with(&definitions, &["make"]);
+        } else {
+            let fixture = with_reader_split(&definitions, &["make"], run_fixture);
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
+
+#[test]
+fn a_heritage_factory_runs_at_class_creation() {
+    let definitions = "function factory() { second(); return first; }\nfunction make() { return class extends factory() {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(); return new C(); }";
+    assert_reader_split_diverges_with(definitions, &["factory", "make"]);
+}
+
+#[test]
+fn heritage_observes_a_local_changed_by_an_earlier_operand() {
+    let definitions = "function make(h) { function change() { h = second; } return class extends (change(), h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(first); return new C(); }";
+    assert_reader_split_diverges_with(definitions, &["make"]);
+}
+
 /// Opposing control: a direct `eval` runs string code that can read and
 /// write any binding visible by name, which no summary sees: refused at
 /// admission (A1) at any depth.
