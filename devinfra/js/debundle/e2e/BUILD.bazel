@@ -191,6 +191,12 @@ debundle_e2e_test(
     ],
 )
 
+# 820 debundler runs, each followed by two Node runs.
+debundle_e2e_test(
+    name = "foreign_state_node_differential_sweep_test",
+    timeout = "moderate",
+)
+
 debundle_e2e_test(
     name = "foreign_cell_read_order_test",
     deps = [
