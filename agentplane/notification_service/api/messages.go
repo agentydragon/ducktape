@@ -43,9 +43,6 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
 		return nil, err
 	}
-	if !s.policy.Health.Available() {
-		return nil, errSendPolicyUnavailable
-	}
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: request.GetSessionId()})
 	if status.Code(err) == codes.NotFound {
 		return nil, errNoSession
@@ -86,10 +83,17 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 	if err != nil {
 		return nil, err
 	}
-	// TODO(SESSION_IDENTITY_AUTHZ): decide sends by the target Session's Identity and the bindings
-	// naming it, not by the Sandbox hosting it (agentplane/plans/task_dag.md).
-	if !s.policy.PermitsSend(grantee, view.Resource) {
-		return nil, errSendDenied
+	// A Session of the sender's own Identity takes its messages without a grant: the recipient could
+	// learn the same itself. Any other recipient needs a `session_inbox_access` rule bound to the sender.
+	// TODO(SESSION_IDENTITY_AUTHZ): target that grant at the recipient Session's Identity, not the
+	// Sandbox hosting it (agentplane/plans/task_dag.md).
+	if !sameIdentity(caller, session.GetSession(), message.SessionID, message.DestinationRef) {
+		if !s.policy.Health.Available() {
+			return nil, errSendPolicyUnavailable
+		}
+		if !s.policy.PermitsSend(grantee, view.Resource) {
+			return nil, errSendDenied
+		}
 	}
 	sandbox := view.Identity
 	message.DestinationRef.UID = sandbox.Uid
@@ -129,6 +133,18 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 		return nil, err
 	}
 	return &notificationspb.SendMessageResponse{Message: sentMessageView(sent)}, nil
+}
+
+// sameIdentity reports whether caller acts as the Identity incarnation the Session authority recorded the
+// recipient Session as executing as, by name and UID: an Identity recreated under the name is another
+// sender, as its credentials are another incarnation's.
+func sameIdentity(caller actor, session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) bool {
+	sender, ok := caller.(identityActor)
+	if !ok {
+		return false
+	}
+	recorded, ok := sessionidentity.Identity(session, sessionID, ref)
+	return ok && recorded == sender.identity
 }
 
 // confirmSession checks that History recorded the Session against this exact Sandbox incarnation, so a sender

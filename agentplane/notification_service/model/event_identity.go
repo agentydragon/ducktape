@@ -49,10 +49,12 @@ type GitHubMergeabilitySnapshotEvent struct {
 	Version           int64
 }
 
-// MessageEvent is a message a workload sent to the inbox, with the sender the service authenticated.
+// MessageEvent is a message a workload sent to the inbox, with the sender the service authenticated:
+// its ServiceAccount, or for an Identity sender the Sandbox it sent from and the Identity incarnation.
 type MessageEvent struct {
-	MessageID uuid.UUID
-	Sender    ServiceAccount
+	MessageID      uuid.UUID
+	Sender         ServiceAccount
+	SenderIdentity *Identity
 }
 
 func (ActionsEvent) isEventIdentity()                    {}
