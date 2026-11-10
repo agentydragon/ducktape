@@ -60,6 +60,7 @@ runs:
         linkage_roles: release-unstamped
         bazel_invocation_ids: ${{ steps.invocation.outputs.unstamped }}
         rbe_container_image: ${{ inputs.rbe_container_image }}
+        run_from_commit: ${{ github.sha }}
 
     - name: Check content hash
       id: check
@@ -123,6 +124,7 @@ runs:
         linkage_roles: release-stamped
         bazel_invocation_ids: ${{ steps.invocation.outputs.stamped }}
         rbe_container_image: ${{ inputs.rbe_container_image }}
+        run_from_commit: ${{ github.sha }}
 
     - name: Upload release
       if: steps.check.outputs.should_release == 'true'

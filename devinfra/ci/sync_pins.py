@@ -2,20 +2,19 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27"]
 # ///
-"""Sync nix/artifact-pins.json with the latest GitHub Release for each package.
+"""Sync pins to already-published content identified by exact-source devel CI.
 
-For each pinned package, finds the latest release tag, compares the URL
-against the current pin, and updates nix/artifact-pins.json if the pin is stale.
-
-Expects: GH_TOKEN env var.
+Expects GH_TOKEN, BUILDBUDDY_API_KEY, and the pinned bbapi on PATH. Missing
+evidence retains pins; release creation time never determines desired content.
 """
 
+import argparse
+import base64
 import io
 import os
 import sys
 import zipfile
 from pathlib import Path
-from typing import Any
 
 # Add repo root to path for devinfra.ci imports when running via uv
 _REPO_ROOT = Path(__file__).parent.parent.parent
@@ -26,7 +25,18 @@ import httpx
 from github import Auth, Github
 from github.GithubException import GithubException
 
-from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
+from devinfra.ci.artifacts import (
+    ARTIFACTS,
+    Pin,
+    Sources,
+    artifact_targets_path,
+    skills_registry_path,
+    sources_path,
+    url_sha256,
+)
+from devinfra.ci.pin_publication import current_run, desired_tags, read_build
+from devinfra.ci.plan_releases import load_releases
+from devinfra.ci.publication_test_verdicts import effective_rbe_image
 
 # gazelle:include_dep @pypi//httpx
 
@@ -61,107 +71,100 @@ def download_wheel(url: str) -> bytes:
     return response.content
 
 
-def release_is_on_devel(repo: Any, release: Any, devel_sha: str, reachable: dict[str, bool]) -> bool:
-    """Whether a release was built from a commit reachable from current devel.
-
-    Release workflows can be manually dispatched from any ref.  A release from a
-    feature branch must not become the repository-wide pin merely because it is
-    newer than the last release from devel.
-    """
-    target = release.target_commitish
-    if not target:
-        return False
-    if target not in reachable:
-        try:
-            comparison = repo.compare(target, devel_sha)
-        except GithubException as error:
-            print(f"{release.tag_name}: cannot compare {target} with devel: {error}")
-            reachable[target] = False
-        else:
-            reachable[target] = comparison.status in {"ahead", "identical"}
-    return reachable[target]
-
-
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source-commit", required=True, help="checked-out devel SHA (dry runs may inspect historical devel CI)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="verify candidates and print changes without writing pins"
+    )
+    args = parser.parse_args(argv)
     gh_token = os.environ["GH_TOKEN"]
     repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
-
-    # Sort newest-first — GitHub's REST API does not guarantee chronological order.
-    # Scan the full list, not a newest-N window: with ~40 per-skill families
-    # (skill-*), a rarely-changed skill's latest release can sit far down the
-    # list, and truncating would silently freeze (or never create) its pin.
-    releases = sorted(
-        (r for r in repo.get_releases() if not r.draft and not r.prerelease), key=lambda r: r.created_at, reverse=True
-    )
     devel_sha = repo.get_branch("devel").commit.sha
-    reachable: dict[str, bool] = {}
-
+    if args.source_commit != devel_sha:
+        if not args.dry_run:
+            print("Devel advanced since checkout; retaining pins until the next sync")
+            return
+        devel_sha = args.source_commit
+        print("Historical dry run; no pin changes will be written")
+    run = current_run(repo.get_workflow("ci.yml").get_runs(branch="devel", event="push", head_sha=devel_sha), devel_sha)
+    rbe_image = effective_rbe_image("")
+    if run is None or rbe_image is None:
+        print("Current devel CI is pending or unavailable; retaining pins")
+        return
+    releases = load_releases(artifact_targets_path(), skills_registry_path())
+    tags = desired_tags(
+        releases,
+        source_commit=devel_sha,
+        run_id=str(run.id),
+        attempt=str(run.run_attempt),
+        rbe_image=rbe_image,
+        successful_jobs={
+            job.name
+            for job in run.jobs(_filter="latest")
+            if job.status == "completed" and job.conclusion == "success" and job.run_attempt == run.run_attempt
+        },
+        read=read_build,
+    )
     sources = Sources.model_validate_json(sources_path().read_text())
-
-    releases_by_package = {
-        artifact.pkg: next(
-            (
-                r
-                for r in releases
-                if is_tag_for_pkg(r.tag_name, artifact.release_tag_prefix)
-                and release_is_on_devel(repo, r, devel_sha, reachable)
-            ),
-            None,
-        )
-        for artifact in ARTIFACTS
-    }
-    artifacts_by_package = {artifact.pkg: artifact for artifact in ARTIFACTS}
-
-    updated = []
-    for artifact in ARTIFACTS:
-        release = releases_by_package[artifact.pkg]
-        if not release:
-            print(f"{artifact.pkg}: no release from devel found, skipping")
+    candidates: dict[str, Pin] = {}
+    for release in releases:
+        if not (tag := tags.get(release.pkg)):
+            print(f"{release.pkg}: no verified build identity; retaining pins")
             continue
-        tag = release.tag_name
-        url = f"{BASE}/{tag}/{artifact.filename}"
-        pin = sources.pins.get(artifact.pkg)
-        if pin and url == pin.url:
-            print(f"{artifact.pkg}: up to date ({tag})")
+        owned = [artifact for artifact in ARTIFACTS if artifact.release_tag_prefix == release.pkg]
+        if not owned:
             continue
+        try:
+            published = repo.get_release(tag)
+            if published.tag_name != tag or published.draft or published.prerelease:
+                raise ValueError("release is not the selected published content")
+            assets = {asset["name"]: asset for asset in published.raw_data["assets"]}
+            group: dict[str, Pin] = {}
+            for artifact in owned:
+                asset = assets.get(artifact.filename)
+                stored_digest = asset.get("digest") if asset else None
+                if not isinstance(stored_digest, str) or not stored_digest.startswith("sha256:"):
+                    raise ValueError("release asset has no SHA-256 digest")
+                expected = bytes.fromhex(stored_digest.removeprefix("sha256:"))
+                if len(expected) != 32:
+                    raise ValueError("release asset has an invalid SHA-256 digest")
+                url = f"{BASE}/{tag}/{artifact.filename}"
+                current = sources.pins.get(artifact.pkg)
+                value = current.sha256 if current and current.url == url else url_sha256(url)
+                if base64.b64decode(value, validate=True) != expected:
+                    raise ValueError("release asset SHA-256 does not match downloaded or pinned bytes")
+                group[artifact.pkg] = Pin(url=url, sha256=value)
+            candidates.update(group)
+        except (GithubException, httpx.HTTPError, ValueError, KeyError, TypeError) as error:
+            print(f"{release.pkg}: release unavailable or unverifiable ({type(error).__name__}); retaining group pins")
 
-        if artifact.pkg == "ducktape-util":
-            consumers: dict[str, bytes] = {}
-            compatible = True
+    if (candidate_util := candidates.get("ducktape-util")) and candidate_util != sources.pins.get("ducktape-util"):
+        consumers: dict[str, bytes] = {}
+        try:
             for name in ("ws", "gmail-archiver"):
-                candidate = releases_by_package[name]
-                if candidate:
-                    filename = artifacts_by_package[name].filename
-                    consumer_url = f"{BASE}/{candidate.tag_name}/{filename}"
-                elif current := sources.pins.get(name):
-                    consumer_url = current.url
-                else:
-                    print(f"{artifact.pkg}: no {name} wheel available; keeping the existing pin")
-                    compatible = False
-                    break
-                consumers[name] = download_wheel(consumer_url)
-            else:
-                missing = missing_wheel_imports(download_wheel(url), consumers)
-                if missing:
-                    print(f"{artifact.pkg}: keeping the existing pin; {', '.join(missing)}")
-                    compatible = False
-            if not compatible:
-                continue
+                pin = candidates.get(name) or sources.pins.get(name)
+                if pin is None:
+                    raise ValueError(f"no {name} wheel available")
+                consumers[name] = download_wheel(pin.url)
+            missing = missing_wheel_imports(download_wheel(candidate_util.url), consumers)
+            if missing:
+                raise ValueError(", ".join(missing))
+        except (httpx.HTTPError, ValueError, KeyError, zipfile.BadZipFile) as error:
+            print(f"ducktape-util: retaining pin; incompatible or unavailable consumers ({error})")
+            del candidates["ducktape-util"]
 
-        print(f"{artifact.pkg}: updating to {tag}")
-        new_hash = url_sha256(url)
-        if pin is None:
-            sources.pins[artifact.pkg] = Pin(url=url, sha256=new_hash)
-        else:
-            pin.url = url
-            pin.sha256 = new_hash
-        print(f"{artifact.pkg}: {new_hash}")
-        updated.append(artifact.pkg)
-
+    updated = [pkg for pkg, pin in candidates.items() if pin != sources.pins.get(pkg)]
     if not updated:
         print("All pins up to date")
         return
-
+    if args.dry_run:
+        for pkg in updated:
+            print(f"Would update {pkg}: {candidates[pkg].url}")
+        return
+    sources.pins.update(candidates)
     sources_path().write_text(sources.model_dump_json(indent=2) + "\n")
     print(f"Updated: {' '.join(updated)}")
 

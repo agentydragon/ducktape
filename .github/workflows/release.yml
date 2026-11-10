@@ -135,6 +135,7 @@ jobs:
         with:
           args: test ${{ matrix.tests }}
           rbe_container_image: ${{ inputs.rbe_container_image }}
+          run_from_commit: ${{ github.sha }}
 
       - uses: ./.github/actions/release-artifact
         with:
