@@ -30,7 +30,9 @@ import json
 import re
 import zipfile
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 import pytest_bazel
@@ -52,6 +54,27 @@ _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 _FAKE_DBUS_DEST = "works.allegedly.AiQuotaFake"
 _FAKE_DBUS_PATH = "/works/allegedly/AiQuotaFake"
 _FAKE_DBUS_SERVICE = "ducktape/aiquota/gnome/fake-daemon.js"
+
+
+@dataclass(frozen=True)
+class _ProviderPopup:
+    session: GnomeSession
+    provider: str
+
+    def text(self, method: str) -> str:
+        return string_reply(self.session.call(method, self.provider))
+
+    @property
+    def header(self) -> str:
+        return self.text("GetHeaderText")
+
+    @property
+    def groups(self) -> list[dict[str, str]]:
+        return cast(list[dict[str, str]], json.loads(self.text("GetReadingGroups")))
+
+    @property
+    def details(self) -> str:
+        return self.text("GetDetailsText")
 
 
 def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
@@ -165,15 +188,6 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "expires" in grants
             assert "original $100.00" in details
             assert string_reply(session.call("GetEmptyLabelText")) == "AI quota"
-        elif fixture_name == "anthropic_platform_credits":
-            balances = string_reply(session.call("GetBalanceText", "anthropic_platform"))
-            grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
-            assert "Main org · Available balance: $123.45" in balances
-            assert "Grant: $85.00" in grants
-            assert "Promo grant" in grants
-            assert "scope: Claude API (Sonnet), Claude Code" in grants
-            assert "scope: unscoped" not in grants
-            assert "Expired grant" not in grants
         elif fixture_name == "platform_credits_with_subscription_resets":
             assert "Prepaid balance: $25.75" in string_reply(session.call("GetHeaderText", "claude"))
             assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 2
@@ -191,12 +205,6 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "Grant: $60.00" in openai_grants
             assert "Jun 1" in openai_grants
 
-            anthropic_balance = string_reply(session.call("GetBalanceText", "anthropic_platform"))
-            anthropic_grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
-            assert "Shared org · Available balance: $75.00" in anthropic_balance
-            assert "Shared org · Grant: $50.00" in anthropic_grants
-            assert "Shared org · Promo grant: $25.00" in anthropic_grants
-            assert "scope: Claude API (Sonnet)" in anthropic_grants
         elif fixture_name == "wire_fields":
             rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1
@@ -273,6 +281,53 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
     except (TimeoutError, RuntimeError) as e:
         session.save_log(undeclared_dir / f"{fixture_name}.shell.log")
         pytest.fail(f"{fixture_name}: {e}")
+
+
+def test_anthropic_organization_headers_and_group_transitions(session: GnomeSession) -> None:
+    popup = _ProviderPopup(session, "anthropic_platform")
+    session.close_menu()
+    session.reload("/fixtures/platform_credits_with_subscription_resets.json")
+    assert popup.header == "Anthropic API — Shared org — Available balance: $75.00"
+    (single,) = popup.groups
+    assert single["header"] == single["balance"] == ""
+    assert "Grant: $50.00" in single["grants"]
+    assert "Promo grant: $25.00" in single["grants"]
+    assert "scope: Claude API (Sonnet)" in single["grants"]
+    assert "Shared org" not in single["grants"]
+    assert "Shared org" not in popup.details
+
+    session.reload("/fixtures/anthropic_platform_credits.json")
+    assert popup.header == "Anthropic API"
+    main, secondary = popup.groups
+    assert main["header"] == "Main org — Available balance: $123.45"
+    assert secondary["header"] == "Secondary org — Available balance: $50.00"
+    assert main["balance"] == secondary["balance"] == ""
+    assert "Grant: $85.00" in main["grants"]
+    assert "Promo grant" in main["grants"]
+    assert "scope: Claude API (Sonnet), Claude Code" in main["grants"]
+    assert "scope: unscoped" not in main["grants"]
+    assert "Main org" not in main["grants"]
+    assert "Expired grant" not in main["grants"]
+    assert secondary["grants"] == ""
+
+    session.reload("/fixtures/platform_credits_with_subscription_resets.json")
+    assert popup.header == "Anthropic API — Shared org — Available balance: $75.00"
+    assert len(popup.groups) == 1
+
+
+def test_anthropic_balance_error_remains_visible_under_its_header(
+    session: GnomeSession, fixture_json_dir: Path
+) -> None:
+    data = json.loads((fixture_json_dir / "platform_credits_with_subscription_resets.json").read_text())
+    provider = next(item for item in data["providers"] if item["provider"] == "anthropic_platform")
+    provider["balances"][0].update(value="lookup failed", error="example lookup failure")
+    session.close_menu()
+    session.call("SetViewForTest", json.dumps(data))
+    popup = _ProviderPopup(session, "anthropic_platform")
+    assert popup.header == "Anthropic API — Shared org"
+    assert popup.groups[0]["balance"] == "Available balance: lookup failed"
+    assert "Available balance: example lookup failure" in popup.details
+    assert "Shared org" not in popup.details
 
 
 def test_render_distinct_prepaid_and_quota_staleness(

@@ -122,9 +122,9 @@ function formatExpiry(expiry, details = false) {
   return `expires ${formatDeadline(expiry, new Date(nowMs()), details) ?? "expiry unknown"}`;
 }
 
-function formatGrant(grant, details = false) {
+function formatGrant(grant, details = false, includeGroup = false) {
   const parts = [];
-  if (grant.group) parts.push(grant.group);
+  if (includeGroup && grant.group) parts.push(grant.group);
   parts.push(`${grant.label}: ${grant.remaining}`);
   parts.push(formatExpiry(grant.expires_at, details));
   if (details) parts.push(`original ${grant.original}`);
@@ -134,10 +134,25 @@ function formatGrant(grant, details = false) {
   return parts.join(" · ");
 }
 
-function headerBalance(state) {
-  if (state.balances.length !== 1) return null;
-  const balance = state.balances[0];
-  return balance.group || balance.stale_since || balance.error ? null : balance;
+function readingGroups(state) {
+  const groups = new Map();
+  for (const [kind, readings] of [
+    ["balances", state.balances],
+    ["grants", state.grants],
+  ]) {
+    for (const reading of readings) {
+      const name = reading.group || null;
+      if (!groups.has(name)) groups.set(name, { name, balances: [], grants: [] });
+      groups.get(name)[kind].push(reading);
+    }
+  }
+  return groups.size ? [...groups.values()] : [{ name: null, balances: [], grants: [] }];
+}
+
+function headerBalance(group) {
+  if (group.balances.length !== 1) return null;
+  const balance = group.balances[0];
+  return balance.stale_since || balance.error ? null : balance;
 }
 
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
@@ -296,6 +311,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
           '<method name="GetBalanceText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetGrantText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetReadingGroups"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="groups"/></method>' +
           '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
@@ -323,12 +339,18 @@ const QuotaIndicator = GObject.registerClass(
             this._loadFixtureView(decodeBytes(bytes));
           },
           SetStreamStatus: (status, error) => this._setStreamState(status, error),
-          GetBalanceText: (provider) => {
-            const row = this._providers.find(({ id }) => id === provider)?.balanceRow;
-            return row?.visible ? row._summaryLabel.get_text() : "";
-          },
-          GetGrantText: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.grantRow?._summaryLabel.get_text() ?? "",
+          GetBalanceText: (provider) => this._readingText(provider, "balanceRow"),
+          GetGrantText: (provider) => this._readingText(provider, "grantRow"),
+          GetReadingGroups: (provider) =>
+            JSON.stringify(
+              this._providers
+                .find(({ id }) => id === provider)
+                ?.readingSections.map((section) => ({
+                  header: section.header?.label.get_text() ?? "",
+                  balance: section.balanceRow.visible ? section.balanceRow._summaryLabel.get_text() : "",
+                  grants: section.grantRow.visible ? section.grantRow._summaryLabel.get_text() : "",
+                })) ?? []
+            ),
           GetStatusText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
           GetResetText: (provider) =>
@@ -576,6 +598,17 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
+    _readingText(provider, key) {
+      return (
+        this._providers
+          .find(({ id }) => id === provider)
+          ?.readingSections.map((section) => section[key])
+          .filter((row) => row.visible)
+          .map((row) => row._summaryLabel.get_text())
+          .join("\n") ?? ""
+      );
+    }
+
     _buildPanel() {
       const box = new St.BoxLayout({
         style_class: "quota-indicator",
@@ -627,8 +660,13 @@ const QuotaIndicator = GObject.registerClass(
       this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(title));
       for (const p of providers) {
         p.header = new PopupMenu.PopupSeparatorMenuItem(p.state.label || p.label);
-        p.balanceRow = this._makeTextRow();
-        p.grantRow = this._makeTextRow();
+        const groups = readingGroups(p.state);
+        p.readingSections = groups.map((group) => ({
+          name: group.name,
+          header: groups.length > 1 && group.name ? new PopupMenu.PopupSeparatorMenuItem(group.name) : null,
+          balanceRow: this._makeTextRow(),
+          grantRow: this._makeTextRow(),
+        }));
         p.resetRow = this._makeTextRow();
         p.statusRow = this._makeTextRow();
         p.burnRow = this._makeTextRow();
@@ -637,8 +675,15 @@ const QuotaIndicator = GObject.registerClass(
         );
         p.detailsItem = this._makeDetailsSubmenu("Details");
         this.menu.addMenuItem(p.header);
-        this.menu.addMenuItem(p.balanceRow);
-        this.menu.addMenuItem(p.grantRow);
+        for (const section of p.readingSections) {
+          if (section.header) {
+            section.header.label.add_style_class_name("quota-popup-header");
+            section.header.label.clutter_text.line_wrap = true;
+            this.menu.addMenuItem(section.header);
+          }
+          this.menu.addMenuItem(section.balanceRow);
+          this.menu.addMenuItem(section.grantRow);
+        }
         this.menu.addMenuItem(p.resetRow);
         this.menu.addMenuItem(p.statusRow);
         this.menu.addMenuItem(p.burnRow);
@@ -857,7 +902,14 @@ const QuotaIndicator = GObject.registerClass(
           summaryIndex: pq.summary_index ?? null,
         };
       }
-      const needsRebuild = this._providers.some((p) => p.windowRows.length !== Math.max(1, p.state.windows.length));
+      const needsRebuild = this._providers.some((p) => {
+        const groups = readingGroups(p.state);
+        return (
+          p.windowRows.length !== Math.max(1, p.state.windows.length) ||
+          p.readingSections.length !== groups.length ||
+          p.readingSections.some((section, index) => section.name !== groups[index].name)
+        );
+      });
       if (needsRebuild) this._buildPopup();
     }
 
@@ -941,9 +993,15 @@ const QuotaIndicator = GObject.registerClass(
     _renderPopup() {
       this._renderStreamStatus();
       for (const p of this._providers) {
-        this._renderProviderHeader(p.header, p.state.label || p.label, p.state);
-        this._renderBalanceRow(p.balanceRow, p.state);
-        this._renderGrantRow(p.grantRow, p.state);
+        const groups = readingGroups(p.state);
+        const single = groups.length === 1;
+        this._renderProviderHeader(p.header, p.state.label || p.label, single ? groups[0] : null, single);
+        p.readingSections.forEach((section, index) => {
+          const group = groups[index];
+          if (section.header) this._renderProviderHeader(section.header, group.name, group, false);
+          this._renderBalanceRow(section.balanceRow, group, single || section.header !== null);
+          this._renderGrantRow(section.grantRow, group);
+        });
         this._renderResetRow(p.resetRow, p.state);
         this._renderStatusRow(p.statusRow, p.state);
         this._renderBurnRow(p.burnRow, p.state);
@@ -954,24 +1012,26 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
-    _renderProviderHeader(item, title, state) {
-      const balance = headerBalance(state);
-      item.label.set_text(balance ? `${title} — ${balance.label}: ${balance.value}` : title);
+    _renderProviderHeader(item, title, group, includeGroup) {
+      const parts = [title];
+      if (includeGroup && group?.name) parts.push(group.name);
+      const balance = group && headerBalance(group);
+      if (balance) parts.push(`${balance.label}: ${balance.value}`);
+      item.label.set_text(parts.join(" — "));
     }
 
-    _renderBalanceRow(item, state) {
-      const lines = state.balances.map((balance) => {
-        const group = balance.group ? `${balance.group} · ` : "";
+    _renderBalanceRow(item, group, hasHeader) {
+      const lines = group.balances.map((balance) => {
         const staleSince = balance.stale_since ? new Date(balance.stale_since).getTime() : null;
         const stale = staleSince == null ? "" : ` · stale ${formatAge(Math.max(0, (nowMs() - staleSince) / 1000))} ago`;
-        return `${group}${balance.label}: ${balance.value}${stale}`;
+        return `${balance.label}: ${balance.value}${stale}`;
       });
-      item.visible = lines.length > 0 && headerBalance(state) === null;
+      item.visible = lines.length > 0 && (!hasHeader || headerBalance(group) === null);
       item._summaryLabel.set_text(lines.join("\n"));
     }
 
-    _renderGrantRow(item, state) {
-      const lines = state.grants.map((grant) => formatGrant(grant));
+    _renderGrantRow(item, group) {
+      const lines = group.grants.map((grant) => formatGrant(grant));
       item.visible = lines.length > 0;
       item._summaryLabel.set_text(lines.join("\n"));
     }
@@ -1021,11 +1081,14 @@ const QuotaIndicator = GObject.registerClass(
     _renderProviderDetails(item, state) {
       const details = [];
       if (state.errorDetail) details.push(`${state.errorSummary ?? "Refresh failed"}: ${state.errorDetail}`);
+      const includeGroup = readingGroups(state).length > 1;
       for (const balance of state.balances) {
         if (balance.error)
-          details.push(`${balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.error}`);
+          details.push(
+            `${includeGroup && balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.error}`
+          );
       }
-      details.push(...state.grants.map((grant) => formatGrant(grant, true)));
+      details.push(...state.grants.map((grant) => formatGrant(grant, true, includeGroup)));
       const { staleAge } = effectiveState(state);
       for (const window of state.windows.map((window) => withLiveReset(window))) {
         if (staleAge == null && window.pace) details.push(`${window.label} pace: ${window.pace}`);
