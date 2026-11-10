@@ -230,8 +230,7 @@ to one exact source/spec pair and held to the interactive budget in
   `trusted_dataflow_summaries` are complete and linted. Complete recording
   outside the interpreter's hot paths, one kind per change, then lint it the
   same way (never consumed → `inferable`, consumed → probe): the `node_global`
-  alias, the `heap_contents` / `at_init_fallback` native-input exits, the
-  loader keys, and a per-statement declared-purity use list written at each
+  alias, the loader keys, and a per-statement declared-purity use list written at each
   classifier arm (never a `ProofDependencies` field). The hot-path kinds
   (`reentry_free_builtin_modules` / `_bun_modules` static closure,
   `initializer_call_effect_inputs`, `deferred_global_publications`,
