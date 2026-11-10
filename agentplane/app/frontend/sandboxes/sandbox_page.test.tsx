@@ -264,6 +264,9 @@ async function render(
       return Promise.resolve(Response.json(testSandboxPresetsProtoJSON([preset])));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
+    if (/^\/upstream\/environments\/v1\/environments\/[^/]+\/[^/]+:identity-record$/.test(path)) {
+      return Promise.resolve(Response.json({}));
+    }
     if (/^\/upstream\/app\/v1\/threads\/[^/]+$/.test(path)) {
       return Promise.resolve(Response.json({ detail: "not found" }, { status: 404 }));
     }

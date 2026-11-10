@@ -95,8 +95,13 @@ It scopes existing Sessions and existing environments; it does not create enviro
   Identity. Dispatcher
   passes both to the runtime or central sampler when it places the Session. Placement and command delivery
   require the Sandbox to still name that exact Identity incarnation, or none for a Session recorded with none;
-  otherwise the work fails `execution_identity_changed`, so an Identity changed while the Sandbox was stopped
-  strands its Sessions rather than re-attributing them.
+  otherwise the work fails `execution_identity_changed`. EnvironmentService identity changes hold an
+  exclusive per-Sandbox PostgreSQL advisory lock and refuse if any retained Session on that exact
+  Sandbox UID names a different Identity name or UID. `CreateSession` holds the shared lock and
+  rechecks the Sandbox and acting Identity after acquiring it. Direct Kubernetes patches outside
+  EnvironmentService can still change a stopped Sandbox and strand Sessions; the CRD's CEL rule
+  only enforces the stopped condition. Because Dispatcher has no terminal Session lifecycle,
+  all retained rows are references, including failed or historical rows.
   `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
   `Session.execution_identity`, the execution ServiceAccount.
 - An Identity caller (a workload SVID naming an Identity, admitted only once the Gateway's optional

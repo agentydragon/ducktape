@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -519,6 +520,68 @@ func lockLiveSandbox(ctx context.Context, tx *sql.Tx, sandboxUID string) error {
 		return ErrSandboxDeleted
 	}
 	return nil
+}
+
+// SessionIdentityConflict names retained Sessions that would still refer to another acting
+// identity after an Environment identity change. Retained rows are conservative references:
+// Dispatcher has no terminal Session lifecycle projection to prove that one can be ignored.
+type SessionIdentityConflict struct{ SessionIDs []string }
+
+func (e *SessionIdentityConflict) ConflictingSessionIDs() []string { return e.SessionIDs }
+
+func (e *SessionIdentityConflict) Error() string {
+	return "environment identity is still named by Sessions: " + strings.Join(e.SessionIDs, ", ")
+}
+
+// ChangeSandboxIdentity serializes a Sandbox patch with Session admission using the same per-UID
+// advisory lock. The patch runs while the lock is held; callers fence the Kubernetes UID/version.
+func (s *Store) ChangeSandboxIdentity(ctx context.Context, sandboxUID string, identity *identitypb.Identity, patch func() error) error {
+	if sandboxUID == "" || patch == nil {
+		return errors.New("Sandbox UID and patch are required")
+	}
+	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "sandbox:"+sandboxUID); err != nil {
+			return err
+		}
+		var deleted bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM deleted_sandbox WHERE sandbox_uid=$1)", sandboxUID).Scan(&deleted); err != nil {
+			return err
+		}
+		if deleted {
+			return ErrSandboxDeleted
+		}
+		var name, uid any
+		if identity != nil {
+			name, uid = identity.GetName(), identity.GetUid()
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT session_id FROM session
+			WHERE sandbox_uid=$1 AND (execution_identity_name IS DISTINCT FROM $2 OR execution_identity_uid::text IS DISTINCT FROM $3)
+			ORDER BY session_id LIMIT 21`, sandboxUID, name, uid)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			if len(ids) > 20 {
+				ids = append(ids[:20], "and more")
+			}
+			return &SessionIdentityConflict{SessionIDs: ids}
+		}
+		return patch()
+	})
 }
 
 func operation(command *commandpb.Command) (string, error) {
@@ -1056,6 +1119,16 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 // CreateSessionForCaller stores the immutable execution account separately from the verified
 // caller attribution. Retrying a concurrently inserted session requires retained read authority.
 func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
+	return s.createSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller, nil)
+}
+
+// CreateSessionWithPlacementForCallerAndCheck revalidates the live execution identity after the
+// Sandbox admission lock. The external API supplies the check; direct store tests may omit it.
+func (s *Store) CreateSessionWithPlacementForCallerAndCheck(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
+	return s.createSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller, check)
+}
+
+func (s *Store) createSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
 	executionPrincipal := execution.Principal
 	// An Identity-run Session records no ServiceAccount; every other names one.
 	if executionPrincipal == nil && execution.Identity == nil || executionPrincipal != nil &&
@@ -1078,7 +1151,7 @@ func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, session
 	if identity := execution.Identity; identity != nil && (identity.GetName() == "" || identity.GetUid() == "") {
 		return nil, errors.New("execution identity requires a name and UID")
 	}
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller)
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller, check)
 }
 
 // authorizeRetry uses retained read authority: a receipt retry performs no new execution.
@@ -1115,7 +1188,7 @@ func (o *Session) matchRequest(sandboxName, sandboxUID string, placement Session
 	return nil
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
 	executionPrincipal := execution.Principal
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
@@ -1158,6 +1231,11 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		if check != nil {
+			if err := check(ctx); err != nil {
+				return err
+			}
 		}
 		var ns, name any
 		if wakeCaller != nil {

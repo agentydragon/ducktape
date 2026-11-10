@@ -36,9 +36,10 @@ protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decima
 ## Sandbox lifecycle ownership
 
 The Runner Gateway's `EnvironmentService` owns Sandbox creation, templates, suspend, delete, wake
-policy and idle suspend policy. The app authenticates the operator and forwards the generated HTTP
+policy, idle suspend policy, and stopped-Sandbox identity changes. The app authenticates the operator and forwards the generated HTTP
 facade with its projected Pod-bound service token. The service applies configured default policy
-sets and fences mutations on Sandbox UID and resourceVersion. The app still reads Sandbox inventory
+sets and fences mutations on Sandbox UID and resourceVersion. Identity changes additionally use
+Dispatcher's per-Sandbox Session admission lock and retained-Session check. The app still reads Sandbox inventory
 through its existing read routes and watch. The Sandbox Controller reconciles the requested `spec`
 and owns `status`.
 

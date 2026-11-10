@@ -7,11 +7,13 @@ import {
   CreateEnvironmentRequestSchema,
   type CreateEnvironmentRequest,
   EnvironmentMutationRequestSchema,
+  EnvironmentIdentityRecordSchema,
   ListEnvironmentTemplatesResponseSchema,
   ResumeEnvironmentRequestSchema,
   ResumeEnvironmentResponseSchema,
   ResumeOutcome,
   SetEnvironmentIdleSuspendRequestSchema,
+  SetEnvironmentIdentityRequestSchema,
   SetEnvironmentWakeOnSendRequestSchema,
 } from "../../../environments/v1/environment_service_pb";
 import {
@@ -179,6 +181,23 @@ export async function deleteEnvironment(target: EnvironmentTarget): Promise<void
   await environmentJSON(`${environmentPath(target)}?target.uid=${encodeURIComponent(target.uid)}`, {
     method: "DELETE",
   });
+}
+
+/** Only the current Sandbox-owned credential survives; older acting identities are not retained. */
+export async function getEnvironmentIdentityRecord(target: EnvironmentTarget): Promise<string | null> {
+  const record = fromJson(
+    EnvironmentIdentityRecordSchema,
+    await environmentJSON(`${environmentPath(target)}:identity-record?target.uid=${encodeURIComponent(target.uid)}`)
+  );
+  return record.identity?.name || null;
+}
+
+export async function setEnvironmentIdentity(target: EnvironmentTarget, identityName: string | null): Promise<void> {
+  const request = create(SetEnvironmentIdentityRequestSchema, { target, identityName: identityName ?? "" });
+  await environmentJSON(
+    `${environmentPath(target)}:identity`,
+    environmentPost("PATCH", toJson(SetEnvironmentIdentityRequestSchema, request) as JsonObject)
+  );
 }
 
 export async function setEnvironmentWakeOnSend(target: EnvironmentTarget, wakeOnSend: boolean): Promise<void> {

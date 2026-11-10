@@ -20,6 +20,8 @@ import {
   resumeSandbox,
   suspendEnvironment,
   deleteEnvironment,
+  getEnvironmentIdentityRecord,
+  setEnvironmentIdentity,
   setEnvironmentIdleSuspend,
 } from "./client";
 
@@ -57,6 +59,32 @@ it("sends the generated exact target through the EnvironmentService facade", asy
   expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
     target: { namespace: "team", name: "box", uid: "opaque-uid" },
     idleSuspendAfter: "90s",
+  });
+});
+
+it("reads the current credential and patches an exact stopped Environment identity", async () => {
+  const exact = create(EnvironmentTargetSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ identity: { name: "prior", uid: "prior-uid" } }))
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({}));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(getEnvironmentIdentityRecord(exact)).resolves.toBe("prior");
+  await setEnvironmentIdentity(exact, "next");
+  await setEnvironmentIdentity(exact, null);
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/environments/v1/environments/team/box:identity-record?target.uid=opaque-uid",
+    "/upstream/environments/v1/environments/team/box:identity",
+    "/upstream/environments/v1/environments/team/box:identity",
+  ]);
+  expect(fetchMock.mock.calls[1]![1].method).toBe("PATCH");
+  expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
+    identityName: "next",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
   });
 });
 

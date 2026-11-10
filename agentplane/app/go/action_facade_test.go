@@ -32,9 +32,11 @@ import (
 
 type generatedEnvironmentService struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
-	authorization []string
-	created       *environmentpb.CreateEnvironmentRequest
-	deleted       *identitypb.EnvironmentTarget
+	authorization  []string
+	created        *environmentpb.CreateEnvironmentRequest
+	deleted        *identitypb.EnvironmentTarget
+	recordTarget   *identitypb.EnvironmentTarget
+	identityChange *environmentpb.SetEnvironmentIdentityRequest
 }
 
 func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*identitypb.EnvironmentTarget, error) {
@@ -48,6 +50,20 @@ func (s *generatedEnvironmentService) DeleteEnvironment(ctx context.Context, req
 	md, _ := metadata.FromIncomingContext(ctx)
 	s.authorization = append(s.authorization, md.Get("authorization")...)
 	s.deleted = request.GetTarget()
+	return &emptypb.Empty{}, nil
+}
+
+func (s *generatedEnvironmentService) GetEnvironmentIdentityRecord(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentIdentityRecord, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.authorization = append(s.authorization, md.Get("authorization")...)
+	s.recordTarget = request.GetTarget()
+	return &environmentpb.EnvironmentIdentityRecord{Identity: &identitypb.Identity{Name: "test-agent", Uid: "identity-uid"}}, nil
+}
+
+func (s *generatedEnvironmentService) SetEnvironmentIdentity(ctx context.Context, request *environmentpb.SetEnvironmentIdentityRequest) (*emptypb.Empty, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.authorization = append(s.authorization, md.Get("authorization")...)
+	s.identityChange = request
 	return &emptypb.Empty{}, nil
 }
 
@@ -81,6 +97,8 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 	for _, operation := range []struct{ method, url, body, path string }{
 		{http.MethodPost, "/upstream/environments/v1/environments", `{"name":"created","template":"pod"}`, "v1/environments"},
 		{http.MethodDelete, "/upstream/environments/v1/environments/agentplane/created?target.uid=sandbox-uid", "", "v1/environments/agentplane/created"},
+		{http.MethodGet, "/upstream/environments/v1/environments/agentplane/created:identity-record?target.uid=sandbox-uid", "", "v1/environments/agentplane/created:identity-record"},
+		{http.MethodPatch, "/upstream/environments/v1/environments/agentplane/created:identity", `{"target":{"namespace":"agentplane","name":"created","uid":"sandbox-uid"},"identityName":"test-agent"}`, "v1/environments/agentplane/created:identity"},
 	} {
 		request := httptest.NewRequest(operation.method, operation.url, strings.NewReader(operation.body))
 		request.Header.Set("Content-Type", "application/json")
@@ -93,10 +111,12 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 		}
 	}
 	if service.created.GetName() != "created" || service.created.GetTemplate() != "pod" ||
-		service.deleted.GetNamespace() != "agentplane" || service.deleted.GetName() != "created" || service.deleted.GetUid() != "sandbox-uid" {
-		t.Fatalf("generated facade requests: create=%+v delete=%+v", service.created, service.deleted)
+		service.deleted.GetNamespace() != "agentplane" || service.deleted.GetName() != "created" || service.deleted.GetUid() != "sandbox-uid" ||
+		service.recordTarget.GetNamespace() != "agentplane" || service.recordTarget.GetName() != "created" || service.recordTarget.GetUid() != "sandbox-uid" ||
+		service.identityChange.GetTarget().GetUid() != "sandbox-uid" || service.identityChange.GetIdentityName() != "test-agent" {
+		t.Fatalf("generated facade requests: create=%+v delete=%+v record=%+v change=%+v", service.created, service.deleted, service.recordTarget, service.identityChange)
 	}
-	if len(service.authorization) != 2 || service.authorization[0] != "Bearer app-pod-token" || service.authorization[1] != "Bearer app-pod-token" {
+	if len(service.authorization) != 4 || service.authorization[0] != "Bearer app-pod-token" || service.authorization[1] != "Bearer app-pod-token" || service.authorization[2] != "Bearer app-pod-token" || service.authorization[3] != "Bearer app-pod-token" {
 		t.Fatalf("generated facade authorization = %v", service.authorization)
 	}
 }

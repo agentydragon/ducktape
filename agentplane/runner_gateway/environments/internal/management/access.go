@@ -165,6 +165,59 @@ func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, valu
 	})
 }
 
+// ResolveIdentity pins the name chosen by the operator to its current incarnation for the
+// Dispatcher guard. A change between this read and the patch is refused by SetIdentity.
+func (a *Access) ResolveIdentity(ctx context.Context, name string) (*identitypb.Identity, error) {
+	if name == "" {
+		return nil, nil
+	}
+	identity := &policyapi.Identity{}
+	err := a.objects.Get(ctx, types.NamespacedName{Namespace: a.namespace, Name: name}, identity)
+	if client.IgnoreNotFound(err) != nil {
+		return nil, fmt.Errorf("read Identity %s: %w", name, err)
+	}
+	if err != nil || identity.UID == "" || identity.DeletionTimestamp != nil {
+		return nil, &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s is unavailable", name)}
+	}
+	return &identitypb.Identity{Name: name, Uid: string(identity.UID)}, nil
+}
+
+// SetIdentity patches only spec.identity on the selected stopped Sandbox. The caller holds the
+// Dispatcher's exclusive per-Sandbox admission lock until this patch returns.
+func (a *Access) SetIdentity(ctx context.Context, name, uid string, expected *identitypb.Identity) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		resource, err := a.incarnation(ctx, name, uid)
+		if err != nil {
+			return err
+		}
+		if resource.DeletionTimestamp != nil {
+			return &SandboxTearingDownError{Name: name}
+		}
+		if resource.Status.OperatingMode != "" && resource.Status.StopStage != sandboxapi.StopStageStopped {
+			return &IdentityChangeRunningError{Name: name}
+		}
+		if expected != nil {
+			current, err := a.ResolveIdentity(ctx, expected.GetName())
+			if err != nil {
+				return err
+			}
+			if current.GetUid() != expected.GetUid() {
+				return &SandboxConflictError{Name: "Identity changed; refresh and try again"}
+			}
+		}
+		if expected == nil {
+			if resource.Spec.Identity == nil {
+				return nil
+			}
+			return a.patchSpec(ctx, resource, map[string]any{"identity": nil})
+		}
+		if resource.Spec.Identity != nil && resource.Spec.Identity.Name == expected.GetName() {
+			return nil
+		}
+		return a.patchSpec(ctx, resource, map[string]any{"identity": map[string]string{"name": expected.GetName()}})
+	})
+}
+
 // Delete begins teardown of the exact current Sandbox. Running Sandboxes are refused; repeated
 // requests against a Sandbox already deleting are idempotent.
 func (a *Access) Delete(ctx context.Context, name, uid string) error {

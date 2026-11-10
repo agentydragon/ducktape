@@ -424,6 +424,9 @@ func apiError(err error) error {
 	case errors.Is(err, ErrNotCancellable):
 		return status.Error(codes.FailedPrecondition, "delivery already began")
 	default:
+		if _, ok := status.FromError(err); ok {
+			return err
+		}
 		return status.Error(codes.Unavailable, "dispatcher storage unavailable")
 	}
 }
@@ -618,8 +621,31 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if !identityFound {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
 	}
-	row, err = s.Store.CreateSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
-		request.GetSpec(), request.SetupScript, nil, execution, caller)
+	row, err = s.Store.CreateSessionWithPlacementForCallerAndCheck(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
+		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
+			latest, err := s.sandbox(ctx, target.GetName())
+			if err != nil {
+				return err
+			}
+			if latest.UID != current.UID {
+				return status.Error(codes.FailedPrecondition, "sandbox identity changed")
+			}
+			identityNow, found, err := s.executionIdentity(ctx, latest)
+			if err != nil {
+				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+			}
+			if !found || !sameIdentity(identityNow, execution.Identity) {
+				return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
+			}
+			accountNow, accountFoundNow, err := s.executionAccount(ctx, latest)
+			if err != nil {
+				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
+			}
+			if accountFoundNow != accountFound || accountFound && !sameServiceAccountIdentity(accountNow, account) {
+				return status.Error(codes.FailedPrecondition, "sandbox execution account changed")
+			}
+			return nil
+		})
 	if err != nil {
 		return nil, apiError(err)
 	}

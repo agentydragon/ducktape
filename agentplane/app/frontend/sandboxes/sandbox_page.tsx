@@ -32,6 +32,7 @@ import {
 } from "./client";
 import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "./egress";
+import { EnvironmentIdentity } from "./identity";
 import { useEnvironmentWatch, sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
@@ -519,7 +520,12 @@ export function SandboxPage({
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
-          {sandbox && <StatusView sandbox={sandbox} threads={threads} active={tab === "status"} onError={setError} />}
+          {sandbox && tab === "status" && (
+            <Stack>
+              <EnvironmentIdentity sandbox={sandbox} />
+              <StatusView sandbox={sandbox} threads={threads} active={tab === "status"} onError={setError} />
+            </Stack>
+          )}
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
