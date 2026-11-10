@@ -38,6 +38,8 @@ spec:
         - env:
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
               value: agentplane-staging
+            - name: AGENTPLANE_RUNNER_GATEWAY_POLICY_NAMESPACE
+              value: agentplane-staging
             - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
               value: /var/run/secrets/agentplane-runner-gateway/token
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
@@ -564,6 +566,12 @@ rules:
       - agentplane.allegedly.works
     resources:
       - workloadcredentials
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
     verbs:
       - get
   - apiGroups:

@@ -1389,6 +1389,12 @@ rules:
       - workloadcredentials
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1436,6 +1442,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    policy_namespace: agentplane-staging
     central_sampler_accounts:
       - agentplane-staging/central-sampler
     log_llm_requests: true
@@ -1452,6 +1459,10 @@ data:
               source: pod_name
             - key: agentplane.pod_uid
               source: pod_uid
+            - key: agentplane.identity
+              source: identity
+            - key: agentplane.identity_uid
+              source: identity_uid
       baggage:
         - key: litellm.metadata.spend_logs_metadata.agentplane.namespace
           source: namespace
@@ -1461,6 +1472,10 @@ data:
           source: pod_name
         - key: litellm.metadata.spend_logs_metadata.agentplane.pod_uid
           source: pod_uid
+        - key: litellm.metadata.spend_logs_metadata.agentplane.identity
+          source: identity
+        - key: litellm.metadata.spend_logs_metadata.agentplane.identity_uid
+          source: identity_uid
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
     rpc:
       listen_address: 0.0.0.0:8080
@@ -2652,6 +2667,12 @@ rules:
       - workloadcredentials
     verbs:
       - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - identities
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2894,6 +2915,7 @@ data:
       - namespace: agentplane-staging
         name: notifications
     token_audience: agentplane-history-service
+    policy_namespace: agentplane-staging
     ingress:
       token_audience: agentplane-runner-ingress
       writer_namespaces:
@@ -7691,6 +7713,7 @@ rules:
     resources:
       - identities
     verbs:
+      - get
       - list
       - watch
   - apiGroups:

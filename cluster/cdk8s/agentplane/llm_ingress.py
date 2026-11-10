@@ -171,6 +171,8 @@ class LlmIngress(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
                 ),
+                # An Identity caller's SVID names its Identity, read live in the policy namespace.
+                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
@@ -188,6 +190,7 @@ class LlmIngress(Construct):
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
         content = {
             "allowed_service_account_namespaces": [env.namespace],
+            "policy_namespace": env.namespace,
             **(
                 {"central_sampler_accounts": [f"{env.namespace}/{central_sampler.NAME}"]}
                 if env.central_sampler is not None
