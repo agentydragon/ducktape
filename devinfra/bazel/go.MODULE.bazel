@@ -270,8 +270,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/arch",
-    sum = "h1:jZ6dpec5haP/fUv1kLCbuJy6dnRrfX6iVK08lZBFpk4=",
-    version = "v0.26.0",
+    sum = "h1:8sSET5wB0+exBm0FGmOtdHMqjlRdV2DRD3/IV6OZgho=",
+    version = "v0.29.0",
 )
 go_deps.module(
     path = "golang.org/x/net",
@@ -392,8 +392,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mattn/go-colorable",
-    sum = "h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=",
-    version = "v0.1.14",
+    sum = "h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=",
+    version = "v0.1.15",
 )
 go_deps.module(
     path = "github.com/mattn/go-isatty",
