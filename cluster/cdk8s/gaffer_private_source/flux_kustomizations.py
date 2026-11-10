@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecPatches,
-    KustomizationSpecPatchesTarget,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 
@@ -28,16 +23,6 @@ def gaffer_private_bridge(chart: Chart, kyverno: Kustomization, tofu_controller:
         path="./k8s",
         timeout="5m",
         wait=None,
-        # CLEANUP(added 2026-11-10): Resume after the matched upstream controller
-        # and runner are active and the old runner pods have drained.
-        patches=[
-            KustomizationSpecPatches(
-                target=KustomizationSpecPatchesTarget(
-                    group="infra.contrib.fluxcd.io", version="v1alpha2", kind="Terraform"
-                ),
-                patch="- op: add\n  path: /spec/suspend\n  value: true\n",
-            )
-        ],
         depends_on=flux_kustomization_depends_on_many(
             # Kyverno's failurePolicy: Fail webhook admits the child Flux Kustomizations.
             kyverno,
