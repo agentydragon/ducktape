@@ -262,10 +262,11 @@ def _egress_credentials(scope: Construct, *, namespace: str, projected_kubernete
             "egresscredential-kubernetes-workload",
             metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
             description=(
-                f"Kubernetes API server: https://{KUBERNETES_HOST}. This credential acts as the calling "
-                "Sandbox's own ServiceAccount. Use "
+                f"Kubernetes API server: https://{KUBERNETES_HOST}. This credential acts as the caller's "
+                "own ServiceAccount, which only an Action command box running as its caller has; a Sandbox "
+                "has none. Use "
                 f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder_of(KUBERNETES_CREDENTIAL)} "
-                "for Kubernetes commands; the proxy substitutes this Sandbox's projected "
+                "for Kubernetes commands; the proxy substitutes the box's projected "
                 "Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
             ),
             source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
@@ -372,14 +373,14 @@ def _egress_policies(
             ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every
             # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
-            # caller happened to name a policy. Every Sandbox discovers this credential through
-            # the rules endpoint. Kubernetes commands carry its placeholder directly; the proxy
-            # substitutes the Sandbox's own projected token. A missing rule therefore means no
-            # available Kubernetes route. Without `projected_kubernetes_token`, an agent reaches the
-            # API server only as an account whose use set it holds (`kubernetes_account_rule`).
+            # caller happened to name a policy. Kubernetes commands carry its placeholder directly;
+            # the proxy substitutes the caller's own projected token, which only a command box
+            # running as its caller carries: a Sandbox has no ServiceAccount, so this rule gives it
+            # nothing. Without `projected_kubernetes_token`, an agent reaches the API server only as
+            # an account whose use set it holds (`kubernetes_account_rule`).
             #
-            # No method or path list: what a sandbox may read or write is the API server's answer
-            # for its own ServiceAccount, and narrowing verbs here would be a second, weaker copy
+            # No method or path list: what a box may read or write is the API server's answer
+            # for its caller's ServiceAccount, and narrowing verbs here would be a second, weaker copy
             # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
             # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
             # requests and watches are what this admits in practice.

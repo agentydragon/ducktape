@@ -14,7 +14,7 @@ from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbo
 from cluster.cdk8s.pod_policy import harden, pod_spec
 
 
-def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App) -> None:
+def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     chart = Chart(scratch_app, "firecracker-test")
     state = {
         "name": "state",
@@ -43,11 +43,6 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     assert relay["securityContext"]["runAsNonRoot"] is True
     assert relay["securityContext"]["runAsUser"] == 1000
     assert pod["automountServiceAccountToken"] is False
-    host_mounts = {m["name"] for m in host["volumeMounts"]}
-    token_volumes = {v["name"] for v in pod["volumes"] if "projected" in v}
-    assert token_volumes
-    assert not host_mounts & token_volumes
-    assert token_volumes <= {m["name"] for m in relay["volumeMounts"]}
     assert pod["restartPolicy"] == "Never"
     assert host["readinessProbe"]["httpGet"] == {"path": "/readyz", "port": 9092}
     guest_config = one(

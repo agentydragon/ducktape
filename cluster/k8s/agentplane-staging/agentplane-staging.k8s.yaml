@@ -2088,7 +2088,7 @@ metadata:
   name: kubernetes-workload
   namespace: agentplane-staging
 spec:
-  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local. This credential acts as the calling Sandbox's own ServiceAccount. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-kubernetes-workload for Kubernetes commands; the proxy substitutes this Sandbox's projected Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local. This credential acts as the caller's own ServiceAccount, which only an Action command box running as its caller has; a Sandbox has none. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-kubernetes-workload for Kubernetes commands; the proxy substitutes the box's projected Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
   source:
     projectedWorkloadToken:
       audience: https://localhost:7445
@@ -5019,8 +5019,7 @@ data:
           mode: spiffe
           cert_file: /run/agentplane/environment-runtime-tls/tls.crt
           key_file: /run/agentplane/environment-runtime-tls/tls.key
-    audience_token_files:
-      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+    audience_token_files: {}
     workload_routes:
       actions.agentplane-staging.svc.cluster.local:8080:
         upstream: actions.agentplane-staging.svc.cluster.local:8080
@@ -5342,9 +5341,6 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
           volumeMounts:
-            - mountPath: /var/run/agentplane-egress
-              name: egress-token
-              readOnly: true
             - mountPath: /etc/agentplane-egress-sidecar
               name: egress-sidecar-settings
               readOnly: true
@@ -5365,13 +5361,6 @@ spec:
         - configMap:
             name: sandbox-tool-config
           name: tool-config
-        - name: egress-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: https://localhost:7445
-                  expirationSeconds: 600
-                  path: kubernetes-token
         - configMap:
             name: environment-tools-egress-sidecar
           name: egress-sidecar-settings
@@ -5432,8 +5421,7 @@ data:
           mode: spiffe
           cert_file: /run/agentplane/environment-runtime-tls/tls.crt
           key_file: /run/agentplane/environment-runtime-tls/tls.key
-    audience_token_files:
-      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+    audience_token_files: {}
     workload_routes:
       actions.agentplane-staging.svc.cluster.local:8080:
         upstream: actions.agentplane-staging.svc.cluster.local:8080
@@ -5690,13 +5678,6 @@ spec:
               - name: forgejo-images-creds
             serviceAccountName: "{{account.metadata.name}}"
             volumes:
-              - name: egress-token
-                projected:
-                  sources:
-                    - serviceAccountToken:
-                        audience: https://localhost:7445
-                        expirationSeconds: 600
-                        path: kubernetes-token
               - configMap:
                   name: launcher-relay-egress-sidecar
                 name: egress-sidecar-settings
@@ -5762,9 +5743,6 @@ spec:
                 runAsNonRoot: true
                 runAsUser: 1000
               volumeMounts:
-                - mountPath: /var/run/agentplane-egress
-                  name: egress-token
-                  readOnly: true
                 - mountPath: /etc/agentplane-egress-sidecar
                   name: egress-sidecar-settings
                   readOnly: true

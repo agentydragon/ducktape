@@ -346,12 +346,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['upstream']}"
     assert sidecar_env.get("OTEL_SDK_DISABLED") != "true"
     assert telemetry_route["upstream"] == "alloy.monitoring.svc.cluster.local:4317"
-    runner_pod_spec = template["spec"]["pod"]["spec"]
-    runner_egress_volume = next(v for v in runner_pod_spec["volumes"] if v["name"] == "egress-token")
-    runner_token_sources = runner_egress_volume["projected"]["sources"]
-    assert not any(
-        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress" for source in runner_token_sources
-    )
     rules_route = routes["egress-rules"]
     assert rules_route["transport"] == {"mode": "tls_connect", "server_uri": "spiffe://agentplane/egress-proxy"}
     assert rules_route["upstream"] in egress_config["tls_passthrough_targets"]

@@ -14,14 +14,12 @@ from cdk8s_plus_34 import k8s
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from agentplane.egress import sidecar_config
-from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
 from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
-from cluster.cdk8s.pod_policy import pod_spec, workload_kind
+from cluster.cdk8s.pod_policy import workload_kind
 
 
 def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -384,35 +382,6 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
         mount_paths = {item["mountPath"] for item in container.get("volumeMounts", [])}
         assert "KUBECONFIG" not in env_names
         assert "/run/agentplane/config/kubeconfig" not in mount_paths
-
-
-def test_with_the_identity_catalog_a_sandbox_pod_projects_no_kubernetes_token(
-    identity_catalog_manifests: list[dict[str, Any]],
-) -> None:
-    """Acting as an Identity, an agent reaches Kubernetes only as an account it may use, through the
-    proxy: nothing substitutes a token of the Pod's own, so none is projected. Any token left is
-    the egress sidecar's alone."""
-    templates = [doc for doc in identity_catalog_manifests if workload_kind(doc) == (GROUP, "SandboxTemplate")]
-    pods = [pod_spec(doc) for doc in templates if "vm" not in doc["spec"]]
-    assert pods
-    for pod in pods:
-        containers = [*pod["containers"], *pod.get("initContainers", [])]
-        for volume in pod["volumes"]:
-            sources = volume.get("projected", {}).get("sources", [])
-            if not any("serviceAccountToken" in source for source in sources):
-                continue
-            mounted_by = {
-                c["name"] for c in containers if any(m["name"] == volume["name"] for m in c.get("volumeMounts", []))
-            }
-            assert mounted_by == {sidecar_config.CONTAINER_NAME}, volume["name"]
-            assert all(
-                source["serviceAccountToken"]["audience"] != KUBERNETES_AUDIENCE
-                for source in sources
-                if "serviceAccountToken" in source
-            ), volume["name"]
-        settings_volume = one(v for v in pod["volumes"] if v["name"] == sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME)
-        settings_doc = _by_name(identity_catalog_manifests, "ConfigMap", settings_volume["configMap"]["name"])
-        assert not yaml.safe_load(settings_doc["data"]["settings.yaml"]).get("audience_token_files")
 
 
 if __name__ == "__main__":
