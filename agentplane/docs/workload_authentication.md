@@ -121,7 +121,9 @@ including one inherited through a tunnel:
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
 Services see the record's subject and `spec.pod` as an `auth.Subject`: a ServiceAccount
 `Principal`, or an `IdentityPrincipal` naming the Identity and its UID, each with the Pod as the
-provenance Pod. Only a method whose rule is `AnySubject` admits an Identity caller, as an
+provenance Pod. An `IdentityPrincipal` also carries its record (`auth.Workload`: namespace, name and
+its controller owner, or `StandingWorkload` for an ownerless record), so a service can pin state to
+the Sandbox that owns the workload. Only a method whose rule is `AnySubject` admits an Identity caller, as an
 `IdentityAdmission`; every other rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only
 and refuse one. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A standing workload's `Principal`, like a bound
 one whose owner has not named its Pod yet, is its subject with no Pod: an operation that needs Pod

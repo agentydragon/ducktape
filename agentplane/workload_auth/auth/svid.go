@@ -95,10 +95,22 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 			PodName:           podName, PodUID: podUID,
 		}, nil
 	case resolver.Identity:
-		return IdentityPrincipal{Identity: Identity{Name: subject.Name, UID: string(subject.UID)}, PodName: podName, PodUID: podUID}, nil
+		return IdentityPrincipal{
+			Identity: Identity{Name: subject.Name, UID: string(subject.UID)}, Workload: WorkloadOf(resolved),
+			PodName: podName, PodUID: podUID,
+		}, nil
 	default:
 		panic(fmt.Sprintf("unknown subject %T", resolved.Subject))
 	}
+}
+
+// WorkloadOf is the provenance a resolved workload's record carries.
+func WorkloadOf(peer resolver.Peer) Workload {
+	workload := Workload{Namespace: peer.Workload.Namespace, Name: peer.Workload.Name, Owner: StandingWorkload{}}
+	if owner := peer.Owner; owner != nil {
+		workload.Owner = ControllerOwner{APIVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, UID: string(owner.UID)}
+	}
+	return workload
 }
 
 func svidStatus(ctx context.Context, err error) error {

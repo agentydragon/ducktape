@@ -107,6 +107,18 @@ func TestSVIDResolvesAnIdentitySubject(t *testing.T) {
 	if got, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); err != nil || got != workload.Subject {
 		t.Fatalf("subject = %#v, %v; want %#v", got, err, workload.Subject)
 	}
+	// A standing workload's record has no owner to pin it to.
+	record := workload.Record
+	record.OwnerReferences, record.Spec.Binding, record.Spec.Pod = nil, nil, nil
+	if err := workload.Objects.Update(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	leaf.URIs[0] = mustURL(t, workload.Issue(t, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"))
+	standing := auth.IdentityPrincipal{Identity: workload.Subject.Identity, Workload: workload.Subject.Workload}
+	standing.Workload.Owner = auth.StandingWorkload{}
+	if got, err := svids.ResolveVerifiedLeaf(t.Context(), leaf); err != nil || got != standing {
+		t.Fatalf("standing subject = %#v, %v; want %#v", got, err, standing)
+	}
 	if err := workload.Objects.Delete(t.Context(), workload.Identity); err != nil {
 		t.Fatal(err)
 	}
