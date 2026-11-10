@@ -1,10 +1,10 @@
 # CLIProxyAPI with management OIDC
 
-Builds the backend from the upstream CLIProxyAPI release and the management UI from
-our OIDC fork. The OIDC changes originated in the now-closed
+Builds the backend from our OIDC branch rebased on CLIProxyAPI v8.0.63 and the
+management UI from our OIDC fork. The OIDC changes originated in the now-closed
 [CLIProxyAPI #6761](https://github.com/router-for-me/CLIProxyAPI/pull/6761) and
 [Management Center #505](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/pull/505).
-The backend changes are carried as a local patch. Exact revisions and checksums are in
+Exact revisions and checksums are in
 `MODULE.bazel`. The backend uses `rules_go`; the frontend uses Vite through `rules_js`;
 `rules_oci` packages both into a Debian 13 distroless image with CA certificates and
 CGO runtime libraries. Go and npm dependencies are isolated from Ducktape's application
@@ -19,8 +19,6 @@ The image publication roster publishes `cli-proxy-api` to the Forgejo registry.
 The deployment is described in <../../cluster/k8s/cli-proxy-api/README.md>.
 
 ## Patch ownership
-
-- `patches/management-oidc.patch`: browser OIDC login, rebased from the closed backend PR.
 
 - `patches/bundled-panel.patch`: `MANAGEMENT_STATIC_READONLY=true` prevents panel
   downloads and replacement, including when the file is missing.
@@ -39,9 +37,8 @@ The deployment is described in <../../cluster/k8s/cli-proxy-api/README.md>.
   Management OIDC endpoints also expire any legacy root-scoped `__Host-` cookies they
   receive, using the original root path so browsers remove the matching entries.
 
-The management UI still tracks a fork because upstream has not merged OIDC support.
-Remove the backend patch and move the UI pin to upstream once equivalent support is
-available. Remove `bundled-panel.patch` when the upstream panel has an equivalent
+Both source pins track forks because upstream has not merged OIDC support. Move the
+backend and UI pins to upstream once equivalent support is available. Remove `bundled-panel.patch` when the upstream panel has an equivalent
 read-only/no-download contract or the deployment no longer requires it. Remove
 `bazel.patch` when the pinned upstream sources provide compatible BUILD metadata. Remove
 `upstream-timing.patch` when upstream logs per-request upstream timing to stdout.

@@ -1,15 +1,6 @@
 diff --git a/internal/api/handlers/management/BUILD.bazel b/internal/api/handlers/management/BUILD.bazel
 --- a/internal/api/handlers/management/BUILD.bazel
 +++ b/internal/api/handlers/management/BUILD.bazel
-@@ -1,2 +1,3 @@
-         "handler.go",
-+        "oidc.go",
-         "logs.go",
-@@ -1,2 +1,4 @@
-         "@com_github_gin_gonic_gin//:gin",
-+        "@com_github_coreos_go_oidc_v3//oidc",
-+        "@org_golang_x_oauth2//:oauth2",
-         "@com_github_google_uuid//:uuid",
 @@ -166,3 +166,18 @@
          "@org_golang_x_oauth2//:oauth2",
      ],
