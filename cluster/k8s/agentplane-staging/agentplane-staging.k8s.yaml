@@ -2916,6 +2916,7 @@ data:
       actor: agentplane-staging/actions
       caller_namespaces:
         - agentplane-staging
+      identity_callers: true
       methods:
         - /agentplane.history_service.HistoryService/ReadSessionEvents
         - /agentplane.history_service.HistoryService/FollowSession

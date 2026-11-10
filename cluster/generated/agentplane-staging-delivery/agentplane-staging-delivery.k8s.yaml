@@ -456,6 +456,7 @@ data:
       actor: agentplane-staging/actions
       caller_namespaces:
         - agentplane-staging
+      identity_callers: true
       methods:
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
