@@ -130,11 +130,18 @@ a fixpoint. What the work so far showed:
   chunk's first opaque call refusals are everywhere
   (<analysis_performance.md> § Superlinear callback pools). Constant-factor
   work bought 10–30%; the target needs 10–25×.
-- **Coverage is all-or-nothing per statement.** A statement the kernel cannot
-  finish is `incomplete`, which the flip must treat as havoc. Wave 3 landed
-  rows 1, 2, 3, 9, 10 and part of 5 while the count of legacy-accepted,
-  effect-incomplete evaluations stayed near 360
-  (<convergence_landing.md> § Replan).
+- **Coverage is all-or-nothing per statement, and havoc is global.** A
+  statement the kernel cannot finish is `incomplete`, and one unknown call
+  gives the whole statement global havoc, so it conflicts with every pure
+  definition it is swapped with. On the public corpus split one module per
+  atomic group, the effect verdict leaves 33–42% of swapped pairs unproven,
+  all of them havoc-only, and about 80% of the modules fall into one
+  component; no subset of coverage rows frees a module, and removing the
+  callback-pool mechanism would leave 85–99% of those pairs. The unknown
+  calls are mostly bundled vendor code behind CommonJS interop. The legacy
+  gate accepts the same assignment and the emitted tree runs: it keeps impure
+  statements in mutual order and lets pure definitions move
+  (<../debug/2026_11_10_excalidraw_module_blockers.md>).
 - **"Unknown" is not structurally tied to "escaped".** A call through an
   unknown value reaches only escaped functions, so every site that widens a
   value to unknown must also escape what it dropped. An audit found sites that
@@ -154,18 +161,38 @@ may call at initialization.
 - **Known cost.** Less precision: no strong updates inside functions, no
   decided branches, context-insensitive unless refined. Each lost proof costs
   module granularity in a spec.
-- **Unknown.** Whether the loss matters for the real specs. A report-only
-  prototype under `x/` measures it: for each real spec's emitted order, how
-  many authored modules would have to be merged; the same for a decompose-style
-  stress assignment on the public corpus; and a cross-check that it reports
+- **What decides it.** The pairs that matter are a statement making an opaque
+  call swapped with a pure definition. The producer must answer which
+  functions could be invoked as of that statement (escaped by statements up
+  to it in source order, plus its own callees) and whether any of them
+  touches the definition; one whole-chunk escaped set would reproduce the
+  single component. After that, vendor callees in other chunks are the next
+  precision bucket (whole-program constraints).
+- **Unknown.** Whether the remaining loss matters for the real specs. A
+  report-only prototype under `x/` measures it: for each real spec's emitted
+  order, how many authored modules would have to be merged; the same for the
+  per-atomic-group stress assignment on the public corpus, joined pair by
+  pair with the current engine's result; and a cross-check that it reports
   every conflict today's analysis models and refuses the audit's unsound
   shapes.
 
 **Decision rule.** Adopt the summary-based producer if, with bounded
 refinements (call-site sensitivity for small helpers, existing premises as
 axioms on summaries), the real specs keep their modules and the cost target is
-met. Otherwise keep the execution-based producer, with the monotone-delta
-pool fix and coverage rows ranked by the module boundaries they unblock.
+met. Otherwise keep the execution-based producer: bound havoc reach,
+model the vendor interop callees, apply the fewer-opaque-events changes and
+the monotone delta (<analysis_performance.md>), and finish the kernel
+migration.
+
+**The half-migrated state.** `devel` runs two verdicts (the legacy gate
+decides, the effect verdict reports) and two evaluators (the flat lane and
+the kernel, joined per statement by attempt-and-rewind), with old paths kept
+because the legacy gate reads them. The unsound shapes found so far sit in
+those seams. Adopting the summary-based producer ends the migration by
+replacement: its sets are complete for every statement, so the flip needs no
+coverage rows, and the flat lane, the kernel lanes, attempt-and-rewind and
+the legacy gate are deleted after it. Keeping the execution-based producer
+means completing the migration into the kernel first.
 
 **Unchanged either way.** Parse, spec resolution, the loader model, order
 search, swapped-pair validation, structural placement obligations, emit, the
