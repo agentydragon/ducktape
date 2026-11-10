@@ -36,10 +36,6 @@ type Auth struct {
 
 // New constructs the auth boundary. OIDC discovery is deferred until a browser uses the login route.
 func New(cfg Config) (*Auth, error) {
-	return NewWithContext(context.Background(), cfg)
-}
-
-func NewWithContext(_ context.Context, cfg Config) (*Auth, error) {
 	a := &Auth{cfg: cfg, changes: cfg.SessionChanges, subjects: make(map[string]struct{}, len(cfg.TokenSubjects))}
 	for _, subject := range cfg.TokenSubjects {
 		if subject == "" {
