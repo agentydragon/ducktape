@@ -11,7 +11,7 @@ from typing import cast
 
 from python.runfiles import Runfiles
 
-from platform_sessions.chrome.cookies import chrome_password, decrypt_cookie
+from platform_sessions.chrome.cookies import chrome_password, chrome_user_agent, decrypt_cookie
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,10 @@ class ChromeProfile:
 
     def __init__(self, directory: Path):
         self.directory = Path(directory).expanduser()
+
+    @staticmethod
+    def user_agent(executable: str) -> str:
+        return chrome_user_agent(executable)
 
     def cookies(self, *, hosts: Sequence[str], names: Sequence[str], partitions: Sequence[str]) -> list[ChromeCookie]:
         if not hosts or not names or not partitions:
