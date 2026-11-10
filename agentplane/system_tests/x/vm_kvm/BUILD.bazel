@@ -1,0 +1,39 @@
+# gazelle:ignore
+
+load("//agentplane/system_tests/k3s:defs.bzl", "k3s_suite")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+# Experimental: the VM Sandbox scenarios with KubeVirt hardware acceleration on the KVM worker pool.
+k3s_suite(
+    name = "test_vm_kvm",
+    srcs = ["//agentplane/system_tests/suites:test_vm.py"],
+    boot_evidence = True,
+    main = "//agentplane/system_tests/suites:test_vm.py",
+    require_kvm = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:trace_contract",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

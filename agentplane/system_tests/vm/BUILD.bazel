@@ -208,7 +208,10 @@ py_test(
 py_library(
     name = "trace_contract",
     srcs = ["trace_contract.py"],
-    visibility = ["//agentplane/system_tests/suites:__pkg__"],
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
+    ],
 )
 
 py_library(
