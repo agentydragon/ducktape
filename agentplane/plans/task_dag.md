@@ -3163,8 +3163,9 @@ other noticing.
 resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
 methods; LLM ingress serves and attributes Identity callers once given its `policy_namespace`. The
 Action Service's Gate admits an Identity SVID caller by the bindings naming it and records requests
-and cancellations by the Identity incarnation, and gives it Action boxes it owns on the default
-ServiceAccount; launches, Session delegation and the MCP edge's delegated path still need a
+and cancellations by the Identity incarnation, and gives it Action boxes on the default
+ServiceAccount, in any group namespace, whose records nothing owns, so deleting the Identity revokes
+their credentials and deletes nothing; launches, Session delegation and the MCP edge's delegated path still need a
 ServiceAccount. Dispatcher records each Session's execution Identity from its Sandbox's
 `spec.identity`, places it on the wire and strands a Session whose Sandbox names another; its
 methods admit an Identity caller (`ReviewedServiceAccountOrIdentity`, once given its
@@ -3187,7 +3188,8 @@ re-attributing them. Migrations rewrite rows whose Sandbox still exists and mark
 historical, as History migration 8 did. Action boxes run as the caller's Identity here, not in
 `SANDBOX_IDENTITY_SPEC`: `stamp` (`action_service/sandbox/inventory.go`) names the caller's
 Identity as the box record's subject and runs the box on the default ServiceAccount, which needs the
-Action Service to know its caller as an Identity. A caller with no Sandbox has its box records owned by its `Identity`; its
+Action Service to know its caller as an Identity. An Identity caller's box records have no owner
+(operator, 2026-11-10: acting as an Identity confers no authority over a box); its
 `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. **Exit:** the existing service tests pass with identity
 principals, a retained Session with a deleted Sandbox reads as historical.
 

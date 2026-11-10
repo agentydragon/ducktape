@@ -32,7 +32,8 @@ cleared or the Sandbox, and with it the record, is removed. See the [egress cont
 ## WorkloadCredentials
 
 A workload's SVID is requested by its owner as a `WorkloadCredential`
-(`agentplane/workload_identity`), named after the owner and controlled by it. The owner writes
+(`agentplane/workload_identity`), named after the owner and controlled by it; an Identity's Action
+box's record has no owner and lives until the box is disposed of. The owner writes
 `spec`; only the issuer, hosted in the Policy Controller, writes `status` and creates the
 Certificate. The Sandbox Controller requests one per Sandbox, and the Action Service one per command
 or build box ([sandbox Actions](../action_service/sandbox/README.md)). A Sandbox's record:

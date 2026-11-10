@@ -114,7 +114,7 @@ func (f fixture) inventory() *Inventory {
 	if err != nil {
 		panic(err) // Both are given.
 	}
-	return NewInventory(f.binding, f.binding.Namespace, server.Clientset, f.exec.Exec, credentials, objects)
+	return NewInventory(f.binding, server.Clientset, f.exec.Exec, credentials, objects)
 }
 
 // created is what Create returned, with the box's credential issued as it waited.

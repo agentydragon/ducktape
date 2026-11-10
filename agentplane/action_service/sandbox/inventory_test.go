@@ -71,21 +71,28 @@ func TestABoxRunsAsItsCallerAndGoesWithItsSandboxOrAccount(t *testing.T) {
 	}
 }
 
-// An Identity's box runs on the namespace's default ServiceAccount, and its record names and is owned by the Identity
-// incarnation, so the box goes with the Identity. Its SVID resolves to the Identity, with the box as its Pod, as the
-// egress proxy and the services resolve a Sandbox's: the box acts as the Identity, by the Identity's bindings. Neither
-// a later incarnation of the name nor a same-named account reaches it.
-func TestAnIdentitysBoxRunsOnTheDefaultAccountAndGoesWithTheIdentity(t *testing.T) {
+// An Identity's box runs on the group namespace's default ServiceAccount, in a group outside the policy namespace that
+// holds the Identity. Its SVID resolves to the Identity, with the box as its Pod, as the egress proxy and the services
+// resolve a Sandbox's: the box acts as the Identity, by the Identity's bindings. Nothing owns its record, so the box
+// outlives the Identity until it is disposed of: deleting the Identity revokes the SVID and deletes nothing. Neither a
+// same-named successor Identity nor a same-named account reaches the box, or creates one of its name while it stands.
+func TestAnIdentitysBoxOutlivesTheIdentityWithItsCredentialRevoked(t *testing.T) {
+	ctx := t.Context()
 	f := newFixture(t, nil)
+	policyNamespace := f.binding.Namespace + "-policy"
+	if err := objects.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: policyNamespace}}); err != nil {
+		t.Fatal(err)
+	}
 	live := &policyapi.Identity{
-		ObjectMeta: metav1.ObjectMeta{Namespace: f.binding.Namespace, Name: "test-agent"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-agent"},
 		Spec:       policyapi.IdentitySpec{Description: "test agent"},
 	}
-	if err := objects.Create(t.Context(), live); err != nil {
+	if err := objects.Create(ctx, live); err != nil {
 		t.Fatal(err)
 	}
 	agent := Identity{Name: live.Name, UID: string(live.UID)}
-	if _, err := f.create(t, f.inventory(), agent, "box", testTemplate); err != nil {
+	inventory := f.inventory()
+	if _, err := f.create(t, inventory, agent, "box", testTemplate); err != nil {
 		t.Fatal(err)
 	}
 	f.issuance.Settle(t)
@@ -97,37 +104,65 @@ func TestAnIdentitysBoxRunsOnTheDefaultAccountAndGoesWithTheIdentity(t *testing.
 	if owner := metav1.GetControllerOf(pod); owner == nil || owner.Kind != workloadapi.Kind || owner.UID != record.UID {
 		t.Errorf("the box is owned by %v, want its WorkloadCredential %s", pod.OwnerReferences, record.UID)
 	}
-	want := []metav1.OwnerReference{{
-		APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Identity", Name: agent.Name, UID: types.UID(agent.UID), Controller: new(true),
-	}}
-	if !reflect.DeepEqual(record.OwnerReferences, want) {
-		t.Errorf("the box's record is owned by %+v, want %+v", record.OwnerReferences, want)
+	// What the garbage collector, which this test API server does not run, would collect the record by.
+	if len(record.OwnerReferences) != 0 {
+		t.Errorf("the box's record is owned by %+v, want no owner", record.OwnerReferences)
 	}
 	if subject := record.Spec.Subject; subject.ServiceAccount != "" || subject.Identity == nil ||
 		*subject.Identity != (workloadapi.IdentitySubject{Name: agent.Name, UID: types.UID(agent.UID)}) {
 		t.Errorf("the box's record names %+v, want the Identity", subject)
 	}
-	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: f.binding.Namespace})
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	peer, err := resolves.Resolve(t.Context(), f.leaf(t, f.record(t, agent, "box")))
+	leaf := f.leaf(t, record)
+	peer, err := resolves.Resolve(ctx, leaf)
 	if err != nil || peer.Subject != (resolver.Identity{Name: agent.Name, UID: live.UID}) || peer.Pod == nil || peer.Pod.UID != pod.UID {
 		t.Errorf("the box's SVID resolves to %+v, %v; want the Identity and Pod %s", peer, err, pod.UID)
 	}
-
-	if boxes, err := f.inventory().List(t.Context(), agent); err != nil || len(boxes) != 1 {
+	if boxes, err := inventory.List(ctx, agent); err != nil || len(boxes) != 1 {
 		t.Errorf("the Identity lists %v, %v", boxes, err)
 	}
+
+	if err := objects.Delete(ctx, live); err != nil {
+		t.Fatal(err)
+	}
+	successor := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: live.Name}, Spec: live.Spec}
+	if err := objects.Create(ctx, successor); err != nil {
+		t.Fatal(err)
+	}
+	if peer, err := resolves.Resolve(ctx, leaf); !errors.Is(err, resolver.ErrRefused) {
+		t.Errorf("the deleted Identity's box SVID resolves to %+v, %v; want it refused", peer, err)
+	}
 	sameNamed := account(t, f.binding.Namespace, agent.Name)
-	for name, other := range map[string]Caller{"a later incarnation": Identity{Name: agent.Name, UID: uuid.NewString()}, "a same-named account": sameNamed} {
+	for name, other := range map[string]Caller{"the successor": Identity{Name: successor.Name, UID: string(successor.UID)}, "a same-named account": sameNamed} {
 		var foreign *ForeignError
-		if _, err := f.inventory().Get(t.Context(), other, "box"); !errors.As(err, &foreign) {
+		if _, err := inventory.Get(ctx, other, "box"); !errors.As(err, &foreign) {
 			t.Errorf("%s: Get() = %v, want a ForeignError", name, err)
 		}
-		if boxes, err := f.inventory().List(t.Context(), other); err != nil || len(boxes) != 0 {
+		if boxes, err := inventory.List(ctx, other); err != nil || len(boxes) != 0 {
 			t.Errorf("%s lists %v, %v", name, boxes, err)
 		}
+		if _, err := f.create(t, inventory, other, "box", testTemplate); !errors.As(err, &foreign) {
+			t.Errorf("%s: Create() = %v, want a ForeignError", name, err)
+		}
+		if existed, err := inventory.Dispose(ctx, other, "box"); !errors.As(err, &foreign) || existed {
+			t.Errorf("%s: Dispose() = %t, %v; want a ForeignError", name, existed, err)
+		}
+	}
+	if kept := f.pod(t, agent, "box"); kept.UID != pod.UID {
+		t.Errorf("the box is now Pod %s, want %s", kept.UID, pod.UID)
+	}
+	if kept := f.record(t, agent, "box"); kept.UID != record.UID || kept.Spec.Subject.Identity.UID != live.UID {
+		t.Errorf("the box's record is now %s for %+v, want %s for the deleted Identity", kept.UID, kept.Spec.Subject, record.UID)
+	}
+
+	if existed, err := inventory.Dispose(ctx, agent, "box"); err != nil || !existed {
+		t.Fatalf("Dispose() = %t, %v", existed, err)
+	}
+	if err := objects.Get(ctx, types.NamespacedName{Namespace: f.binding.Namespace, Name: record.Name}, &workloadapi.WorkloadCredential{}); !apierrors.IsNotFound(err) {
+		t.Errorf("the disposed box's record survived: %v", err)
 	}
 }
 

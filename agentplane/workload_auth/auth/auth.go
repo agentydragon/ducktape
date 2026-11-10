@@ -108,7 +108,8 @@ type ControllerOwner struct {
 	APIVersion, Kind, Name, UID string
 }
 
-// StandingWorkload is a record with no controller owner, which no owner revokes.
+// StandingWorkload is a record with no controller owner, which no owner revokes: a standing
+// workload, or an Identity's sandbox box, which lives until it is disposed of.
 type StandingWorkload struct{}
 
 func (ControllerOwner) isWorkloadOwner()  {}
