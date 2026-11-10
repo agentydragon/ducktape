@@ -375,15 +375,65 @@ incremental frontier instead:
 Validation is per element, not one `ptr_eq` on a whole collection, so this is
 a design change rather than a memo.
 
+## Cost model (inlined editor chunk)
+
+Measured with temporary, uncommitted per-owner counters on the transient-input
+engine. A run executes 4,297 owners in the editor chunk.
+
+**Serial share.** The editor chunk runs alone from 2.3 s to the end of a
+268 s run, so about 99% of wall time is in one chunk's single-threaded
+analysis. In the split shape, the editor chunk overlaps `main`.
+
+**Where it goes.** 162 owners take 93% of the chunk's 276 s.
+
+- They form one contiguous run of source-unit ordinals, 754–932.
+- Nearly all are icon constants of the form
+  `X = k((0, f.jsxs)("g", {children: [(0, f.jsx)("path", …), …]}))`.
+- `f = ca(u1())` is esbuild's CommonJS interop wrapper (imported from another
+  chunk) around the bundled JSX runtime.
+- So every `f.jsx`/`f.jsxs` call is a call on an opaque value, and each one
+  runs the possible-callback pool.
+
+Per-owner means, bucketed by the size of the escaped-callback pool when the
+owner runs:
+
+| Escaped callbacks | Owners | Mean time | Opaque-call pool passes | Mean pool size | Deferred promotions |
+| ----------------: | -----: | --------: | ----------------------: | -------------: | ------------------: |
+|              0–49 |  1,952 |    6.7 ms |                      35 |             28 |                  14 |
+|           300–349 |    186 |    777 ms |                     393 |            337 |                 107 |
+|           350–399 |    556 |    201 ms |                      94 |            354 |                  25 |
+|           400–449 |    218 |    5.2 ms |                     1.6 |            436 |                 0.6 |
+
+A heavy icon owner does about 850 pool passes over about 354 callbacks, with
+about 870 bounded fallbacks, about 1,450 `unsettle` calls, and 228 deferred
+promotions.
+
+**Scaling.** Passes per owner grow with the pool: roughly 1.2 passes per
+pooled callback, from 28 callbacks to 337. Each pass costs time proportional
+to the pool, a median of about 6 µs per pass·callback. So:
+
+> cost per opaque-calling owner ∝ pool², and chunk cost ∝ (owners making
+> opaque calls while the pool is large) × pool².
+
+Between those two buckets, mean owner time grows 116× (6.7 ms to 777 ms)
+while pool² grows 145×.
+
+Inlining roughjs matters because its classes and closures escape into this
+chunk's pool before the icons run. Splitting it out keeps the pool small at
+that point: the split editor chunk takes 14–16 s, against 260–390 s inlined.
+
 ## Candidate optimizations, ranked
 
-Ranked from the inlined app-build editor chunk, the public analogue of the
-private single-chunk inputs:
+From the cost model above:
 
-1. **Make `unsettle` incremental**, with the per-element frontier above.
-2. **Make callback promotion incremental.** `invoke_possible_callbacks` (57%
-   inclusive) and `promote_deferred_callbacks` (42%) re-derive the callback
-   pool and its reach per opaque call; see the design note that follows.
+1. **Stop nested opaque calls from re-running an active pool.** A pool
+   invocation already iterates every member to a fixpoint, so re-running the
+   same pool for an opaque call made inside it is redundant work. This removes
+   one factor of the pool from the per-owner cost.
+2. **Make callback promotion a per-owner worklist,** so each deferred callback
+   is promoted once per state change, not once per opaque call.
+3. **Make `unsettle` incremental** with the per-element frontier above. It is
+   now 7% inclusive, so this comes after 1 and 2.
 
 Earlier candidates, from the package build:
 
