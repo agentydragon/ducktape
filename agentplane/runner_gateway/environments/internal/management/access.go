@@ -83,11 +83,11 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 	if err := validateCreate(request); err != nil {
 		return nil, err
 	}
-	intent, err := createIntent(request, a.caller)
+	intent, err := encodeCreateIntent(request, a.caller)
 	if err != nil {
 		return nil, &InvalidSandboxError{Reason: "create request cannot be recorded"}
 	}
-	if existing, err := a.retry(ctx, request.GetName(), intent); err != nil {
+	if existing, err := a.retry(ctx, request); err != nil {
 		return nil, err
 	} else if existing != nil {
 		return &identitypb.EnvironmentTarget{Namespace: existing.Namespace, Name: existing.Name, Uid: string(existing.UID)}, nil
@@ -100,7 +100,7 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 
 	resource := sandboxForCreate(request, a.namespace, policySetNames, intent)
 	if err := a.objects.Create(ctx, resource); err != nil {
-		existing, retryErr := a.retry(ctx, request.GetName(), intent)
+		existing, retryErr := a.retry(ctx, request)
 		if retryErr != nil {
 			return nil, retryErr
 		}
@@ -306,7 +306,10 @@ func (a *Access) requirePolicySets(ctx context.Context, names []string) error {
 	return nil
 }
 
-func (a *Access) retry(ctx context.Context, name, intent string) (*sandboxapi.Sandbox, error) {
+// retry returns the Sandbox an earlier identical create by this caller made, nil when the name is free, and a
+// conflict when the name is taken by anything else.
+func (a *Access) retry(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*sandboxapi.Sandbox, error) {
+	name := request.GetName()
 	resource, err := a.read(ctx, name)
 	if err != nil {
 		var missing *SandboxNotFoundError
@@ -315,7 +318,7 @@ func (a *Access) retry(ctx context.Context, name, intent string) (*sandboxapi.Sa
 		}
 		return nil, err
 	}
-	if resource.DeletionTimestamp != nil || resource.Annotations[sandboxapi.CreateIntentAnnotation] != intent {
+	if resource.DeletionTimestamp != nil || !sameIntent(resource.Annotations[sandboxapi.CreateIntentAnnotation], request, a.caller) {
 		return nil, &SandboxConflictError{Name: name}
 	}
 	return resource, nil
@@ -459,56 +462,48 @@ func isAlphaNumeric(value byte) bool {
 	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
-func createIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
-	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
-	if err != nil {
-		return "", err
-	}
-	var requestValue any
-	if err := json.Unmarshal(requestJSON, &requestValue); err != nil {
-		return "", err
-	}
-	value := map[string]any{
-		"caller":  map[string]any{"name": caller.GetName(), "namespace": caller.GetNamespace()},
-		"request": requestValue,
-	}
-	return pythonJSON(value)
+// createIntent is the receipt a create records on its Sandbox: the caller and the request it made.
+// The encoding needs only to be decodable; retries are matched by sameIntent, never by its bytes.
+type createIntent struct {
+	Caller  intentCaller    `json:"caller"`
+	Request json.RawMessage `json:"request"`
 }
 
-func pythonJSON(value any) (string, error) {
-	encoded, err := json.Marshal(value)
+type intentCaller struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) (string, error) {
+	requestJSON, err := protojson.Marshal(request)
 	if err != nil {
 		return "", err
 	}
-	// Python's json.dumps(sort_keys=True, separators=(",", ":")) sorts map keys and escapes
-	// non-ASCII characters. Go also escapes HTML by default, while Python does not.
-	var raw any
-	if err := json.Unmarshal(encoded, &raw); err != nil {
+	encoded, err := json.Marshal(createIntent{
+		Caller:  intentCaller{Namespace: caller.GetNamespace(), Name: caller.GetName()},
+		Request: requestJSON,
+	})
+	if err != nil {
 		return "", err
 	}
-	var buffer strings.Builder
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(raw); err != nil {
-		return "", err
+	return string(encoded), nil
+}
+
+// sameIntent reports whether recorded is a create by caller of request. A receipt that does not decode is
+// someone else's.
+func sameIntent(recorded string, request *environmentpb.CreateEnvironmentRequest, caller *identitypb.ServiceAccount) bool {
+	var intent createIntent
+	if err := json.Unmarshal([]byte(recorded), &intent); err != nil {
+		return false
 	}
-	canonical := strings.TrimSuffix(buffer.String(), "\n")
-	var ascii strings.Builder
-	for _, character := range canonical {
-		if character <= 0x7f {
-			ascii.WriteRune(character)
-			continue
-		}
-		if character <= 0xffff {
-			fmt.Fprintf(&ascii, `\u%04x`, character)
-			continue
-		}
-		character -= 0x10000
-		high := rune(0xd800 + (character >> 10))
-		low := rune(0xdc00 + (character & 0x3ff))
-		fmt.Fprintf(&ascii, `\u%04x\u%04x`, high, low)
+	if intent.Caller.Namespace != caller.GetNamespace() || intent.Caller.Name != caller.GetName() {
+		return false
 	}
-	return ascii.String(), nil
+	var recordedRequest environmentpb.CreateEnvironmentRequest
+	if err := protojson.Unmarshal(intent.Request, &recordedRequest); err != nil {
+		return false
+	}
+	return proto.Equal(&recordedRequest, request)
 }
 
 func uniqueSorted(values []string) []string {

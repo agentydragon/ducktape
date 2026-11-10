@@ -16,6 +16,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -114,10 +115,6 @@ func TestCreateAppliesDefaultsAndCallerIntentAndIsIdempotent(t *testing.T) {
 	}
 	if stored.Labels[view.PresetLabel] != preset || stored.Annotations[sandboxapi.CreateIntentAnnotation] == "" {
 		t.Fatalf("stored metadata = %#v", stored.ObjectMeta)
-	}
-	wantIntent := `{"caller":{"name":"app","namespace":"test-sandboxes"},"request":{"bootstrap":"echo < start","idle_suspend_after":"60s","inbox_tags":["team-b","team-a","team-b"],"name":"created-sandbox","policy_sets":["extra-policy"],"preset":"selected-preset","template":"pod-template","wake_on_send":true}}`
-	if got := stored.Annotations[sandboxapi.CreateIntentAnnotation]; got != wantIntent {
-		t.Fatalf("create intent = %s, want %s", got, wantIntent)
 	}
 	retry, err := access.Create(context.Background(), request)
 	if err != nil || retry.GetUid() != created.GetUid() {
@@ -318,20 +315,88 @@ func isInvalid(err error) bool {
 	return errors.As(err, &target)
 }
 
-func TestPythonJSONEscapingMatchesCreateIntentConvention(t *testing.T) {
-	value := map[string]any{"z": "snowman ☃", "a": "<tag>"}
-	got, err := pythonJSON(value)
+func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
+	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
+		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "default-policy", Namespace: namespace}},
+	).Build()
+	objects := &assigningClient{Client: base}
+	access, err := New(namespace, objects, []string{"default-policy"}, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"a":"<tag>","z":"snowman \u2603"}`
-	if got != want {
-		t.Fatalf("pythonJSON = %s, want %s", got, want)
+	request := &environmentpb.CreateEnvironmentRequest{
+		Name: "unicode-sandbox", Template: "pod", Bootstrap: "echo '<b>&amp;</b> snowman ☃ 😀'",
 	}
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(got), &decoded); err != nil || decoded["a"] != "<tag>" {
-		t.Fatalf("canonical JSON did not round trip: %v %v", decoded, err)
+	created, err := access.Create(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if retry, err := access.Create(context.Background(), proto.Clone(request).(*environmentpb.CreateEnvironmentRequest)); err != nil || retry.GetUid() != created.GetUid() {
+		t.Fatalf("identical retry with Unicode and HTML = %#v, %v", retry, err)
+	}
+
+	// The receipt is compared by meaning: a reformatted one that says the same still matches.
+	stored := readSandbox(t, objects, request.Name)
+	var intent map[string]any
+	if err := json.Unmarshal([]byte(stored.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
+		t.Fatal(err)
+	}
+	reformatted, err := json.MarshalIndent(intent, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.Annotations[sandboxapi.CreateIntentAnnotation] = string(reformatted)
+	if err := objects.Update(context.Background(), stored); err != nil {
+		t.Fatal(err)
+	}
+	if retry, err := access.Create(context.Background(), request); err != nil || retry.GetUid() != created.GetUid() {
+		t.Fatalf("retry against reformatted receipt = %#v, %v", retry, err)
+	}
+
+	changed := proto.Clone(request).(*environmentpb.CreateEnvironmentRequest)
+	changed.WakeOnSend = true
+	if _, err := access.Create(context.Background(), changed); !isConflict(err) {
+		t.Fatalf("different request adopted name: %v", err)
+	}
+
+	stored = readSandbox(t, objects, request.Name)
+	stored.Annotations[sandboxapi.CreateIntentAnnotation] = "not a receipt"
+	if err := objects.Update(context.Background(), stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := access.Create(context.Background(), request); !isConflict(err) {
+		t.Fatalf("undecodable receipt adopted: %v", err)
+	}
+}
+
+// A create whose outcome the client never saw still lands; the caller's retry of it adopts that Sandbox.
+func TestCreateAdoptsItsOwnUncertainCreate(t *testing.T) {
+	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
+		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "default-policy", Namespace: namespace}},
+	).Build()
+	objects := &lostCreateClient{assigningClient: assigningClient{Client: base}}
+	access, err := New(namespace, objects, []string{"default-policy"}, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &environmentpb.CreateEnvironmentRequest{Name: "uncertain", Template: "pod"}
+	created, err := access.Create(context.Background(), request)
+	if err != nil || created.GetUid() != "created-1" {
+		t.Fatalf("Create after a lost response = %#v, %v", created, err)
+	}
+}
+
+// lostCreateClient makes the create land but reports it as a name conflict, as a retried request whose first
+// attempt succeeded does.
+type lostCreateClient struct {
+	assigningClient
+}
+
+func (c *lostCreateClient) Create(ctx context.Context, object client.Object, options ...client.CreateOption) error {
+	if err := c.assigningClient.Create(ctx, object, options...); err != nil {
+		return err
+	}
+	return apierrors.NewAlreadyExists(sandboxapi.GroupVersion.WithResource("sandboxes").GroupResource(), object.GetName())
 }
 
 func TestListTemplates(t *testing.T) {
