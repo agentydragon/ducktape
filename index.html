@@ -190,16 +190,24 @@
             <//>
             <${Paper} component="article" withBorder p="lg" radius="md" my="md">
               <${Title} order=${2} mt="md" mb="sm">
-                <${Anchor} href=${"storage/"}> ${"Cluster storage"} <//>
+                <${Anchor} href=${"storage/"}>
+                  ${"Cluster storage dashboard"}
+                <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Current SeaweedFS bucket inventory, S3 consumers, PostgreSQL backup choices, and storage alternatives. "}
+                ${" HDD pool scenarios, ranked savings options, and Langfuse S3 and ClickHouse evidence, with the earlier storage inventory. "}
               <//>
               <${Text} component="span" size="sm" c="dimmed">
-                ${"Live read: 9 November UTC; resource-reported usage ages vary."}
+                ${"Remediation snapshot: 10 November UTC; inventory: 9 November UTC."}
               <//>
               <${Text} component="p" my="sm">
-                <${Anchor} href=${"storage/evidence.json"}> ${"evidence"} <//>
+                <${Anchor} href=${"storage/remediation-evidence.json"}>
+                  ${"remediation evidence"}
+                <//>
+                ${" · "}
+                <${Anchor} href=${"storage/evidence.json"}>
+                  ${"inventory evidence"}
+                <//>
                 ${" · "}
                 <${Anchor} href=${"storage/manifest.json"}> ${"manifest"} <//>
               <//>
