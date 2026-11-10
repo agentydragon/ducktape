@@ -106,6 +106,43 @@ def test_kvm_workers_never_share_a_node_and_each_has_a_network_policy_and_an_ssd
     assert len(claims) == len(workers)
 
 
+def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    workers = [
+        doc
+        for doc in documents
+        if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    ]
+    service = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "Service" and doc["metadata"]["name"] == "buildbuddy-kvm-worker-metrics"
+    )
+    monitor = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
+    )
+    port = next(port for port in service["spec"]["ports"] if port["name"] == "metrics")
+    for worker in workers:
+        pod_labels = worker["spec"]["template"]["metadata"]["labels"]
+        assert service["spec"]["selector"].items() <= pod_labels.items()
+    assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
+    assert monitor["spec"]["endpoints"][0]["port"] == port["name"]
+    for policy in (
+        doc
+        for doc in documents
+        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"].startswith("buildbuddy-kvm-worker")
+    ):
+        (rule,) = policy["spec"]["ingress"]
+        assert rule["fromEndpoints"] == [
+            {"matchLabels": {"app.kubernetes.io/name": "alloy-node", "k8s:io.kubernetes.pod.namespace": "monitoring"}}
+        ]
+        assert [p["port"] for p in rule["toPorts"][0]["ports"]] == [str(port["port"])]
+
+
 def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
@@ -168,7 +205,12 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
         if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == worker["metadata"]["name"]
     )["spec"]
     assert policy["endpointSelector"]["matchLabels"].items() <= worker["spec"]["template"]["metadata"]["labels"].items()
-    assert policy["ingress"] == [{}]
+    # Ingress admits only named peers (the metrics scraper); the exact peer and port are pinned in
+    # test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy.
+    assert all(
+        rule.get("fromEndpoints") and not rule.get("fromEntities") and not rule.get("fromCIDR")
+        for rule in policy["ingress"]
+    )
     assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in policy["egress"])
 
 
