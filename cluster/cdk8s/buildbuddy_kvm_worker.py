@@ -60,6 +60,8 @@ _METRICS_PORT_NAME = "metrics"
 _NODE_METRICS_PORT = 9100
 _NODE_METRICS_PORT_NAME = "node-metrics"
 _METRICS_SERVICE = f"{NAME}-metrics"
+# Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
+_VM_SHUTDOWN_GRACE_SECONDS = 87_000
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
@@ -224,6 +226,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
             failure_threshold=3,
             success_threshold=1,
         ),
+        termination_grace_period_seconds=_VM_SHUTDOWN_GRACE_SECONDS,
         ports=[],
         disks={
             "work": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes(
