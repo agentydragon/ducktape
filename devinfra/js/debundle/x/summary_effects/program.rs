@@ -46,6 +46,49 @@ pub struct ProgramFacts {
     /// string literal, and the string.
     exported_strings: FxHashMap<PathBuf, FxHashMap<String, String>>,
     resolution: Resolution,
+    /// What each chunk imports.
+    graph: BTreeMap<PathBuf, Imports>,
+    root: PathBuf,
+}
+
+/// Whether any chunk statically imports itself through others.
+fn has_static_cycle(graph: &BTreeMap<PathBuf, Imports>, resolution: &Resolution) -> bool {
+    let edges = |path: &PathBuf| -> Vec<PathBuf> {
+        graph[path]
+            .statics
+            .iter()
+            .filter_map(|specifier| resolve(path, specifier, resolution))
+            .filter(|target| graph.contains_key(target))
+            .collect()
+    };
+    // Depth-first, each chunk entered once: an edge to a chunk still being
+    // visited closes a cycle.
+    let mut state: FxHashMap<&PathBuf, bool> = FxHashMap::default();
+    for start in graph.keys() {
+        if state.contains_key(start) {
+            continue;
+        }
+        let mut stack: Vec<(PathBuf, Vec<PathBuf>)> = vec![(start.clone(), edges(start))];
+        state.insert(start, false);
+        while let Some((path, pending)) = stack.last_mut() {
+            let Some(next) = pending.pop() else {
+                let (done, _) = graph.get_key_value(&*path).expect("a chunk of the graph");
+                state.insert(done, true);
+                stack.pop();
+                continue;
+            };
+            let (next, _) = graph.get_key_value(&next).expect("a chunk of the graph");
+            match state.get(next) {
+                Some(false) => return true,
+                Some(true) => {}
+                None => {
+                    state.insert(next, false);
+                    stack.push((next.clone(), edges(next)));
+                }
+            }
+        }
+    }
+    false
 }
 
 /// How an import specifier names a chunk file.
@@ -63,6 +106,75 @@ impl ProgramFacts {
     pub fn resolve(&self, from: &Path, specifier: &str) -> Option<usize> {
         let target = resolve(from, specifier, &self.resolution)?;
         self.modules.iter().position(|(path, _)| *path == target)
+    }
+
+    /// Makes `chunk` the analysed chunk: decides whether it is on an import
+    /// cycle. The other facts are the program's and stay.
+    pub fn retarget(&mut self, chunk: &Path) -> Result<()> {
+        let chunk = chunk
+            .canonicalize()
+            .with_context(|| format!("resolving {}", chunk.display()))?;
+        let (graph, resolution) = (&self.graph, &self.resolution);
+        anyhow::ensure!(
+            graph.contains_key(&chunk),
+            "{} is not under {}",
+            chunk.display(),
+            self.root.display()
+        );
+        let static_closure = |start: &Path| -> FxHashSet<PathBuf> {
+            let mut seen = FxHashSet::default();
+            let mut pending = vec![start.to_path_buf()];
+            while let Some(path) = pending.pop() {
+                let Some(imports) = graph.get(&path) else {
+                    continue;
+                };
+                for specifier in &imports.statics {
+                    if let Some(target) = resolve(&path, specifier, resolution)
+                        && seen.insert(target.clone())
+                    {
+                        pending.push(target);
+                    }
+                }
+            }
+            seen
+        };
+        let dependencies = static_closure(&chunk);
+        let static_cycle = dependencies.contains(&chunk);
+        // A dynamic `import()` settles in a later job. Without a top-level
+        // `await` anywhere in the program, a module graph evaluates in one
+        // job, so that job cannot run while this chunk is half evaluated.
+        // With one, evaluation suspends, and a dependency that dynamically
+        // imports this chunk, or a chunk that statically reaches it, or an
+        // unknown specifier, may run against it.
+        let dynamic_cycle = self.top_level_awaits > 0
+            && dependencies.iter().any(|dependency| {
+                graph.get(dependency).is_some_and(|imports| {
+                    imports.dynamics.iter().any(|specifier| {
+                        match specifier
+                            .as_deref()
+                            .and_then(|specifier| resolve(dependency, specifier, resolution))
+                        {
+                            Some(target) => {
+                                target == chunk || static_closure(&target).contains(&chunk)
+                            }
+                            None => true,
+                        }
+                    })
+                })
+            });
+        // A synchronous load of an unknown chunk, by this chunk or one it
+        // has loaded, may be of a chunk that imports this one.
+        let unknown_require = std::iter::once(&chunk).chain(&dependencies).any(|path| {
+            graph
+                .get(path)
+                .is_some_and(|imports| imports.unknown_requires > 0)
+        });
+        self.on_import_cycle = static_cycle
+            || dynamic_cycle
+            || unknown_require
+            || self.unresolved_static_specifiers > 0;
+        self.chunk = chunk;
+        Ok(())
     }
 
     /// The imported bindings of `module`, the chunk at `from`, that only
@@ -83,6 +195,7 @@ impl ProgramFacts {
 fn exported_strings(
     module: &Module,
     imported: &FxHashMap<Id, String>,
+    assigned: &FxHashSet<Id>,
     settled_vars: bool,
 ) -> FxHashMap<String, String> {
     let string = |declarator: &VarDeclarator| {
@@ -103,7 +216,6 @@ fn exported_strings(
             _ => None,
         }
     };
-    let assigned = crate::derive::assigned_bindings(module);
     let constants = |var: &VarDecl| {
         let decls = if var.kind == VarDeclKind::Var && !settled_vars {
             &[]
@@ -396,32 +508,31 @@ pub fn load(
     // Without a static import cycle, a chunk that did not parse, an unknown
     // synchronous load or an import of a chunk not read, every chunk a
     // chunk imports has finished evaluating before the importer starts.
-    let mut cyclic = unparsed_chunks > 0;
-    for (path, imports) in &graph {
-        cyclic |= imports.unknown_requires > 0;
-        let mut seen: FxHashSet<PathBuf> = FxHashSet::default();
-        let mut pending = vec![path.clone()];
-        while let Some(next) = pending.pop() {
-            for specifier in graph.get(&next).map_or(&[][..], |imports| &imports.statics) {
-                if let Some(target) = resolve(&next, specifier, &resolution) {
-                    cyclic |= target == *path || !graph.contains_key(&target);
-                    if seen.insert(target.clone()) {
-                        pending.push(target);
-                    }
-                }
-            }
-        }
-    }
+    let cyclic = unparsed_chunks > 0
+        || graph.values().any(|imports| imports.unknown_requires > 0)
+        || has_static_cycle(&graph, &resolution)
+        || graph.iter().any(|(path, imports)| {
+            imports.statics.iter().any(|specifier| {
+                resolve(path, specifier, &resolution)
+                    .is_some_and(|target| !graph.contains_key(&target))
+            })
+        });
+    // What each chunk assigns does not change between rounds.
+    let assigned: Vec<FxHashSet<Id>> = modules
+        .iter()
+        .map(|(_, parsed)| crate::derive::assigned_bindings(&parsed.module))
+        .collect();
     // A chunk may re-export a string it imports: read until none is new.
     let mut exported: FxHashMap<PathBuf, FxHashMap<String, String>> = FxHashMap::default();
     loop {
         let next: FxHashMap<PathBuf, FxHashMap<String, String>> = modules
             .iter()
-            .map(|(path, parsed)| {
+            .zip(&assigned)
+            .map(|((path, parsed), assigned)| {
                 let imported = imported_strings(path, &parsed.module, &exported, &resolution);
                 (
                     path.clone(),
-                    exported_strings(&parsed.module, &imported, !cyclic),
+                    exported_strings(&parsed.module, &imported, assigned, !cyclic),
                 )
             })
             .collect();
@@ -438,59 +549,6 @@ pub fn load(
         written.locate(index);
         merged.merge(written);
     }
-    anyhow::ensure!(
-        graph.contains_key(&chunk),
-        "{} is not under {}",
-        chunk.display(),
-        root.display()
-    );
-    let static_closure = |start: &Path| -> FxHashSet<PathBuf> {
-        let mut seen = FxHashSet::default();
-        let mut pending = vec![start.to_path_buf()];
-        while let Some(path) = pending.pop() {
-            let Some(imports) = graph.get(&path) else {
-                continue;
-            };
-            for specifier in &imports.statics {
-                if let Some(target) = resolve(&path, specifier, &resolution)
-                    && seen.insert(target.clone())
-                {
-                    pending.push(target);
-                }
-            }
-        }
-        seen
-    };
-    let dependencies = static_closure(&chunk);
-    let static_cycle = dependencies.contains(&chunk);
-    // A dynamic `import()` settles in a later job. Without a top-level
-    // `await` anywhere in the program, a module graph evaluates in one job,
-    // so that job cannot run while this chunk is half evaluated. With one,
-    // evaluation suspends, and a dependency that dynamically imports this
-    // chunk, or a chunk that statically reaches it, or an unknown specifier,
-    // may run against it.
-    let top_level_awaits: usize = graph.values().map(|imports| imports.top_level_awaits).sum();
-    let dynamic_cycle = top_level_awaits > 0
-        && dependencies.iter().any(|dependency| {
-            graph.get(dependency).is_some_and(|imports| {
-                imports.dynamics.iter().any(|specifier| {
-                    match specifier
-                        .as_deref()
-                        .and_then(|specifier| resolve(dependency, specifier, &resolution))
-                    {
-                        Some(target) => target == chunk || static_closure(&target).contains(&chunk),
-                        None => true,
-                    }
-                })
-            })
-        });
-    // A synchronous load of an unknown chunk, by this chunk or one it has
-    // loaded, may be of a chunk that imports this one.
-    let unknown_require = std::iter::once(&chunk).chain(&dependencies).any(|path| {
-        graph
-            .get(path)
-            .is_some_and(|imports| imports.unknown_requires > 0)
-    });
     let unresolved = |dynamic: bool| {
         graph
             .iter()
@@ -515,15 +573,15 @@ pub fn load(
     if unresolved_static_specifiers > 0 {
         merged.refuse_everything();
     }
-    Ok(ProgramFacts {
+    let top_level_awaits: usize = graph.values().map(|imports| imports.top_level_awaits).sum();
+    let mut program = ProgramFacts {
         chunks: graph.len(),
-        on_import_cycle: static_cycle
-            || dynamic_cycle
-            || unknown_require
-            || unresolved_static_specifiers > 0,
+        on_import_cycle: true,
         census: merged,
         modules,
-        chunk,
+        chunk: PathBuf::new(),
+        graph,
+        root: root.to_path_buf(),
         top_level_awaits,
         unparsed_chunks,
         unresolved_static_specifiers,
@@ -531,5 +589,7 @@ pub fn load(
         string_exports: exported.values().map(FxHashMap::len).sum(),
         exported_strings: exported,
         resolution,
-    })
+    };
+    program.retarget(&chunk)?;
+    Ok(program)
 }

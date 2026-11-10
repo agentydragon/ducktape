@@ -488,7 +488,15 @@ and tier 0 accepts a swap Node observes. Without premises tier 0 refuses all 41.
 - **Program-wide unchangeable literals.** A literal of this chunk that the
   whole program only reads named members of (the settled-import conditions,
   seen from the exporting side) counts as unchangeable although exported.
-  No cycle verdict is needed: no chunk can change it at any time.
+  No cycle verdict is needed: no chunk can change it at any time. A
+  namespace object cannot be written through, so a chunk that imports the
+  exporter as a namespace, binds the namespace of a dynamic import
+  (`import("./x.js").then((m) => …)`, `const m = await import("./x.js")`) or
+  destructures it keeps the literal while it only reads named members of
+  `ns.table`; using the namespace whole, as a call receiver or under a
+  computed key, or `ns.table` as a value, does not. The report says why each
+  other literal of the chunk does not qualify (`settled_local_refusals`, and
+  per declaring unit for those read by name 20 times or more).
 - **Aliases of a lazy module's member.** `const alias = ns.member` (or
   `ns.default.member`), declared once and never assigned, in this chunk or
   exported by another, is an allocator when the member is: the module has
@@ -819,6 +827,13 @@ Not modeled, and what each maps to:
 | a throw from a top-level statement                          | **not an effect** — a gap in this mode          |
 
 ## Running it
+
+`--manifest <json>` analyses several chunks against one read of the program:
+a JSON array of `{"chunk": …, "out": …}` entries with optional
+`effect_report`, `order`, `current_conflicts`, `modules`, `premises` and
+`unproven_pairs`. The program-wide facts are computed once; the cycle verdict
+is taken per chunk. A chunk that fails is reported on stderr and the others
+still run.
 
 ```sh
 bbr build -c opt //devinfra/js/debundle/x/summary_effects:summary_effects_bin

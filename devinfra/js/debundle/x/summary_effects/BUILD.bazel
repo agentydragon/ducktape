@@ -46,6 +46,7 @@ rust_binary(
         "//devinfra/js/debundle:js_ast",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:serde",
         "@crates//:serde_json",
     ],
 )

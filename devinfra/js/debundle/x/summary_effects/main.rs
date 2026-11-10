@@ -4,7 +4,7 @@
 //! effect translation-validation report and conflict export for that chunk,
 //! and writes one JSON report. It decides nothing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -15,8 +15,14 @@ use summary_effects::tier0;
 #[derive(Parser)]
 struct Cli {
     /// The chunk's JavaScript source.
-    #[arg(long)]
-    chunk: PathBuf,
+    #[arg(long, required_unless_present = "manifest")]
+    chunk: Option<PathBuf>,
+    /// Tier 0: a JSON array of chunks to analyse against one read of the
+    /// program. Each entry has `chunk` and optionally `effect_report`,
+    /// `order`, `current_conflicts`, `modules`, `premises`,
+    /// `unproven_pairs` and `out`, as the flags of those names.
+    #[arg(long, conflicts_with_all = ["chunk", "effect_report", "order", "current_conflicts", "modules", "premises", "unproven_pairs", "out"])]
+    manifest: Option<PathBuf>,
     /// The chunk's `effect_translation_validation.json`; its `emitted_order`
     /// selects the swapped pairs.
     #[arg(long, conflicts_with = "order")]
@@ -88,108 +94,150 @@ enum Mode {
     PointsTo,
 }
 
+/// One chunk to analyse and where its inputs and report are.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Job {
+    chunk: PathBuf,
+    effect_report: Option<PathBuf>,
+    order: Option<Vec<usize>>,
+    current_conflicts: Option<PathBuf>,
+    modules: Option<PathBuf>,
+    premises: Option<PathBuf>,
+    unproven_pairs: Option<PathBuf>,
+    out: Option<PathBuf>,
+}
+
+fn read(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+}
+
+fn parsed<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    serde_json::from_str(&read(path)?).with_context(|| format!("parsing {}", path.display()))
+}
+
+/// The inputs of a job, read.
+fn inputs<'a>(job: &'a Job, chunk: &'a str, cli: &Cli) -> Result<Inputs<'a>> {
+    let order = match (&job.effect_report, &job.order) {
+        (Some(path), _) => {
+            let value: serde_json::Value = parsed(path)?;
+            Some(serde_json::from_value(value["emitted_order"].clone())?)
+        }
+        (None, order) => order.clone(),
+    };
+    let current_conflicts = match &job.current_conflicts {
+        Some(path) => Some(
+            read(path)?
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(serde_json::from_str)
+                .collect::<Result<Vec<serde_json::Value>, _>>()?,
+        ),
+        None => None,
+    };
+    Ok(Inputs {
+        chunk,
+        source: read(&job.chunk)?,
+        order,
+        current_conflicts,
+        function_heap: cli.function_heap,
+        modules: job.modules.as_deref().map(parsed).transpose()?,
+        examples: cli.examples,
+        pairs_out: job.unproven_pairs.clone(),
+    })
+}
+
+fn write(out: Option<&Path>, rendered: String) -> Result<()> {
+    match out {
+        Some(path) => {
+            std::fs::write(path, rendered).with_context(|| format!("writing {}", path.display()))
+        }
+        None => {
+            println!("{rendered}");
+            Ok(())
+        }
+    }
+}
+
+/// Analyses every job against one read of the program.
+fn run(cli: &Cli, jobs: &[Job]) -> Result<()> {
+    let Some(first) = jobs.first() else {
+        return Ok(());
+    };
+    if cli.mode == Mode::PointsTo {
+        anyhow::ensure!(cli.manifest.is_none(), "a manifest is for tier 0");
+        let chunk = first.chunk.display().to_string();
+        let rendered = serde_json::to_string_pretty(&report(inputs(first, &chunk, cli)?)?)?;
+        return write(first.out.as_deref(), rendered);
+    }
+    let program = cli
+        .program_chunks
+        .as_deref()
+        .map(|root| {
+            summary_effects::program::load(
+                root,
+                &first.chunk,
+                cli.program_file_list.as_deref(),
+                &cli.program_specifier_root,
+            )
+        })
+        .transpose()?;
+    let mut options = tier0::Options {
+        exports_reachable: cli.exports_reachable,
+        upgrades: cli.upgrade.iter().copied().collect(),
+        what_if_pure: cli.what_if_pure.iter().copied().collect(),
+        program,
+        premises: Default::default(),
+        derive: cli.derive,
+    };
+    // One chunk that cannot be analysed does not stop the others.
+    let mut failed = 0;
+    for job in jobs {
+        let chunk = job.chunk.display().to_string();
+        let done = (|| -> Result<()> {
+            if let Some(program) = &mut options.program {
+                program.retarget(&job.chunk)?;
+            }
+            options.premises = match &job.premises {
+                Some(path) => parsed(path)?,
+                None => Default::default(),
+            };
+            let rendered =
+                serde_json::to_string_pretty(&tier0_report(inputs(job, &chunk, cli)?, &options)?)?;
+            write(job.out.as_deref(), rendered)
+        })();
+        if let Err(error) = done {
+            anyhow::ensure!(cli.manifest.is_some(), error);
+            eprintln!("{chunk}: {error:#}");
+            failed += 1;
+        }
+    }
+    anyhow::ensure!(failed == 0, "{failed} of {} chunks failed", jobs.len());
+    Ok(())
+}
+
+// Minified chunks nest expressions deeper than the default stack.
 const STACK_BYTES: usize = 1 << 30;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let source = std::fs::read_to_string(&cli.chunk)
-        .with_context(|| format!("reading {}", cli.chunk.display()))?;
-    let order = match (&cli.effect_report, cli.order) {
-        (Some(path), _) => {
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            let value: serde_json::Value = serde_json::from_str(&text)?;
-            Some(serde_json::from_value(value["emitted_order"].clone())?)
-        }
-        (None, order) => order,
+    let jobs: Vec<Job> = match (&cli.manifest, &cli.chunk) {
+        (Some(manifest), _) => parsed(manifest)?,
+        (None, Some(chunk)) => vec![Job {
+            chunk: chunk.clone(),
+            effect_report: cli.effect_report.clone(),
+            order: cli.order.clone(),
+            current_conflicts: cli.current_conflicts.clone(),
+            modules: cli.modules.clone(),
+            premises: cli.premises.clone(),
+            unproven_pairs: cli.unproven_pairs.clone(),
+            out: cli.out.clone(),
+        }],
+        (None, None) => unreachable!("clap requires a chunk or a manifest"),
     };
-    let current_conflicts = match &cli.current_conflicts {
-        Some(path) => {
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            Some(
-                text.lines()
-                    .filter(|line| !line.trim().is_empty())
-                    .map(serde_json::from_str)
-                    .collect::<Result<Vec<serde_json::Value>, _>>()?,
-            )
-        }
-        None => None,
-    };
-    let chunk = cli.chunk.display().to_string();
-    let function_heap = cli.function_heap;
-    let modules = match &cli.modules {
-        Some(path) => {
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            Some(serde_json::from_str(&text)?)
-        }
-        None => None,
-    };
-    let premises = match &cli.premises {
-        Some(path) => {
-            let text = std::fs::read_to_string(path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?
-        }
-        None => Default::default(),
-    };
-    let (mode, examples) = (cli.mode, cli.examples);
-    let pairs_out = cli.unproven_pairs;
-    let (exports_reachable, upgrades, what_if_pure) =
-        (cli.exports_reachable, cli.upgrade, cli.what_if_pure);
-    let (program_chunks, chunk_path) = (cli.program_chunks, cli.chunk.clone());
-    let (program_file_list, derive) = (cli.program_file_list, cli.derive);
-    let specifier_roots = cli.program_specifier_root;
-    // Minified chunks nest expressions deeper than the default stack.
-    let rendered = std::thread::Builder::new()
+    std::thread::Builder::new()
         .stack_size(STACK_BYTES)
-        .spawn(move || {
-            js_ast::with_swc_globals(|| -> Result<String> {
-                let inputs = Inputs {
-                    chunk: &chunk,
-                    source,
-                    order,
-                    current_conflicts,
-                    function_heap,
-                    modules,
-                    examples,
-                    pairs_out,
-                };
-                Ok(match mode {
-                    Mode::Tier0 => {
-                        let program = program_chunks
-                            .as_deref()
-                            .map(|root| {
-                                summary_effects::program::load(
-                                    root,
-                                    &chunk_path,
-                                    program_file_list.as_deref(),
-                                    &specifier_roots,
-                                )
-                            })
-                            .transpose()?;
-                        let options = tier0::Options {
-                            exports_reachable,
-                            upgrades: upgrades.into_iter().collect(),
-                            what_if_pure: what_if_pure.into_iter().collect(),
-                            program,
-                            premises,
-                            derive,
-                        };
-                        serde_json::to_string_pretty(&tier0_report(inputs, &options)?)?
-                    }
-                    Mode::PointsTo => serde_json::to_string_pretty(&report(inputs)?)?,
-                })
-            })
-        })?
+        .spawn(move || js_ast::with_swc_globals(|| run(&cli, &jobs)))?
         .join()
-        .map_err(|_| anyhow::anyhow!("the analysis thread panicked"))??;
-    match &cli.out {
-        Some(path) => {
-            std::fs::write(path, rendered).with_context(|| format!("writing {}", path.display()))?
-        }
-        None => println!("{rendered}"),
-    }
-    Ok(())
+        .map_err(|_| anyhow::anyhow!("the analysis thread panicked"))?
 }
