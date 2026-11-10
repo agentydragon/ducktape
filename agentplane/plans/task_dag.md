@@ -3527,7 +3527,11 @@ design nodes stay in their sections. Not cleanups: fakes kept to inject faults t
 cannot produce (named at the fake); the delta settlement flag (operator, 2026-10-13 PDT);
 upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in `electric_sync.tsx`
 against `@electric-sql/client` 1.5.28, the jsdom pragma in `markdown.test.tsx`). Doing one still
-needs the gate observed on devel and every reader found.
+needs the gate observed on devel and every reader found. The authentication surface left from the
+projected-ServiceAccount-token era is one burn-down split across the three subsections' "Authentication"
+headings: what each piece serves today, what it collapses into once an Identity SVID is the only
+workload credential, and the gate. Platform components calling each other as themselves keep
+service-to-service TokenReview (operator, 2026-11-10); that is not dead and is not listed.
 
 ```mermaid
 flowchart LR
@@ -3543,6 +3547,8 @@ flowchart LR
 ### Unblocked
 
 Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
+
+#### Smaller items
 
 - **History migration 00012's trigger and function** (`thread_command_operation_enum` in
   `history_service/migrations/history/00012_thread_command_operation_enum.sql`): the gate is met,
@@ -3567,6 +3573,33 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   "Event & Notification Hub", is gone on devel. Source: `REFACTOR_COHERENCE_AUDIT`.
 - **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): selected, unscheduled; the App's Thread-events SSE
   route and its code go once supported callers use a History-backed contract. Stays in section 11.
+
+#### Authentication: dead or stale today
+
+Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside tests).
+
+- **`auth.AnyAccount`** has one production site, History's `SessionJournalIngress.Push` when the
+  listener has no `spiffe` mode (`history_service/main.go`); staging's listener has it, so the rule
+  runs only in fixtures. Require `spiffe` on the ingress listener and delete `AnyAccount`, leaving
+  `SVIDOrAccounts` (runners by SVID, the sampler by bearer). No gate; a listener-contract change.
+- **`agentplane-runner-ingress`** (`RUNNER_INGRESS_AUDIENCE`, `history_service/settings.py`): runners
+  push by SVID, so its only sender is the central sampler's `history` projected token
+  (`central_sampler_workload.py`). Rename it for the sampler, or fold it into History's own audience;
+  coordinate the sampler's projection and History's listener audiences. No gate.
+- **The Action Service's `caller_service_account_namespaces`** lists `public-coder-agent`'s namespace
+  (`cluster/cdk8s/agentplane/staging.py`, `ActionsProps`), which no caller reaches it from
+  ([lifecycle plan § After the bearer hop](workload_identity_lifecycle.md#after-the-bearer-hop)); the
+  setting feeds the TokenReview and SVID resolvers, the policy informer and a per-namespace Role
+  (`actions.py`). Drop the entry and its Role after confirming no `WorkloadCredential` or bearer
+  caller in that namespace reaches the Action Service.
+- **Stale doc sentences.** `docs/workload_authentication.md` § TokenReview and projected credentials
+  says Sandbox Runtime templates "continue to project" the Kubernetes token (none since #15258; only
+  command boxes do) and § Service authorization says authentication yields "only the verified Sandbox
+  ServiceAccount" (an Identity subject resolves since the expand phase). `workload_auth/README.md`
+  says a record naming an Identity "is refused until `Principal` has an Identity form" and "there is no
+  identity reference" (`IdentityPrincipal`, `AnySubject` and the Identity delegation exist, and the
+  same README describes them further down), and that the proxy's hop "still accepts" the
+  `agentplane-egress` audience (the `forward` listener is `spiffe` alone). Fix in one docs PR.
 
 #### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
@@ -3627,6 +3660,8 @@ and doc link. Exit: no import of the old path remains.
 
 Grouped by the node, PR or merge each waits for. Most of it is the identity migration's contract
 phase (section 14): expand → switch → contract leaves each transitional piece until the node named.
+
+#### By gate
 
 - **`STANDING_WORKLOAD_IDENTITY` (in flight):** the standing `WorkloadCredential`s' ServiceAccount
   subjects in `haku-sandbox` and `haku-ci`, their `PolicyBinding`s' ServiceAccount subjects and any
@@ -3706,6 +3741,51 @@ phase (section 14): expand → switch → contract leaves each transitional piec
   workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
   and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
 
+#### Authentication: collapses with a named gate
+
+What each piece serves today, and what it becomes once an Identity SVID is the only workload form.
+Every first-party listener is `[kubernetes_bearer, spiffe]` (Action Service and LLM ingress on
+`agentplane-egress`; History on its own and the runner-ingress audiences; Notification and the Gateway
+on theirs); the proxy's `forward` is `spiffe` alone and its admin, the Policy Service and the sampler
+are bearer-only. The bearer halves stay for platform components; what goes is every path where a
+bearer or a ServiceAccount subject stands in for a workload.
+
+- **At `ENVIRONMENT_LIFECYCLE_RULES`:** `EnvironmentService`'s `auth.ReviewedServiceAccount` rule
+  (`runner_gateway/environments/service.go`) becomes `ReviewedServiceAccountOrIdentity`, since an
+  Identity caller gains resume, wake and read there; its eight `ServiceAccountPrincipal` sites keep
+  serving the app and the Action Service's launch executor. `ReviewedServiceAccount` then has one
+  caller left, the Policy Service's reads (`policy_controller/service/service.go`), a platform path.
+- **At `CENTRAL_SESSION_DELEGATED_ACTING`:** the sampler keeps its `llm`, `gateway` and `history`
+  projected tokens (`central_sampler_workload.py`) as a delegating actor; the `bearer` connection auth
+  type and LLM ingress's `central_sampler_accounts` are reviewed as listed under that gate above.
+  History's `SVIDOrAccounts` push rule stays: runners by SVID, the sampler by bearer.
+- **At `IDENTITY_CUTOVER`** (the pieces above under that gate, seen as one collapse):
+  - A workload SVID always names an Identity, so the SVID resolver's ServiceAccount subject
+    (`workload_auth/auth/svid.go`, `resolver.ServiceAccount`) and `SVIDResolver.IdentitySubjectsOnly`
+    (History's read API is the one user, `history_service/main.go`) go: Identity-only is the only mode.
+    `AnySubject`, `ReviewedServiceAccountOrIdentity` and `SVIDOrAccounts` then each admit "a platform
+    bearer, or an Identity SVID", and the three names and their `Admitted` branches fold into one rule
+    kind with an account allowlist; `auth.Principal` takes its platform-component name.
+  - The projected-token plumbing is one removal: the `kubernetes-token` projection for command boxes
+    (`sandbox_pod.py`, `command_sandbox.py`), the sidecar's `audience_token_files` and
+    `X-Agentplane-Workload-Token` forwarding (`egress/sidecar/relay.go`, `sidecar_config.py`), the
+    proxy's `identity.Verifier` second TokenReview and `projected_token_audiences` setting
+    (`egress/identity/identity.go`, `egress.py`), the `projectedWorkloadToken` credential source, the
+    proxy's `allowed_service_account_namespaces` (serving only those reviews), and the egress
+    `TODO.md` entry. The `kubernetesServiceAccount` source and the proxy's own impersonation token stay.
+  - The MCP edge stops being a token minter: `coreCaller.serviceAccountToken`'s TokenRequest and the
+    `actionAudience` constant (`mcp_edge/core_client.go`), `mintable_accounts`, the edge's
+    `caller_service_account_namespaces` (it only scopes `mintable_accounts`) and the `create` on
+    `serviceaccounts/token` for `claude-ai` go; the edge calls the Action Service with its own token
+    and a delegation envelope. The Action Service's `agentplane-egress` bearer listener keeps
+    Notification's `actions` token and the edge's own.
+  - The Action Service's `caller_service_account_namespaces` narrows to what still presents a bearer
+    or a `WorkloadCredential` there (the staging namespace; `haku-sandbox` for the standing records),
+    and the per-namespace `serviceaccounts` Role it renders goes where no ServiceAccount is read.
+  - `agentplane-egress` (`WORKLOAD_TOKEN_AUDIENCE`) keeps the sampler's `llm` token and
+    Notification's `actions` token as senders, so the audience survives the cutover under a misleading
+    name; the rename stays frozen (`WORKLOAD_AUDIENCE_RENAME`).
+
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
 **Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest
@@ -3717,6 +3797,8 @@ and boots in seconds under emulation, and point the k3s VM scenarios at that gue
 ### Future
 
 The gate is a decision not yet made or a track not started; nothing here is dispatchable.
+
+#### Decisions and tracks
 
 - **`APP_AGENT_TOKEN_DECISION` (spike [#15448](https://github.com/agentydragon/ducktape/pull/15448)):**
   if test-minted OIDC tokens are adopted, the app's `agentplane-agent` TokenReview path (`caller()` in
@@ -3751,6 +3833,25 @@ The gate is a decision not yet made or a track not started; nothing here is disp
 - **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
   when a direction is chosen and its parts land in owning docs; [`standard_idioms.md`](standard_idioms.md)
   burns down with section 16.
+
+#### Authentication: waiting on a decision
+
+- **The app's `agentplane-agent` bearer** (`APP_AGENT_TOKEN_DECISION`, above): the last agent-side
+  TokenReview path. Its callers are the system-test driver (`system_tests/driver/cluster.py`),
+  the shared-cluster allocation probe (`system_tests/x/shared_cluster/allocation.py`) and hand-run
+  scripts; `caller()` in `app/go/auth/auth.go` and the `token_subjects` renderings go with the decision.
+- **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
+  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
+  (`history_service/api/service.go`), EnvironmentService management and the lifecycle manager
+  (`environments/management.go`, `lifecycle/manager.go`), and the resolver's `RequirePod` is step 7
+  of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
+  route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
+- **`Accounts` and `ReviewedServiceAccount` after the cutover:** the Gateway's caller, dispatcher,
+  executor and controller allowlists (`runner_gateway/gateway/gateway.go`), the Policy Service's
+  writers and the egress admin callers are platform components and stay on bearers by decision;
+  whether they later move to service-class SVIDs is explicitly open in the
+  [identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)
+  ("stay open for later; nothing now needs them") and has no node.
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
