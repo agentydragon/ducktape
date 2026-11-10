@@ -84,6 +84,14 @@ func sameServiceAccountIdentity(left, right *ServiceAccountIdentity) bool {
 	return sameServiceAccount(left.GetAccount(), right.GetAccount()) && left.GetUid() == right.GetUid()
 }
 
+// sameIdentity compares Identity incarnations, nil meaning none.
+func sameIdentity(left, right *identitypb.Identity) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return left.GetName() == right.GetName() && left.GetUid() == right.GetUid()
+}
+
 func sameServiceAccount(left, right *identitypb.ServiceAccount) bool {
 	if left == nil || right == nil {
 		return left == right
@@ -143,6 +151,10 @@ type Session struct {
 	// legacy row with no trustworthy owner; an empty UID with a set account is a privileged open
 	// waiting to bind the controller-owned ServiceAccount.
 	ExecutionPrincipal *ServiceAccountIdentity
+	// ExecutionIdentity is the Identity the Session's Sandbox named in `spec.identity` when the
+	// Session was created, nil when it named none. It is immutable and set beside ExecutionPrincipal,
+	// never instead of it.
+	ExecutionIdentity *identitypb.Identity
 	// Creator records the authenticated actor that brokered the session, separately from its owner
 	// and effective caller. For a delegated session this is the Actions ServiceAccount.
 	Creator              *ServiceAccountIdentity
@@ -693,7 +705,7 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, execution_a
 	action_request_id::text, action_execution_id::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
 	spec, setup_script, state, reason, traceparent, created_at, updated_at,
-	delivery_blocker, wake_assessment, environment_deleted_at`
+	delivery_blocker, wake_assessment, environment_deleted_at, execution_identity_name, execution_identity_uid::text`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o := &Session{}
@@ -702,14 +714,22 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var actionRequestID, actionExecutionID sql.NullString
 	var callerNS, callerName, incarnation, script, reason sql.NullString
 	var wakeAt, environmentDeletedAt sql.NullTime
+	var identityName, identityUID sql.NullString
 	var spec, blockerBytes, wakeBytes []byte
 	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
 		&creatorNS, &creatorName, &creatorUID, &effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
-		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt)
+		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt,
+		&identityName, &identityUID)
 	if err != nil {
 		return nil, err
+	}
+	if identityName.Valid != identityUID.Valid {
+		return nil, errors.New("Session execution identity is incomplete")
+	}
+	if identityName.Valid {
+		o.ExecutionIdentity = &identitypb.Identity{Name: identityName.String, Uid: identityUID.String}
 	}
 	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid || creatorNS.Valid != creatorName.Valid ||
 		creatorNS.Valid != creatorUID.Valid {
@@ -775,7 +795,8 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 
 // CreateSessionForCaller stores the immutable execution account separately from the verified
 // caller attribution. Retrying a concurrently inserted session requires retained read authority.
-func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Session, error) {
+func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller CallerIdentity) (*Session, error) {
+	executionPrincipal := execution.Principal
 	if executionPrincipal == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
 		executionPrincipal.GetAccount().GetName() == "" || caller.Attribution == nil || caller.Attribution.Actor == nil ||
 		caller.Attribution.Actor.GetAccount().GetNamespace() == "" || caller.Attribution.Actor.GetAccount().GetName() == "" ||
@@ -785,7 +806,10 @@ func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, session
 	if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
 		return nil, err
 	}
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, executionPrincipal, &caller)
+	if identity := execution.Identity; identity != nil && (identity.GetName() == "" || identity.GetUid() == "") {
+		return nil, errors.New("execution identity requires a name and UID")
+	}
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, &caller)
 }
 
 // authorizeRetry uses retained read authority: a receipt retry performs no new execution.
@@ -815,7 +839,8 @@ func (o *Session) matchRequest(sandboxName, sandboxUID string, placement Session
 	return nil
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Session, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller *CallerIdentity) (*Session, error) {
+	executionPrincipal := execution.Principal
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
@@ -862,7 +887,10 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		if wakeCaller != nil {
 			ns, name = wakeCaller.Namespace, wakeCaller.Name
 		}
-		var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID any
+		var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID, identityName, identityUID any
+		if execution.Identity != nil {
+			identityName, identityUID = execution.Identity.GetName(), execution.Identity.GetUid()
+		}
 		if executionPrincipal != nil {
 			ownerNS, ownerName = executionPrincipal.GetAccount().GetNamespace(), executionPrincipal.GetAccount().GetName()
 			if executionPrincipal.GetUid() != "" {
@@ -880,12 +908,13 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
 			 creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+sessionColumns,
+			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment,
+			 execution_identity_name,execution_identity_uid)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25,$26,$27) RETURNING `+sessionColumns,
 			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
 			wakeCaller != nil, ns, name, data, setupScript, SessionWaitingState,
-			observability.Traceparent(ctx), nil, wakeAssessment))
+			observability.Traceparent(ctx), nil, wakeAssessment, identityName, identityUID))
 		if err != nil {
 			return err
 		}

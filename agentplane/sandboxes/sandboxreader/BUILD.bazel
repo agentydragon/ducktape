@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/sandboxes/api",
         "@io_k8s_api//core/v1:core",
@@ -22,6 +23,7 @@ go_test(
     srcs = ["reader_test.go"],
     embed = [":sandboxreader"],
     deps = [
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/sandboxes/api",
         "@io_k8s_api//core/v1:core",

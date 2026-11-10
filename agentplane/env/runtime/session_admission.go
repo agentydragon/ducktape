@@ -43,6 +43,9 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 	if err := validateExecutionPrincipal(request.GetExecutionPrincipal()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	if err := validateExecutionIdentity(request.GetExecutionIdentity()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	expected, err := r.authorizeSession(ctx, true)
 	if err != nil {
 		return nil, err
@@ -95,6 +98,9 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 		if !compatibleExecutionPrincipal(record.ExecutionPrincipal, request.GetExecutionPrincipal()) {
 			return nil, status.Error(codes.AlreadyExists, "session exists with a different execution principal")
 		}
+		if !compatibleExecutionIdentity(record.ExecutionIdentity, request.GetExecutionIdentity()) {
+			return nil, status.Error(codes.AlreadyExists, "session exists with a different execution identity")
+		}
 		if err := r.sessions.RetryFresh(r.lifecycleContext, request.SessionId); err != nil {
 			return nil, rpcError(err)
 		}
@@ -118,6 +124,9 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 	}
 	if request.GetExecutionPrincipal() != nil {
 		record.ExecutionPrincipal = proto.Clone(request.GetExecutionPrincipal()).(*identitypb.ServiceAccountIdentity)
+	}
+	if request.GetExecutionIdentity() != nil {
+		record.ExecutionIdentity = proto.Clone(request.GetExecutionIdentity()).(*identitypb.Identity)
 	}
 	admitted := false
 	s, err := r.sessions.ReserveFresh(r.lifecycleContext, request.SessionId, func() error {
@@ -160,6 +169,21 @@ func validateExecutionPrincipal(principal *identitypb.ServiceAccountIdentity) er
 // A retry may omit a principal after it was durably recorded, but it may not replace one or assign
 // an identity to an older unassociated record.
 func compatibleExecutionPrincipal(retained, incoming *identitypb.ServiceAccountIdentity) bool {
+	if retained == nil {
+		return incoming == nil
+	}
+	return incoming == nil || proto.Equal(retained, incoming)
+}
+
+func validateExecutionIdentity(identity *identitypb.Identity) error {
+	if identity != nil && (identity.GetName() == "" || identity.GetUid() == "") {
+		return errors.New("execution_identity must include a name and UID")
+	}
+	return nil
+}
+
+// compatibleExecutionIdentity is compatibleExecutionPrincipal for the Identity the Session executes as.
+func compatibleExecutionIdentity(retained, incoming *identitypb.Identity) bool {
 	if retained == nil {
 		return incoming == nil
 	}

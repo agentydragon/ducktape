@@ -30,6 +30,8 @@ message CreateSessionRequest {
   optional string setup_script = 5;
   // Supplied by the Dispatcher and retained separately from the authenticated sampler writer.
   agentplane.proto.ServiceAccountIdentity execution_principal = 6;
+  // Supplied by the Dispatcher beside execution_principal when the executor's Sandbox names an Identity.
+  agentplane.proto.Identity execution_identity = 7;
 }
 message CreateSessionResponse { agentplane.proto.Attached attached = 1; }
 message GetSessionRequest { string session_id = 1; }

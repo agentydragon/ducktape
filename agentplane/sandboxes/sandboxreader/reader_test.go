@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -28,6 +29,9 @@ func newReader(t *testing.T, sandboxes ...client.Object) *Reader {
 		t.Fatal(err)
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := policyapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	reader, err := New(testNamespace, clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandboxes...).Build())
@@ -264,5 +268,38 @@ func TestNewRequiresANamespaceAndAClient(t *testing.T) {
 	}
 	if _, err := New(testNamespace, nil); err == nil {
 		t.Error("a missing client was accepted")
+	}
+}
+
+func TestExecutionIdentityReadsTheNamedIdentityOfTheExactLiveSandbox(t *testing.T) {
+	named := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "names-identity", UID: "uid-named"},
+		Spec:       sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: "present-identity"}},
+	}
+	dangling := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "names-missing-identity", UID: "uid-dangling"},
+		Spec:       sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: "missing-identity"}},
+	}
+	unnamed := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "names-no-identity", UID: "uid-unnamed"}}
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "present-identity", UID: "uid-identity"}}
+	reader := newReader(t, named, dangling, unnamed, identity)
+	for _, tc := range []struct {
+		name    string
+		sandbox *Identity
+		want    *identitypb.Identity
+		found   bool
+	}{
+		{"named Identity", &Identity{Namespace: testNamespace, Name: "names-identity", Uid: "uid-named"}, &identitypb.Identity{Name: "present-identity", Uid: "uid-identity"}, true},
+		{"names none", &Identity{Namespace: testNamespace, Name: "names-no-identity", Uid: "uid-unnamed"}, nil, true},
+		{"named Identity absent", &Identity{Namespace: testNamespace, Name: "names-missing-identity", Uid: "uid-dangling"}, nil, false},
+		{"replaced Sandbox", &Identity{Namespace: testNamespace, Name: "names-identity", Uid: "uid-replaced"}, nil, false},
+		{"absent Sandbox", &Identity{Namespace: testNamespace, Name: "absent", Uid: "uid-absent"}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, found, err := reader.ExecutionIdentity(context.Background(), tc.sandbox)
+			if err != nil || found != tc.found || !proto.Equal(got, tc.want) {
+				t.Fatalf("ExecutionIdentity = %v, %v, %v; want %v, %v", got, found, err, tc.want, tc.found)
+			}
+		})
 	}
 }
