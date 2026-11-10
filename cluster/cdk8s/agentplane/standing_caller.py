@@ -3,7 +3,9 @@
 Today a standing caller is the ServiceAccount it authenticates as. In the identity catalog
 (`Environment.identity_catalog`) its bindings name an `Identity` of its own instead, which the staging
 chart renders; the ServiceAccount stays the caller's credential until its services authenticate by
-identity.
+identity. Haku's standing workloads and the haku-ci relay are not standing callers: their SVIDs
+already act as Identities the chart renders unconditionally (haku/ui_egress.py,
+haku_ci/egress_gateway.py).
 """
 
 from __future__ import annotations

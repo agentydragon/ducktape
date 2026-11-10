@@ -1960,12 +1960,6 @@ rules:
       - workloadcredentials
     verbs:
       - get
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1992,12 +1986,6 @@ rules:
       - agentplane.allegedly.works
     resources:
       - workloadcredentials
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
     verbs:
       - get
 ---
@@ -9180,57 +9168,81 @@ spec:
               protocol: TCP
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: haku-ui
+  namespace: agentplane-staging
+spec:
+  description: Haku's operator UI, haku-anki and haku-jupyter, in haku-sandbox.
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-ui's egress sidecar presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-ui
   namespace: haku-sandbox
 spec:
   subject:
-    serviceAccount: haku-ui
+    identity:
+      name: haku-ui
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-anki's egress sidecar presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-anki
   namespace: haku-sandbox
 spec:
   subject:
-    serviceAccount: haku-ui
+    identity:
+      name: haku-ui
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-jupyter's egress sidecar presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-jupyter
   namespace: haku-sandbox
 spec:
   subject:
-    serviceAccount: haku-ui
+    identity:
+      name: haku-ui
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   annotations:
-    description: The subject haku-ci's builds reach the public internet as (PolicyBinding haku-ci-egress).
+    description: The account the relay runs as; its SVID acts as the haku-ci-egress Identity in agentplane-staging.
   name: haku-ci-egress
   namespace: haku-ci
 automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: haku-ci-egress
+  namespace: agentplane-staging
+spec:
+  description: haku-ci's builds, through its egress relay.
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: WorkloadCredential
 metadata:
   annotations:
     description: The SVID haku-ci's egress relay presents to the egress proxy.
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: haku-ci-egress
   namespace: haku-ci
 spec:
   subject:
-    serviceAccount: haku-ci-egress
+    identity:
+      name: haku-ci-egress
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -11960,7 +11972,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: What haku-ui (haku-sandbox) may reach and have auto-approved.
+    description: What Haku's standing workloads (haku-sandbox), acting as this Identity, may reach and have auto-approved.
   name: haku-ui
   namespace: agentplane-staging
 spec:
@@ -11970,8 +11982,8 @@ spec:
     - ankiweb-sync
     - haku-notebook-fetch
   subject:
-    name: haku-ui
-    namespace: haku-sandbox
+    identity:
+      name: haku-ui
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -12007,15 +12019,15 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: What haku-ci's builds (haku-ci namespace) may reach.
+    description: What haku-ci's builds (haku-ci namespace), acting as this Identity, may reach.
   name: haku-ci-egress
   namespace: agentplane-staging
 spec:
   policySets:
     - haku-ci-build-fetch
   subject:
-    name: haku-ci-egress
-    namespace: haku-ci
+    identity:
+      name: haku-ci-egress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding

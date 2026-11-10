@@ -58,6 +58,33 @@ def test_no_policy_set_carries_a_kubernetes_rule(identity_catalog_manifests: lis
     ] == []
 
 
+def test_every_identity_binding_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
+    """Staging renders the standing workloads' bindings on Identities before the catalog; each names
+    one staging renders, in the binding's namespace."""
+    identities = _names(staging_manifests, "Identity")
+    named = [
+        (binding["metadata"]["namespace"], binding["spec"]["subject"]["identity"]["name"])
+        for binding in _of(staging_manifests, "PolicyBinding")
+        if "identity" in binding["spec"]["subject"]
+    ]
+    assert named
+    assert set(named) <= identities
+
+
+def test_every_standing_record_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
+    """Every `WorkloadCredential` staging renders is standing and acts as an Identity the policy
+    namespace renders, never as a ServiceAccount."""
+    actions = one(doc for doc in _of(staging_manifests, "ConfigMap") if doc["metadata"]["name"] == "actions-settings")
+    policy_namespace = yaml.safe_load(one(actions["data"].values()))["policy_namespace"]
+    identities = _names(staging_manifests, "Identity")
+    records = _of(staging_manifests, "WorkloadCredential")
+    assert records
+    for record in records:
+        assert set(record["spec"]) == {"subject"}, record["metadata"]
+        assert set(record["spec"]["subject"]) == {"identity"}, record["metadata"]
+        assert (policy_namespace, record["spec"]["subject"]["identity"]["name"]) in identities, record["metadata"]
+
+
 def test_every_binding_names_an_identity_that_exists(identity_catalog_manifests: list[dict[str, Any]]) -> None:
     bindings = _of(identity_catalog_manifests, "PolicyBinding")
     assert bindings

@@ -306,11 +306,12 @@ def test_no_holder_gains_access_on_the_switch(
         for preset in identity_rendering.launches
     }
     for name, before in serviceaccount_rendering.bindings.items():
-        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch.
+        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch; a
+        # binding already on an Identity (the standing workloads') has no account of its own.
         subject = before["subject"]
-        today = serviceaccount_rendering.binding(name) | serviceaccount_rendering.rbac.identity(
-            "ServiceAccount", subject["name"], subject["namespace"]
-        )
+        today = serviceaccount_rendering.binding(name)
+        if "identity" not in subject:
+            today |= serviceaccount_rendering.rbac.identity("ServiceAccount", subject["name"], subject["namespace"])
         gained[f"binding {name}"] = uncovered(identity_rendering.binding(name), today)
     assert {holder: sorted(map(str, permissions)) for holder, permissions in gained.items() if permissions} == {}
 

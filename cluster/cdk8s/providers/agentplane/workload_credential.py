@@ -13,19 +13,33 @@ from agentplane_workloadcredential_crds.works.allegedly.agentplane import (
     WorkloadCredential as _WorkloadCredential,
     WorkloadCredentialSpec,
     WorkloadCredentialSpecSubject,
+    WorkloadCredentialSpecSubjectIdentity,
 )
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import IServiceAccount
 from constructs import Construct
+
+from cluster.cdk8s.providers.agentplane.identity import Identity
 
 
 class WorkloadCredential(_WorkloadCredential):
-    """A standing workload's `WorkloadCredential`, whose subject is a ServiceAccount in its own namespace."""
+    """A standing workload's `WorkloadCredential`, acting as `subject`, an `Identity` of the policy
+    namespace.
 
-    def __init__(self, scope: Construct, id: str, *, metadata: ApiObjectMetadata, subject: IServiceAccount) -> None:
+    The subject names no UID: git cannot know one, so the record follows the live Identity of that
+    name. The CRD forbids re-pointing a subject without a new binding, which a standing record never
+    has, so a changed subject replaces the record; the Flux annotation makes kustomize-controller do
+    that (delete, then recreate) instead of failing the apply. Replacing a record rotates its
+    credential ID, so the workload's `svid-<name>` Secret is reissued and the workload rolls
+    (Reloader) before it reaches the proxy again.
+    """
+
+    def __init__(self, scope: Construct, id: str, *, metadata: ApiObjectMetadata, subject: Identity) -> None:
         super().__init__(
             scope,
             id,
             metadata=metadata,
-            spec=WorkloadCredentialSpec(subject=WorkloadCredentialSpecSubject(service_account=subject.name)),
+            spec=WorkloadCredentialSpec(
+                subject=WorkloadCredentialSpecSubject(identity=WorkloadCredentialSpecSubjectIdentity(name=subject.name))
+            ),
         )
+        self.metadata.add_annotation("kustomize.toolkit.fluxcd.io/force", "enabled")
