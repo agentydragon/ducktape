@@ -255,6 +255,8 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 1,000) inside the retention window and returns them oldest first.
 
 The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
+TODO: a row names an Identity subject by name alone, as it does a ServiceAccount, so a recreated
+Identity of the same name shares its predecessor's history; a UID column is the additive fix.
 Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose; existing
 history rows and the inert `egress_alembic_version` table remain in place. The proxy migrates before starting its
 listeners or workers, so a failed migration keeps that Pod unready while previous proxies keep enforcing.
