@@ -34,6 +34,7 @@ go_test(
     deps = [
         ":lifecycle",
         "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",

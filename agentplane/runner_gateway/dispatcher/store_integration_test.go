@@ -422,7 +422,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		wakeWG.Add(1)
 		go func(i int) {
 			defer wakeWG.Done()
-			wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, int64(i+1))
+			wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, int64(i+1))
 			wakeErrs <- err
 			wakeDurations <- wait > 0
 			if err == nil && wait == 0 {
@@ -453,12 +453,12 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		acceptedGeneration = generation
 		break
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("same-generation retry: %v %v", wait, err)
 	}
 	callerAccount := accountOfIdentity(caller)
 	replacement := wakeBudgetCaller(callerAccount.Namespace, callerAccount.Name, "replacement-wake-budget-app-uid")
-	if wait, err := store.ReserveWakeAttempt(ctx, replacement, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replacement), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("replacement ServiceAccount inherited old budget: %v %v", wait, err)
 	}
 }
@@ -474,14 +474,14 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, legacyFirst, legacySandboxUID, 1); err != nil || wait != 0 {
 		t.Fatalf("legacy first reservation: %v %v", wait, err)
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, currentFirst, legacySandboxUID, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentFirst), legacySandboxUID, 1); err != nil || wait != 0 {
 		t.Fatalf("current reader did not recognize legacy same-generation reservation: %v %v", wait, err)
 	}
 	assertWakeAttemptCount(t, store, legacyFirst, legacySandboxUID, 1)
 
 	currentThenLegacy := wakeBudgetCaller("mixed-writer", "current-first", "current-first-uid")
 	currentSandboxUID := uuid.NewString()
-	if wait, err := store.ReserveWakeAttempt(ctx, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentThenLegacy), currentSandboxUID, 1); err != nil || wait != 0 {
 		t.Fatalf("current first reservation: %v %v", wait, err)
 	}
 	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
@@ -507,7 +507,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	newWriterStarted := make(chan struct{})
 	go func() {
 		close(newWriterStarted)
-		_, err := store.ReserveWakeAttempt(ctx, lockCaller, lockSandboxUID, 1)
+		_, err := store.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
 		newWriterDone <- err
 	}()
 	<-newWriterStarted
@@ -549,7 +549,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 			if i%2 == 0 {
 				wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, mixedCaller, mixedSandboxUID, int64(i+1))
 			} else {
-				wait, err = store.ReserveWakeAttempt(ctx, mixedCaller, mixedSandboxUID, int64(i+1))
+				wait, err = store.ReserveWakeAttempt(ctx, wakeKey(mixedCaller), mixedSandboxUID, int64(i+1))
 			}
 			results <- reservationResult{limited: wait > 0, err: err}
 		}(i)
@@ -578,7 +578,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	replaced := wakeBudgetCaller("mixed-writer", "uid-replacement", "old-uid")
 	replacementSandboxUID := uuid.NewString()
 	for generation := int64(1); generation <= WakeLimit; generation++ {
-		if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, generation); err != nil || wait != 0 {
+		if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, generation); err != nil || wait != 0 {
 			t.Fatalf("old UID reservation %d: %v %v", generation, wait, err)
 		}
 	}
@@ -586,7 +586,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 		t.Fatalf("previous writer did not count all nonempty UIDs: %v %v", wait, err)
 	}
 	replaced.Uid = "replacement-uid"
-	if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
 		t.Fatalf("replacement UID inherited another nonempty UID's budget: %v %v", wait, err)
 	}
 }
@@ -594,6 +594,16 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 // reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
 // caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
 // relies on the migration's empty-UID default.
+// wakeAccount is the ServiceAccount a wake caller is, for the tests whose callers are all accounts.
+func wakeAccount(caller lifecycle.WakeCaller) *ServiceAccountIdentity {
+	return caller.(lifecycle.AccountWakeCaller).Account
+}
+
+// wakeKey is the budget key the lifecycle manager derives for a ServiceAccount caller.
+func wakeKey(caller *ServiceAccountIdentity) lifecycle.WakeBudgetKey {
+	return lifecycle.WakeBudgetKey{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(), UID: caller.GetUid()}
+}
+
 func reserveWakeAttemptAsPreviousWriter(
 	ctx context.Context,
 	store *Store,
@@ -1239,7 +1249,7 @@ func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}
 
-func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(0),
@@ -1250,7 +1260,7 @@ type rateLimitedWake struct {
 	calls int
 }
 
-func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
@@ -1266,8 +1276,8 @@ type scriptedWake struct {
 	targets     []*lifecycle.Target
 }
 
-func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
-	w.callers = append(w.callers, caller)
+func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, wakeAccount(caller))
 	w.targets = append(w.targets, target)
 	if len(w.assessments) == 0 {
 		return nil, errors.New("unexpected lifecycle wake request")
@@ -2899,7 +2909,7 @@ type cancelDuringWake struct {
 	calls     int
 }
 
-func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	if _, err := w.store.Cancel(ctx, w.commandID); err != nil {
 		return nil, err
@@ -2940,9 +2950,9 @@ type changingWakeGrant struct {
 	callers []*ServiceAccountIdentity
 }
 
-func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
-	w.callers = append(w.callers, caller)
-	if sameServiceAccountIdentity(caller, w.opener) {
+func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, wakeAccount(caller))
+	if sameServiceAccountIdentity(wakeAccount(caller), w.opener) {
 		if w.allowed {
 			return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED}, nil
 		}

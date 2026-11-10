@@ -7,17 +7,16 @@ import (
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 )
 
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
 // caller across replicas. A retry of the same generation spends no new budget.
-func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountIdentity, sandboxUID string, generation int64) (time.Duration, error) {
-	if caller == nil || caller.GetAccount() == nil || caller.GetAccount().GetNamespace() == "" ||
-		caller.GetAccount().GetName() == "" || caller.GetUid() == "" {
+func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.WakeBudgetKey, sandboxUID string, generation int64) (time.Duration, error) {
+	if caller.Namespace == "" || caller.Name == "" || caller.UID == "" {
 		return 0, errors.New("wake caller namespace, name and UID are required")
 	}
-	account := caller.GetAccount()
-	namespace, name, uid := account.GetNamespace(), account.GetName(), caller.GetUid()
+	namespace, name, uid := caller.Namespace, caller.Name, caller.UID
 	var retryAfter time.Duration
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,

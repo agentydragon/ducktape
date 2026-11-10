@@ -265,13 +265,11 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return w.waitForRequestedWake(ctx, work, owner, sandbox, blocker)
 	}
 
-	// Only a ServiceAccount caller's wake is authorized today; an Identity caller's waits like an
-	// unattributed one.
-	// TODO: authorize an Identity caller's wake by an Identity resume policy before the Sandbox switch
-	// (SANDBOX_IDENTITY_SPEC, agentplane/plans/task_dag.md); nothing sends to an Identity-run Session
-	// before it.
-	account, isAccount := work.attribution.(*AdmissionAttribution)
-	if !isAccount {
+	// The lifecycle manager authorizes the wake for the row's retained effective caller: its
+	// ServiceAccount, or the Identity it acted as. A row attributed to no one (a legacy writer's)
+	// never wakes.
+	caller := wakeCaller(work.attribution)
+	if caller == nil {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,
 			environmentpb.WakeState_WAKE_STATE_DENIED,
 			environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, nil)
@@ -300,10 +298,9 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if err != nil || !stillOwns {
 		return false, err
 	}
-	effectiveCaller := account.EffectiveCaller
 	assessment, err := w.Wake.RequestWake(ctx, &lifecycle.Target{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
-	}, effectiveCaller)
+	}, caller)
 	if err != nil {
 		assessment = assessmentFor(sandbox, nil, environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
 			environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN, status.Convert(err).Proto())
@@ -356,6 +353,21 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_wake_outcome_unknown")
 	default:
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_suspended")
+	}
+}
+
+// wakeCaller is whom a row's attribution lets the lifecycle manager assess a wake for, nil for an
+// unattributed row.
+func wakeCaller(attribution Attribution) lifecycle.WakeCaller {
+	switch attribution := attribution.(type) {
+	case *AdmissionAttribution:
+		return lifecycle.AccountWakeCaller{Account: attribution.EffectiveCaller}
+	case *IdentityAttribution:
+		return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
+	case *DelegatedIdentityAttribution:
+		return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
+	default:
+		return nil
 	}
 }
 

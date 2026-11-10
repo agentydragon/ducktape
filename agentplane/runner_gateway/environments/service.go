@@ -380,7 +380,7 @@ func (s *Service) describe(
 			return nil, err
 		}
 		if object.Status.OperatingMode == api.OperatingModeSuspended {
-			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, caller)
+			wake, err := s.lifecycle.AssessAutomaticWake(ctx, target, lifecycle.AccountWakeCaller{Account: caller})
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "automatic wake eligibility is unavailable")
 			}

@@ -55,7 +55,7 @@ func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.T
 
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
