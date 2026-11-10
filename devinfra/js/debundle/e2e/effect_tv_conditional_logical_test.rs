@@ -1184,3 +1184,76 @@ fn new_of_a_plain_function_without_effects_keeps_the_split() {
         }
     }
 }
+
+/// Opposing control: an iterator installed where the protocol later finds
+/// it: an own `[Symbol.iterator]` written on `arguments` or by an analysed
+/// callee on an array, and `String.prototype[Symbol.iterator]` installed by
+/// `Object.defineProperty` or an assignment, found by a string iteration or
+/// by an array pattern in a `for`-`in` head; a default in a `for`-`in`
+/// assignment head; and `for await` over a generator. Each reaches `second`.
+#[test]
+fn an_installed_iterator_runs_where_the_protocol_finds_it() {
+    const STRING_DEFINE: &str = "const patched = Object.defineProperty(String.prototype, Symbol.iterator, { value: function* () { second(); } });";
+    const STRING_ASSIGN: &str =
+        "const patched = (String.prototype[Symbol.iterator] = function* () { second(); });";
+    for (definitions, extra) in [
+        (
+            "function take() { if (first()) {} arguments[Symbol.iterator] = function* () { second(); }; for (const x of arguments) {} }\nfunction flag() { if (first()) {} take(1); return noop; }\nfunction run() { if (first()) {} flag(); return 0; }".to_string(),
+            &["take"][..],
+        ),
+        (
+            "function patch(a) { if (first()) {} a[Symbol.iterator] = function* () { second(); }; }\nfunction flag() { if (first()) {} const a = [1]; patch(a); for (const x of a) {} return noop; }\nfunction run() { if (first()) {} flag(); return 0; }".to_string(),
+            &["patch"][..],
+        ),
+        (
+            format!("{STRING_DEFINE}\nfunction flag() {{ for (const x of 'ab') {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            format!("{STRING_ASSIGN}\nfunction flag() {{ for (const x of 'ab') {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            format!("{STRING_ASSIGN}\nfunction flag() {{ for (const [c] in {{ ab: 1 }}) {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            format!("{STRING_ASSIGN}\nfunction flag() {{ let c; for ([c] in {{ ab: 1 }}) {{}} return noop; }}\nfunction run() {{ flag(); return 0; }}"),
+            &["patched"][..],
+        ),
+        (
+            "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }\nfunction flag() { let x; for ([, , [x] = mk()] in { ab: 1 }) {} return noop; }\nfunction run() { flag(); return 0; }".to_string(),
+            &["mk"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nasync function loop() { for await (const x of gen()) {} }\nfunction flag() { loop(); return noop; }\nfunction run() { flag(); return 0; }".to_string(),
+            &["gen", "loop"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nasync function loop() { if (first()) {} for await (const x of gen()) {} }\nfunction flag() { if (first()) {} loop(); return noop; }\nfunction run() { return flag()(); }".to_string(),
+            &["gen", "loop"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(&definitions, extra);
+    }
+}
+
+/// Positive anchor for the control above: the same iterations with no
+/// installed iterator keep the split.
+#[test]
+fn iterations_without_an_installed_iterator_keep_the_split() {
+    for body in [
+        "for (const [c] in { ab: 1 }) {}",
+        "let c; for ([c] in { ab: 1 }) {}",
+        "const a = [1]; for (const x of a) {}",
+    ] {
+        let fixture = with_reader_split(
+            &format!(
+                "function flag() {{ {body} return noop; }}\nfunction run() {{ flag(); return 0; }}"
+            ),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}

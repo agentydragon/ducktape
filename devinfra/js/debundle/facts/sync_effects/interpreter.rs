@@ -11181,7 +11181,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
-        self.iterate_callable_sources(callable, &env, &mut outcome);
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
@@ -11247,6 +11246,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        // The lane is flow-insensitive: iterate after the body's writes and
+        // calls, so the published pool holds what they install.
+        self.iterate_callable_sources(callable, &env, &mut outcome);
         if !certified_data_receivers.is_empty()
             && (self.state.array_iteration_unsupported
                 || !self.array_intrinsics_intact()

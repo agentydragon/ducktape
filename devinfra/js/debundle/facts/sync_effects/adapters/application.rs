@@ -221,6 +221,31 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         span: Span,
     ) {
         self.retain_global_fallback_accesses(frame, &reason, span);
+        // The summarized remainder may create and publish any function written
+        // after the truncation point (a descriptor's `value`, a stored
+        // callback) before it completes; none of them has a value yet.
+        let mut reached = reached;
+        let index = self.executor.inputs.index;
+        let enclosing = self
+            .scope
+            .caller()
+            .and_then(|key| index.callable_spans.get(&key).copied());
+        reached.extend(
+            index
+                .callable_spans
+                .iter()
+                .filter(|(key, callable)| {
+                    callable.lo >= span.hi
+                        && enclosing.is_none_or(|enclosing| {
+                            enclosing.lo < callable.lo && callable.hi <= enclosing.hi
+                        })
+                        && index
+                            .callables
+                            .get(key)
+                            .is_some_and(|callable| callable.owner == self.owner)
+                })
+                .map(|(key, _)| AbstractValue::Value(Value::Alloc(Kind::Function, *key))),
+        );
         self.executor.local_operation_fallback(
             frame,
             reached,
