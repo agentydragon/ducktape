@@ -2,6 +2,8 @@
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -16,6 +18,17 @@ proto_library(
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "policy_service_pb2",
+    deps = [":policy_service_proto"],
+)
+
+py_grpc_service_library(
+    name = "policy_service_pb2_grpc",
+    proto = ":policy_service_proto",
+    py_proto = ":policy_service_pb2",
 )
 
 go_proto_library(

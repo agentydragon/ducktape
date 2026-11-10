@@ -11,13 +11,15 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import cast, override
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
+import grpc
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
+from google.protobuf.empty_pb2 import Empty
 from playwright.async_api import (
     APIResponse,
     Locator,
@@ -47,6 +49,7 @@ from agentplane.app.testing.thread_browser import (
     scripted_runner,
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
+from agentplane.grpc.serving import serving
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
@@ -62,6 +65,7 @@ from agentplane.history_service.fold.models import (
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
+from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
@@ -232,8 +236,9 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
     certificate: BrowserCertificate,
     sandbox: SandboxCluster,
     gateway_access: GatewayAccess,
+    tmp_path: Path,
 ) -> None:
-    """Browser requests traverse app BFF, Gateway, PostgreSQL guard, and API-server CEL."""
+    """The browser uses real BFF, Gateway, PostgreSQL and Kubernetes mutation paths."""
     identity = await sandbox.custom_objects.create_namespaced_custom_object(
         "agentplane.allegedly.works",
         "v1alpha1",
@@ -247,7 +252,34 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         },
     )
     assert identity["metadata"]["uid"]
+
+    # Only the identity inventory watch is served by this fixture. The browser's
+    # change request continues through the real app, Gateway, database, and API server.
+    class IdentityWatch(policy_service_pb2_grpc.PolicyServiceServicer):
+        @override
+        async def WatchIdentities(
+            self, request: policy_service_pb2.WatchIdentitiesRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[policy_service_pb2.WatchIdentitiesResponse]:
+            yield policy_service_pb2.WatchIdentitiesResponse(
+                snapshot=policy_service_pb2.IdentityChunk(
+                    identities=[
+                        policy_service_pb2.Identity(
+                            identity=policy_service_pb2.PolicyResourceIdentity(
+                                namespace=sandbox.namespace, name="browser-identity", uid=identity["metadata"]["uid"]
+                            )
+                        )
+                    ]
+                )
+            )
+            yield policy_service_pb2.WatchIdentitiesResponse(snapshot_complete=Empty())
+            await asyncio.Event().wait()
+
+    policy = grpc.aio.server()
+    policy_service_pb2_grpc.add_PolicyServiceServicer_to_server(IdentityWatch(), policy)
+    policy_token = tmp_path / "identity-watch-token"
+    policy_token.write_text("test-policy-service-token")
     async with (
+        serving(policy, "127.0.0.1:0", grace_s=0) as policy_port,
         app_process(
             db_url,
             history=event_logs.reader,
@@ -256,6 +288,10 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
+            config={
+                "policy_service_target": f"127.0.0.1:{policy_port}",
+                "policy_service_token_file": str(policy_token),
+            },
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -287,7 +323,7 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         assert (await sandbox.sandbox())["spec"].get("identity") is None
 
         await sandbox.patch_sandbox_status({"status": {"stopStage": "Stopped"}})
-        selector = panel.get_by_role("textbox", name="Identity for next start")
+        selector = panel.get_by_role("combobox", name="Identity for next start")
         await expect(selector).to_be_visible()
         await selector.click()
         await page.get_by_role("option", name="browser-identity").click()
