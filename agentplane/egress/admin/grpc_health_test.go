@@ -33,8 +33,10 @@ func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 		}},
 		{"failing", failingIndex(), counters, &egressadminpb.GetHealthResponse{
 			Synced: true, DecisionHistory: wantCounters,
-			Failing: map[string]*egressadminpb.KindFailure{
-				"secrets": {Error: "test-failure", Since: timestamppb.New(started)},
+			Failing: []*egressadminpb.KindFailure{
+				{Kind: egressadminpb.KindFailure_KIND_UNSPECIFIED, Error: "test-failure", Since: timestamppb.New(started)},
+				{Kind: egressadminpb.KindFailure_KIND_POLICY_SETS, Error: "test-failure", Since: timestamppb.New(started)},
+				{Kind: egressadminpb.KindFailure_KIND_SECRETS, Error: "test-failure", Since: timestamppb.New(started)},
 			},
 		}},
 		// No write has succeeded or failed yet, which is not the same as the latest having failed.

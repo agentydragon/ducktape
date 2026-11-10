@@ -217,7 +217,7 @@ func TestListDecisionsReadsTheSelectedSubject(t *testing.T) {
 		},
 		{
 			EventId: refused.EventID.String(), At: timestamppb.New(started), Method: "GET", Host: "example.test", Port: 443,
-			Outcome: egressadminpb.Decision_OUTCOME_DENY, Reason: proto.String("no-rule"),
+			Outcome: egressadminpb.Decision_OUTCOME_DENY, Reason: egressadminpb.Decision_REASON_NO_RULE.Enum(),
 		},
 	}
 	if len(response.GetDecisions()) != len(want) {

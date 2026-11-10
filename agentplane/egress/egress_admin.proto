@@ -47,14 +47,33 @@ message Decision {
     OUTCOME_ALLOW = 1;
     OUTCOME_DENY = 2;
   }
+  // Why the proxy refused; `decision.Reason` names each, as the `x-agentplane-egress` header and
+  // history spell it.
+  enum Reason {
+    // The proxy recorded a reason this schema does not name.
+    REASON_UNSPECIFIED = 0;
+    REASON_TOKEN_MISSING = 1;
+    REASON_TOKEN_REJECTED = 2;
+    REASON_POD_MISMATCH = 3;
+    REASON_NO_BINDING = 4;
+    REASON_NO_RULE = 5;
+    REASON_INVALID_BODY = 6;
+    REASON_PLACEHOLDER_UNRESOLVED = 7;
+    REASON_CREDENTIAL_UNAVAILABLE = 8;
+    REASON_IMPERSONATION_FORBIDDEN = 9;
+    REASON_ADDRESS_FORBIDDEN = 10;
+    REASON_HOST_UNRESOLVED = 11;
+    REASON_UNAVAILABLE = 12;
+  }
 
   google.protobuf.Timestamp at = 1;
   string method = 2;
   string host = 3;
   int32 port = 4;
   Outcome outcome = 5;
-  // The proxy's machine-readable refusal, on a deny.
-  optional string reason = 6;
+  reserved 6;
+  // Set on a deny.
+  optional Reason reason = 14;
   // The rule that admitted the request.
   optional string binding = 7;
   optional string policy = 8;
@@ -111,14 +130,26 @@ message GetHealthResponse {
   bool synced = 2;
   bool draining = 3;
   DecisionHistoryHealth decision_history = 4;
-  reserved 5, 6;
+  reserved 5, 6, 7;
   reserved "stale_after_seconds", "refreshed_seconds_ago";
-  // Each resource kind whose last list or watch failed, by kind.
-  map<string, KindFailure> failing = 7;
+  // Each resource kind whose last list or watch failed, in Kind order.
+  repeated KindFailure failing = 8;
 }
 
 // Why a resource kind is failing, since its first failure after its last successful list or watch.
 message KindFailure {
+  // A resource kind the proxy watches.
+  enum Kind {
+    // A kind this schema does not name.
+    KIND_UNSPECIFIED = 0;
+    KIND_POLICY_SETS = 1;
+    KIND_POLICY_BINDINGS = 2;
+    KIND_IDENTITIES = 3;
+    KIND_EGRESS_CREDENTIALS = 4;
+    KIND_SECRETS = 5;
+  }
+
+  Kind kind = 3;
   string error = 1;
   google.protobuf.Timestamp since = 2;
 }
