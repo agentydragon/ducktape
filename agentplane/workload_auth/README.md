@@ -20,12 +20,12 @@ accepted review results are cached for up to 30 seconds by default, so revocatio
 may take that long to affect a cached token. Rejections and review failures are not cached.
 
 `SVIDResolver` accepts a leaf already verified by the shared workload TLS listener, requires its
-validity and explicit clientAuth EKU, and resolves its namespace, Sandbox UID and credential ID
-through live Sandbox status. It returns the same `Principal`: the Sandbox's own ServiceAccount with
-its canonical UID and the status-bound Pod name/UID. There is no identity reference or caller
-header. A finalizing Sandbox keeps using its accepted credential for History sealing; clearing
-acceptance or removing the object revokes it. Services need Sandbox get/list and ServiceAccount get
-in their allowed namespaces. `Resolver.WithListenerAuthentication` selects this path only when the
+validity and explicit clientAuth EKU, and resolves it through the live `WorkloadCredential` it names
+([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)).
+It returns the same `Principal` shape: the record's ServiceAccount subject with its canonical UID and,
+when the record's owner accepted one, the Pod name/UID. A record naming an `Identity` subject is
+refused until `Principal` has an Identity form. There is no identity reference or caller header.
+Deleting the record or replacing its credential ID revokes the certificate. `Resolver.WithListenerAuthentication` selects this path only when the
 listener allows SPIFFE. Listener credential selection does not grant method authorization, and
 delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
 bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
@@ -39,12 +39,11 @@ service's SPIFFE URI using `environment_runtime_transport.ClientTLS`, then authe
 existing bearer or delegation credentials. They receive no SVID. The shared `grpc/healthprobe`
 binary checks the same listener through verified TLS without application credentials.
 
-Action command/build boxes and Haku UI/Anki present their own `WorkloadCredential`'s SVID. The
-egress proxy's `forward` listener still accepts the `agentplane-egress` audience for its Kubernetes
-bearer mode, which no workload uses. Sandbox Runtime templates use SVIDs and
-continue projecting Kubernetes destination-audience tokens where credential rules require them;
-they do not project the proxy-hop or first-party-service audiences. The shared identity and SVID
-lifecycle that will replace the remaining compatibility paths remains deferred.
+Action command/build boxes and Haku's and `haku-ci`'s standing workloads present their own
+`WorkloadCredential`'s SVID. The egress proxy's `forward` listener still accepts the
+`agentplane-egress` audience for its Kubernetes bearer mode, which no workload uses. Sandbox Runtime
+templates use SVIDs and continue projecting Kubernetes destination-audience tokens where credential
+rules require them; they do not project the proxy-hop or first-party-service audiences.
 
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
@@ -85,8 +84,9 @@ not install the ordinary Bearer interceptor. Existing direct clients continue us
 Bearer helper.
 
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
-used by backend callers of LLM ingress and Action Service, including the sampler's delegated path,
-and by non-Sandbox egress hop callers. Sandbox Runtime templates do not project it. Each backend
+used by backend callers of LLM ingress and Action Service: the sampler, Notification, and the MCP
+edge's minted Connection tokens. The egress proxy's hop still accepts it, though no workload sends
+it there. Sandbox Runtime templates do not project it. Each backend
 verifier receives its audience explicitly; the Go resolver has no default audience.
 
 Operator and browser-session authentication use separate mechanisms and do not produce a workload

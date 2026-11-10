@@ -2,8 +2,9 @@
 
 Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation through
 its [`WorkloadCredential`](#workloadcredentials).
-Configured non-Sandbox workloads retain Pod-bound Kubernetes bearer authentication over verified
-TLS. This document describes both active routes and the remaining identity lifecycle boundary.
+Command/build boxes and standing workloads present `WorkloadCredential` SVIDs too. Backend services
+calling each other retain Kubernetes bearer authentication over verified TLS. This document
+describes both.
 
 ## Sandbox SVID route
 
@@ -202,8 +203,8 @@ the SVID mode, and their templates do not project the proxy hop bearer.
 destination-audience token, and the proxy substitutes it only after TokenReview binds it to the same
 caller Pod and a matching credential rule. Sandbox Runtime templates continue to project this
 Kubernetes destination-audience token; they do not project the proxy-hop or first-party-service
-audiences. The generic sidecar also retains its explicitly selected token transport for its separate
-deployments.
+audiences. The generic sidecar's bearer token transport is configured only by the parked
+`public-coder-agent` relay.
 
 The proxy's `forward` and services' `rpc` settings use the shared
 [authentication allowlist](../workload_auth/README.md). Each first-party service uses one TLS RPC
