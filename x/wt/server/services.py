@@ -15,14 +15,9 @@ from x.wt.server.worktree_index import WorktreeIndex
 
 class WorktreeIndexService:
     def __init__(
-        self,
-        *,
-        get_index: Callable[[], WorktreeIndex | None],
-        rebuild_index: Callable[[], Awaitable[object]],
-        run_discovery_once: Callable[[], Awaitable[object]],
+        self, *, get_index: Callable[[], WorktreeIndex | None], run_discovery_once: Callable[[], Awaitable[object]]
     ) -> None:
         self._get_index = get_index
-        self._rebuild_index = rebuild_index
         self._run_discovery_once = run_discovery_once
 
     async def ensure_discovery(self) -> None:
@@ -98,7 +93,6 @@ class DiscoveryService:
         periodic: Callable[[], Awaitable[object]] | None = None,
         cancel_periodic: Callable[[], None] | None = None,
     ) -> None:
-        self._is_scanning = is_scanning
         self._periodic = periodic
         self._cancel = cancel_periodic
         # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)

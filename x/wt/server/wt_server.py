@@ -150,9 +150,7 @@ class WtDaemon:
         self.git_refs_watcher = GitRefsWatcher(store=self.store, git_manager=self.git_manager, config=self.config)
         # Build DI services
         self.index_service = WorktreeIndexService(
-            get_index=lambda: self.worktree_index,
-            rebuild_index=self.rebuild_index,
-            run_discovery_once=self._run_discovery_once,
+            get_index=lambda: self.worktree_index, run_discovery_once=self._run_discovery_once
         )
 
         # Helper to fetch known worktree info without repeated membership checks
