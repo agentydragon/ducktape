@@ -39,7 +39,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
+from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture, meter_quota_view
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from gnome.test_image import gnome_shell_test
@@ -228,21 +228,16 @@ def test_claude_prepaid_balance(session: GnomeSession) -> None:
 @pytest.mark.parametrize(
     ("usage", "displayed", "value"), [(-5, -5, 0), (0, 0, 0), (99.9, 99, 99), (100, 100, 100), (105, 105, 100)]
 )
-def test_meter_accessibility(
-    session: GnomeSession, fixture_json_dir: Path, usage: float, displayed: int, value: int
-) -> None:
+def test_meter_accessibility(session: GnomeSession, usage: float, displayed: int, value: int) -> None:
     _reload_fixture(session, "binding_summary")
-    data = json.loads((fixture_json_dir / "binding_summary.json").read_text())
-    provider = next(item for item in data["providers"] if item["provider"] == "codex")
-    window = provider["display_windows"][0]
-    window.update(used_percent=usage, used=displayed, elapsed=0.5)
-    session.call("SetViewForTest", json.dumps(data))
+    view = meter_quota_view(usage)
+    session.call("SetViewForTest", view.model_dump_json())
     session.open_menu()
     try:
         meters = json.loads(string_reply(session.call("GetMeterAccessibility", "codex")))
         assert meters[0] == {
             "role": "level bar",
-            "name": f"{window['label']}: {displayed}% used, 50% of the window elapsed",
+            "name": f"5h: {displayed}% used, 50% of the window elapsed",
             "description": "Fill is quota used; tick is time elapsed.",
             "value": value,
             "minimum": 0,
