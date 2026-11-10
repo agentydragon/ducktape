@@ -19,15 +19,15 @@ partial stream is not an external effect); the JavaScript epoch advances and a m
 notice lists what was abandoned. The `CODE_HOST_LOSS` boundary record names the previous and next
 host, the abandoned intents, cells and handles, and whether the Session was unblocked. The turn
 then continues and the model decides what to do. Work scans also select a Session that an earlier
-release had blocked on this state, so it settles when the next runtime starts.
+owner had blocked whose recorded host is gone, so it settles when the next runtime starts.
 
 Reconcile any possibly completed external effect before asking the model to repeat it: the notice
 is the model's only signal that a nested `exec_command` or `apply_patch` may have run.
 
 The rest of this document covers the state that still waits for an operator: a Session blocked on
-its still-running host with only nonterminal process handles left (an interrupt whose cleanup
-could not confirm every handle), and older blocked Sessions an operator wants to review before the
-automatic settlement reaches them. `RecoverSession` remains available for both.
+the host that still serves it (an uncommitted provider stream or compaction, an interrupt whose
+cleanup could not confirm every handle). That block is a reviewed decision; it settles the same way
+once that host is replaced, or an operator recovers it earlier with `RecoverSession`.
 
 The Code Mode host binding is independent of executor reachability. Attaching JavaScript does not
 open an executor stream or prepare the workspace; the sampler acquires execution when a command,

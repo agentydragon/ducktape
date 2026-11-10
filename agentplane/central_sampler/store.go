@@ -633,6 +633,12 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err != nil {
 			return err
 		}
+		// A block an owner recorded on the host that still serves the Session is a reviewed
+		// decision (an uncommitted provider stream, an interrupt with unconfirmed handles); only
+		// a lost host or lost owner settles it without an operator.
+		if !hostLost && session.Blocked {
+			return nil
+		}
 		intents, err := lostIntents(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
@@ -1363,9 +1369,9 @@ func (s *Store) PendingSessionIDs(ctx context.Context, target, after string, lim
 }
 
 // RecoverableSessions lists unowned Sessions with pending work. A blocked Session is included
-// when its recorded JavaScript host is not instanceID or it holds an unresolved intent or live
-// cell, which no fenced-out owner can settle: the owner that claims it settles the lost work in
-// ReconcileCodeHostLoss and unblocks it, so a wedge never outlives the host that caused it.
+// only when its recorded JavaScript host is not instanceID: the owner that claims it settles the
+// lost work in ReconcileCodeHostLoss and unblocks it, so a wedge never outlives the host that
+// caused it, while a block recorded on the host still serving the Session waits for its operator.
 func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit int, instanceID string) ([]string, error) {
 	if limit <= 0 {
 		return nil, protocol.ErrInvalid
@@ -1377,9 +1383,7 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 		exclude = []string{}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
-		WHERE (ss.blocked=FALSE OR c.code_host_instance IS NOT NULL AND c.code_host_instance<>$5::uuid
-			OR EXISTS(SELECT 1 FROM sampler_intent stale WHERE stale.conversation_id=c.id AND stale.result IS NULL)
-			OR EXISTS(SELECT 1 FROM sampler_cell stale WHERE stale.conversation_id=c.id AND stale.status='live'))
+		WHERE (ss.blocked=FALSE OR c.code_host_instance IS NOT NULL AND c.code_host_instance<>$5::uuid)
 		AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
 		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(sessionpb.SetupState_SETUP_STATE_RUNNING),

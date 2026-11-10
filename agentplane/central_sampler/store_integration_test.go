@@ -1040,15 +1040,26 @@ func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T
 				t.Fatal(err)
 			}
 			instance := uuid.NewString()
-			if recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, instance); err != nil || len(recoverable) != 1 || recoverable[0] != session.ID {
-				t.Fatalf("Session with a stale pending intent was not selected: %v err=%v", recoverable, err)
+			recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, instance)
+			if err != nil || blocked != (len(recoverable) == 0) {
+				t.Fatalf("work scan selection: blocked=%v recoverable=%v err=%v", blocked, recoverable, err)
 			}
 			successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform); err != nil || !changed {
-				t.Fatalf("stale pending sampling did not settle: changed=%v err=%v", changed, err)
+			changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform)
+			if err != nil || changed == blocked {
+				t.Fatalf("stale pending sampling settlement: blocked=%v changed=%v err=%v", blocked, changed, err)
+			}
+			if blocked {
+				// The block was recorded on the host still serving the Session: a reviewed
+				// decision that only an operator, or losing that host, settles.
+				still, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+				if err != nil || !still.Blocked {
+					t.Fatalf("same-host block was cleared: blocked=%v err=%v", still.Blocked, err)
+				}
+				return
 			}
 			result, err := intentResultForDB(t, store, intentID)
 			if err != nil || result["status"] != string(IntentResultAbandoned) || result["output_committed"] != false || result["provider_completion_unknown"] != true {
@@ -1069,9 +1080,8 @@ func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			// A failed turn is over; only a cut turn still has its command to resample under.
-			if blocked != (command == nil) || command != nil && command.ID != "cut" {
-				t.Fatalf("successor command after settlement: blocked=%v command=%+v", blocked, command)
+			if command == nil || command.ID != "cut" {
+				t.Fatalf("successor cannot resume the command to resample: command=%+v", command)
 			}
 		})
 	}
