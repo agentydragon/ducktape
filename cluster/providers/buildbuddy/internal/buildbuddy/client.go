@@ -46,14 +46,6 @@ type APIKey struct {
 	VisibleToDevelopers bool
 }
 
-// CreatedAPIKey contains the one-time key value returned only when a key is
-// created. Callers should publish Value directly as connection detail and must
-// not log it or copy it into managed-resource status.
-type CreatedAPIKey struct {
-	APIKey
-	Value []byte
-}
-
 // NewClient opens a TLS connection to BuildBuddy's gRPC service. Dialing is lazy.
 func NewClient(apiKey string) (*Client, error) {
 	if apiKey == "" {
@@ -74,46 +66,8 @@ func (c *Client) requestContext(ctx context.Context) (context.Context, context.C
 }
 
 // Do not include server error messages: they may contain sensitive request data.
-type buildBuddyRPCError struct {
-	method    string
-	code      codes.Code
-	ambiguous bool
-}
-
-func (e *buildBuddyRPCError) Error() string {
-	return fmt.Sprintf("BuildBuddy %s failed: %s", e.method, e.code)
-}
-
-func (e *buildBuddyRPCError) AmbiguousAPIKeyCreate() bool {
-	return e.method == "CreateApiKey" && e.ambiguous
-}
-
 func rpcError(method string, err error) error {
-	code := status.Code(err)
-	return &buildBuddyRPCError{
-		method: method,
-		code:   code,
-		// These errors are returned by BuildBuddy before its CreateApiKey
-		// handler can commit a key. Other RPC errors may occur after a commit
-		// whose response did not reach this client.
-		ambiguous: method == "CreateApiKey" && !definitivelyRejectedCreate(code),
-	}
-}
-
-func definitivelyRejectedCreate(code codes.Code) bool {
-	switch code {
-	case codes.InvalidArgument, codes.Unauthenticated, codes.PermissionDenied, codes.NotFound, codes.FailedPrecondition, codes.Unimplemented:
-		return true
-	default:
-		return false
-	}
-}
-
-// IsAmbiguousAPIKeyCreate reports whether a CreateApiKey RPC may have
-// committed even though no successful response reached the provider.
-func IsAmbiguousAPIKeyCreate(err error) bool {
-	var ambiguous interface{ AmbiguousAPIKeyCreate() bool }
-	return errors.As(err, &ambiguous) && ambiguous.AmbiguousAPIKeyCreate()
+	return fmt.Errorf("BuildBuddy %s failed: %s", method, status.Code(err))
 }
 
 func (c *Client) PublicKey(ctx context.Context) (PublicKey, error) {
@@ -178,9 +132,8 @@ func (c *Client) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
-// APIKeys lists group-owned API-key metadata. BuildBuddy deliberately omits
-// values from this endpoint; callers must not use GetApiKey for routine
-// observation because server-side value readback is optional.
+// APIKeys lists group-owned API-key metadata. BuildBuddy omits values from
+// this endpoint.
 func (c *Client) APIKeys(ctx context.Context, groupID string) ([]APIKey, error) {
 	if groupID == "" {
 		return nil, errors.New("BuildBuddy group ID is empty")
@@ -205,15 +158,40 @@ func (c *Client) APIKeys(ctx context.Context, groupID string) ([]APIKey, error) 
 	return keys, nil
 }
 
-// CreateAPIKey creates a group-owned API key. The one-time value is returned
-// separately from metadata so callers can publish it as connection details.
-func (c *Client) CreateAPIKey(ctx context.Context, groupID, label string, capabilities []string, visibleToDevelopers bool) (CreatedAPIKey, error) {
+// APIKeyValue reads a group-owned key's value. Callers must verify that the ID
+// belongs to the configured group before using it and must not log the value.
+func (c *Client) APIKeyValue(ctx context.Context, groupID, id string) ([]byte, error) {
+	if groupID == "" || id == "" {
+		return nil, errors.New("BuildBuddy API-key group ID and key ID are required")
+	}
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+	response, err := c.rpc.GetApiKey(ctx, &apikeypb.GetApiKeyRequest{
+		RequestContext: &contextpb.RequestContext{GroupId: groupID},
+		ApiKeyId:       id,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read BuildBuddy API-key value (requires group admin and value readback): %w", rpcError("GetApiKey", err))
+	}
+	key := response.GetApiKey()
+	if key.GetId() != id {
+		return nil, errors.New("BuildBuddy GetApiKey returned a different or missing key ID")
+	}
+	if key.GetValue() == "" {
+		return nil, errors.New("BuildBuddy GetApiKey returned no value; API-key value readback must be enabled")
+	}
+	return []byte(key.GetValue()), nil
+}
+
+// CreateAPIKey creates a group-owned API key and returns its ID. The value is
+// read separately so that the same readback path is used on every reconcile.
+func (c *Client) CreateAPIKey(ctx context.Context, groupID, label string, capabilities []string, visibleToDevelopers bool) (string, error) {
 	protoCaps, err := protoCapabilities(capabilities)
 	if err != nil {
-		return CreatedAPIKey{}, err
+		return "", err
 	}
 	if groupID == "" || label == "" {
-		return CreatedAPIKey{}, errors.New("BuildBuddy API-key group ID and label are required")
+		return "", errors.New("BuildBuddy API-key group ID and label are required")
 	}
 	ctx, cancel := c.requestContext(ctx)
 	defer cancel()
@@ -224,17 +202,13 @@ func (c *Client) CreateAPIKey(ctx context.Context, groupID, label string, capabi
 		VisibleToDevelopers: visibleToDevelopers,
 	})
 	if err != nil {
-		return CreatedAPIKey{}, rpcError("CreateApiKey", err)
+		return "", rpcError("CreateApiKey", err)
 	}
-	key := response.GetApiKey()
-	if key == nil || key.GetId() == "" || key.GetValue() == "" {
-		return CreatedAPIKey{}, &buildBuddyRPCError{method: "CreateApiKey", code: codes.Unknown, ambiguous: true}
+	id := response.GetApiKey().GetId()
+	if id == "" {
+		return "", errors.New("BuildBuddy CreateApiKey returned no key ID")
 	}
-	metadata, err := apiKeyMetadata(key)
-	if err != nil {
-		return CreatedAPIKey{}, &buildBuddyRPCError{method: "CreateApiKey", code: codes.Unknown, ambiguous: true}
-	}
-	return CreatedAPIKey{APIKey: metadata, Value: []byte(key.GetValue())}, nil
+	return id, nil
 }
 
 // UpdateAPIKey updates the mutable metadata of a group-owned key. Group
