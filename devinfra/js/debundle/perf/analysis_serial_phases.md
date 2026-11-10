@@ -296,18 +296,94 @@ cd <dir> && bbr build //devinfra/js/debundle/excalidraw:{source,inputs}
 Then project and analyze its `bb-out` tree as above, with no `--package-root`;
 its vendor marks are empty.
 
+## Landed: transient callback inputs
+
+The callback walks (`callback_values`, `unsettle`, `taint_objects`,
+`expose_class_capabilities`) only iterate their input. Before, callers built
+that input as a persistent `Values`, one insert per element. Now the walks
+take any iterator of values:
+
+- **Transient inputs** are a sorted, deduplicated `Vec` (`ordered_values`). It
+  holds the same elements in the same order as the `Values` it replaces.
+- **Stored sets** (the global escaped callbacks and the callback pool) insert
+  only absent values. A present value no longer copies the persistent path.
+
+Base is `devel` at `a6199437`. Runs are single, on the same 4-core VM.
+
+| Shape   | Before                    | After                     |
+| ------- | ------------------------- | ------------------------- |
+| Split   | 23.9 s wall, 36.9 s CPU   | 23.3 s wall, 34.7 s CPU   |
+| Inlined | 289.8 s wall, 308.8 s CPU | 268.2 s wall, 287.2 s CPU |
+
+Peak RSS is unchanged. The `.analysis` bodies are byte-identical on both
+shapes.
+
+Inlined editor chunk profile, before and after:
+
+| Row                                  | Before |  After |
+| ------------------------------------ | -----: | -----: |
+| Total samples                        | 62,428 | 56,806 |
+| `OrdSet` construction (inclusive)    |  33.9% |  14.2% |
+| `ordered_values` sort (inclusive)    |      — |   9.9% |
+| `invoke_possible_callbacks_transfer` |  59.9% |  57.1% |
+| `promote_deferred_callbacks`         |  42.2% |  41.6% |
+
+## `unsettle` call pattern (inlined editor chunk)
+
+Measured with temporary, uncommitted instrumentation on the binding-ordinal
+engine:
+
+| Measure                                                     | Value                         |
+| ----------------------------------------------------------- | ----------------------------- |
+| Calls                                                       | 396,047                       |
+| Values visited                                              | 93.4 M                        |
+| Visited per call: mean, median, p90, max                    | 236, 327, 481, 1,735          |
+| Input values per call: median, max                          | 254, 789                      |
+| Calls that inserted no new unsettled object                 | 99.8%                         |
+| Inputs equal to the previous call's                         | 29.5% of calls, 40.8% of work |
+| Inputs a subset of the previous call's                      | 33.7% of calls, 42.4% of work |
+| Reads unchanged since the previous call                     | 61.3% of calls, 40.5% of work |
+| Both subset inputs and unchanged reads (memo hits, at most) | 16.6% of calls, 10.4% of work |
+
+"Reads" are the persistent collections `prefix_values`,
+`prefix_object_properties`, `applied_accessors` and `descriptors`, compared
+with `ptr_eq`.
+
+Every effect `unsettle` has is idempotent:
+
+- cell `Top` and TDZ widening;
+- an `unsettled_objects` insert;
+- `writable_prefix` → `Unknown`;
+- a revoked-result insert.
+
+So a previous-call memo would be sound, but its ceiling is about 10% of
+`unsettle`, under 2% of the run. It was not built.
+
+The walk almost always re-derives state that already holds. That points to an
+incremental frontier instead:
+
+- **Retain the expanded set.** Keep the set of values already expanded, with
+  their effects in place, across calls.
+- **Revalidate per element, against that element's own reads:**
+  - a closure: its captured cells' `Values`, and its callable's `prefix_values`
+    reads;
+  - an object: its `prefix_object_properties` and `applied_accessors` entries;
+  - a descriptor map: its `descriptors` entry.
+- **Skip only what still validates.** A call expands only values outside the
+  frontier, or whose reads changed.
+
+Validation is per element, not one `ptr_eq` on a whole collection, so this is
+a design change rather than a memo.
+
 ## Candidate optimizations, ranked
 
 Ranked from the inlined app-build editor chunk, the public analogue of the
 private single-chunk inputs:
 
-1. **Bound `unsettle`'s repeated reachability.** It re-walks the reachable heap
-   on every fallback. A monotonic "already unsettled" frontier, valid while the
-   world is unchanged, is a candidate, with the same soundness bar as the
-   export-surface memo. 18.3% inclusive.
-2. **Avoid persistent-set construction for transient results.** 32.5%
-   inclusive (33.9% after ordinals) across `bounded_invocation_fallback_transfer`, `callback_values`'
-   final build, `note_unknown_execution` and `insert_escaped_callback_values`.
+1. **Make `unsettle` incremental**, with the per-element frontier above.
+2. **Make callback promotion incremental.** `invoke_possible_callbacks` (57%
+   inclusive) and `promote_deferred_callbacks` (42%) re-derive the callback
+   pool and its reach per opaque call; see the design note that follows.
 
 Earlier candidates, from the package build:
 
