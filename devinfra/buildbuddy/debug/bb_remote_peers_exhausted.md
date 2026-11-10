@@ -60,6 +60,12 @@ returned 3923 bytes whose SHA-256 was exactly
 The CLI also materialized both files under
 `bb-out/bazel-out/k8-fastbuild/bin/devinfra/`.
 
+The upload-all comparison populated this shared CAS digest. A subsequent
+minimal-mode build may therefore succeed while that blob remains available;
+it still does not upload the launcher itself. Availability can depend on
+another invocation having uploaded the same content, so a passing rerun alone
+does not establish that the upload policy is correct.
+
 ## Integration and scope
 
 `bbr build` supplies `--remote_build_event_upload=all` before session and
