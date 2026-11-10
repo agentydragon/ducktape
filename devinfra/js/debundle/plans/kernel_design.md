@@ -53,9 +53,9 @@ the family when every leaf has completed; the contract is in
   run-wide accumulators, and the flat lane runs as if the attempt never
   ran. The filter (`roots/operands.rs`, `root_array_iteration`) is cheap and
   has no side effects. The cost is a second execution of every refused
-  attempt: with the early-exit rows, 217 iteration roots attempt in the e2e
-  suite and 187 of them rewind (30 seal), most in
-  `intrinsic_array_iteration_test`. Roots over record elements are row 13.
+  attempt: in the e2e suite about 123 iteration roots attempt and about 105
+  of them rewind, most in `intrinsic_array_iteration_test`. Roots over
+  record elements are row 13.
 
   Separately, an array literal inside a callback loses its writability
   witness on the callback's second invocation (the allocation site is pooled),

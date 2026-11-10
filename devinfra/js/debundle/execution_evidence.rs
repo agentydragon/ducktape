@@ -101,9 +101,9 @@ pub enum OrderedCallAdmissionRefusal {
     MultipleTargets,
     NonLocalTarget,
     UnsupportedReceiver,
-    /// An `Array.prototype` iteration method without a kernel row:
-    /// `flatMap`, `reduce` without an initial value, or a call whose
-    /// argument count the row does not admit (a `thisArg`).
+    /// An `Array.prototype` iteration method without a kernel row: the
+    /// early-exit rows (`some`, `every`, `find`, `findIndex`), `flatMap`,
+    /// and `reduce` without an initial value.
     ArrayIterationRowUnsupported,
     /// After the arguments or a callback, a slot the row reads
     /// (`Array.prototype` method, element reads, `ArraySpeciesCreate`) is no

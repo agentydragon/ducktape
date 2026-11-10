@@ -3986,12 +3986,7 @@ adapter's `call` rechecks the rest of the row (element reads,
 `ArraySpeciesCreate`, the receiver's exact length and dense slots) after the
 arguments. An iteration row invokes its callback through `Executor::invoke`
 once per element, so a callback with an ordered plan and no live captures
-runs in the kernel, and rechecks the receiver after every invocation. An
-early-exit row (`some`, `every`, `find`, `findIndex`) keeps, at each callback
-result whose truthiness may stop it, the path state that stopped there
-(`ControlContext::branch`), runs on, and joins those paths with the one that
-ran past every element through `ExecutionPath::join` and
-`EffectCoverageFragment::join_alternatives`, as a kernel fork does. Its
+runs in the kernel, and rechecks the receiver after every invocation. Its
 fresh result commits through the native `plan`/`commit` path. A refusal at any
 check keeps the effects of the callbacks that already ran and summarizes the
 remainder. Only depth-zero invocations take the kernel prologue, so a row
