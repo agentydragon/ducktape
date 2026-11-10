@@ -410,10 +410,18 @@ async def _follow_code_mode_cell(
     try:
         async with asyncio.timeout(timeout_s):
             while True:
-                (output,) = [output for output in request.tool_outputs if output.call_id == call_id]
+                matching_outputs = [output for output in request.tool_outputs if output.call_id == call_id]
+                code_outputs = [
+                    output
+                    for output in matching_outputs
+                    if output.blocks
+                    and output.blocks[0].startswith(("Script running", "Script completed", "Script failed"))
+                ]
+                assert code_outputs, f"no code-mode result for {call_id}: {matching_outputs}"
+                output = code_outputs[-1]
                 output_blocks.extend(output.blocks)
                 visible_blocks.extend(
-                    [*request.user_texts, *(block for item in request.tool_outputs for block in item.blocks)]
+                    [*request.user_texts, *(block for item in matching_outputs for block in item.blocks)]
                 )
                 running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
                 if running is None:
