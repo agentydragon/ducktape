@@ -544,3 +544,29 @@ fn a_record_root_with_an_aliased_store_rewinds() {
     assert_preserved_entry_output(&fixture, "7 2\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "aliased store");
 }
+
+/// Opposing control: a closure read from an element field keeps its
+/// identity, so invoking it later reads the state it closes over. Moving
+/// the invocation before that state's writer prints the old value.
+#[test]
+fn an_invoked_field_closure_stays_after_the_writer_of_its_state() {
+    assert_rejected_split_diverges(
+        "const store = { value: 0 };\nconst items = [{ executor: () => store.value }];\nconst fns = items.map((entry) => entry.executor);\nstore.value = 1;\nconst observed = fns[0]();\nconsole.log(observed, store.value);\n",
+        &["store", "items", "fns"],
+        "1 1\n",
+        "0 1\n",
+    );
+}
+
+/// Opposing control: the row reads each element field at the current
+/// prefix and records its `OwnProperty` cell, so a store to that field
+/// stays before the iteration that reads it.
+#[test]
+fn a_store_to_a_read_field_stays_before_the_iteration() {
+    assert_rejected_split_diverges(
+        "const items = [{ executor: () => 'original' }];\nitems[0].executor = () => 'replaced';\nconst fns = items.map((entry) => entry.executor);\nconst observed = fns[0]();\nconsole.log(observed);\n",
+        &["items", "fns"],
+        "replaced\n",
+        "original\n",
+    );
+}
