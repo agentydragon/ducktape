@@ -415,3 +415,89 @@ fn summarized_locals_reaching_only_effect_free_functions_keep_the_split() {
         assert_reader_split_commutes(&format!("function flag() {{ {body} }}\n{CALL_FLAG}"));
     }
 }
+
+/// The value-losing binding sources: each binds a part of `source` only as
+/// unknown, so `source` is published. `{guard}` puts `flag` on the
+/// source-summary lane when non-empty.
+const UNKNOWN_SOURCE_SHAPES: &[(&str, &str)] = &[
+    ("", "const [h] = [{value}]; return h;"),
+    ("", "const [, h] = [noop, {value}]; return h;"),
+    (
+        "",
+        "const k = 'h'; const { [k]: h } = { h: {value} }; return h;",
+    ),
+    (
+        "function* gen() { yield {value}; }\n",
+        "for (const h of gen()) { return h; } return noop;",
+    ),
+    (
+        "function* gen() { yield {value}; }\n",
+        "return gen().next().value;",
+    ),
+    (
+        "function pick() { return arguments[0]; }\n",
+        "return pick({value});",
+    ),
+    (
+        "function pick() { for (const h of arguments) { return h; } return noop; }\n",
+        "return pick({value});",
+    ),
+    ("", "try { throw {value}; } catch (e) { return e; }"),
+    (
+        "function pick({ h }) { return h; }\n",
+        "return pick({ h: {value} });",
+    ),
+    (
+        "function pick([h]) { return h; }\n",
+        "return pick([{value}]);",
+    ),
+];
+
+fn unknown_source_definitions(helpers: &str, body: &str, guard: &str, value: &str) -> String {
+    format!(
+        "{}function flag() {{ {guard}{} }}\n{CALL_FLAG}",
+        helpers.replace("{value}", value),
+        body.replace("{value}", value)
+    )
+}
+
+/// Opposing control: an array element, a computed key, a generator's yield,
+/// `arguments`, a thrown value or a pattern parameter's part reaches its
+/// binding only as unknown, so the source is published and calling the
+/// binding reaches `second`, on either lane.
+#[test]
+fn a_value_reaching_a_binding_only_as_unknown_is_published() {
+    for (helpers, body) in UNKNOWN_SOURCE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let extra = unknown_source_extra(helpers);
+            assert_reader_split_diverges_with(
+                &unknown_source_definitions(helpers, body, guard, "second"),
+                &extra,
+            );
+        }
+    }
+}
+
+fn unknown_source_extra(helpers: &str) -> Vec<&'static str> {
+    ["gen", "pick"]
+        .into_iter()
+        .filter(|name| {
+            helpers.contains(&format!("function {name}"))
+                || helpers.contains(&format!("function* {name}"))
+        })
+        .collect()
+}
+
+/// Positive anchors: the same shapes carrying only the effect-free `first`
+/// keep the split, with the source's output.
+#[test]
+fn a_value_reaching_a_binding_only_as_unknown_without_effects_keeps_the_split() {
+    for (helpers, body) in UNKNOWN_SOURCE_SHAPES {
+        let fixture = with_reader_split(
+            &unknown_source_definitions(helpers, body, "if (first()) {} ", "first"),
+            &unknown_source_extra(helpers),
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}

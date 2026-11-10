@@ -11,7 +11,7 @@ use super::effect_coverage::{
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_call_identity_key, native_own_data_read_slots,
+    native_call_identity_key, native_own_data_read_slots, pattern_source,
 };
 use super::kernel::closure::{CapturePolicy, lexical_captures};
 use super::kernel::construct;
@@ -10211,9 +10211,39 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.escape_untracked_values(values);
             }
         }
-        for (parameter, values) in callable.params.iter().zip(args) {
+        // `arguments` reads every incoming value as unknown.
+        if callable.reads.iter().any(|id| id.0 == "arguments") {
+            for values in args {
+                self.escape_untracked_values(values);
+            }
+        }
+        for (index, parameter) in callable.params.iter().enumerate() {
             if parameter.binding.is_some() {
                 continue;
+            }
+            let mut values = args
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
+            if let Some(default) = &parameter.default
+                && values.contains(&AbstractValue::UNDEFINED)
+            {
+                values.remove(&AbstractValue::UNDEFINED);
+                values.extend(self.evaluate(default, env, env));
+            }
+            // Bind each pattern binding to its projection of the incoming
+            // value. A part the pattern or the projection loses to unknown
+            // is published with the whole value.
+            env.insert(pattern_source(), values.clone());
+            let mut loses_values = parameter.pattern_loses_values;
+            for (binding, projection) in &parameter.pattern_assignments {
+                let projected = self.evaluate(projection, env, env);
+                loses_values |= projected.contains(&AbstractValue::Value(Value::Top));
+                env.entry(binding.clone()).or_default().extend(projected);
+            }
+            env.remove(&pattern_source());
+            if loses_values {
+                self.escape_untracked_values(&values);
             }
             let untracked: Vec<&Id> = parameter
                 .bindings
@@ -10221,7 +10251,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .filter(|binding| self.inputs.untracked_locals.contains(*binding))
                 .collect();
             if !untracked.is_empty() {
-                self.escape_untracked_values(values);
+                self.escape_untracked_values(&values);
                 for binding in untracked {
                     env.entry(binding.clone()).or_default().extend(unknown());
                 }
@@ -10229,11 +10259,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    /// A loop head binds the iterated value's elements, which no assignment
-    /// records; publish what they can reach.
+    /// Values whose parts reach a binding only as unknown (an iterated
+    /// value's elements, a destructured value's parts, a thrown or yielded
+    /// value); publish what they can reach.
     #[inline(never)]
-    fn publish_iterated_values(&mut self, callable: &Callable, env: &Context) {
-        for iterated in &callable.iterated_values {
+    fn publish_sources(&mut self, callable: &Callable, env: &Context) {
+        for iterated in &callable.published_sources {
             let values = self.evaluate(iterated, env, env);
             self.escape_untracked_values(&values);
         }
@@ -10676,7 +10707,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             env.entry(id.clone()).or_default().extend(values);
         }
-        self.publish_iterated_values(callable, &env);
+        self.publish_sources(callable, &env);
         let mut outcome = Outcome {
             complete: true,
             ..Outcome::default()
