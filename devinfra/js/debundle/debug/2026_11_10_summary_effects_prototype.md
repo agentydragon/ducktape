@@ -575,6 +575,12 @@ scratch checkout; nothing in `e2e/` is changed here.
   `new` of a class with no constructor moved before a binding its methods
   write.
 
+Those 2 are not a gap in `tier0`. Where a binding may be assigned from, and
+whether a split would assign one through a read-only import, are placement
+obligations the pipeline checks separately from the order of statements; an
+effect verdict that accepts such an order is correct, and the pipeline still
+rejects the split.
+
 ## `points-to`: what convergence took
 
 A solver with per-object field nodes did not finish on one chunk. Getting a
