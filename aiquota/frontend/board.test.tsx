@@ -73,7 +73,7 @@ function sampleQuotas(): AllQuotasView {
         ],
         stale_since: null,
         stale_at: "2026-01-15T14:45:00Z",
-        status: "Included quota exhausted · paid credits available",
+        status: null,
         error_summary: "Authentication failed",
         error_detail: "401 invalid_token returned from the provider",
         display: {
@@ -94,9 +94,9 @@ function sampleQuotas(): AllQuotasView {
         },
         last_success: null,
         currently_over_plan: false,
-        extra_status: "active",
+        extra_status: "informational",
         monthly_extra_spend: { is_enabled: true, used_usd: 25.5, monthly_limit_usd: 100, utilization: 25.5 },
-        paid_credits_active: true,
+        paid_credits_active: false,
         burn: null,
         display_windows: [window],
         display_openai_platform_credits: null,
@@ -161,7 +161,6 @@ describe("QuotaBoard", () => {
 
   it("groups providers, renders normalized balances and grants, and keeps paid windows visible", () => {
     const quotas = sampleQuotas();
-    quotas.providers[0]!.display_windows[0]!.exhausted = true;
     render(quotas);
 
     expect(container.querySelector(".aiquota-board")?.hasAttribute("aria-live")).toBe(false);
@@ -170,7 +169,6 @@ describe("QuotaBoard", () => {
     expect(container.textContent).toContain("Meter: fill = quota used; tick = time elapsed.");
     expect(container.textContent).toContain("Forecasts use average usage since the window started.");
     expect(container.textContent).toContain("Paid credits");
-    expect(container.textContent).toContain("Included quota exhausted · paid credits available");
     expect(container.textContent).toContain("5h");
     expect(container.textContent).toContain("On pace");
     expect(container.textContent).toContain("Numeric pace: +10 pp");
@@ -194,7 +192,6 @@ describe("QuotaBoard", () => {
 
   it("updates only reset countdown and pending state as time advances without a new payload", () => {
     const quotas = sampleQuotas();
-    quotas.providers[0]!.display_windows[0]!.exhausted = true;
     render(quotas, Date.parse("2026-01-15T12:00:00Z"));
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain(
       "Resets in 2h 30m"
@@ -217,6 +214,7 @@ describe("QuotaBoard", () => {
     const quotas = sampleQuotas();
     const codex = quotas.providers[0]!;
     codex.display_windows[0]!.exhausted = true;
+    codex.paid_credits_active = true;
     codex.stale_at = "2026-01-15T12:10:00Z";
     codex.stale_since = null;
     codex.error_summary = null;
@@ -225,6 +223,8 @@ describe("QuotaBoard", () => {
       fetched_at: "2026-01-15T12:00:00Z",
       result: { kind: "success", windows: [], reset_credit_expiry_lookup_failed: false },
     };
+    render(quotas);
+    expect(container.textContent).toContain("Included quota exhausted · paid credits available");
     render(quotas, Date.parse("2026-01-15T12:11:00Z"));
 
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-badge-stale')?.textContent).toBe(
