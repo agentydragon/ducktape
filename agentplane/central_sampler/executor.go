@@ -46,6 +46,7 @@ type Executor struct {
 	processLocks         map[string]*sync.Mutex
 	rpcTimeout           time.Duration
 	initializeTimeout    time.Duration
+	reconnectTimeout     time.Duration
 	lifetime             context.Context
 	sessionStream        executorSessionStream
 	sessionCancel        context.CancelFunc
@@ -106,6 +107,7 @@ func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Sessio
 		environment: map[string]string{"AGENTPLANE_SESSION_ID": session.ID}, processLocks: map[string]*sync.Mutex{},
 		rpcTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
 		initializeTimeout: settings.ExecutorInitializeTimeout(),
+		reconnectTimeout:  settings.ExecutorReconnectTimeout(),
 		workspacePrepared: session.WorkspacePrepared,
 	}
 	state, err := store.ExecutionState(ctx, owner)
@@ -618,7 +620,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 	deadline := start.Add(time.Duration(yieldMS) * time.Millisecond)
 	for {
 		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
-		pageCtx, cancel := context.WithTimeout(ctx, time.Duration(waitMS+eRPCSlackMS)*time.Millisecond)
+		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(time.Duration(waitMS+eRPCSlackMS)*time.Millisecond))
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS, ObservedOutput: output})
 		cancel()
 		if rpcErr != nil {
@@ -707,7 +709,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, err
 		}
-		pageCtx, cancel := context.WithTimeout(ctx, timeout)
+		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(timeout))
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536, ObservedOutput: readOutput})
 		cancel()
 		if rpcErr != nil {

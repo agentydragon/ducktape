@@ -69,7 +69,11 @@ sending a process-termination request. Pinned Codex 0.166.0 keeps a detached nat
 to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
 durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure
-`gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
+`executor_reconnect_timeout_seconds` (120 seconds by default) to bound attempts to resume a
+retained native session during a Gateway outage, independently of the first-open and typed RPC
+timeouts. An outage longer than the exec-server's detached-session lifetime can return a definitive
+native loss response when Gateway recovers; the sampler then records a model notice before later work.
+Set `gateway_target` to `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
 it selects the Gateway replica holding that Runner's observation Lease. A load-balanced Gateway
 Service is unsuitable when there are multiple replicas. Fixed targets support single-process
 fixtures. Templates accept DNS-label executor names and only these two placeholders. A fixed

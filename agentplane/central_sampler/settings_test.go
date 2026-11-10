@@ -138,6 +138,25 @@ func TestExecutorInitializeTimeoutDefaultsIndependentlyAndCanBeConfigured(t *tes
 	}
 }
 
+func TestExecutorReconnectTimeoutDefaultsIndependentlyAndCanBeConfigured(t *testing.T) {
+	settings := fixtureSettings()
+	if got := settings.ExecutorReconnectTimeout(); got != 120*time.Second {
+		t.Fatalf("default executor reconnect timeout=%s, want 120s", got)
+	}
+	configured := 180
+	settings.ExecutorReconnectTimeoutSeconds = &configured
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := settings.ExecutorReconnectTimeout(); got != 180*time.Second {
+		t.Fatalf("configured executor reconnect timeout=%s, want 180s", got)
+	}
+	configured = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted a zero executor reconnect timeout")
+	}
+}
+
 func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
 		"missing connection":           {ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},

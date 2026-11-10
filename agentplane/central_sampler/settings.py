@@ -226,6 +226,12 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed for the executor OpenSession initialization handshake.",
     )
+    executor_reconnect_timeout_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Time allowed to resume a retained executor session during a connection outage.",
+    )
     shutdown_drain_seconds: int = Field(
         default=40, gt=0, description="Wait for active effects to settle before canceling them during shutdown."
     )
