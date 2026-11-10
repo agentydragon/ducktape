@@ -165,6 +165,7 @@ class RunnerGateway(Construct):
             field: checked_value(Settings, field, value)
             for field, value in {
                 "sandbox_namespace": namespace,
+                "policy_namespace": namespace,
                 "runner_token_file": _RUNNER_TOKEN_FILE,
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
@@ -418,6 +419,10 @@ class RunnerGateway(Construct):
                 ),
                 # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
                 RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
+                # One Role covers both reads because the Sandbox namespace is the policy namespace: a
+                # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
+                # `spec.identity` names one beside it (Sandbox namespace).
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],

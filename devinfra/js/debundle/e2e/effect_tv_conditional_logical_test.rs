@@ -540,3 +540,37 @@ fn a_parameter_default_runs_for_an_argument_that_may_be_undefined() {
         }
     }
 }
+
+const ITERATION_RESULT_READS: &[&str] = &[
+    "return [{value}].map((x) => x)[0];",
+    "return [{value}].filter(() => true)[0];",
+    "const items = [{value}]; return items.map((x) => x)[0];",
+];
+
+/// Opposing control: an iteration result the analysis cannot keep settled
+/// is read as unknown, and unknown alone reaches no unescaped callable. The
+/// read keeps the values the iteration stored, so calling the element read
+/// from a `map` or `filter` result reaches `second`, on either lane.
+#[test]
+fn a_read_of_an_unsettled_iteration_result_keeps_its_stored_values() {
+    for body in ITERATION_RESULT_READS {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges(&format!(
+                "function flag() {{ {guard}{} }}\n{CALL_FLAG}",
+                body.replace("{value}", "second")
+            ));
+        }
+    }
+}
+
+/// Positive anchors: the same reads reaching only the effect-free `first`
+/// keep the split.
+#[test]
+fn a_read_of_an_unsettled_iteration_result_without_effects_keeps_the_split() {
+    for body in ITERATION_RESULT_READS {
+        assert_reader_split_commutes(&format!(
+            "function flag() {{ if (first()) {{}} {} }}\n{CALL_FLAG}",
+            body.replace("{value}", "first")
+        ));
+    }
+}

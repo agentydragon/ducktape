@@ -532,6 +532,8 @@ ENV = Environment(
                         AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
                         AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
                         AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
+                        AttributionField(key="agentplane.identity", source=VerifiedClaim.IDENTITY),
+                        AttributionField(key="agentplane.identity_uid", source=VerifiedClaim.IDENTITY_UID),
                     ],
                 )
             ],
@@ -548,6 +550,13 @@ ENV = Environment(
                 ),
                 AttributionField(
                     key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=VerifiedClaim.POD_UID
+                ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.identity", source=VerifiedClaim.IDENTITY
+                ),
+                AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.identity_uid",
+                    source=VerifiedClaim.IDENTITY_UID,
                 ),
             ],
         ),

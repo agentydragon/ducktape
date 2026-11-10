@@ -34,6 +34,30 @@ Backend tokens for LLM ingress and Action Service retain the `agentplane-egress`
 longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
 name stays relevant; any rename must coordinate those verifiers and their projected tokens.
 
+## Sandboxes and Action boxes
+
+### `SANDBOX_BOX_CONVERGENCE` — Sandboxes and Action boxes as one object type
+
+**Direction, not scheduled (operator, 2026-11-10).** Both offer "execute something here", in
+divergent ways. The shared shape: a workload acting as an Identity, a `WorkloadCredential`, SVID
+egress, exec, a lifetime, and access grants. Today they diverge:
+
+- Identity reference: a Sandbox by name (`spec.identity`), a box by name and UID.
+- Access: a Sandbox's acting is implied for its bound Identity and its lifecycle needs grants; a box
+  is reached through its `caller-identity` labels, and its acting Identity always equals its
+  requester.
+- Lifecycle: the Sandbox Controller versus Action Service records; only Sandboxes suspend and resume.
+- Credential ownership: Sandbox-controlled versus `NoController`.
+- Harnesses: only Sandboxes run them.
+
+Guideline: new identity and access decisions on either side move toward the shared shape where it
+is cheap. Boxes and Sandboxes converge on the plan's
+[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting in the workload is
+implied for its bound Identity, so box access keyed on the box's acting Identity is correct;
+lifecycle (create, dispose, rebind) needs an explicit grant. A box's acting Identity is its
+requester today, so this changes no behaviour. Linked from `ACTION_BOX_IDLE_REAPER` and
+`SANDBOX_IDENTITY_SPEC` in the [DAG](task_dag.md).
+
 ## Workload credentials
 
 Deferred by the operator on 2026-11-09 with the proxy bearer hop removal (#15247)
@@ -317,6 +341,17 @@ records what was actually exercised.
 ## Runtime redesign and offline acceptance
 
 Requires a fresh operator product/architecture decision. These alternatives are not prerequisites for service-owned input metadata or ordinary session history.
+
+### `POD_EXECUTOR_COMPANION_REVIEW` — consider removing the executor companion
+
+Operator requested, 2026-11-10; revisit when prioritizing Pod executor lifecycle simplification.
+Compare the current PID 1 companion with alternatives such as running Codex exec-server as PID 1
+and using Kubernetes container replacement. Determine how each detects owner loss, triggers and
+proves cleanup despite a fast Runtime restart or stale status, gates executor access, reaps orphaned
+children, and supplies the claim's environment. Compare privileges, control ownership and operational
+cost. Preserve separate executor resource limits and the [execution ownership contract](../env/runtime/execution/SPEC.md#ownership-and-admission),
+including fencing escaped descendants before a successor and not replaying uncertain effects. This
+is a design investigation; it does not select removal or block current work.
 
 ### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
 

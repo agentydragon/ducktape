@@ -520,6 +520,12 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, err
 	}
+	// An Identity creates no Session, not even on a Sandbox acting as it: creating a Session is
+	// lifecycle control, which needs an explicit grant that does not exist yet. How a Session asks for a sub-Session is
+	// SESSION_SUBAGENT_DELEGATION (agentplane/plans/task_dag.md).
+	if _, ok := caller.(IdentityCaller); ok {
+		return nil, status.Error(codes.PermissionDenied, "an Identity caller cannot create a Session")
+	}
 	// Recover an accepted request without consulting current owner availability. This
 	// path only reads the receipt; it never queues, wakes, binds or materializes work.
 	row, err := s.Store.GetSession(ctx, request.GetSessionId())
@@ -581,11 +587,6 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
 		if !c.Privileged && (!accountFound || account == nil || !sameServiceAccountIdentity(account, c.ServiceAccountIdentity)) {
-			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
-		}
-	case IdentityCaller:
-		// An Identity caller opens a Session only on a Sandbox naming its exact Identity.
-		if identity == nil || !sameIdentity(identity, c.Identity) {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
 	}
