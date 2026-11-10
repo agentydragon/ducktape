@@ -169,7 +169,11 @@ func NewIdentityWorkload(t *testing.T, api *kubeapiserver.Server, namespace, nam
 		Identity: identity,
 		Subject: auth.IdentityPrincipal{
 			Identity: auth.Identity{Name: identity.Name, UID: string(identity.UID)},
-			PodName:  workload.Principal.PodName, PodUID: workload.Principal.PodUID,
+			Workload: auth.Workload{Namespace: namespace, Name: name, Owner: auth.ControllerOwner{
+				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
+				Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID),
+			}},
+			PodName: workload.Principal.PodName, PodUID: workload.Principal.PodUID,
 		},
 	}
 }
