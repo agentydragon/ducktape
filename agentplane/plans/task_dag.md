@@ -146,7 +146,8 @@ runs remain authorized; broad disruption exercises remain waived. Revisit reliab
 normal use exposes a concrete regression. First such regression, 2026-11-10: three staging rollouts in four minutes
 (#15439, #15440) cost every central Session its exec-server session and wedged one on a lost
 JavaScript host; fixes #15449 (drain logs), #15451 (drain keeps serving live work) and the automatic
-settlement of host loss in flight; the executor's survival across control-plane rolls is
+settlement of host loss (#15455) in flight; the remaining operator-only blocks are
+`SAMPLER_INTENT_LEASES`; the executor's survival across control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
 | Lane          | Next reviewable outcome                                                                                            | Prerequisite / stopping point                                     |
@@ -1235,6 +1236,30 @@ provider-visible inline tools from nested code-mode tools and the existing Actio
 Exit when selected: tool additions/removals reach model input and runtime consistently, retain the
 cached prefix where supported, survive restart, and preserve execution authorization plus
 thinking/compaction validity. No worker or priority is assigned.
+
+### `SAMPLER_INTENT_LEASES` — sampling attempts are leased; a lapsed lease is reconciled, never a block
+
+**Decision; operator direction, 2026-11-10.** The sampler's owner lease (claim, generation, owner
+token, heartbeat; [SPEC](../central_sampler/SPEC.md#runtime-and-effects)) answers "is anyone holding
+this Session?", and `sampler_intent` records each effect in flight. Nothing answers "is anyone
+sampling this turn?": a block is a terminal decision the owner writes, so a Session whose owner is
+alive but could not continue (a provider stream failure mid-turn, an unconfirmed interrupt) waits
+for a human, even when nothing holds it and a retry would be safe. The automatic settlement in
+[#15455](https://github.com/agentydragon/ducktape/pull/15455) covers only a lost owner or host.
+
+Target: each sampling attempt takes a lease on its intent ("I am sampling this turn, until T"). The
+owner renews while the provider streams or the cell runs; on failure it releases with a reason and a
+backoff, never a terminal block; a draining owner stops renewing. One reconciliation rule, "an open
+turn whose intent lease has lapsed", reclaims by kind: a provider sample with nothing committed is
+resampled; an executor operation is settled as unknown outcome and never replayed; a lost cell is
+abandoned with the model-visible notice. "Operator-only" survives as a visible exhausted retry
+budget with its reason, so a Session never silently waits on a person. The drain's special handling
+of live work and #15455's work scan become instances of this rule. Keep the fenced owner writes and
+the no-replay rule for uncertain external effects.
+
+**Exit:** a reviewed lease and reconciliation contract (lease duration, renewal, backoff and budget
+per intent kind, what the app shows), then the implementation replacing the block paths in
+`central_sampler/store.go` and `runtime.go`.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — gated native Claude remote tools
 
