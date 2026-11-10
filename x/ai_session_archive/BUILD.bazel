@@ -1,5 +1,8 @@
+# gazelle:resolve py x.ai_session_archive.ingest_test_image //x/ai_session_archive:ingest_test_image
+
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -162,6 +165,7 @@ py_library(
     deps = [
         ":database",
         ":ingest",
+        ":migrate_cli",
         ":models",
         ":restic",
         "@pypi//pyyaml",
@@ -199,6 +203,31 @@ oci_image(
     tars = [":ingest_image_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "ingest_test_image",
+    testonly = True,
+    image = ":ingest_image",
+)
+
+py_test(
+    name = "test_ingest_migrate_image",
+    size = "medium",
+    srcs = ["test_ingest_migrate_image.py"],
+    data = ["@crane"],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//devinfra/oci",
+        "//util/testing:container_logs",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "//x/ai_session_archive:ingest_test_image",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
 )
 
 py_library(
