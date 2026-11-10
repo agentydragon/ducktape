@@ -13,7 +13,7 @@ import (
 )
 
 // Executor runs the sandbox Actions in this process, for the caller the request names: as its ServiceAccount, or
-// owned by its Identity. That identity comes from
+// as its Identity. That identity comes from
 // ExecutionRequest.Caller, which the authenticated admission path sets and no argument can reach: a surface that
 // took the account as an argument would instead mean "stamp a Pod as any account you can name".
 //
@@ -54,11 +54,6 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 		}
 		caller = Account(recorded.Account)
 	case store.IdentityCaller:
-		if e.inventory.policyNamespace != e.binding.Namespace {
-			// The Identity owns its boxes' records, and an owner reference cannot cross namespaces.
-			return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL, fmt.Sprintf("an Identity's sandboxes live in the policy namespace "+
-				"%q, and this group's live in %q", e.inventory.policyNamespace, e.binding.Namespace)), nil
-		}
 		caller = Identity(recorded.Identity)
 	default:
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN, "this request's caller is of a kind this release does not know"), nil
@@ -68,7 +63,7 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 	})
 }
 
-// attempt is one attempt at request from a caller of the group's namespace. A refusal the caller can act on is a
+// attempt is one attempt at request from a caller the group can serve. A refusal the caller can act on is a
 // failed Execution with its reason; only an outcome this cannot characterise is an error.
 func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest, caller Caller) (store.ExecutionOutcome, error) {
 	outcome, err := e.dispatch(ctx, request, caller)

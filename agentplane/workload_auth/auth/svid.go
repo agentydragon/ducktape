@@ -118,7 +118,7 @@ func (r *SVIDResolver) ResolveVerifiedLeaf(ctx context.Context, leaf *x509.Certi
 
 // WorkloadOf is the provenance a resolved workload's record carries.
 func WorkloadOf(peer resolver.Peer) Workload {
-	workload := Workload{Namespace: peer.Workload.Namespace, Name: peer.Workload.Name, Owner: StandingWorkload{}}
+	workload := Workload{Namespace: peer.Workload.Namespace, Name: peer.Workload.Name, Owner: NoController{}}
 	if owner := peer.Owner; owner != nil {
 		workload.Owner = ControllerOwner{APIVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, UID: string(owner.UID)}
 	}

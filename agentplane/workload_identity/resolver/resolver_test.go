@@ -209,7 +209,8 @@ func TestAnIdentitySubjectResolvesToTheLiveIdentity(t *testing.T) {
 }
 
 // Deleting an Identity revokes every credential naming it, and a same-named successor is another
-// incarnation.
+// incarnation. The record is ownerless and bound, as an Identity's sandbox box's is: nothing owns
+// it, so the Identity's deletion revokes it without deleting it.
 func TestADeletedIdentityRevokesItsCredentials(t *testing.T) {
 	ctx := t.Context()
 	ca := transporttesting.NewCA(t)
@@ -223,7 +224,7 @@ func TestADeletedIdentityRevokesItsCredentials(t *testing.T) {
 	}
 	spec := identityPodSpec(pod, identity.UID)
 	spec.Subject.Identity.Name = identity.Name
-	record := issue(t, ca, servedNamespace, "test-deleted-identity", sandboxOwner("test-deleted-identity"), spec, &workloadapi.Binding{PodUID: pod}, credentialIDs[0])
+	record := issue(t, ca, servedNamespace, "test-deleted-identity", nil, spec, &workloadapi.Binding{PodUID: pod}, credentialIDs[0])
 	resolves := newResolver(t, objects)
 	if _, err := resolves.Resolve(ctx, record.leaf); err != nil {
 		t.Fatal(err)

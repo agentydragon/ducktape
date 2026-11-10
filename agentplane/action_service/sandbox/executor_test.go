@@ -8,7 +8,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/workload_identity/testing"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -121,34 +120,19 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	}
 }
 
-// An Identity owns its boxes' records, and an owner reference cannot cross namespaces, so only a group of the policy
-// namespace gives an Identity a box. A caller of a kind this release does not know is given none.
-func TestAnIdentityOrUnknownCallerTheGroupCannotServeIsRefused(t *testing.T) {
+// A caller of a kind this release does not know is given no box.
+func TestAnUnknownCallerIsRefused(t *testing.T) {
 	f := newFixture(t, nil)
-	credentials, err := requester.New(objects, objects)
+	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
 		t.Fatal(err)
 	}
-	elsewhere := NewInventory(f.binding, f.binding.Namespace+"-policy", server.Clientset, f.exec.Exec, credentials, objects)
-	for name, test := range map[string]struct {
-		inventory *Inventory
-		caller    store.Caller
-		kind      action_servicepb.ExecutionErrorKind
-	}{
-		"an Identity of another namespace": {elsewhere, store.IdentityCaller{Identity: store.Identity{Name: "test-agent", UID: uuid.NewString()}}, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_LOCAL},
-		"an unknown caller":                {f.inventory(), store.UnknownCaller{}, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN},
-	} {
-		executor, err := NewExecutor(f.binding, test.inventory)
-		if err != nil {
-			t.Fatal(err)
-		}
-		outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
-			RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
-			Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: test.caller,
-		}, nil)
-		if kind := (attempted{t, outcome, err}).failure(); kind != test.kind {
-			t.Errorf("%s: kind = %v, want %v", name, kind, test.kind)
-		}
+	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
+		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
+		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: store.UnknownCaller{},
+	}, nil)
+	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
+		t.Errorf("kind = %v, want caller_unknown", kind)
 	}
 	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 0 {
