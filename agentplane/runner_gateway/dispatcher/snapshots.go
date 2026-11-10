@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/protobuf/proto"
@@ -95,6 +96,9 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 	// A name without an incarnation UID is not evidence of Session ownership.
 	if row.ExecutionPrincipal != nil && row.ExecutionPrincipal.GetAccount().GetNamespace() != "" && row.ExecutionPrincipal.GetAccount().GetName() != "" && row.ExecutionPrincipal.GetUid() != "" {
 		result.ExecutionIdentity = proto.Clone(row.ExecutionPrincipal).(*ServiceAccountIdentity)
+	}
+	if row.ExecutionIdentity != nil {
+		result.Identity = proto.Clone(row.ExecutionIdentity).(*identitypb.Identity)
 	}
 	result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_AVAILABLE
 	if row.EnvironmentDeletedAt != nil {
