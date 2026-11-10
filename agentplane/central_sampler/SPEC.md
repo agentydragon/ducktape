@@ -388,8 +388,9 @@ opens. A host restart within one Pod rotates that generation. Before the next mo
 owner compares it under the lease fence. If it differs, or an older owner generation left an intent
 or live cell behind without blocking the Session (that generation is fenced and can never settle
 them), the sampler settles the lost work in one transaction and continues; it never blocks the
-Session on it. A block an owner recorded on the host still serving the Session is a reviewed
-decision and is left alone until that host is replaced or an operator recovers it. Every unresolved
+Session on it. A block an owner recorded on the host still serving the Session is left alone until
+that host is replaced or an operator recovers it, until `SAMPLER_INTENT_LEASES` (DAG section 5)
+replaces such blocks with leased attempts and backoff. Every unresolved
 intent is abandoned as an unknown remote outcome with no automatic replay: nested tool and executor
 intents, the cell intent of the running cell, and a pending provider sampling or compaction
 intent, whose partial stream is not committed as model output (`ConversationReconciled` marks its
@@ -503,7 +504,8 @@ Session whose recorded JavaScript host is gone is selected by the next runtime's
 settled and unblocked as described above without an operator. A Session blocked on the host that
 still serves it (an uncommitted provider stream or compaction, an interrupt whose cleanup could not
 confirm every handle) waits: it settles the same way once that host is replaced, or an operator
-recovers it earlier. An authenticated caller for the same account can
+recovers it earlier, until `SAMPLER_INTENT_LEASES` (DAG section 5) replaces such blocks with leased
+attempts and backoff. An authenticated caller for the same account can
 call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
 to abandon a blocked cell/runtime or provider-sampling failure. Its transaction locks the conversation
 before its session and requires an expired owner lease and an exact cursor match. It supports

@@ -635,7 +635,8 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		}
 		// A block an owner recorded on the host that still serves the Session is a reviewed
 		// decision (an uncommitted provider stream, an interrupt with unconfirmed handles); only
-		// a lost host or lost owner settles it without an operator.
+		// a lost host or lost owner settles it without an operator. See the
+		// TODO(SAMPLER_INTENT_LEASES) in settleFailure for the design that retires that block.
 		if !hostLost && session.Blocked {
 			return nil
 		}
@@ -2926,6 +2927,10 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	}
 	var knownFailure *protocol.KnownFailureError
 	known := errors.As(failure, &knownFailure) && knownFailure != nil
+	// TODO(SAMPLER_INTENT_LEASES): this terminal block (owner alive, provider failure or
+	// unconfirmed interrupt cleanup) goes away once sampling attempts are leased and a lapsed
+	// lease is reconciled with backoff (DAG section 5). Until then only a lost host or lost owner
+	// settles it automatically (ReconcileCodeHostLoss); otherwise RecoverSession.
 	session.Blocked = !known || conversation.Pending != nil || unresolved || liveCell || liveProcess
 	session.ActiveCommand = nil
 	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold
