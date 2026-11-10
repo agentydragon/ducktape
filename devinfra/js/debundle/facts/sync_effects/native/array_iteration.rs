@@ -18,6 +18,7 @@ use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
 use super::super::kernel::frame::{
     LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue,
 };
+use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{AbstractValue, CallSite, CapturedContext, HeapAddress, Values};
 use super::operation::{self, IterationResultArray};
 use crate::analysis_inputs::NativeIntrinsic;
@@ -28,6 +29,7 @@ use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::IterationResult;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
+use std::collections::BTreeSet;
 use swc_common::Span;
 
 /// The callback a row may invoke: one local callable with no live captures.
@@ -181,6 +183,21 @@ impl LocalExecutionContext<'_, '_, '_> {
         }
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&dependencies);
+        // Element records the callback may read at the current prefix:
+        // settled, with a source record shape, checked before any callback.
+        let element_records: BTreeSet<u32> = slots
+            .iter()
+            .flatten()
+            .filter_map(|value| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Object, record))
+                    if self.object_properties_are_settled(*record)
+                        && self.ordinary_record_shape(*record).is_some() =>
+                {
+                    Some(*record)
+                }
+                _ => None,
+            })
+            .collect();
         let mut accumulator =
             (row.result == IterationResult::Accumulated).then(|| arguments[1].values.clone());
         let mut mapped = Vec::with_capacity(slots.len());
@@ -195,9 +212,18 @@ impl LocalExecutionContext<'_, '_, '_> {
                 operands.insert(0, accumulator.clone());
             }
             let prerequisites = self.executor.boxed_settled_prefix_dependencies();
+            // Only the innermost row's records are answered for while its
+            // callback runs, on every path of it: `invoke` returns after the
+            // callback's family is joined, and nothing returns between the
+            // replacement and the restore.
+            let outer_records = std::mem::replace(
+                &mut self.executor.state.iteration_element_records,
+                element_records.clone(),
+            );
             let mut nested =
                 self.executor
                     .invoke(callback.key, operands, callback.captured.clone(), false);
+            self.executor.state.iteration_element_records = outer_records;
             let returned = nested.returns.clone();
             let complete = nested.complete
                 && !nested.unknown_call

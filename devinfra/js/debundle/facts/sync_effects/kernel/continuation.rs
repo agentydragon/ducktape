@@ -136,7 +136,7 @@ enum Step {
     },
     StoreField {
         receivers: Values,
-        module_prefix: bool,
+        prefix_tracked: bool,
         property: String,
         span: Span,
     },
@@ -826,7 +826,7 @@ impl LocalContinuation {
             }
             Step::StoreField {
                 receivers,
-                module_prefix,
+                prefix_tracked,
                 property,
                 span,
             } => {
@@ -839,7 +839,7 @@ impl LocalContinuation {
                     context,
                     &mut self.frame,
                     &receivers,
-                    module_prefix,
+                    prefix_tracked,
                     &property,
                     &selected.values,
                     span,
@@ -1167,13 +1167,13 @@ impl LocalContinuation {
                     self.frame.stop_normal_path();
                     return Ok(None);
                 }
-                // Capture the applicable module-prefix lane alongside the LHS
+                // Capture the applicable prefix-tracked lane alongside the LHS
                 // reference. The RHS may rebind the source cell, but JavaScript
                 // has already evaluated the original receiver value.
-                let module_prefix = context.module_prefix_receiver(&receiver, &receivers);
+                let prefix_tracked = context.prefix_tracked_receiver(&receiver, &receivers);
                 self.steps.push(Step::StoreField {
                     receivers,
-                    module_prefix,
+                    prefix_tracked,
                     property,
                     span,
                 });
@@ -1526,8 +1526,8 @@ fn read_field(
     property: &str,
     span: Span,
 ) -> Result<LocalValueResult, RemainderDisposition> {
-    let module_prefix = context.module_prefix_receiver(receiver, receivers);
-    let slot = if module_prefix {
+    let prefix_tracked = context.prefix_tracked_receiver(receiver, receivers);
+    let slot = if prefix_tracked {
         own_data_transfer::resolve_slot(
             context,
             receivers,
@@ -1548,7 +1548,7 @@ fn read_field(
             // prototype lookup, global or host operation; its one heap
             // effect is the slot cell recorded above.
             let mut effects = EffectCoverageFragment::no_effects();
-            if module_prefix {
+            if prefix_tracked {
                 effects.depend_on(selection_dependencies.as_ref());
             }
             Ok(LocalValueResult {
@@ -1605,12 +1605,12 @@ fn store_field(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     receivers: &Values,
-    module_prefix: bool,
+    prefix_tracked: bool,
     property: &str,
     values: &Values,
     span: Span,
 ) -> Result<(), RemainderDisposition> {
-    let slot = if module_prefix {
+    let slot = if prefix_tracked {
         own_data_transfer::resolve_writable_slot(context, receivers, property)
     } else {
         own_data_field(context, receivers, property, frame).ok()
@@ -1833,7 +1833,7 @@ fn evaluated_callee(
                 });
             }
             frame.inputs.extend(receivers.iter().cloned());
-            let module_prefix = context.module_prefix_receiver(receiver, &receivers);
+            let prefix_tracked = context.prefix_tracked_receiver(receiver, &receivers);
             let mut array_method = None;
             let result = if let Some((selection, effects)) =
                 context.array_method_callee(&receivers, property)
@@ -1847,7 +1847,7 @@ fn evaluated_callee(
             } else {
                 read_field(context, frame, receiver, &receivers, property, *member_span)?
             };
-            let selection_dependencies = module_prefix
+            let selection_dependencies = prefix_tracked
                 .then(|| result.effects.lexical_selection_dependencies())
                 .flatten();
             // Selection/GetValue is an executed lexical operation and

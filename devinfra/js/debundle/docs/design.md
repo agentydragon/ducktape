@@ -4007,6 +4007,18 @@ unknown, so it seals the statement but never a lexical binding-effect receipt.
 The rebind is the owner's syntactic write of the binding's cell, the cell its
 readers record.
 
+**A covered own-data read needs a prefix-tracked receiver.**
+`BindingContext::prefix_tracked_receiver` answers whether an evaluated
+receiver is an object the current prefix tracks: an initialized,
+non-imported module binding's value, or an element record of the innermost
+active iteration row, which checked it settled and source-shaped before its
+first callback. Its reads resolve against the current `World` at each read
+(`resolve_slot` with `CurrentPrefix`) and depend on the current
+prerequisites; every other receiver needs fresh-local ownership. A root over
+record elements is admitted only when its callback reads primitive own data
+fields of the element and stores, invokes and imports nothing
+(`roots/operands.rs`, `root_array_iteration`).
+
 **Stores are mutated, observations are returned.** Heap, lexical cells,
 object surface and descriptors are mutated in place through `&mut World`; a
 missed store write shows up as a wrong value. Effects, completion, touched

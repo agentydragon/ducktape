@@ -1117,6 +1117,10 @@ pub(super) struct ExecutionState {
     /// the per-invocation non-assumed premise subset.
     pub(super) statement_invoked_callables: BTreeSet<u32>,
     pub(super) array_iteration_depth: usize,
+    /// Element records of the kernel iteration rows whose callbacks are
+    /// running: the row checked each one settled and source-shaped before
+    /// its first callback, so a callback reads them at the current prefix.
+    pub(super) iteration_element_records: BTreeSet<u32>,
     array_iteration_protected_objects: BTreeSet<u32>,
     pub(super) array_iteration_unsupported: bool,
     invocation_depth: usize,
@@ -1417,6 +1421,7 @@ impl ExecutionState {
             current_top_owner: _,
             checking_record_factory_contract: _,
             array_iteration_depth: _,
+            iteration_element_records: _,
             invocation_depth: _,
             active: _,
             assumption: _,
@@ -1535,6 +1540,7 @@ impl Executor<'_, '_> {
             checking_record_factory_contract: _,
             prior_effect_owners: _,
             array_iteration_depth: _,
+            iteration_element_records: _,
             invocation_depth: _,
             active: _,
             assumption: _,
@@ -12594,6 +12600,7 @@ pub(crate) fn annotate_synchronous_calls(
         statement_executed_owners: BTreeSet::new(),
         statement_invoked_callables: BTreeSet::new(),
         array_iteration_depth: 0,
+        iteration_element_records: BTreeSet::new(),
         array_iteration_protected_objects: BTreeSet::new(),
         array_iteration_unsupported: false,
         invocation_depth: 0,
