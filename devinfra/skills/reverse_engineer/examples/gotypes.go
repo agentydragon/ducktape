@@ -4,10 +4,12 @@
 // Why this works when symbols are gone: the Go runtime needs type metadata at
 // run time for interface dispatch, type assertions, reflection and map hashing,
 // so the linker cannot drop it and garble cannot rewrite it into nothing.
-// `.typelink` lists the reachable named types; each entry points at an
-// `abi.Type` that we expand recursively. Field *names* are garbled along with
-// everything else, but two things survive verbatim and carry most of the
-// signal:
+// Before Go 1.27, `.typelink` lists reachable named types; each entry points
+// at an `abi.Type` that we expand recursively. Go 1.27 replaces `.typelink`
+// with a contiguous descriptor range in `.go.type`, bounded by
+// `moduledata.types` and `moduledata.typedesclen`. Field *names* are garbled
+// along with everything else, but two things survive verbatim and carry most
+// of the signal:
 //
 //   - **struct tags**, because `encoding/json` reads them reflectively at run
 //     time — so `json:"session_ingress_token"` is intact even under
@@ -23,10 +25,10 @@
 //	gotypes -filter Config ./binary       # only types whose name contains Config
 //	gotypes -all-kinds ./binary           # non-struct named types too
 //
-// If output is empty or names look like garbage, the types base is wrong: it
-// defaults to `.rodata`'s address, which is right for most builds, but the
-// authoritative value is `moduledata.types`. Override it with -types-base
-// (and optionally -etypes to bound the walk).
+// On pre-Go 1.27 binaries, the types base defaults to an inferred address near
+// `.rodata`; the authoritative value is `moduledata.types`. Override it with
+// -types-base (and optionally -etypes to bound the walk). Go 1.27 binaries
+// read the descriptor range directly from `.go.module`.
 package main
 
 import (
@@ -378,11 +380,11 @@ func run(path, filter string, allKinds bool, typesBase, etypes uint64) error {
 		if err != nil {
 			return err
 		}
-		rodata := f.Section(".rodata")
-		if rodata == nil {
-			return fmt.Errorf("no .rodata section for .typelink; pass -types-base explicitly")
-		}
 		if typesBase == 0 {
+			rodata := f.Section(".rodata")
+			if rodata == nil {
+				return fmt.Errorf("no .rodata section for .typelink; pass -types-base explicitly")
+			}
 			typesBase, err = detectTypesBase(f, raw, tld, rodata.Addr)
 			if err != nil {
 				return err

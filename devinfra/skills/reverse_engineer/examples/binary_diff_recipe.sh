@@ -36,6 +36,14 @@ assert_eq() {
   echo "  ASSERT OK: $label = '$got'"
 }
 
+assert_neq() {
+  local label="$1" got="$2" unexpected="$3"
+  if [ "$got" = "$unexpected" ]; then
+    fail "$label: unexpectedly got '$unexpected'"
+  fi
+  echo "  ASSERT OK: $label differs from '$unexpected'"
+}
+
 # string_vma BINARY STRING
 #   stdout: hex VMA; stderr: step trace
 string_vma() {
@@ -114,12 +122,14 @@ echo "Locating '$S1':"
 fn1_v1=$(fn_for_string v1_plain "$S1")
 assert_eq "plain function for '$S1'" "$fn1_v1" "main.connectToServer"
 fn1_v2=$(fn_for_string v2_garbled "$S1")
+assert_neq "garbled function for '$S1'" "$fn1_v2" "main.connectToServer"
 echo "  → $fn1_v2"
 S2="failed to read config file"
 echo "Locating '$S2':"
 fn2_v1=$(fn_for_string v1_plain "$S2")
 assert_eq "plain function for '$S2'" "$fn2_v1" "main.loadConfig"
 fn2_v2=$(fn_for_string v2_garbled "$S2")
+assert_neq "garbled function for '$S2'" "$fn2_v2" "main.loadConfig"
 echo "  → $fn2_v2"
 [ "$fn1_v2" != "$fn2_v2" ] \
   || fail "connectToServer and loadConfig garbled to same name ($fn1_v2)"
@@ -131,6 +141,7 @@ S_NEW="invalid port: must be between 1 and 65535"
 echo "'$S_NEW': absent from v1 (validateConfig only exists in v2)"
 echo "Locating '$S_NEW' in v2_garbled:"
 fn_new=$(fn_for_string v2_garbled "$S_NEW")
+assert_neq "garbled function for '$S_NEW'" "$fn_new" "main.validateConfig"
 echo "  → $fn_new"
 [ "$fn_new" != "$fn1_v2" ] \
   || fail "validateConfig collides with connectToServer garbled name"
