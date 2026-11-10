@@ -53,9 +53,10 @@ func (s *residentSession) signal() {
 	}
 }
 
-func NewRuntime(store *Store, settings Settings) *Runtime {
+// NewRuntime takes the shared Code Mode host it attaches logical sessions to and shuts down.
+func NewRuntime(store *Store, settings Settings, codeHost *CodeModeHost) *Runtime {
 	return &Runtime{
-		store: store, settings: settings, claimLease: store.Claim, releaseLease: store.Release, newExecutor: NewExecutor,
+		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: NewExecutor,
 		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
 		changed: make(chan struct{}, 1), draining: make(chan struct{}),
 	}
@@ -84,9 +85,6 @@ func (r *Runtime) Run(ctx context.Context, work <-chan struct{}) error {
 	// A service shutdown stops new work immediately, but an already dispatched effect must
 	// retain its context long enough to reach a durable result or the drain deadline.
 	r.runCtx, r.cancel = context.WithCancel(context.WithoutCancel(ctx))
-	if r.codeHost == nil { // tests attach a fake host before Run
-		r.codeHost = NewCodeModeHost(context.Background(), r.settings, r.store)
-	}
 	codeHost := r.codeHost
 	r.mu.Unlock()
 

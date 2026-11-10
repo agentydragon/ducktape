@@ -43,6 +43,13 @@ func startRuntimeForTest(t *testing.T, runtime *Runtime) (context.CancelFunc, <-
 	}
 }
 
+// fakeCodeHost is a Code Mode host that never starts a real process.
+func fakeCodeHost(t *testing.T) *CodeModeHost {
+	t.Helper()
+	manager, _ := newFakeCodeModeManager(t)
+	return manager
+}
+
 func assertRuntimeWaitsForGate(t *testing.T, done <-chan error, description string) {
 	t.Helper()
 	select {
@@ -67,7 +74,7 @@ func waitRuntimeDone(t *testing.T, done <-chan error) {
 func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60})
+	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan Owner, 1)
 	allowClaimReturn := make(chan struct{})
 	runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (Owner, error) {
@@ -110,7 +117,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
-	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60})
+	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan struct{}, 1)
 	runtime.claimLease = func(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
 		owner, err := store.Claim(ctx, conversationID, duration)
@@ -175,7 +182,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 }
 
 func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60})
+	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 2
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -198,7 +205,7 @@ func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) 
 }
 
 func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60})
+	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 1
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -314,10 +321,9 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 			ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""},
 		}},
 	}
-	f.runtime = NewRuntime(store, settings)
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
-	f.runtime.codeHost = manager
+	f.runtime = NewRuntime(store, settings, manager)
 	f.peers = peers
 	f.runtime.newExecutor = func(_ context.Context, store *Store, owner Owner, _ *Session, _ Settings) (*Executor, func() error, error) {
 		executor := newFakeExecutor(t, store, owner, client)
