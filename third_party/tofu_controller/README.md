@@ -24,8 +24,9 @@ both pins together in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.
 same change, add `--feature-gates=ExternalArtifact=true` to the controller Deployment through
 the HelmRelease post-renderer in `cluster/cdk8s/tofu_controller_release.py`. The pinned chart
 does not expose this flag, upstream defaults it to false, and the current fork does not accept
-it. Verify a Terraform reconciliation and its runner after Flux applies the change. The pins
-are deliberately outside image automation while this pair is staged.
+it. Verify a Terraform reconciliation and its runner after Flux applies the change. Keep the
+pins manual until image automation can update the pair together; independent policies can
+publish mismatched protocols during future upgrades too.
 
 Drain in-flight reconciliations and confirm old runner pods are gone before activating the new
 controller: a running runner with the current TLS secret can otherwise be reused across the
