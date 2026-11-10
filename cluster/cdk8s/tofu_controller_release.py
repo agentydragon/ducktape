@@ -6,7 +6,7 @@ The controller image is ours, built from the upstream commit pinned by
 source, so we install that CRD instead of the chart's (the HelmRelease skips CRDs), and a
 post-renderer grants the chart's manager ClusterRole read access to ExternalArtifacts. The
 runner pods' image is ours too (`cluster/tf_runner`: upstream's runner with every provider
-baked in). `PINS_DIR` sets both images in the HelmRelease from the image policies below.
+baked in). `PINS_DIR` sets both images in the HelmRelease.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
