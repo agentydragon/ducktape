@@ -501,3 +501,22 @@ fn a_value_reaching_a_binding_only_as_unknown_without_effects_keeps_the_split() 
         assert_preserved_entry_output(&fixture, "0 0\n");
     }
 }
+
+/// Opposing control: the same value-losing destructuring at the top level
+/// publishes its source when its owner runs.
+#[test]
+fn a_top_level_value_reaching_a_binding_only_as_unknown_is_published() {
+    for (declaration, extra) in [
+        ("const [h] = [second];", &["h"][..]),
+        ("const [, h] = [noop, second];", &["h"][..]),
+        (
+            "const k = 'h';\nconst { [k]: h } = { h: second };",
+            &["k", "h"][..],
+        ),
+    ] {
+        assert_reader_split_diverges_with(
+            &format!("{declaration}\nfunction flag() {{ return h; }}\n{CALL_FLAG}"),
+            extra,
+        );
+    }
+}

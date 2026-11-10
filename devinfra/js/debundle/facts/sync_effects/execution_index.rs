@@ -6230,6 +6230,9 @@ pub(super) struct ExecutionIndex {
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_calls: Vec<Vec<Call>>,
+    /// Per top-level owner, what `Callable::published_sources` lists for a
+    /// callable: values whose parts reach a binding only as unknown.
+    pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
@@ -6449,6 +6452,7 @@ impl Default for ExecutionIndex {
             owner_callable_prefix_effects: Vec::new(),
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
+            top_published_sources: BTreeMap::new(),
             original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
             bare_constructor_sites: BTreeSet::new(),
@@ -11702,12 +11706,19 @@ impl ExecutionIndex {
     }
 
     fn record_published_source(&mut self, value: &Expr) {
-        if let Some(key) = self.current {
-            self.callables
+        let value = ValueExpr::from_expr(value);
+        match self.current {
+            Some(key) => self
+                .callables
                 .get_mut(&key)
                 .unwrap()
                 .published_sources
-                .push(ValueExpr::from_expr(value));
+                .push(value),
+            None => self
+                .top_published_sources
+                .entry(self.owner)
+                .or_default()
+                .push(value),
         }
     }
 
@@ -12493,13 +12504,7 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        if let Some(key) = self.current {
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .published_sources
-                .push(ValueExpr::from_expr(&node.right));
-        }
+        self.record_published_source(&node.right);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -13527,6 +13532,15 @@ impl Visit for ExecutionIndex {
                     ValueExpr::from_expr(&assignment.right),
                     assignment.span,
                 );
+            }
+            let loses_values = match pattern {
+                AssignTargetPat::Array(_) | AssignTargetPat::Invalid(_) => true,
+                AssignTargetPat::Object(object) => {
+                    pattern_loses_values(&Pat::Object(object.clone()))
+                }
+            };
+            if loses_values {
+                self.record_published_source(&assignment.right);
             }
             let mut assignments = Vec::new();
             collect_assign_target_assignments(

@@ -10259,6 +10259,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// A top-level owner's values whose parts reach a binding only as
+    /// unknown, published like a callable's `published_sources`.
+    pub(super) fn publish_top_sources(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        env: &Context,
+        captures: &Context,
+    ) {
+        let Some(sources) = self.inputs.index.top_published_sources.get(&owner) else {
+            return;
+        };
+        for source in sources {
+            let values = self.evaluate(source, env, captures);
+            self.escape_untracked_values(&values);
+        }
+    }
+
     /// Values whose parts reach a binding only as unknown (an iterated
     /// value's elements, a destructured value's parts, a thrown or yielded
     /// value); publish what they can reach.
