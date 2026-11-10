@@ -199,3 +199,33 @@ const table = { key: 'a' }; const name = 'key'; function rename() { table[name] 
 rename();
 const label = table.key;
 console.log(label);
+### commutes same: an unnamed store through an alias of Object.prototype across a read of an owned static
+-
+const P = Object.prototype; const key = ['extra', 'Name'].join(''); function install(k, v) { delete P[k]; P[k] = v; }
+install(key, 1);
+const define = Object.defineProperty;
+console.log(typeof define, P.extraName);
+### ordered differs: an unnamed store through an alias of Object.prototype across a read of an inherited static
+-
+const P = Object.prototype; const key = ['to', 'String'].join(''); function install(k, v) { delete P[k]; P[k] = v; }
+install(key, 1);
+const inherited = Math.toString;
+console.log(typeof inherited);
+### ordered differs: an unnamed store through an alias of Object.prototype across a read of a prototype member
+-
+const P = Object.prototype; const key = ['hasOwn', 'Property'].join(''); function install(k, v) { P[k] = v; }
+install(key, 1);
+const has = Object.prototype.hasOwnProperty;
+console.log(typeof has);
+### ordered differs: an unnamed delete through an alias of Object.prototype across a read of a prototype member
+-
+const P = Object.prototype; const key = ['value', 'Of'].join(''); function remove(k) { delete P[k]; }
+remove(key);
+const valueOf = Object.prototype.valueOf;
+console.log(typeof valueOf);
+### ordered differs: an unnamed store on the constructor across a read of an owned static
+-
+const O = Object; const key = ['ke', 'ys'].join(''); function install(k, v) { O[k] = v; }
+install(key, 1);
+const keys = Object.keys;
+console.log(typeof keys);

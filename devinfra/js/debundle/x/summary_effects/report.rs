@@ -668,6 +668,9 @@ pub struct Tier0Report {
     /// way the census cannot name (replaced, escaping, computed key).
     pub globals_written: usize,
     pub globals_written_unnamed: usize,
+    /// The same for the `prototype` objects of globals.
+    pub global_prototypes_written: usize,
+    pub global_prototypes_written_unnamed: usize,
     /// With `--examples`: per written global, the property names, or `*`.
     pub globals_written_detail: BTreeMap<String, Vec<String>>,
     /// The intrinsics in `intrinsic_families_used` whose value flows where
@@ -932,20 +935,29 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             .values()
             .filter(|writes| writes.any)
             .count(),
-        globals_written_detail: analysis
+        global_prototypes_written: analysis.census.prototype_written.len(),
+        global_prototypes_written_unnamed: analysis
             .census
-            .written
-            .iter()
-            .filter(|_| with_examples)
-            .map(|(global, writes)| {
-                let mut props: Vec<String> = writes.props.iter().cloned().collect();
-                props.sort();
-                if writes.any {
-                    props.insert(0, "*".to_string());
-                }
-                (global.clone(), props)
-            })
-            .collect(),
+            .prototype_written
+            .values()
+            .filter(|writes| writes.any)
+            .count(),
+        globals_written_detail: [
+            ("", &analysis.census.written),
+            (".prototype", &analysis.census.prototype_written),
+        ]
+        .into_iter()
+        .flat_map(|(suffix, side)| side.iter().map(move |entry| (suffix, entry)))
+        .filter(|_| with_examples)
+        .map(|(suffix, (global, writes))| {
+            let mut props: Vec<String> = writes.props.iter().cloned().collect();
+            props.sort();
+            if writes.any {
+                props.insert(0, "*".to_string());
+            }
+            (format!("{global}{suffix}"), props)
+        })
+        .collect(),
         intrinsic_families_escaped: analysis
             .families_used
             .keys()

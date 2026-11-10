@@ -43,8 +43,11 @@ pub enum WholeWrite {
     UnnamedKey,
     /// The same on its `prototype`.
     UnnamedPrototypeKey,
-    /// A store on something read off the global's value or `prototype`.
+    /// A store on something read off the global's value, which may be its
+    /// `prototype`.
     DeeperStore,
+    /// A store on something read off its `prototype`.
+    DeeperPrototypeStore,
 }
 
 /// Globals the language defines: naming one says nothing about the input.
@@ -120,7 +123,10 @@ impl WholeWriteSite {
 pub struct Census {
     /// Each store behind a `Writes::any`.
     pub whole_write_sites: Vec<WholeWriteSite>,
+    /// Per global: writes of the binding and of the value it holds.
     pub written: FxHashMap<String, Writes>,
+    /// Per global: writes of the `prototype` object of the value it holds.
+    pub prototype_written: FxHashMap<String, Writes>,
     /// A store on the global object under an unknown key.
     pub all: bool,
     /// Where: the program chunk's index, `None` for the chunk the census
@@ -167,21 +173,33 @@ impl Census {
         self.unfollowed_prototype_stores
             .props
             .extend(other.unfollowed_prototype_stores.props);
-        for (global, writes) in other.written {
-            let mine = self.written.entry(global).or_default();
-            mine.any |= writes.any;
-            mine.props.extend(writes.props);
+        for (mine, theirs) in [
+            (&mut self.written, other.written),
+            (&mut self.prototype_written, other.prototype_written),
+        ] {
+            for (global, writes) in theirs {
+                let mine = mine.entry(global).or_default();
+                mine.any |= writes.any;
+                mine.props.extend(writes.props);
+            }
         }
     }
 
     pub fn escaped(&self, global: &str) -> bool {
-        self.escaped_all || self.escaped.contains(global)
+        self.escaped_all
+            || self.escaped.iter().any(|name| {
+                name.strip_suffix(ANY_GLOBAL)
+                    .map_or(name == global, |prefix| global.starts_with(prefix))
+            })
     }
 
     /// Whether the chunk leaves the global binding and these properties of
     /// it (or of its `prototype`) untouched. `prototype_members` says the
     /// properties are members of the prototype object: only those can be
-    /// hit by a store through an unfollowed `<base>.prototype`.
+    /// hit by a store on the prototype, followed or through an unfollowed
+    /// `<base>.prototype`. A use that depends on none is one of the binding
+    /// and of properties the value itself owns, which a store on its
+    /// prototype cannot change.
     pub fn untouched(&self, global: &str, props: &[&str], prototype_members: bool) -> bool {
         if self.all
             || self
@@ -193,10 +211,18 @@ impl Census {
         }
         let clear =
             |writes: &Writes| !writes.any && props.iter().all(|prop| !writes.props.contains(*prop));
-        self.written.get(global).is_none_or(clear)
+        let named = |side: &FxHashMap<String, Writes>| {
+            side.iter()
+                .filter(|(name, _)| {
+                    name.strip_suffix(ANY_GLOBAL)
+                        .map_or(*name == global, |prefix| global.starts_with(prefix))
+                })
+                .all(|(_, writes)| clear(writes))
+        };
+        named(&self.written)
             && (!prototype_members
-                || !self.escaped(global)
-                || clear(&self.unfollowed_prototype_stores))
+                || named(&self.prototype_written)
+                    && (!self.escaped(global) || clear(&self.unfollowed_prototype_stores)))
     }
 }
 
@@ -215,6 +241,11 @@ const MUTATORS: [(&str, &str); 10] = [
     ("Reflect", "set"),
     ("Reflect", "setPrototypeOf"),
 ];
+
+/// Ends the name of a set of globals: every global whose name starts with
+/// what precedes it. Alone it stands for every global, where a value is
+/// that of one the census cannot name.
+const ANY_GLOBAL: &str = "*";
 
 /// What a value may be.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -742,7 +773,33 @@ impl Flow {
                             (Intrinsic::GlobalObject, Some(name)) => {
                                 join(&mut taint, vec![Intrinsic::Object(name.clone())]);
                             }
+                            // Under a key the census cannot name: the value
+                            // of some global.
+                            (Intrinsic::GlobalObject, None) => {
+                                let keys = match &member.prop {
+                                    MemberProp::Computed(computed) => {
+                                        computed_key(&computed.expr, self.unresolved, &self.keys)
+                                    }
+                                    _ => None,
+                                };
+                                let globals = match keys {
+                                    Some(KeyValue::Names(names)) => names,
+                                    Some(KeyValue::Prefix(prefix)) => {
+                                        vec![format!("{prefix}{ANY_GLOBAL}")]
+                                    }
+                                    _ => vec![ANY_GLOBAL.to_string()],
+                                };
+                                join(
+                                    &mut taint,
+                                    globals.into_iter().map(Intrinsic::Object).collect(),
+                                );
+                            }
                             (Intrinsic::Object(global), Some(name)) if name == "prototype" => {
+                                join(&mut taint, vec![Intrinsic::Prototype(global)]);
+                            }
+                            // Under a key the census cannot name it may be
+                            // the `prototype`.
+                            (Intrinsic::Object(global), None) => {
                                 join(&mut taint, vec![Intrinsic::Prototype(global)]);
                             }
                             _ => {}
@@ -935,13 +992,34 @@ impl Visitor<'_> {
         self.census.all_sites.push((None, target.span().lo.0));
     }
 
-    fn writes(&mut self, global: String) -> &mut Writes {
-        self.census.written.entry(global).or_default()
+    fn writes(&mut self, global: String, prototype: bool) -> &mut Writes {
+        let side = if prototype {
+            &mut self.census.prototype_written
+        } else {
+            &mut self.census.written
+        };
+        side.entry(global).or_default()
     }
 
-    /// Records a write of the whole of `global` through `target`.
+    /// Records a write of the whole of `global`, or of its `prototype`,
+    /// through `target`.
     fn whole(&mut self, global: &str, target: &Expr, kind: WholeWrite) {
-        self.writes(global.to_string()).any = true;
+        // What is read off the value on the way to a deeper store may be
+        // its `prototype`.
+        let value = !matches!(
+            kind,
+            WholeWrite::UnnamedPrototypeKey | WholeWrite::DeeperPrototypeStore
+        );
+        let prototype = !matches!(
+            kind,
+            WholeWrite::BindingAssigned | WholeWrite::GlobalObjectMember | WholeWrite::UnnamedKey
+        );
+        if value {
+            self.writes(global.to_string(), false).any = true;
+        }
+        if prototype {
+            self.writes(global.to_string(), true).any = true;
+        }
         self.census.whole_write_sites.push(WholeWriteSite {
             global: global.to_string(),
             chunk: None,
@@ -966,8 +1044,13 @@ impl Visitor<'_> {
                     Some(prefix) => self.census.prefixes.push(prefix.clone()),
                     None => self.unnamed_global_store(target),
                 },
-                (Intrinsic::Object(global) | Intrinsic::Prototype(global), Some(name)) => {
-                    self.writes(global.clone()).props.insert(name.clone());
+                (Intrinsic::Object(global), Some(name)) => {
+                    self.writes(global.clone(), false)
+                        .props
+                        .insert(name.clone());
+                }
+                (Intrinsic::Prototype(global), Some(name)) => {
+                    self.writes(global.clone(), true).props.insert(name.clone());
                 }
                 (Intrinsic::Object(global), None) => {
                     self.whole(global, target, WholeWrite::UnnamedKey);
@@ -1028,8 +1111,11 @@ impl Visitor<'_> {
                     }
                 }
                 (Intrinsic::GlobalObject, _) => self.unnamed_global_store(target),
-                (Intrinsic::Object(global) | Intrinsic::Prototype(global), _) => {
+                (Intrinsic::Object(global), _) => {
                     self.whole(global, target, WholeWrite::DeeperStore);
+                }
+                (Intrinsic::Prototype(global), _) => {
+                    self.whole(global, target, WholeWrite::DeeperPrototypeStore);
                 }
             }
         }

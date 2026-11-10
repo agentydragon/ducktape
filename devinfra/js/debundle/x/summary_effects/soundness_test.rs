@@ -238,10 +238,16 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             // The record of a global whose name is not known may be any
             // intrinsic.
             "function setup({ win: o = window } = {}) { let h = o; let g = h[unknownName()] ??= {}; return (u, v) => { g[u] = v; }; } setup(); const a = new Map();",
+            // The value of a global the census cannot name may be any.
+            "const target = globalThis[unknownName()]; target.keys = 1; const k = Object.keys;",
+            "const target = globalThis[unknownName()]; target.prototype.set = 1; const a = new Map([['k', 1]]);",
+            "function install(name, key, value) { const target = globalThis[name]; target[key] = value; } install(a, b, c); const k = Object.keys;",
+            "const proto = Object[unknownName()]; proto.toString = 1; const ts = Object.prototype.toString;",
+            "const target = globalThis[`Ma${suffix}`]; target.prototype.set = 1; const a = new Map([['k', 1]]);",
             "const n = 1; window[n + suffix] = 1; const a = new Map();",
             "window[suffix + '_cb'] = 1; const a = new Map();",
             "const K = 'Map'; const root = globalThis; const record = root[K] ??= {}; record[name] = 1; const a = new Map();",
-            "const root = globalThis; root[`Ma${suffix}`].prototype.set = 1; const a = new Map();",
+            "const root = globalThis; root[`Ma${suffix}`].prototype.set = 1; const a = new Map([['k', 1]]);",
             "let key = 'registry'; key = 'Map'; globalThis[key] = class {}; const a = new Map();",
             "let key = 'registry'; function pick() { key = 'Map'; } globalThis[key] = class {}; const a = new Map();",
             "Object.assign(globalThis, { Map: class {} }); const a = new Map();",
@@ -250,7 +256,7 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             "for (const name of ['other', 'Map']) globalThis[name] = class {}; const a = new Map();",
             "for (const name of names) globalThis[name] = 1; const a = new Map();",
             "[['Map', 1]].forEach(([name, value]) => { globalThis[name] = value; }); const a = new Map();",
-            "const root = globalThis; root[k].set = 1; const a = new Map();",
+            "const root = globalThis; root[k].set = 1; const a = Reflect.set;",
             "(function (root) { root.Map = class {}; })(globalThis); const a = new Map();",
             "((root, name) => { root[name] = 1; })(window, 'Map'); const a = new Map();",
             // A store through `.prototype` of something an escaped
@@ -289,6 +295,7 @@ fn tier0_upgrades_stop_at_their_near_misses() {
             // A store into the record a destructured parameter's default
             // global object holds under a constant name.
             "const K = '__records__'; function setup({ win: o = window } = {}) { let h = o; let g = h[K] ??= {}; return (u, v) => { g[u] = v; }; } setup(); const a = new Map();",
+            "const record = globalThis[`__registry_${id}`]; record.prototype.set = 1; const a = new Map([['k', 1]]);",
             // A key that starts with what a binding holds.
             "const P = 'cb_'; class C { constructor(id) { this.id = id; window[P + this.id] = () => {}; } } const a = new Map();",
             "const P = 'cb_'; window[`${P}${id}`] = 1; const a = new Map();",

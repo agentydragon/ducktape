@@ -151,6 +151,17 @@ assigned, or a parameter of a function that is only ever called by name with
 such a binding in that position. That the global object escaped refuses
 nothing by itself; it only makes every intrinsic count as escaped.
 
+Writes are kept per global on two sides: the binding and the value it holds,
+and the `prototype` object of that value. A use that depends on no prototype
+member (a subclass, an owned static, an empty collection) is refused only by
+writes on the first side; `P = Object.prototype; P[k] = v` or `delete P[k]`
+with an unnamed key refuses reads of `Object.prototype` members and of
+inherited statics, not `Object.defineProperty`. A store deeper inside the
+value (`G[x].y = v`) counts on both sides, since `G[x]` may be the
+prototype. The value of a global the census cannot name (`globalThis[name]`)
+stands for every global, or for those whose name starts with a known prefix:
+a store on it or on its `prototype` counts against each of them.
+
 The report lists each store that counts as a write of a whole global the
 language defines (`whole_write_sites`): the family, the chunk, the byte
 offset of the store's target, how it counted (the binding assigned, a member
@@ -567,8 +578,8 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 33 programs run under Node in both orders (12
-admitted with Node agreeing, 21 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 38 programs run under Node in both orders (13
+admitted with Node agreeing, 25 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks, a guarded polyfill
