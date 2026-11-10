@@ -32,6 +32,58 @@ Rules that follow from this:
 - Local `bbr`/`bazelisk` runs are the normal iteration loop. Hosted CI is the
   landing check, not the only compiler.
 
+## Replan (2026-11-10)
+
+Waves 0–2 landed the kernel. Wave 3 landed rows 1, 2, 3, 9 and 10 and the root
+half of row 5. Three findings since then change the order of work.
+
+1. **Coverage rows are not moving the flip.** Across those slices the count of
+   legacy-accepted, effect-incomplete e2e evaluations stayed near 360, and the
+   root attempt counters show most admitted roots rewind (139 seal, 440
+   rewind, mostly on an unknown call or an open effect ledger). A statement is
+   covered only when the kernel finishes all of it.
+2. **The engine has under-approximations that predate the slices.** Independent
+   review of each kernel slice found defects the author's own suite and audit
+   did not, and an audit of "unknown" value sources found accepted splits that
+   diverge under Node (<target_architecture.md> § Known open problems).
+3. **Analysis cost is structural.** 10–47 minutes per private product against
+   a target of 2–4; the cause is the execution model, not constants
+   (<analysis_performance.md>).
+
+The precision yardstick is now explicit: what the real specs need to split
+into reasonable modules (<target_architecture.md> § Contract).
+
+**Order of work from here:**
+
+1. **Soundness fixes on `devel`, first and regardless of anything below:** the
+   uninitialized-declaration fix, then the "drop to unknown escapes what was
+   dropped" rule at closure writes and `for` heads, then the same rule at every
+   remaining unknown value source. Each gets an independent review and a
+   private canonical check after merge. The gaffer-private pin does not move
+   past a `devel` with a known unsound acceptance.
+2. **Two measurements, in parallel:**
+   - the summary-based producer prototype against the real specs and the
+     stress assignment (<target_architecture.md> § Open decision);
+   - for the current engine, which missing rules block module boundaries that
+     real specs draw, on the public canonical corpus, with the share that
+     traces to the callback-pool mechanism.
+3. **Decide the stage 2 producer** by the rule in
+   <target_architecture.md> § Open decision.
+   - _Summary-based adopted:_ the remaining Wave 3 rows are dropped, not
+     landed. The producer is built behind the existing effect-set interface,
+     validated by the e2e suite and the canonical check, and the flip (Wave 4)
+     switches the authoritative verdict to effect validation over its sets;
+     the kernel lanes and the legacy gate are deleted in that order.
+   - _Execution-based kept:_ Wave 3 resumes with rows ranked by the second
+     measurement, and the monotone-delta pool fix is the performance path.
+4. **Until the decision:** no new Wave 3 coverage rows are dispatched. Slices
+   already in review finish (row 13, the early-exit rows after their rework).
+   The monotone-delta pool fix continues, because it is the fallback's only
+   route to the cost target and is contained.
+
+Every kernel slice gets a second, independent review before it is marked
+ready: the author's suite and audit share the author's model of the engine.
+
 ## Slice contract
 
 Every PR in this plan:
@@ -357,14 +409,9 @@ touching the rule.
 |    13 | Field reads on borrowed element records inside a callback (`entries.reduce((t, e) => t + e.size, 0)`): gates admitting iteration roots over record elements (11 of the 18 legacy-accepted / effect-incomplete evaluations in the row 2 targets; 12 of the 18 also need row 9)                                                                                                                                                                                                                                                                                                                                                                                                                 |          11 | row 2                 |
 |    14 | Object spread inside a callback (`tools.map((tool) => ({ ...tool }))`): the other gate for record-element roots (<kernel_design.md> § Root admission)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |  unmeasured | row 2                 |
 
-**Order from here.** Wave 3 is ordered by what the canonical inputs need, not
-by reference-head case counts: at `fa49ae5ed1` the flip would refuse Tana Web,
-Tana Desktop, 14 Claude CLI chunks and 22 Claude Web chunks. The first job
-after the current batch (rows 2 and 3 in flight) is the canonical conflict
-export aggregated by missing rule for those chunks (L4c); rows 4–7 and 9–12
-are then dispatched in the order that export gives, widest canonical recovery
-first. Until it exists, rows 9 and 10 go next: they have no dependencies and
-the largest e2e reach.
+**Order from here.** See § Replan: no new row is dispatched until the stage 2
+producer is decided; if the execution-based producer is kept, rows are ranked
+by the module boundaries they unblock on real specs.
 
 Canonical checks so far are recorded with the private corpus, not here. Two
 things they showed that shape this plan: a coverage slice can move emitted
@@ -540,7 +587,10 @@ claims recovered acceptance adds one such witness for its family.
 
 ## Exit gates
 
-The refactor is done when all of these hold on `devel`:
+The refactor is done when all of these hold on `devel`. The first gate is
+written for the execution-based producer; if the summary-based producer is
+adopted (§ Replan) it reads "one producer: no kernel lanes, no flat callable
+lane, one builtin table".
 
 - One kernel: no `evaluate_legacy_compat`, no flat callable lane, one native
   plan/commit path, one `World::join`, one ESM loader model, one coverage ledger.
@@ -548,8 +598,9 @@ The refactor is done when all of these hold on `devel`:
   candidate assessment; the legacy gate code is deleted.
 - Full hosted suite green with the oracle on; every classified discrepancy from
   L4c resolved or recorded as a sound refusal with its Node evidence.
-- Canonical inputs: acceptance not below the pre-flip baseline except where a
-  Node divergence shows the old acceptance was unsafe.
+- Canonical inputs: every real spec still splits into its authored modules,
+  except where a Node divergence shows an old acceptance was unsafe or a
+  module is merged by a recorded migration (§ Compatibility).
 - No production module over ~3k lines, no function over ~300 lines in
   `facts/sync_effects/`; no `#[cfg(test)]` hooks in production.
 - A real-profiler measurement on representative inputs within the
