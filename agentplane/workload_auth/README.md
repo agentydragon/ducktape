@@ -56,7 +56,8 @@ each full method name to the `Rule` admitting its callers and refuses any method
 `AnyAccount` accepts a `PrincipalResolver` and puts its resolved `Principal` in `Caller`. A
 TokenReview `Resolver` proves its established Pod-bound identity; another verified source supplies
 only the identity fields it proves. `Accounts` applies an explicit account allowlist. `SVIDOrAccounts` admits current Sandbox SVIDs
-and applies the account allowlist only to bearer callers, preserving History's sampler writer policy.
+and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
+an SVID naming an Identity is admitted as `AnySubject` admits it.
 `ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver` and
 admits a ServiceAccount as `AnyAccount` does, or an Identity as an `IdentityAdmission`.
 `ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity

@@ -62,7 +62,7 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 	return err
 }
 
-var testWriter = storage.Writer{Namespace: testNamespace, Name: "test-writer", UID: "test-writer-uid"}
+var testWriter = storage.ServiceAccountWriter{Namespace: testNamespace, Name: "test-writer", UID: "test-writer-uid"}
 
 type testServer struct {
 	service *Service

@@ -35,6 +35,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -152,7 +153,11 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		if err != nil {
 			return err
 		}
-		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, nil)
+		var identities *resolver.Identities
+		if c.PolicyNamespace != "" {
+			identities = &resolver.Identities{PolicyNamespace: c.PolicyNamespace}
+		}
+		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, identities)
 		if err != nil {
 			return err
 		}
