@@ -1000,7 +1000,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
         kubevirt.io/domain: buildbuddy-kvm-worker
     spec:
       affinity:
@@ -1232,7 +1232,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker-2
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
         kubevirt.io/domain: buildbuddy-kvm-worker-2
     spec:
       affinity:
@@ -1439,18 +1439,18 @@ apiVersion: pool.kubevirt.io/v1beta1
 kind: VirtualMachinePool
 metadata:
   labels:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
-  name: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  name: buildbuddy-kvm-worker
   namespace: buildbuddy-executor
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/part-of: buildbuddy-kvm-workers
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
   virtualMachineTemplate:
     metadata:
       labels:
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
     spec:
       dataVolumeTemplates:
         - metadata:
@@ -1470,7 +1470,7 @@ spec:
       template:
         metadata:
           labels:
-            app.kubernetes.io/part-of: buildbuddy-kvm-workers
+            app.kubernetes.io/part-of: buildbuddy-kvm-worker
         spec:
           affinity:
             nodeAffinity:
@@ -1493,7 +1493,7 @@ spec:
                       - key: app.kubernetes.io/part-of
                         operator: In
                         values:
-                          - buildbuddy-kvm-workers
+                          - buildbuddy-kvm-worker
                   topologyKey: kubernetes.io/hostname
           domain:
             cpu:
@@ -1620,7 +1620,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: buildbuddy-kvm-workers
+  name: buildbuddy-kvm-worker-pool
   namespace: buildbuddy-executor
 spec:
   egress:
@@ -1661,7 +1661,7 @@ spec:
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/part-of: buildbuddy-kvm-workers
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
   ingress:
     - fromEndpoints:
         - matchLabels:
@@ -1676,7 +1676,7 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
   name: buildbuddy-kvm-worker-metrics
   namespace: buildbuddy-executor
 spec:
@@ -1686,7 +1686,7 @@ spec:
       protocol: TCP
       targetPort: 9090
   selector:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
   type: ClusterIP
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -1700,7 +1700,7 @@ spec:
       port: metrics
   selector:
     matchLabels:
-      app.kubernetes.io/part-of: buildbuddy-kvm-workers
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

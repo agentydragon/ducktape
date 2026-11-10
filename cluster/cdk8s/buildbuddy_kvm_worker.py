@@ -74,15 +74,13 @@ NAME = "buildbuddy-kvm-worker"
 # Each worker registers its own executor in the pool and runs one action at a time. The first keeps the
 # original name so its VM is not recreated.
 WORKER_NAMES = (NAME, f"{NAME}-2")
-# The pool that replaces them; its VMs are named `<pool>-<index>`. Both kinds of worker carry `_WORKER_LABELS`.
-POOL_NAME = f"{NAME}s"
 NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
 _METRICS_PORT = 9090
 _METRICS_PORT_NAME = "metrics"
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Selects every worker's pods for one Service, whatever their names.
-_WORKER_LABELS = {"app.kubernetes.io/part-of": NAME + "s"}
+_WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # KubeVirt's curated Ubuntu 24.04 cloud image, mirrored from Canonical with checksum verification.
 _IMAGE = "quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4"
@@ -409,7 +407,7 @@ def chart(app: App) -> Chart:
     VirtualMachinePool(
         chart,
         "pool",
-        metadata=ApiObjectMetadata(name=POOL_NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_WORKER_LABELS),
         selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
         virtual_machine_template=_pool_worker_template(),
         replicas=1,
@@ -417,7 +415,8 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "pool-network",
-        metadata=ApiObjectMetadata(name=POOL_NAME, namespace=NAMESPACE),
+        # The standalone VMs' per-name policies cover them until they are retired, so this one is named apart.
+        metadata=ApiObjectMetadata(name=f"{NAME}-pool", namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
         ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])],
         egress=[
