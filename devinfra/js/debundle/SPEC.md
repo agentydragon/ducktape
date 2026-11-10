@@ -2351,9 +2351,9 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
 - `inferable` (`never_consumed`): a `host_behavior.reentry_free_operations`
   entry no chunk's analysis consumed. Its only reader records every use it
   grants, so an absent record means no fact used it
-  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`).
+  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk.
 - `inconclusive`: a probe suggests the annotation is unnecessary but does not
-  establish that. A consumed `reentry_free_operations` entry is `consumed`:
+  establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
   the fact it supported may have another derivation. While any chunk is
   unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint the classifier infers without the hint
   (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
