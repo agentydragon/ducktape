@@ -7691,6 +7691,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         )
     }
 
+    /// Runs a local plain function's body for `new`, and absorbs its
+    /// effects into `outcome`.
+    #[inline(never)]
+    fn construct_plain_function(
+        &mut self,
+        target: &AbstractValue,
+        args: &[Values],
+        outcome: &mut Outcome,
+    ) {
+        let (key, captured) = match target {
+            AbstractValue::Value(Value::Alloc(Kind::Function, key)) => (*key, None),
+            AbstractValue::Closure(HeapAddress { callable: key, .. }, captured) => {
+                (*key, Some(captured.clone()))
+            }
+            _ => return,
+        };
+        if !self.inputs.index.callables.contains_key(&key) {
+            return;
+        }
+        let mut nested = self.invoke(key, args.to_vec(), captured, false);
+        self.apply_rebind_effects(&nested.effects.rebinds);
+        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+        outcome.executed_owners.extend(nested.executed_owners);
+        outcome.unknown_call |= nested.unknown_call;
+        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+    }
+
     /// The flat lane's invocation of an admitted constructor body.
     fn invoke_checked_constructor(
         &mut self,
@@ -11935,7 +11962,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
-                _ => {
+                target => {
+                    // `new` of a local plain function runs its body with an
+                    // untracked `this`; what the body stores through `this`
+                    // or into other bindings is part of the call's effects.
+                    // The instance itself stays unknown below.
+                    if call.kind == CallKind::New {
+                        self.construct_plain_function(&target, &args, outcome);
+                    }
                     outcome.lose_call_target(call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);

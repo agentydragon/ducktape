@@ -891,3 +891,58 @@ fn a_class_capturing_an_effect_free_heritage_or_member_keeps_the_split() {
         }
     }
 }
+
+/// `new F()` of a plain function that stores its `this` in a module binding
+/// and stores `value` through `this`; `run` reaches the stored value
+/// through the binding.
+const THIS_STORE_SHAPES: &[(&str, &str)] = &[
+    (
+        "function F() { {guard}saved = this; this.fn = {value}; }",
+        "function flag() { new F(); return saved; }\nfunction run() { return flag().fn(); }",
+    ),
+    (
+        "function F() { this.fn = {value}; saved = this; }",
+        "function flag() { {guard}new F(); return saved.fn; }\nfunction run() { return flag()(); }",
+    ),
+];
+
+fn this_store_definitions(constructor: &str, rest: &str, guard: &str, value: &str) -> String {
+    format!(
+        "let saved = null;\n{}\n{}",
+        constructor
+            .replace("{guard}", guard)
+            .replace("{value}", value),
+        rest.replace("{guard}", guard)
+    )
+}
+
+/// Opposing control: `new` of a plain function runs its body, so what the
+/// body stores through `this` (here `second`) is published and reachable
+/// through the binding that saved `this`.
+#[test]
+fn new_of_a_plain_function_runs_its_body() {
+    for (constructor, rest) in THIS_STORE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            assert_reader_split_diverges_with(
+                &this_store_definitions(constructor, rest, guard, "second"),
+                &["saved", "F"],
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: the same constructors storing
+/// the effect-free `first` keep the split.
+#[test]
+fn new_of_a_plain_function_without_effects_keeps_the_split() {
+    for (constructor, rest) in THIS_STORE_SHAPES {
+        for guard in ["", "if (first()) {} "] {
+            let fixture = with_reader_split(
+                &this_store_definitions(constructor, rest, guard, "first"),
+                &["saved", "F"],
+                run_fixture,
+            );
+            assert_preserved_entry_output(&fixture, "0 0\n");
+        }
+    }
+}
