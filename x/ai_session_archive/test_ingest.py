@@ -20,26 +20,27 @@ from x.ai_session_archive.models import Harness, SessionKind
 from x.ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from x.ai_session_archive.restic import ResticChange, ResticRepository, ResticSnapshot
 
+SNAPSHOT = ResticSnapshot(
+    id="snapshot-test",
+    captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+    parent_id="parent-test",
+    tree_id="tree-test",
+    paths=("/.claude", "/.codex"),
+)
+
 
 @pytest.mark.parametrize(
-    "changes",
+    "changed_snapshot",
     [
-        {"id": "other-snapshot"},
-        {"captured_at": datetime(2026, 1, 2, tzinfo=UTC)},
-        {"parent_id": None},
-        {"tree_id": None},
-        {"paths": ("/.claude",)},
-        {"paths": ("/.codex", "/.claude")},
+        replace(SNAPSHOT, id="other-snapshot"),
+        replace(SNAPSHOT, captured_at=datetime(2026, 1, 2, tzinfo=UTC)),
+        replace(SNAPSHOT, parent_id=None),
+        replace(SNAPSHOT, tree_id=None),
+        replace(SNAPSHOT, paths=("/.claude",)),
+        replace(SNAPSHOT, paths=("/.codex", "/.claude")),
     ],
 )
-def test_snapshot_identity_rejects_metadata_drift(changes: dict[str, object]) -> None:
-    snapshot = ResticSnapshot(
-        id="snapshot-test",
-        captured_at=datetime(2026, 1, 1, tzinfo=UTC),
-        parent_id="parent-test",
-        tree_id="tree-test",
-        paths=("/.claude", "/.codex"),
-    )
+def test_snapshot_identity_rejects_metadata_drift(changed_snapshot: ResticSnapshot) -> None:
     snapshot_row = ResticSnapshotRow(
         machine_id="identity-test",
         snapshot_id="snapshot-test",
@@ -50,9 +51,9 @@ def test_snapshot_identity_rejects_metadata_drift(changes: dict[str, object]) ->
         inventory_status="complete",
         processing_status="failed",
     )
-    _assert_snapshot_identity(snapshot_row, snapshot)
+    _assert_snapshot_identity(snapshot_row, SNAPSHOT)
     with pytest.raises(RuntimeError, match="Restic metadata changed"):
-        _assert_snapshot_identity(snapshot_row, replace(snapshot, **changes))
+        _assert_snapshot_identity(snapshot_row, changed_snapshot)
 
 
 def test_unit_restic_question_modifier_is_an_indexable_content_change() -> None:
