@@ -22,6 +22,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -83,15 +84,25 @@ type samplerExportIngressServer struct {
 	service *Service
 	plans   []*samplerExportPlan
 	pushes  atomic.Int32
+	// admissions records how the middleware admitted each push, in call order.
+	mu         sync.Mutex
+	admissions []auth.Admission
 }
 
 func (s *samplerExportIngressServer) Push(stream grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]) error {
+	admission, err := auth.Admitted(stream.Context())
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.admissions = append(s.admissions, admission)
+	s.mu.Unlock()
 	index := int(s.pushes.Add(1)) - 1
 	if index >= len(s.plans) {
 		return status.Error(codes.Internal, "unexpected sampler export call")
 	}
 	plan := s.plans[index]
-	err := s.service.Push(&samplerExportStream{BidiStreamingServer: stream, plan: plan})
+	err = s.service.Push(&samplerExportStream{BidiStreamingServer: stream, plan: plan})
 	if err == nil && plan.failAfterCleanClose {
 		return status.Error(codes.Unavailable, "test interrupted completion after History accepted the snapshot")
 	}
@@ -137,11 +148,17 @@ func (s *samplerExportStream) Recv() (*session_ingresspb.PushFrame, error) {
 }
 
 type samplerExportFixture struct {
-	history *storage.Store
-	sampler *centralsampler.Store
-	target  string
-	token   string
+	history   *storage.Store
+	historyDB *sql.DB
+	sampler   *centralsampler.Store
+	target    string
+	token     string
+	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
+	identity workloadauthtesting.IdentityWorkload
+	ingress  *samplerExportIngressServer
 }
+
+const samplerExportPolicyNamespace = "test-sampler-export-policies"
 
 func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerExportFixture {
 	t.Helper()
@@ -188,9 +205,21 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(principals)}
+	// Push as deployed: the SVID-or-accounts rule, with the sampler granted the delegated mode for
+	// the Identities of the policy namespace.
+	named := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "test-export-identity-"+uuid.NewString()[:8], samplerExportPolicyNamespace)
+	identities, err := auth.KubernetesIdentityUIDs(named.Objects, samplerExportPolicyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushRule, err := AllowDelegatingSamplers(auth.SVIDOrAccounts(principals, []auth.Account{account}), []auth.Account{account}, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: pushRule}
 	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
-	session_ingresspb.RegisterSessionJournalIngressServer(server, &samplerExportIngressServer{service: service, plans: plans})
+	ingressServer := &samplerExportIngressServer{service: service, plans: plans}
+	session_ingresspb.RegisterSessionJournalIngressServer(server, ingressServer)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
@@ -199,10 +228,20 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err := os.WriteFile(tokenFile, []byte(token), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return samplerExportFixture{history: history, sampler: samplerStore, target: listener.Addr().String(), token: tokenFile}
+	return samplerExportFixture{
+		history: history, historyDB: historyDB, sampler: samplerStore, target: listener.Addr().String(), token: tokenFile,
+		identity: named, ingress: ingressServer,
+	}
 }
 
 func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session {
+	t.Helper()
+	return f.openSessionExecutingAs(t, nil)
+}
+
+// openSessionExecutingAs opens a Session the Dispatcher recorded as executing as identity, or as
+// no Identity when nil.
+func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *identitypb.Identity) *centralsampler.Session {
 	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
 	executorUID := uuid.NewString()
@@ -219,6 +258,7 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
+		ExecutionIdentity:      identity,
 	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)
 	if err != nil {
 		t.Fatal(err)

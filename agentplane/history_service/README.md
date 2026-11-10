@@ -277,7 +277,17 @@ The listener accepts TCP addresses or inherited descriptors as documented by
 identities fixed. A central execution principal is retained only from the Dispatcher-provided
 identity on the admitted sampler path; the executor account name is not used to guess its UID.
 Native announcements cannot claim central metadata. The same cursor, exact-replay,
-writer fencing and commit-before-ack rules apply. Central outboxes retain evidence in sampler
+writer fencing and commit-before-ack rules apply.
+
+`ingress.sampler_identity_callers` (requires `policy_namespace`, sampler accounts and the SPIFFE
+listener, on which `Push` admits Identity writers) additionally lets those accounts push as
+delegating actors under the [delegated authorization contract](../docs/delegated_authorization.md),
+naming the Identity a Session executes as and the Session itself. The middleware verifies the
+sampler's token and grant and reads the Identity live, so a stale or missing incarnation is refused
+before the handler; the sampler stays the writer, and the Identity is retained as the Session's
+execution Identity only when the announcement names the same one and the same Session, in a
+`sampler_announce`. A sampler pushing as itself keeps relaying the recorded Identity as above.
+Announcing a central Session never implies this grant. Central outboxes retain evidence in sampler
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
 not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
