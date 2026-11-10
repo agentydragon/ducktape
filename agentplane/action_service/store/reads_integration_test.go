@@ -173,7 +173,7 @@ func TestRequestViewsDoNotDependOnTheReader(t *testing.T) {
 	sameJSON(t, want.Arguments, body.Arguments)
 	sameJSON(t, want.Execution.Result, []byte(result))
 	sameJSON(t, want.Execution.Error, []byte(failure))
-	if want.Caller != caller.Account {
+	if accountOf(want.Caller) != caller.Account {
 		t.Errorf("caller = %+v", want.Caller)
 	}
 	for name, principal := range map[string]ReadPrincipal{"owner": caller, "operator": operator, "service reader": reader} {

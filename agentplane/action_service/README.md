@@ -12,9 +12,10 @@ not routes on the Action Service listener.
 
 All Action, operator, linkage, Web Push and health RPCs use one listener on 8080.
 It accepts the existing Kubernetes bearer credentials and, for ActionService methods,
-the Sandbox's service-owned SVID. The service resolves a verified leaf to the live
-Sandbox's ServiceAccount and UID; caller-label, request ownership, approval policy
-and watch rechecks are unchanged. Operator APIs still require their configured OIDC
+the Sandbox's service-owned SVID. The service resolves a verified leaf to the subject its
+WorkloadCredential names. A ServiceAccount's caller-label, request ownership, approval policy and
+watch rechecks are unchanged; an Identity is admitted and decided by the PolicyBindings naming it and
+owns its requests by incarnation ([SPEC](SPEC.md#caller-admission-and-connection-authority)). Operator APIs still require their configured OIDC
 issuer, and linkage callbacks retain their existing single-use state authorization.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an

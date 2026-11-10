@@ -40,7 +40,12 @@ func (e *Executor) Actions() map[string]catalog.ActionDefinition {
 // large repository does, but never runs unbounded. A caller no box can be given is refused before the lease is held:
 // nothing has happened, so the outcome is known.
 func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *worker.Lease) (store.ExecutionOutcome, error) {
-	if caller := request.Caller; caller.Namespace != e.binding.Namespace {
+	recorded, ok := request.Caller.(store.ServiceAccountCaller)
+	if !ok {
+		return worker.Failed("caller_not_service_account",
+			"sandboxes run as their calling ServiceAccount, and this request's caller is not one"), nil
+	}
+	if caller := recorded.Account; caller.Namespace != e.binding.Namespace {
 		// A Pod can only run as a ServiceAccount of its own namespace, so a caller from anywhere else cannot be given
 		// a box that is it. Stamping the box as some other account would quietly hand it authority its caller never
 		// had.
@@ -48,14 +53,14 @@ func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, 
 			"must live in %q; %q cannot be given one", e.binding.Namespace, caller.Namespace)), nil
 	}
 	return worker.Hold(ctx, lease, func(ctx context.Context) (store.ExecutionOutcome, error) {
-		return e.attempt(ctx, request)
+		return e.attempt(ctx, request, recorded.Account)
 	})
 }
 
 // attempt is one attempt at request from a caller of the group's namespace. A refusal the caller can act on is a
 // failed Execution with its reason; only an outcome this cannot characterise is an error.
-func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	outcome, err := e.dispatch(ctx, request)
+func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest, caller store.ServiceAccount) (store.ExecutionOutcome, error) {
+	outcome, err := e.dispatch(ctx, request, caller)
 	var foreign *ForeignError
 	var unavailable *UnavailableError
 	var unrun *ExecError
@@ -83,8 +88,8 @@ type DisposeResult struct {
 	Existed bool   `json:"existed"`
 }
 
-func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	caller, action := request.Caller, request.Action.Name
+func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest, caller store.ServiceAccount) (store.ExecutionOutcome, error) {
+	action := request.Action.Name
 	switch action {
 	case string(contract.Create):
 		args, err := e.inputs.Create.Decode(request.Arguments)

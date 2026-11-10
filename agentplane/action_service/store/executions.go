@@ -179,7 +179,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		}
 		payload = ExecutionRequest{
 			RequestID: row.ID, ExecutionID: execution.ID, Action: row.Action, Arguments: row.Arguments,
-			Caller: row.Caller, CallerUID: row.CallerUID,
+			Caller: row.Caller,
 		}
 		return nil
 	})
