@@ -126,6 +126,9 @@ func (r *Reader) ExecutionIdentity(ctx context.Context, sandbox *Identity) (*ide
 	if current.Spec.Identity == nil {
 		return nil, true, nil
 	}
+	// spec.identity names an Identity in the Sandbox's namespace, while SVID verifiers read Identities
+	// in the policy namespace. Assumption: the two are the same namespace, as staging renders them
+	// (cluster/cdk8s/agentplane: both are the environment namespace); name and UID still match exactly.
 	var named policyapi.Identity
 	if err := r.objects.Get(ctx, types.NamespacedName{Namespace: current.Namespace, Name: current.Spec.Identity.Name}, &named); apierrors.IsNotFound(err) {
 		return nil, false, nil

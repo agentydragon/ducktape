@@ -267,6 +267,9 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 
 	// Only a ServiceAccount caller's wake is authorized today; an Identity caller's waits like an
 	// unattributed one.
+	// TODO: authorize an Identity caller's wake by an Identity resume policy before the Sandbox switch
+	// (SANDBOX_IDENTITY_SPEC, agentplane/plans/task_dag.md); nothing sends to an Identity-run Session
+	// before it.
 	account, isAccount := work.attribution.(*AdmissionAttribution)
 	if !isAccount {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,

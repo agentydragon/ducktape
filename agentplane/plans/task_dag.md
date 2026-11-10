@@ -3143,6 +3143,12 @@ change, not a mode behind a setting or behind `Environment.identity_catalog` (op
   and the Kubernetes-rule-to-role-set move stay behind it until `IDENTITY_CUTOVER` flips it.
 - The agent Kubernetes docs lose the kubeconfig and point at the rules endpoint.
 
+Setting `spec.identity` on a Sandbox strands its existing Sessions (Dispatcher refuses delivery to
+a Session whose recorded execution identity differs), so the switch needs a step that either
+rewrites those Sessions' execution identity or retires them. On staging no Sandboxes run during the
+switch, so retiring them is acceptable (team lead, 2026-11-10). An Identity caller's wake-on-send
+needs an Identity resume policy first (TODO in `runner_gateway/dispatcher/delivery_wake.go`).
+
 **Exit:** controller tests for a Sandbox with and without a live identity; Sandbox Pods render no
 projected ServiceAccount token, verified by review of the rendered manifests; and a Sandbox with no
 Kubernetes use rule has nothing in the accounts namespace.
