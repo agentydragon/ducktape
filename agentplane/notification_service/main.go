@@ -148,7 +148,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	var workloadSVIDs *auth.SVIDResolver
 	if c.RPC.Has(listener.SPIFFE) {
-		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace})
+		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, nil)
 		if err != nil {
 			return err
 		}

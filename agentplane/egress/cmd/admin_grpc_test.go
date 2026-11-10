@@ -309,7 +309,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 		Status: workloadapi.WorkloadCredentialStatus{CredentialID: runnerCredentialID, URI: uri, AcceptedBinding: pod},
 	}
 	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", UID: types.UID("test-account-uid")}}
-	records, err := resolver.New(clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account).Build(), []string{"test-ns"})
+	records, err := resolver.New(clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account).Build(), []string{"test-ns"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
