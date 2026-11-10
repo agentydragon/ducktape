@@ -1344,6 +1344,10 @@ pub(super) struct Callable {
     pub(super) calls: Vec<Call>,
     pub(super) local_assignments: Vec<(Id, ValueExpr)>,
     pub(super) declared_locals: BTreeSet<Id>,
+    /// Locals a read can observe before any assignment, as `undefined`: a
+    /// declarator without an initializer outside a `for`-`in`/`of` head, and
+    /// every `var` (hoisted). `local_assignments` never contributes that value.
+    pub(super) undefined_before_assignment: BTreeSet<Id>,
     hoisted_vars: BTreeSet<Id>,
     lexical_declarations: BTreeMap<Id, LocalBinding>,
     pub(super) self_binding: Option<Id>,
@@ -1592,6 +1596,7 @@ impl Default for Callable {
             calls: Vec::new(),
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
+            undefined_before_assignment: BTreeSet::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
             self_binding: None,
@@ -6092,6 +6097,8 @@ pub(super) struct ExecutionIndex {
     /// Visiting an assignment target: its identifiers are assigned, not
     /// declared.
     assignment_target: bool,
+    /// Visiting the declaration of a `for`-`in`/`of` head.
+    for_head_declaration: bool,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     pub(super) setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
@@ -6308,6 +6315,7 @@ impl Default for ExecutionIndex {
             never_written_overrode: false,
             destructuring_source: None,
             assignment_target: false,
+            for_head_declaration: false,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
@@ -12903,6 +12911,20 @@ impl Visit for ExecutionIndex {
                 .declared_locals
                 .insert(binding.id.to_id());
         }
+        // A loop head's binding takes the loop's values, which no entry in
+        // `local_assignments` records; leave it to the unknown fallback.
+        if let Some(key) = self.current
+            && !self.for_head_declaration
+            && (declarator.init.is_none() || self.variable_kind == Some(VarDeclKind::Var))
+        {
+            let mut bindings = Vec::new();
+            collect_pattern_assignments(&declarator.name, &ValueExpr::Undefined, &mut bindings);
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .undefined_before_assignment
+                .extend(bindings.into_iter().map(|(binding, _)| binding));
+        }
         declarator.visit_children_with(self);
         if let Some(init) = &declarator.init {
             let kind = match &declarator.name {
@@ -13067,7 +13089,12 @@ impl Visit for ExecutionIndex {
         }
         self.namespace_privacy.target_depth += 1;
         let saved = std::mem::replace(&mut self.assignment_target, matches!(head, ForHead::Pat(_)));
+        let saved_declaration = std::mem::replace(
+            &mut self.for_head_declaration,
+            matches!(head, ForHead::VarDecl(_)),
+        );
         head.visit_children_with(self);
+        self.for_head_declaration = saved_declaration;
         self.assignment_target = saved;
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;

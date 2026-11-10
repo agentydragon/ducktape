@@ -143,6 +143,18 @@ pub(super) fn from_flow(values: FlowValues) -> Values {
     values.into_iter().map(AbstractValue::Value).collect()
 }
 
+/// Source-summary lanes flatten assignments, so a read may precede all of
+/// them. Kept out of line: `Executor::invoke` recurses once per nested call
+/// and its frame size bounds the supported call depth.
+#[inline(never)]
+fn seed_undefined_before_assignment(env: &mut Context, bindings: &BTreeSet<Id>) {
+    for id in bindings {
+        env.entry(id.clone())
+            .or_default()
+            .insert(AbstractValue::UNDEFINED);
+    }
+}
+
 pub(super) fn unknown() -> Values {
     Values::from([AbstractValue::Value(Value::Top)])
 }
@@ -10512,6 +10524,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.state.world.cells[cell.0].values.clone(),
             );
         }
+        seed_undefined_before_assignment(&mut env, &callable.undefined_before_assignment);
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
             // A chunk binding read later in this prefix must see the assigned
