@@ -124,6 +124,14 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
             assert file is not None
             assert file.file_version_id is None
             assert file.status == "pending"
+            snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
+            assert snapshot is not None
+            assert (
+                snapshot.inventory_status,
+                snapshot.processing_status,
+                snapshot.codex_metadata_status,
+                snapshot.capture_status,
+            ) == ("complete", "pending", "complete", "unknown")
         if len(committed_sizes) == 2:
             raise SimulatedCrash
 
@@ -145,6 +153,17 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
         session = db.get(SessionRow, version.session_id)
         assert session is not None
         assert session.title == "original"
+        snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
+        assert snapshot is not None
+        assert (
+            snapshot.inventory_status,
+            snapshot.processing_status,
+            snapshot.codex_metadata_status,
+            snapshot.capture_status,
+        ) == ("complete", "complete", "complete", "unknown")
+        file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
+        assert file is not None
+        assert file.status == "partial"
         events = []
         cursor = None
         while True:
