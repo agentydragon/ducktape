@@ -153,15 +153,11 @@ class WtDaemon:
             get_index=lambda: self.worktree_index, run_discovery_once=self._run_discovery_once
         )
 
-        # Helper to fetch known worktree info without repeated membership checks
-        def get_known_worktree(p):
-            return self.known_worktrees.get(p)
-
         self.gitstatusd_service = GitstatusdService(
-            get_client=lambda p: self.gitstatusd_clients.get(wt.wtid) if (wt := get_known_worktree(p)) else None,
+            get_client=lambda p: self.gitstatusd_clients.get(wt.wtid) if (wt := self.known_worktrees.get(p)) else None,
             iter_client_paths=lambda: list(self.known_worktrees),
             ensure_watcher_for_path=lambda p: (
-                self._ensure_git_watcher(get_known_worktree(p)) if get_known_worktree(p) else asyncio.sleep(0)
+                self._ensure_git_watcher(wt) if (wt := self.known_worktrees.get(p)) else asyncio.sleep(0)
             ),
             list_watchers=lambda: list(self.git_watchers.values()),
             clear_watchers=self.git_watchers.clear,
