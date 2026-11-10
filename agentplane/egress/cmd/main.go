@@ -220,7 +220,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	}
 	var records *resolver.Resolver
 	if c.Forward.Has(listener.SPIFFE) {
-		if records, err = resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces); err != nil {
+		if records, err = resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, nil); err != nil {
 			return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
 		}
 	}

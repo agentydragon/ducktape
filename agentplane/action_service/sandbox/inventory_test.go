@@ -115,7 +115,7 @@ func TestAnOfflineBoxMountsNoCredential(t *testing.T) {
 // box's SVID and refuses the earlier box's.
 func TestARecreatedBoxsCredentialReplacesTheDisposedOnes(t *testing.T) {
 	f := newFixture(t, nil)
-	resolves, err := resolver.New(objects, []string{f.binding.Namespace})
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestARecreatedBoxsCredentialReplacesTheDisposedOnes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if peer.Subject.Name != f.caller.Name || peer.Pod == nil || peer.Pod.UID != first.UID {
+	if subject, ok := peer.Subject.(resolver.ServiceAccount); !ok || subject.Name != f.caller.Name || peer.Pod == nil || peer.Pod.UID != first.UID {
 		t.Errorf("the box's SVID resolves to %+v, want its caller and Pod %s", peer, first.UID)
 	}
 

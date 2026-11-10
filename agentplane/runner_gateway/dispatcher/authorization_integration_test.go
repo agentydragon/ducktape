@@ -277,7 +277,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 	ownerIdentity := serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerIdentity, accountFound: true}
-	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace})
+	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
