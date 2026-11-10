@@ -605,6 +605,8 @@ enum ExecutionErrorKind {
   EXECUTION_ERROR_KIND_WAIT_UNAVAILABLE = 37;
   // The executor runs as or forwards a calling ServiceAccount, and the caller is an Identity.
   EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT = 38;
+  // The request's caller is of a kind this release does not name.
+  EXECUTION_ERROR_KIND_CALLER_UNKNOWN = 39;
 }
 
 // The Environment Service's answer to a resume that did not take effect.

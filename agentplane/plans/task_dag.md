@@ -3152,8 +3152,9 @@ other noticing.
 resolver yields an Identity subject and `auth` admits it as an `IdentityAdmission` on `AnySubject`
 methods; LLM ingress serves and attributes Identity callers once given its `policy_namespace`. The
 Action Service's Gate admits an Identity SVID caller by the bindings naming it and records requests
-and cancellations by the Identity incarnation; its caller-acting executors (Action boxes, launches,
-Session delegation) and the MCP edge's delegated path still need a ServiceAccount.** History's execution
+and cancellations by the Identity incarnation, and gives it Action boxes it owns on the default
+ServiceAccount; launches, Session delegation and the MCP edge's delegated path still need a
+ServiceAccount.** History's execution
 principal, Dispatcher's Session rows, Notification's inbox ownership, the Action Service's caller
 and the delegation envelope carry an identity reference plus the workload incarnation as provenance.
 The seam is `workload_auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`): each service moves

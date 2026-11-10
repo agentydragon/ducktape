@@ -50,6 +50,7 @@ var storedErrorKinds = map[action_servicepb.ExecutionErrorKind]string{
 	action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET:          "unknown_policy_set",
 	action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_WAIT_UNAVAILABLE:            "wait_unavailable",
 	action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_NOT_SERVICE_ACCOUNT:  "caller_not_service_account",
+	action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN:              "caller_unknown",
 }
 
 // errorKindFromStored is the kind a stored `kind` names. One this release does not name, such as the Go type

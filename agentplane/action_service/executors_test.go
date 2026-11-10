@@ -62,7 +62,7 @@ func TestAnActionRoutesToItsGroupsExecutorWhileTheCatalogOffersIt(t *testing.T) 
 
 func TestASandboxGroupOffersTheSandboxActionsAndRunsThem(t *testing.T) {
 	groups := sandboxGroups(t, sandboxNamespace(t, kube, true), `["create"]`)
-	byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config)
+	byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config, "test-policy")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestAStartupCheckRefusesASandboxGroup(t *testing.T) {
 				}
 			}
 			groups := sandboxGroups(t, namespace, test.directTools)
-			if byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config); !test.refused(err) {
+			if byGroup, err := sandboxExecutors(t.Context(), groups, kube.Config, "test-policy"); !test.refused(err) {
 				t.Errorf("sandboxExecutors() = %v, %v; want it refused", byGroup, err)
 			}
 		})
