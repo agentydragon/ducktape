@@ -2,9 +2,7 @@
 
 import asyncio
 import json
-import os
 import re
-import signal
 from contextlib import aclosing
 from pathlib import Path
 from uuid import uuid4
@@ -570,13 +568,30 @@ async def _kill_gateway_process(cluster: Cluster, pod: dict[str, object], crictl
     pid = inspected["info"]["pid"]
     assert isinstance(pid, int), pid
     assert pid > 1, pid
-    pidfd = os.pidfd_open(pid)
-    try:
-        executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-        assert executable.name == "runner-gateway", executable
-        signal.pidfd_send_signal(pidfd, signal.SIGKILL)
-    finally:
-        os.close(pidfd)
+    ctr_command = (crictl_command[0], "ctr", "--address", "unix:///run/k3s/containerd/containerd.sock", "-n", "k8s.io")
+    tasks = await asyncio.create_subprocess_exec(
+        *ctr_command, "tasks", "ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await asyncio.wait_for(tasks.communicate(), timeout=15)
+    if tasks.returncode:
+        raise RuntimeError(f"ctr tasks ls exited {tasks.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+    matching = [line.split() for line in stdout.decode().splitlines()[1:] if line.split()[:1] == [container_id]]
+    assert matching == [[container_id, str(pid), "RUNNING"]], matching
+    executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
+    assert executable.name == "runner-gateway", executable
+    kill = await asyncio.create_subprocess_exec(
+        *ctr_command,
+        "tasks",
+        "kill",
+        "--signal",
+        "SIGKILL",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await asyncio.wait_for(kill.communicate(), timeout=15)
+    if kill.returncode:
+        raise RuntimeError(f"ctr tasks kill exited {kill.returncode}: {stderr.decode(errors='replace')[-2000:]}")
 
 
 async def _roll_gateway_for_central_session(
