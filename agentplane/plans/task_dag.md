@@ -3091,9 +3091,21 @@ caller is the `Identity` Dispatcher bound to that Session, as Actions' is its ad
 record. Optional hardening, not planned: a receiver checks the asserted `Identity` against
 Dispatcher's live Session binding.
 
-**Still open for the operator:** how such calls originate from the V8 isolates; what each receiving
-service records; and whether LLM ingress attributes provider calls to the Identity rather than to
-the sampler plus a trusted `session_id` claim.
+**Call origin (operator, 2026-11-10).** Agentplane calls never leave a V8 isolate: a cell's nested
+tool call reaches the sampler as a code-mode `delegate/request` tagged with its logical Session
+([SPEC](../central_sampler/SPEC.md#runtime-and-effects)), and the sampler's Go handler makes the
+backend call. It names the `Identity` Dispatcher bound to that Session; neither JavaScript nor tool
+arguments can name or override it.
+
+**LLM attribution (operator, 2026-11-10).** Provider calls the sampler makes for a Session are
+attributed to the Session's `Identity`, including the spend-log JSON headers and W3C baggage LLM
+ingress stamps today from the verified Kubernetes principal
+([README](../llm_ingress/README.md)). The sampler reaches LLM ingress as the same delegating actor;
+the ingress gains `Identity`-sourced attribution fields and keeps stripping caller-supplied copies,
+so attribution stays server-stamped. A Sandbox's own provider calls are attributed by its SVID's
+`Identity` once it resolves to one.
+
+**Still open for the operator:** what each receiving service records.
 
 ### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
 
