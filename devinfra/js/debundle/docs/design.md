@@ -4015,9 +4015,11 @@ active iteration row, which checked it settled and source-shaped before its
 first callback. Its reads resolve against the current `World` at each read
 (`resolve_slot` with `CurrentPrefix`) and depend on the current
 prerequisites; every other receiver needs fresh-local ownership. A root over
-record elements is admitted only when its callback reads primitive own data
-fields of the element and stores, invokes and imports nothing
-(`roots/operands.rs`, `root_array_iteration`).
+record elements is filtered only by row, receiver and callback admission
+(`roots/operands.rs`, `root_array_iteration`): it runs on the attempted lane
+and is kept only if it seals, and each field read in the callback, whatever
+the field holds, is checked by `resolve_slot` against the current `World` at
+that read.
 
 **Stores are mutated, observations are returned.** Heap, lexical cells,
 object surface and descriptors are mutated in place through `&mut World`; a

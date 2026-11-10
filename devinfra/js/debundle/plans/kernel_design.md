@@ -59,7 +59,11 @@ the family when every leaf has completed; the contract is in
   elements: the row checks each record settled and source-shaped before the
   first callback and scopes it as prefix-tracked
   (`BindingContext::prefix_tracked_receiver`) for the callback's reads, which
-  close their domains like any checked own-data read.
+  close their domains like any checked own-data read. Open: `delete` is
+  invisible to `resolve_slot`, so after `delete item.size` in the prefix such
+  a read seals as a present own-data read although the real read walks
+  `Object.prototype`. Not exploitable while every prototype writer is havoc;
+  it becomes live once one gains coverage.
 
   Separately, an array literal inside a callback loses its writability
   witness on the callback's second invocation (the allocation site is pooled),
