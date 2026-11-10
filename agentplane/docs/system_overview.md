@@ -609,8 +609,8 @@ Rules, Notification, ModelConfig and telemetry share the local gRPC listener on 
 service prefixes select independent upstream connections and authentication.
 
 Action command/build boxes present their own `WorkloadCredential`'s SVID, subject their caller's
-ServiceAccount. Haku UI/Anki keep their ServiceAccount subject and Pod-bound bearer hop over
-verified TLS. Their sidecars alone hold credentials. The later shared
+ServiceAccount; Haku UI/Anki present their standing records' SVIDs, subject `haku-ui`. Their
+sidecars alone hold credentials. The later shared
 identity and SVID lifecycle is independent of Sandboxes; no Identity/account cutover is included
 here. Existing Sandbox processes need recreation to read the new mode/route configuration; image
 updates alone do not replace running Pods.
