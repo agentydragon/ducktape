@@ -18,8 +18,12 @@ const (
 type IdentitySubject struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
+	// UID is the requester's choice to pin the Identity incarnation it resolved: a record naming it
+	// fails closed once that Identity is replaced by a same-named one. A record naming none follows
+	// the live Identity of its name, as a standing record rendered from git must, since git cannot
+	// know a UID (operator, 2026-11-10).
 	// +kubebuilder:validation:Format=uuid
-	UID types.UID `json:"uid"`
+	UID types.UID `json:"uid,omitempty"`
 }
 
 // Subject is who the workload acts as.

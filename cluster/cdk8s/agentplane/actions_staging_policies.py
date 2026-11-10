@@ -48,10 +48,9 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
 )
 from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.haku import ui_egress as haku_ui_egress
-from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.providers.agentplane import policy_set
+from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -86,13 +85,6 @@ ORCHESTRATION_PRESETS_SET = "orchestration-presets"
 
 CLAUDE_AI = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="claude-ai"), identity="claude-ai")
 HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-agent"), identity="haku-agent")
-HAKU_UI = StandingCaller(
-    ServiceAccountRef(namespace=haku_ui_egress.NAMESPACE, name=haku_ui_egress.SERVICE_ACCOUNT),
-    identity=haku_ui_egress.SERVICE_ACCOUNT,
-)
-HAKU_CI = StandingCaller(
-    ServiceAccountRef(namespace=runner.NAMESPACE, name=egress_gateway.NAME), identity=egress_gateway.NAME
-)
 
 
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
@@ -384,7 +376,11 @@ _GROCY_SF_READS_ACTIONS = [
 _KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pods_top"]
 
 
-def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> None:
+def add_staging_action_policies(
+    scope: Construct, *, identity_catalog: bool, haku_ui: Identity, haku_ci: Identity
+) -> None:
+    """`haku_ui` and `haku_ci` are the Identities Haku's standing workloads and haku-ci's egress relay act
+    as (haku/ui_egress.py, haku_ci/egress_gateway.py), rendered whether or not the catalog is."""
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
     # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
     # makes it an Action caller, and removing the label or the object is how it is disabled.
@@ -809,17 +805,19 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
         scope,
         "policybinding-haku-ui",
         metadata=ApiObjectMetadata(
-            name=haku_ui_egress.SERVICE_ACCOUNT,
+            name=haku_ui.name,
             namespace=_NAMESPACE,
-            annotations={"description": "What haku-ui (haku-sandbox) may reach and have auto-approved."},
+            annotations={
+                "description": "What Haku's standing workloads (haku-sandbox), acting as this Identity, may reach and have auto-approved."
+            },
         ),
-        subject=HAKU_UI.subject(identity_catalog=identity_catalog),
+        subject=haku_ui.binding_subject(),
         policy_sets=[HOME_ASSISTANT_READS_SET, GROCY_SF_READS_SET, ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY],
     )
 
     # haku-ci's builds, through its egress relay (haku_ci/egress_gateway.py): exactly the hosts haku-ci
     # reached through its former mitmproxy (haku-egress-proxy) over 2026-11-08/09 (about 60 CI jobs), each with the methods it
-    # used. Add a host when its `no-rule` decision for subject haku-ci/haku-ci-egress appears. Docker Hub
+    # used. Add a host when its `no-rule` decision for the haku-ci-egress Identity appears. Docker Hub
     # stays out: dind pulls it through oci-cache, in-cluster.
     add_egress_policy(
         scope,
@@ -857,11 +855,13 @@ def add_staging_action_policies(scope: Construct, *, identity_catalog: bool) -> 
         scope,
         "policybinding-haku-ci-egress",
         metadata=ApiObjectMetadata(
-            name=egress_gateway.NAME,
+            name=haku_ci.name,
             namespace=_NAMESPACE,
-            annotations={"description": "What haku-ci's builds (haku-ci namespace) may reach."},
+            annotations={
+                "description": "What haku-ci's builds (haku-ci namespace), acting as this Identity, may reach."
+            },
         ),
-        subject=HAKU_CI.subject(identity_catalog=identity_catalog),
+        subject=haku_ci.binding_subject(),
         policy_sets=[HAKU_CI_BUILD_FETCH_POLICY],
     )
 

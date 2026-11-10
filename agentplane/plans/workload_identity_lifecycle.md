@@ -89,9 +89,10 @@ and runs on the default ServiceAccount; its record has no owner (operator, 2026-
 Identity confers no authority over a box), so deleting the Identity revokes the box's credential and
 deletes nothing. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the cutover,
 requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches every
-requester's `subject` to an identity, and cdk8s renders `haku-ui` and the `haku-ci` relay's account
-as `Identity`s. The resolver already reads `spec.subject.identity` live with its UID, in the policy
-namespace rather than the record's own, which matters for `haku-sandbox` and `haku-ci` records.
+requester's `subject` to an identity. The standing records moved first
+(`STANDING_WORKLOAD_IDENTITY`): cdk8s renders the `haku-ui` and `haku-ci-egress` `Identity`s and
+the records name them by name alone, since git cannot know a UID; the resolver reads
+`spec.subject.identity` live in the policy namespace rather than the record's own.
 
 ## Open questions
 

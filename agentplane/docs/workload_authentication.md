@@ -79,13 +79,20 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
 A record with no owner and no binding is standing: a workload with replicas, not a controller-owned
 incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet), Anki's (`haku-anki`, a
 Deployment) and Jupyter's (`haku-jupyter`, a Deployment) into `haku-sandbox`
-(`cluster/cdk8s/haku/ui_egress.py`), all with subject `haku-ui`;
-Haku's deployer Role cannot write a record. The issuer keeps its one credential ID and names its
-Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress sidecar alone.
-Any Pod Haku creates in `haku-sandbox` could mount it, the reach the `haku-ui` ServiceAccount
-already gives. haku-ci's egress relay (`haku-ci-egress`, a Deployment in `haku-ci`;
-`cluster/cdk8s/haku_ci/egress_gateway.py`) is one too: its subject is its own ServiceAccount, and
-only the relay mounts `svid-haku-ci-egress`, so builds in the privileged runner Pods never hold it.
+(`cluster/cdk8s/haku/ui_egress.py`), all acting as the Flux-owned `haku-ui` `Identity` of the
+policy namespace; Haku's deployer Role cannot write a record. The issuer keeps its one credential ID
+and names its Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress
+sidecar alone. Any Pod Haku creates in `haku-sandbox` could mount it. haku-ci's egress relay
+(`haku-ci-egress`, a Deployment in `haku-ci`; `cluster/cdk8s/haku_ci/egress_gateway.py`) is one
+too, acting as the `haku-ci-egress` `Identity`; only the relay mounts `svid-haku-ci-egress`, so
+builds in the privileged runner Pods never hold it. The Pods keep running as their ServiceAccounts,
+which the proxy's network policies select; those accounts are no policy subject. A standing record
+names its Identity by name alone, since git cannot know the UID Kubernetes will give it; it acts as
+whatever Identity of that name the same Kustomization applies, so a same-name replacement of the
+Identity keeps the credential valid (the standing credential is already the weaker one:
+`plans/task_freezer.md` § `STANDING_WORKLOAD_INCARNATIONS`). Changing a standing record's subject
+replaces the record (the CRD never re-points one), which Flux does for the records'
+`kustomize.toolkit.fluxcd.io/force` annotation; the new record has a new credential ID.
 
 Every replica presents the same SVID and proves no Pod: the proxy drops any Pod token such a caller
 forwards, and decisions record no source Pod ([egress SPEC](../egress/SPEC.md)). This is weaker
@@ -112,7 +119,10 @@ including one inherited through a tunnel:
 5. `spec.subject` is the subject, read live: a ServiceAccount in the record's namespace, for its
    UID; or an Identity in the policy namespace, whose live UID must be the one the record names, so
    deleting an Identity revokes every credential naming it and a same-named successor inherits
-   none. A verifier constructed without the policy namespace refuses Identity subjects; the egress
+   none. Naming the UID is the requester's choice (the Sandbox Controller and the Action Service
+   name it); a record naming none follows the live Identity of its name, as a standing record from
+   git does, since git cannot know a UID. A verifier constructed without the policy namespace
+   refuses Identity subjects; the egress
    proxy and the Action Service ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority))
    pass their own, LLM ingress and the Runner Gateway's Dispatcher theirs once given an optional
    `policy_namespace`, and until each other service authorizes an Identity `Principal`

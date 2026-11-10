@@ -73,8 +73,11 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   ServiceAccount of its name. A ServiceAccount subject is every Pod running as that account, so bind
   only an account dedicated to one workload; the integration app gives each sandbox an account of its
   own, owned by it, so deleting the sandbox collects the account and the bindings naming it alike. An
-  Identity binding answers only while the live Identity of its name has the UID the caller's record
-  names, so a credential of a deleted Identity gains nothing from a same-named successor.
+  Identity binding answers only while the live Identity of its name is the one the caller's record
+  names: a record naming the Identity's UID binds that incarnation, so a credential of a deleted
+  Identity gains nothing from a same-named successor, while a record naming no UID (a standing
+  record rendered from git) follows a same-name replacement
+  ([workload authentication](../docs/workload_authentication.md) § Standing workloads).
 - Hosts admit exact names, `*.` suffix wildcards (not their apex), or `*` for any public
   destination. A blanket `*` rule cannot set `credentialRef` or `clusterInternal`, enforced by
   both CRD admission and runtime parsing. It grants no credential substitution or private-address

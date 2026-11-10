@@ -245,7 +245,8 @@ of `KubernetesRoleSet`s, or it is a temporary `ManagedServiceAccount`
 is off, so Sandboxes act as their own ServiceAccount, and the assignable `PolicySet`s above carry the
 Kubernetes rules. With the switch on (`staging.environment(identity_catalog=True)`, which the
 manifest and RBAC tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`,
-`haku-agent`, `haku-ui`, `public-coder-openclaw`), each assignable set's Kubernetes rules become a
+`haku-agent`, `public-coder-openclaw`; `haku-ui` and `haku-ci-egress` already do, catalog or not),
+each assignable set's Kubernetes rules become a
 same-named `KubernetesRoleSet`, and the catalog adds these accounts. Each is a ServiceAccount, a
 Flux-owned grant, a credential and a one-rule use set `k8s-account-<name>`:
 
