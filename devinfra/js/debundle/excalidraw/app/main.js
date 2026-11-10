@@ -5,6 +5,6 @@ import "@excalidraw/excalidraw/index.css";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 
-createRoot(document.getElementById("root")).render(
+createRoot(globalThis.document.getElementById("root")).render(
   createElement("div", { style: { height: "100vh" } }, createElement(Excalidraw))
 );

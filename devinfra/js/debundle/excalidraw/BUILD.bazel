@@ -2,7 +2,7 @@ load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
 
@@ -100,12 +100,14 @@ filegroup(
 )
 
 # Residual baseline: the unmodified chunks with no module claims and no vendor
-# substitutions.
+# substitutions. `postsubmit`: DebundleAnalyze takes ~5 minutes of mostly
+# single-threaded CPU on RBE (README.md § Cost), so pull requests skip it.
 debundle_pipeline(
     name = "debundle",
     input_data = [":source"],
     spec_tree_inputs = [":spec"],
     split_dependency_graphs = True,
+    tags = ["postsubmit"],
     tree_config = "config.yaml",
     tree_modules = "spec/modules",
     tree_source_root = ":source",
@@ -116,4 +118,25 @@ filegroup(
     name = "analysis",
     srcs = [":debundle"],
     output_group = "analysis",
+    tags = ["postsubmit"],
+)
+
+py_test(
+    name = "test_debundle_tree",
+    srcs = ["test_debundle_tree.py"],
+    data = [
+        "js-files.txt",
+        ":debundle",
+    ],
+    env = {
+        "DEBUNDLE_JS_LIST": "$(rlocationpath js-files.txt)",
+        "DEBUNDLE_OUT": "$(rlocationpath :debundle)",
+    },
+    tags = ["postsubmit"],
+    deps = [
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
 )
