@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 
@@ -23,13 +24,15 @@ import (
 
 type testServer struct {
 	servicepb.UnimplementedBuildBuddyServiceServer
-	t               *testing.T
-	public, private *[32]byte
-	mu              sync.Mutex
-	stored          []byte
-	apiKeys         map[string]*apikeypb.ApiKey
-	createError     codes.Code
-	commitBeforeErr bool
+	t                *testing.T
+	public, private  *[32]byte
+	mu               sync.Mutex
+	stored           []byte
+	apiKeys          map[string]*apikeypb.ApiKey
+	createError      codes.Code
+	commitBeforeErr  bool
+	readbackDisabled bool
+	readbackError    codes.Code
 }
 
 func (s *testServer) checkAuth(ctx context.Context) {
@@ -103,6 +106,28 @@ func (s *testServer) GetApiKeys(ctx context.Context, req *apikeypb.GetApiKeysReq
 		})
 	}
 	return response, nil
+}
+
+func (s *testServer) GetApiKey(ctx context.Context, req *apikeypb.GetApiKeyRequest) (*apikeypb.GetApiKeyResponse, error) {
+	s.checkAuth(ctx)
+	if req.GetRequestContext().GetGroupId() != "fake-group" {
+		s.t.Error("API-key readback did not use the explicit group")
+		return nil, status.Error(codes.InvalidArgument, "unexpected group")
+	}
+	if s.readbackError != codes.OK {
+		return nil, status.Error(s.readbackError, "sensitive server error")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := s.apiKeys[req.GetApiKeyId()]
+	if key == nil {
+		return nil, status.Error(codes.NotFound, "absent")
+	}
+	value := key.GetValue()
+	if s.readbackDisabled {
+		value = ""
+	}
+	return &apikeypb.GetApiKeyResponse{ApiKey: &apikeypb.ApiKey{Id: key.GetId(), Value: value}}, nil
 }
 
 func (s *testServer) CreateApiKey(ctx context.Context, req *apikeypb.CreateApiKeyRequest) (*apikeypb.CreateApiKeyResponse, error) {
@@ -207,59 +232,73 @@ func TestAPIKeyLifecycle(t *testing.T) {
 	impl := &testServer{t: t, apiKeys: make(map[string]*apikeypb.ApiKey)}
 	c := newTestClient(t, impl)
 	ctx := context.Background()
-	created, err := c.CreateAPIKey(ctx, "fake-group", "fake-label", []string{"CAS_WRITE", "CACHE_WRITE"}, true)
+	id, err := c.CreateAPIKey(ctx, "fake-group", "fake-label", []string{"CAS_WRITE", "CACHE_WRITE"}, true)
 	if err != nil {
 		t.Fatal("create API key:", err)
 	}
-	if created.ID != "fake-api-key-id" || string(created.Value) != "fake-generated-key" {
-		t.Fatal("create returned incomplete API-key material")
-	}
-	if len(created.Capabilities) != 2 || created.Capabilities[0] != "CACHE_WRITE" || created.Capabilities[1] != "CAS_WRITE" {
-		t.Fatal("create returned unexpected API-key capabilities")
+	value, err := c.APIKeyValue(ctx, "fake-group", id)
+	if err != nil || id != "fake-api-key-id" || string(value) != "fake-generated-key" {
+		t.Fatal("could not read back created API key:", err)
 	}
 
 	keys, err := c.APIKeys(ctx, "fake-group")
 	if err != nil || len(keys) != 1 {
 		t.Fatalf("list API keys: got %d keys, err=%v", len(keys), err)
 	}
-	if keys[0].ID != created.ID || keys[0].Label != "fake-label" || len(keys[0].Capabilities) != 2 || keys[0].Capabilities[0] != "CACHE_WRITE" {
+	if keys[0].ID != id || keys[0].Label != "fake-label" || len(keys[0].Capabilities) != 2 || keys[0].Capabilities[0] != "CACHE_WRITE" {
 		t.Fatal("list returned unexpected API-key metadata")
 	}
-	if err := c.UpdateAPIKey(ctx, created.ID, "updated-label", []string{"ORG_ADMIN"}, false); err != nil {
+	if err := c.UpdateAPIKey(ctx, id, "updated-label", []string{"ORG_ADMIN"}, false); err != nil {
 		t.Fatal("update API key:", err)
 	}
 	keys, err = c.APIKeys(ctx, "fake-group")
 	if err != nil || len(keys) != 1 || keys[0].Label != "updated-label" || len(keys[0].Capabilities) != 1 || keys[0].Capabilities[0] != "ORG_ADMIN" || keys[0].VisibleToDevelopers {
 		t.Fatal("API-key update was not reflected by group listing")
 	}
-	if err := c.UpdateAPIKey(ctx, created.ID, "read-only-key", nil, false); err != nil {
+	if err := c.UpdateAPIKey(ctx, id, "read-only-key", nil, false); err != nil {
 		t.Fatal("clear API-key capabilities:", err)
 	}
 	keys, err = c.APIKeys(ctx, "fake-group")
 	if err != nil || len(keys) != 1 || keys[0].Label != "read-only-key" || len(keys[0].Capabilities) != 0 {
 		t.Fatal("clearing API-key capabilities was not reflected by group listing")
 	}
-	if err := c.DeleteAPIKey(ctx, created.ID); err != nil {
+	if err := c.DeleteAPIKey(ctx, id); err != nil {
 		t.Fatal("delete API key:", err)
 	}
-	if err := c.DeleteAPIKey(ctx, created.ID); err != nil {
+	if err := c.DeleteAPIKey(ctx, id); err != nil {
 		t.Fatal("repeated API-key delete must be idempotent:", err)
 	}
-	readOnly, err := c.CreateAPIKey(ctx, "fake-group", "read-only-key", nil, false)
+	_, err = c.CreateAPIKey(ctx, "fake-group", "read-only-key", nil, false)
 	if err != nil {
 		t.Fatal("create API key without capabilities:", err)
 	}
-	if len(readOnly.Capabilities) != 0 {
-		t.Fatalf("created read-only API key has capabilities: %v", readOnly.Capabilities)
+	keys, err = c.APIKeys(ctx, "fake-group")
+	if err != nil || len(keys) != 1 || len(keys[0].Capabilities) != 0 {
+		t.Fatal("created read-only API key has unexpected capabilities")
 	}
 }
 
-func TestAPIKeyCreateAmbiguity(t *testing.T) {
+func TestAPIKeyReadbackRequired(t *testing.T) {
+	impl := &testServer{t: t, apiKeys: map[string]*apikeypb.ApiKey{
+		"id": {Id: "id", Value: "fake-value"},
+	}, readbackDisabled: true}
+	c := newTestClient(t, impl)
+	if _, err := c.APIKeyValue(context.Background(), "fake-group", "id"); err == nil || !strings.Contains(err.Error(), "readback must be enabled") {
+		t.Fatalf("disabled readback should produce an actionable error: %v", err)
+	}
+	impl.readbackDisabled = false
+	impl.readbackError = codes.PermissionDenied
+	if _, err := c.APIKeyValue(context.Background(), "fake-group", "id"); err == nil || !strings.Contains(err.Error(), "PermissionDenied") || strings.Contains(err.Error(), "sensitive server error") {
+		t.Fatalf("readback error should include the code but not the server message: %v", err)
+	}
+}
+
+func TestAPIKeyCreateErrorsDoNotExposeServerMessage(t *testing.T) {
 	impl := &testServer{t: t, apiKeys: make(map[string]*apikeypb.ApiKey), createError: codes.Unavailable, commitBeforeErr: true}
 	c := newTestClient(t, impl)
 	_, err := c.CreateAPIKey(context.Background(), "fake-group", "fake-label", []string{"CACHE_WRITE"}, false)
-	if err == nil || !IsAmbiguousAPIKeyCreate(err) {
-		t.Fatal("a lost response after key creation must be classified as ambiguous")
+	if err == nil || !strings.Contains(err.Error(), "Unavailable") || strings.Contains(err.Error(), "fake response lost") {
+		t.Fatalf("create error should include the code but not the server message: %v", err)
 	}
 	if len(impl.apiKeys) != 1 {
 		t.Fatal("test server did not retain the ambiguous created key")
@@ -268,8 +307,8 @@ func TestAPIKeyCreateAmbiguity(t *testing.T) {
 	impl = &testServer{t: t, apiKeys: make(map[string]*apikeypb.ApiKey), createError: codes.PermissionDenied}
 	c = newTestClient(t, impl)
 	_, err = c.CreateAPIKey(context.Background(), "fake-group", "fake-label", []string{"CACHE_WRITE"}, false)
-	if err == nil || IsAmbiguousAPIKeyCreate(err) {
-		t.Fatal("a permission rejection must be safe to retry")
+	if err == nil || !strings.Contains(err.Error(), "PermissionDenied") || strings.Contains(err.Error(), "fake server error") {
+		t.Fatalf("permission error should include the code but not the server message: %v", err)
 	}
 	if len(impl.apiKeys) != 0 {
 		t.Fatal("permission rejection unexpectedly created a key")

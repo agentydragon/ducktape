@@ -81,9 +81,9 @@ type APIKeyStatus struct {
 	AtProvider                 APIKeyObservation `json:"atProvider,omitempty"`
 }
 
-// An APIKey manages a group-owned BuildBuddy API key. BuildBuddy returns the
-// generated key value only at creation time; the provider publishes it through
-// writeConnectionSecretToRef and never stores it in the resource spec or status.
+// An APIKey manages a group-owned BuildBuddy API key. The provider requires
+// value readback and publishes the value through writeConnectionSecretToRef;
+// it never stores the value in the resource spec or status.
 // +kubebuilder:object:root=true
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
