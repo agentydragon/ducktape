@@ -57,7 +57,7 @@ fn fixture(annotated: bool) -> FixtureOpts<'static> {
 
 fn lint(opts: FixtureOpts<'_>) -> Vec<LintFinding> {
     let fixture = write_validate_fixture_spec(opts);
-    let report = spec_lint_json(&fixture.spec_path);
+    let report = spec_lint_json(&fixture.spec_path, &[]);
     assert!(report.get("unlinted_chunks").is_none(), "{report:#}");
     serde_json::from_value(report["findings"].clone())
         .unwrap_or_else(|error| panic!("{error}: {report:#}"))

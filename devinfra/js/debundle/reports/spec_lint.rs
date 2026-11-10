@@ -53,6 +53,8 @@ pub enum LintedAnnotation {
 pub enum PurityHintOwner {
     /// A logical-module member annotation.
     LogicalMember(ResolvedMemberSelector),
+    /// A `chunk_renames.<chunk>.annotations` entry, by its readable name.
+    ChunkRename { name: String },
     /// An annotation no logical-module member resolves to (a
     /// `chunk_renames` annotation): only the input binding is known.
     InputBinding { binding: String },
@@ -79,9 +81,13 @@ pub enum InferableReason {
     SummarizedEndpoints,
     /// The chunk has no violation of the overridden check.
     NoAdmissionViolation,
+    /// `spec lint --probe-analysis` reran the program with this one
+    /// annotation withheld: it was accepted with identical reports (dependency
+    /// graphs, atomic groups, precision losses, module contents).
+    WithheldRunUnchanged,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "probe", rename_all = "snake_case")]
 pub enum InconclusiveReason {
     /// The binding classifies without the hint, but other analysis consumers
@@ -90,6 +96,13 @@ pub enum InconclusiveReason {
         classification: RedundantPurityReason,
         proof_basis: RedundantPurityProofBasis,
     },
+    /// The baseline run of `--probe-analysis` was not accepted, so no
+    /// withheld run can be compared with it.
+    BaselineNotAccepted { error: String },
+    /// The withheld run could not run (an invalid edited spec, an I/O error).
+    ProbeFailed { error: String },
+    /// `--max-probes` was reached before this annotation was probed.
+    NotProbed,
 }
 
 impl LintFinding {

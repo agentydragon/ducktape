@@ -2353,6 +2353,23 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
   (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
   hint are not rerun.
 
+`spec lint --probe-analysis` decides `purity: pure` hints (logical-module and
+`chunk_renames` annotations) instead of leaving them as classifier leads. It
+prepares the input once, runs the whole program as a baseline and then once per
+hint with only that hint withheld from an in-memory copy of the spec, each run
+writing its reports and full graphs to a fresh directory. A hint is `inferable`
+(`withheld_run_unchanged`) when its run is accepted and every report is
+identical to the baseline's: dependency graphs with their precision losses,
+atomic groups and module contents. Only the hint diagnostics a withheld hint
+changes by construction (`spec_lint.json`, `modules.json`'s
+`redundant_purity_hints`) are excluded. A rejected or different run means the
+hint is used and produces no finding. A baseline that is not accepted
+(`baseline_not_accepted`), a run that cannot execute (`probe_failed`) and a hint
+past `--max-probes` (`not_probed`) are `inconclusive`; `--probe-chunk` limits
+probing to named chunks. Each probe costs one full pipeline run on the prepared
+input, reported per hint under `probes`. One hint is withheld at a time: two
+hints each reported inferable are not proven jointly removable.
+
 Findings are warnings: lint exits 0 whenever the pass produced reports, never
 edits the spec, and removal stays a reviewed edit followed by validation. A
 chunk the pass stopped before is listed in `unlinted_chunks`; its annotations

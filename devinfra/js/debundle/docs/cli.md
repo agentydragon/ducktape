@@ -791,6 +791,11 @@ gives `findings[]` (typed per [SPEC](../SPEC.md#spec-lint)) and
 `unlinted_chunks`; text prints one `warning[inferable_annotation]:` line per
 `inferable` finding and a `note[...]` line per `inconclusive` one, naming the
 module/member or spec location. It exits 0 whenever the pass produced reports.
+`--probe-analysis` additionally decides `purity: pure` hints by rerunning the
+whole program once per hint with that hint withheld
+([SPEC](../SPEC.md#spec-lint)); `--probe-chunk <chunk>` and `--max-probes <n>`
+bound it, and `probes[]` gives each run's outcome and `millis`. Budget it as one
+`run --dry-run` per hint.
 
 To find authored chunk-export contracts that this exact assignment does not
 currently need, run a bounded fresh audit:
