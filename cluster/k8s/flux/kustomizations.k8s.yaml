@@ -3630,6 +3630,15 @@ spec:
       namespace: ducktape-flux
     - name: piraeus-cluster
       namespace: ducktape-flux
+  ignore:
+    - paths:
+        - /spec/replicas
+      target:
+        group: pool.kubevirt.io
+        kind: VirtualMachinePool
+        name: buildbuddy-kvm-worker
+        namespace: buildbuddy-executor
+        version: v1beta1
   interval: 10m
   path: ./cluster/k8s/buildbuddy-kvm-worker
   prune: true

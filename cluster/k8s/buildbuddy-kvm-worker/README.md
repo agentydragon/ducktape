@@ -9,8 +9,9 @@ The disk is a blank image on a filesystem volume from `piraeus-ssd-local-delete`
 `DataVolume` template: a pool can only provide per-VM volumes that way, and CDI's importer cannot open a
 raw block device (<https://github.com/agentydragon/ducktape/issues/15297>). The volume is one unreplicated
 copy on the node's SSD pool; the contents rebuild. It keeps the VM on its node. A template change
-restarts each member in place and keeps its volume, cache and image store; deleting a member deletes the
-volume claim and its underlying volume. Existing volumes created with `piraeus-ssd-local` retain their
+replaces members one at a time; with only one member, that temporarily leaves no worker. A data-volume
+template change can also replace the disk and its cache. Deleting a member deletes the volume claim and
+its underlying volume. Existing volumes created with `piraeus-ssd-local` retain their
 old reclaim policy and leave a volume behind when their claim is deleted; clean those up separately.
 A member counts as ready once its executor has registered with BuildBuddy (the
 executor's `/readyz` on port 8080, which needs the `server-type` header), so the pool restarts members one at a time
@@ -38,6 +39,8 @@ adds at most one VM per 15 minutes. It holds the requested count while a VM is b
 or missing metrics, and alerts if that persists. Scale-down uses a 15-minute stabilization window and
 removes at most one VM every five minutes. Missing pool metrics hold the current count. Newly provisioned
 workers need time to install packages and warm their local cache.
+The pool manifest initializes `spec.replicas` to one because KubeVirt's scale subresource requires the
+field; the worker Flux Kustomization ignores subsequent changes to it so the HPA can scale the pool.
 
 Before enabling autoscaling, deploy the longer executor drain timeout and verify that both existing
 workers have rolled out and registered with it. The initial rollout can interrupt a busy worker still

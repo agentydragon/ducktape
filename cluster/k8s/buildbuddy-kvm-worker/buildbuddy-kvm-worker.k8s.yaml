@@ -989,6 +989,7 @@ metadata:
   namespace: buildbuddy-executor
 spec:
   maxUnavailable: 1
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/part-of: buildbuddy-kvm-worker
