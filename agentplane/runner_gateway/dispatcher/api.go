@@ -520,8 +520,8 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err != nil {
 		return nil, err
 	}
-	// An Identity creates no Session, not even on a Sandbox acting as it: acting as an Identity
-	// confers no authority over the Sandbox. How a Session asks for a sub-Session is
+	// An Identity creates no Session, not even on a Sandbox acting as it: creating a Session is
+	// lifecycle control, which needs an explicit grant that does not exist yet. How a Session asks for a sub-Session is
 	// SESSION_SUBAGENT_DELEGATION (agentplane/plans/task_dag.md).
 	if _, ok := caller.(IdentityCaller); ok {
 		return nil, status.Error(codes.PermissionDenied, "an Identity caller cannot create a Session")

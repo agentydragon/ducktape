@@ -116,20 +116,41 @@ A managed account's `EgressCredential` and one-rule `PolicySet` are emitted by t
 owned by the account, so a temporary account's grants, use bindings, credential and set go with its
 one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)).
 
-**Acting as is not authority** (operator, 2026-11-10). "A Sandbox acts as Identity I" means only
-that its workloads authenticate as I and their outgoing calls are authorized by I's bindings. It
-confers no authority over the Sandbox: not reading, resuming, waking, deleting or managing it, nor
-over an environment or an Action box. That authority comes only from explicit grants, a `PolicySet`
-rule bound to a subject, which may happen to be I if someone writes that binding but is never
-implied. Deleting an Identity revokes what a Sandbox acting as it can do, since its credentials stop
-resolving, but deletes no Sandbox, environment or box. `Sandbox.spec.identity` is a name-based
-reference: a Sandbox acts as whichever Identity holds that name now, so a recreated same-named
-Identity becomes its acting identity again, while credentials stay UID-fenced and the old
-incarnation's stop working. Explicit environment rules, saying who may read, resume or wake which
-environments, are the mechanism that replaces implicit ownership. No such `PolicySet` rule type
-exists yet (`Rule.Type` has `kubernetes_role_binding`, `kubernetes_cluster_role_binding`, `egress`,
-`action_auto_approve`, `session_inbox_access`); it is an open item tied to open question 11 and
-[`SESSION_IDENTITY_AUTHZ`](task_dag.md#session_identity_authz--session-reads-and-sends-authorized-by-identity).
+**Acting as an Identity, and what it implies** (operator, 2026-11-10).
+
+- **An Identity is the isolation boundary.** One Session has one Identity, and Sessions sharing an
+  Identity have the same access by design; to isolate, use different Identities. An Identity is not
+  assumed to be one-to-one with a Sandbox: several may be bound to it.
+- **Acting in a workload is implied for its bound Identity**: exec in a Sandbox or box, reading its
+  files, interacting with Sessions running as that Identity. A harness-hosted Session already
+  executes commands inside the Sandbox it runs in, as that Sandbox's Identity; any Session of
+  Identity I executing in any Sandbox bound to I is the transitive closure of that, and grants
+  nothing I does not already have.
+- **Messaging between Sessions of the same Identity is implied**, since the recipient could learn the
+  same itself, and so is a resume or wake that such a send causes, under the recipient's resume
+  policy, for multi-agent use. Only sending across Identities needs an explicit grant
+  (`session_inbox_access`). This is the intended design under
+  [`SESSION_IDENTITY_AUTHZ`](task_dag.md#session_identity_authz--session-reads-and-sends-authorized-by-identity);
+  Notification's send check today still requires a `session_inbox_access` binding even for a
+  same-Identity send (#15374).
+- **Lifecycle control needs an explicit grant**: create, resume, wake, suspend, delete or rebind a
+  Sandbox or box as a direct request, or create Sessions. A grant is a `PolicySet` rule bound to a
+  subject, which may be I if someone writes that binding, never implied. Explicit environment
+  rules, saying who may resume, wake or manage which environments, are the mechanism; no such
+  `PolicySet` rule type exists yet (`Rule.Type` has `kubernetes_role_binding`,
+  `kubernetes_cluster_role_binding`, `egress`, `action_auto_approve`, `session_inbox_access`), an
+  open item tied to open question 11 and `SESSION_IDENTITY_AUTHZ`.
+- **Action boxes:** creating one is lifecycle. Today it is granted explicitly, through the Action
+  Service's `action_auto_approve` policy on the effective caller. **Open consideration** (operator,
+  not decided): an agent creating its own boxes with automatic approval is a deliberate path, so MCP
+  clients can run bash and use egress credentials; if needed it can stay a privileged component
+  (the MCP edge, acting for the Identity through delegation, under policy) rather than the
+  Identity's own SVID being allowed to create boxes directly.
+- Deleting an Identity revokes what a workload acting as it can do, since its credentials stop
+  resolving, but deletes no Sandbox, environment or box. `Sandbox.spec.identity` is a name-based
+  reference: a Sandbox acts as whichever Identity holds that name now, so a recreated same-named
+  Identity becomes its acting identity again, while credentials stay UID-fenced and the old
+  incarnation's stop working.
 
 ## Changing an environment's identity
 

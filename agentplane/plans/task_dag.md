@@ -2023,7 +2023,8 @@ a plain Pod delete is enough, since boxes have no seal. It takes over `TODO(sand
 `action_service/sandbox/inventory.go`; the closed draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expired agent-sandbox boxes the same way. It also revokes a box's `WorkloadCredential` whose bound
 Pod no longer exists, so a Pod deleted outside `dispose` or garbage collection leaves no resolvable
-record.
+record. Boxes and Sandboxes are to converge into one object type
+([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)).
 
 ### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
@@ -3200,11 +3201,13 @@ Identity subject, and on the open question of who creates a launched Sandbox's `
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
 only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
 Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes
-its acting identity again, while credentials stay UID-fenced. Acting as an Identity confers no
-authority over the Sandbox, its environment or its boxes, and deleting the Identity revokes the
-Sandbox's credentials without deleting it ([plan](identity_and_kubernetes_accounts.md#identity-lifetime);
-operator, 2026-11-10). Authority over environments comes only from explicit rules, which do not
-exist yet, so Identity callers get no EnvironmentService read, resume or wake until they do. #15380
+its acting identity again, while credentials stay UID-fenced. Acting in a workload is implied for
+its bound Identity, but lifecycle control (resume, wake, suspend, delete, rebind, create Sessions)
+needs an explicit grant, and deleting the Identity revokes the Sandbox's credentials without
+deleting it ([plan](identity_and_kubernetes_accounts.md#identity-lifetime); operator, 2026-11-10).
+Explicit environment rules do not exist yet, so Identity callers get no EnvironmentService resume
+or wake until they do. Sandboxes and Action boxes are to converge into one object type
+([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)). #15380
 derived them from acting-as and was closed unmerged: `resumePolicy.allowOwnIdentity`, Identity
 wake-on-send and its Dispatcher migration are rebuilt once an explicit environment rule type exists
 (its code is kept on branch `identity-consumers-environment-self-read-deferred`). The switch is one
@@ -3329,7 +3332,9 @@ The design builds on the existing [delegated authorization](../docs/delegated_au
 create and message a sub-Session under `SESSION_IDENTITY_AUTHZ`, settles which Identity the
 sub-Session runs as with open question 11 of the
 [plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), and covers Sessions with
-no environment (`CENTRAL_SESSION_ACTING_DESIGN`). **Exit:** a decided design and the PRs it implies.
+no environment (`CENTRAL_SESSION_ACTING_DESIGN`). What a sub-Session of the same Identity may do follows the plan's
+[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting and same-Identity
+messaging are implied, creating it is lifecycle and needs a grant. **Exit:** a decided design and the PRs it implies.
 
 ### `SESSION_IDENTITY_AUTHZ` — Session reads and sends authorized by identity
 
@@ -3349,7 +3354,10 @@ read a Session, whichever Sandbox (if any) hosts it. A central-sampler Session h
 (`CENTRAL_SESSION_ACTING_DESIGN`), and the Sandbox hosting a Session stops carrying authority once
 Sandboxes run as Identities (`IDENTITY_CUTOVER`). It also depends on open question 11 of the
 [plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits), who creates a launched
-Sandbox's Identity. The Sandbox-anchored sites carry `TODO(SESSION_IDENTITY_AUTHZ)`. **Exit:** a
+Sandbox's Identity. The Sandbox-anchored sites carry `TODO(SESSION_IDENTITY_AUTHZ)`. Intended design (operator, 2026-11-10): messaging between Sessions of the same Identity is
+implied, and so is a resume or wake it causes under the recipient's resume policy; only a send
+across Identities needs `session_inbox_access` ([plan](identity_and_kubernetes_accounts.md#identity-lifetime)).
+Today's Notification send check (#15374) still requires that binding for a same-Identity send. **Exit:** a
 decided design for send, inbox and History-read authorization keyed on the Session's Identity, and
 the PRs it implies. It follows `SESSION_SA_PRINCIPAL_REMOVAL`: once a Session has only an Identity,
 the Sandbox is the only remaining anchor to replace. It also reviews any policy bound to a platform
