@@ -26,3 +26,9 @@ export function monthlySpendingMinorUnits(
 export function annualFundingMinorUnits(portfolioMinorUnits: number, drawRate: string): Decimal {
   return new Decimal(portfolioMinorUnits).mul(drawRate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 }
+
+export function fundingFromSpendingMinorUnits(spendingMinorUnits: number, effectiveTaxRate: string): Decimal {
+  return new Decimal(spendingMinorUnits)
+    .div(new Decimal(1).minus(effectiveTaxRate))
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+}
