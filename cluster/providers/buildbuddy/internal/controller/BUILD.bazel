@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "controller",
     srcs = [
+        "api_key.go",
         "config.go",
         "secret.go",
     ],
@@ -24,7 +25,28 @@ go_library(
         "@buildbuddy_crossplane_runtime//pkg/reconciler/providerconfig",
         "@buildbuddy_crossplane_runtime//pkg/resource",
         "@buildbuddy_k8s_api//core/v1:core",
+        "@buildbuddy_k8s_apimachinery//pkg/api/errors",
         "@buildbuddy_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@buildbuddy_k8s_apimachinery//pkg/types",
+    ],
+)
+
+go_test(
+    name = "api_key_test",
+    srcs = ["api_key_test.go"],
+    embed = [":controller"],
+    deps = [
+        "//cluster/providers/buildbuddy/apis/v1alpha1",
+        "//cluster/providers/buildbuddy/internal/buildbuddy",
+        "@buildbuddy_controller_runtime//pkg/client/fake",
+        "@buildbuddy_controller_runtime//pkg/manager",
+        "@buildbuddy_controller_runtime//pkg/reconcile",
+        "@buildbuddy_crossplane_apis//core/v2:core",
+        "@buildbuddy_crossplane_runtime//pkg/meta",
+        "@buildbuddy_crossplane_runtime//pkg/reconciler/managed",
+        "@buildbuddy_k8s_api//core/v1:core",
+        "@buildbuddy_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@buildbuddy_k8s_apimachinery//pkg/runtime",
         "@buildbuddy_k8s_apimachinery//pkg/types",
     ],
 )

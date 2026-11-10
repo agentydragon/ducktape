@@ -72,6 +72,9 @@ func run() error {
 	if err := provider.SetupSecret(mgr, watchSecret, credentialSecret); err != nil {
 		return err
 	}
+	if err := provider.SetupAPIKey(mgr, watchSecret, credentialSecret); err != nil {
+		return err
+	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
 	}

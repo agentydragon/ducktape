@@ -5,6 +5,8 @@ package v1alpha1
 import "github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
 var (
+	_ resource.ModernManaged            = &APIKey{}
+	_ resource.ManagedList              = &APIKeyList{}
 	_ resource.ModernManaged            = &Secret{}
 	_ resource.ManagedList              = &SecretList{}
 	_ resource.ProviderConfig           = &ProviderConfig{}
@@ -14,6 +16,7 @@ var (
 )
 
 func init() {
+	SchemeBuilder.Register(&APIKey{}, &APIKeyList{})
 	SchemeBuilder.Register(&Secret{}, &SecretList{})
 	SchemeBuilder.Register(&ProviderConfig{}, &ProviderConfigList{})
 	SchemeBuilder.Register(&ProviderConfigUsage{}, &ProviderConfigUsageList{})

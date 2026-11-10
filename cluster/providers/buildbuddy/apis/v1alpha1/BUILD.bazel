@@ -5,6 +5,7 @@ load("//devinfra/go:controller_gen.bzl", "controller_crds")
 go_library(
     name = "inputs",
     srcs = [
+        "api_key_types.go",
         "doc.go",
         "register.go",
         "secret_types.go",
