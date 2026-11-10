@@ -140,7 +140,7 @@ flowchart LR
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|opaque Dispatcher SVID TLS| gw
 
-    egress -.->|opaque TLS; Rules verifies SVID or bearer :8081| egressRules
+    egress -.->|opaque TLS; Rules verifies SVID :8081| egressRules
     agent -.->|Notification HTTP| sidecar
     guest_agent -.->|Notification HTTP| relay
     sidecar -.->|Notification SVID TLS through CONNECT| egress
@@ -582,12 +582,12 @@ flowchart LR
     workload --> box_sidecar
     runner --> sidecar -->|mTLS Runtime SVID :8888| egress
     guest --> relay -->|mTLS Runtime SVID :8888| egress
-    nonSandbox[Action boxes] -->|TLS and Pod-bound bearer :8888| egress
+    nonSandbox[Action boxes] -->|mTLS box SVID :8888| egress
     standing[Haku UI and Anki sidecars] -->|mTLS standing SVID :8888| egress
     app -->|admin API on shared TLS gRPC listener :8081| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
-    egress -.->|opaque TLS; Rules verifies SVID or bearer :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
+    egress -.->|opaque TLS; Rules verifies SVID :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
     egress -.->|opaque TLS to shared SVID RPC listener :8080| llm
     sampler -->|direct TokenReview HTTP:8080| llm
     llm -->|model API + server-held key| litellm
@@ -595,10 +595,9 @@ flowchart LR
     actions -->|REST + web push| github
 ```
 
-The required runner mTLS hop resolves the SVID's Sandbox UID and accepted credential through
-live status before using that Sandbox's own ServiceAccount as the policy subject. The plaintext
-central plaintext token hop is removed. Non-Sandbox sidecars retain explicit Pod-bound bearer
-authentication over the same verified TLS listener. Rules uses that same authentication policy
+The required mTLS hop resolves the SVID's live `WorkloadCredential` before using its subject
+ServiceAccount as the policy subject; no bearer authenticates it. Rules uses that same
+authentication policy
 and terminates TLS through an opaque central tunnel;
 the proxy never asserts the caller. History, Notification, Gateway, Action and LLM each serve
 bearer-authenticated and Sandbox-SVID RPCs on their primary TLS listener, with method-specific

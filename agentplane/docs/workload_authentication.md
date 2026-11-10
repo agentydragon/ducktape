@@ -2,8 +2,9 @@
 
 Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation through
 its [`WorkloadCredential`](#workloadcredentials).
-Configured non-Sandbox workloads retain Pod-bound Kubernetes bearer authentication over verified
-TLS. This document describes both active routes and the remaining identity lifecycle boundary.
+Command/build boxes and standing workloads present `WorkloadCredential` SVIDs too. Backend services
+calling each other retain Kubernetes bearer authentication over verified TLS. This document
+describes both.
 
 ## Sandbox SVID route
 
@@ -193,21 +194,17 @@ other Certificate against the issuer is refused. Certificates against other issu
 
 ## TokenReview and projected credentials
 
-The central egress proxy's `forward` listener requires TLS and allows either a Runtime SVID or a
-Kubernetes bearer with the `agentplane-egress` audience, which it verifies with TokenReview. No
-deployed workload uses the bearer: Sandbox, command/build box and standing-workload sidecars select
-the SVID mode, and their templates do not project the proxy hop bearer.
+The central egress proxy's `forward` listener requires mTLS and authenticates SVIDs alone; a
+bearer does not authenticate the hop.
 
 `projectedWorkloadToken` is a separate destination credential. A sidecar offers its explicit
 destination-audience token, and the proxy substitutes it only after TokenReview binds it to the same
 caller Pod and a matching credential rule. Sandbox Runtime templates continue to project this
-Kubernetes destination-audience token; they do not project the proxy-hop or first-party-service
-audiences. The generic sidecar also retains its explicitly selected token transport for its separate
-deployments.
+Kubernetes destination-audience token; they do not project first-party-service audiences.
 
 The proxy's `forward` and services' `rpc` settings use the shared
-[authentication allowlist](../workload_auth/README.md). Each first-party service uses one TLS RPC
-listener for Sandbox SVIDs and existing backend bearers. Protected calls reject both a certificate
+[authentication allowlist](../workload_auth/README.md); `forward` names `spiffe` alone. Each
+first-party service uses one TLS RPC listener for workload SVIDs and existing backend bearers. Protected calls reject both a certificate
 and an application credential presented together. Admission stays method-specific: enabling both
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
 or delegated calls.
@@ -232,10 +229,8 @@ requests and responses, and stamps verified Sandbox and Pod metadata into LiteLL
 metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 [`../llm_ingress/README.md`](../llm_ingress/README.md).
 
-## Non-Sandbox and future callers
+## Future callers
 
-No non-Sandbox workload holds a proxy-hop bearer: command/build boxes and standing workloads present
-their `WorkloadCredential` SVIDs.
 Do not infer that arbitrary callers are admitted, or treat an egress placeholder, source IP, or
 caller-supplied identity header as authentication.
 

@@ -39,6 +39,7 @@ pub(super) fn finalize(
         record_factory_rejection,
         checked_local_constructor_factory,
         provisional_roots,
+        ordered_statement,
         effect_initializer_source,
         ..
     } = root;
@@ -186,6 +187,11 @@ pub(super) fn finalize(
             &state.world.module.initialized_bindings,
             &outcome.effect_coverage,
         );
+    }
+    // The body phase keeps an attempted statement only when it seals.
+    if outcome.effects.completed_initialization.is_none() && ordered_statement.is_some() {
+        outcome.effects.completed_initialization =
+            CompletedInitialization::from_root_statement_effects(owner, &outcome.effect_coverage);
     }
     // A private declaration whose every operation the ledger covers ran
     // no user code and exposed no capability: its own callables and the

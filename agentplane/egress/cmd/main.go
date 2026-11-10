@@ -31,7 +31,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -110,21 +109,8 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	return base, nil
 }
 
-// workloadIdentity reviews explicitly enabled hop bearers and projected destination tokens.
+// workloadIdentity reviews projected destination tokens.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
-	var hop *auth.Resolver
-	for _, method := range c.Forward.Auth {
-		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok {
-			if len(bearer.Audiences) != 1 {
-				return nil, errors.New("proxy bearer authentication requires exactly one audience")
-			}
-			var err error
-			hop, err = auth.NewResolver(reviews, bearer.Audiences[0], c.AllowedServiceAccountNamespaces)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
 	for _, audience := range c.ProjectedTokenAudiences {
 		resolver, err := auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces)
@@ -133,7 +119,7 @@ func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, 
 		}
 		projected[audience] = resolver
 	}
-	return identity.NewVerifier(hop, projected), nil
+	return identity.NewVerifier(projected), nil
 }
 
 // tokenFile reads a kubelet-rotated token file each time it is called.
@@ -218,11 +204,9 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	if err != nil {
 		return err
 	}
-	var records *resolver.Resolver
-	if c.Forward.Has(listener.SPIFFE) {
-		if records, err = resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, nil); err != nil {
-			return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
-		}
+	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, nil)
+	if err != nil {
+		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
 	}
 	ca, err := tls.LoadX509KeyPair(c.CACert, c.CAKey)
 	if err != nil {

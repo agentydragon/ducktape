@@ -47,7 +47,8 @@ use swc_ecma_ast::*;
 #[derive(Clone, Copy)]
 pub(in crate::facts::sync_effects) enum LocalExecutionScope {
     Callable(u32),
-    RootInitializer,
+    /// A root owner's variable initializer or expression statement.
+    Root,
     /// The lowered base-constructor body of this class, run by the kernel's
     /// construct rule. It has no call operation of its own.
     Constructor(u32),
@@ -57,7 +58,7 @@ impl LocalExecutionScope {
     pub(in crate::facts::sync_effects) fn caller(self) -> Option<u32> {
         match self {
             Self::Callable(key) => Some(key),
-            Self::RootInitializer | Self::Constructor(_) => None,
+            Self::Root | Self::Constructor(_) => None,
         }
     }
 }
@@ -96,9 +97,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
     pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Call] {
         match self.scope {
             LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
-            LocalExecutionScope::RootInitializer => {
-                &self.executor.inputs.index.top_calls[self.owner.0]
-            }
+            LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
             LocalExecutionScope::Constructor(_) => &[],
         }
     }
@@ -154,7 +153,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             LocalExecutionScope::Callable(key) => {
                 &self.executor.inputs.index.callables[&key].member_value_writes
             }
-            LocalExecutionScope::RootInitializer => {
+            LocalExecutionScope::Root => {
                 &self.executor.inputs.index.top_member_value_writes[self.owner.0]
             }
             LocalExecutionScope::Constructor(_) => &[],
@@ -377,6 +376,37 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         // separately by the ordered operation that produced it.
         EffectCoverageFragment::no_effects()
     }
+    /// Only an admitted root statement stores to a module binding: a root
+    /// initializer has its own binding identity, and a callable's store
+    /// would need the closure's view of the binding.
+    fn store_module_binding(
+        &mut self,
+        binding: &Id,
+        values: &Values,
+    ) -> Option<EffectCoverageFragment> {
+        if !matches!(self.scope, LocalExecutionScope::Root)
+            || self.outcome.root_binding_effect_identity.is_some()
+            || !self.executor.inputs.top_bindings.contains(binding)
+            || self
+                .executor
+                .module_binding_store_refusal(binding)
+                .is_some()
+        {
+            return None;
+        }
+        // The flattened lane's join, which the owner's assignment phase
+        // repeats: the statement may be one of several writers.
+        if self.executor.inputs.needed_bindings.contains(binding) {
+            let world = self.executor.state.world_mut();
+            let possible = world.module.prefix_values.entry_or_default(binding);
+            let before = possible.len();
+            possible.extend(values.iter().cloned());
+            if possible.len() != before {
+                world.revision.bump_prefix();
+            }
+        }
+        Some(EffectCoverageFragment::module_binding_store())
+    }
     fn module_prefix_receiver(&self, binding: &Id, _receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
     }
@@ -484,7 +514,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition> {
         let mut result = self.read_binding(binding, frame)?;
-        let selected = matches!(self.scope, LocalExecutionScope::RootInitializer)
+        let selected = matches!(self.scope, LocalExecutionScope::Root)
             && self
                 .outcome
                 .root_binding_effect_identity
@@ -638,8 +668,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 .root_binding_effect_identity
                 .as_ref()
                 .filter(|identity| {
-                    matches!(self.scope, LocalExecutionScope::RootInitializer)
-                        && identity.owner == self.owner
+                    matches!(self.scope, LocalExecutionScope::Root) && identity.owner == self.owner
                 })
                 .and_then(|identity| match &call.callee {
                     ValueExpr::Binding(callee) => self
@@ -779,7 +808,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 ),
                 // This canonical root has one direct zero-argument call and
                 // no suffix. Other root expressions retain remainder fallback.
-                LocalExecutionScope::RootInitializer => {
+                LocalExecutionScope::Root => {
                     self.body.single_identifier_call_initializer() == Some(span)
                 }
                 // A constructor body is admitted without calls.
@@ -875,14 +904,14 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
                 creation,
                 super::super::local_operations::DeferredCallableCreation::Function(_)
             )
-            && matches!(self.scope, LocalExecutionScope::RootInitializer)
+            && matches!(self.scope, LocalExecutionScope::Root)
             && self
                 .outcome
                 .root_binding_effect_identity
                 .as_ref()
                 .is_some_and(|identity| {
                     identity.owner == self.owner
-                        && identity.initializer_span == self.body.initializer_span()
+                        && identity.initializer_span == self.body.root_span()
                         && self
                             .body
                             .single_identifier_call_with_function_argument_initializer()
@@ -990,7 +1019,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         call_span: Span,
     ) -> Option<LocalValueResult> {
         // Only the exact canonical root call has an ordered execution witness.
-        if !matches!(self.scope, LocalExecutionScope::RootInitializer) {
+        if !matches!(self.scope, LocalExecutionScope::Root) {
             return None;
         }
         let callee = ValueExpr::Member(
@@ -1022,7 +1051,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         span: Span,
     ) -> Option<LocalValueResult> {
         // Only the exact canonical root read has an ordered execution witness.
-        if !matches!(self.scope, LocalExecutionScope::RootInitializer) {
+        if !matches!(self.scope, LocalExecutionScope::Root) {
             return None;
         }
         let callee = ValueExpr::Member(
@@ -1122,7 +1151,7 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 span,
                 refusal,
             } => {
-                if matches!(self.scope, LocalExecutionScope::RootInitializer)
+                if matches!(self.scope, LocalExecutionScope::Root)
                     && let Some(read) = self.executor.present_own_data_read(receivers, property)
                 {
                     self.outcome

@@ -490,18 +490,19 @@ impl EffectCoverageFragment {
         fragment
     }
 
-    /// An executed lexical operation whose global, heap, and host effects
-    /// remain outside this receipt family. Keeping those domains Unknown is
-    /// deliberate: this proof can seal binding-effect coverage only.
-    pub(super) fn lexical_operation() -> Self {
+    /// SetMutableBinding of an initialized, mutable, unexported module
+    /// binding no closure reads: no global, heap or host effect. The rebind
+    /// is the owner's syntactic binding write; lexical coverage stays
+    /// unknown, so this never seals a lexical binding-effect receipt.
+    pub(super) fn module_binding_store() -> Self {
         Self {
-            lexical: Some(Box::new(LexicalEffectCoverage {
-                reads: DomainCoverage::Covered(Box::default()),
-                rebinds: DomainCoverage::Covered(Box::default()),
-                calls: BTreeMap::new(),
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: DomainCoverage::Covered(Box::default()),
+                general_heap: DomainCoverage::Covered(Box::default()),
+                host_effects: DomainCoverage::Covered(Box::default()),
             })),
+            lexical: None,
             completion: Completion::Normal(()),
-            ..Self::default()
         }
     }
 

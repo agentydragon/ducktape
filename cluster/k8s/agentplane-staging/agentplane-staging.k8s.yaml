@@ -1581,9 +1581,6 @@ data:
       auth:
         - mode: spiffe
           ca_file: /etc/agentplane-egress/svid-ca/ca-certificates.crt
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-egress
 immutable: false
 ---
 apiVersion: v1
@@ -13885,8 +13882,6 @@ spec:
       toPorts:
         - ports:
             - port: "8888"
-              protocol: TCP
-            - port: "8081"
               protocol: TCP
 ---
 apiVersion: cilium.io/v2

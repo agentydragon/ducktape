@@ -27,6 +27,7 @@ use super::frame::{
     LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
+use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeMap;
@@ -1068,10 +1069,14 @@ impl LocalContinuation {
                 value,
                 span,
             } => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
+                // A store to a binding outside this body composes its own
+                // fragment in `store_binding`.
+                if body.bindings.contains_key(&binding) {
+                    self.frame
+                        .ledger
+                        .effects
+                        .compose(&EffectCoverageFragment::default());
+                }
                 self.steps.push(Step::Assign(binding, span));
                 self.steps.push(Step::Expression(value.as_ref().clone()));
             }
@@ -1539,7 +1544,10 @@ fn read_field(
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
             frame.ledger.heap_accesses.reads.insert(read.cell);
-            let mut effects = EffectCoverageFragment::lexical_operation();
+            // [[Get]] of a present own data property runs no getter,
+            // prototype lookup, global or host operation; its one heap
+            // effect is the slot cell recorded above.
+            let mut effects = EffectCoverageFragment::no_effects();
             if module_prefix {
                 effects.depend_on(selection_dependencies.as_ref());
             }
@@ -1628,14 +1636,25 @@ fn store_field(
         .property_is_writable(slot.object, property)
         .then(|| context.current_prerequisites());
     frame.ledger.heap_accesses.writes.insert(slot.cell());
+    // Writability is an attribute of the object's shape: a later
+    // redefinition or integrity change must stay ordered after this store.
+    frame
+        .ledger
+        .heap_accesses
+        .reads
+        .insert(EffectCell::ObjectShape(slot.object));
     context.world_mut().literal_heap().write_property(
         slot.object,
         Some(property.to_owned()),
         values,
     );
+    // [[Set]] on an existing writable own data property of an ordinary
+    // object with settled accessors replaces its value: no setter, prototype
+    // lookup, global or host operation runs. The one heap effect is the
+    // slot cell recorded above.
     let effects = match write_dependencies {
         Some(dependencies) => {
-            let mut effects = EffectCoverageFragment::lexical_operation();
+            let mut effects = EffectCoverageFragment::no_effects();
             effects.depend_on(dependencies.as_ref());
             effects
         }
@@ -1668,11 +1687,17 @@ fn store_binding(
         return Ok(SelectedValue::raw(values));
     }
     let Some(kind) = body.bindings.get(binding) else {
+        frame.binding_selections.remove(binding);
+        if !context.world().active_cells.contains_key(binding)
+            && let Some(effects) = context.store_module_binding(binding, &values)
+        {
+            frame.ledger.effects.compose(&effects);
+            return Ok(completing_selected(SelectedValue::raw(values), frame));
+        }
         frame
             .ledger
             .effects
             .compose(&EffectCoverageFragment::default());
-        frame.binding_selections.remove(binding);
         let result = cells::store_captured(context, frame, binding, &values, span)?;
         frame.ledger.allocation.compose(&result.judgment);
         return Ok(completing_selected(

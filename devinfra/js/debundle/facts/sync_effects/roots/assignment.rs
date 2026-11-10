@@ -55,7 +55,7 @@ pub(super) fn assign(
                             identity.owner == owner
                                 && identity.binding == *id
                                 && ordered_initializer.is_some_and(|body| {
-                                    identity.initializer_span == body.initializer_span()
+                                    identity.initializer_span == body.root_span()
                                 })
                         })
             });

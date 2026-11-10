@@ -199,9 +199,9 @@ func (b *Bridge) authenticate(ctx context.Context, headers http.Header, previous
 	values, supplied := headers[textproto.CanonicalMIMEHeaderKey(proxyAuthorizationHeader)]
 	token := ""
 	if supplied {
-		var ok bool
-		token, ok = identity.BearerToken(values)
-		if !ok {
+		var err error
+		token, err = auth.BearerToken(values)
+		if err != nil {
 			return tunnelState{}, decision.TokenRejected, http.StatusForbidden
 		}
 	} else if previous != nil {

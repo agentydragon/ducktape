@@ -1,42 +1,23 @@
-"""The sidecar authoring union keeps invalid hop combinations out of rendered settings."""
+"""The sidecar authoring model keeps invalid hop settings out of rendered settings."""
 
 import json
-from pathlib import Path
 
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.egress.platform_routes import (
-    PLATFORM_ROUTES_LISTEN_ADDRESS,
-    PlatformRoute,
-    PlatformRoutes,
-    TLSConnectRouteTransport,
-)
-from agentplane.egress.sidecar_config import (
-    KubernetesBearerProxyAuth,
-    PlaintextProxyTransport,
-    Proxy,
-    Settings,
-    SpiffeProxyAuth,
-    TLSProxyTransport,
-    WorkloadRoute,
-)
+from agentplane.egress.sidecar_config import Proxy, WorkloadRoute
 
 
 @pytest.mark.parametrize(
     "transport",
     [
-        {"mode": "plaintext", "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"}},
+        {"mode": "plaintext", "ca_file": "/ca", "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"}},
         {"mode": "tls", "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"}},
-        {"mode": "tls", "ca_file": "/ca", "auth": {"mode": "kubernetes_bearer"}},
-        {"mode": "plaintext", "auth": {"mode": "kubernetes_bearer", "token_file": "relative"}},
-        {"mode": "tls", "ca_file": "relative", "auth": {"mode": "kubernetes_bearer", "token_file": "/token"}},
-        {
-            "mode": "tls",
-            "ca_file": "/ca",
-            "auth": {"mode": "kubernetes_bearer", "token_file": "/token", "cert_file": "/c"},
-        },
+        {"mode": "tls", "ca_file": "relative", "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"}},
+        {"mode": "tls", "ca_file": "/ca", "auth": {"mode": "spiffe", "cert_file": "relative", "key_file": "/k"}},
+        {"mode": "tls", "ca_file": "/ca", "auth": {"mode": "spiffe", "cert_file": "/c"}},
+        {"mode": "tls", "ca_file": "/ca", "auth": {"mode": "token", "cert_file": "/c", "key_file": "/k"}},
         {
             "mode": "tls",
             "ca_file": "/ca",
@@ -44,7 +25,7 @@ from agentplane.egress.sidecar_config import (
         },
     ],
 )
-def test_rejects_invalid_auth_transport_combinations(transport: dict[str, object]) -> None:
+def test_rejects_invalid_proxy_transport(transport: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         Proxy.model_validate_json(json.dumps({"address": "egress.example:8888", "transport": transport}))
 
@@ -68,83 +49,14 @@ def test_proxy_address_requires_exact_host_port(address: str) -> None:
             json.dumps(
                 {
                     "address": address,
-                    "transport": {"mode": "plaintext", "auth": {"mode": "kubernetes_bearer", "token_file": "/token"}},
+                    "transport": {
+                        "mode": "tls",
+                        "ca_file": "/ca",
+                        "auth": {"mode": "spiffe", "cert_file": "/c", "key_file": "/k"},
+                    },
                 }
             )
         )
-
-
-def test_tls_connect_route_requires_svid_proxy_hop() -> None:
-    routes = PlatformRoutes(
-        listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
-        routes={
-            "egress-rules": PlatformRoute(
-                service_prefixes=("/agentplane.egress.EgressRules/",),
-                upstream="rules:8081",
-                transport=TLSConnectRouteTransport(server_uri="spiffe://agentplane/egress-proxy"),
-            )
-        },
-    )
-    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
-        Settings(
-            proxy=Proxy(
-                address="egress.example:8888",
-                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=Path("/token"))),
-            ),
-            platform_routes=routes,
-        )
-    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
-        Settings(
-            proxy=Proxy(
-                address="egress.example:8888",
-                transport=TLSProxyTransport(
-                    ca_file=Path("/ca"), auth=KubernetesBearerProxyAuth(token_file=Path("/token"))
-                ),
-            ),
-            platform_routes=routes,
-        )
-    Settings(
-        proxy=Proxy(
-            address="egress.example:8888",
-            transport=TLSProxyTransport(
-                ca_file=Path("/ca"),
-                auth=SpiffeProxyAuth(cert_file=Path("/svid/tls.crt"), key_file=Path("/svid/tls.key")),
-            ),
-        ),
-        platform_routes=routes,
-    )
-
-
-def test_workload_route_reuses_svid_proxy_hop() -> None:
-    route = WorkloadRoute(upstream="notifications:8443", server_uri="spiffe://agentplane/notifications")
-    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
-        Settings(
-            proxy=Proxy(
-                address="egress.example:8888",
-                transport=PlaintextProxyTransport(auth=KubernetesBearerProxyAuth(token_file=Path("/token"))),
-            ),
-            workload_routes={"notifications:8080": route},
-        )
-    with pytest.raises(ValidationError, match="SVID-authenticated routes require"):
-        Settings(
-            proxy=Proxy(
-                address="egress.example:8888",
-                transport=TLSProxyTransport(
-                    ca_file=Path("/ca"), auth=KubernetesBearerProxyAuth(token_file=Path("/token"))
-                ),
-            ),
-            workload_routes={"notifications:8080": route},
-        )
-    Settings(
-        proxy=Proxy(
-            address="egress.example:8888",
-            transport=TLSProxyTransport(
-                ca_file=Path("/ca"),
-                auth=SpiffeProxyAuth(cert_file=Path("/svid/tls.crt"), key_file=Path("/svid/tls.key")),
-            ),
-        ),
-        workload_routes={"notifications:8080": route},
-    )
 
 
 def test_workload_route_rejects_per_route_tls_credentials() -> None:

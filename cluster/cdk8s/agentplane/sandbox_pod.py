@@ -184,7 +184,7 @@ def add_sidecar_settings(
     *,
     name: str,
     platform_routes: PlatformRoutes,
-    proxy_transport: sidecar_config.ProxyTransport,
+    proxy_transport: sidecar_config.TLSProxyTransport,
     workload_routes: Mapping[str, sidecar_config.WorkloadRoute] | None = None,
     listen_address: str | None = None,
 ) -> SettingsFile:

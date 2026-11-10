@@ -45,7 +45,7 @@ use super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin, LexicalCaptures,
     LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
-    canonical_array_index,
+    canonical_array_index, ordered_values,
 };
 use super::world::cells::{CellInitialization, CellTrace};
 use super::world::descriptor_heap::{
@@ -91,7 +91,7 @@ use crate::facts::sync_effects::property_inference::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
-    DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
+    DataflowOpacityCause, EffectCell, LocalClassConstructionProof, LocalClassConstructionShapes,
     NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic, SetIterableShapes,
     StatementPurityContext, TopLevelNativeIterableOperandSite, set_iterables::SetIterableProof,
 };
@@ -742,6 +742,10 @@ pub(super) struct NativeCallResolution {
     plan: CheckedNativePlan,
     iterable: Option<NativeIterableReceipt>,
     operation_coverage: Option<EffectCoverageFragment>,
+    /// Source cells an own-property projection row reads: the object's shape
+    /// and, for descriptors, every projected value slot. A closed native
+    /// receipt covers the heap domain only together with these reads.
+    projected_reads: Vec<EffectCell>,
     /// Prerequisites of the admission: callee identity, operand proofs and
     /// the prefix premises they read. The admitted row runs no user code, so
     /// these also cover the operation's effect domains.
@@ -1683,14 +1687,20 @@ fn kernel_constructor_body<'index>(
 pub(super) enum LocalActivation {
     Callable(u32),
     RootInitializer(RootInitializerIdentity),
-    Constructor { class: u32, instance: Values },
+    /// An admitted top-level expression statement: no binding receives its
+    /// value, so it has no lexical binding-effect identity.
+    RootStatement,
+    Constructor {
+        class: u32,
+        instance: Values,
+    },
 }
 
 impl LocalActivation {
     fn scope(&self) -> LocalExecutionScope {
         match self {
             Self::Callable(key) => LocalExecutionScope::Callable(*key),
-            Self::RootInitializer(_) => LocalExecutionScope::RootInitializer,
+            Self::RootInitializer(_) | Self::RootStatement => LocalExecutionScope::Root,
             Self::Constructor { class, .. } => LocalExecutionScope::Constructor(*class),
         }
     }
@@ -2632,6 +2642,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let mut ordinary_operands = BTreeSet::new();
         let mut own_property_projection = None;
+        let mut projected_reads = Vec::new();
         let mut application = None;
         let mut definition = None;
         for mutation in row.mutates {
@@ -2696,17 +2707,37 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     ordinary_operands.extend([target, descriptors]);
                 }
                 Mutation::FreshOwnDescriptorsOf(ArgSel::Arg(index)) => {
-                    own_property_projection = Some(self.own_property_projection(
+                    let proof = self.own_property_projection(
                         args.get(index)?,
                         OwnPropertyRequest::Descriptors {
                             native_call: native_call.clone()?,
                         },
-                    )?);
+                    )?;
+                    let OwnPropertyProjection::Descriptors(projection) = &proof.projection else {
+                        return None;
+                    };
+                    let source = projection.source_object;
+                    projected_reads.push(EffectCell::ObjectShape(source));
+                    projected_reads.extend(projection.ordered_names.iter().map(|name| {
+                        EffectCell::OwnProperty {
+                            origin: source,
+                            property: name.clone(),
+                        }
+                    }));
+                    own_property_projection = Some(proof);
                     ordinary_operands.insert(index);
                 }
                 Mutation::FreshOwnKeysOf(ArgSel::Arg(index)) => {
+                    let source_values = args.get(index)?;
+                    // The projection admits only a singleton ordinary record.
+                    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, source))) =
+                        source_values.first()
+                    else {
+                        return None;
+                    };
+                    projected_reads.push(EffectCell::ObjectShape(*source));
                     own_property_projection = Some(self.own_property_projection(
-                        args.get(index)?,
+                        source_values,
                         OwnPropertyRequest::Names {
                             native_call: native_call.clone()?,
                         },
@@ -2796,6 +2827,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             plan,
             iterable,
             operation_coverage,
+            projected_reads,
             dependencies,
         })
     }
@@ -3167,6 +3199,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             plan,
             iterable,
             operation_coverage,
+            projected_reads: _,
             dependencies: _,
         } = resolution;
         let fresh = match native_operation::execute(self, plan) {
@@ -5584,21 +5617,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Exports expose live capabilities only to code that can reenter the
         // module. Builtin iteration without such reentry remains precise.
         if self.inputs.export_reentry_enabled {
-            let mut exported = if self.inputs.reentry_default {
-                self.state.world.publication.exported_runtime_values.clone()
-            } else {
-                Values::new()
-            };
-            exported.extend(self.inputs.reentry_bindings.iter().flat_map(|binding| {
-                self.state
-                    .world
-                    .module
-                    .prefix_values
-                    .get(binding)
+            let world = &self.state.world;
+            let exported = ordered_values(
+                self.inputs
+                    .reentry_default
+                    .then_some(&world.publication.exported_runtime_values)
                     .into_iter()
                     .flatten()
-                    .cloned()
-            }));
+                    .chain(self.inputs.reentry_bindings.iter().flat_map(|binding| {
+                        world
+                            .module
+                            .prefix_values
+                            .get(binding)
+                            .into_iter()
+                            .flatten()
+                    }))
+                    .cloned(),
+            );
             self.expose_class_capabilities(&exported);
             self.taint_objects(&exported);
         }
@@ -6096,8 +6131,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(super) fn callback_values(&self, values: &Values) -> Values {
-        let pending: Vec<_> = values.iter().cloned().collect();
+    pub(super) fn callback_values<'v>(
+        &self,
+        values: impl IntoIterator<Item = &'v AbstractValue>,
+    ) -> Values {
+        let pending: Vec<_> = values.into_iter().cloned().collect();
         self.walk_callback_values(pending, None).0
     }
 
@@ -6784,7 +6822,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     AbstractValue::Instance(key, captured, _) => {
                         self.state.world_mut().classes.tainted.insert(key);
-                        self.taint_objects(&captured.values);
+                        self.taint_objects(captured.values.iter());
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
                         self.insert_escaped_callback_values(
@@ -6838,7 +6876,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) {
         for write in writes {
             let receivers = self.evaluate(&write.receiver, env, captures);
-            let uncertified = receivers.iter().filter(|value| !matches!(value,
+            let uncertified: Values = receivers.iter().filter(|value| !matches!(value,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object)) if certified_data_receivers.contains(object))).cloned().collect();
             self.taint_objects(&uncertified);
             let mut callbacks = self.callback_values(&receivers);
@@ -7119,14 +7157,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     bounded_fallback_callsite,
                 });
         }
-        let before = self.state.world.publication.global_escaped_callbacks.len();
-        self.state
-            .world_mut()
-            .publication
-            .global_escaped_callbacks
-            .extend(callbacks.iter().cloned());
-        if self.state.world.publication.global_escaped_callbacks.len() != before {
-            self.state.world_mut().revision.bump_prefix();
+        let escaped = &self.state.world.publication.global_escaped_callbacks;
+        if callbacks.iter().any(|callback| !escaped.contains(callback)) {
+            let world = self.state.world_mut();
+            world
+                .publication
+                .global_escaped_callbacks
+                .extend_absent(callbacks);
+            world.revision.bump_prefix();
         }
     }
 
@@ -7172,27 +7210,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        self.callback_values(&captured.values).iter().all(|value| {
-            !self
-                .state
-                .world
-                .publication
-                .global_escaped_callbacks
-                .contains(value)
-                && match value {
-                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
-                        !self.state.world.native.tainted_functions.contains(key)
+        self.callback_values(captured.values.iter())
+            .iter()
+            .all(|value| {
+                !self
+                    .state
+                    .world
+                    .publication
+                    .global_escaped_callbacks
+                    .contains(value)
+                    && match value {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                        | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
+                            !self.state.world.native.tainted_functions.contains(key)
+                        }
+                        AbstractValue::AuditedRetainedResult(_, nested) => !self
+                            .state
+                            .world
+                            .native
+                            .revoked_audited_results
+                            .contains_key(&nested.cache_identity()),
+                        _ => true,
                     }
-                    AbstractValue::AuditedRetainedResult(_, nested) => !self
-                        .state
-                        .world
-                        .native
-                        .revoked_audited_results
-                        .contains_key(&nested.cache_identity()),
-                    _ => true,
-                }
-        })
+            })
     }
 
     fn revoke_audited_result(&mut self, captured: &Captured<Values>) {
@@ -7221,8 +7261,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
-    pub(super) fn unsettle(&mut self, values: &Values) {
-        let mut pending: Vec<_> = values.iter().cloned().collect();
+    pub(super) fn unsettle<'v>(&mut self, values: impl IntoIterator<Item = &'v AbstractValue>) {
+        let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut visited = FxHashSet::default();
         // This pass does not change prefix values. Distinct closure contexts
         // still expand their own captures below, but share each binding's
@@ -7282,8 +7322,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(super) fn taint_objects(&mut self, values: &Values) {
-        let mut pending: Vec<_> = values.iter().cloned().collect();
+    pub(super) fn taint_objects<'v>(
+        &mut self,
+        values: impl IntoIterator<Item = &'v AbstractValue>,
+    ) {
+        let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut visited = BTreeSet::new();
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
@@ -7710,8 +7753,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         objects
     }
 
-    pub(super) fn expose_class_capabilities(&mut self, values: &Values) {
-        let mut pending: Vec<_> = values.iter().cloned().collect();
+    pub(super) fn expose_class_capabilities<'v>(
+        &mut self,
+        values: impl IntoIterator<Item = &'v AbstractValue>,
+    ) {
+        let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut visited = BTreeSet::new();
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
@@ -8060,7 +8106,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .lazy_effects_for_source_unit(owner);
                 let reads = reads.clone();
                 let rebinds = rebinds.clone();
-                let referenced = reads
+                let referenced: Values = reads
                     .iter()
                     .flat_map(|id| {
                         self.state
@@ -8090,7 +8136,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let (reads, rebinds) = self.inputs.synchronous_effects(owner, false);
             let reads = reads.clone();
             let rebinds = rebinds.clone();
-            let referenced = reads
+            let referenced: Values = reads
                 .iter()
                 .flat_map(|id| {
                     self.state
@@ -8523,7 +8569,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // An opaque callee can retain any callback passed to it and invoke it
         // during a later prefix event.
-        let values = args.iter().flatten().cloned().collect();
+        let values = ordered_values(args.iter().flatten().cloned());
         self.taint_objects(&values);
         let callbacks = self.callback_values(&values);
         self.insert_escaped_callback_values(
@@ -8547,10 +8593,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .publication
             .global_escaped_callbacks
             .clone();
-        callbacks.extend(self.available_export_callbacks());
+        callbacks.extend_absent(&self.available_export_callbacks());
         // A callback-argument exemption does not certify foreign getters or
         // direct live-cell captures reachable through a returned record.
-        let supplied: Values = args.iter().flatten().cloned().collect();
+        let supplied = ordered_values(args.iter().flatten().cloned());
         let supplied_callbacks = self.callback_values(&supplied);
         if !*foreign_promoted
             && (callbacks.contains(&AbstractValue::ForeignDeferredRecord)
@@ -8560,7 +8606,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             *foreign_promoted = true;
         }
         if !no_sync_arguments {
-            callbacks.extend(supplied_callbacks);
+            callbacks.extend_absent(&supplied_callbacks);
         }
         // Activate the foreign pool before any callback-size fallback, which
         // otherwise only expands callables with local source owners.
@@ -8839,18 +8885,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // from this callable and callbacks actually present in its arguments,
         // captures, exports, or escaped globals. Do not turn ordinary
         // recursion into a whole-chunk reachability root.
-        let mut possible_values: Values = args.iter().flatten().cloned().collect();
-        possible_values.extend(captured.values().flatten().cloned());
-        possible_values.extend(
-            self.state
-                .world
-                .publication
-                .global_escaped_callbacks
-                .iter()
+        let export_callbacks = self.available_export_callbacks();
+        let possible_values = ordered_values(
+            args.iter()
+                .flatten()
+                .chain(captured.values().flatten())
+                .chain(&self.state.world.publication.global_escaped_callbacks)
+                .chain(&export_callbacks)
                 .cloned(),
         );
-        let export_callbacks = self.available_export_callbacks();
-        possible_values.extend(export_callbacks.iter().cloned());
 
         let callbacks = self.callback_values(&possible_values);
         let first_class_candidates: BTreeSet<_> = callbacks
@@ -8941,8 +8984,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // The summarized bodies run on these inputs without the interpreter
         // following what they do to them.
-        let mut reached: Values = args.iter().flatten().cloned().collect();
-        reached.extend(callbacks.iter().cloned());
+        let reached = ordered_values(args.iter().flatten().chain(&callbacks).cloned());
         self.unsettle(&reached);
         let mut roots = BTreeSet::new();
         for callback in &callbacks {
@@ -9297,7 +9339,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             )
         });
         self.apply_rebind_effects(&outcome.effects.rebinds);
-        let reached = self
+        let reached: Values = self
             .state
             .world
             .module
@@ -9477,7 +9519,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let body = self.inputs.index.ordered_initializers.get(&call.owner)?;
                 Some(LocalBodyIdentity::RootInitializer {
                     owner: call.owner,
-                    initializer_span: body.initializer_span()?,
+                    initializer_span: body.root_span()?,
                 })
             }
         }
@@ -9884,7 +9926,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 construct::bind_receiver(&mut frame, class, instance);
                 None
             }
-            LocalActivation::Callable(_) => None,
+            LocalActivation::Callable(_) | LocalActivation::RootStatement => None,
         };
         frame.borrowed_records = self.reachable_objects(&frame.inputs);
         let mut outcome = Outcome {
@@ -9983,7 +10025,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .get(&key)
                 .copied()
                 .unwrap_or(DUMMY_SP),
-            LocalExecutionScope::RootInitializer => body.initializer_span().unwrap_or(DUMMY_SP),
+            LocalExecutionScope::Root => body.root_span().unwrap_or(DUMMY_SP),
             LocalExecutionScope::Constructor(class) => self
                 .inputs
                 .index
@@ -10883,6 +10925,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 outcome.effect_coverage = coverage;
             }
+            for cell in &resolution.projected_reads {
+                outcome
+                    .effects
+                    .record_heap_read(cell.clone(), self.state.assumption.is_none());
+            }
             if let Some(receipt) = &resolution.iterable {
                 outcome.effects.record_heap_contents(
                     &receipt.external_heap_contents(),
@@ -11078,7 +11125,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             // The Map retains its entries, and the interpreter does not track
             // what it holds: whoever reaches the Map reaches them.
-            let entries = args.iter().flatten().cloned().collect();
+            let entries: Values = args.iter().flatten().cloned().collect();
             self.taint_objects(&entries);
             return CallTransfer::EffectsOnly;
         }
@@ -11341,7 +11388,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // those bodies because merely creating a closure does
                     // not execute it.
                     self.note_unknown_call(call);
-                    let possible_objects = args.iter().flatten().cloned().collect();
+                    let possible_objects: Values = args.iter().flatten().cloned().collect();
                     self.taint_objects(&possible_objects);
                     let mut possible_accessors: BTreeSet<_> = self
                         .state

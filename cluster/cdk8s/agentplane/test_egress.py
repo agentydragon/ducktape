@@ -118,7 +118,7 @@ def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list
     assert admin(staging.ENV.namespace).pod_port in ports
     settings = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
-    assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe", "kubernetes_bearer"}
+    assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe"}
     api = admin(staging.ENV.namespace)
     assert f"{api.fqdn}:{api.port.number}" in settings["tls_passthrough_targets"]
 
