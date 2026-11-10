@@ -1,4 +1,4 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -211,7 +211,7 @@ proto_library(
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:event_proto",
         "//agentplane/proto:session_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -265,17 +265,8 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "history_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":history_service_proto",
     visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_pb",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:event_pb",
-        "//agentplane/proto:session_pb",
-        "//google/api:annotations_pb",
-    ],
+    deps = [":history_service_proto"],
 )

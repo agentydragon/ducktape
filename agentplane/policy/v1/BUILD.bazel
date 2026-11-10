@@ -1,5 +1,5 @@
 # gazelle:resolve proto agentplane/policy/api/v1alpha1/policy_types.proto //agentplane/policy/api/v1alpha1:policy_types_proto
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 
@@ -12,7 +12,7 @@ proto_library(
         "//agentplane/policy/api/v1alpha1:policy_types_proto",
         "//agentplane/proto:identity_proto",
         "//agentplane/proto:kubernetes_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -37,15 +37,7 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "policy_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":policy_service_proto",
-    deps = [
-        "//agentplane/policy/api/v1alpha1:policy_types_pb",
-        "//agentplane/proto:identity_pb",
-        "//agentplane/proto:kubernetes_pb",
-        "//google/api:annotations_pb",
-    ],
+    deps = [":policy_service_proto"],
 )

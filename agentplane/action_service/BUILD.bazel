@@ -1,4 +1,4 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -138,8 +138,8 @@ proto_library(
     deps = [
         "//agentplane/proto:environment_lifecycle_proto",
         "//agentplane/proto:identity_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/rpc:code_proto",
+        "//third_party/googleapis:api_proto",
+        "//third_party/googleapis:rpc_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
@@ -150,7 +150,7 @@ py_proto_library_with_mypy_stubs(
     name = "action_service_pb2",
     deps = [
         ":action_service_proto",
-        "@googleapis//google/rpc:code_proto",
+        "//third_party/googleapis:rpc_proto",
     ],
 )
 
@@ -178,18 +178,9 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":action_service_proto",
-    protoc_gen_options = {"rewrite_imports": "./google/rpc/*_pb.js:./agentplane/proto"},
-    deps = [
-        "//agentplane/proto:code_pb",
-        "//agentplane/proto:environment_lifecycle_pb",
-        "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
-    ],
+    deps = [":action_service_proto"],
 )
 
 proto_library(
@@ -197,7 +188,7 @@ proto_library(
     srcs = ["operator_action_service.proto"],
     deps = [
         ":action_service_proto",
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -223,22 +214,16 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "operator_action_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":operator_action_service_proto",
-    deps = [
-        ":action_service_pb",
-        "//google/api:annotations_pb",
-    ],
+    deps = [":operator_action_service_proto"],
 )
 
 proto_library(
     name = "web_push_service_proto",
     srcs = ["web_push_service.proto"],
     deps = [
-        "@googleapis//google/api:annotations_proto",
+        "//third_party/googleapis:api_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
@@ -457,10 +442,7 @@ go_test(
     ],
 )
 
-ts_proto_library(
+js_library(
     name = "web_push_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":web_push_service_proto",
-    deps = ["//google/api:annotations_pb"],
+    deps = [":web_push_service_proto"],
 )
