@@ -54,6 +54,9 @@ struct Cli {
     /// causes as pure definitions.
     #[arg(long, value_enum, value_delimiter = ',')]
     what_if_pure: Vec<tier0::ImpureCause>,
+    /// Tier 0: trusted callee premises, as JSON (`premises.rs`).
+    #[arg(long)]
+    premises: Option<PathBuf>,
     /// The heap abstraction for literals allocated inside function bodies.
     #[arg(long, value_enum, default_value = "function")]
     function_heap: FunctionHeap,
@@ -111,6 +114,14 @@ fn main() -> Result<()> {
         }
         None => None,
     };
+    let premises = match &cli.premises {
+        Some(path) => {
+            let text = std::fs::read_to_string(path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?
+        }
+        None => Default::default(),
+    };
     let (mode, examples) = (cli.mode, cli.examples);
     let pairs_out = cli.unproven_pairs;
     let (exports_reachable, upgrades, what_if_pure) =
@@ -142,6 +153,7 @@ fn main() -> Result<()> {
                             upgrades: upgrades.into_iter().collect(),
                             what_if_pure: what_if_pure.into_iter().collect(),
                             program,
+                            premises,
                         };
                         serde_json::to_string_pretty(&tier0_report(inputs, &options)?)?
                     }

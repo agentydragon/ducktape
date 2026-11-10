@@ -150,6 +150,81 @@ of intrinsic constructors.
 The fixture `tier0_export_cycle_needs_the_precondition` shows the pair the
 cycle precondition decides.
 
+### Premises
+
+`--premises <json>` gives tier 0 trusted contracts about callees. Tier 0 does
+not check them. A premise names its callee the way the chunk does:
+
+```json
+{
+  "callees": [
+    {
+      "callee": { "by": "import", "specifier": "./dep.js", "export": "build" },
+      "kind": "pure_call"
+    },
+    { "callee": { "by": "local", "unit": 12 }, "kind": "pure_new" },
+    {
+      "callee": {
+        "by": "import_member",
+        "specifier": "./dep.js",
+        "export": "*",
+        "member": "lazy"
+      },
+      "kind": "callback_factory"
+    },
+    {
+      "callee": { "by": "local_member", "unit": 3, "member": "make" },
+      "kind": "pure_call"
+    },
+    {
+      "callee": { "by": "local", "unit": 4 },
+      "kind": "decorator_helper",
+      "target_arg": 1
+    }
+  ]
+}
+```
+
+`export` is the exported name, `default`, or `*` for a namespace import;
+`unit` is the source-unit ordinal that declares the binding. The callee may be
+written `f`, `ns.member` or `(0, ns.member)`. The report gives
+`premises_given`, `premises_matched` (those that named a binding of this
+chunk), `premise_uses` per kind, and `premised_reading_imports`.
+
+A premise applies only where every argument is itself a pure definition
+(literals, functions, bindings, nested premised calls) and none is spread.
+What each kind asserts, and what tier 0 still orders:
+
+| Kind               | Spec counterpart                                       | The author asserts, for every such call at the chunk's top level                                                                                                                                                                                                       | Tier 0 then                                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pure_call`        | `pure_exports`, `pure_members`                         | The call cannot throw, writes nothing but its fresh result, keeps no reference to its arguments outside the result, and reads only its arguments, what they reference, and state nothing in this chunk's initialization changes. A function it is given it may call.   | Treats the statement as a pure definition that reads every binding its arguments can reference, including those the bodies of function arguments mention: it stays ordered against any impure statement that can reach or write one, and after their definitions.      |
+| `pure_new`         | `pure_new_exports`                                     | The same for `new F(…)`. It says nothing of `F(…)`.                                                                                                                                                                                                                    | The same.                                                                                                                                                                                                                                                              |
+| `callback_factory` | `callback_factory_exports`, `callback_factory_members` | `pure_call`, and the functions written inline as arguments are retained in the result, never called during the call.                                                                                                                                                   | The same, except that the bodies of inline function arguments are not read: the definition may precede what they mention.                                                                                                                                              |
+| `decorator_helper` | none                                                   | `f(decorators, target, …)` cannot throw; it and the decorators it applies write only the object at `target_arg` (and objects created during the call), read only that object, their arguments and what those reference, and return the target or a replacement for it. | Treats `f([…], T, …)`, `f([…], T.prototype, …)` and `T = f([…], T)` as confined to `T`: ordered after `T`'s definition, against any impure statement that can reach `T` or what the decorators reference, and against any other confined or premised statement on `T`. |
+
+An argument that reads an import keeps the statement ordered against every
+impure statement: another chunk's code may change what the import holds.
+`premised_reading_imports` counts these.
+
+`decorator_helper` is a proposal. The spec vocabulary has no kind for "this
+call's effects are confined to one argument"; the nearest,
+`commuting_statements`, certifies one pair at a time. A production form would
+need the same audit as a callback factory (every decorator reaching the
+helper, in every chunk) and a decision on whether the premise belongs to the
+helper or to each decorator.
+
+`callback_factory` here is weaker than the spec's contract of that name. The
+spec admits one inline callback and tracks the retained callback through the
+result; tier 0 needs neither, since anything that later calls the result is
+an impure statement whose reach already includes what the callback mentions.
+
+`premise_fixtures.txt` holds 27 programs, each run under Node in both orders:
+9 where a premise lets a swap through and Node agrees, 15 where the premise
+holds but the swap is observable and tier 0 refuses, and 3 where the premise
+is false (a `pure_call` that counts, a `callback_factory` that calls its
+callback, a decorator that writes a shared registry) and tier 0 accepts a
+swap Node observes. Without premises tier 0 refuses all 27.
+
 ### Shapes from a large private consumer corpus
 
 `tier0_synthetic_shape_families` fixes the verdicts for three generic shapes.

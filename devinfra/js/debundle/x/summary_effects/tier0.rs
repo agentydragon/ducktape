@@ -31,6 +31,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::helpers::assigned_ids;
 use crate::intrinsics::{Census, census};
+use crate::premises::{Callee as PremisedCallee, PremiseKind, Premises};
 use crate::program::ProgramFacts;
 
 #[derive(
@@ -75,6 +76,9 @@ pub enum Kind {
     /// statement runs.
     Hoisted,
     Pure,
+    /// A premised helper call whose effects are confined to its target
+    /// object: it leaks nothing and writes no binding but a replaced target.
+    Confined,
     Impure(ImpureCause),
 }
 
@@ -94,6 +98,12 @@ pub enum Conflict {
     Write,
     /// One definition's initializer reads the other's binding.
     EagerRead,
+    /// The impure statement can reach an object a premised call reads, or a
+    /// confined statement's target.
+    ObjectState,
+    /// Two confined statements share a target, or one involves a binding the
+    /// other replaces.
+    SharedTarget,
 }
 
 type Binding = u32;
@@ -106,6 +116,15 @@ pub struct Unit {
     mentions: Vec<Binding>,
     /// Bindings some assignment inside the unit targets.
     assigns: Vec<Binding>,
+    /// Bindings whose objects a premised call may read, with everything
+    /// those objects were built from.
+    deep: FxHashSet<Binding>,
+    /// The first impure ordinal that can reach a `deep` binding.
+    deep_stamp: u32,
+    /// For a confined statement: the bindings holding its target object, and
+    /// the bindings it replaces.
+    targets: Vec<Binding>,
+    replaces: Vec<Binding>,
 }
 
 pub struct Tier0 {
@@ -126,6 +145,14 @@ pub struct Tier0 {
     pub exports_reachable: bool,
     /// Intrinsic uses left impure because the census found a write.
     pub intrinsics_denied: usize,
+    pub premises_given: usize,
+    /// Premises whose callee the chunk names.
+    pub premises_matched: usize,
+    /// Per premise kind: the statements it made pure or confined.
+    pub premise_uses: std::collections::BTreeMap<PremiseKind, usize>,
+    /// Premised statements that read an import, and so stay ordered against
+    /// every impure statement.
+    pub premised_reading_imports: usize,
     /// Per intrinsic global: the pure definitions that depend on it being
     /// unmodified.
     pub families_used: std::collections::BTreeMap<&'static str, usize>,
@@ -134,6 +161,42 @@ pub struct Tier0 {
 }
 
 const NEVER: u32 = u32::MAX;
+
+/// The bindings mentioned inside the functions and classes of an
+/// expression: what running them at once would read.
+struct Bodies<'a> {
+    bindings: &'a FxHashMap<Id, Binding>,
+    depth: usize,
+    mentions: FxHashSet<Binding>,
+}
+
+impl Visit for Bodies<'_> {
+    fn visit_function(&mut self, function: &Function) {
+        self.depth += 1;
+        function.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.depth += 1;
+        arrow.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_class(&mut self, class: &Class) {
+        self.depth += 1;
+        class.visit_children_with(self);
+        self.depth -= 1;
+    }
+
+    fn visit_ident(&mut self, ident: &Ident) {
+        if self.depth > 0
+            && let Some(binding) = self.bindings.get(&ident.to_id())
+        {
+            self.mentions.insert(*binding);
+        }
+    }
+}
 
 struct Scan<'a> {
     bindings: &'a FxHashMap<Id, Binding>,
@@ -270,6 +333,25 @@ struct Classifier<'a> {
     intrinsics: Vec<&'static str>,
     /// Intrinsic uses the census refused.
     denied: usize,
+    premises: &'a ResolvedPremises,
+    /// Bindings read by the arguments of premised calls.
+    deep: Vec<Binding>,
+    targets: Vec<Binding>,
+    replaces: Vec<Binding>,
+    premise_uses: Vec<PremiseKind>,
+    /// Positions in `eager` that hold the callee of a premised call.
+    callee_slots: FxHashSet<usize>,
+    /// Nesting depth in the arguments of premised calls.
+    premised_args: usize,
+}
+
+/// Premises resolved to this chunk's bindings.
+#[derive(Default)]
+pub struct ResolvedPremises {
+    callees: FxHashMap<Binding, (PremiseKind, usize)>,
+    members: FxHashMap<(Binding, String), (PremiseKind, usize)>,
+    pub given: usize,
+    pub matched: usize,
 }
 
 /// Whether `expr` evaluates to a number, string, boolean, `null` or
@@ -560,6 +642,177 @@ impl Classifier<'_> {
         ok
     }
 
+    /// The premise on a callee expression, with the binding it reads.
+    fn premise(&self, callee: &Expr) -> Option<(PremiseKind, usize, Binding)> {
+        match callee {
+            Expr::Paren(paren) => self.premise(&paren.expr),
+            // `(0, ns.member)(…)`.
+            Expr::Seq(seq) => match seq.exprs.as_slice() {
+                [zero, last] if literal_only(zero) => self.premise(last),
+                _ => None,
+            },
+            Expr::Ident(ident) => {
+                let binding = *self.bindings.get(&ident.to_id())?;
+                let (kind, target) = *self.premises.callees.get(&binding)?;
+                Some((kind, target, binding))
+            }
+            Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(member),
+                ..
+            }) => {
+                let Expr::Ident(namespace) = &**obj else {
+                    return None;
+                };
+                let binding = *self.bindings.get(&namespace.to_id())?;
+                let (kind, target) = *self
+                    .premises
+                    .members
+                    .get(&(binding, member.sym.to_string()))?;
+                Some((kind, target, binding))
+            }
+            _ => None,
+        }
+    }
+
+    /// A call or construction a premise makes a pure allocation.
+    fn premised_allocation(&mut self, expr: &Expr) -> bool {
+        let (callee, args, constructs) = match expr {
+            Expr::Call(CallExpr {
+                callee: Callee::Expr(callee),
+                args,
+                ..
+            }) => (&**callee, args.as_slice(), false),
+            Expr::New(new) => (&*new.callee, new.args.as_deref().unwrap_or_default(), true),
+            _ => return false,
+        };
+        let Some((kind, _, callee_binding)) = self.premise(callee) else {
+            return false;
+        };
+        let applies = match kind {
+            PremiseKind::PureNew => constructs,
+            PremiseKind::PureCall | PremiseKind::CallbackFactory => !constructs,
+            PremiseKind::DecoratorHelper => false,
+        };
+        if !applies || args.iter().any(|arg| arg.spread.is_some()) {
+            return false;
+        }
+        let before = self.eager.len();
+        self.premised_args += 1;
+        let impure = args.iter().any(|arg| self.pure(&arg.expr).is_err());
+        self.premised_args -= 1;
+        if impure {
+            return false;
+        }
+        if kind != PremiseKind::CallbackFactory {
+            // The callee may call its function arguments at once.
+            let mut bodies = Bodies {
+                bindings: self.bindings,
+                depth: 0,
+                mentions: FxHashSet::default(),
+            };
+            args.visit_with(&mut bodies);
+            self.eager.extend(bodies.mentions);
+        }
+        // The callee may read the objects its arguments reference. The
+        // callees of nested premised calls are not arguments.
+        let read: Vec<Binding> = (before..self.eager.len())
+            .filter(|slot| !self.callee_slots.contains(slot))
+            .map(|slot| self.eager[slot])
+            .collect();
+        self.deep.extend(read);
+        self.callee_slots.insert(self.eager.len());
+        self.eager.push(callee_binding);
+        self.premise_uses.push(kind);
+        true
+    }
+
+    /// `helper(decorators, Target.prototype, …)` or
+    /// `Target = helper(decorators, Target)` under a decorator-helper
+    /// premise.
+    fn confined(&mut self, expr: &Expr) -> bool {
+        let (call, assigned) = match expr {
+            Expr::Paren(paren) => return self.confined(&paren.expr),
+            Expr::Call(call) => (call, None),
+            Expr::Assign(AssignExpr {
+                op: AssignOp::Assign,
+                left: AssignTarget::Simple(SimpleAssignTarget::Ident(target)),
+                right,
+                ..
+            }) => match &**right {
+                Expr::Call(call) => (call, Some(&target.id)),
+                _ => return false,
+            },
+            _ => return false,
+        };
+        let Callee::Expr(callee) = &call.callee else {
+            return false;
+        };
+        let Some((PremiseKind::DecoratorHelper, target_arg, helper)) = self.premise(callee) else {
+            return false;
+        };
+        if call.args.iter().any(|arg| arg.spread.is_some()) {
+            return false;
+        }
+        let before = self.eager.len();
+        for (position, arg) in call.args.iter().enumerate() {
+            if position == target_arg {
+                // `Target` or `Target.prototype`.
+                let target = match &*arg.expr {
+                    Expr::Member(MemberExpr {
+                        obj,
+                        prop: MemberProp::Ident(prototype),
+                        ..
+                    }) if &*prototype.sym == "prototype" => &**obj,
+                    other => other,
+                };
+                let Expr::Ident(target) = target else {
+                    return false;
+                };
+                let Some(binding) = self.bindings.get(&target.to_id()) else {
+                    return false;
+                };
+                if self.imports.contains(binding) {
+                    return false;
+                }
+                self.targets.push(*binding);
+            } else {
+                self.premised_args += 1;
+                let impure = self.pure(&arg.expr).is_err();
+                self.premised_args -= 1;
+                if impure {
+                    return false;
+                }
+                let mut bodies = Bodies {
+                    bindings: self.bindings,
+                    depth: 0,
+                    mentions: FxHashSet::default(),
+                };
+                arg.expr.visit_with(&mut bodies);
+                self.eager.extend(bodies.mentions);
+            }
+        }
+        if self.targets.is_empty() {
+            return false;
+        }
+        if let Some(assigned) = assigned {
+            match self.bindings.get(&assigned.to_id()) {
+                Some(binding) => self.replaces.push(*binding),
+                None => return false,
+            }
+        }
+        // The helper applies the decorators, which run with whatever they
+        // reference.
+        let read: Vec<Binding> = (before..self.eager.len())
+            .filter(|slot| !self.callee_slots.contains(slot))
+            .map(|slot| self.eager[slot])
+            .collect();
+        self.deep.extend(read);
+        self.eager.push(helper);
+        self.premise_uses.push(PremiseKind::DecoratorHelper);
+        true
+    }
+
     /// A class whose definition runs nothing: no `extends`, static block,
     /// static initializer, computed key or decorator.
     fn class(&mut self, class: &Class) -> Result<(), ImpureCause> {
@@ -611,6 +864,9 @@ impl Classifier<'_> {
         {
             return Ok(());
         }
+        if self.premised_allocation(expr) {
+            return Ok(());
+        }
         if let Some(dependencies) = self.intrinsic_member_read(expr) {
             let prop = match expr {
                 Expr::Member(MemberExpr {
@@ -640,7 +896,11 @@ impl Classifier<'_> {
                 _ => Err(ImpureCause::ForeignRead),
             },
             Expr::Ident(ident) => match self.bindings.get(&ident.to_id()) {
-                Some(binding) if self.imports.contains(binding) => Err(ImpureCause::ForeignRead),
+                // An argument of a premised call: the unit is then ordered
+                // against every impure statement.
+                Some(binding) if self.imports.contains(binding) && self.premised_args == 0 => {
+                    Err(ImpureCause::ForeignRead)
+                }
                 Some(binding) => {
                     self.eager.push(*binding);
                     Ok(())
@@ -765,7 +1025,11 @@ impl Classifier<'_> {
             ModuleItem::Stmt(Stmt::Decl(decl)) => self.decl(decl),
             ModuleItem::Stmt(Stmt::Empty(_)) => Kind::Inert,
             ModuleItem::Stmt(Stmt::Expr(statement)) => {
-                Kind::Impure(self.statement_cause(&statement.expr))
+                if self.confined(&statement.expr) {
+                    Kind::Confined
+                } else {
+                    Kind::Impure(self.statement_cause(&statement.expr))
+                }
             }
             ModuleItem::Stmt(_) => Kind::Impure(ImpureCause::ControlFlow),
             ModuleItem::ModuleDecl(decl) => match decl {
@@ -843,6 +1107,91 @@ pub struct Options {
     pub what_if_pure: FxHashSet<ImpureCause>,
     /// Facts about the program's other chunks, when they were read.
     pub program: Option<ProgramFacts>,
+    pub premises: Premises,
+}
+
+fn resolve_premises(
+    module: &Module,
+    premises: &Premises,
+    bindings: &FxHashMap<Id, Binding>,
+    declared_by_unit: &[Vec<Binding>],
+) -> ResolvedPremises {
+    let mut imported: FxHashMap<(String, String), Vec<Binding>> = FxHashMap::default();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let specifier = js_ast::str_value(&import.src);
+        for import_specifier in &import.specifiers {
+            let (export, local) = match import_specifier {
+                ImportSpecifier::Named(named) => (
+                    match &named.imported {
+                        Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                        Some(ModuleExportName::Str(name)) => js_ast::str_value(name),
+                        None => named.local.sym.to_string(),
+                    },
+                    &named.local,
+                ),
+                ImportSpecifier::Default(default) => ("default".to_string(), &default.local),
+                ImportSpecifier::Namespace(namespace) => ("*".to_string(), &namespace.local),
+            };
+            if let Some(binding) = bindings.get(&local.to_id()) {
+                imported
+                    .entry((specifier.clone(), export))
+                    .or_default()
+                    .push(*binding);
+            }
+        }
+    }
+    let mut resolved = ResolvedPremises {
+        given: premises.callees.len(),
+        ..ResolvedPremises::default()
+    };
+    for premise in &premises.callees {
+        let value = (premise.kind, premise.target_arg);
+        let (targets, member): (Vec<Binding>, Option<&String>) = match &premise.callee {
+            PremisedCallee::Import { specifier, export } => (
+                imported
+                    .get(&(specifier.clone(), export.clone()))
+                    .cloned()
+                    .unwrap_or_default(),
+                None,
+            ),
+            PremisedCallee::ImportMember {
+                specifier,
+                export,
+                member,
+            } => (
+                imported
+                    .get(&(specifier.clone(), export.clone()))
+                    .cloned()
+                    .unwrap_or_default(),
+                Some(member),
+            ),
+            PremisedCallee::Local { unit } => (
+                declared_by_unit.get(*unit).cloned().unwrap_or_default(),
+                None,
+            ),
+            PremisedCallee::LocalMember { unit, member } => (
+                declared_by_unit.get(*unit).cloned().unwrap_or_default(),
+                Some(member),
+            ),
+        };
+        if !targets.is_empty() {
+            resolved.matched += 1;
+        }
+        for binding in targets {
+            match member {
+                Some(member) => {
+                    resolved.members.insert((binding, member.clone()), value);
+                }
+                None => {
+                    resolved.callees.insert(binding, value);
+                }
+            }
+        }
+    }
+    resolved
 }
 
 pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) -> Tier0 {
@@ -971,6 +1320,8 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut refused = 0;
     let mut top_level_awaits = 0;
     let mut intrinsics_denied = 0;
+    let mut premise_uses: std::collections::BTreeMap<PremiseKind, usize> = Default::default();
+    let premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
     let mut families_used: std::collections::BTreeMap<&'static str, usize> = Default::default();
     let object_aliases = crate::helpers::prepass(module, unresolved).object_aliases;
     let mut census = census(module, unresolved, &object_aliases);
@@ -998,6 +1349,13 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             eager: Vec::new(),
             intrinsics: Vec::new(),
             denied: 0,
+            premises: &premises,
+            deep: Vec::new(),
+            targets: Vec::new(),
+            replaces: Vec::new(),
+            premise_uses: Vec::new(),
+            callee_slots: FxHashSet::default(),
+            premised_args: 0,
         };
         let (kind, assigned) = match source {
             Source::Item(item) => {
@@ -1033,6 +1391,11 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         if default_export {
             exported.extend(mentions.iter().copied());
         }
+        if matches!(kind, Kind::Pure | Kind::Confined) {
+            for used in &classifier.premise_uses {
+                *premise_uses.entry(*used).or_default() += 1;
+            }
+        }
         units.push(Unit {
             kind,
             declared,
@@ -1042,6 +1405,10 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
                 .iter()
                 .filter_map(|id| bindings.get(id).copied())
                 .collect(),
+            deep: classifier.deep.into_iter().collect(),
+            deep_stamp: NEVER,
+            targets: classifier.targets,
+            replaces: classifier.replaces,
         });
     }
     if refused > 0 {
@@ -1059,6 +1426,10 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
     let mut edges: Vec<Vec<Binding>> = vec![Vec::new(); binding_count];
     for unit in &units {
         for binding in unit.declared.iter().chain(&unit.assigns) {
+            edges[*binding as usize].extend(&unit.mentions);
+        }
+        // A decorator helper may store what it was given in its target.
+        for binding in &unit.targets {
             edges[*binding as usize].extend(&unit.mentions);
         }
     }
@@ -1124,7 +1495,36 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             *stamp = (*stamp).min(enabled);
         }
     }
+    // A premised call may read, and through a function it is given run,
+    // everything its arguments can reference. What an import references is
+    // another chunk's, which any impure statement may change.
+    let mut premised_reading_imports = 0;
+    for unit in &mut units {
+        if !matches!(unit.kind, Kind::Pure | Kind::Confined) {
+            unit.deep.clear();
+        }
+        let seeds: Vec<Binding> = unit.deep.drain().collect();
+        closure(&seeds, &mut |binding| unit.deep.insert(binding));
+        unit.deep_stamp = unit
+            .deep
+            .iter()
+            .map(|binding| {
+                if imports.contains(binding) {
+                    0
+                } else {
+                    reach_stamp[*binding as usize]
+                }
+            })
+            .min()
+            .unwrap_or(NEVER);
+        premised_reading_imports +=
+            usize::from(unit.deep.iter().any(|binding| imports.contains(binding)));
+    }
     Tier0 {
+        premised_reading_imports,
+        premises_given: premises.given,
+        premises_matched: premises.matched,
+        premise_uses,
         units,
         reach_stamp,
         write_stamp,
@@ -1157,10 +1557,98 @@ impl Tier0 {
             }
         }
         let written = |binding: &Binding| self.write_stamp[*binding as usize] <= at;
-        if unit.eager.iter().any(written) || unit.declared.iter().any(written) {
+        if unit
+            .eager
+            .iter()
+            .chain(&unit.declared)
+            .chain(&unit.deep)
+            .any(written)
+        {
             return Some(Conflict::Write);
         }
+        // The impure statement may change an object a premised call reads.
+        if unit.deep_stamp <= at {
+            return Some(Conflict::ObjectState);
+        }
         None
+    }
+
+    fn impure_with_confined(&self, impure: usize, confined: usize) -> Option<Conflict> {
+        let at = impure as u32;
+        let unit = &self.units[confined];
+        let reached = |binding: &Binding| self.reach_stamp[*binding as usize] <= at;
+        if unit.targets.iter().chain(&unit.replaces).any(reached) || unit.deep_stamp <= at {
+            return Some(Conflict::ObjectState);
+        }
+        let written = |binding: &Binding| self.write_stamp[*binding as usize] <= at;
+        (unit
+            .eager
+            .iter()
+            .chain(&unit.targets)
+            .chain(&unit.deep)
+            .any(written))
+        .then_some(Conflict::Write)
+    }
+
+    fn confined_with_definition(&self, confined: usize, definition: usize) -> Option<Conflict> {
+        let (statement, unit) = (&self.units[confined], &self.units[definition]);
+        let involved = |binding: &Binding| {
+            statement.eager.contains(binding)
+                || statement.deep.contains(binding)
+                || statement.targets.contains(binding)
+                || statement.replaces.contains(binding)
+        };
+        // A hoisted function is readable throughout; only replacing it matters.
+        let reads_definition = match unit.kind {
+            Kind::Hoisted => unit
+                .declared
+                .iter()
+                .any(|binding| statement.replaces.contains(binding)),
+            _ => unit.declared.iter().any(involved),
+        };
+        if reads_definition
+            || unit
+                .eager
+                .iter()
+                .any(|binding| statement.replaces.contains(binding))
+        {
+            return Some(Conflict::EagerRead);
+        }
+        // A premised call in the definition reads the target's state.
+        statement
+            .targets
+            .iter()
+            .chain(&statement.replaces)
+            .any(|binding| unit.deep.contains(binding))
+            .then_some(Conflict::ObjectState)
+    }
+
+    fn confined_pair(&self, a: usize, b: usize) -> Option<Conflict> {
+        let (first, second) = (&self.units[a], &self.units[b]);
+        let touches = |unit: &Unit, binding: &Binding| {
+            unit.targets.contains(binding)
+                || unit.replaces.contains(binding)
+                || unit.deep.contains(binding)
+        };
+        let shared = first
+            .targets
+            .iter()
+            .chain(&first.replaces)
+            .any(|binding| touches(second, binding))
+            || second
+                .targets
+                .iter()
+                .chain(&second.replaces)
+                .any(|binding| touches(first, binding))
+            || first
+                .replaces
+                .iter()
+                .any(|binding| second.eager.contains(binding))
+            || second
+                .replaces
+                .iter()
+                .any(|binding| first.eager.contains(binding));
+        shared.then_some(Conflict::SharedTarget)
     }
 
     /// Why the two units are not proven to commute, if they are not.
@@ -1169,14 +1657,20 @@ impl Tier0 {
         match (first.kind, second.kind) {
             (Kind::Inert, _) | (_, Kind::Inert) => None,
             (Kind::Impure(_), Kind::Impure(_)) => Some(Conflict::BothImpure),
+            (Kind::Impure(_), Kind::Confined) => self.impure_with_confined(a, b),
+            (Kind::Confined, Kind::Impure(_)) => self.impure_with_confined(b, a),
             (Kind::Impure(_), _) => self.impure_with_definition(a, b),
             (_, Kind::Impure(_)) => self.impure_with_definition(b, a),
+            (Kind::Confined, Kind::Confined) => self.confined_pair(a, b),
+            (Kind::Confined, _) => self.confined_with_definition(a, b),
+            (_, Kind::Confined) => self.confined_with_definition(b, a),
             _ => {
                 let reads = |reader: &Unit, definition: &Unit| {
                     definition.kind == Kind::Pure
                         && reader
                             .eager
                             .iter()
+                            .chain(&reader.deep)
                             .any(|binding| definition.declared.contains(binding))
                 };
                 let redeclares = first

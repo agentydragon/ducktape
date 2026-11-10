@@ -100,6 +100,7 @@ fn tier0_refuses_every_divergent_swap() {
                 upgrades: upgrades.into_iter().collect(),
                 what_if_pure: Default::default(),
                 program: None,
+                premises: Default::default(),
             };
             let accepted = accepted(|name, source| {
                 let parsed = js_ast::parse_js_module(name, source).expect("the fixture parses");
@@ -127,6 +128,7 @@ fn last_is_pure(source: &str) -> bool {
         upgrades: ALL_UPGRADES.into_iter().collect(),
         what_if_pure: Default::default(),
         program: None,
+        premises: Default::default(),
     };
     let analysis = tier0::analyze(&parsed.module, unresolved, &options);
     analysis.units.last().expect("a statement").kind == tier0::Kind::Pure
@@ -269,6 +271,7 @@ fn tier0(source: &str, exports_reachable: bool) -> tier0::Tier0 {
         upgrades: ALL_UPGRADES.into_iter().collect(),
         what_if_pure: Default::default(),
         program: None,
+        premises: Default::default(),
     };
     tier0::analyze(&parsed.module, unresolved, &options)
 }
@@ -360,5 +363,46 @@ fn tier0_synthetic_shape_families() {
         assert_eq!(wrappers.conflict(component, other), Some(BothImpure));
         assert_eq!(wrappers.conflict(component, unrelated), None);
         assert_eq!(wrappers.conflict(other, unrelated), None);
+    });
+}
+
+/// Programs with premises, as `### <verdict> <node>: <name>`, the premises,
+/// a prelude line, the two swapped statements and a line that prints. The
+/// first block is the module the programs import.
+const PREMISE_FIXTURES: &str = include_str!("premise_fixtures.txt");
+
+/// Premises decide exactly the fixtures marked `commutes`; where Node then
+/// disagrees (`commutes differs`) the premise is false, which tier 0 does
+/// not check.
+#[test]
+fn tier0_premises_are_trusted_and_bounded() {
+    js_ast::with_swc_globals(|| {
+        for block in PREMISE_FIXTURES.split("### ").skip(2) {
+            let (head, rest) = block.split_once('\n').expect("a head line");
+            let (premises, source) = rest.split_once('\n').expect("a premises line");
+            let conflict = |callees: &str| {
+                let parsed = js_ast::parse_js_module("fixture", source).expect("it parses");
+                let unresolved =
+                    swc_common::SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+                let options = tier0::Options {
+                    exports_reachable: false,
+                    upgrades: ALL_UPGRADES.into_iter().collect(),
+                    what_if_pure: Default::default(),
+                    program: None,
+                    premises: serde_json::from_str(&format!("{{\"callees\":{callees}}}"))
+                        .expect("the premises parse"),
+                };
+                let analysis = tier0::analyze(&parsed.module, unresolved, &options);
+                let units = analysis.units.len();
+                assert_eq!(analysis.premises_matched, analysis.premises_given, "{head}");
+                analysis.conflict(units - 3, units - 2)
+            };
+            assert!(conflict("[]").is_some(), "{head}: refused without premises");
+            assert_eq!(
+                conflict(premises).is_none(),
+                head.starts_with("commutes"),
+                "{head}"
+            );
+        }
     });
 }

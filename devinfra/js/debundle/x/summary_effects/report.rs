@@ -577,6 +577,8 @@ pub struct KindCounts {
     pub inert: usize,
     pub hoisted_function: usize,
     pub pure_definition: usize,
+    /// Premised helper calls confined to their target.
+    pub confined: usize,
     pub impure: usize,
 }
 
@@ -625,6 +627,12 @@ pub struct Tier0Report {
     /// What the verdicts rest on, and whether this input satisfies it.
     pub preconditions: Vec<Precondition>,
     pub kinds: KindCounts,
+    /// Premises given, how many named a callee of this chunk, and per kind
+    /// the statements one made a pure definition or confined.
+    pub premises_given: usize,
+    pub premises_matched: usize,
+    pub premise_uses: BTreeMap<crate::premises::PremiseKind, usize>,
+    pub premised_reading_imports: usize,
     pub impure_causes: BTreeMap<ImpureCause, usize>,
     /// Pure definitions that depend on an intrinsic family being unmodified.
     pub intrinsic_families_used: BTreeMap<&'static str, usize>,
@@ -691,6 +699,7 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
             Kind::Inert => kinds.inert += 1,
             Kind::Hoisted => kinds.hoisted_function += 1,
             Kind::Pure => kinds.pure_definition += 1,
+            Kind::Confined => kinds.confined += 1,
             Kind::Impure(cause) => {
                 kinds.impure += 1;
                 *impure_causes.entry(cause).or_default() += 1;
@@ -836,6 +845,10 @@ pub fn tier0_report(inputs: Inputs<'_>, options: &tier0::Options) -> Result<Tier
         top_level_bindings: analysis.bindings,
         preconditions,
         kinds,
+        premises_given: analysis.premises_given,
+        premises_matched: analysis.premises_matched,
+        premise_uses: analysis.premise_uses.clone(),
+        premised_reading_imports: analysis.premised_reading_imports,
         impure_causes,
         intrinsic_families_used: analysis.families_used.clone(),
         globals_written: analysis.census.written.len(),

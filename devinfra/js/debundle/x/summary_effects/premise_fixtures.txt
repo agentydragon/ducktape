@@ -1,0 +1,173 @@
+### dep
+export function pure(x) { return { x }; }
+export function snapshot(o) { return { ...o }; }
+export function factory(fn) { return { fn }; }
+export function invoker(fn) { return fn(); }
+export function decorate(decorators, target, key) { let r = target; for (const d of decorators) r = d(target, key) || r; return r; }
+let mode = 'a'; let count = 0;
+export function setMode(m) { mode = m; }
+export function tag(target) { target.tag = mode; }
+export function next() { return ++count; }
+export class Box { constructor(v) { this.v = v; } }
+### commutes same: pure call across an impure statement
+[{"callee":{"by":"import","specifier":"./dep.js","export":"pure"},"kind":"pure_call"}]
+import { pure } from './dep.js'; let state = 0;
+state = 1;
+const a = pure({ v: 1 });
+console.log(state + a.x.v);
+### commutes same: pure new of an imported class across an impure statement
+[{"callee":{"by":"import","specifier":"./dep.js","export":"Box"},"kind":"pure_new"}]
+import { Box } from './dep.js'; let state = 0;
+state = 1;
+const a = new Box(2);
+console.log(state + a.v);
+### commutes same: pure new of a local class
+[{"callee":{"by":"local","unit":0},"kind":"pure_new"}]
+class Local { constructor(v) { this.v = v; } } let state = 0;
+state = 1;
+const a = new Local(2);
+console.log(state + a.v);
+### commutes same: pure member of a local object
+[{"callee":{"by":"local_member","unit":0,"member":"make"},"kind":"pure_call"}]
+const ns = { make(v) { return { v }; } }; let state = 0;
+state = 1;
+const a = ns.make(2);
+console.log(state + a.v);
+### commutes same: nested pure members of an imported namespace
+[{"callee":{"by":"import_member","specifier":"./dep.js","export":"*","member":"pure"},"kind":"pure_call"}]
+import * as ns from './dep.js'; let state = 0;
+state = 1;
+const a = ns.pure({ inner: ns.pure(1) });
+console.log(state + a.x.inner.x);
+### commutes same: callback factory retains a callback that reads a later definition
+[{"callee":{"by":"import_member","specifier":"./dep.js","export":"*","member":"factory"},"kind":"callback_factory"}]
+import * as ns from './dep.js';
+const a = (0, ns.factory)(() => later);
+var later = 1;
+console.log(a.fn());
+### commutes same: decorator helper on two classes
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function mark(target, key) { target[key].marked = true; } class A { m() {} } class B { m() {} }
+decorate([mark], A.prototype, 'm');
+decorate([mark], B.prototype, 'm');
+console.log(A.prototype.m.marked, B.prototype.m.marked);
+### commutes same: decorator helper replacing two classes
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function wrap(target) { return class extends target {}; } let A = class {}; let B = class {};
+A = decorate([wrap], A);
+B = decorate([wrap], B);
+console.log(typeof A, typeof B);
+### commutes same: decorator helper across an unrelated impure statement
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function mark(target) { target.marked = true; } class A {} let state = 0;
+decorate([mark], A);
+state = 1;
+console.log(A.marked, state);
+### ordered differs: pure call invokes a callback that reads a later definition
+[{"callee":{"by":"import","specifier":"./dep.js","export":"invoker"},"kind":"pure_call"}]
+import { invoker } from './dep.js';
+const a = invoker(() => later);
+var later = 1;
+console.log(a);
+### ordered differs: pure call invokes a named function that reads a later definition
+[{"callee":{"by":"import","specifier":"./dep.js","export":"invoker"},"kind":"pure_call"}]
+import { invoker } from './dep.js'; function read() { return later; }
+const a = invoker(read);
+var later = 1;
+console.log(a);
+### ordered differs: impure statement changes an object a pure call reads
+[{"callee":{"by":"import","specifier":"./dep.js","export":"snapshot"},"kind":"pure_call"}]
+import { snapshot } from './dep.js'; const o = { v: 1 }; function bump() { o.v = 2; }
+bump();
+const s = snapshot(o);
+console.log(s.v);
+### ordered differs: impure statement changes what an invoked function reads
+[{"callee":{"by":"import","specifier":"./dep.js","export":"invoker"},"kind":"pure_call"}]
+import { invoker } from './dep.js'; const cell = { v: 1 }; function read() { return cell.v; } function bump() { cell.v = 2; }
+bump();
+const s = invoker(read);
+console.log(s);
+### ordered differs: impure statement rebinds what a pure call is given
+[{"callee":{"by":"import","specifier":"./dep.js","export":"pure"},"kind":"pure_call"}]
+import { pure } from './dep.js'; let given = 1;
+given = 2;
+const s = pure(given);
+console.log(s.x);
+### ordered differs: foreign code changes an import a pure call is given
+[{"callee":{"by":"import","specifier":"./dep.js","export":"invoker"},"kind":"pure_call"}]
+import { invoker, next } from './dep.js';
+next();
+const s = invoker(next);
+console.log(s);
+### ordered differs: two decorator helpers on one class
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function first(target) { target.log = (target.log || '') + 'a'; } function second(target) { target.log = (target.log || '') + 'b'; } class A {}
+decorate([first], A);
+decorate([second], A);
+console.log(A.log);
+### ordered differs: two decorator helpers on a class and its prototype
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function first(target) { target.constructor.log = (target.constructor.log || '') + 'a'; } function second(target) { target.log = (target.log || '') + 'b'; } class A {}
+decorate([first], A.prototype);
+decorate([second], A);
+console.log(A.log);
+### ordered differs: decorator helper before its class
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function mark(target) { target.marked = true; }
+class A {}
+decorate([mark], A);
+console.log(A.marked);
+### ordered differs: impure statement reads a decorated class
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function mark(target) { target.marked = true; } class A {} let out;
+decorate([mark], A);
+out = A.marked;
+console.log(out);
+### ordered differs: pure call reads a decorated class
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"},{"callee":{"by":"import","specifier":"./dep.js","export":"snapshot"},"kind":"pure_call"}]
+import { decorate, snapshot } from './dep.js'; function mark(target) { target.marked = true; } class A {}
+decorate([mark], A);
+const s = snapshot(A);
+console.log(s.marked);
+### ordered differs: definition reads a replaced class
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; function wrap(target) { return class extends target {}; } let A = class {};
+A = decorate([wrap], A);
+const alias = A;
+console.log(alias === A);
+### ordered differs: inline decorator reads a later definition
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; class A {}
+decorate([(target) => { target.v = later; }], A);
+var later = 1;
+console.log(A.v);
+### ordered differs: foreign code changes an imported decorator
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate, tag, setMode } from './dep.js'; class A {}
+setMode('b');
+decorate([tag], A);
+console.log(A.tag);
+### ordered differs: impure statement changes what a decorator reads
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; const cell = { v: 1 }; function stamp(target) { target.v = cell.v; } function bump() { cell.v = 2; } class A {}
+bump();
+decorate([stamp], A);
+console.log(A.v);
+### commutes differs: false premise, a pure call that counts
+[{"callee":{"by":"import","specifier":"./dep.js","export":"next"},"kind":"pure_call"}]
+import { next } from './dep.js'; let state = 0;
+const a = next();
+const b = next();
+console.log(a, b);
+### commutes differs: false premise, a callback factory that invokes its callback
+[{"callee":{"by":"import","specifier":"./dep.js","export":"invoker"},"kind":"callback_factory"}]
+import { invoker } from './dep.js';
+const a = invoker(() => later);
+var later = 1;
+console.log(a);
+### commutes differs: false premise, a decorator that writes a shared registry
+[{"callee":{"by":"import","specifier":"./dep.js","export":"decorate"},"kind":"decorator_helper"}]
+import { decorate } from './dep.js'; const seen = []; function register(target, key) { seen.push(key); } class A {} class B {}
+decorate([register], A, 'a');
+decorate([register], B, 'b');
+console.log(seen.join());
