@@ -1977,22 +1977,19 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 
 ## 8. Ownership and naming cleanup
 
-Cleanups that leave one database per service and names that say what things are. Each node is one
-deployment; edges are the known order. Staging data follows
+Decisions and designs about what things are called and which service owns what. The decided
+renames and ownership moves (`ACTION_BOX_RENAME`, `RUNNER_GATEWAY_RENAME`, `TRANSPORT_PACKAGE_RENAME`,
+`HISTORY_DATABASE_RENAME`) are dispatched from [Cleanups](#15-cleanups). Staging data follows
 [staging data preservation](../docs/staging_data_preservation.md): Session identities and history
 are irreplaceable, and a node that deletes a column or row stops for the operator.
 
 ```mermaid
 flowchart TD
-    HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
-    ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
-    RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
     ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
-    TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
 ```
 
 ### `SANDBOX_ENVIRONMENT_RENAME_DESIGN` — review a scoped Sandbox-to-Environment rename
@@ -2022,33 +2019,15 @@ separate from API ownership. Update Gateway routing, authorization, tests, compo
 overviews with the split. Base the boundary on
 [`session_runtime_model.md`](session_runtime_model.md#role-boundaries-and-routing).
 
-### `RUNNER_GATEWAY_RENAME` — rename the Runner Gateway
-
-**Unscheduled by operator direction, 2026-10-31.** Later, rename the control-plane Gateway to
-Environment Gateway, including its package/binary/image, Kubernetes Deployment and Services, labels,
-settings and projected-token paths, token audience, SPIFFE identity/certificates, image automation and
-Flux pins, docs and tests. The Environment Runtime protocol/resource and tools-image cutovers are
-complete; this item covers only the Gateway's own naming and security identity. Its clients already use
-the renamed Runtime API.
-
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
 **Decision, unscheduled (operator, 2026-10-20 04:05 UTC: "consider maybe").** Consider renaming the
 History Service to a transcript service "or something like that", and history tags to transcript
 tags with it ([tags](sandbox_tags.md#tags)). Deciding before `HISTORY_SANDBOX_RECORD` lands lets the
 Sandbox field take its final name with no CRD rename. A service rename reaches its protos, token
-audiences, images, the `agentplane/history_service` package and docs, and `HISTORY_DATABASE_RENAME`
-would take the new name.
-
-### `HISTORY_DATABASE_RENAME` — name the database for its owner
-
-**Deferred by the operator; not dispatchable until selected.** The old Sandbox Service is gone, but
-the `sandbox_service` database, role and `postgres-sandbox-service` Secret remain in use by the
-History Service. This is a naming cleanup, not permission to recreate or drop the database. Rename
-the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and have the CNPG
-`Database` and managed role adopt the new names; recreating the database under a new name would copy
-the log. Verify the History Service and Electric reconnect with no data movement. Update the
-`history_service/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
+audiences, images, the `agentplane/history_service` package and docs, and
+[`HISTORY_DATABASE_RENAME`](#history_database_rename--name-the-database-for-its-owner) would take
+the new name.
 
 ### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
 
@@ -2063,25 +2042,6 @@ credentials revoked, and no caller can dispose of them since their old Identity 
 Boxes and Sandboxes are to converge into one object type
 ([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)).
 
-### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
-
-**Unscheduled; operator, 2026-10-11 PDT: a later TODO.** Rename what calls an Action Service box a
-sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
-`action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
-`cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
-external Connections call, so renaming them is a wire change.
-
-### `TRANSPORT_PACKAGE_RENAME` — a shorter home for `environment_runtime_transport`
-
-**Unscheduled; operator, 2026-11-09: reorganize at some point.** `agentplane/environment_runtime_transport`
-is a long name at the top of `agentplane/`, and it no longer describes its job: it holds the shared
-SPIFFE mTLS trust, URI and EKU checks, and the TLS client and server configuration that every
-first-party service and the egress proxy use, not only Environment Runtime's transport. Choose a
-short name and home that matches that job, and coordinate with the `agentplane/workload_identity`
-packages ([workload authentication](../docs/workload_authentication.md#workloadcredentials)), which
-may absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
-and doc link. Exit: no import of the old path remains.
-
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
 **Decision, then changes; unscheduled (operator, 2026-10-20 UTC: keep the egress sidecar on YAML "for now" and
@@ -2095,35 +2055,8 @@ first; changes follow as their own nodes.
 
 ## 9. Legacy burn-down
 
-Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
-devel. A gate counts as legacy once its rollout is finished on staging or nothing
-reads it; the delta settlement flag stays (operator, 2026-10-13 PDT). Lane named per
-node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
-tombstones with a verifiable condition in code (`keepingOffset` in
-`electric_sync.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
-
-```mermaid
-flowchart TD
-    REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit]
-```
-
-### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
-
-**Scheduling update, 2026-10-30 PDT:** later work under the stakeholder priorities. The former
-blanket hold until the optional Dispatcher/Gateway merge is removed: an audit of current devel
-does not technically require that design to land. Check the actual code and active ownership when
-selected; each removal still needs its own evidence and any real prerequisite.
-
-**Candidate.** Sweep devel for unused modules, functions, settings, proto
-fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
-(Runner Gateway, History Service, ingress, control; Session for the raw stream,
-Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and
-`docs/` describing the code as it is, without cutover narration; no compatibility branch,
-optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
-`agentplane/docs/system_overview.md` showing exactly the deployed services and the traffic between them in
-`cluster/cdk8s/agentplane`. Known now: `docs/operator_federation.md` says "Event & Notification Hub";
-`cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
-PRs of their own; this node leaves with the last of them.
+Folded into [Cleanups](#15-cleanups) on 2026-11-10; the number stays so later sections keep their
+anchors.
 
 ## 10. Runner ingress and control split
 
@@ -3565,21 +3498,75 @@ is approved and expires, and the plan's content moves to `docs/` with the SPECs 
 Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section
 and `AGENT_PRINCIPAL_MODEL_DESIGN` are then removed.
 
-## 15. Cleanups after the current tracks
+## 15. Cleanups
 
-Dead code, transitional pieces and test leftovers each current track reports it will leave behind
-(census of the lanes, 2026-10-21). Removals that a track's own plan already lists stay there. The
-[dispatch order](#dispatch-order-and-prerequisites) controls priority; the nodes below retain their
-actual prerequisites. Fakes kept to inject faults the real API server cannot produce are named at
-the fake and are not cleanups.
+Deletions and simplifications that exist only because of a transition, a migration, a superseded
+design or a track that has landed: dead code, met gates, compatibility shims, stale names, redundant
+tests and docs. Census of 2026-11-10 over the `CLEANUP(added …)` tombstones, component `TODO.md`
+files, `TODO` comments, sections 13 and 14, the identity plans, open PRs and the freezer; it absorbs
+the 2026-10-10 legacy burn-down (section 9) and the 2026-10-21 census of the lanes. **Unblocked**
+has no gate, or a gate met on devel; **Blocked** names the node, PR or merge it waits for;
+**Future** waits on an undecided design or a track not started. Each entry says what goes, where,
+the gate and the source; a removal a track's own node lists is linked, not copied, and feature or
+design nodes stay in their sections. Not cleanups: fakes kept to inject faults the real API server
+cannot produce (named at the fake); the delta settlement flag (operator, 2026-10-13 PDT);
+upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in `electric_sync.tsx`
+against `@electric-sql/client` 1.5.28, the jsdom pragma in `markdown.test.tsx`). Doing one still
+needs the gate observed on devel and every reader found.
 
 ```mermaid
 flowchart LR
+    REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit]
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
+    ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
+    RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
+    TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
+    HISTORY_SERVICE_RENAME[Decision, section 8] -. takes its name .-> HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
 ```
 
-### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
+### Unblocked
+
+Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate.
+
+- **History migration 00012's trigger and function** (`thread_command_operation_enum` in
+  `history_service/migrations/history/00012_thread_command_operation_enum.sql`): the gate is met,
+  since migration 00013 is on staging (section 14), so no History replica older than 00012 runs.
+  Drop both in a new migration. Source: tombstone of 2026-11-09.
+- **`pythonJSON`** in `runner_gateway/environments/internal/management/access.go`, a Python-emulating
+  intent encoding left by the Go port: replace it with deterministic encoding and semantic
+  caller/request comparison. No gate; Python-byte interoperability is not a requirement. Source:
+  [EnvironmentService TODO](../runner_gateway/environments/TODO.md).
+- **The OAuth MCP fixture image** (`action_service/testing/oauth_mcp_server.py` and its deployment
+  wiring): check whether an existing MCP image (the Everything image) can serve the tool surface with
+  Dex, then delete the custom fixture. Source: `TODO` at the fixture.
+- **Write-only Action Service fields,
+  [#11417](https://github.com/agentydragon/ducktape/pull/11417):** drops the `heartbeat_at` write on
+  `action_execution` that nothing reads, `store.ExecutionClaim.ExpiresAt`, `mcpexec.Executor.tools`
+  and settings no deployment sets. Partly overtaken: on devel `policy_resync_seconds` and
+  `policies.NoMatchReason` are already gone, while `github_visibility` (`action_service/config.go`,
+  `settings.py`; rendered by no cdk8s module), the `heartbeat_at` write (`store/executions.go`) and
+  `ExecutionClaim.ExpiresAt` remain. Rebase and recheck each item before merging.
+- **`cluster/cdk8s/agentplane/test_sandbox_service.py`** is named for the retired Sandbox Service;
+  rename it for what it tests. The other item section 9 knew, `docs/operator_federation.md` saying
+  "Event & Notification Hub", is gone on devel. Source: `REFACTOR_COHERENCE_AUDIT`.
+- **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): selected, unscheduled; the App's Thread-events SSE
+  route and its code go once supported callers use a History-backed contract. Stays in section 11.
+
+#### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
+
+**Candidate; later work under the stakeholder priorities (2026-10-30 PDT); no longer held on the
+optional Dispatcher/Gateway merge.** Sweep devel for unused modules, functions, settings, proto
+fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
+(Runner Gateway, History Service, ingress, control; Session for the raw stream, Thread for its
+projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and `docs/` describing the
+code as it is, without cutover narration; no compatibility branch, optional-with-fallback setting or
+`CLEANUP` tombstone whose condition is met; the system diagram in `agentplane/docs/system_overview.md`
+showing exactly the deployed services and the traffic between them in `cluster/cdk8s/agentplane`.
+Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
+node leaves with the last of them.
+
+#### `FAKE_CLIENTS_TO_ENVTEST` — the remaining fake API clients move to envtest
 
 **Candidate; any time (standing rule: Go tests that talk only to Go code use envtest).** These still build fake
 Kubernetes clients for state envtest can hold:
@@ -3590,12 +3577,175 @@ Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go`
 
 One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 
-### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
+#### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
-**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `system_tests/vm/guest`, a
-second implementation of `agentplane/env/images/vm.nix`'s guest boot contract (disks by serial, workspace format,
-harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
-emulation, and point the k3s VM scenarios at that guest.
+**Unscheduled; operator, 2026-10-11 PDT: a later TODO.** Rename what calls an Action Service box a
+sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
+`action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
+`cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
+external Connections call, so renaming them is a wire change. Boxes and Sandboxes are to converge
+into one object type
+([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)),
+which would settle the name instead; check that before dispatch.
+
+#### `RUNNER_GATEWAY_RENAME` — rename the Runner Gateway
+
+**Unscheduled by operator direction, 2026-10-31.** Later, rename the control-plane Gateway to
+Environment Gateway, including its package/binary/image, Kubernetes Deployment and Services, labels,
+settings and projected-token paths, token audience, SPIFFE identity/certificates, image automation and
+Flux pins, docs and tests. The Environment Runtime protocol/resource and tools-image cutovers are
+complete; this item covers only the Gateway's own naming and security identity. Its clients already use
+the renamed Runtime API.
+
+#### `TRANSPORT_PACKAGE_RENAME` — a shorter home for `environment_runtime_transport`
+
+**Unscheduled; operator, 2026-11-09: reorganize at some point.** `agentplane/environment_runtime_transport`
+is a long name at the top of `agentplane/`, and it no longer describes its job: it holds the shared
+SPIFFE mTLS trust, URI and EKU checks, and the TLS client and server configuration that every
+first-party service and the egress proxy use, not only Environment Runtime's transport. Choose a
+short name and home that matches that job, and coordinate with the `agentplane/workload_identity`
+packages ([workload authentication](../docs/workload_authentication.md#workloadcredentials)), which
+may absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
+and doc link. Exit: no import of the old path remains.
+
+### Blocked
+
+Grouped by the node, PR or merge each waits for. Most of it is the identity migration's contract
+phase (section 14): expand → switch → contract leaves each transitional piece until the node named.
+
+- **`STANDING_WORKLOAD_IDENTITY` (in flight):** the standing `WorkloadCredential`s' ServiceAccount
+  subjects in `haku-sandbox` and `haku-ci`, their `PolicyBinding`s' ServiceAccount subjects and any
+  Role or RoleBinding that existed only to carry them go in that PR; nothing to dispatch separately.
+- **`CENTRAL_SESSION_DELEGATED_ACTING` (in flight):** once the sampler reaches LLM ingress as a
+  delegating actor, the staging `llm-ingress` connection (`AuthConfig(type="bearer", …)` in
+  `cluster/cdk8s/agentplane/staging.py`) moves to `agentplane_ingress`; the `bearer` connection auth
+  type and its projected-token credential file (`central_sampler/settings.py`, `settings.go`) go
+  once no connection uses it. Review LLM ingress's `central_sampler_accounts` (trusted sampler
+  producers attributing public Session IDs) then: the delegated Identity carries that attribution.
+- **`SANDBOX_IDENTITY_SPEC` (blocked on question 11):**
+  - Seven settings become required, per their tombstones of 2026-11-10: `policy_namespace` in
+    `llm_ingress/{settings.py,config.go}`, `history_service/{settings.py,config.go}` and
+    `runner_gateway/{settings.py,config.go}`, and `identities` in `workload_identity/resolver/resolver.go`'s
+    `New` (a switched Sandbox must reach every verifier on day one).
+  - The Sandbox Controller's `ensureIdentity` and `ensureBinding` (`sandbox_controller/identity.go`),
+    the per-Sandbox ServiceAccount, `Sandbox.spec.policySets` with every writer of it, and the Kyverno
+    launcher policy's ServiceAccount injection (`cluster/cdk8s/agentplane/launcher_relay.py`);
+    `Environment.identity_catalog`'s Sandbox-only parts become unconditional; the agent Kubernetes
+    docs lose the kubeconfig. Source: the node.
+  - Draft [#15239](https://github.com/agentydragon/ducktape/pull/15239), the controller's identity
+    mode, is closed: the switch is rebuilt on question 11's answer, not rebased.
+- **`ENVIRONMENT_LIFECYCLE_RULES` (blocked on `ENVIRONMENT_RULE_TYPE_DESIGN`):** branch
+  `identity-consumers-environment-self-read-deferred` (closed
+  [#15380](https://github.com/agentydragon/ducktape/pull/15380)'s code) is deleted once its
+  EnvironmentService self-read is revived as the `boundIdentity` target and its Dispatcher migration
+  renumbered. Source: `SANDBOX_IDENTITY_SPEC`, `ENVIRONMENT_LIFECYCLE_RULES`.
+- **`SESSION_SA_PRINCIPAL_REMOVAL` (blocked on `SANDBOX_IDENTITY_SPEC`):** the ServiceAccount side of
+  Sessions in Dispatcher, History, Notification and the Action Service; the node lists it.
+- **`IDENTITY_CUTOVER` (blocked on `IDENTITY_SYSTEM_TESTS`, `APP_IDENTITIES_UI`,
+  `STANDING_WORKLOAD_IDENTITY`):** the cutover PR takes these with it. The node has the full list;
+  the pieces with a tombstone or a `TODO` are named here so a sweep finds them.
+  - Tombstones (2026-11-08 to 10): the ServiceAccount variant of `WorkloadCredential.spec.subject`
+    (`workload_identity/api/v1alpha1/types.go`, `crds/manifests/crd-workloadcredentials.yaml`) and of
+    `PolicyBinding.spec.subject` (`policy/api/v1alpha1/types.go`); `resolver.ServiceAccount`
+    (`workload_identity/resolver/resolver.go`); the `Account` box path in
+    `action_service/sandbox/inventory.go` (a box running as its caller's ServiceAccount with the
+    Kubernetes-audience token); and `identity_catalog=False` with `_app_config(identity_catalog=…)`
+    in `cluster/cdk8s/agentplane/staging.py`. `Environment.identity_catalog` itself and its readers
+    go when it flips: `StandingCaller.subject(identity_catalog=…)` (`standing_caller.py`),
+    `command_sandbox.py`'s `kubernetes_token`, `egress.py`'s `projected_kubernetes_token`,
+    `egress_staging_credentials.py`, and `cluster/cdk8s/test_agent_rbac.py`'s two renderings become one.
+  - The Kubernetes-audience projected token for command boxes and, with it, the
+    `projectedWorkloadToken` `EgressCredential` source (`egress/api/v1alpha1/types.go`,
+    `egress/resources/resources.go`, `egress/resources.py`, `crd-egresscredentials.yaml`), the
+    sidecar's `X-Agentplane-Workload-Token` forwarding (`egress/sidecar/relay.go`,
+    `egress/identity/identity.go`), the proxy's second TokenReview per tunnel and its
+    `allowed_service_account_namespaces` (serving only those reviews since the bearer hop went;
+    `cluster/cdk8s/agentplane/egress.py`), the `x/firecracker_spike` forged-header probes, and the
+    egress [TODO entry](../egress/TODO.md#review-where-a-projected-token-is-substituted) on where
+    substitution happens, deleted rather than settled. Source: `SERVICES_IDENTITY_PRINCIPAL`,
+    [lifecycle plan](workload_identity_lifecycle.md#remaining-paths) row 3.
+  - The MCP edge's token minting (`mcp_edge/core_client.go`), `mintable_accounts`
+    (`mcp_edge/settings.py`, `config.go`, `staging.py`, the system-test fixture charts), and
+    `connection_identities` as a static name list (parsed, unread; reworked rather than populated,
+    since eligibility belongs on the `Identity` or the binding record); `bound_caller` and
+    `original_caller` become Identities. Source: the node,
+    [plan § MCP edge](identity_and_kubernetes_accounts.md#mcp-edge), lifecycle rows 1 and 2.
+  - The delegation envelope's ServiceAccount effective caller: `Delegation.caller`
+    (`ServiceAccountIdentity`), `caller_namespaces` and `auth.DelegatedAdmission`'s ServiceAccount UID
+    reader (`workload_auth/auth/delegation.go`, `proto/delegation.proto`). Source: the node.
+  - `auth.Principal` (`workload_auth/auth/auth.go`) takes a name meaning "platform component caller"
+    (`ComponentPrincipal` or `PlatformCaller`, to be decided) once every service admits workloads
+    through `AnySubject`. Source: `TODO` at the type.
+  - The Kubernetes rule types leave `PolicySet`; the caller ServiceAccounts and the static Flux
+    RoleBindings naming `claude-ai` go. Source: the node.
+  - Plan exits: [`identity_and_kubernetes_accounts.md`](identity_and_kubernetes_accounts.md#exit)
+    moves to `docs/` and the SPECs and is deleted, `agent_rbac.md` is rewritten, and section 14 and
+    `AGENT_PRINCIPAL_MODEL_DESIGN` (section 5) leave this DAG.
+- **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
+  per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
+- **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records
+  (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/threads/local_commands.ts`)
+  are retired once every retained record is Session-addressed; preserve unconfirmed saved input and
+  its Sandbox UID fence, and never replay an uncertain command. Source: [app TODO](../app/TODO.md).
+- **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
+  workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
+  and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
+
+#### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
+
+**Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest
+under `system_tests/vm/guest`, a second implementation of `agentplane/env/images/vm.nix`'s guest boot
+contract (disks by serial, workspace format, harness and tool paths); the two share the static
+runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built
+and boots in seconds under emulation, and point the k3s VM scenarios at that guest.
+
+### Future
+
+The gate is a decision not yet made or a track not started; nothing here is dispatchable.
+
+- **`APP_AGENT_TOKEN_DECISION` (spike [#15448](https://github.com/agentydragon/ducktape/pull/15448)):**
+  if test-minted OIDC tokens are adopted, the app's `agentplane-agent` TokenReview path (`caller()` in
+  `app/go/auth/auth.go`), its `token_subjects` rendering (`cluster/cdk8s/agentplane/app_settings.py`,
+  `system_tests/deployment/fixture_chart.py`) and `AGENT_SERVICE_ACCOUNT` in
+  `system_tests/driver/cluster.py` go once callers move. The
+  [lifecycle plan](workload_identity_lifecycle.md) is deleted when its rows 1 to 4 are gone and its
+  open questions, this one included, are settled.
+- **`CENTRAL_SESSION_CREATION_CONTRACT` ([#15436](https://github.com/agentydragon/ducktape/pull/15436),
+  recommendation A):** `central_sampler_v1` is retired in the cutover that adds the `central_sampler`
+  placement: `CentralSamplerV1Placement` in `proto/session.proto`, `placement.go`'s `CentralSampler`,
+  the `central_sampler_v1` cases in `app/testing/client.py` and
+  `runner_gateway/dispatcher/testing_client.py`, `central_sampler/testing.py` and
+  `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with
+  one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
+- **`SESSION_IDENTITY_AUTHZ` (design, not started):** the Sandbox-anchored ownership checks at the
+  `TODO(SESSION_IDENTITY_AUTHZ)` sites (`notification_service/api/messages.go`,
+  `notification_service/store/store.go`, `history_service/storage/store.go`) are replaced by
+  Identity-keyed ones.
+- **`HISTORY_DATABASE_RENAME`** (below): deferred by the operator, and takes the name
+  `HISTORY_SERVICE_RENAME` (section 8) decides.
+- **The observation naming layer** (`Event.observation`, Runtime's observation handling, History's
+  `ReadSessionObservations` and `ReadNativeFrames`, the debug UI): squash to "Event" if the operator
+  agrees it is not a deliberate distinction. Source: [frontend TODO](../app/frontend/TODO.md#thread-view-ux).
+- **One result shape for executors:** the MCP edge's per-executor result rendering
+  (`mcp_edge/mcpserver/results.go`) goes if the Sandbox executor answers as an MCP tool. Source:
+  [Action Service TODO](../action_service/TODO.md#executors-that-answer-as-mcp-tools).
+- **Frozen:** [`WORKLOAD_AUDIENCE_RENAME`](task_freezer.md#workload_audience_rename--rename-the-agentplane-egress-audience)
+  (the `agentplane-egress` audience name; backend callers keep the tokens) and
+  [`HAKU_ACTION_NATIVE_CLIENT`](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client)
+  (Haku UI's client off the retired Action HTTP facade) stay in the freezer with their triggers.
+- **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
+  when a direction is chosen and its parts land in owning docs; [`standard_idioms.md`](standard_idioms.md)
+  burns down with section 16.
+
+#### `HISTORY_DATABASE_RENAME` — name the database for its owner
+
+**Deferred by the operator; not dispatchable until selected.** The old Sandbox Service is gone, but
+the `sandbox_service` database, role and `postgres-sandbox-service` Secret remain in use by the
+History Service. This is a naming cleanup, not permission to recreate or drop the database. Rename
+the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and have the CNPG
+`Database` and managed role adopt the new names; recreating the database under a new name would copy
+the log. Verify the History Service and Electric reconnect with no data movement. Update the
+`history_service/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
 
 ## 16. Standard idioms over hand-rolled mechanisms
 
