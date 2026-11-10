@@ -653,3 +653,82 @@ fn a_constructed_plain_function_without_effects_keeps_the_split() {
     );
     assert_preserved_entry_output(&fixture, "0 0\n");
 }
+
+/// Opposing control: calling a generator runs nothing, and its body runs
+/// when later code resumes the generator object, by `next()`, `for`-`of`,
+/// destructuring (declaration, assignment, parameter), spread or `yield*`,
+/// also from another statement than the one that created it. A hand-written
+/// iterator's `next` runs the same way. Each resumption reaches `second`,
+/// whether `run` discards `flag()` or calls what it returns.
+#[test]
+fn resuming_a_generator_or_an_iterator_runs_its_body() {
+    const GEN: &str = "function* gen() { second(); yield 0; }";
+    const MK: &str = "function mk() { return { [Symbol.iterator]() { return { next() { second(); return { done: true }; } }; } }; }";
+    for (definitions, resume, extra) in [
+        (GEN, "gen().next();", &["gen"][..]),
+        (
+            "function* gen() { counter = 1; yield 0; }",
+            "gen().next();",
+            &["gen"][..],
+        ),
+        (GEN, "for (const x of gen()) {}", &["gen"][..]),
+        (GEN, "const [x] = gen();", &["gen"][..]),
+        (GEN, "let x; [x] = gen();", &["gen"][..]),
+        (
+            "function* gen() { second(); yield 0; }\nfunction take([x]) { return x; }",
+            "take(gen());",
+            &["gen", "take"][..],
+        ),
+        (GEN, "[...gen()];", &["gen"][..]),
+        (GEN, "Math.max(...gen());", &["gen"][..]),
+        (
+            "function* gen() { second(); yield 0; }\nfunction* outer() { yield* gen(); }",
+            "outer().next();",
+            &["gen", "outer"][..],
+        ),
+        (
+            "const holder = { *items() { second(); yield 0; } };",
+            "holder.items().next();",
+            &["holder"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nconst box = { it: null };",
+            "box.it = gen(); box.it.next();",
+            &["gen", "box"][..],
+        ),
+        (
+            "function* gen() { second(); yield 0; }\nconst g = gen();",
+            "g.next();",
+            &["gen", "g"][..],
+        ),
+        (MK, "for (const x of mk()) {}", &["mk"][..]),
+        (MK, "[...mk()];", &["mk"][..]),
+        (MK, "const [x] = mk();", &["mk"][..]),
+    ] {
+        for run in ["function run() { flag(); return 0; }", CALL_FLAG] {
+            assert_reader_split_diverges_with(
+                &format!("{definitions}\nfunction flag() {{ {resume} return noop; }}\n{run}"),
+                extra,
+            );
+        }
+    }
+}
+
+/// Positive anchor for the control above: iterating native arrays of
+/// effect-free values keeps the split.
+#[test]
+fn iterating_native_arrays_keeps_the_split() {
+    for body in [
+        "for (const x of [first]) {}",
+        "const [y] = [1];",
+        "let z; [z] = [2];",
+        "return [...[1, 2]].length;",
+    ] {
+        let fixture = with_reader_split(
+            &format!("function flag() {{ {body} }}\nfunction run() {{ flag(); return 0; }}"),
+            &[],
+            run_fixture,
+        );
+        assert_preserved_entry_output(&fixture, "0 0\n");
+    }
+}

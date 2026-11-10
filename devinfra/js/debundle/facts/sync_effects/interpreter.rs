@@ -10247,7 +10247,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         reads_arguments: bool,
         args: &[Values],
         env: &mut Context,
-    ) {
+    ) -> Vec<Values> {
+        let mut iterated = Vec::new();
         for (id, values) in env.iter() {
             if self.inputs.untracked_locals.contains(id) {
                 self.escape_untracked_values(values);
@@ -10277,6 +10278,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Bind each pattern binding to its projection of the incoming
             // value. A part the pattern or the projection loses to unknown
             // is published with the whole value.
+            if parameter.pattern_iterates {
+                iterated.push(values.clone());
+            }
             env.insert(pattern_source(), values.clone());
             let mut loses_values = parameter.pattern_loses_values;
             for (binding, projection) in &parameter.pattern_assignments {
@@ -10300,6 +10304,71 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        iterated
+    }
+
+    /// The iterator protocol a top-level owner runs on its
+    /// `top_iterated_sources`.
+    pub(super) fn iterate_top_sources(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let Some(sources) = self.inputs.index.top_iterated_sources.get(&owner) else {
+            return;
+        };
+        for source in sources {
+            let values = self.evaluate(source, env, captures);
+            self.run_iterator_protocol(&values, owner, outcome);
+        }
+    }
+
+    /// Iterating `values` calls their `[Symbol.iterator]` and the iterator's
+    /// `next`. Unless every value is a proven native iterable, those are
+    /// unknown callees: the iterated value is published and the operation
+    /// may run any published callback (a generator body, a hand-written
+    /// `next`), charged to the operation's owner.
+    #[inline(never)]
+    fn run_iterator_protocol(
+        &mut self,
+        values: &Values,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        if self.iterates_natively(values) {
+            return;
+        }
+        outcome.lose_call_target(owner, DUMMY_SP);
+        outcome.unknown_call = true;
+        self.invoke_possible_callbacks_at(std::slice::from_ref(values), false, None, outcome);
+    }
+
+    /// Every value iterates without user code: a primitive (a string yields
+    /// its code points; any other primitive throws), a throwing read, or an
+    /// array allocation no opaque code reached, under intact Array
+    /// intrinsics.
+    fn iterates_natively(&mut self, values: &Values) -> bool {
+        if values.is_empty() {
+            return false;
+        }
+        let mut arrays = false;
+        for value in values {
+            match value {
+                AbstractValue::Value(Value::Prim(_) | Value::Unavailable) => {}
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if (*kind == Kind::Array
+                        || (*kind == Kind::Object
+                            && self.inputs.index.array_elements.contains_key(object)))
+                        && !self.state.world.surface.tainted_objects.contains(object) =>
+                {
+                    arrays = true;
+                }
+                _ => return false,
+            }
+        }
+        !arrays || self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
     }
 
     /// A top-level owner's values whose parts reach a binding only as
@@ -10743,7 +10812,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &callable.local_assignments,
         );
         self.widen_untracked_locals(callable, &mut env);
-        self.escape_untracked_environment(callable, reads_arguments, &args, &mut env);
+        let iterated_parameters =
+            self.escape_untracked_environment(callable, reads_arguments, &args, &mut env);
         for (id, value) in &callable.local_assignments {
             let values = self.evaluate(value, &env, &env);
             // A chunk binding read later in this prefix must see the assigned
@@ -10778,6 +10848,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ..Outcome::default()
         };
         outcome.executed_owners.insert(callable.owner);
+        for values in &iterated_parameters {
+            self.run_iterator_protocol(values, callable.owner, &mut outcome);
+        }
         if callable.generator {
             // Generator parameter initializers run at call time, although
             // the body waits for the first iteration. Their effects are not
@@ -10787,6 +10860,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 callable.owner,
                 DUMMY_SP,
             );
+            // The body runs when some later code resumes the generator
+            // object (`next()`, `for`-`of`, spread, destructuring). The
+            // object is opaque, and the body is a published callback, so each
+            // resumption, an unknown call, promotes the body's effects to the
+            // resuming owner. What the body can reach (the arguments and
+            // captures, which the frame's environment holds) is published
+            // with it.
+            let reached: Values = args.iter().chain(env.values()).flatten().cloned().collect();
+            self.publish_values(
+                &reached,
+                ClassMembersPublicationWriter::GeneratorCreation,
+                None,
+            );
+            let body = self.deferred_callbacks(Values::from([AbstractValue::Value(Value::Alloc(
+                Kind::Function,
+                key,
+            ))]));
+            self.insert_escaped_callback_values(
+                &Values::from([body]),
+                ClassMembersPublicationWriter::GeneratorCreation,
+                None,
+                None,
+            );
+            outcome.returns.insert(AbstractValue::Value(Value::Top));
             self.state.active.remove(&active_invocation);
             self.state.invocation_depth -= 1;
             self.remember_invocation(signature, &outcome);
@@ -10812,6 +10909,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if self.inputs.top_bindings.contains(id) {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
+        }
+        for iterated in &callable.iterated_sources {
+            let values = self.evaluate(iterated, &env, &env);
+            self.run_iterator_protocol(&values, callable.owner, &mut outcome);
         }
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
