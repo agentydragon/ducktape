@@ -706,11 +706,24 @@ fn analyze_chunk_with_policy_and_sync(
             }
         }
     }
+    let read_names: BTreeSet<&str> = facts
+        .iter()
+        .flat_map(|fact| fact.reads.eager.iter().chain(&fact.reads.lazy))
+        .map(|id| id.0.as_ref())
+        .collect();
+    let unconsulted_purity_hints = hints
+        .assumptions
+        .declared_pure
+        .iter()
+        .filter(|name| !read_names.contains(name.as_str()))
+        .cloned()
+        .collect();
     ChunkFactAnalysis {
         facts,
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
+        unconsulted_purity_hints,
     }
 }
 

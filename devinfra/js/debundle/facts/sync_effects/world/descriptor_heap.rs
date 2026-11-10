@@ -270,6 +270,20 @@ impl<'a> DescriptorHeap<'a> {
         self.literal().dense_array(allocation, slots);
     }
 
+    /// A fresh array whose elements are some of `contents`, in unknown
+    /// positions. Like a qualitative spread literal, it keeps only their
+    /// reachability: no slot, length or primitive-contents claim.
+    pub(in crate::facts::sync_effects) fn contents_array(
+        &mut self,
+        allocation: u32,
+        contents: Values,
+    ) {
+        let mut literal = self.literal();
+        literal.invalidate_dense_array(allocation);
+        literal.invalidate_primitive_array(allocation);
+        literal.record(allocation, BTreeMap::from([(None, contents)]));
+    }
+
     /// Commit a checked primitive-keyed definition: the payload joins the
     /// target's dynamic-key slot and the literal writability witness is gone.
     pub(in crate::facts::sync_effects) fn define_dynamic_key(

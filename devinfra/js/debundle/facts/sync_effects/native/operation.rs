@@ -35,6 +35,49 @@ pub(in crate::facts::sync_effects) enum NativeOperationCommit {
     },
     DefineProperties(DescriptorApplication),
     DefineDynamicKey(DynamicKeyDefinition),
+    /// `map`'s fresh result: one slot per callback result, in index order.
+    CreateDenseArray {
+        allocation: u32,
+        slots: Vec<Values>,
+    },
+    /// `filter`'s fresh result: some of the receiver's elements, in an
+    /// unknown number and positions.
+    CreateContentsArray {
+        allocation: u32,
+        contents: Values,
+    },
+}
+
+/// The fresh array an iteration row creates, after every callback ran.
+pub(in crate::facts::sync_effects) enum IterationResultArray {
+    Slots(Vec<Values>),
+    Contents(Values),
+}
+
+/// Materialize an iteration row's fresh result at `allocation`, the
+/// result-array identity the execution index assigned to the call site.
+pub(in crate::facts::sync_effects) fn plan_iteration_result(
+    allocation: u32,
+    result: IterationResultArray,
+    revision: u64,
+) -> CheckedNativePlan {
+    let commit = match result {
+        IterationResultArray::Slots(slots) => {
+            NativeOperationCommit::CreateDenseArray { allocation, slots }
+        }
+        IterationResultArray::Contents(contents) => NativeOperationCommit::CreateContentsArray {
+            allocation,
+            contents,
+        },
+    };
+    CheckedNativePlan {
+        expected_revision: revision,
+        commits: vec![commit],
+        fresh: Some(Values::from([AbstractValue::Value(Value::Alloc(
+            Kind::Object,
+            allocation,
+        ))])),
+    }
 }
 
 /// A complete native operation after its callee, operands and current-prefix
@@ -159,6 +202,13 @@ pub(in crate::facts::sync_effects) fn commit(
         }
         NativeOperationCommit::DefineProperties(application) => heap.apply(&application),
         NativeOperationCommit::DefineDynamicKey(definition) => heap.define_dynamic_key(&definition),
+        NativeOperationCommit::CreateDenseArray { allocation, slots } => {
+            heap.dense_array(allocation, slots);
+        }
+        NativeOperationCommit::CreateContentsArray {
+            allocation,
+            contents,
+        } => heap.contents_array(allocation, contents),
     }
 }
 

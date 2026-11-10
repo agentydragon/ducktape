@@ -510,6 +510,7 @@ pub(super) fn finish_logical_chunk(
                     &precomputed.unused_commuting_statements,
                     &redundant_admission_overrides,
                     &analysis.redundant_purity_hints,
+                    &analysis.unconsulted_purity_hints,
                     graph_context.resolved_member_sites,
                 )
                 .into_iter()
@@ -1219,12 +1220,14 @@ enum GateOutcome<'a> {
 /// the documented `debundle gate list/describe` follow-up works.
 /// The chunk's `spec lint` findings whose signal the run computes anyway:
 /// unused `commuting_statements` entries, admission overrides that suppress
-/// nothing, and `purity: pure` hints the classifier infers without the hint.
+/// nothing, `purity: pure` hints no statement reads by name, and those the
+/// classifier infers without the hint.
 fn spec_lint_findings(
     chunk_id: &str,
     unused_commuting_statements: &[analysis::CommutingStatementsUnused],
     redundant_admission_overrides: &[spec::AdmissionCheck],
     redundant_purity_hints: &[analysis::RedundantPurityHint],
+    unconsulted_purity_hints: &BTreeSet<String>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Vec<LintFinding> {
     let purity_owner = |binding: &str| {
@@ -1258,9 +1261,23 @@ fn spec_lint_findings(
                 .iter()
                 .map(|check| LintFinding::redundant_admission_override(chunk_id, *check)),
         )
-        .chain(redundant_purity_hints.iter().map(|hint| {
-            LintFinding::redundant_purity_hint(chunk_id, hint, purity_owner(&hint.binding_name))
-        }))
+        .chain(
+            unconsulted_purity_hints.iter().map(|binding| {
+                LintFinding::unconsulted_purity_hint(chunk_id, purity_owner(binding))
+            }),
+        )
+        .chain(
+            redundant_purity_hints
+                .iter()
+                .filter(|hint| !unconsulted_purity_hints.contains(&hint.binding_name))
+                .map(|hint| {
+                    LintFinding::redundant_purity_hint(
+                        chunk_id,
+                        hint,
+                        purity_owner(&hint.binding_name),
+                    )
+                }),
+        )
         .collect()
 }
 

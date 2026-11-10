@@ -2355,7 +2355,7 @@ annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
 - `inconclusive`: a probe suggests the annotation is unnecessary but does not
   establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
   the fact it supported may have another derivation. While any chunk is
-  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint the classifier infers without the hint
+  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint whose name no statement of its chunk reads is `inferable` (`never_consumed`): the classifier consults a hint only at a direct call of the name and the code graph only at a read of the name as an import. A read hint the classifier infers without the hint
   (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
   hint are not rerun.
 
@@ -4318,6 +4318,13 @@ required to continue. A call rejected by the ordered operand path retains its
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
 `non_local_target`, or `unsupported_receiver`. It names
 the first ordered admission check that refused the already evaluated operands.
+An `unsupported_operation` / `array_iteration` reason names why a selected
+`Array.prototype` iteration method was not executed: `array_iteration_row_unsupported`
+(`some`, `every`, `find`, `findIndex`, `flatMap`, or `reduce` without an initial
+value), `array_iteration_intrinsics_changed`, `array_iteration_receiver_unproved`,
+`array_iteration_callback_unsupported`, `array_iteration_capturing_callback`, or
+`array_iteration_callback_incomplete`. Callbacks that already ran keep their
+effects; the remainder is summarized.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
 transfer do not carry this admission reason.

@@ -271,6 +271,19 @@ impl LintFinding {
         }
     }
 
+    /// A `purity: pure` hint whose name no statement of its chunk reads, so
+    /// no classifier arm or import read consulted it.
+    pub fn unconsulted_purity_hint(chunk: &str, owner: PurityHintOwner) -> Self {
+        Self {
+            rule: LintRule::InferableAnnotation,
+            chunk: Some(chunk.to_owned()),
+            annotation: LintedAnnotation::PurityHint { owner },
+            verdict: InferenceVerdict::Inferable {
+                reason: InferableReason::NeverConsumed,
+            },
+        }
+    }
+
     pub fn redundant_purity_hint(
         chunk: &str,
         hint: &RedundantPurityHint,

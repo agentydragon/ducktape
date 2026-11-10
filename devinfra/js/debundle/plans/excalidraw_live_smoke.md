@@ -26,20 +26,9 @@ esbuild output), and `emit_browser_harness` for the smoke below.
 
 ## Smoke target contract
 
-- runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
-  similar);
-- builds the Excalidraw bundle through the shared `debundle_pipeline`
-  rule (<../pipeline.bzl>);
-- starts a test-owned server for the resulting harness and package
-  mappings;
-- drives headless Chromium against that server, asserting:
-  - no failed asset requests,
-  - no console errors,
-  - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`
-    or whichever stable selector Excalidraw exposes),
-  - a small interaction works (click the rectangle tool, click on
-    the canvas, verify a shape was added — proves the React app is
-    reactive after debundle).
+Landed: `//devinfra/js/debundle/excalidraw:test_smoke` (<../excalidraw/README.md>
+§ Spec). Not yet covered: lazy chunks reached by `import()` after startup
+(locales, font subsetting, file system), and a published screenshot.
 
 ## Hosting
 
