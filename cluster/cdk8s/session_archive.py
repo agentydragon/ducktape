@@ -4,22 +4,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import (
-    Cluster,
-    ClusterSpec,
-    ClusterSpecBootstrap,
-    ClusterSpecBootstrapPgBasebackup,
-    ClusterSpecExternalClusters,
-    ClusterSpecExternalClustersSslCert,
-    ClusterSpecExternalClustersSslKey,
-    ClusterSpecExternalClustersSslRootCert,
-    ClusterSpecPostgresql,
-    ClusterSpecProbes,
-    ClusterSpecProbesLiveness,
-    ClusterSpecProbesLivenessIsolationCheck,
-    ClusterSpecReplica,
-    ClusterSpecStorage,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
@@ -40,7 +25,6 @@ NAMESPACE = session_backup.NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/ai-session-archive-image-pins"
 HOSTNAME = "ai-session-archive.allegedly.works"
-SOURCE_DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
 DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespace=NAMESPACE)
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
@@ -66,19 +50,19 @@ def _database(chart: Chart) -> None:
     cluster.cluster(
         chart,
         "archive-database",
-        ref=SOURCE_DATABASE,
+        ref=DATABASE,
         annotations={
             "description": "Disposable, Restic-derived view of workstation AI session history.",
             "cnpg.io/skipWalArchiving": "enabled",
-            "kustomize.toolkit.fluxcd.io/prune": "disabled",
         },
-        profile=cluster.ClusterPlacement(storage_class="piraeus-hdd-2", affinity=cluster.OVH_PIRAEUS_SSD.affinity),
+        profile=cluster.OVH_PIRAEUS_HDD,
         size="100Gi",
         resize_in_use_volumes=False,
         instances=1,
         # The default 5s replication timeouts disconnect the HDD standby during
         # observed multi-second storage and network stalls.
         postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
+        # Created by pg_basebackup; initdb names the cloned app role CNPG reconciles.
         initdb=cluster.same_owner_initdb("ai_session_archive"),
         # The Restic snapshots are the durable backup; this database is a rebuildable projection.
         wal_archive=False,
@@ -93,62 +77,6 @@ def _database(chart: Chart) -> None:
         namespace=NAMESPACE,
         secret=f"{retired_bucket}-s3-credentials",
         key_fields=s3.AWS_ENV_KEY_FIELDS,
-    )
-
-
-def _database_replica(chart: Chart) -> None:
-    # CLEANUP(added 2026-11-10): Retire the source after verifying the cutover;
-    # then replace pg_basebackup with initdb for the cloned application role.
-    Cluster(
-        chart,
-        "archive-database-hdd",
-        metadata=ApiObjectMetadata(
-            name=DATABASE.name,
-            namespace=NAMESPACE,
-            annotations={
-                "description": "Session archive database on single-copy OVH HDD storage.",
-                "cnpg.io/skipWalArchiving": "enabled",
-            },
-        ),
-        spec=ClusterSpec(
-            instances=1,
-            image_name=cluster.POSTGRES_IMAGE,
-            affinity=cluster.OVH_PIRAEUS_HDD.affinity,
-            storage=ClusterSpecStorage(
-                storage_class=cluster.OVH_PIRAEUS_HDD.storage_class, size="100Gi", resize_in_use_volumes=False
-            ),
-            postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
-            probes=ClusterSpecProbes(
-                liveness=ClusterSpecProbesLiveness(
-                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
-                )
-            ),
-            bootstrap=ClusterSpecBootstrap(
-                pg_basebackup=ClusterSpecBootstrapPgBasebackup(
-                    source=SOURCE_DATABASE.name, database="ai_session_archive", owner="ai_session_archive"
-                )
-            ),
-            replica=ClusterSpecReplica(enabled=False, source=SOURCE_DATABASE.name),
-            external_clusters=[
-                ClusterSpecExternalClusters(
-                    name=SOURCE_DATABASE.name,
-                    connection_parameters={
-                        "host": f"{SOURCE_DATABASE.name}-rw.{NAMESPACE}.svc.cluster.local",
-                        "user": "streaming_replica",
-                        "dbname": "postgres",
-                    },
-                    ssl_key=ClusterSpecExternalClustersSslKey(
-                        name=f"{SOURCE_DATABASE.name}-replication", key="tls.key"
-                    ),
-                    ssl_cert=ClusterSpecExternalClustersSslCert(
-                        name=f"{SOURCE_DATABASE.name}-replication", key="tls.crt"
-                    ),
-                    ssl_root_cert=ClusterSpecExternalClustersSslRootCert(
-                        name=f"{SOURCE_DATABASE.name}-ca", key="ca.crt"
-                    ),
-                )
-            ],
-        ),
     )
 
 
@@ -399,7 +327,6 @@ def _network_policies(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _database(chart)
-    _database_replica(chart)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _web(chart)
     for host, display_name, schedule in _SOURCE_HOSTS:
