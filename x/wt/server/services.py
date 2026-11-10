@@ -38,7 +38,7 @@ class WorktreeIndexService:
         idx = self._get_index()
         if not idx:
             return None
-        return idx.get_by_name(name)
+        return idx.by_name.get(name)
 
     def resolve_target(self, name: str | None, current_path: Path):
         idx = self._get_index()

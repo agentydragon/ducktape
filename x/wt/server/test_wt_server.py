@@ -34,7 +34,7 @@ async def test_registration_survives_discovery_scan_that_predates_it(real_config
     await asyncio.gather(discovery, registration)
 
     assert daemon.worktree_index is not None
-    assert daemon.worktree_index.get_by_name("created") == created
+    assert daemon.worktree_index.by_name.get("created") == created
 
 
 async def test_worktree_found_by_a_scan_while_being_registered_gets_one_gitstatusd(real_config, monkeypatch):
