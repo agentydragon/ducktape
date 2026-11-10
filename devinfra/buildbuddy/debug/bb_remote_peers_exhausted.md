@@ -1,209 +1,89 @@
-# `bb remote build` post-run "Exhausted all peers" — RCA + workaround
+# `bb remote build` missing local outputs
 
-**Status:** active workaround in CI; upstream BuildBuddy bug not yet filed.
+Verified 2026-11-10 with `bb` 5.0.500 and Bazel 9.2.0.
 
-## Symptom
+`bb remote build //devinfra:gazelle` can finish the hosted Bazel build
+successfully, then exit 1 downloading a generated launcher from CAS:
 
-`bb remote build //...` (and any other `bb remote build` / `bb remote run`)
-exits 1 immediately after the runner reports completion, with:
-
-```
-Remote run completed at 2026-05-03 00:46:52.004 UTC
-download blob: rpc error: code = FailedPrecondition desc =
-  read 66e1f2ff8901a52ba79a20ebfc3dc075a5bb8b36c61f93f8254e63393065ae00/24:
-  rpc error: code = NotFound desc = Exhausted all peers attempting to read
-  "66e1f2ff8901a52ba79a20ebfc3dc075a5bb8b36c61f93f8254e63393065ae00".
-##[error]Process completed with exit code 1.
+```text
+download blob: read c755c56d73fe520d31a41295a6dacdfaef93369e2f1605c311d27e1f088e6cb0/3923:
+rpc error: code = NotFound desc = Exhausted all peers attempting to read
+"c755c56d73fe520d31a41295a6dacdfaef93369e2f1605c311d27e1f088e6cb0".
 ```
 
-The Bazel build (and tests) **succeed** on the runner — `INFO: Build completed
-successfully` appears before the failure. The crash is purely in `bb`'s
-client-side post-run download.
+## Proven mechanism
 
-First seen: **2026-04-30 ~10:56 UTC** on devel CI. Has been hitting almost every
-Bazel CI run since 2026-05-02. Reproducible from any session, not just CI.
+Bazel's `--remote_build_event_upload` defaults to `minimal`. That mode skips
+uploading local build outputs other than logs/profiles, yet emits their
+`bytestream://` URIs even when the blobs are absent. See Bazel 9.2.0's
+[`RemoteOptions`](https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/remote/options/RemoteOptions.java#L314-L328)
+and [`ByteStreamBuildEventArtifactUploader`](https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/remote/ByteStreamBuildEventArtifactUploader.java#L238-L247)
+(`shouldUpload` and `PathConverterImpl`).
 
-## Affected CI
+Gazelle's `gazelle-runner.bash` is produced by a local `TemplateExpand`
+internal action, not a remotely executed spawn. The failing build's Bazel
+profile records that expansion in 885 microseconds. Both top-level outputs,
+`gazelle-runner.bash` and `gazelle`, advertise the same 3923-byte digest.
 
-The `Build + lint` step of `.github/workflows/bazel-ci.yml`. The `Test` step
-runs `bb remote test //...` and is unaffected (see "Why" below). Sample
-failures:
+The CLI enables `--remote_upload_local_results`, which covers locally
+executed spawn results but does not upload this internal template output.
+After the runner exits, the CLI reads the target's BEP output URIs and tries
+to download both files. See
+[`parseArgs` and `downloadOutputs`](https://github.com/buildbuddy-io/buildbuddy/blob/0ca572258f0eecd479a7a4df644ccdbae4c94cca/cli/remotebazel/remotebazel.go)
+(source at the CLI release date; hosted-service revision is independent).
 
-- Run [25266572770](https://github.com/agentydragon/ducktape/actions/runs/25266572770), job 74081984808, branch `claude/add-secret-banner-DiiPK`
-- Run [25266455677](https://github.com/agentydragon/ducktape/actions/runs/25266455677), job 74081696418, branch `claude/debundle-strip-tana`
-- Run [25265709835](https://github.com/agentydragon/ducktape/actions/runs/25265709835), job 74079772131, branch `claude/debundle-rust-use-statements`
-- Run [25265862077](https://github.com/agentydragon/ducktape/actions/runs/25265862077), job 74080175153, branch `devel`
+## Controlled comparison
 
-In every CI failure, the same digest is requested:
-`66e1f2ff8901a52ba79a20ebfc3dc075a5bb8b36c61f93f8254e63393065ae00/24`.
-
-## Why
-
-`bb` source [`cli/remotebazel/remotebazel.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/remotebazel/remotebazel.go):
-
-```go
-if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
-    fetchOutputs = true
-}
-...
-if opts.FetchOutputs && exitCode == 0 {
-    downloadOutputs(...)   // GetBlob(...) for each main output + runfiles
-}
-```
-
-`downloadOutputs` resolves output digests from the inner Bazel invocation's
-BES events (main outputs from `lookupBazelInvocationOutputs` →
-`GetInvocation`; runfiles from `RunTargetAnalyzed` events). It then calls
-`cachetools.GetBlob` for each — and that's where `download blob: …` originates.
-
-`bb remote test` doesn't set `fetchOutputs`. `bb remote --script` skips this
-path entirely. So the bug only appears when the bb CLI tries to pull build
-outputs back to the local workspace.
-
-### Why the blobs are missing
-
-The runner action is created with `DoNotCache: true` hardcoded at
-[`enterprise/server/hostedrunner/hostedrunner.go:278`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/hostedrunner/hostedrunner.go).
-That is correct semantically — the wrapper action has unique inputs (invocation
-ID, patches, timeout) and would never hit the action cache.
-
-`DoNotCache` is supposed to disable **action result** caching only;
-content-addressed **CAS blobs** uploaded by the action should persist
-independently. But in current BuildBuddy production, every blob produced by a
-`DoNotCache` runner action becomes unreachable within ~1s of the action
-completing. Even the action's own `stderr` and `vm_log_tail.txt` blobs
-(referenced from `bb execution get`) fail with the same `Exhausted all peers`
-error. The cache-write path is uploading blobs that are not actually
-retrievable from peers.
-
-This is the upstream BuildBuddy bug. We don't have insight into PebbleCache /
-distributed cache internals.
-
-## Reproduction
-
-Any session with `BUILDBUDDY_API_KEY` set:
+Both builds used devel commit `4cf722d394f39b8d65960d0d622806de6c71d05f`,
+with the repository's RBE/cache settings enabled. Only the BEP upload flag
+changed. Commands run from an isolated worktree:
 
 ```bash
-# Fails:
-bb remote build //devinfra:gazelle --config=rbe
-# → download blob: ... Exhausted all peers ...
-
-# Works (proves the bug is in downloadOutputs, not the runner):
-bb remote --script="bazel build //devinfra:gazelle --config=rbe"
-
-# Inspect the missing blob — same error:
-bb download <hash>/<size>
-bbapi cache metadata <hash> <size>
+bbr build //devinfra:gazelle
+bbr build //devinfra:gazelle --remote_build_event_upload=all
 ```
 
-Demonstrating that even the runner's own stderr is unreachable:
+| Invocation                                                                                             | Hosted Bazel | Local CLI | Launcher                |
+| ------------------------------------------------------------------------------------------------------ | ------------ | --------- | ----------------------- |
+| [Original PR #15300 build](https://app.buildbuddy.io/invocation/2ac0667c-54d7-4259-a9ca-e8a52ce0e340)  | Success      | Exit 1    | CAS NotFound            |
+| [Default-mode reproduction](https://app.buildbuddy.io/invocation/5a5357ba-e90d-4159-82c9-79606704af3c) | Success      | Exit 1    | Same CAS NotFound       |
+| [Upload-all comparison](https://app.buildbuddy.io/invocation/be41e8a3-522e-4bd6-9e20-ee399235888f)     | Success      | Exit 0    | Both outputs downloaded |
 
-```bash
-bb remote --invocation_id_file=/tmp/inv.txt build //devinfra:gazelle --config=rbe
-bbapi invocation $(cat /tmp/inv.txt)              # note Child: <id>
-bbapi execution <inv-id> --json                   # find executeResponseDigest
-# pull stderr digest from the execution response
-bb download <stderr-hash>/<stderr-size>           # also "Exhausted all peers"
-```
+Before the comparison, `bbapi cache metadata` returned NotFound for the
+launcher, and the artifact HTTP endpoint returned 404. The original build's
+159948-byte Bazel profile downloaded successfully as a control.
 
-## Workaround
+After the upload-all build, metadata reported a 3923-byte blob modified at
+2026-11-10 20:57:56.585888 UTC. An independent `bbapi artifact download`
+returned 3923 bytes whose SHA-256 was exactly
+`c755c56d73fe520d31a41295a6dacdfaef93369e2f1605c311d27e1f088e6cb0`.
+The CLI also materialized both files under
+`bb-out/bazel-out/k8-fastbuild/bin/devinfra/`.
 
-Wrap the build command in `--script`:
+## Integration and scope
 
-```bash
-bb remote --script="bazel build --config=rbe //..."
-```
+`bbr build` supplies `--remote_build_event_upload=all` before session and
+user options. Direct `bb remote build` callers must pass the flag explicitly.
+A later explicit `minimal` override restores Bazel's original behavior.
+Only missing local BEP-referenced files are uploaded; existing remote outputs
+are reused. A broad build can therefore add presence checks and uploads for
+more local top-level files so the CLI can download them. Bazel offers no
+per-file upload filter. This does not request every intermediate output or
+change action-cache/RBE settings. The comparison added one 3923-byte blob
+(2215 stored bytes); broad-build latency and storage overhead were not measured.
 
-`--script` keeps `bb` away from `downloadOutputs`. The build still happens
-remotely and remote cache writes still occur — you just don't get the
-build outputs auto-downloaded to the local `bb-out/` tree. For CI we don't
-need the artifacts back on the GHA runner anyway (`push-images.yml` does its
-own artifact download and is unaffected — see TODO below).
+`bb remote test` does not download build outputs. CI's `--script` path also
+avoids this post-run download. Local `bb run` can use the launcher directly
+without retrieving it from CAS. The CLI's build-remotely/run-locally path
+separately uploads its executable and runfiles.
 
-For local `bbr` use (`bbr build //target`), users who want artifacts back can
-either (a) use `--remote_download_regex` and accept the bug for that
-invocation, or (b) `bb remote --script "bazel build //target"` then re-run
-`bazel build //target` locally — the second invocation hits the now-warm RBE
-cache and materializes outputs via Bazel's normal download path, not via
-`bb`'s broken `downloadOutputs`.
-
-## CI fix
-
-`.github/actions/bb-remote/action.yml` gained a `script` input.
-`.github/workflows/bazel-ci.yml` collapsed its two-step `Test` + `Build + lint`
-into a single `bb remote --script` invocation. Side benefit: 1 Firecracker VM
-allocation per CI run instead of 2.
-
-## Reference data (for upstream report)
-
-- Local repro invocation: `bf3aafbf-fcab-4d72-9509-57d6b4abbb68` (workflow), child `6b93e3de-51f9-4a46-98ed-a27db464ab3f`
-- Local repro execution: `bb-snapshot/uploads/79487951-4994-4eaa-9475-fc9df7adab10/blobs/blake3/4731968eedecefa557dc131e488ed915304ca474b9ed3fe5a16d0cccf5789a38/150`
-- Action mnemonic: `RemoteBazelRun`
-- Action metadata: `doNotCache: true`, `fileUploadCount: 4`, `fileUploadSizeBytes: 97472`
-- Failing CAS digests (all return `Exhausted all peers`):
-  - `71eb57bd65aa8516fcc15da1aee0cb71ca9993c92a2796b0b516c2c8f2ee2fe2/3813` (the blob `bb` wants)
-  - `8860153709b0953142f8d6f18b600cc0df32dcd8a49a966731c435384f01d090/88491` (action stderr)
-  - `a3ce63f5a76f392cc8e393fd5483ae4f700e2d7ae4107446d19a4e2c7bc30caa/8981` (vm_log_tail.txt)
-  - `af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262/0` (action stdout — empty file digest)
-
-## TODO
-
-- [ ] File upstream issue at <https://github.com/buildbuddy-io/buildbuddy/issues/new>. Draft body below.
-- [x] Audit other `bb remote build` consumers. `.github/workflows/push-images.yml` no longer uses `--remote_download_regex`; its four `bb-remote` steps use `args: build … --remote_download_outputs=toplevel` and publish images successfully, so they are not blocked by this bug.
-- [ ] When upstream is fixed, revert the `--script` workaround in `bazel-ci.yml` and remove the `script` input from `bb-remote/action.yml`.
-
-### Draft upstream issue
-
-> **Title:** `bb remote build` post-run `downloadOutputs` fails with `Exhausted all peers` for blobs the runner just uploaded
->
-> **Symptom**
->
-> Every `bb remote build //target` invocation against `remote.buildbuddy.io`
-> fails after the runner reports completion:
->
-> ```
-> Remote run completed at <ts>
-> download blob: rpc error: code = FailedPrecondition desc = read <hash>/<size>:
->   rpc error: code = NotFound desc = Exhausted all peers attempting to read "<hash>".
-> ```
->
-> The inner Bazel build itself succeeds — `INFO: Build completed successfully`
-> appears before the failure. `bb remote --script="bazel build …"` works
-> (skips `downloadOutputs`). `bb remote test //…` works (no `fetchOutputs`).
->
-> **Repro**
->
-> ```
-> bb remote build //some/target --config=rbe   # fails
-> bb remote --script="bazel build //some/target --config=rbe"   # succeeds
-> ```
->
-> **Investigation**
->
-> The runner action is created with `DoNotCache: true`
-> ([`hostedrunner.go:278`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/hostedrunner/hostedrunner.go)).
-> Its execution metadata reports `fileUploadCount: 4`,
-> `fileUploadSizeBytes: 97472`, so output blobs went into CAS. But within ~1s
-> of completion, **every** referenced blob is unreachable — including action
-> stderr, `vm_log_tail.txt`, and the empty-file digest:
->
-> ```
-> bb download 8860153709b0953142f8d6f18b600cc0df32dcd8a49a966731c435384f01d090/88491
-> # → Exhausted all peers
-> bbapi cache metadata 8860153709b0953142f8d6f18b600cc0df32dcd8a49a966731c435384f01d090 88491
-> # → Exhausted all peers
-> ```
->
-> Hypothesis: distributed-cache (PebbleCache) writes for `DoNotCache: true`
-> action outputs are not making it to the peer set, even though the
-> `BatchUpdateBlobs` / `Write` RPCs return success during the action.
->
-> **Reference invocations / digests** (in our org, available to BB support):
->
-> - Workflow invocation: `bf3aafbf-fcab-4d72-9509-57d6b4abbb68`, child `6b93e3de-51f9-4a46-98ed-a27db464ab3f`
-> - Execution: `bb-snapshot/uploads/79487951-4994-4eaa-9475-fc9df7adab10/blobs/blake3/4731968eedecefa557dc131e488ed915304ca474b9ed3fe5a16d0cccf5789a38/150`
-> - Missing CAS digests: `71eb57bd…/3813`, `8860153709…/88491`, `a3ce63f5…/8981`, `af1349b9…/0`
->
-> First seen ~2026-04-30, persists. Affects all `bb remote build` users in our
-> org; not specific to a particular target, container image, or
-> `runner_exec_properties` configuration.
+An earlier 2026-05 investigation recorded similar errors for launcher
+`71eb57bd65aa8516fcc15da1aee0cb71ca9993c92a2796b0b516c2c8f2ee2fe2/3813`,
+runner stderr, and `vm_log_tail.txt`, and proposed distributed-cache loss
+associated with `DoNotCache`. Its reference invocation was
+`bf3aafbf-fcab-4d72-9509-57d6b4abbb68`, child
+`6b93e3de-51f9-4a46-98ed-a27db464ab3f`. Those historical diagnostic blobs were
+not re-investigated here; the current controlled result establishes missing
+BEP uploads for the Gazelle launcher and does not establish their cause.
+A broad recent-invocation query timed out, and target history contained no
+Gazelle entries, so these observations are not a population failure rate.
