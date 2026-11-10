@@ -4,4 +4,4 @@ configurations:
   - kustomizeconfig
 images:
   - name: git.allegedly.works/ducktape-ci/crossplane-provider-buildbuddy
-    newTag: latest # {"$imagepolicy": "flux-system:crossplane-provider-buildbuddy:tag"}
+    newTag: devel-20261110210018-4cf722d # {"$imagepolicy": "flux-system:crossplane-provider-buildbuddy:tag"}
