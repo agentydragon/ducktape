@@ -1,0 +1,119 @@
+load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_testonly = True)
+
+js_library(
+    name = "app",
+    srcs = ["app/main.js"],
+    deps = [
+        "//:node_modules/@excalidraw/excalidraw",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+# Production build: minified, identifier-mangled, tree-shaken ESM, split at
+# Excalidraw's dynamic-import boundaries.
+esbuild(
+    name = "bundle",
+    config = {
+        # `@excalidraw/excalidraw/index.css` is exported only under the
+        # `development`/`production` conditions.
+        "conditions": [
+            "browser",
+            "production",
+        ],
+        "loader": {".woff2": "file"},
+    },
+    define = {"process.env.NODE_ENV": "\"production\""},
+    entry_point = "app/main.js",
+    # The text-to-diagram dialog's lazy mermaid closure (~170 chunks, d3,
+    # cytoscape, katex) would dominate the corpus; it stays an unresolved
+    # dynamic import, so only that dialog fails to load.
+    external = ["@excalidraw/mermaid-to-excalidraw"],
+    format = "esm",
+    minify = True,
+    output_dir = True,
+    platform = "browser",
+    sourcemap = False,
+    splitting = True,
+    target = ["es2022"],
+    deps = [":app"],
+)
+
+py_library(
+    name = "gen_inputs",
+    srcs = ["gen_inputs.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_binary(
+    name = "gen_inputs_bin",
+    main_module = "devinfra.js.debundle.excalidraw.gen_inputs",
+    deps = [":gen_inputs"],
+)
+
+run_binary(
+    name = "inputs",
+    srcs = [
+        "spec/config_template.yaml",
+        ":bundle",
+    ],
+    outs = [
+        "config.yaml",
+        "js-files.txt",
+    ],
+    args = [
+        "--bundle-dir",
+        "$(execpath :bundle)",
+        "--inputs-root",
+        package_name() + "/bundle",
+        "--template",
+        "$(execpath spec/config_template.yaml)",
+        "--js-list",
+        "$(execpath js-files.txt)",
+        "--js-list-path",
+        package_name() + "/js-files.txt",
+        "--config",
+        "$(execpath config.yaml)",
+    ],
+    tool = ":gen_inputs_bin",
+)
+
+# Bundle chunks and their JS list share bazel-bin, the root the generated
+# config's `inputs` paths resolve against.
+filegroup(
+    name = "source",
+    srcs = [
+        "js-files.txt",
+        ":bundle",
+    ],
+)
+
+filegroup(
+    name = "spec",
+    srcs = glob(["spec/**"]),
+)
+
+# Residual baseline: the unmodified chunks with no module claims and no vendor
+# substitutions.
+debundle_pipeline(
+    name = "debundle",
+    input_data = [":source"],
+    spec_tree_inputs = [":spec"],
+    split_dependency_graphs = True,
+    tree_config = "config.yaml",
+    tree_modules = "spec/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "spec/vendor_marks.yaml",
+)
+
+filegroup(
+    name = "analysis",
+    srcs = [":debundle"],
+    output_group = "analysis",
+)
