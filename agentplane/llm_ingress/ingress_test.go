@@ -645,8 +645,17 @@ func TestIdentityCallerIsAttributedByIdentityWithoutAccountClaims(t *testing.T) 
 	if !maps.Equal(metadata, want) {
 		t.Fatalf("Identity caller metadata = %v, want %v without namespace or service_account", metadata, want)
 	}
-	if got := forwarded.Get("Baggage"); got != "agentplane.identity=agent-a,agentplane.pod_uid=pod-a-uid" {
-		t.Fatalf("Identity caller baggage = %q, want its identity and Pod alone", got)
+	// Baggage members serialize in no fixed order.
+	parsed, err := baggage.Parse(forwarded.Get("Baggage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := map[string]string{}
+	for _, member := range parsed.Members() {
+		members[member.Key()] = member.Value()
+	}
+	if !maps.Equal(members, map[string]string{"agentplane.identity": "agent-a", "agentplane.pod_uid": "pod-a-uid"}) {
+		t.Fatalf("Identity caller baggage = %v, want its identity and Pod alone", members)
 	}
 }
 
