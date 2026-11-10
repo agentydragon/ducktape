@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
@@ -71,14 +72,23 @@ func TestABoxRunsAsItsCallerAndGoesWithItsSandboxOrAccount(t *testing.T) {
 }
 
 // An Identity's box runs on the namespace's default ServiceAccount, and its record names and is owned by the Identity
-// incarnation, so the box goes with the Identity. Neither a later incarnation of the name nor a same-named account
-// reaches it.
+// incarnation, so the box goes with the Identity. Its SVID resolves to the Identity, with the box as its Pod, as the
+// egress proxy and the services resolve a Sandbox's: the box acts as the Identity, by the Identity's bindings. Neither
+// a later incarnation of the name nor a same-named account reaches it.
 func TestAnIdentitysBoxRunsOnTheDefaultAccountAndGoesWithTheIdentity(t *testing.T) {
 	f := newFixture(t, nil)
-	agent := Identity{Name: "test-agent", UID: uuid.NewString()}
+	live := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: f.binding.Namespace, Name: "test-agent"},
+		Spec:       policyapi.IdentitySpec{Description: "test agent"},
+	}
+	if err := objects.Create(t.Context(), live); err != nil {
+		t.Fatal(err)
+	}
+	agent := Identity{Name: live.Name, UID: string(live.UID)}
 	if _, err := f.create(t, f.inventory(), agent, "box", testTemplate); err != nil {
 		t.Fatal(err)
 	}
+	f.issuance.Settle(t)
 	pod := f.pod(t, agent, "box")
 	record := f.record(t, agent, "box")
 	if pod.Spec.ServiceAccountName != "default" {
@@ -96,6 +106,14 @@ func TestAnIdentitysBoxRunsOnTheDefaultAccountAndGoesWithTheIdentity(t *testing.
 	if subject := record.Spec.Subject; subject.ServiceAccount != "" || subject.Identity == nil ||
 		*subject.Identity != (workloadapi.IdentitySubject{Name: agent.Name, UID: types.UID(agent.UID)}) {
 		t.Errorf("the box's record names %+v, want the Identity", subject)
+	}
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: f.binding.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := resolves.Resolve(t.Context(), f.leaf(t, f.record(t, agent, "box")))
+	if err != nil || peer.Subject != (resolver.Identity{Name: agent.Name, UID: live.UID}) || peer.Pod == nil || peer.Pod.UID != pod.UID {
+		t.Errorf("the box's SVID resolves to %+v, %v; want the Identity and Pod %s", peer, err, pod.UID)
 	}
 
 	if boxes, err := f.inventory().List(t.Context(), agent); err != nil || len(boxes) != 1 {

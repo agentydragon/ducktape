@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
@@ -44,7 +45,7 @@ func TestMain(m *testing.M) {
 	os.Exit(kubeapiserver.Run(m, func(started *kubeapiserver.Server) error {
 		server = started
 		scheme := runtime.NewScheme()
-		for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+		for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
 			if err := add(scheme); err != nil {
 				return err
 			}

@@ -62,6 +62,7 @@ go_test(
         "//agentplane/action_service/sandbox/contract",
         "//agentplane/action_service/store",
         "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_identity/api/v1alpha1",
