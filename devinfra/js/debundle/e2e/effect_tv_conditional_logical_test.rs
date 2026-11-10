@@ -993,6 +993,12 @@ fn a_heritage_factory_runs_at_class_creation() {
     assert_reader_split_diverges_with(definitions, &["factory", "make"]);
 }
 
+#[test]
+fn heritage_observes_a_local_changed_by_an_earlier_operand() {
+    let definitions = "function make(h) { function change() { h = second; } return class extends (change(), h) {}; }\nfunction flag() { return 0; }\nfunction run() { const C = make(first); return new C(); }";
+    assert_reader_split_diverges_with(definitions, &["make"]);
+}
+
 /// Opposing control: more iterator-protocol sites. A `catch` parameter's
 /// array pattern iterates the thrown value; a default below the root of a
 /// pattern (declaration, assignment, parameter, `for`-`of` head, `catch`)
