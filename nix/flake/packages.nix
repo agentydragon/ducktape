@@ -185,4 +185,20 @@ ducktapePkgs
   cpap-gateway-container-disk = import ../../cpap/gateway/container-disk.nix {
     inherit pkgs self;
   };
+  # Five-GiB KubeVirt containerDisk for the BuildBuddy KVM worker pool.
+  buildbuddy-kvm-worker-container-disk =
+    import ../../devinfra/buildbuddy/kvm/worker/container-disk.nix
+      {
+        inherit pkgs;
+      };
+  # Exposed for focused image verification; the image derivation also depends on this check.
+  buildbuddy-kvm-worker-root-disk-check =
+    import ../../devinfra/buildbuddy/kvm/worker/root-disk-check.nix
+      {
+        inherit pkgs;
+        disk = import ../../devinfra/buildbuddy/kvm/worker/root-disk.nix {
+          inherit pkgs;
+          sourceImage = import ../../devinfra/buildbuddy/kvm/worker/source-image.nix { inherit pkgs; };
+        };
+      };
 }

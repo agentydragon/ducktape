@@ -32,6 +32,17 @@
       ],
       "smoke": null
     },
+    "buildbuddy-kvm-worker-container-disk": {
+      "repository": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker",
+      "paths": [
+        "devinfra/buildbuddy/kvm/worker/container-disk.nix",
+        "devinfra/buildbuddy/kvm/worker/root-disk-check.nix",
+        "devinfra/buildbuddy/kvm/worker/root-disk.nix",
+        "devinfra/buildbuddy/kvm/worker/root_disk_boot_check.py",
+        "devinfra/buildbuddy/kvm/worker/source-image.nix"
+      ],
+      "smoke": null
+    },
     "agentplane-environment-vm-container-disk": {
       "repository": "git.allegedly.works/ducktape-ci/agentplane-environment-vm",
       "paths": [
