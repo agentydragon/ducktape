@@ -3195,7 +3195,14 @@ verifier its policy namespace and `get` on Identities there, without which a ver
 Identity subject, and on the open question of who creates a launched Sandbox's `Identity`
 ([plan](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)).**
 `Sandbox.spec.identity` and its admission rule landed (#15235): it may be set, changed or cleared
-only before the controller's first report or at `status.stopStage: Stopped`. The switch is one
+only before the controller's first report or at `status.stopStage: Stopped`. It is name-based: the
+Sandbox acts as whichever Identity holds that name now, so a recreated same-named Identity becomes
+its acting identity again, while credentials stay UID-fenced. Acting as an Identity confers no
+authority over the Sandbox, its environment or its boxes, and deleting the Identity revokes the
+Sandbox's credentials without deleting it ([plan](identity_and_kubernetes_accounts.md#identity-lifetime);
+operator, 2026-11-10). Authority over environments comes only from explicit rules, which do not
+exist yet, so Identity callers get no EnvironmentService read, resume or wake until they do: the
+draft #15380 derived them from acting-as and is deferred. The switch is one
 change, not a mode behind a setting or behind `Environment.identity_catalog` (operator,
 2026-11-09); draft #15239 holds the controller part and draft #15258 the template part:
 
