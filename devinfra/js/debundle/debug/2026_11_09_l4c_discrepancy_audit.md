@@ -313,7 +313,7 @@ available, so the per-owner counts above are not recomputed.
 | Legacy  | Effect status | Base | Branch |
 | ------- | ------------- | ---: | -----: |
 | accepts | accepted      | 1512 |   1535 |
-| accepts | `incomplete`  |  393 |    393 |
+| accepts | `incomplete`  |  393 |    394 |
 | refuses | accepted      |  159 |    153 |
 | refuses | `conflict`    |  955 |    955 |
 | refuses | `incomplete`  |   81 |     81 |
