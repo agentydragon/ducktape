@@ -64,12 +64,12 @@ below). Then rewrite it as one PR per app on `openapi_zod_ts_library`, starting 
 and #12286 (Spend). GitHub shows those leaves as merged, but they merged into this PR's branch
 `codex/openapi-zod-config`; none of their merge commits are on `devel`.
 
-**#12303, decode snapshots before marking streams live.** Mostly overtaken. `358d3919ba` (#14096)
-replaced the notification snapshot stream it hardens with Session inbox watches, which the frontend decodes with generated messages (`211ed4128f` #13461) inside a Zod-checked envelope
-(`a96bfb2171` #14856). Its base branch belongs to a closed PR, so it cannot land as stacked. One behavior did not land:
-`followResponse` in `agentplane/app/frontend/stream_reader.ts` reports `live` before `onFrame` runs, so a malformed
-first frame shows `live` briefly and then reconnects. **Close.** If wanted, fix the ordering as a separate small PR;
-no schema decision is involved.
+**#12303, decode snapshots before marking streams live.** Mostly overtaken. `358d3919ba` (#14096) replaced the
+notification snapshot stream it hardens with Session inbox watches, which the frontend decodes with generated messages
+(`211ed4128f` #13461) inside a Zod-checked envelope (`a96bfb2171` #14856). Its base branch belongs to a closed PR, so it
+cannot land as stacked. One behavior did not land: `followResponse` in `agentplane/app/frontend/stream_reader.ts`
+reports `live` before `onFrame` runs, so a malformed first frame shows `live` briefly and then reconnects. **Close.** If
+wanted, fix the ordering as a separate small PR; no schema decision is involved.
 
 **#12304, dispatcher watch decoder.** Mostly overtaken. `c6b7c38d17` (#12867) decodes watch frames through the
 generated Dispatcher ProtoJSON schema (`dispatchFromJson`), and `a96bfb2171` validates the envelope. It is also stacked
