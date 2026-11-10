@@ -57,6 +57,8 @@ NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
 _METRICS_PORT = 9090
 _METRICS_PORT_NAME = "metrics"
+_NODE_METRICS_PORT = 9100
+_NODE_METRICS_PORT_NAME = "node-metrics"
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
@@ -93,7 +95,7 @@ def _cloud_init() -> str:
                 "security": [{"arches": ["amd64"], "uri": "https://security.ubuntu.com/ubuntu"}],
             },
             "package_update": True,
-            "packages": ["docker.io"],
+            "packages": ["docker.io", "prometheus-node-exporter"],
             "fs_setup": [{"device": "/dev/disk/by-id/virtio-work", "filesystem": "ext4", "overwrite": False}],
             "mounts": [
                 ["/dev/disk/by-id/virtio-work", "/buildbuddy", "ext4", "defaults", "0", "2"],
@@ -297,7 +299,11 @@ def chart(app: App) -> Chart:
         "pool-network",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
-        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])],
+        ingress=[
+            IngressRule.from_endpoints(
+                cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT, _NODE_METRICS_PORT]
+            )
+        ],
         egress=[
             cilium.dns_egress(resolves=["*"]),
             EgressRule.to_fqdns(*_HTTPS_HOSTS),
@@ -316,7 +322,13 @@ def chart(app: App) -> Chart:
                     port=_METRICS_PORT,
                     target_port=k8s.IntOrString.from_number(_METRICS_PORT),
                     protocol="TCP",
-                )
+                ),
+                k8s.ServicePort(
+                    name=_NODE_METRICS_PORT_NAME,
+                    port=_NODE_METRICS_PORT,
+                    target_port=k8s.IntOrString.from_number(_NODE_METRICS_PORT),
+                    protocol="TCP",
+                ),
             ],
             type="ClusterIP",
         ),
@@ -326,9 +338,9 @@ def chart(app: App) -> Chart:
         "service-monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
-        endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME)],
+        endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME), Endpoint.plain(port=_NODE_METRICS_PORT_NAME)],
     )
-    target = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}"'
+    target = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS_PORT_NAME}"'
     PrometheusRule(
         chart,
         "prometheus-rule",
