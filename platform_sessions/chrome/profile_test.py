@@ -7,6 +7,15 @@ from platform_sessions.chrome.profile import ChromeProfile
 from platform_sessions.chrome.testing.cookie_db import CookieRow, create_cookie_db
 
 
+def test_user_agent_uses_chrome_major_version(tmp_path):
+    # gaffer-private's platform-session exporters call ChromeProfile.user_agent.
+    chrome = tmp_path / "chrome"
+    chrome.write_text("#!/bin/sh\nprintf 'Google Chrome 124.0.6367.60\\n'\n")
+    chrome.chmod(0o755)
+
+    assert "Chrome/124.0.0.0" in ChromeProfile.user_agent(str(chrome))
+
+
 def test_cookie_selection_uses_network_database_and_preserves_metadata(tmp_path):
     network = tmp_path / "Network"
     network.mkdir()

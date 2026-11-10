@@ -10,11 +10,13 @@ ConditionPathExists=/etc/buildbuddy/executor.yaml
 [Service]
 Type=simple
 ExecStart=/usr/local/libexec/buildbuddy-kvm-worker/run-executor
-ExecStop=/usr/bin/docker stop --time 30 buildbuddy-kvm-worker-executor
+# Leave 2m beyond the executor shutdown window for Docker to exit cleanly.
+ExecStop=/usr/bin/docker stop --time 86595 buildbuddy-kvm-worker-executor
 ExecStopPost=/usr/bin/rm -f /run/buildbuddy-executor/environment
 Restart=always
 RestartSec=10
-TimeoutStopSec=45
+# KubeVirt allows 4m45s beyond this timeout for the remaining guest shutdown.
+TimeoutStopSec=24h 5min 15s
 
 [Install]
 WantedBy=multi-user.target

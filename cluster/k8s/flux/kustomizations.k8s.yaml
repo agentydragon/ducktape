@@ -1645,15 +1645,6 @@ spec:
     - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
-  patches:
-    - patch: |
-        - op: add
-          path: /spec/suspend
-          value: true
-      target:
-        group: infra.contrib.fluxcd.io
-        kind: Terraform
-        version: v1alpha2
   path: ./k8s
   prune: true
   retryInterval: 1m
@@ -3637,6 +3628,17 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
+  ignore:
+    - paths:
+        - /spec/replicas
+      target:
+        group: pool.kubevirt.io
+        kind: VirtualMachinePool
+        name: buildbuddy-kvm-worker
+        namespace: buildbuddy-executor
+        version: v1beta1
   interval: 10m
   path: ./cluster/k8s/buildbuddy-kvm-worker
   prune: true
@@ -3647,6 +3649,31 @@ spec:
     namespace: ducktape-flux
   suspend: false
   timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: buildbuddy-kvm-worker-autoscaler
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: buildbuddy-kvm-worker
+      namespace: ducktape-flux
+    - name: keda
+      namespace: ducktape-flux
+    - name: monitoring-stack
+      namespace: ducktape-flux
+    - name: mimir
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/buildbuddy-kvm-worker-autoscaler
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: buildbuddy-kvm-worker-autoscaler
+    namespace: ducktape-flux
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -3770,7 +3797,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/platform-sessions-remote
-  prune: false
+  prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -4421,7 +4448,61 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Publish Crossplane's LiteLLM live-test key as the sealed BuildBuddy OPENAI_API_KEY secret.
+    description: Install the BuildBuddy provider after Crossplane and its registry credentials are ready.
+  name: crossplane-provider-buildbuddy
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-litellm
+      namespace: ducktape-flux
+    - name: litellm
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: pkg.crossplane.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
+      kind: Provider
+  interval: 10m
+  path: ./cluster/generated/crossplane-provider-buildbuddy
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-provider-buildbuddy
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the BuildBuddy live-test secret with Crossplane.
+  name: litellm-buildbuddy-crossplane
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-buildbuddy
+      namespace: ducktape-flux
+    - name: litellm-crossplane-keys
+      namespace: ducktape-flux
+    - name: litellm-keys-tf
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/litellm-buildbuddy-crossplane
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: litellm-buildbuddy-crossplane
+    namespace: ducktape-flux
+  wait: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Keep the retired BuildBuddy Terraform sync suspended until its later removal.
   name: litellm-buildbuddy-sync
   namespace: ducktape-flux
 spec:

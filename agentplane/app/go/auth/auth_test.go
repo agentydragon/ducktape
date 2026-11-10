@@ -55,7 +55,7 @@ func TestOIDCDiscoveryIsDeferredUntilLogin(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a, err := NewWithContext(context.Background(), Config{
+	a, err := New(Config{
 		OIDC: &OIDCConfig{
 			Issuer: server.URL, ClientID: "client", ClientSecret: "secret",
 			SessionSecret: "session-secret", PublicBaseURL: "https://agentplane.test",
@@ -64,7 +64,7 @@ func TestOIDCDiscoveryIsDeferredUntilLogin(t *testing.T) {
 		HTTPClient: server.Client(),
 	})
 	if err != nil {
-		t.Fatalf("NewWithContext() error = %v", err)
+		t.Fatalf("New() error = %v", err)
 	}
 	if got := requests.Load(); got != 0 {
 		t.Fatalf("OIDC discovery requests during construction = %d, want 0", got)

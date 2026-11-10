@@ -208,14 +208,14 @@ finishing, required checks succeeding, GitHub reporting mergeability, auto-merge
 being enabled, and the eventual merge itself. If push timestamps or exact head
 association cannot be recovered, say so and present a labeled proxy instead of
 inventing a precise push-to-green percentile. Use a new output directory outside
-the checkout. `collect.sh` recursively partitions dense run windows by second,
+the checkout. `collect.py` recursively partitions dense run windows by second,
 checks every page against the API's reported total, and fails if even a one-second
 partition reaches GitHub's 1,000-result cap. It pages jobs with `filter=all` to
 preserve attempts, collects open-PR head checks, and sweeps older unfinished runs
 separately. A collection is not atomic; preserve its start/end timestamps.
 
 ```bash
-bash scripts/collect.sh agentydragon/ducktape "$SINCE" "$UNTIL" "$OUT"
+python3 scripts/collect.py agentydragon/ducktape "$SINCE" "$UNTIL" "$OUT"
 bash scripts/evidence.sh "$OUT" > "$OUT/evidence.json"
 ```
 

@@ -1,0 +1,148 @@
+### closure write to an outer local
+(function () { let f = noop; const set = () => { f = second; }; set(); return f(); })();
+### array destructuring
+(function () { const [h] = [second]; return h(); })();
+### for-of over an array literal
+(function () { for (const h of [second]) return h(); })();
+### generator result
+(function () { function* g() { yield second; } return g().next().value(); })();
+### arguments object
+(function () { return arguments[0](); })(second);
+### thrown and caught
+(function () { try { throw second; } catch (e) { return e(); } })();
+### through Array.prototype.map
+(function () { return [second].map((x) => x)[0](); })();
+### object destructuring
+(function () { const o = { m: second }; const { m } = o; return m(); })();
+### computed store then named read
+(function () { const o = {}; const k = "m"; o[k] = second; return o.m(); })();
+### named store then computed read
+(function () { const o = {}; o.m = second; const k = "m"; return o[k](); })();
+### sequence callee
+(0, second)();
+### conditional callee
+(state === 0 ? second : noop)();
+### logical callee
+(null || second)();
+### Function.prototype.call
+second.call(null);
+### Function.prototype.apply
+second.apply(null, []);
+### Function.prototype.bind
+second.bind(null)();
+### constructor body
+new (class { constructor() { second(); } })();
+### static block
+(class { static { second(); } });
+### static field initializer
+(class { static x = second(); });
+### instance field initializer
+new (class { x = second(); })();
+### getter on a literal
+({ get x() { second(); return 1; } }).x;
+### setter on a literal
+({ set x(v) { second(); } }).x = 1;
+### class getter
+new (class { get x() { second(); return 1; } })().x;
+### toString coercion
+"" + { toString: second };
+### valueOf coercion
++{ valueOf: second };
+### template literal coercion
+`${{ toString: second }}`;
+### Symbol.toPrimitive
++{ [Symbol.toPrimitive]: second };
+### user iterator spread
+[...{ [Symbol.iterator]: function* () { second(); } }];
+### tagged template
+second`x`;
+### default parameter
+((a = second()) => a)();
+### destructuring default
+(function () { const { a = second() } = {}; return a; })();
+### Reflect.apply
+Reflect.apply(second, null, []);
+### forEach callback
+[1].forEach(second);
+### callback invoking its argument
+[second].forEach((f) => f());
+### Array.from
+Array.from([second])[0]();
+### Object.values
+Object.values({ a: second })[0]();
+### Map round trip
+new Map([["a", second]]).get("a")();
+### returned from a factory
+(() => second)()();
+### passed as an argument
+((f) => f())(second);
+### nested object path
+({ a: { b: second } }).a.b();
+### optional call
+second?.();
+### Object.defineProperty getter
+(function () { const o = {}; Object.defineProperty(o, "x", { get: second }); return o.x; })();
+### prototype method assignment
+(function () { function K() {} K.prototype.m = second; return new K().m(); })();
+### class inheritance
+(function () { class A { m() { second(); } } class B extends A {} return new B().m(); })();
+### super call
+(function () { class A { constructor() { second(); } } class B extends A { constructor() { super(); } } return new B(); })();
+### assignment through destructuring target
+(function () { let f; [f] = [second]; return f(); })();
+### object destructuring assignment
+(function () { let f; ({ f } = { f: second }); return f(); })();
+### nullish assignment
+(function () { let f; f ??= second; return f(); })();
+### logical-or assignment
+(function () { let f; f ||= second; return f(); })();
+### for-of assignment target
+(function () { let f; for (f of [second]); return f(); })();
+### nested closure write
+(function () { let f; (() => { (() => { f = second; })(); })(); return f(); })();
+### closure write through a parameter default
+(function () { let f; ((x = (f = second)) => x)(); return f(); })();
+### closure write in a class field
+(function () { let f; new (class { x = (f = second); })(); return f(); })();
+### closure write to a top-level binding
+holder = second, holder();
+### stored on an escaped object then called back
+(function () { const o = { run: second }; globalThis.__hook = o; return globalThis.__hook.run(); })();
+### rest parameter
+((...fs) => fs[0]())(second);
+### spread argument
+((f) => f())(...[second]);
+### object spread
+({ ...{ m: second } }).m();
+### array spread element
+[...[second]][0]();
+### conditional property
+({ m: state === 0 ? second : noop }).m();
+### instanceof hasInstance
+({}) instanceof { [Symbol.hasInstance]: second };
+### in operator key coercion
+({ toString: second }) in {};
+### computed key coercion
+({})[{ toString: second }];
+### comma in initializer list
+[noop(), second()];
+### Symbol.iterator via alias
+(function () { const it = Symbol.iterator; const o = {}; o[it] = function* () { second(); }; return [...o]; })();
+### label and loop
+(function () { out: for (;;) { second(); break out; } })();
+### switch case
+(function () { switch (state) { case 0: second(); } })();
+### finally block
+(function () { try { noop(); } finally { second(); } })();
+### new on a plain function
+new second();
+### JSON.stringify toJSON
+JSON.stringify({ toJSON: second });
+### sort comparator
+[2, 1].sort(second);
+### string replace callback
+"a".replace("a", second);
+### Promise executor
+new Promise(second);
+### direct call
+second();

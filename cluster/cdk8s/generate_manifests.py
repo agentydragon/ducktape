@@ -20,6 +20,7 @@ from cluster.cdk8s import (
     alloy_otlp_bearer,
     buildbuddy_executor,
     buildbuddy_kvm_worker,
+    buildbuddy_provider,
     claude_sandbox_secrets,
     claude_session_sync,
     cpap_sync,
@@ -200,6 +201,7 @@ from cluster.cdk8s.infra_drift import drift_watch
 from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.litellm import (
+    buildbuddy_crossplane as litellm_buildbuddy_crossplane,
     buildbuddy_sync as litellm_buildbuddy_sync,
     crossplane_keys as litellm_crossplane_keys,
     database as litellm_database,
@@ -1027,7 +1029,7 @@ def generate_manifests(root: Path) -> None:
         tofu_state_db_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
-    monitoring_stack.monitoring_stack(
+    monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
         flux_chart,
         # The SOPS sibling turns on Flux decryption.
         write_directory(
@@ -1082,7 +1084,7 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     monitoring_mimir_artifact = artifact("monitoring-mimir", mimir.OUTPUT_DIR)
-    mimir.mimir(
+    monitoring_mimir_kustomization = mimir.mimir(
         flux_chart,
         write_directory(root, monitoring_mimir_artifact, mimir.chart),
         monitoring_crds_kustomization,
@@ -1522,12 +1524,24 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     buildbuddy_kvm_worker_artifact = artifact(buildbuddy_kvm_worker.NAME, buildbuddy_kvm_worker.OUTPUT_DIR)
-    buildbuddy_kvm_worker.buildbuddy_kvm_worker(
+    buildbuddy_kvm_worker_kustomization = buildbuddy_kvm_worker.buildbuddy_kvm_worker(
         flux_chart,
         write_directory(root, buildbuddy_kvm_worker_artifact, buildbuddy_kvm_worker.chart),
         buildbuddy_executor_kustomization,
         kubevirt_kustomization,
         monitoring_crds_kustomization,
+        piraeus_cluster_kustomization,
+    )
+    buildbuddy_kvm_autoscaler_artifact = artifact(
+        buildbuddy_kvm_worker.AUTOSCALER_NAME, buildbuddy_kvm_worker.AUTOSCALER_OUTPUT_DIR
+    )
+    buildbuddy_kvm_worker.autoscaler(
+        flux_chart,
+        write_directory(root, buildbuddy_kvm_autoscaler_artifact, buildbuddy_kvm_worker.autoscaler_chart),
+        buildbuddy_kvm_worker_kustomization,
+        keda_kustomization,
+        monitoring_stack_kustomization,
+        monitoring_mimir_kustomization,
     )
     cpap_sync_artifact = artifact("cpap-sync", cpap_sync.OUTPUT_DIR)
     cpap_sync.cpap_sync(
@@ -1856,7 +1870,7 @@ def generate_manifests(root: Path) -> None:
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, write_directory(root, haku_workloads_artifact, haku_workloads.chart))
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
-    litellm_keys.litellm_keys_tf(
+    litellm_keys_tf_kustomization = litellm_keys.litellm_keys_tf(
         flux_chart,
         write_directory(root, litellm_keys_tf_artifact, siblings=["buildbuddy-org-admin-api-key.sops.yaml"]),
         tofu_controller_kustomization,
@@ -1878,6 +1892,30 @@ def generate_manifests(root: Path) -> None:
         ),
         crossplane_provider_kustomization,
         litellm_kustomization,
+    )
+    buildbuddy_provider_artifact = artifact(
+        buildbuddy_provider.NAME, buildbuddy_provider.OUTPUT_DIR, buildbuddy_provider.PINS_DIR
+    )
+    buildbuddy_provider_kustomization = buildbuddy_provider.resources(
+        flux_chart,
+        write_directory(
+            root,
+            buildbuddy_provider_artifact,
+            buildbuddy_provider.chart,
+            components=[posixpath.relpath(buildbuddy_provider.PINS_DIR, buildbuddy_provider.OUTPUT_DIR)],
+        ),
+        crossplane_provider_kustomization,
+        litellm_kustomization,
+    )
+    litellm_buildbuddy_crossplane_artifact = artifact(
+        litellm_buildbuddy_crossplane.NAME, litellm_buildbuddy_crossplane.OUTPUT_DIR
+    )
+    litellm_buildbuddy_crossplane.resources(
+        flux_chart,
+        write_directory(root, litellm_buildbuddy_crossplane_artifact, litellm_buildbuddy_crossplane.chart),
+        buildbuddy_provider_kustomization,
+        litellm_crossplane_keys_kustomization,
+        litellm_keys_tf_kustomization,
     )
     litellm_buildbuddy_sync_artifact = artifact("litellm-buildbuddy-sync", litellm_buildbuddy_sync.OUTPUT_DIR)
     litellm_buildbuddy_sync_module = terraform.gitops_module(litellm_buildbuddy_sync.TF_MODULE)
@@ -2006,6 +2044,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_stack_artifact,
             buildbuddy_executor_artifact,
             buildbuddy_kvm_worker_artifact,
+            buildbuddy_kvm_autoscaler_artifact,
             ntfy_artifact,
             claude_rbac_artifact,
             authentik_artifact,
@@ -2035,6 +2074,8 @@ def generate_manifests(root: Path) -> None:
             litellm_keys_tf_artifact,
             litellm_crossplane_keys_artifact,
             litellm_buildbuddy_sync_artifact,
+            buildbuddy_provider_artifact,
+            litellm_buildbuddy_crossplane_artifact,
             reflector_artifact,
             seaweedfs_cluster_artifact,
             seaweedfs_operator_artifact,

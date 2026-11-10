@@ -1,0 +1,5 @@
+images:
+  - group: pkg.crossplane.io
+    version: v1
+    kind: Provider
+    path: spec/package

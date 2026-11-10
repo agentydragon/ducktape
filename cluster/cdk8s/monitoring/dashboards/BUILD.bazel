@@ -30,6 +30,12 @@ py_library(
 )
 
 grafana_dashboard_visual_test(
+    name = "cpap_gateway_disk_dashboard_visual_test",
+    dashboard = ":cpap-gateway-disk.json",
+    fixture_data = ":visual_fixtures/cpap-gateway-disk.json",
+)
+
+grafana_dashboard_visual_test(
     name = "buildbuddy_executor_pool_dashboard_visual_test",
     dashboard = ":buildbuddy-executor-pool.json",
     fixture_data = ":visual_fixtures/buildbuddy-executor-pool.json",

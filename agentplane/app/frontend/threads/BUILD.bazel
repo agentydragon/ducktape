@@ -42,18 +42,6 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_view_recorder_tools",
-    srcs = ["thread_view_recorder_tools.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_view_recorder",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//util/frontend/transcript:history_recorder_tools",
-    ],
-)
-
-ts_library(
     name = "thread_view_recorder",
     srcs = ["thread_view_recorder.ts"],
     tsconfig = TSCONFIG,

@@ -1,0 +1,40 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+            - periodSeconds: 300
+              type: Pods
+              value: 1
+          stabilizationWindowSeconds: 900
+        scaleUp:
+          policies:
+            - periodSeconds: 900
+              type: Pods
+              value: 1
+          stabilizationWindowSeconds: 120
+  fallback:
+    behavior: currentReplicasIfHigher
+    failureThreshold: 3
+    replicas: 1
+  maxReplicaCount: 3
+  minReplicaCount: 1
+  pollingInterval: 30
+  scaleTargetRef:
+    apiVersion: pool.kubevirt.io/v1beta1
+    kind: VirtualMachinePool
+    name: buildbuddy-kvm-worker
+  triggers:
+    - metadata:
+        ignoreNullValues: "false"
+        query: ((sum(clamp_max((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"})))), 1)) + (sum((buildbuddy_remote_execution_queue_length{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))) or 0 * sum((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))))) and on () ((count((buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} and (time() - timestamp(buildbuddy_remote_execution_assigned_milli_cpu{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) ((up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"} == 1) and (time() - timestamp(up{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics"}) < 180) and on (namespace, pod) (buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"} == 1) and on (namespace, pod) (time() - timestamp(buildbuddy_health_check_status{namespace="buildbuddy-executor",service="buildbuddy-kvm-worker-metrics",endpoint="metrics",health_check_name="registered_to_scheduler"}) < 180) and on (namespace, pod) (max by (namespace, pod) (kube_pod_info{namespace="buildbuddy-executor",created_by_kind="VirtualMachineInstance",created_by_name=~"buildbuddy-kvm-worker-[0-9]+"}))))) or vector(0)) == max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"} and (time() - timestamp(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}) < 180)))) or (max(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"} and (time() - timestamp(kube_customresource_kubevirt_vmpool_desired_replicas{namespace="buildbuddy-executor",name="buildbuddy-kvm-worker"}) < 180)))
+        serverAddress: http://mimir-gateway.monitoring.svc.cluster.local/prometheus
+        threshold: "1"
+      metricType: AverageValue
+      type: prometheus

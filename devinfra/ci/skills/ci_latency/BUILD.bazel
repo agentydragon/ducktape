@@ -15,7 +15,6 @@ skill_package(
                 "scripts/attribution.py",
                 "scripts/checks.jq",
                 "scripts/collect.py",
-                "scripts/collect.sh",
                 "scripts/contention.jq",
                 "scripts/evidence.sh",
                 "scripts/gate_headroom.py",

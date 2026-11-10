@@ -13,6 +13,7 @@ Linux only.
 ## Bazel Commands
 
 - `bbr` for build/test/query; `bb run` when the binary must execute locally (Gazelle, manifest updates, formatters); `bazelisk` for local runs needing the session bazelrc; never raw `bazel`.
+- **Remote artifacts:** minimal BEP upload can advertise local generated files absent from CAS. Add `--remote_build_event_upload=all` only on calls that need those regular files downloaded; runfiles and declared directories need separate handling. Details: <devinfra/buildbuddy/docs/remote.md>.
 - RBE and remote cache are the defaults — never disable them (`--remote_executor=""` is never needed; <devinfra/buildbuddy/docs/rbe_workflows.md>). Browser/visual and Docker tests run **only** on RBE; never skip or stub them. `--noremote_cache`/`--noremote_accept_cached` are fine.
 - Can't reach BuildBuddy from outside the sandbox → stop and report (usually a broken session hook or VPN).
 - **Bazel Bash runfiles:** use `rules_shell`'s `sh_binary` or `sh_test` with `use_bash_launcher = True`; declare runtime files in `data`, pass `$(rlocationpath ...)` via `args` or `env`, and resolve with `rlocation` in the script. The launcher initializes the library; don't copy its bootstrap into each script.

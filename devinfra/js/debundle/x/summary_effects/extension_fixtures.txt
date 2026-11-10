@@ -1,0 +1,417 @@
+### dep
+export let value = 1;
+export function bump() { value = 2; }
+### commutes same: a class extending a local class across an impure statement
+-
+class Base {} let state = 0;
+state = 1;
+class Derived extends Base {}
+console.log(state, Object.getPrototypeOf(Derived) === Base);
+### ordered differs: a class before its local base class
+-
+let unused;
+class Base {}
+class Derived extends Base {}
+console.log(Object.getPrototypeOf(Derived) === Base);
+### ordered differs: a base binding that is rebound
+-
+let Base = class {}; function swap() { Base = class { static tag = 1; }; }
+swap();
+class Derived extends Base {}
+console.log(Derived.tag);
+### ordered differs: a function base whose prototype is replaced
+-
+function Base() {} function patch() { Base.prototype = { tag: 1 }; }
+patch();
+class Derived extends Base {}
+console.log(new Derived().tag);
+### commutes same: static fields with literal and function initializers
+-
+let state = 0;
+state = 1;
+class K { static limit = 3; static make = () => state; static table = { a: [1] }; }
+console.log(state, K.limit, K.make(), K.table.a[0]);
+### ordered differs: a static field that reads a binding an impure statement writes
+-
+let state = 0;
+state = 1;
+class K { static seen = [state]; }
+console.log(K.seen[0]);
+### commutes same: a property read of a literal across an impure statement
+-
+const table = { a: 1, b: 2 }; let state = 0;
+state = 1;
+const a = table.a;
+console.log(state + a);
+### commutes same: two property reads of one literal
+-
+const table = { a: 1, b: 2 };
+const a = table.a;
+const b = table.b;
+console.log(a + b);
+### ordered differs: the literal is changed between
+-
+const table = { a: 1 }; function bump() { table.a = 2; }
+bump();
+const a = table.a;
+console.log(a);
+### ordered differs: an earlier statement made the property an accessor
+-
+const table = { a: 1 }; Object.defineProperty(table, 'a', { get() { return later; } });
+const a = table.a;
+var later = 1;
+console.log(a);
+### ordered differs: a property the literal does not have
+-
+const table = {}; function patch() { Object.prototype.inherited = 1; }
+patch();
+const a = table.inherited;
+console.log(a);
+### ordered differs: a property read before the literal's definition
+-
+let unused;
+const table = { a: 1 };
+const a = table.a;
+console.log(a);
+### commutes same: two reads of an import
+-
+import { value } from './dep.js';
+const a = value;
+const b = value;
+console.log(a + b);
+### ordered differs: an import another chunk's code changes
+-
+import { value, bump } from './dep.js';
+bump();
+const v = value;
+console.log(v);
+### commutes same: a class with symbol and literal computed keys
+-
+const tag = Symbol('t'); let state = 0;
+state = 1;
+class K { [tag]() { return 1; } [Symbol.iterator]() { return [][Symbol.iterator](); } ['plain']() { return 2; } }
+console.log(state, new K()[tag](), new K().plain());
+### commutes same: an object literal keyed by primitive bindings
+-
+const a = 'x'; const b = 2; let state = 0;
+state = 1;
+const o = { [a]: 1, [b]: 2 };
+console.log(state, o.x, o[2]);
+### commutes same: a key that is a primitive entry of a literal table
+-
+const names = { first: 'f' }; let state = 0;
+state = 1;
+const o = { [names.first]: 1 };
+console.log(state, o.f);
+### ordered differs: a key whose conversion runs code
+-
+let state = 0; const key = { toString() { state = 1; return 'k'; } };
+const o = { [key]: 1 };
+const seen = state;
+console.log(seen);
+### ordered differs: a table entry used as a key is changed between
+-
+const names = { first: 'f' }; function rename() { names.first = 'g'; }
+rename();
+const o = { [names.first]: 1 };
+console.log(Object.keys(o).join());
+### commutes same: spreading a plain literal
+-
+const base = { a: 1 }; let state = 0;
+state = 1;
+const o = { ...base, b: 2 };
+console.log(state, o.a, o.b);
+### ordered differs: the spread literal is changed between
+-
+const base = { a: 1 }; function grow() { base.c = 3; }
+grow();
+const o = { ...base };
+console.log(Object.keys(o).join());
+### ordered differs: an earlier statement gave the spread literal an accessor
+-
+const base = { a: 1 }; Object.defineProperty(base, 'g', { enumerable: true, get() { return later; } });
+const o = { ...base };
+var later = 1;
+console.log(o.g);
+### commutes same: spreading array literals
+-
+const a = [1, 2]; const b = [3]; let state = 0;
+state = 1;
+const all = [...a, ...b, 4];
+console.log(state, all.join());
+### ordered differs: the spread array is changed between
+-
+const a = [1]; function grow() { a.push(2); }
+grow();
+const all = [...a];
+console.log(all.length);
+### commutes same: a guarded polyfill of one static across a read of another
+-
+let unused;
+Object.entriesOf || (Object.entriesOf = function (o) { return Object.entries(o); });
+const keys = Object.keys;
+console.log(keys({ a: 1 }).length, typeof Object.entriesOf);
+### ordered differs: a guarded polyfill across a read of the static it defines
+-
+let unused;
+if (!Object.entriesOf) Object.entriesOf = function () {};
+const entriesOf = Object.entriesOf;
+console.log(typeof entriesOf);
+### ordered differs: a guarded polyfill of a standard static across a read of it
+-
+delete Object.fromEntries;
+Object.fromEntries || (Object.fromEntries = function () { return 'polyfill'; });
+const fromEntries = Object.fromEntries;
+console.log(typeof fromEntries);
+### commutes same: a literal only ever read by name, across an impure statement that reaches it
+-
+const table = { key: 'a', other: 1 }; let seen; function peek() { seen = table.other; }
+peek();
+const label = table.key;
+console.log(seen, label);
+### ordered differs: the literal is stored to through a destructuring target
+-
+const table = { key: 'a' }; function rename() { [table.key] = ['b']; }
+rename();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is stored to through a parenthesized target
+-
+const table = { key: 'a' }; function rename() { (table.key) = 'b'; }
+rename();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is the receiver of a call that changes it
+-
+const table = { key: 'a', set: function () { this.key = 'b'; } }; function rename() { table.set(); }
+rename();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is handed out as a value and changed
+-
+const table = { key: 'a' }; function leak() { return table; }
+leak().key = 'b';
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is changed under a computed key
+-
+const table = { key: 'a' }; const name = 'key'; function rename() { table[name] = 'b'; }
+rename();
+const label = table.key;
+console.log(label);
+### commutes same: an unnamed store through an alias of Object.prototype across a read of an owned static
+-
+const P = Object.prototype; const key = ['extra', 'Name'].join(''); function install(k, v) { delete P[k]; P[k] = v; }
+install(key, 1);
+const define = Object.defineProperty;
+console.log(typeof define, P.extraName);
+### ordered differs: an unnamed store through an alias of Object.prototype across a read of an inherited static
+-
+const P = Object.prototype; const key = ['to', 'String'].join(''); function install(k, v) { delete P[k]; P[k] = v; }
+install(key, 1);
+const inherited = Math.toString;
+console.log(typeof inherited);
+### ordered differs: an unnamed store through an alias of Object.prototype across a read of a prototype member
+-
+const P = Object.prototype; const key = ['hasOwn', 'Property'].join(''); function install(k, v) { P[k] = v; }
+install(key, 1);
+const has = Object.prototype.hasOwnProperty;
+console.log(typeof has);
+### ordered differs: an unnamed delete through an alias of Object.prototype across a read of a prototype member
+-
+const P = Object.prototype; const key = ['value', 'Of'].join(''); function remove(k) { delete P[k]; }
+remove(key);
+const valueOf = Object.prototype.valueOf;
+console.log(typeof valueOf);
+### ordered differs: an unnamed store on the constructor across a read of an owned static
+-
+const O = Object; const key = ['ke', 'ys'].join(''); function install(k, v) { O[k] = v; }
+install(key, 1);
+const keys = Object.keys;
+console.log(typeof keys);
+### commutes same: an enum definition across an impure statement that cannot reach it
+-
+var Color; let state = 0;
+state = 1;
+(function (e) { e[e.Red = 0] = "Red"; e.Blue = "b"; })(Color || (Color = {}));
+console.log(state, Color.Red, Color[0], Color.Blue);
+### commutes same: two enum definitions of different bindings
+-
+var Color, Size;
+(function (e) { e[e.Red = 0] = "Red"; e[e.Green = 1] = "Green"; })(Color || (Color = {}));
+(function (e) { e["Small"] = "s"; e.Large = -1; })(Size || (Size = {}));
+console.log(Color[1], Size.Small, Size.Large);
+### ordered differs: an impure statement reads the enum
+-
+var Color; let seen; function peek() { seen = Color && Color.Red; }
+peek();
+(function (e) { e[e.Red = 0] = "Red"; })(Color || (Color = {}));
+console.log(seen);
+### ordered differs: the enum binding is assigned elsewhere
+-
+var Color; function reset() { Color = { Red: 9 }; }
+reset();
+(function (e) { e[e.Red = 0] = "Red"; })(Color || (Color = {}));
+console.log(Color.Red, Color[0]);
+### ordered differs: two enum statements on one binding
+-
+var Color;
+(function (e) { e.Red = 1; })(Color || (Color = {}));
+(function (e) { e.Red = 2; })(Color || (Color = {}));
+console.log(Color.Red);
+### ordered differs: an enum-shaped statement whose value is a call
+-
+var Color; let n = 0; function next() { return ++n; }
+n = 5;
+(function (e) { e.Red = next(); })(Color || (Color = {}));
+console.log(Color.Red);
+### ordered differs: a definition reads the enum binding when it runs
+-
+var Color;
+(function (e) { e[e.Red = 0] = "Red"; })(Color || (Color = {}));
+const table = { c: Color };
+console.log(typeof table.c);
+### commutes same: a literal also listed, tested and copied, across an impure statement that reaches it
+-
+const table = { key: 'a', other: 1 }; let seen; function peek() { seen = [Object.keys(table).length, 'key' in table, { ...table }.other, table === null, typeof table, table[seen]]; for (const k in table) seen.push(k); }
+peek();
+const label = table.key;
+console.log(seen.length, label);
+### ordered differs: the literal is listed and also handed to a function that changes it
+-
+const table = { key: 'a' }; function rename(t) { t.key = 'b'; } function both() { rename(table); return Object.keys(table); }
+both();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is changed through a static that is not a listing
+-
+const table = { key: 'a' }; let held; function keep() { held = Object.assign(table, { key: 'b' }); }
+keep();
+const label = table.key;
+console.log(label);
+### commutes same: a member of an inline literal inside a literal, across an impure statement that reaches it
+-
+const table = { colors: { red: '#f00', blue: '#00f' }, size: 1 }; let seen; function peek() { seen = table.colors.blue; }
+peek();
+const red = table.colors.red;
+console.log(seen, red);
+### ordered differs: the inner literal is stored to
+-
+const table = { colors: { red: '#f00' } }; function repaint() { table.colors.red = '#000'; }
+repaint();
+const red = table.colors.red;
+console.log(red);
+### ordered differs: the inner literal is handed out and changed
+-
+const table = { colors: { red: '#f00' } }; function repaint() { const inner = table.colors; inner.red = '#000'; }
+repaint();
+const red = table.colors.red;
+console.log(red);
+### ordered differs: the inner literal is reached through a listing of the outer one
+-
+const table = { colors: { red: '#f00' } }; function repaint() { Object.values(table)[0].red = '#000'; }
+repaint();
+const red = table.colors.red;
+console.log(red);
+### commutes same: a call of a function over primitives with a literal argument, across an impure statement
+-
+const unit = 'px'; const fmt = (n) => `${n}${unit}`; const scale = function (a, b) { return a * 2 + (b === void 0 ? 0 : b); }; let state = 0;
+state = 1;
+const width = [fmt(4), scale(3), scale(1, -2)];
+console.log(state, width.join());
+### ordered differs: the function reads a binding an impure statement changes
+-
+let unit = 'px'; const fmt = (n) => `${n}${unit}`; function metric() { unit = 'em'; }
+metric();
+const width = fmt(4);
+console.log(width);
+### ordered differs: the argument converts by running code
+-
+let n = 0; const fmt = (v) => `${v}!`; const counter = { toString() { return String(++n); } };
+n = 5;
+const label = fmt(counter);
+console.log(label);
+### ordered differs: the function binding is reassigned
+-
+let fmt = (v) => `${v}!`; function swap() { fmt = (v) => v; }
+swap();
+const label = fmt(1);
+console.log(label);
+### ordered differs: the function calls its argument
+-
+let n = 0; const run = (f) => `${f()}`; const bump = () => ++n;
+n = 5;
+const label = run(bump);
+console.log(label);
+### commutes same: a statement of named reads of literals across an impure statement
+-
+const first = { key: 1 }; const second = { key: 2 }; let state = 0;
+state = 1;
+first.key, void second.key, (first.key);
+console.log(state);
+### ordered differs: a statement reading a member that is a getter
+-
+let n = 0; const record = { get key() { return ++n; } };
+n = 5;
+record.key;
+console.log(n);
+### ordered differs: a statement reading a member an earlier statement made an accessor
+-
+let n = 0; const record = { key: 1 }; function arm() { Object.defineProperty(record, 'key', { get() { return ++n; } }); }
+arm();
+record.key;
+console.log(n);
+### ordered differs: a statement reading a member the literal lacks
+-
+let n = 0; const record = { key: 1 }; function arm() { Object.defineProperty(Object.prototype, 'missing', { get() { return ++n; }, configurable: true }); }
+arm();
+record.missing;
+console.log(n);
+### ordered differs: a statement reading a member of a proxy
+-
+let n = 0; const record = new Proxy({}, { get() { return ++n; } });
+n = 5;
+record.key;
+console.log(n);
+### ordered differs: a statement reading a literal before its declaration
+-
+let state = 0;
+record.key;
+const record = { key: 1 };
+console.log(state);
+### commutes same: an enum definition written as an arrow with a sequence body
+-
+var Color; let state = 0;
+state = 1;
+((e) => (e[e.Red = 0] = "Red", e.Blue = "b", e))(Color || (Color = {}));
+console.log(state, Color.Red, Color[0], Color.Blue);
+### commutes same: an enum declared by the result of the call
+-
+let state = 0;
+state = 1;
+var Size = ((e) => { e[e.Small = 0] = "Small"; e.Large = "l"; return e; })(Size || {});
+console.log(state, Size.Small, Size[0], Size.Large);
+### ordered differs: an enum declared by the result of the call, also assigned elsewhere
+-
+function preset() { Size = { Small: 9 }; }
+preset();
+var Size = ((e) => (e.Large = "l", e))(Size || {});
+console.log(Size.Small, Size.Large);
+### ordered differs: an arrow enum whose value is a call
+-
+var Color; let n = 0; const next = () => ++n;
+n = 5;
+((e) => (e.Red = next(), e))(Color || (Color = {}));
+console.log(Color.Red);
+### ordered differs: an enum declared by a call that returns something else
+-
+let other = { Large: 1 }; function swap() { other = { Large: 2 }; }
+swap();
+var Size = ((e) => (e.Large = "l", other))(Size || {});
+console.log(Size.Large);
+### ordered differs: the literal is handed out by an eval of its name
+-
+const table = { key: 'a' }; function leak() { return eval("table"); }
+leak().key = 'b';
+const label = table.key;
+console.log(label);

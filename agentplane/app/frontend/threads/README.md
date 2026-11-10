@@ -13,7 +13,7 @@ The shared [`history_geometry.ts`](../../../../util/frontend/transcript/history_
 [`history_viewport.ts`](../../../../util/frontend/transcript/history_viewport.ts) verifies committed DOM geometry and owns reader intent and scroll writes.
 `util/frontend/transcript/history_recorder.ts` owns bounded opt-in diagnostic recording and its
 generic recording format. `thread_view_recorder.ts` configures the page-wide recorder, including
-the User Timing prefix consumed by browser tests; `thread_view_recorder_tools.tsx` supplies the
+the User Timing prefix consumed by browser tests; `../sidebar.tsx` supplies the
 Agentplane label, download prefix, and sidebar menu position. `command_delivery.ts`
 owns retained command submission, receipts, and retries; `thread_commands.tsx` renders command
 outcomes. `thread_sync.ts`

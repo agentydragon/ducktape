@@ -14,6 +14,7 @@ class FileDashboard:
 # `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap.
 FILE_DASHBOARDS = {
     "buildbuddy-executor-pool": FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="CI"),
+    "cpap-gateway-disk": FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Cluster & Platform"),
     "flux-cluster": FileDashboard(datasources={}, folder="Cluster & Platform"),
     "interface-flap-frequency": FileDashboard(
         datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"

@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "buildbuddy",
+    srcs = ["client.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/providers/buildbuddy/internal/buildbuddy",
+    visibility = ["//cluster/providers/buildbuddy:__subpackages__"],
+    deps = [
+        "@buildbuddy_crypto//nacl/box",
+        "@buildbuddy_grpc//:grpc",
+        "@buildbuddy_grpc//codes",
+        "@buildbuddy_grpc//credentials",
+        "@buildbuddy_grpc//metadata",
+        "@buildbuddy_grpc//status",
+        "@buildbuddy_protos//:buildbuddy_service_go_proto",
+        "@buildbuddy_protos//:secrets_go_proto",
+    ],
+)
+
+go_test(
+    name = "client_test",
+    srcs = ["client_test.go"],
+    embed = [":buildbuddy"],
+    deps = [
+        "@buildbuddy_crypto//nacl/box",
+        "@buildbuddy_grpc//:grpc",
+        "@buildbuddy_grpc//codes",
+        "@buildbuddy_grpc//credentials/insecure",
+        "@buildbuddy_grpc//metadata",
+        "@buildbuddy_grpc//status",
+        "@buildbuddy_grpc//test/bufconn",
+        "@buildbuddy_protos//:buildbuddy_service_go_proto",
+        "@buildbuddy_protos//:secrets_go_proto",
+    ],
+)
