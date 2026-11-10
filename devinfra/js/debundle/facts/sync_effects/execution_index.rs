@@ -1031,6 +1031,35 @@ pub(super) struct Parameter {
     pub(super) binding: Option<Id>,
     pub(super) bindings: BTreeSet<Id>,
     pub(super) default: Option<ValueExpr>,
+    /// A pattern parameter's bindings as projections of its incoming value,
+    /// bound to `pattern_source()`, and whether some binding receives a part
+    /// of it only as unknown.
+    pub(super) pattern_assignments: Vec<(Id, ValueExpr)>,
+    pub(super) pattern_loses_values: bool,
+}
+
+/// The binding a pattern parameter's projections read its incoming value
+/// from. No source identifier can spell it.
+pub(super) fn pattern_source() -> Id {
+    ("\u{0}pattern_source".into(), Default::default())
+}
+
+/// Whether destructuring `pattern` gives some binding a part of the value
+/// only as unknown: an array element, a rest, or a computed key.
+fn pattern_loses_values(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Ident(_) => false,
+        Pat::Assign(assign) => pattern_loses_values(&assign.left),
+        Pat::Object(object) => object.props.iter().any(|property| match property {
+            ObjectPatProp::KeyValue(property) => {
+                static_property_name(&property.key).is_none()
+                    || pattern_loses_values(&property.value)
+            }
+            ObjectPatProp::Assign(_) => false,
+            ObjectPatProp::Rest(_) => true,
+        }),
+        Pat::Array(_) | Pat::Rest(_) | Pat::Expr(_) | Pat::Invalid(_) => true,
+    }
 }
 
 impl Parameter {
@@ -1041,25 +1070,36 @@ impl Parameter {
             .into_iter()
             .map(|(binding, _)| binding)
             .collect();
-        match pattern {
-            Pat::Ident(binding) => Self {
-                binding: Some(binding.id.to_id()),
-                bindings,
-                default: None,
-            },
-            Pat::Assign(assign) => Self {
-                binding: match assign.left.as_ref() {
+        let (binding, default, destructured) = match pattern {
+            Pat::Ident(binding) => (Some(binding.id.to_id()), None, None),
+            Pat::Assign(assign) => (
+                match assign.left.as_ref() {
                     Pat::Ident(binding) => Some(binding.id.to_id()),
                     _ => None,
                 },
-                bindings,
-                default: Some(ValueExpr::from_expr(&assign.right)),
-            },
-            _ => Self {
-                binding: None,
-                bindings,
-                default: None,
-            },
+                Some(ValueExpr::from_expr(&assign.right)),
+                Some(assign.left.as_ref()),
+            ),
+            _ => (None, None, Some(pattern)),
+        };
+        let mut pattern_assignments = Vec::new();
+        let pattern_loses_values = match destructured.filter(|_| binding.is_none()) {
+            Some(destructured) => {
+                collect_pattern_assignments(
+                    destructured,
+                    &ValueExpr::Binding(pattern_source()),
+                    &mut pattern_assignments,
+                );
+                pattern_loses_values(destructured)
+            }
+            None => false,
+        };
+        Self {
+            binding,
+            bindings,
+            default,
+            pattern_assignments,
+            pattern_loses_values,
         }
     }
 }
@@ -1348,11 +1388,14 @@ pub(super) struct Callable {
     /// declarator without an initializer outside a `for`-`in`/`of` head, and
     /// every `var` (hoisted). `local_assignments` never contributes that value.
     pub(super) undefined_before_assignment: BTreeSet<Id>,
-    /// Bindings a `for`-`in`/`of` head of this callable writes, and the
-    /// iterated values of its `for`-`of` loops. No `local_assignments` entry
-    /// records the elements a head binding takes.
+    /// Bindings a `for`-`in`/`of` head of this callable writes. No
+    /// `local_assignments` entry records the elements a head binding takes.
     pub(super) head_bindings: BTreeSet<Id>,
-    pub(super) iterated_values: Vec<ValueExpr>,
+    /// Values whose parts reach a binding only as unknown: `for`-`of`
+    /// iterables, initializers of destructuring that loses values, thrown
+    /// values (a `catch` parameter) and yielded values (a generator's
+    /// consumer).
+    pub(super) published_sources: Vec<ValueExpr>,
     /// Bindings an update expression (`x++`) of this callable writes; neither
     /// `rebinds` nor `local_assignments` records them.
     pub(super) update_targets: BTreeSet<Id>,
@@ -1670,7 +1713,7 @@ impl Default for Callable {
             declared_locals: BTreeSet::new(),
             undefined_before_assignment: BTreeSet::new(),
             head_bindings: BTreeSet::new(),
-            iterated_values: Vec::new(),
+            published_sources: Vec::new(),
             update_targets: BTreeSet::new(),
             hoisted_vars: BTreeSet::new(),
             lexical_declarations: BTreeMap::new(),
@@ -6187,6 +6230,9 @@ pub(super) struct ExecutionIndex {
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_calls: Vec<Vec<Call>>,
+    /// Per top-level owner, what `Callable::published_sources` lists for a
+    /// callable: values whose parts reach a binding only as unknown.
+    pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
@@ -6406,6 +6452,7 @@ impl Default for ExecutionIndex {
             owner_callable_prefix_effects: Vec::new(),
             uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
+            top_published_sources: BTreeMap::new(),
             original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
             bare_constructor_sites: BTreeSet::new(),
@@ -11658,6 +11705,23 @@ impl ExecutionIndex {
         })
     }
 
+    fn record_published_source(&mut self, value: &Expr) {
+        let value = ValueExpr::from_expr(value);
+        match self.current {
+            Some(key) => self
+                .callables
+                .get_mut(&key)
+                .unwrap()
+                .published_sources
+                .push(value),
+            None => self
+                .top_published_sources
+                .entry(self.owner)
+                .or_default()
+                .push(value),
+        }
+    }
+
     fn record_nested_write(&mut self, binding: Id) {
         for key in &self.prototype_capture_stack {
             self.nested_callable_writes
@@ -11818,6 +11882,8 @@ impl Visit for ExecutionIndex {
                             binding: None,
                             bindings: BTreeSet::new(),
                             default: None,
+                            pattern_assignments: Vec::new(),
+                            pattern_loses_values: false,
                         },
                     })
                     .collect();
@@ -12438,13 +12504,7 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        if let Some(key) = self.current {
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .iterated_values
-                .push(ValueExpr::from_expr(&node.right));
-        }
+        self.record_published_source(&node.right);
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -12950,6 +13010,11 @@ impl Visit for ExecutionIndex {
                         }),
                 );
         } else {
+            if let Some(init) = &declarator.init
+                && pattern_loses_values(&declarator.name)
+            {
+                self.record_published_source(init);
+            }
             let mut bindings = Vec::new();
             let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
             collect_pattern_assignments(&declarator.name, &pattern_value, &mut bindings);
@@ -13468,6 +13533,15 @@ impl Visit for ExecutionIndex {
                     assignment.span,
                 );
             }
+            let loses_values = match pattern {
+                AssignTargetPat::Array(_) | AssignTargetPat::Invalid(_) => true,
+                AssignTargetPat::Object(object) => {
+                    pattern_loses_values(&Pat::Object(object.clone()))
+                }
+            };
+            if loses_values {
+                self.record_published_source(&assignment.right);
+            }
             let mut assignments = Vec::new();
             collect_assign_target_assignments(
                 pattern,
@@ -13630,7 +13704,15 @@ impl Visit for ExecutionIndex {
         }
     }
 
+    fn visit_yield_expr(&mut self, yielded: &YieldExpr) {
+        if let Some(argument) = &yielded.arg {
+            self.record_published_source(argument);
+        }
+        yielded.visit_children_with(self);
+    }
+
     fn visit_throw_stmt(&mut self, thrown: &ThrowStmt) {
+        self.record_published_source(&thrown.arg);
         thrown.visit_children_with(self);
         self.mark_possible_namespace_escape(&thrown.arg);
     }
