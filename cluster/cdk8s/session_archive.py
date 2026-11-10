@@ -4,7 +4,22 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
+from cnpg_cluster_crds.io.cnpg.postgresql import (
+    Cluster,
+    ClusterSpec,
+    ClusterSpecBootstrap,
+    ClusterSpecBootstrapPgBasebackup,
+    ClusterSpecExternalClusters,
+    ClusterSpecExternalClustersSslCert,
+    ClusterSpecExternalClustersSslKey,
+    ClusterSpecExternalClustersSslRootCert,
+    ClusterSpecPostgresql,
+    ClusterSpecProbes,
+    ClusterSpecProbesLiveness,
+    ClusterSpecProbesLivenessIsolationCheck,
+    ClusterSpecReplica,
+    ClusterSpecStorage,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
@@ -26,6 +41,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/ai-session-archive-image-pins"
 HOSTNAME = "ai-session-archive.allegedly.works"
 DATABASE = cluster.PostgresRef.generated(name="session-archive-db", namespace=NAMESPACE)
+REPLICA_DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespace=NAMESPACE)
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset"
@@ -76,6 +92,56 @@ def _database(chart: Chart) -> None:
         namespace=NAMESPACE,
         secret=f"{retired_bucket}-s3-credentials",
         key_fields=s3.AWS_ENV_KEY_FIELDS,
+    )
+
+
+def _database_replica(chart: Chart) -> None:
+    # CLEANUP(added 2026-11-10): Promote this replica after replay catches up and
+    # source writers are fenced; retain the source until cutover is verified.
+    Cluster(
+        chart,
+        "archive-database-hdd",
+        metadata=ApiObjectMetadata(
+            name=REPLICA_DATABASE.name,
+            namespace=NAMESPACE,
+            annotations={
+                "description": "Streaming replica for migration of the session archive to single-copy HDD.",
+                "cnpg.io/skipWalArchiving": "enabled",
+            },
+        ),
+        spec=ClusterSpec(
+            instances=1,
+            image_name=cluster.POSTGRES_IMAGE,
+            affinity=cluster.OVH_PIRAEUS_HDD.affinity,
+            storage=ClusterSpecStorage(
+                storage_class=cluster.OVH_PIRAEUS_HDD.storage_class, size="100Gi", resize_in_use_volumes=False
+            ),
+            postgresql=ClusterSpecPostgresql(parameters={"wal_sender_timeout": "60s", "wal_receiver_timeout": "60s"}),
+            probes=ClusterSpecProbes(
+                liveness=ClusterSpecProbesLiveness(
+                    isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
+                )
+            ),
+            bootstrap=ClusterSpecBootstrap(
+                pg_basebackup=ClusterSpecBootstrapPgBasebackup(
+                    source=DATABASE.name, database="ai_session_archive", owner="ai_session_archive"
+                )
+            ),
+            replica=ClusterSpecReplica(enabled=True, source=DATABASE.name),
+            external_clusters=[
+                ClusterSpecExternalClusters(
+                    name=DATABASE.name,
+                    connection_parameters={
+                        "host": f"{DATABASE.name}-rw.{NAMESPACE}.svc.cluster.local",
+                        "user": "streaming_replica",
+                        "dbname": "postgres",
+                    },
+                    ssl_key=ClusterSpecExternalClustersSslKey(name=f"{DATABASE.name}-replication", key="tls.key"),
+                    ssl_cert=ClusterSpecExternalClustersSslCert(name=f"{DATABASE.name}-replication", key="tls.crt"),
+                    ssl_root_cert=ClusterSpecExternalClustersSslRootCert(name=f"{DATABASE.name}-ca", key="ca.crt"),
+                )
+            ],
+        ),
     )
 
 
@@ -326,6 +392,7 @@ def _network_policies(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _database(chart)
+    _database_replica(chart)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _web(chart)
     for host, display_name, schedule in _SOURCE_HOSTS:
