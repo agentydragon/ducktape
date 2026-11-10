@@ -53,16 +53,16 @@
       "sha256": "4eBO7BRYjX1X/+02uRxQ0ihH9aoK9X0cTxw2qIA9PWY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-171b3fe30eaa/aiquota.zip",
-      "sha256": "xuLrMsvQoEzmc76HYSdxeTkUqdskWtHaaW6k9QjIx+s="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-46eea4aaf2ac/aiquota.zip",
+      "sha256": "+5Q3D0FbWwq9T3EtdiFB8+qXQpxVqj/DwODxp/ZgfzM="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-171b3fe30eaa/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "ScYL50jt+e5dPPtbXCPi+/IrDw5dLaVxzwXcM/Zydq0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-46eea4aaf2ac/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "cRT5u4IZdtQoS+Dil7oybzEKQS50dUz/2hbCtKo/J6Q="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-2ec9da7c2694/debundle",
-      "sha256": "LsnafCaUzHoLEpI2X6+gZOQkszhUHFlcA0RKe+pGIGA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-63b20d461434/debundle",
+      "sha256": "Y7INRhQ0G3o4ZyGNO4lPyq8t6S3Zg/IqFMvxZUJv+PQ="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
@@ -237,8 +237,8 @@
       "sha256": "USeWzzYb5NBQLlVsrB0QiN9CpT8jQm8LTaOq+hpLSCQ="
     },
     "ducktape-claude-api": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-eb20b431a4ea/ducktape_claude_api-0.1.0-py3-none-any.whl",
-      "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-d3f701e020ed/ducktape_claude_api-0.1.0-py3-none-any.whl",
+      "sha256": "0/cB4CDtejkwoVZp261mtU6a5JppbiXftWsVCLjFpuA="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
