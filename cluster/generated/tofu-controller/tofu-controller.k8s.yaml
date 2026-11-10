@@ -11275,6 +11275,13 @@ spec:
             target:
               kind: ClusterRole
               name: tofu-manager-role
+          - patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/args/-
+                value: --feature-gates=ExternalArtifact=true
+            target:
+              kind: Deployment
+              name: tofu-controller
   upgrade:
     crds: Skip
   values:

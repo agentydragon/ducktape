@@ -91,7 +91,16 @@ def chart(app: App) -> Chart:
                                 kind="ClusterRole", name="tofu-manager-role"
                             ),
                             patch=_EXTERNAL_ARTIFACT_RBAC_PATCH,
-                        )
+                        ),
+                        # The pinned chart has no feature-gate value; upstream defaults it off.
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=NAME),
+                            patch=(
+                                "- op: add\n"
+                                "  path: /spec/template/spec/containers/0/args/-\n"
+                                "  value: --feature-gates=ExternalArtifact=true\n"
+                            ),
+                        ),
                     ]
                 )
             )
