@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/egress_admin_pb";
 import { decisionFixture } from "./decision_fixture";
-import { decisionAt, decisionOutcome, groupDecisions } from "./decision_groups";
+import { decisionAt, decisionOutcome, decisionReason, groupDecisions } from "./decision_groups";
 
 function decision(at: string, overrides: Omit<Partial<Decision>, "at"> = {}): Decision {
   return decisionFixture({
@@ -72,9 +72,17 @@ it("keeps an empty log empty and keeps an unspecified outcome distinct", () => {
     decision("2026-01-01T00:00:01Z", {
       outcome: Decision_Outcome.UNSPECIFIED,
       policy: undefined,
-      reason: Decision_Reason.UNSPECIFIED,
+      reason: Decision_Reason.UNKNOWN,
     }),
   ]);
   expect(decisionOutcome(group.members[0])).toBe("unknown");
   expect(group.why).toBe("unknown");
+});
+
+it("spells a refusal as the proxy's header does, and one the proxy could not name as unknown", () => {
+  const refused = (reason: Decision_Reason) =>
+    decision("2026-01-01T00:00:01Z", { outcome: Decision_Outcome.DENY, policy: undefined, reason });
+
+  expect(decisionReason(refused(Decision_Reason.PLACEHOLDER_UNRESOLVED))).toBe("placeholder-unresolved");
+  expect(decisionReason(refused(Decision_Reason.UNKNOWN))).toBe("unknown");
 });

@@ -9,10 +9,13 @@ export function decisionOutcome(decision: Decision): "allow" | "deny" | "unknown
   return "unknown";
 }
 
-/** A refusal as the proxy's `x-agentplane-egress` header spells it; "unknown" for one this bundle does not name. */
+/** A refusal as the proxy's `x-agentplane-egress` header spells it; "unknown" for one the proxy or this
+ * bundle does not name. */
 export function decisionReason(decision: Decision): string | null {
   if (decision.reason === undefined) return null;
+  if (decision.reason === Decision_Reason.UNKNOWN) return "unknown";
   const name: string | undefined = Decision_Reason[decision.reason];
+  // UNSPECIFIED is never sent; a number this bundle lacks comes from a newer proxy.
   if (name === undefined || decision.reason === Decision_Reason.UNSPECIFIED) return "unknown";
   return name.toLowerCase().replaceAll("_", "-");
 }

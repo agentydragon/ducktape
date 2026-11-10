@@ -341,7 +341,7 @@ func reasonOf(reason decision.Reason) egressadminpb.Decision_Reason {
 		return egressadminpb.Decision_REASON_UNAVAILABLE
 	}
 	// A replica of a newer release may have recorded a reason this one does not name.
-	return egressadminpb.Decision_REASON_UNSPECIFIED
+	return egressadminpb.Decision_REASON_UNKNOWN
 }
 
 func kindOf(kind watchhealth.Kind) egressadminpb.KindFailure_Kind {
@@ -358,5 +358,5 @@ func kindOf(kind watchhealth.Kind) egressadminpb.KindFailure_Kind {
 		return egressadminpb.KindFailure_KIND_SECRETS
 	}
 	// The informers' kinds are named by request path; its error says which request failed.
-	return egressadminpb.KindFailure_KIND_UNSPECIFIED
+	return egressadminpb.KindFailure_KIND_UNKNOWN
 }

@@ -50,7 +50,6 @@ message Decision {
   // Why the proxy refused; `decision.Reason` names each, as the `x-agentplane-egress` header and
   // history spell it.
   enum Reason {
-    // The proxy recorded a reason this schema does not name.
     REASON_UNSPECIFIED = 0;
     REASON_TOKEN_MISSING = 1;
     REASON_TOKEN_REJECTED = 2;
@@ -64,6 +63,8 @@ message Decision {
     REASON_ADDRESS_FORBIDDEN = 10;
     REASON_HOST_UNRESOLVED = 11;
     REASON_UNAVAILABLE = 12;
+    // The proxy recorded a reason this schema does not name.
+    REASON_UNKNOWN = 13;
   }
 
   google.protobuf.Timestamp at = 1;
@@ -140,13 +141,14 @@ message GetHealthResponse {
 message KindFailure {
   // A resource kind the proxy watches.
   enum Kind {
-    // A kind this schema does not name.
     KIND_UNSPECIFIED = 0;
     KIND_POLICY_SETS = 1;
     KIND_POLICY_BINDINGS = 2;
     KIND_IDENTITIES = 3;
     KIND_EGRESS_CREDENTIALS = 4;
     KIND_SECRETS = 5;
+    // A kind this schema does not name.
+    KIND_UNKNOWN = 6;
   }
 
   Kind kind = 3;

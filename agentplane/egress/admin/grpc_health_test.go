@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
+	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -34,9 +37,9 @@ func TestGetHealthCarriesTheVerdictAndItsFacts(t *testing.T) {
 		{"failing", failingIndex(), counters, &egressadminpb.GetHealthResponse{
 			Synced: true, DecisionHistory: wantCounters,
 			Failing: []*egressadminpb.KindFailure{
-				{Kind: egressadminpb.KindFailure_KIND_UNSPECIFIED, Error: "test-failure", Since: timestamppb.New(started)},
 				{Kind: egressadminpb.KindFailure_KIND_POLICY_SETS, Error: "test-failure", Since: timestamppb.New(started)},
 				{Kind: egressadminpb.KindFailure_KIND_SECRETS, Error: "test-failure", Since: timestamppb.New(started)},
+				{Kind: egressadminpb.KindFailure_KIND_UNKNOWN, Error: "test-failure", Since: timestamppb.New(started)},
 			},
 		}},
 		// No write has succeeded or failed yet, which is not the same as the latest having failed.
@@ -87,5 +90,17 @@ func TestProbesRefuseAServiceTheyDoNotKnow(t *testing.T) {
 
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("got %v, want NotFound", err)
+	}
+}
+
+func TestKindOfNamesWatchedKindsAndAnUnnamedOneAsUnknown(t *testing.T) {
+	for kind, want := range map[watchhealth.Kind]egressadminpb.KindFailure_Kind{
+		reader.PolicySets:  egressadminpb.KindFailure_KIND_POLICY_SETS,
+		policy.Credentials: egressadminpb.KindFailure_KIND_EGRESS_CREDENTIALS,
+		"test-unnamed":     egressadminpb.KindFailure_KIND_UNKNOWN,
+	} {
+		if got := kindOf(kind); got != want {
+			t.Errorf("kindOf(%q) = %v, want %v", kind, got, want)
+		}
 	}
 }
