@@ -53,17 +53,12 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         claims = [
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
         ]
-        if instance in remote.PIRAEUS_MIGRATIONS:
-            assert claims == [f"{name}-piraeus", name]
-            claim = resource("PersistentVolumeClaim", f"{name}-piraeus")
-            assert claim["spec"]["storageClassName"] == "piraeus-ssd-2-autodiskful"
-            assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
-            old = next(volume for volume in provider_pod["volumes"] if volume["name"] == "old-data")
-            assert old["persistentVolumeClaim"]["readOnly"]
-            mount = next(mount for mount in provider_pod["containers"][0]["volumeMounts"] if mount["name"] == "data")
-            assert mount["subPath"] == "state"
-        else:
-            assert claims == [name]
+        assert claims == [f"{name}-piraeus"]
+        claim = resource("PersistentVolumeClaim", f"{name}-piraeus")
+        assert claim["spec"]["storageClassName"] == "piraeus-ssd-2-autodiskful"
+        assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
+        mount = next(mount for mount in provider_pod["containers"][0]["volumeMounts"] if mount["name"] == "data")
+        assert mount["subPath"] == "state"
         assert json.loads(remote.CONFIG.data[f"{instance}-integration.json"])["integrations"][0]["id"] == instance
 
         host = urlsplit(connection["origin"]).hostname
@@ -95,10 +90,7 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         containers = {container["name"]: container for container in pod["containers"]}
         assert set(containers) == {"provider"}
         init = pod["initContainers"]
-        assert [container["name"] for container in init] == (
-            (["migrate-state"] if instance in remote.PIRAEUS_MIGRATIONS else [])
-            + ["recorder-ca-init", "upstream-recorder"]
-        )
+        assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
         recorder = init[-1]
         assert recorder["restartPolicy"] == "Always"
         assert "startupProbe" in recorder

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -51,8 +50,6 @@ GATEWAY = "platform-sessions-gateway"
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
-# Keep the migration mounts until every provider's Piraeus state is verified.
-PIRAEUS_MIGRATIONS = frozenset(PROVIDERS)
 BEARER_FILES = ("owner", "aiquota", "quest", "thrive-scraper", "thrive-read", "chatgpt-read", "blueshield-read")
 _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
 _GATEWAY_DNS = f"{GATEWAY}.{NAMESPACE}.svc"
@@ -226,32 +223,16 @@ def _add_provider(chart: Chart, instance: str) -> None:
 
     k8s.KubePersistentVolumeClaim(
         chart,
-        f"{name}-claim",
+        f"{name}-piraeus",
         metadata=k8s.ObjectMeta(
-            name=name, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
+            name=f"{name}-piraeus", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh-ssd",
+            storage_class_name="piraeus-ssd-2-autodiskful",
             resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
         ),
     )
-
-    if instance in PIRAEUS_MIGRATIONS:
-        k8s.KubePersistentVolumeClaim(
-            chart,
-            f"{name}-piraeus",
-            metadata=k8s.ObjectMeta(
-                name=f"{name}-piraeus",
-                namespace=NAMESPACE,
-                annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            ),
-            spec=k8s.PersistentVolumeClaimSpec(
-                access_modes=["ReadWriteOnce"],
-                storage_class_name="piraeus-ssd-2-autodiskful",
-                resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-            ),
-        )
 
     # Keep the capture PVC even when recording is disabled; it contains user data.
     k8s.KubePersistentVolumeClaim(
@@ -292,7 +273,6 @@ def _image_policy(chart: Chart, name: str) -> None:
 
 def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: bool) -> None:
     name = _provider_name(instance)
-    migrating = instance in PIRAEUS_MIGRATIONS
     provider_credentials = k8s.Volume(
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
@@ -450,7 +430,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 k8s.VolumeMount(name="config", mount_path="/etc/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="provider-credentials", mount_path=_TOKEN_DIR, read_only=True),
                 k8s.VolumeMount(name="tls", mount_path="/var/run/provider-tls", read_only=True),
-                k8s.VolumeMount(name="data", mount_path="/data", sub_path="state" if migrating else None),
+                k8s.VolumeMount(name="data", mount_path="/data", sub_path="state"),
                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                 *recorder_mounts,
             ],
@@ -460,54 +440,13 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             provider_credentials,
             k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{name}-tls")),
             k8s.Volume(
-                name="data",
-                persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                    claim_name=f"{name}-piraeus" if migrating else name
-                ),
+                name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=f"{name}-piraeus")
             ),
             tmp,
-            *(
-                [
-                    k8s.Volume(
-                        name="old-data",
-                        persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=name, read_only=True),
-                    ),
-                    k8s.Volume(
-                        name="migration-script",
-                        config_map=k8s.ConfigMapVolumeSource(name="platform-sessions-piraeus-migration"),
-                    ),
-                ]
-                if migrating
-                else []
-            ),
             *recorder_volumes,
         ],
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-        # Recreate waits for the old provider to terminate before this init container
-        # copies its read-only state. Remove this temporary source mount after all
-        # providers have migrated and their Piraeus state has been verified.
-        init_containers=[
-            *(
-                [
-                    k8s.Container(
-                        name="migrate-state",
-                        image=f"{REGISTRY}/{_provider_image(instance)}:unset",
-                        command=["python", "-I", "/migration/migrate_state.py"],
-                        volume_mounts=[
-                            k8s.VolumeMount(name="old-data", mount_path="/source", read_only=True),
-                            k8s.VolumeMount(name="data", mount_path="/destination"),
-                            k8s.VolumeMount(name="migration-script", mount_path="/migration", read_only=True),
-                        ],
-                        security_context=_container_security(),
-                        resources=_resources(),
-                    )
-                ]
-                if migrating
-                else []
-            ),
-            *recorder_init,
-            *recorder_sidecars,
-        ],
+        init_containers=[*recorder_init, *recorder_sidecars],
     )
     _service(
         chart,
@@ -533,12 +472,6 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
 
 
 def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
-    k8s.KubeConfigMap(
-        chart,
-        "piraeus-migration",
-        metadata=k8s.ObjectMeta(name="platform-sessions-piraeus-migration", namespace=NAMESPACE),
-        data={"migrate_state.py": Path(__file__).with_name("migrate_state.py").read_text()},
-    )
     if record_upstream_traffic:
         interception_root_ca(
             chart,
