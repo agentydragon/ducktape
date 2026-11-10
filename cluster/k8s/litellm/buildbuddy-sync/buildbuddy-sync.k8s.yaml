@@ -4,7 +4,6 @@ metadata:
   name: litellm-buildbuddy-sync
   namespace: flux-system
 spec:
-  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
@@ -13,6 +12,7 @@ spec:
       }
   interval: 15m
   path: ./tf/gitops/litellm-buildbuddy-sync
+  planOnly: true
   refreshBeforeApply: true
   runnerPodTemplate:
     spec:
@@ -22,11 +22,6 @@ spec:
             secretKeyRef:
               key: password
               name: tofu-state-db-credentials
-        - name: BUILDBUDDY_API_KEY
-          valueFrom:
-            secretKeyRef:
-              key: api-key
-              name: buildbuddy-org-admin-api-key
       resources:
         requests:
           cpu: 250m
@@ -36,10 +31,4 @@ spec:
     kind: ExternalArtifact
     name: tf-gitops-litellm-buildbuddy-sync
     namespace: ducktape-flux
-  suspend: true
-  vars:
-    - name: buildbuddy_api_key
-      valueFrom:
-        secretKeyRef:
-          key: api-key
-          name: buildbuddy-org-admin-api-key
+  storeReadablePlan: human

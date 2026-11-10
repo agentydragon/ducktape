@@ -13,37 +13,12 @@ terraform {
   }
 }
 
-data "kubernetes_secret" "litellm_buildbuddy_live_tests" {
-  metadata {
-    name      = "litellm-key-buildbuddy-live-tests"
-    namespace = "litellm"
-  }
-}
+removed {
+  from = terraform_data.buildbuddy_live_tests_secret
 
-# BuildBuddy rotates the public encryption key independently of LiteLLM. Include
-# its ID in the trigger so the secret gets resealed whenever that key changes.
-data "external" "buildbuddy_public_key" {
-  program = ["/usr/local/bin/buildbuddy-secret-sync", "public-key-id"]
-}
-
-resource "terraform_data" "buildbuddy_live_tests_secret" {
-  triggers_replace = [
-    sha256(data.kubernetes_secret.litellm_buildbuddy_live_tests.data["api-key"]),
-    data.external.buildbuddy_public_key.result.key_id,
-  ]
-
-  provisioner "local-exec" {
-    command = "/usr/local/bin/buildbuddy-secret-sync set"
-    environment = {
-      BUILDBUDDY_API_KEY = var.buildbuddy_api_key
-      LITELLM_API_KEY    = data.kubernetes_secret.litellm_buildbuddy_live_tests.data["api-key"]
-    }
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "/usr/local/bin/buildbuddy-secret-sync delete"
-    # BUILDBUDDY_API_KEY is injected into the runner pod and inherited by
-    # local-exec. Do not map it here: destroy provisioners cannot reference vars.
+  # Forget the writer without running its destroy provisioner. Keep this
+  # tombstone until the remaining BuildBuddy Terraform machinery is retired.
+  lifecycle {
+    destroy = false
   }
 }
