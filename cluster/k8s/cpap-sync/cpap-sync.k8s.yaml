@@ -274,6 +274,70 @@ spec:
     kubevirt.io/domain: cpap-gateway
   type: ClusterIP
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Internal metrics endpoint for the CPAP gateway guest filesystem collector.
+  labels:
+    app.kubernetes.io/name: cpap-gateway-metrics
+  name: cpap-gateway-metrics
+  namespace: cpap-sync
+spec:
+  ports:
+    - name: node-metrics
+      port: 9100
+      protocol: TCP
+      targetPort: 9100
+  selector:
+    kubevirt.io/domain: cpap-gateway
+  type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  annotations:
+    description: Scrapes only the CPAP gateway guest's filesystem metrics.
+  name: cpap-gateway-metrics
+  namespace: cpap-sync
+spec:
+  endpoints:
+    - path: /metrics
+      port: node-metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cpap-gateway-metrics
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Only monitoring Alloy node agents may scrape the CPAP guest filesystem metrics; the sync Job retains its existing card-bridge access.
+  name: guest-metrics-ingress
+  namespace: cpap-sync
+spec:
+  endpointSelector:
+    matchLabels:
+      kubevirt.io/domain: cpap-gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: sync
+            app.kubernetes.io/name: cpap-sync
+            k8s:io.kubernetes.pod.namespace: cpap-sync
+      toPorts:
+        - ports:
+            - port: "18080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy-node
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9100"
+              protocol: TCP
+---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -306,7 +370,7 @@ apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
   annotations:
-    description: Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API to the sync Service.
+    description: Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically attached to OptiPlex and is passed through to this VM; the VM exposes the card's HTTP API to the sync Service and filesystem-only metrics to monitoring Alloy.
     ducktape.org/auto-restart-template-changes: "true"
   labels:
     app.kubernetes.io/name: cpap-gateway
@@ -343,6 +407,8 @@ spec:
               ports:
                 - name: http
                   port: 18080
+                - name: node-metrics
+                  port: 9100
         firmware:
           bootloader:
             efi:
