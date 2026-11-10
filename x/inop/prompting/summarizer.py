@@ -40,20 +40,16 @@ class PatternSummarizer(FeedbackProvider):
         "Prioritize patterns that appear across multiple tasks and have clear connections to prompt weaknesses."
     )
 
-    def _count_tokens(self, text: str) -> int:
-        tokens: int = self.truncation_manager.count_tokens(text)
-        return tokens
-
     async def provide_feedback(self, rollouts: list[GradedRollout]) -> str:
         rollout_summaries: list[str] = []
         original_count = len(rollouts)
 
-        system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
+        system_tokens = self.truncation_manager.count_tokens(self._SYSTEM_MESSAGE)
         header_text = (
             f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
         )
         ctx_window = get_model_metadata(self.context_model_id).context_window_tokens
-        remaining_tokens = ctx_window - system_tokens - self._count_tokens(header_text)
+        remaining_tokens = ctx_window - system_tokens - self.truncation_manager.count_tokens(header_text)
 
         logger.info(
             "Pattern analysis context management",
@@ -83,7 +79,7 @@ class PatternSummarizer(FeedbackProvider):
                 )
                 task_summary += f"  Files: {json.dumps(truncated_files, indent=2)}\n"
 
-            potential_tokens = self._count_tokens("\n".join([*rollout_summaries, task_summary]))
+            potential_tokens = self.truncation_manager.count_tokens("\n".join([*rollout_summaries, task_summary]))
             if potential_tokens > remaining_tokens:
                 removed_count = original_count - len(rollout_summaries)
                 logger.warning(
@@ -99,7 +95,7 @@ class PatternSummarizer(FeedbackProvider):
 
         analysis_prompt = header_text + "\n".join(rollout_summaries)
 
-        final_tokens = self._count_tokens(analysis_prompt) + system_tokens
+        final_tokens = self.truncation_manager.count_tokens(analysis_prompt) + system_tokens
         logger.info(
             "Pattern analysis prompt prepared",
             final_tokens=final_tokens,
