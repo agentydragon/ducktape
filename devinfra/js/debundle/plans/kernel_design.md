@@ -28,7 +28,8 @@ the family when every leaf has completed; the contract is in
   lane is a conditional or logical operator still takes the flat lane
   (`roots/operands.rs`, the `ordered_initializer` families). Admitting it
   needs a typed loss for an unproved member read at the root instead of the
-  remainder summary, or legacy-accepted roots regress.
+  remainder summary, or legacy-accepted roots regress. New admissions use the
+  attempted lane (<convergence_landing.md> § Root admission).
 - **Field reads under a fork.** An own-data read leaves the initialization
   domains unknown (`EffectCoverageFragment::lexical_operation`), so a test on
   a record field forks but its owner is not initialization-covered.

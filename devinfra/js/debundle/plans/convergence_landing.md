@@ -65,7 +65,15 @@ Every PR in this plan:
    (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
 5. Keeps the legacy gate authoritative until the flip PR. A refusal the legacy
    gate would not have made is a regression unless the PR proves the acceptance
-   was unsafe with a Node divergence.
+   was unsafe with a Node divergence. The reverse also holds: an acceptance
+   the legacy gate would not have made is a regression unless the effect
+   verdict accepts the same candidate and the PR shows Node parity with
+   `swapped_pairs > 0`. A slice feeds the legacy gate through the facts it
+   reads, so the PR compares every e2e evaluation's legacy verdict, effect
+   status and emitted order with its `devel` base (the `DEBUNDLE_TV_AUDIT=1`
+   records) and lists each difference with its evidence. "No difference" is a
+   stated result, not an assumption: three of the first Wave 3 slices changed
+   legacy inputs without saying so (§ Root admission below).
 6. Keeps every `devel` test or replaces it with a stronger one in the forms of
    item 3. A refusal that becomes an acceptance needs a relocation with Node
    parity; an acceptance that becomes a refusal needs a Node divergence. The
@@ -76,6 +84,30 @@ Every PR in this plan:
 8. Runs the canonical-spec check (§ below) when it changes any acceptance,
    placement, emitted order or emitted bytes. Mechanical refactors, report-only
    additions and test-only splits skip it and say so.
+
+## Root admission
+
+Relocation is decided for top-level statements, so a kernel rule recovers
+coverage only when the root that reaches it is kernel-run. A root on the
+ordered lane keeps the kernel's outcome even when the kernel could not finish:
+a refusal after part of the body ran becomes a remainder summary with global
+reach, which is worse than what the flat lane produced for the same root, and
+the legacy gate reads it. Found three times on real slices: iteration roots
+over record elements (three e2e targets regressed), retaining-factory and
+mixed roots (three legacy refusals became acceptances with an `incomplete`
+effect verdict), and root field stores (the sealed outcome replaced the flat
+lane's heap-content facts).
+
+- **A newly admitted root goes through the attempted lane**
+  (`attempted_initializer` in `roots/`, landed with row 10): run the kernel;
+  when the owner does not seal, rewind and let the flat lane produce the
+  outcome as before. Admission is then safe by construction, and the
+  admission predicate is only a filter for roots worth attempting.
+- The committed `ordered_initializer` families that predate this rule move to
+  the attempted lane as their slices are touched; each move states what the
+  rewind restores and shows no legacy verdict changed.
+- A refused attempt runs the root twice. Each slice reports how many e2e roots
+  attempt and rewind; the cost gate below applies.
 
 ## Canonical-spec check
 
@@ -288,6 +320,15 @@ are then dispatched in the order that export gives, widest canonical recovery
 first. Until it exists, rows 9 and 10 go next: they have no dependencies and
 the largest e2e reach.
 
+Canonical checks so far are recorded with the private corpus, not here. Two
+things they showed that shape this plan: a coverage slice can move emitted
+placement on a real spec while every e2e fixture stays unchanged, so the
+post-merge check is not optional; and a cold build of the accepted products
+does not fit the remote runner's one-hour limit, because analysis is
+single-threaded for most of its 10–47 minutes per product
+(<analysis_performance.md>, `../perf/analysis_serial_phases.md`). Run one
+product per invocation.
+
 Saved-analysis parity has no red target; every slice keeps the direct/saved
 parity tests green.
 
@@ -329,6 +370,16 @@ parity tests green.
   (`realizability/effect_translation_validation.rs`) becomes an acceptance
   that keeps the premise in the audit list. Uncovered havoc pairs stay
   `incomplete`.
+
+  Premise attribution is a deliverable of the flip. The legacy graph carries
+  no attribution (edges come from purity and effect summaries; proof
+  dependencies never reach `graph/`, `atomic_groups.rs` or `gate.rs`), so
+  "was this annotation needed for this acceptance" has no answer today beyond
+  recorded uses (<../docs/premise_provenance.md>). The effect verdict already
+  records `covered_owner_dependencies` and `relocation_dependencies`; once it
+  decides, `spec lint` reports from them which premises an accepted candidate
+  rests on, and an annotation that no accepted relocation depends on is
+  inferable without a rerun.
 
   Two preconditions:
   - The terminal-call stop in the application adapter clears `complete`
