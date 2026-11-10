@@ -42,9 +42,10 @@ type SandboxCatalog interface {
 }
 
 // WakeRequester shares the lifecycle owner's live authorization, guarded mutation and budget
-// path with explicit resume. Dispatcher supplies only the retained effective sender identity.
+// path with explicit resume. Dispatcher supplies only the retained effective sender: the
+// ServiceAccount or Identity a row is attributed to.
 type WakeRequester interface {
-	RequestWake(context.Context, *lifecycle.Target, *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error)
+	RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error)
 }
 
 type DeliveryRunner interface {

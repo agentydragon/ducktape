@@ -232,7 +232,7 @@ func validateCaller(caller Caller, wakeCaller *Account) error {
 			return errors.New("Identity caller has no proof")
 		}
 		if wakeCaller != nil {
-			return errors.New("an Identity caller is never a wake caller")
+			return errors.New("an Identity caller records no wake caller account; its wake is assessed from its attribution")
 		}
 		return nil
 	default:

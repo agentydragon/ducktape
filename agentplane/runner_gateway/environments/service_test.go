@@ -57,7 +57,7 @@ type tokenReviewStub map[string]authenticationv1.UserInfo
 
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 

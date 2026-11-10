@@ -45,10 +45,10 @@ It scopes existing Sessions and existing environments; it does not create enviro
   rewrite its admission evidence.
 - A delegated Identity caller is authorized exactly as that Identity's own workload: it reads, writes, cancels and
   watches only Sessions recorded with its exact Identity incarnation, which middleware checked against the live
-  Identity. It never opens a Session (`CreateSession` is `PERMISSION_DENIED`) and its queued work never requests a
-  wake. Its dispatch rows record the Identity, the actor's ServiceAccount and Pod and the Action correlation in
-  columns of their own, which a replica predating them reads as unattributed. EnvironmentService admits no
-  Identity caller, delegated or direct.
+  Identity. It never opens a Session (`CreateSession` is `PERMISSION_DENIED`); its queued work requests a wake as
+  the Identity, under the rule below. Its dispatch rows record the Identity, the actor's ServiceAccount and Pod and
+  the Action correlation in columns of their own, which a replica predating them reads as unattributed.
+  EnvironmentService admits no Identity caller, delegated or direct.
 - No credentials or Action lease token are persisted. The Gateway performs no Actions or app lookup. Delegation does not
   alter the Runner transport boundary below.
 
@@ -104,8 +104,11 @@ It scopes existing Sessions and existing environments; it does not create enviro
   Sandbox acting as it: creating a Session is lifecycle control, which needs an explicit grant, not acting as the Identity. It reads, writes, cancels and watches only Sessions whose recorded execution
   Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
   require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor, in
-  columns separate from ServiceAccount attribution. Its queued work never requests a wake: lifecycle wake
-  authority is still decided by ServiceAccount.
+  columns separate from ServiceAccount attribution. Its queued work requests an automatic wake as the Identity,
+  which the lifecycle manager authorizes exactly as the Sandbox's own ServiceAccount's: the target Sandbox
+  must act as that live Identity incarnation and its `resumePolicy.allowOwnServiceAccount` must permit its
+  own principal to resume it. Messaging between Sessions of one Identity, and the wake it causes, is implied;
+  a direct resume or wake request by an Identity still has no rule type and is refused.
 - Legacy openings whose owner columns are NULL stay distinct from new/pending rows. The current owner of a
   same-named ServiceAccount is not retroactively granted those Sessions.
 
@@ -142,8 +145,8 @@ It scopes existing Sessions and existing environments; it does not create enviro
   a native Runtime. This check is not an atomic fence against deletion after the read; managed
   quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
-  rechecks the target UID, the retained effective caller's current ServiceAccount UID, and current `resumePolicy` before
-  requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
+  rechecks the target UID, the retained effective caller's current ServiceAccount UID (for an Identity caller, that
+  the Sandbox acts as that live Identity incarnation), and current `resumePolicy` before requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
   wake only; it does not grant explicit resume authority or override `SuspendedBy=Requested`. Dispatcher actors and
   admission-time eligibility are never substitutes for the effective caller's current authority.
 - A queued opening denied wake for its creator does not suppress an authorized queued input or unattended
