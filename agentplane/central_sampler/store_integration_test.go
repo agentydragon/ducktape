@@ -886,7 +886,10 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 	}
 }
 
-func TestStoreCodeHostLossKeepsUnknownEffectBlocked(t *testing.T) {
+// The state staging Session d05a1f28 was left in: blocked by an earlier owner on host loss with
+// one unresolved nested intent and nothing live. A later runtime must pick it up, settle it and
+// unblock it without an operator.
+func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
@@ -898,22 +901,179 @@ func TestStoreCodeHostLossKeepsUnknownEffectBlocked(t *testing.T) {
 	if err := store.StampCodeHostInstance(t.Context(), owner, previous); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
+	intentID, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"})
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, &protocol.UnknownEffectError{Reason: "previous JavaScript host was lost with an unresolved effect"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil || !blocked.Blocked {
+		t.Fatalf("fixture is not blocked: blocked=%v err=%v", blocked.Blocked, err)
+	}
 	successor := uuid.NewString()
-	if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, successor, protocol.ExecEncodingFreeform); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
-		t.Fatalf("unresolved executor effect was auto-settled: changed=%v err=%v", changed, err)
+	if recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, previous); err != nil || len(recoverable) != 0 {
+		t.Fatalf("the host that blocked the Session re-selected it: %v err=%v", recoverable, err)
 	}
-	blocked := logged("central sampler blocked Session on lost JavaScript host")
-	if blocked["session_id"] != session.ID || blocked["generation"] != int64(owner.Generation) || blocked["unresolved_intent"] != true ||
-		blocked["pending"] != false || blocked["live_cell"] != false || blocked["live_process"] != false ||
-		blocked["previous_instance"] != previous || blocked["instance"] != successor {
-		t.Fatalf("block decision record=%v", blocked)
+	recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, successor)
+	if err != nil || len(recoverable) != 1 || recoverable[0] != session.ID {
+		t.Fatalf("blocked Session with a lost host was not selected: %v err=%v", recoverable, err)
 	}
-	work, err := store.LiveWork(t.Context(), owner)
-	if err != nil || work != (LiveWork{UnresolvedIntents: 1}) {
-		t.Fatalf("live work=%+v err=%v", work, err)
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, protocol.ExecEncodingFreeform); err != nil || !changed {
+		t.Fatalf("host loss with an unresolved intent did not settle: changed=%v err=%v", changed, err)
+	}
+	settled := logged("central sampler settled lost JavaScript host work")
+	if settled["session_id"] != session.ID || settled["abandoned_intents"] != int64(1) || settled["host_lost"] != true {
+		t.Fatalf("settlement record=%v", settled)
+	}
+	result, err := intentResultForDB(t, store, intentID)
+	if err != nil || result["status"] != string(IntentResultAbandoned) || result["remote_outcome"] != string(NestedUnknown) || result["automatic_replay"] != false {
+		t.Fatalf("abandoned intent result=%v err=%v", result, err)
+	}
+	work, err := store.LiveWork(t.Context(), newOwner)
+	if err != nil || work != (LiveWork{}) {
+		t.Fatalf("live work after settlement=%+v err=%v", work, err)
+	}
+	unblocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil || unblocked.Blocked || unblocked.BlockedReason != nil {
+		t.Fatalf("settlement left the Session blocked: %+v err=%v", unblocked, err)
+	}
+	conversation, err := store.Read(t.Context(), newOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextWire, err := json.Marshal(conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending != nil || !bytes.Contains(contextWire, []byte("process/start")) || !bytes.Contains(contextWire, []byte("store()/load() values has been lost")) {
+		t.Fatalf("continuation lacks the abandonment notice: pending=%v context=%s", conversation.Pending, contextWire)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, protocol.ExecEncodingFreeform); err != nil || changed {
+		t.Fatalf("settlement repeated: changed=%v err=%v", changed, err)
+	}
+	if recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, successor); err != nil || len(recoverable) != 0 {
+		t.Fatalf("settled idle Session still selected: %v err=%v", recoverable, err)
+	}
+}
+
+func TestStoreCodeHostLossAbandonsLiveProcessHandleWithRetainedEvidence(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "lost-process", 77, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "lost-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "lost-process", 5, []byte("partial output"), false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingFreeform); err != nil || !changed {
+		t.Fatalf("host loss with a live handle did not settle: changed=%v err=%v", changed, err)
+	}
+	process, err := store.Process(t.Context(), successor, "lost-process")
+	if err != nil || process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "partial output" {
+		t.Fatalf("abandoned handle lost its evidence: %+v err=%v", process, err)
+	}
+	work, err := store.LiveWork(t.Context(), successor)
+	if err != nil || work != (LiveWork{}) {
+		t.Fatalf("live work after settlement=%+v err=%v", work, err)
+	}
+}
+
+// A sampling request cut by the drain deadline leaves its intent pending under the old
+// generation; the successor abandons the partial stream without committing output and samples
+// again, which is not an external effect.
+func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T) {
+	// "blocked": an earlier release of this service failed the turn on the pending intent and
+	// blocked the Session; the host marker is NULL because no cell ever ran.
+	for _, blocked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("blocked=%v", blocked), func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+				CommandId: "cut", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
+			}, "fixture-account", nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+				t.Fatal(err)
+			}
+			intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				activeCommand := "cut"
+				if err := store.FailExecution(t.Context(), owner, session.ID, &activeCommand, errors.New("provider stream interrupted")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := store.Release(t.Context(), owner); err != nil {
+				t.Fatal(err)
+			}
+			instance := uuid.NewString()
+			if recoverable, err := store.RecoverableSessions(t.Context(), nil, 10, instance); err != nil || len(recoverable) != 1 || recoverable[0] != session.ID {
+				t.Fatalf("Session with a stale pending intent was not selected: %v err=%v", recoverable, err)
+			}
+			successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform); err != nil || !changed {
+				t.Fatalf("stale pending sampling did not settle: changed=%v err=%v", changed, err)
+			}
+			result, err := intentResultForDB(t, store, intentID)
+			if err != nil || result["status"] != string(IntentResultAbandoned) || result["output_committed"] != false || result["provider_completion_unknown"] != true {
+				t.Fatalf("abandoned sampling result=%v err=%v", result, err)
+			}
+			conversation, err := store.Read(t.Context(), successor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conversation.Pending != nil {
+				t.Fatalf("pending pointer survived settlement: %+v", conversation.Pending)
+			}
+			settled, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+			if err != nil || settled.Blocked {
+				t.Fatalf("Session still blocked after settlement: blocked=%v err=%v", settled.Blocked, err)
+			}
+			command, err := store.NextCommand(t.Context(), successor, session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A failed turn is over; only a cut turn still has its command to resample under.
+			if blocked != (command == nil) || command != nil && command.ID != "cut" {
+				t.Fatalf("successor command after settlement: blocked=%v command=%+v", blocked, command)
+			}
+		})
 	}
 }
 
@@ -1529,7 +1689,7 @@ func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			recoverable, err := store.RecoverableSessions(t.Context(), nil, 1)
+			recoverable, err := store.RecoverableSessions(t.Context(), nil, 1, uuid.NewString())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1551,15 +1711,16 @@ func TestRecoverableSessionsUsesBoundedRotatingPages(t *testing.T) {
 		sessions = append(sessions, openSessionForStore(t, store, "prepare workspace"))
 	}
 	excluded := []string{sessions[0].ID}
-	first, err := store.RecoverableSessions(t.Context(), excluded, 1)
+	instance := uuid.NewString()
+	first, err := store.RecoverableSessions(t.Context(), excluded, 1, instance)
 	if err != nil || len(first) != 1 || first[0] == sessions[0].ID {
 		t.Fatalf("bounded recovery page=%v err=%v", first, err)
 	}
-	second, err := store.RecoverableSessions(t.Context(), append(excluded, first[0]), 1)
+	second, err := store.RecoverableSessions(t.Context(), append(excluded, first[0]), 1, instance)
 	if err != nil || len(second) != 1 || second[0] == first[0] || second[0] == sessions[0].ID {
 		t.Fatalf("recovery did not advance within bound: %v err=%v", second, err)
 	}
-	wrapped, err := store.RecoverableSessions(t.Context(), nil, 1)
+	wrapped, err := store.RecoverableSessions(t.Context(), nil, 1, instance)
 	if err != nil || len(wrapped) != 1 {
 		t.Fatalf("recovery did not yield bounded wraparound page: %v err=%v", wrapped, err)
 	}

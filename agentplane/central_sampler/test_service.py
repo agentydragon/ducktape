@@ -491,7 +491,7 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
     assert summaries == ["Weighing the answer."]
 
 
-async def test_restart_never_replays_unresolved_provider_intent(
+async def test_restart_abandons_cut_provider_request_and_resamples(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
@@ -517,26 +517,24 @@ async def test_restart_never_replays_unresolved_provider_intent(
                 intent_id = intents[0].id
                 await active.aclose()
         async with service(config) as stub:
+            # The successor abandons the cut request without committing its stream and samples
+            # again; the abandoned request itself is never re-sent.
+            async with await endpoint.next() as exchange:
+                await exchange.send(*response_stream([Message("resampled")], model="test-model").events)
             terminal = await turn_completed(stub, SESSION_ID, "lost")
-            assert terminal.status == event_pb2.TURN_STATUS_FAILED
+            assert terminal.status == event_pb2.TURN_STATUS_COMPLETED
             snapshot = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
-            assert snapshot.blocked
+            assert not snapshot.blocked
             assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == receipt
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="new", text="Must not replay"
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
-                )
-            assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-        intents = await store.intents()
-        assert len(intents) == 1
-        assert intents[0].id == intent_id
-        assert intents[0].result is None
+        snapshots = {intent.id: intent for intent in await store.intents()}
+        assert len(snapshots) == 2
+        abandoned = snapshots[intent_id].result
+        assert abandoned is not None
+        assert abandoned["status"] == "abandoned"
+        assert abandoned["output_committed"] is False
+        assert abandoned["automatic_replay"] is False
 
 
 async def test_interrupt_admission_survives_unavailable_executor(
@@ -595,7 +593,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
             assert outcome.outcome == sampler_pb2.COMMAND_OUTCOME_UNKNOWN
 
 
-async def test_restart_cannot_reconstruct_live_javascript(
+async def test_restart_settles_live_javascript_and_continues(
     database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
     async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
@@ -629,29 +627,39 @@ async def test_restart_cannot_reconstruct_live_javascript(
                 await exchange.send(*response_stream([Message("cell remains live")], model="test-model").events)
             await turn_completed(stub, SESSION_ID, "yielded")
         async with service(config) as stub:
+            # The new host cannot reconstruct the cell; the resident driver that picks the Session
+            # up abandons it with a recorded loss and the Session stays usable.
             stream = stub.FollowEvents(
                 sampler_pb2.FollowEventsRequest(session_id=request.session_id, follow=True), metadata=METADATA
             )
             try:
                 async with asyncio.timeout(10):
                     async for frame in stream:
-                        if frame.entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_BLOCKED:
+                        progress = frame.entry.event.execution_progress
+                        if (
+                            progress.kind == event_pb2.ExecutionProgress.KIND_CODE_HOST_LOSS
+                            and progress.phase == event_pb2.ExecutionProgress.PHASE_COMMITTED
+                        ):
                             break
             finally:
                 stream.cancel()
             session = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
-            assert session.blocked
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="lost-cell", text="Continue after host loss"
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+            assert not session.blocked
+            await stub.SubmitInput(
+                environment_runtime_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="lost-cell", text="Continue after host loss"
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                assert "store()/load() values has been lost" in json.dumps(exchange.request.body)
+                await exchange.send(
+                    *response_stream([Message("continued without the cell")], model="test-model").events
                 )
-            assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+            assert (await turn_completed(stub, SESSION_ID, "lost-cell")).status == event_pb2.TURN_STATUS_COMPLETED
             intents = [intent for intent in await store.intents() if intent.request.get("kind") == "cell"]
             assert len(intents) == 1
 

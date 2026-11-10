@@ -164,7 +164,7 @@ func (r *Runtime) recover(ctx context.Context, work <-chan struct{}) {
 		capacity := r.settings.MaxLiveSessions - r.busyLocked()
 		r.mu.Unlock()
 		if capacity > 0 {
-			sessions, err := r.store.RecoverableSessions(ctx, excluded, capacity)
+			sessions, err := r.store.RecoverableSessions(ctx, excluded, capacity, r.codeHost.InstanceID())
 			if err != nil && ctx.Err() == nil {
 				slog.Error("central sampler recovery scan failed", "error", err)
 			} else {

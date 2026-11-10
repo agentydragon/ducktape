@@ -1,9 +1,9 @@
 package centralsampler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -469,7 +469,7 @@ func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	}
 }
 
-func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorBlocks(t *testing.T) {
+func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.T) {
 	f := newDrainFixture(t, 1)
 	cancel, done := startRuntimeForTest(t, f.runtime)
 	defer cancel()
@@ -485,7 +485,30 @@ func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorBlocks(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed, err := f.store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingJSON); changed || !errors.As(err, new(*protocol.UnknownEffectError)) {
-		t.Fatalf("successor did not block on the lost cell: changed=%v err=%v", changed, err)
+	if changed, err := f.store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingJSON); err != nil || !changed {
+		t.Fatalf("successor did not settle the lost cell: changed=%v err=%v", changed, err)
+	}
+	assertNoUnresolvedNestedIntents(t, f.store, successor)
+	work, err := f.store.LiveWork(t.Context(), successor)
+	if err != nil || work != (LiveWork{}) {
+		t.Fatalf("live work after settlement=%+v err=%v", work, err)
+	}
+	conversation, err := f.store.Read(t.Context(), successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls, err := conversation.Archive.PendingCalls(); err != nil || len(calls) != 0 {
+		t.Fatalf("the model's wait call was left unanswered: calls=%v err=%v", calls, err)
+	}
+	contextWire, err := json.Marshal(conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(contextWire, []byte("exec_command")) {
+		t.Fatalf("continuation does not name the nested call with unknown outcome: %s", contextWire)
+	}
+	command, err := f.store.NextCommand(t.Context(), successor, f.session.ID)
+	if err != nil || command == nil || command.ID != "turn" {
+		t.Fatalf("successor cannot continue the turn: command=%+v err=%v", command, err)
 	}
 }

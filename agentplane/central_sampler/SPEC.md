@@ -171,8 +171,10 @@ may claim pending work only when the Session lease is unowned or expired.
 Both work scans include accepted commands after the previous turn stopped, including a known
 provider rejection. The conversation's stopped flag prevents further sampling for that turn;
 it does not prevent processing newly admitted input. An idle Session with no pending work is not
-selected, and blocked Sessions remain excluded. Admission and wakeups never clear a blocked Session
-or replay a rejected or uncertain effect.
+selected. A blocked Session is excluded unless it holds an unresolved intent or live cell, or its
+recorded JavaScript host is not the scanning runtime's; such a Session is selected so that its new
+owner settles and unblocks it (see host loss below). Admission and wakeups never clear a blocked
+Session or replay a rejected or uncertain effect.
 
 Reconciliation is level-triggered: the runtime subscribes before its initial ownership/work scan,
 then work notifications and listener reconnects wake further scans of committed rows. Periodic
@@ -383,15 +385,26 @@ Executor failure leaves continuation and retained conversation outside the faile
 
 The conversation records the actual Code Mode host process generation after its logical Session
 opens. A host restart within one Pod rotates that generation. Before the next model step, a new
-owner compares it under the lease fence. If it differs and no effect is unresolved, the sampler
-advances the durable JavaScript epoch and appends a model-visible notice that prior `store()` /
-`load()` values and live handles were lost. Pending model tool calls proven undispatched receive
-failed outputs paired to their exact call IDs before the notice; unrelated calls follow their
-ordinary dispatcher path. The transaction clears the old host marker, so a retry cannot duplicate
-the notice. The marker is set again only after a logical Session is created on a real host. With an
-unresolved cell, tool, executor or live handle, host loss remains an unknown outcome requiring
-explicit recovery; it is never interpreted as a known no-dispatch call. A first use with no marker
-and an ordinary same-host reacquisition do not add a notice.
+owner compares it under the lease fence. If it differs, or an older owner generation left an intent
+or live cell behind (that generation is fenced and can never settle them), the sampler settles the
+lost work in one transaction and continues; it never blocks the Session on it. Every unresolved
+intent is abandoned as an unknown remote outcome with no automatic replay: nested tool and executor
+intents, the cell intent of the running cell, and a pending provider sampling or compaction
+intent, whose partial stream is not committed as model output (`ConversationReconciled` marks its
+observed items `ABSENT`) and whose request is then sampled again, as that is not an external
+effect. Live cells and nonterminal process handles become `abandoned`, keeping each handle's last
+read cursor and retained output; no remote process is killed or reported exited. The model tool
+call of a lost cell receives a failed output naming the nested calls with unknown outcome; pending
+model tool calls proven undispatched receive the no-dispatch output; unrelated calls follow their
+ordinary dispatcher path. The sampler then advances the durable JavaScript epoch, appends a
+model-visible notice that prior `store()` / `load()` values and live handles were lost (listing
+the abandoned calls), records a `CODE_HOST_LOSS` boundary with what was abandoned, and unblocks a
+Session an earlier owner had blocked on this state. The turn continues so the model decides what
+to do. The transaction clears the old host marker, so a retry cannot duplicate the notice. The
+marker is set again only after a logical Session is created on a real host. A first use with no
+marker and an ordinary same-host reacquisition do not add a notice. Work scans select a blocked
+Session whose recorded host is not the scanning runtime's, so a wedge never outlives the host that
+caused it.
 
 Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
 error text in the matching model tool output without dispatching to the runtime or executor.
@@ -483,9 +496,13 @@ behavior.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. Ordinary executor connection or operation
-uncertainty is settled at its tool boundary and does not by itself block a Session. Existing blocked
-Sessions remain blocked until explicitly reviewed and recovered; this contract does not clear them.
-An authenticated caller for the same account can
+uncertainty is settled at its tool boundary and does not by itself block a Session. A blocked
+Session that holds an unresolved intent or live cell, or whose recorded JavaScript host is gone, is
+selected by the next runtime's work scan, settled and unblocked as described above without an
+operator. The one state that waits is a Session blocked on its still-running host with only
+nonterminal process handles left (an interrupt whose cleanup could not confirm every handle): it
+settles the same way once that host is replaced, or an operator recovers it earlier. An
+authenticated caller for the same account can
 call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
 to abandon a blocked cell/runtime or provider-sampling failure. Its transaction locks the conversation
 before its session and requires an expired owner lease and an exact cursor match. It supports

@@ -6,6 +6,29 @@ executor connection and operation uncertainty is settled at the nested tool boun
 by itself block the Session. The sampler never automatically replays a possibly accepted external
 operation.
 
+## Lost host and lost owner settle automatically
+
+A Session whose JavaScript host is gone (Pod replaced, host process restarted) or whose owner
+generation left work behind (lease lost, drain deadline) is not blocked and needs no operator. The
+next owner settles it before its next model step, in one transaction: every unresolved intent is
+abandoned with `remote_outcome: unknown` and `automatic_replay: false`; live cells and nonterminal
+process handles become `abandoned`, keeping each handle's last cursor and retained output; the
+model tool call of a lost cell gets a failed output naming the nested calls with unknown outcome;
+a pending provider request is abandoned with `output_committed: false` and sampled again (its
+partial stream is not an external effect); the JavaScript epoch advances and a model-visible
+notice lists what was abandoned. The `CODE_HOST_LOSS` boundary record names the previous and next
+host, the abandoned intents, cells and handles, and whether the Session was unblocked. The turn
+then continues and the model decides what to do. Work scans also select a Session that an earlier
+release had blocked on this state, so it settles when the next runtime starts.
+
+Reconcile any possibly completed external effect before asking the model to repeat it: the notice
+is the model's only signal that a nested `exec_command` or `apply_patch` may have run.
+
+The rest of this document covers the state that still waits for an operator: a Session blocked on
+its still-running host with only nonterminal process handles left (an interrupt whose cleanup
+could not confirm every handle), and older blocked Sessions an operator wants to review before the
+automatic settlement reaches them. `RecoverSession` remains available for both.
+
 The Code Mode host binding is independent of executor reachability. Attaching JavaScript does not
 open an executor stream or prepare the workspace; the sampler acquires execution when a command,
 patch, configured setup script, or other executor RPC needs it. Restoring live process handles
