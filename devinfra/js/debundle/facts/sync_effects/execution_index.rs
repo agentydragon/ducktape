@@ -1039,6 +1039,12 @@ pub(super) struct Parameter {
     /// The pattern destructures an array, so binding it runs the iterator
     /// protocol on the incoming value (or on a part of it).
     pub(super) pattern_iterates: bool,
+    /// Some array pattern below the root iterates a part of the incoming
+    /// value, or a default, which no source tracks.
+    pub(super) pattern_iterates_part: bool,
+    /// Defaults below the root that supply a value an array pattern
+    /// iterates.
+    pub(super) iterated_defaults: Vec<ValueExpr>,
 }
 
 /// The binding a pattern parameter's projections read its incoming value
@@ -1081,6 +1087,52 @@ fn pattern_iterates(pattern: &Pat) -> bool {
     }
 }
 
+/// Whether destructuring `pattern` iterates a part of the value, or a
+/// default, rather than the value itself: an array pattern below the root.
+fn pattern_iterates_part(pattern: &Pat) -> bool {
+    match pattern {
+        Pat::Array(array) => array.elems.iter().flatten().any(pattern_iterates),
+        Pat::Assign(assign) => pattern_iterates_part(&assign.left),
+        Pat::Object(_) | Pat::Rest(_) => pattern_iterates(pattern),
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => false,
+    }
+}
+
+/// The defaults below the root of `pattern` that supply a value an array
+/// pattern iterates: `[[x] = mk()]`, `{ a: [x] = mk() }`.
+fn iterated_defaults<'a>(pattern: &'a Pat, defaults: &mut Vec<&'a Expr>) {
+    match pattern {
+        Pat::Array(array) => {
+            for element in array.elems.iter().flatten() {
+                collect_iterated_default(element, defaults);
+            }
+        }
+        Pat::Object(object) => {
+            for property in &object.props {
+                match property {
+                    ObjectPatProp::KeyValue(property) => {
+                        collect_iterated_default(&property.value, defaults)
+                    }
+                    ObjectPatProp::Rest(rest) => collect_iterated_default(&rest.arg, defaults),
+                    ObjectPatProp::Assign(_) => {}
+                }
+            }
+        }
+        Pat::Assign(assign) => iterated_defaults(&assign.left, defaults),
+        Pat::Rest(rest) => iterated_defaults(&rest.arg, defaults),
+        Pat::Ident(_) | Pat::Expr(_) | Pat::Invalid(_) => {}
+    }
+}
+
+fn collect_iterated_default<'a>(pattern: &'a Pat, defaults: &mut Vec<&'a Expr>) {
+    if let Pat::Assign(assign) = pattern
+        && pattern_iterates(&assign.left)
+    {
+        defaults.push(&assign.right);
+    }
+    iterated_defaults(pattern, defaults);
+}
+
 impl Parameter {
     fn from_pattern(pattern: &Pat) -> Self {
         let mut assignments = Vec::new();
@@ -1103,6 +1155,12 @@ impl Parameter {
         };
         let mut pattern_assignments = Vec::new();
         let pattern_iterates = destructured.is_some_and(pattern_iterates);
+        let pattern_iterates_part = destructured.is_some_and(pattern_iterates_part);
+        let mut defaults = Vec::new();
+        if let Some(destructured) = destructured {
+            iterated_defaults(destructured, &mut defaults);
+        }
+        let iterated_defaults = defaults.into_iter().map(ValueExpr::from_expr).collect();
         let pattern_loses_values = match destructured.filter(|_| binding.is_none()) {
             Some(destructured) => {
                 collect_pattern_assignments(
@@ -1121,6 +1179,8 @@ impl Parameter {
             pattern_assignments,
             pattern_loses_values,
             pattern_iterates,
+            pattern_iterates_part,
+            iterated_defaults,
         }
     }
 }
@@ -11753,8 +11813,25 @@ impl ExecutionIndex {
         }
     }
 
+    /// `arguments` is recorded as unknown: an own `[Symbol.iterator]` write
+    /// to it is not tracked.
     fn record_iterated_source(&mut self, value: &Expr) {
-        let value = ValueExpr::from_expr(value);
+        let value = match value.unwrap_parens() {
+            Expr::Ident(ident) if ident.sym == "arguments" => ValueExpr::Unknown,
+            value => ValueExpr::from_expr(value),
+        };
+        self.record_iterated_value(value);
+    }
+
+    fn record_iterated_defaults(&mut self, pattern: &Pat) {
+        let mut defaults = Vec::new();
+        iterated_defaults(pattern, &mut defaults);
+        for default in defaults {
+            self.record_iterated_source(default);
+        }
+    }
+
+    fn record_iterated_value(&mut self, value: ValueExpr) {
         match self.current {
             Some(key) => self
                 .callables
@@ -11933,6 +12010,8 @@ impl Visit for ExecutionIndex {
                             pattern_assignments: Vec::new(),
                             pattern_loses_values: false,
                             pattern_iterates: false,
+                            pattern_iterates_part: false,
+                            iterated_defaults: Vec::new(),
                         },
                     })
                     .collect();
@@ -12555,6 +12634,33 @@ impl Visit for ExecutionIndex {
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         self.record_published_source(&node.right);
         self.record_iterated_source(&node.right);
+        // An array pattern in the head iterates each element, which no
+        // source tracks; `Object.entries` yields fresh native pairs.
+        let head_iterates = match &node.left {
+            ForHead::VarDecl(declaration) => declaration
+                .decls
+                .iter()
+                .any(|declarator| pattern_iterates(&declarator.name)),
+            ForHead::Pat(pattern) => pattern_iterates(pattern),
+            ForHead::UsingDecl(_) => false,
+        };
+        let entries = matches!(node.right.unwrap_parens(), Expr::Call(call)
+            if matches!(&call.callee, Callee::Expr(callee)
+                if matches!(callee.unwrap_parens(), Expr::Member(member)
+                    if static_prop(&member.prop).as_deref() == Some("entries")
+                        && matches!(member.obj.unwrap_parens(), Expr::Ident(object) if object.sym == "Object"))));
+        if head_iterates && !entries {
+            self.record_iterated_value(ValueExpr::Unknown);
+        }
+        match &node.left {
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    self.record_iterated_defaults(&declarator.name);
+                }
+            }
+            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
+            ForHead::UsingDecl(_) => {}
+        }
         if !node.is_await
             && let ForHead::VarDecl(declaration) = &node.left
             && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
@@ -12643,6 +12749,11 @@ impl Visit for ExecutionIndex {
     fn visit_catch_clause(&mut self, clause: &CatchClause) {
         if let Some(parameter) = &clause.param {
             self.invalidate_property_key_pattern(parameter);
+            // The thrown value is untracked; an array pattern iterates it.
+            if pattern_iterates(parameter) {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            self.record_iterated_defaults(parameter);
             if let Some(callable) = self.current {
                 self.callables
                     .get_mut(&callable)
@@ -13070,6 +13181,10 @@ impl Visit for ExecutionIndex {
             {
                 self.record_iterated_source(init);
             }
+            if pattern_iterates_part(&declarator.name) {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            self.record_iterated_defaults(&declarator.name);
             let mut bindings = Vec::new();
             let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
             collect_pattern_assignments(&declarator.name, &pattern_value, &mut bindings);
@@ -13597,13 +13712,30 @@ impl Visit for ExecutionIndex {
             if loses_values {
                 self.record_published_source(&assignment.right);
             }
-            let iterates = match pattern {
-                AssignTargetPat::Array(_) => true,
-                AssignTargetPat::Object(object) => pattern_iterates(&Pat::Object(object.clone())),
-                AssignTargetPat::Invalid(_) => false,
+            let (iterates, iterates_part) = match pattern {
+                AssignTargetPat::Array(array) => {
+                    (true, pattern_iterates_part(&Pat::Array(array.clone())))
+                }
+                AssignTargetPat::Object(object) => {
+                    let object = Pat::Object(object.clone());
+                    (pattern_iterates(&object), pattern_iterates_part(&object))
+                }
+                AssignTargetPat::Invalid(_) => (false, false),
             };
             if iterates {
                 self.record_iterated_source(&assignment.right);
+            }
+            if iterates_part {
+                self.record_iterated_value(ValueExpr::Unknown);
+            }
+            match pattern {
+                AssignTargetPat::Array(array) => {
+                    self.record_iterated_defaults(&Pat::Array(array.clone()))
+                }
+                AssignTargetPat::Object(object) => {
+                    self.record_iterated_defaults(&Pat::Object(object.clone()))
+                }
+                AssignTargetPat::Invalid(_) => {}
             }
             let mut assignments = Vec::new();
             collect_assign_target_assignments(
