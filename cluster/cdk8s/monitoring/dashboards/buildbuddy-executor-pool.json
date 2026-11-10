@@ -31,7 +31,7 @@
     {
       "id": 2,
       "title": "Executor scrapes up",
-      "description": "Number of executor metrics endpoints successfully scraped. Zero also covers a missing scrape target.",
+      "description": "Number of executor metrics endpoints successfully scraped. Zero also covers a missing scrape target. Filtered to pods still present in kube-state-metrics.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -42,7 +42,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"}) or vector(0)",
+          "expr": "sum(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
           "refId": "A",
           "legendFormat": "",
           "instant": true
@@ -84,7 +84,7 @@
     {
       "id": 3,
       "title": "Registered executors",
-      "description": "Executors reporting a healthy registered_to_scheduler check. This is not the configured worker count; missing metrics contribute no healthy executors.",
+      "description": "Executors reporting a healthy registered_to_scheduler check. This is not the configured worker count; missing metrics contribute no healthy executors. Filtered to pods still present in kube-state-metrics.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -95,7 +95,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(buildbuddy_health_check_status{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",health_check_name=\"registered_to_scheduler\"}) or vector(0)",
+          "expr": "sum(buildbuddy_health_check_status{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",health_check_name=\"registered_to_scheduler\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
           "refId": "A",
           "legendFormat": "",
           "instant": true
@@ -137,7 +137,7 @@
     {
       "id": 4,
       "title": "Tasks in progress",
-      "description": "Tasks in executor stages, including preparation, execution and upload; zero includes missing metrics.",
+      "description": "Tasks in executor stages, including preparation, execution and upload; zero includes missing metrics. Filtered to pods still present in kube-state-metrics.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -148,7 +148,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"}) or vector(0)",
+          "expr": "sum(buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
           "refId": "A",
           "legendFormat": "",
           "instant": true
@@ -177,7 +177,7 @@
     {
       "id": 5,
       "title": "Guest scrapes up",
-      "description": "Number of worker guest node-exporter endpoints successfully scraped. Guest CPU, memory and filesystem panels require these scrapes.",
+      "description": "Number of worker guest node-exporter endpoints successfully scraped. Guest CPU, memory and filesystem panels require these scrapes. Filtered to pods still present in kube-state-metrics.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -188,7 +188,7 @@
       "datasource": "${DS_MIMIR}",
       "targets": [
         {
-          "expr": "sum(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}) or vector(0)",
+          "expr": "sum(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
           "refId": "A",
           "legendFormat": "",
           "instant": true
