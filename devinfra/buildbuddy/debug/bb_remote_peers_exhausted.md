@@ -68,15 +68,27 @@ does not establish that the upload policy is correct.
 
 ## Integration and scope
 
-`bbr build` supplies `--remote_build_event_upload=all` before session and
-user options. Direct `bb remote build` callers must pass the flag explicitly.
-A later explicit `minimal` override restores Bazel's original behavior.
+`bbr` leaves Bazel's BEP upload mode unchanged. Add
+`--remote_build_event_upload=all` explicitly to a remote build call that needs
+locally generated regular files downloaded, as in the comparison above.
+For local Gazelle validation, use `bb run //devinfra:gazelle -- -mode=diff`;
+that builds the current generator and checks the local tree directly.
 Only missing local BEP-referenced files are uploaded; existing remote outputs
 are reused. A broad build can therefore add presence checks and uploads for
 more local top-level files so the CLI can download them. Bazel offers no
 per-file upload filter. This does not request every intermediate output or
 change action-cache/RBE settings. The comparison added one 3923-byte blob
 (2215 stored bytes); broad-build latency and storage overhead were not measured.
+
+This establishes the fix for the observed regular launcher file. Upload-all
+does not guarantee runfiles or declared directory contents. The
+[upstream review](https://github.com/buildbuddy-io/buildbuddy/pull/12935#discussion_r3743154048)
+identified those limits; the author
+[removed upload-all](https://github.com/buildbuddy-io/buildbuddy/pull/12935#discussion_r3761949927)
+and implemented the separate [runfile-symlink fix](https://github.com/buildbuddy-io/buildbuddy/pull/12962).
+Current upstream `parseArgs` still only forces `--remote_upload_local_results`
+for build-output fetching. A follow-up report should identify the remaining
+build-only template-output case rather than claim a universal upload fix.
 
 `bb remote test` does not download build outputs. CI's `--script` path also
 avoids this post-run download. Local `bb run` can use the launcher directly
@@ -93,3 +105,20 @@ not re-investigated here; the current controlled result establishes missing
 BEP uploads for the Gazelle launcher and does not establish their cause.
 A broad recent-invocation query timed out, and target history contained no
 Gazelle entries, so these observations are not a population failure rate.
+
+## Caller audit
+
+The tracked remote build steps in `release-artifact/action.yml` (unstamped
+and stamped), `nix-wheel-check.yml`, `push-images.yml`, and
+`bench-remote-bazel.yml` received no upload-policy override. Released wheels
+are `PyWheel` spawn outputs; the released Gazelle target is the compiled Go
+binary, not the template-expanded `//devinfra:gazelle` launcher. OCI layouts
+are directory outputs, which this flag does not cover.
+
+The `agentplane/x/runner_layering/README.md` build recipe explicitly opts in
+for `tools_rootfs` and `local_vm_probe`: the former exposes a Python module
+written by `oci_layout_py`'s `ctx.actions.write`, and the latter exposes a
+template-expanded Python launcher. The flag publishes their regular files;
+the documented local `bb run` remains responsible for the probe's runfiles
+and host execution. Archive, compiled-binary, library-validation, and
+`--nobuild` recipes keep their existing settings.

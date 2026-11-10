@@ -283,10 +283,6 @@ def _scan(
     )
 
 
-def _relative_to(path: Path, start: Path) -> str:
-    return os.path.relpath(path, start)
-
-
 async def _run_bounded[T, R](
     items: Sequence[T], function: Callable[[T], R], *, workers: int, on_done: Callable[[R], None] | None = None
 ) -> list[R]:
@@ -479,7 +475,7 @@ async def _apply_repo_cache_deletions(
         "repo-cache entries",
         "Repo cache",
         "deleted",
-        lambda path: _relative_to(path, contents),
+        lambda path: os.path.relpath(path, contents),
         leftover="trash",
     )
     results = [

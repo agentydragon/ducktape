@@ -45,7 +45,8 @@ class CalendarCoverage:
     gaps: tuple[tuple[str, str, tuple[str, ...]], ...]
 
 
-def _coverage(historical: DatedHistoricalSeries) -> CalendarCoverage:
+def calendar_coverage(historical: DatedHistoricalSeries) -> CalendarCoverage:
+    """Report observed spans and the cross-gap pairs excluded from monthly fitting/scoring."""
     return CalendarCoverage(
         observed_level_count=len(historical.months),
         contiguous_segment_count=len(historical.segments),
@@ -57,11 +58,6 @@ def _coverage(historical: DatedHistoricalSeries) -> CalendarCoverage:
         ),
         gaps=tuple((gap.before_month, gap.after_month, gap.missing_months) for gap in historical.gaps),
     )
-
-
-def calendar_coverage(historical: DatedHistoricalSeries) -> CalendarCoverage:
-    """Report observed spans and the cross-gap pairs excluded from monthly fitting/scoring."""
-    return _coverage(historical)
 
 
 @dataclass(frozen=True)
@@ -106,7 +102,7 @@ def _transition_origins(historical: _HistoricalInput) -> tuple[_TransitionOrigin
 
 
 def _calendar_coverage(historical: _HistoricalInput) -> CalendarCoverage | None:
-    return _coverage(historical) if isinstance(historical, DatedHistoricalSeries) else None
+    return calendar_coverage(historical) if isinstance(historical, DatedHistoricalSeries) else None
 
 
 def fit_for_scoring(model: FittableScorable, historical: _HistoricalInput) -> None:
