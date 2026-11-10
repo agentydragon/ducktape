@@ -1000,7 +1000,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
         kubevirt.io/domain: buildbuddy-kvm-worker
     spec:
       affinity:
@@ -1232,7 +1232,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: buildbuddy-kvm-worker-2
-        app.kubernetes.io/part-of: buildbuddy-kvm-workers
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
         kubevirt.io/domain: buildbuddy-kvm-worker-2
     spec:
       affinity:
@@ -1435,11 +1435,248 @@ spec:
             - port: "9090"
               protocol: TCP
 ---
+apiVersion: pool.kubevirt.io/v1beta1
+kind: VirtualMachinePool
+metadata:
+  labels:
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  name: buildbuddy-kvm-worker
+  namespace: buildbuddy-executor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  virtualMachineTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: buildbuddy-kvm-worker
+    spec:
+      dataVolumeTemplates:
+        - metadata:
+            name: work
+          spec:
+            source:
+              blank: {}
+            storage:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 80Gi
+              storageClassName: piraeus-ssd-local
+              volumeMode: Block
+      runStrategy: Always
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: buildbuddy-kvm-worker
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: cpu-feature.node.kubevirt.io/svm
+                        operator: In
+                        values:
+                          - "true"
+                  - matchExpressions:
+                      - key: cpu-feature.node.kubevirt.io/vmx
+                        operator: In
+                        values:
+                          - "true"
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: app.kubernetes.io/part-of
+                        operator: In
+                        values:
+                          - buildbuddy-kvm-worker
+                  topologyKey: kubernetes.io/hostname
+          domain:
+            cpu:
+              cores: 4
+              features:
+                - name: svm
+                  policy: optional
+                - name: vmx
+                  policy: optional
+              model: host-passthrough
+            devices:
+              autoattachGraphicsDevice: false
+              disks:
+                - bootOrder: 1
+                  disk:
+                    bus: virtio
+                  name: rootdisk
+                - disk:
+                    bus: virtio
+                  name: work
+                  serial: work
+                - disk:
+                    bus: virtio
+                  name: buildbuddy-key
+                  serial: bbkey
+                - disk:
+                    bus: virtio
+                  name: worker-config
+                  serial: bbconfig
+                - disk:
+                    bus: virtio
+                  name: cloudinit
+                  serial: cloudinit
+              interfaces:
+                - masquerade: {}
+                  name: default
+                  ports: []
+            firmware:
+              bootloader:
+                efi:
+                  secureBoot: false
+            resources:
+              limits:
+                cpu: "4"
+                memory: 16Gi
+              requests:
+                cpu: "4"
+                memory: 16Gi
+          networks:
+            - name: default
+              pod: {}
+          nodeSelector:
+            topology.kubernetes.io/region: hil
+          tolerations:
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/control-plane
+              operator: Exists
+          volumes:
+            - containerDisk:
+                image: quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4
+                imagePullPolicy: IfNotPresent
+              name: rootdisk
+            - dataVolume:
+                name: work
+              name: work
+            - name: buildbuddy-key
+              secret:
+                secretName: buildbuddy-api-key
+            - configMap:
+                name: buildbuddy-kvm-worker
+              name: worker-config
+            - cloudInitNoCloud:
+                userData: |
+                  #cloud-config
+                  apt:
+                    primary:
+                    - arches:
+                      - amd64
+                      uri: https://archive.ubuntu.com/ubuntu
+                    security:
+                    - arches:
+                      - amd64
+                      uri: https://security.ubuntu.com/ubuntu
+                  package_update: true
+                  packages:
+                  - docker.io
+                  fs_setup:
+                  - device: /dev/disk/by-id/virtio-work
+                    filesystem: ext4
+                    overwrite: false
+                  mounts:
+                  - - /dev/disk/by-id/virtio-work
+                    - /buildbuddy
+                    - ext4
+                    - defaults
+                    - '0'
+                    - '2'
+                  - - /dev/disk/by-id/virtio-bbkey
+                    - /run/buildbuddy-key
+                    - iso9660
+                    - ro
+                    - '0'
+                    - '0'
+                  - - /dev/disk/by-id/virtio-bbconfig
+                    - /run/buildbuddy-config
+                    - iso9660
+                    - ro
+                    - '0'
+                    - '0'
+                  runcmd:
+                  - - bash
+                    - /run/buildbuddy-config/bootstrap.sh
+                  power_state:
+                    mode: reboot
+                    delay: now
+                    condition:
+                    - test
+                    - -f
+                    - /var/run/reboot-required
+                  ssh_pwauth: false
+                  disable_root: true
+              name: cloudinit
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: buildbuddy-kvm-worker-pool
+  namespace: buildbuddy-executor
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: remote.buildbuddy.io
+        - matchName: buildbuddy.bbcr.io
+        - matchName: archive.ubuntu.com
+        - matchName: security.ubuntu.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - remote.buildbuddy.io
+            - buildbuddy.bbcr.io
+            - archive.ubuntu.com
+            - security.ubuntu.com
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: zot
+            k8s:io.kubernetes.pod.namespace: oci-cache
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy-node
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
   name: buildbuddy-kvm-worker-metrics
   namespace: buildbuddy-executor
 spec:
@@ -1449,7 +1686,7 @@ spec:
       protocol: TCP
       targetPort: 9090
   selector:
-    app.kubernetes.io/part-of: buildbuddy-kvm-workers
+    app.kubernetes.io/part-of: buildbuddy-kvm-worker
   type: ClusterIP
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -1463,7 +1700,7 @@ spec:
       port: metrics
   selector:
     matchLabels:
-      app.kubernetes.io/part-of: buildbuddy-kvm-workers
+      app.kubernetes.io/part-of: buildbuddy-kvm-worker
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
