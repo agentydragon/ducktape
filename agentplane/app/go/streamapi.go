@@ -146,7 +146,7 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 }
 
 // environmentFacade forwards the generated EnvironmentService API with the app's Pod-bound
-// identity. Operator sessions stay tied to logout; service callers stay tied to the request.
+// identity. Browser sessions stay tied to logout; bearer callers stay tied to the request.
 func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
@@ -159,8 +159,7 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 	}
 	var ctx context.Context
 	var cancel context.CancelFunc
-	caller, _ := auth.CallerFromContext(request.Context())
-	if caller.Kind == auth.CallerOperator {
+	if session, ok := auth.SessionFromContext(request.Context()); ok && session.Login != nil {
 		var err error
 		ctx, cancel, err = r.operatorLifetime(request)
 		if err != nil {

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -26,6 +27,7 @@ type Auth struct {
 	cfg      Config
 	oidc     *openID
 	oidcMu   sync.Mutex
+	pinned   *oidc.IDTokenVerifier
 	store    *sessionStore
 	signer   *cookieSigner
 	changes  ChangeSource
@@ -59,6 +61,15 @@ func NewWithContext(_ context.Context, cfg Config) (*Auth, error) {
 		return nil, errors.New("PostgreSQL database is required when OIDC is enabled")
 	}
 	a.cfg.OIDC = &settings
+	if settings.StaticKeys != nil {
+		keys := make([]crypto.PublicKey, len(settings.StaticKeys))
+		for index, key := range settings.StaticKeys {
+			keys[index] = key
+		}
+		a.pinned = oidc.NewVerifier(settings.Issuer, &oidc.StaticKeySet{PublicKeys: keys}, &oidc.Config{
+			ClientID: settings.ClientID, SupportedSigningAlgs: []string{oidc.EdDSA},
+		})
+	}
 	a.store = &sessionStore{
 		db: cfg.Database, idle: time.Duration(settings.SessionIdleSeconds) * time.Second,
 		step: time.Duration(settings.SessionActivityStepSeconds) * time.Second, now: time.Now,
@@ -140,7 +151,8 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// RequireCaller protects a route with either an operator cookie or a reviewed Kubernetes token.
+// RequireCaller protects a route with an operator cookie, an operator's OIDC ID token, or a reviewed
+// Kubernetes token.
 func (a *Auth) RequireCaller(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller, status, message := a.caller(r)
@@ -148,7 +160,8 @@ func (a *Auth) RequireCaller(next http.Handler) http.Handler {
 			writeError(w, status, message)
 			return
 		}
-		if caller.Kind == CallerOperator && !safeMethod(r.Method) {
+		// Only the ambient cookie needs a same-origin check; a bearer is never sent by the browser.
+		if session, ok := SessionFromContext(r.Context()); ok && session.Login != nil && !safeMethod(r.Method) {
 			expected := strings.TrimRight(a.cfg.OIDC.PublicBaseURL, "/")
 			if r.Header.Get("Origin") != expected {
 				writeError(w, http.StatusForbidden, "cross-origin request")
@@ -457,6 +470,23 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
 	}
+	login, ok := a.operatorIdentity(idToken)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "OIDC identity is not accepted")
+		return
+	}
+	if a.cfg.StoreFederationTokens && token.AccessToken != "" && !token.Expiry.IsZero() && token.Expiry.After(time.Now()) {
+		login.Tokens = &LoginTokens{AccessToken: token.AccessToken, ExpiresAt: token.Expiry}
+		if refresh, ok := token.Extra("refresh_token").(string); ok {
+			login.Tokens.RefreshToken = refresh
+		}
+	}
+	session.LogIn(login)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// operatorIdentity applies the app's checks beyond go-oidc's to a verified ID token.
+func (a *Auth) operatorIdentity(idToken *oidc.IDToken) (OperatorSession, bool) {
 	claims := struct {
 		Issuer          string          `json:"iss"`
 		Subject         string          `json:"sub"`
@@ -465,22 +495,12 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		Audience        json.RawMessage `json:"aud"`
 	}{}
 	if err := idToken.Claims(&claims); err != nil {
-		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
-		return
+		return OperatorSession{}, false
 	}
 	if claims.Issuer != a.cfg.OIDC.Issuer || claims.Subject == "" || claims.Username == "" || (claims.AuthorizedParty != "" && claims.AuthorizedParty != a.cfg.OIDC.ClientID) || !audienceIsExact(claims.Audience, a.cfg.OIDC.ClientID) || !idToken.Expiry.After(time.Now()) {
-		writeError(w, http.StatusUnauthorized, "OIDC identity is not accepted")
-		return
+		return OperatorSession{}, false
 	}
-	var loginTokens *LoginTokens
-	if a.cfg.StoreFederationTokens && token.AccessToken != "" && !token.Expiry.IsZero() && token.Expiry.After(time.Now()) {
-		loginTokens = &LoginTokens{AccessToken: token.AccessToken, ExpiresAt: token.Expiry}
-		if refresh, ok := token.Extra("refresh_token").(string); ok {
-			loginTokens.RefreshToken = refresh
-		}
-	}
-	session.LogIn(OperatorSession{Issuer: claims.Issuer, Subject: claims.Subject, Username: claims.Username, Tokens: loginTokens})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	return OperatorSession{Issuer: claims.Issuer, Subject: claims.Subject, Username: claims.Username}, true
 }
 
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
@@ -507,14 +527,60 @@ func (a *Auth) caller(r *http.Request) (*Caller, int, string) {
 	if session, ok := SessionFromContext(r.Context()); ok && session.Login != nil {
 		return &Caller{Kind: CallerOperator, Principal: session.Login.Username}, 0, ""
 	}
-	if a.cfg.TokenReviews == nil || a.cfg.TokenAudience == "" {
-		return nil, http.StatusUnauthorized, "no session and no accepted token"
-	}
 	fields := strings.Fields(r.Header.Get("Authorization"))
 	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
 		return nil, http.StatusUnauthorized, "no session and no accepted token"
 	}
+	if a.cfg.OIDC != nil && unverifiedIssuer(fields[1]) == a.cfg.OIDC.Issuer {
+		return a.idTokenCaller(r.Context(), fields[1])
+	}
+	if a.cfg.TokenReviews == nil || a.cfg.TokenAudience == "" {
+		return nil, http.StatusUnauthorized, "no session and no accepted token"
+	}
 	return a.tokenCaller(r, fields[1])
+}
+
+// idTokenCaller accepts an operator's ID token as a cookie session's operator, with no session row.
+func (a *Auth) idTokenCaller(ctx context.Context, raw string) (*Caller, int, string) {
+	verifier := a.pinned
+	if verifier == nil {
+		provider, err := a.openIDClient(ctx)
+		if err != nil {
+			return nil, http.StatusServiceUnavailable, "identity provider unavailable"
+		}
+		verifier = provider.verifier
+		if a.cfg.HTTPClient != nil {
+			ctx = oidc.ClientContext(ctx, a.cfg.HTTPClient)
+		}
+	}
+	idToken, err := verifier.Verify(ctx, raw)
+	if err != nil {
+		return nil, http.StatusUnauthorized, "no session and no accepted token"
+	}
+	login, ok := a.operatorIdentity(idToken)
+	if !ok {
+		return nil, http.StatusUnauthorized, "OIDC identity is not accepted"
+	}
+	return &Caller{Kind: CallerOperator, Principal: login.Username}, 0, ""
+}
+
+// unverifiedIssuer reads a JWT's `iss` only to pick its verifier, which checks it; "" if unreadable.
+func unverifiedIssuer(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Issuer string `json:"iss"`
+	}
+	if json.Unmarshal(payload, &claims) != nil {
+		return ""
+	}
+	return claims.Issuer
 }
 
 func (a *Auth) tokenCaller(r *http.Request, token string) (*Caller, int, string) {

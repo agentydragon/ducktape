@@ -63,6 +63,7 @@ k3s_suite(
         ":pod_runners",
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:case_batch",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",

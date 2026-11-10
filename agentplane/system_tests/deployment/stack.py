@@ -32,6 +32,7 @@ import yaml
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import certificates, process_traces, rendered_fixture
+from agentplane.system_tests.deployment.operator_tokens import OperatorTokens
 from agentplane.system_tests.deployment.virtualization import Virtualization, VirtualizationFactory
 from agentplane.system_tests.driver.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
 from agentplane.system_tests.driver.port_forward import PortForward
@@ -108,6 +109,8 @@ class Stack:
     base_url: str
     token: str
     mcp_fixtures: McpFixtureAccess | None
+    # Signs ID tokens the app accepts as its test operator; None where the fixture pins no key.
+    operator_tokens: OperatorTokens | None
 
 
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
@@ -441,6 +444,7 @@ def running_stack(
             cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
             system_roots = Path("/etc/ssl/certs/ca-certificates.crt").read_text()
             mcp = _mcp_inputs(work, fixture.mcp_fixtures.dex_host) if fixture.mcp_fixtures is not None else None
+            operator_tokens = OperatorTokens(fixture.operator_tokens) if fixture.operator_tokens is not None else None
             with tracer.start_as_current_span("system_test.fixture.configure"):
                 fixture = rendered_fixture.fill(
                     fixture,
@@ -449,6 +453,7 @@ def running_stack(
                     ),
                     models,
                     mcp,
+                    operator_tokens.public_key if operator_tokens is not None else None,
                 )
                 if virtualization is not None:
                     virtualization.configure(fixture.objects)
@@ -588,7 +593,14 @@ def running_stack(
                 k3s, fixture, models, cert_manager + trust_manager, baseline_marker, baseline_warm, virtualization
             )
             persistence_output.write_text(json.dumps(persistence_evidence))
-        yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
+        yield Stack(
+            k3s=k3s,
+            cluster=cluster,
+            base_url=fixture.app_origin,
+            token=token,
+            mcp_fixtures=access,
+            operator_tokens=operator_tokens,
+        )
         with tracer.start_as_current_span("system_test.stack.diagnostics"):
             _record_token_reviews(k3s, "apiserver-tokenreviews-final.prom")
             print(k3s.report(fixture.namespace))

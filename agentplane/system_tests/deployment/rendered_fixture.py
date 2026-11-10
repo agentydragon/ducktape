@@ -79,6 +79,18 @@ MODEL_PLACEHOLDERS: dict[Backend, Models] = {
     Backend.LOCAL_MODEL: LocalModel(url="http://k3s-env-placeholder-model.invalid:4000"),
     Backend.PUBLIC_LITELLM: PublicLiteLLM(key="k3s-env-placeholder-litellm-key"),
 }
+# Stands for the stack's operator-token public key: 43 base64url characters, an Ed25519 key's length.
+OPERATOR_TOKEN_KEY_PLACEHOLDER = "k3s-env-placeholder-operator-token-key-0000"
+
+
+class OperatorTokenIssuer(BaseModel):
+    """The app trusts ID tokens from `issuer` under a key the stack generates and pins in place of
+    `OPERATOR_TOKEN_KEY_PLACEHOLDER`; the test process signs them. No issuer runs."""
+
+    issuer: str
+    audience: str
+    subject: str
+    username: str
 
 
 class BrowserService(BaseModel):
@@ -112,6 +124,8 @@ class RenderedFixture(BaseModel):
     app_origin: str
     browser_services: list[BrowserService]
     mcp_fixtures: McpFixtures | None
+    # None: the app pins no operator-token key, and callers use the agent ServiceAccount token.
+    operator_tokens: OperatorTokenIssuer | None = None
     objects: list[dict[str, Any]]
 
 
@@ -132,12 +146,22 @@ def read(rendered: Path) -> RenderedFixture:
     return RenderedFixture.model_validate_json(rendered.read_text())
 
 
-def fill(fixture: RenderedFixture, inputs: RuntimeInputs, models: Models, mcp: McpInputs | None) -> RenderedFixture:
+def fill(
+    fixture: RenderedFixture,
+    inputs: RuntimeInputs,
+    models: Models,
+    mcp: McpInputs | None,
+    operator_token_key: str | None,
+) -> RenderedFixture:
     replacements = dict(zip(asdict(PLACEHOLDERS).values(), asdict(inputs).values(), strict=True))
     if (fixture.mcp_fixtures is None) != (mcp is None):
         raise ValueError(f"{fixture.mcp_fixtures=} does not match {mcp is None=}")
     if mcp is not None:
         replacements |= dict(zip(asdict(MCP_PLACEHOLDERS).values(), asdict(mcp).values(), strict=True))
+    if (fixture.operator_tokens is None) != (operator_token_key is None):
+        raise ValueError(f"{fixture.operator_tokens=} does not match {operator_token_key is None=}")
+    if operator_token_key is not None:
+        replacements[OPERATOR_TOKEN_KEY_PLACEHOLDER] = operator_token_key
     match MODEL_PLACEHOLDERS[fixture.backend], models:
         case LocalModel(url=placeholder), LocalModel(url=url):
             replacements[placeholder] = url
