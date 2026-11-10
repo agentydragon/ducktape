@@ -118,14 +118,6 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
 	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
-	claimCommitted := make(chan struct{}, 1)
-	runtime.claimLease = func(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
-		owner, err := store.Claim(ctx, conversationID, duration)
-		if err == nil {
-			claimCommitted <- struct{}{}
-		}
-		return owner, err
-	}
 	releaseCommitted := make(chan Owner, 1)
 	allowReleaseReturn := make(chan struct{})
 	runtime.releaseLease = func(ctx context.Context, owner Owner) error {
@@ -140,10 +132,25 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	cancel, done := startRuntimeForTest(t, runtime)
 	defer cancel()
 	runtime.Wake(session.ID)
-	select {
-	case <-claimCommitted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("runtime did not commit its lease claim")
+	// A committed claim can still return after shutdown begins, taking the stopping path.
+	// Wait until the driver accepts ownership so this test exercises drain release.
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		runtime.mu.Lock()
+		task := runtime.tasks[session.ID]
+		owned := task != nil && task.owner != nil
+		runtime.mu.Unlock()
+		if owned {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("runtime did not accept its lease claim")
+		case <-ticker.C:
+		}
 	}
 	cancel()
 
