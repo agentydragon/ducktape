@@ -169,7 +169,7 @@ its old ordering does not give it precedence over the selected tracks.
 
 ### Identity and Sessions migration, 2026-11-10
 
-**Proposed as the second active track beside P1 (operator confirmation pending, 2026-11-10).** The
+**The second active track beside P1 (operator, 2026-11-10).** The
 work of the last week is [section 14](#14-identity-and-kubernetes-accounts-cutover): Sessions and
 workloads move from ServiceAccounts to Agentplane `Identity`s, expand → switch → contract. The
 expand phase is on staging. The switch (`SANDBOX_IDENTITY_SPEC`) waits on exactly one operator
@@ -190,8 +190,9 @@ smaller and safer; each is independent of the others and of question 11.
 
 The environment-free central Session (`CENTRAL_SESSION_WITHOUT_ENVIRONMENT`, section 13) is part of
 the same goal but gated by three non-identity decisions (`CENTRAL_SESSION_CREATION_CONTRACT`,
-`SESSION_ATTACHMENT_CONTRACT`, `SESSION_AND_INBOX_LIFETIME`); it is not on this track until those
-are drafted.
+`SESSION_ATTACHMENT_CONTRACT`, `SESSION_AND_INBOX_LIFETIME`), drafted together as one design PR
+(central-session-design, dispatched 2026-11-10) for the operator's review; it joins this track once
+they are decided.
 
 ```mermaid
 flowchart LR
@@ -3213,7 +3214,8 @@ The design is settled as far as this migration needs; its implementation is
 
 ### `CENTRAL_SESSION_DELEGATED_ACTING` — the sampler acts for a Session's Identity
 
-**Blocked on `SERVICES_IDENTITY_PRINCIPAL` (#15389), the envelope it uses (proposed 2026-11-10).**
+**In flight on top of #15389 (central-session-delegated-acting, dispatched 2026-11-10); lands after
+`SERVICES_IDENTITY_PRINCIPAL`, whose envelope it uses.**
 Implement `CENTRAL_SESSION_ACTING_DESIGN` for the Sessions that exist today, `central_sampler_v1`
 with one executor Sandbox, whose Identity Dispatcher already records from that Sandbox: the
 sampler's Go handler makes its History, Notification and Action Service calls for a Session as a
@@ -3258,7 +3260,8 @@ existing service tests pass with identity principals.
 
 ### `STANDING_WORKLOAD_IDENTITY` — standing workloads run as Identities
 
-**Candidate; unblocked (proposed 2026-11-10, split out of `IDENTITY_CUTOVER`).** Haku UI, Anki and
+**In flight (standing-workload-identity, dispatched 2026-11-10; the operator chose it over waiting
+for the cutover; split out of `IDENTITY_CUTOVER`).** Haku UI, Anki and
 Jupyter already present SVIDs whose `WorkloadCredential` subjects are the ServiceAccounts
 `haku-sandbox/haku-ui` and, for the `haku-ci` egress relay, `haku-ci/haku-ci-egress`, held for policy
 binding only (operator, 2026-11-10). Move them first: cdk8s renders two Flux-owned `Identity`s in
@@ -3277,7 +3280,8 @@ decision log on staging shows `haku-ci` egress decided for the relay's Identity,
 
 ### `SESSION_IDENTITY_MESSAGING` — same-Identity sends and wakes are implied
 
-**Candidate; unblocked (proposed 2026-11-10, the implementable half of `SESSION_IDENTITY_AUTHZ`).**
+**In flight (session-identity-messaging, dispatched 2026-11-10; the implementable half of
+`SESSION_IDENTITY_AUTHZ`).**
 Messaging between Sessions of the same Identity is implied, and so is the resume or wake such a send
 causes under the recipient's resume policy; only a send across Identities needs `session_inbox_access`
 (operator, 2026-11-10; [plan](identity_and_kubernetes_accounts.md#identity-lifetime)). Today
@@ -3295,12 +3299,13 @@ refused without one, and an Identity sender waking a suspended recipient.
 
 ### `ENVIRONMENT_RULE_TYPE_DESIGN` — explicit environment lifecycle rules
 
-**Decision; unblocked (proposed 2026-11-10).** Lifecycle control of an environment needs an
+**Decision; starting shape selected by the operator, 2026-11-10; the design note is not yet
+dispatched.** Lifecycle control of an environment needs an
 explicit grant (operator, 2026-11-10): create, resume, wake, suspend, delete or rebind a Sandbox or
 box as a direct request, or create Sessions on it. `Rule.Type` has no such rule, so an Identity
 caller gets none of these from `EnvironmentService`, and the deferred
 `resumePolicy.allowOwnIdentity` (branch `identity-consumers-environment-self-read-deferred`, closed
-#15380) derived them from acting-as instead. Recommendation: one `environment` rule type with
+#15380) derived them from acting-as instead. Selected starting shape: one `environment` rule type with
 `operations` (`read`, `resume`, `wake`, `suspend`, `delete`, `rebind`, `create_session`) and
 `targets` naming Sandboxes directly or `boundIdentity: <name>` for every environment currently bound
 to that Identity (the generalization of what a harness-hosted Session already does, operator
