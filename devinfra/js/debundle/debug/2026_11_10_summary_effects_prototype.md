@@ -535,6 +535,15 @@ impure:
   object before it, which is decided by assuming every such read pure and
   then making impure each one an earlier impure statement reaches, until
   none is left.
+  A literal that nothing can change needs none of that: the binding is not
+  exported, the chunk has no direct `eval`, and every mention of the binding
+  in the chunk is a read of a named member (`table.key`, `table?.key`). A
+  store, `delete`, update, destructuring or loop target on a member, a call
+  or tagged template with the binding as receiver, a computed read, a JSX
+  element named by it, or any use of the binding as a value disqualifies it.
+  Nothing but the binding then holds the object, so an impure statement that
+  reaches the binding can only read it; the read is a pure definition
+  ordered only against the literal's declaration.
 - `import-reads`: a read of an imported binding is a pure definition that
   stays ordered against every impure statement, since another chunk's code
   may change what the import holds.
@@ -558,8 +567,8 @@ mostly not of that kind: tests of the host (`typeof document < "u"`,
 spreads of arrays. None is a conversion of an object with a default
 `toString`.
 
-`extension_fixtures.txt` holds 27 programs run under Node in both orders (11
-admitted with Node agreeing, 16 refused with Node showing the divergence:
+`extension_fixtures.txt` holds 33 programs run under Node in both orders (12
+admitted with Node agreeing, 21 refused with Node showing the divergence:
 a base that is rebound, a function base whose prototype is replaced, a
 literal changed between, a property made an accessor by an earlier
 statement, a property the literal lacks, a guarded polyfill

@@ -461,6 +461,8 @@ struct Classifier<'a> {
     /// Bindings that only ever hold one array literal.
     arrays: &'a FxHashSet<Binding>,
     settled: &'a Settled,
+    /// Literals nothing in the chunk can change: see `sealed_literals`.
+    sealed: &'a FxHashSet<Binding>,
     /// Literals the statement reads a property of.
     pristine: Vec<Binding>,
     upgrades: &'a FxHashSet<Upgrade>,
@@ -717,9 +719,7 @@ impl Classifier<'_> {
                         .literal_member_read(expr)
                         .filter(|table| self.literals[table].get(&*key.sym).copied() == Some(true));
                     if let Some(table) = primitive_entry {
-                        self.eager.push(table);
-                        self.deep.push(table);
-                        self.pristine.push(table);
+                        self.read_literal(table);
                     }
                     // Or a primitive member of a settled import.
                     primitive_entry.is_some() || self.primitive_arg(expr)
@@ -937,6 +937,16 @@ impl Classifier<'_> {
             self.denied += 1;
         }
         ok
+    }
+
+    /// Records a read of a property of the literal `table` holds. The read
+    /// depends on the state of the object unless nothing can change it.
+    fn read_literal(&mut self, table: Binding) {
+        self.eager.push(table);
+        if !self.sealed.contains(&table) {
+            self.deep.push(table);
+            self.pristine.push(table);
+        }
     }
 
     /// `table.key` for a binding that only ever holds one plain object
@@ -1344,9 +1354,7 @@ impl Classifier<'_> {
             return Ok(());
         }
         if let Some(table) = self.literal_member_read(expr) {
-            self.eager.push(table);
-            self.deep.push(table);
-            self.pristine.push(table);
+            self.read_literal(table);
             return Ok(());
         }
         if let Some(dependencies) = self.intrinsic_member_read(expr) {
@@ -1465,9 +1473,7 @@ impl Classifier<'_> {
                             let Some(table) = table else {
                                 return Err(ImpureCause::Conversion);
                             };
-                            self.eager.push(table);
-                            self.deep.push(table);
-                            self.pristine.push(table);
+                            self.read_literal(table);
                             continue;
                         }
                     };
@@ -1938,6 +1944,22 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
         .then(|| crate::derive::derive(module, unresolved, options.program.as_ref()));
     // Off an import cycle the exporting chunk has run, and no code of the
     // program touches these objects except to read named members.
+    // A literal no statement of the chunk mentions other than to read a
+    // named member, and that is not exported, is never held by anything but
+    // its binding: no code can change it.
+    let sealed: FxHashSet<Binding> = crate::derive::handled_bindings(module)
+        .map(|handled| {
+            bindings
+                .iter()
+                .filter(|(id, binding)| {
+                    literals.contains_key(*binding)
+                        && !handled.contains(*id)
+                        && !exported.contains(*binding)
+                })
+                .map(|(_, binding)| *binding)
+                .collect()
+        })
+        .unwrap_or_default();
     let mut settled = Settled::default();
     let off_cycle = options
         .program
@@ -2128,6 +2150,7 @@ pub fn analyze(module: &Module, unresolved: SyntaxContext, options: &Options) ->
             symbols: &symbols,
             arrays: &arrays,
             settled: &settled,
+            sealed: &sealed,
             pristine: Vec::new(),
             upgrades: &options.upgrades,
             census: &census,

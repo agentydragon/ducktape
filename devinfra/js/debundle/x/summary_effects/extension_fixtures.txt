@@ -163,3 +163,39 @@ delete Object.fromEntries;
 Object.fromEntries || (Object.fromEntries = function () { return 'polyfill'; });
 const fromEntries = Object.fromEntries;
 console.log(typeof fromEntries);
+### commutes same: a literal only ever read by name, across an impure statement that reaches it
+-
+const table = { key: 'a', other: 1 }; let seen; function peek() { seen = table.other; }
+peek();
+const label = table.key;
+console.log(seen, label);
+### ordered differs: the literal is stored to through a destructuring target
+-
+const table = { key: 'a' }; function rename() { [table.key] = ['b']; }
+rename();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is stored to through a parenthesized target
+-
+const table = { key: 'a' }; function rename() { (table.key) = 'b'; }
+rename();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is the receiver of a call that changes it
+-
+const table = { key: 'a', set: function () { this.key = 'b'; } }; function rename() { table.set(); }
+rename();
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is handed out as a value and changed
+-
+const table = { key: 'a' }; function leak() { return table; }
+leak().key = 'b';
+const label = table.key;
+console.log(label);
+### ordered differs: the literal is changed under a computed key
+-
+const table = { key: 'a' }; const name = 'key'; function rename() { table[name] = 'b'; }
+rename();
+const label = table.key;
+console.log(label);

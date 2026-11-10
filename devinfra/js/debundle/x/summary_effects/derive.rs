@@ -199,12 +199,26 @@ struct Handled {
     loaded: Vec<String>,
     /// One of those with a specifier that is not a literal.
     loads_unknown: bool,
+    /// A direct `eval`, which can name any binding.
+    evals: bool,
+}
+
+/// The bindings of `module` mentioned other than to read a named member:
+/// stored to, deleted from, called as a receiver, read under a computed
+/// key, or used as a value. `None` if a direct `eval` may mention any.
+pub fn handled_bindings(module: &Module) -> Option<FxHashSet<Id>> {
+    let mut handled = Handled::default();
+    module.visit_with(&mut handled);
+    (!handled.evals).then_some(handled.bindings)
 }
 
 impl Handled {
     /// `binding.name` used as more than a read: stored to, deleted, or
     /// called with the binding as receiver.
-    fn used(&mut self, expr: &Expr) {
+    fn used(&mut self, mut expr: &Expr) {
+        while let Expr::Paren(paren) = expr {
+            expr = &paren.expr;
+        }
         if let Expr::Member(MemberExpr { obj, .. }) = expr
             && let Expr::Ident(binding) = &**obj
         {
@@ -237,13 +251,31 @@ impl Visit for Handled {
     }
 
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
-        if let AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr { obj, .. })) =
-            &assign.left
-            && let Expr::Ident(binding) = &**obj
-        {
-            self.bindings.insert(binding.to_id());
+        match &assign.left {
+            AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr { obj, .. })) => {
+                if let Expr::Ident(binding) = &**obj {
+                    self.bindings.insert(binding.to_id());
+                }
+            }
+            AssignTarget::Simple(SimpleAssignTarget::Paren(paren)) => self.used(&paren.expr),
+            _ => {}
         }
         assign.visit_children_with(self);
+    }
+
+    // `[binding.name] = …`, `for (binding.name of …)`.
+    fn visit_pat(&mut self, pattern: &Pat) {
+        if let Pat::Expr(target) = pattern {
+            self.used(target);
+        }
+        pattern.visit_children_with(self);
+    }
+
+    // `<Binding />` hands the binding's value to the element factory.
+    fn visit_jsx_element_name(&mut self, name: &JSXElementName) {
+        if let JSXElementName::Ident(binding) = name {
+            self.bindings.insert(binding.to_id());
+        }
     }
 
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
@@ -272,6 +304,7 @@ impl Visit for Handled {
         match &call.callee {
             Callee::Expr(callee) => {
                 self.used(callee);
+                self.evals |= matches!(&**callee, Expr::Ident(name) if &*name.sym == "eval");
                 let requires = matches!(&**callee, Expr::Member(MemberExpr {
                     obj,
                     prop: MemberProp::Ident(method),
@@ -999,7 +1032,11 @@ impl<'a> Resolver<'a> {
     /// chunk in any other way, in a chunk no code holds as a whole.
     fn settled_literals(&self) -> FxHashMap<(usize, Id), Vec<(String, bool)>> {
         let mut settled = FxHashMap::default();
-        if self.chunks.iter().any(|chunk| chunk.handled.loads_unknown) {
+        if self
+            .chunks
+            .iter()
+            .any(|chunk| chunk.handled.loads_unknown || chunk.handled.evals)
+        {
             return settled;
         }
         // Chunks some code holds as a namespace object.
