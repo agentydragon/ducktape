@@ -1148,9 +1148,10 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         assert probe_outputs[0].blocks, probe_outputs
         probe_output = probe_outputs[0]
         probe_text = "\n".join(probe_output.blocks)
-        if "retained exec-server session was definitively lost" in probe_text:
+        if "was definitively lost" in probe_text:
             assert len(probe_outputs) == 2, probe_outputs
             assert probe_text.startswith("Script failed\n"), probe_text
+            assert f'retained exec-server session "{native_session_id}" was definitively lost' in probe_text, probe_text
             assert "was not dispatched" in probe_text, probe_text
             assert "no mutation was replayed" in probe_text, probe_text
             notice_text = "\n".join(probe_outputs[1].blocks)
