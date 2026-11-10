@@ -80,7 +80,9 @@ Deployment) into `haku-sandbox` (`cluster/cdk8s/haku/ui_egress.py`), both with s
 Haku's deployer Role cannot write a record. The issuer keeps its one credential ID and names its
 Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress sidecar alone.
 Any Pod Haku creates in `haku-sandbox` could mount it, the reach the `haku-ui` ServiceAccount
-already gives.
+already gives. haku-ci's egress relay (`haku-ci-egress`, a Deployment in `haku-ci`;
+`cluster/cdk8s/haku_ci/egress_gateway.py`) is one too: its subject is its own ServiceAccount, and
+only the relay mounts `svid-haku-ci-egress`, so builds in the privileged runner Pods never hold it.
 
 Every replica presents the same SVID and proves no Pod: the proxy drops any Pod token such a caller
 forwards, and decisions record no source Pod ([egress SPEC](../egress/SPEC.md)). This is weaker

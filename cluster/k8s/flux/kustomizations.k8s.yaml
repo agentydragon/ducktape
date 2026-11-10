@@ -4638,6 +4638,10 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
+      name: haku-ci-egress
+      namespace: haku-ci
+    - apiVersion: apps/v1
+      kind: Deployment
       name: policy-controller
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
