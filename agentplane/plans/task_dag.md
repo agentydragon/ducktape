@@ -3032,7 +3032,6 @@ ServiceAccount and the edge forwards a token minted for it (`IDENTITY_CUTOVER`).
 
 ```mermaid
 flowchart LR
-    WORKLOAD_AUTH_CUTOVER[In review: bearer hop removal]
     APP_AGENT_TOKEN_DECISION[Spike then decide: the app's agent token]
     CENTRAL_SESSION_ACTING_DESIGN[Decision: a central Session acting as its identity]
     SERVICES_IDENTITY_PRINCIPAL -->|implementation waits| CENTRAL_SESSION_ACTING_DESIGN
@@ -3046,17 +3045,6 @@ flowchart LR
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
     APP_IDENTITIES_UI --> IDENTITY_CUTOVER
 ```
-
-### `WORKLOAD_AUTH_CUTOVER` — remove the proxy bearer hop
-
-**In review (#15247, 2026-11-10).** Every workload requester presents a `WorkloadCredential` SVID
-(Sandboxes, command/build boxes, Haku's and `haku-ci`'s standing records), so the proxy's `forward`
-listener authenticates SVIDs alone: its bearer mode and hop resolver, the sidecar's bearer proxy
-auth and plaintext transport, and `public_coder`'s bearer relay settings are removed;
-`kubernetes_bearer` stays on service listeners for backend callers. Rollback: revert; no caller
-depends on the bearer hop. #15256 has rolled out on staging and no command box predates it.
-**Exit:** after image and config convergence on staging, Sandboxes, boxes and the standing
-workloads reach the proxy and Rules by SVID; then remove this node.
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
 
